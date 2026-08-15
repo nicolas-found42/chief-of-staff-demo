@@ -328,7 +328,7 @@ th {
 }
 
 .dropzone.disabled {
-  opacity: 0.6;
+  background: var(--surface-alt);
 }
 
 .event-row {

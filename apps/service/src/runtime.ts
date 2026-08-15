@@ -136,7 +136,7 @@ export class ServiceRuntime {
       errors.push("Model configuration is not the locked model");
     }
     if (!openRouterConfigured) {
-      errors.push("OPENROUTER_API_KEY is not present in the service environment");
+      errors.push("OpenRouter API key is not present in the service environment");
     }
     if (config && this.options.mode !== "replay") {
       const checks = runStartupChecks({

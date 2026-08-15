@@ -95,7 +95,7 @@ export function runStartupChecks(opts: PiInitOptions): PiStartupCheck {
     }
   }
   if (!opts.apiKeyPresent) {
-    violations.push("OPENROUTER_API_KEY is not present in the service environment");
+    violations.push("OpenRouter API key is not present in the service environment");
   }
   return {
     modelFound,
