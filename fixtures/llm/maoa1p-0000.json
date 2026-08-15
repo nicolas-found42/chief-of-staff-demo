@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "messages": [
+    {
+      "kind": "text",
+      "text": "Hi,\n\nCould you share the updated delivery schedule for the order? Our client launch depends on the timeline, so an update this week would help us plan.\n\nThank you"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+node_modules/
+dist/
+local-workspace/
+raw/
+.tmp/
+coverage/
+test-results/
+playwright-report/
+playwright/
+*.log
+.env
+playwright/
+.e2e-fixture/
+
+# Sensitive / credentials
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+*.keystore
+
+# Build artifacts / OS
+*.tsbuildinfo
+.DS_Store

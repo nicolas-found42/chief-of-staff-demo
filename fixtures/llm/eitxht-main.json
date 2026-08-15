@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "messages": [
+    {
+      "kind": "toolCall",
+      "name": "submit_tasks",
+      "arguments": {
+        "tasks": [
+          {
+            "Task name": "Email supplier about delivery timeline",
+            "Task type": "email",
+            "Assigned to": "Ada Lovelace",
+            "Deadline": "2026-08-15T15:00:00.000Z",
+            "Email details": {
+              "Recipient": "supplier@example.com",
+              "Subject": "Delivery timeline update",
+              "Body": "Could you share the updated delivery schedule? Our client launch depends on the timeline, so an update this week would help us plan."
+            }
+          },
+          {
+            "Task name": "Draft subscription tier launch plan",
+            "Task type": "business plan",
+            "Assigned to": "Ada Lovelace",
+            "Business plan details": {
+              "Title": "Subscription Tier Launch Plan",
+              "Summary": "Pricing, rollout phases, and success metrics for the new subscription tier."
+            }
+          },
+          {
+            "Task name": "Review Q3 budget spreadsheet",
+            "Task type": "other",
+            "Assigned to": "Ada Lovelace",
+            "Deadline": "2026-08-22T17:00:00.000Z",
+            "Task description": "Review the Q3 budget spreadsheet and flag any line item with more than 10% variance."
+          },
+          {
+            "Task name": "Prepare server room audit checklist",
+            "Task type": "other",
+            "Assigned to": "Charles Babbage",
+            "Task description": "Prepare the server room audit checklist."
+          }
+        ]
+      }
+    }
+  ]
+}

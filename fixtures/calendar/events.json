@@ -1,0 +1,26 @@
+{
+  "timezone": "America/New_York",
+  "events": [
+    {
+      "id": "event-1",
+      "start": "2026-08-17T10:00:00-04:00",
+      "end": "2026-08-17T10:30:00-04:00",
+      "summary": "Busy",
+      "status": "busy"
+    },
+    {
+      "id": "event-2",
+      "start": "2026-08-17T14:00:00-04:00",
+      "end": "2026-08-17T15:30:00-04:00",
+      "summary": "Tentative planning block",
+      "status": "tentative"
+    },
+    {
+      "id": "event-3",
+      "start": "2026-08-17T16:00:00-04:00",
+      "end": "2026-08-17T16:15:00-04:00",
+      "summary": "Optional standup",
+      "status": "free"
+    }
+  ]
+}

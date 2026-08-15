@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": 1,
+  "cases": {
+    "eitxht:main": "eitxht-main.json",
+    "maoa1p:0000": "maoa1p-0000.json",
+    "ia2vvr:0001": "ia2vvr-0001.json"
+  }
+}

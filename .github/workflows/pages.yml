@@ -1,0 +1,58 @@
+name: Deploy static UI to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    env:
+      # Out-of-band vendor token: the scan fails if this is missing or empty.
+      # This job exposes no production or OpenRouter secret.
+      BANNED_VENDOR_TOKEN: ${{ secrets.BANNED_VENDOR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check and tests
+        run: npm run typecheck && npm test
+
+      - name: Banned-token scan (tracked files)
+        run: npm run scan:banned
+      - name: Build only the static web application
+        env:
+          VITE_UI_COMMIT_SHA: ${{ github.sha }}
+        run: npm run build
+
+      - name: Banned-token scan (complete production build)
+        run: npm run scan:banned -- apps/web/dist
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
