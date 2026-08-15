@@ -1,4 +1,5 @@
 import {
+  CALENDAR_TOOL_NAME,
   LLM_PROVIDER_ID,
   type UsageSummary,
   type WorkflowEvent,
@@ -21,6 +22,17 @@ import {
 import { calendarToolFromWorkspace, createSubmitTasksTool, type ExtractionCapture } from "./tools.js";
 
 const EXTRACTION_TOOL = "submit_tasks";
+
+/** The single tool each agent kind may call. The plan agent gets none. */
+function allowedTool(kind: AiInvokeContext["kind"]): string | null {
+  if (kind === "extract") {
+    return EXTRACTION_TOOL;
+  }
+  if (kind === "email") {
+    return CALENDAR_TOOL_NAME;
+  }
+  return null;
+}
 
 export interface InvokerOptions {
   models: Models;
@@ -256,8 +268,12 @@ export class PiAiInvoker implements AiInvoker {
   }
 
   private async attempt(ctx: AiInvokeContext, attempt: number): Promise<AiInvokeResult> {
-    const capture: ExtractionCapture = { tasks: [], submissionCount: 0 };
     let attemptedSubmissions = 0;
+    let invalidToolAttempted = false;
+    let toolCallsSeen = 0;
+    /** Hard bound against live models that loop on tool calls. */
+    const TOOL_CALL_LIMIT = 8;
+    const capture: ExtractionCapture = { tasks: [], submissionCount: 0 };
     const tools: AgentTool[] = [];
     let systemPrompt: string;
     if (ctx.kind === "extract") {
@@ -303,27 +319,38 @@ export class PiAiInvoker implements AiInvoker {
       },
       streamFn: streamFn as StreamFn,
       sessionId: `${ctx.runId}:${ctx.stepId}:${ctx.taskIndex ?? "main"}`,
-      toolExecution: "sequential",
+      shouldStopAfterTurn: () =>
+        attemptedSubmissions > 1 || invalidToolAttempted || toolCallsSeen > TOOL_CALL_LIMIT,
       onResponse: (info) => {
         lastStatus = info.status;
         const retryAfter = (info.headers as Record<string, string> | undefined)?.["retry-after"];
         this.lastRetryAfterSeconds = retryAfter ? Number(retryAfter) : null;
       },
       beforeToolCall: async (before) => {
-        if (before.toolCall.name !== EXTRACTION_TOOL) {
+        toolCallsSeen += 1;
+        const allowed = allowedTool(ctx.kind);
+        if (before.toolCall.name !== allowed) {
+          if (ctx.kind === "extract") {
+            invalidToolAttempted = true;
+          }
           return {
             block: true,
-            reason: `Tool "${before.toolCall.name}" is not allowed; only ${EXTRACTION_TOOL} may be called`,
+            reason:
+              allowed === null
+                ? `Tool "${before.toolCall.name}" is not allowed for this agent`
+                : `Tool "${before.toolCall.name}" is not allowed; only ${allowed} may be called`,
             terminate: true,
           };
         }
-        attemptedSubmissions += 1;
-        if (attemptedSubmissions > 1) {
-          return {
-            block: true,
-            reason: `${EXTRACTION_TOOL} may only be called once`,
-            terminate: true,
-          };
+        if (ctx.kind === "extract") {
+          attemptedSubmissions += 1;
+          if (attemptedSubmissions > 1) {
+            return {
+              block: true,
+              reason: `${EXTRACTION_TOOL} may only be called once`,
+              terminate: true,
+            };
+          }
         }
         return undefined;
       },
@@ -333,7 +360,6 @@ export class PiAiInvoker implements AiInvoker {
       agent.abort();
     };
     ctx.signal.addEventListener("abort", onAbort);
-    let invalidToolAttempted = false;
     const unsubscribe = agent.subscribe((event) => {
       if (event.type === "message_update") {
         if (event.assistantMessageEvent.type === "text_delta") {
@@ -342,9 +368,6 @@ export class PiAiInvoker implements AiInvoker {
           ctx.onProgress("thinking", "");
         }
       } else if (event.type === "tool_execution_start") {
-        if (ctx.kind === "extract" && event.toolName !== EXTRACTION_TOOL) {
-          invalidToolAttempted = true;
-        }
         ctx.onProgress("tool_call", event.toolName);
       }
     });
@@ -377,6 +400,14 @@ export class PiAiInvoker implements AiInvoker {
       (lastAssistant?.role === "assistant" ? lastAssistant.errorMessage : undefined);
     if (ctx.signal.aborted) {
       await this.writeRequestFile(ctx, attempt, "aborted", messages, "cancelled");
+    }
+
+    if (toolCallsSeen > TOOL_CALL_LIMIT) {
+      await this.writeRequestFile(ctx, attempt, "failed", messages, "tool call limit exceeded");
+      throw new WorkflowError(
+        "INVALID_STRUCTURED_OUTPUT",
+        `The agent exceeded the tool call limit of ${TOOL_CALL_LIMIT}`
+      );
     }
 
     if (ctx.kind === "extract") {

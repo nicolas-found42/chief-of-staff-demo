@@ -18,7 +18,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { createFauxCore, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
+import { createFauxCore, fauxProvider, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { createModels, type Models } from "@earendil-works/pi-ai";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,11 +47,14 @@ const EXTRACTION_TASKS: ExtractedTask[] = [
   },
 ];
 
-/** A models registry backed by pi's faux provider, scripted per test. */
-function fauxModels(providerId = "openrouter"): {
+interface FauxModelsHandle {
   models: Models;
-  setResponses: ReturnType<typeof fauxProvider>["setResponses"];
-} {
+  setResponses: (responses: FauxResponseStep[]) => void;
+  getPendingResponseCount: () => number;
+}
+
+/** A models registry backed by pi's faux provider, scripted per test. */
+function fauxModels(providerId = "openrouter"): FauxModelsHandle {
   const handle = fauxProvider({
     api: "openai-completions",
     provider: providerId,
@@ -70,7 +73,11 @@ function fauxModels(providerId = "openrouter"): {
   });
   const models = createModels();
   models.setProvider(handle.provider);
-  return { models, setResponses: handle.setResponses };
+  return {
+    models,
+    setResponses: handle.setResponses,
+    getPendingResponseCount: handle.getPendingResponseCount,
+  };
 }
 
 function scriptedToolCall(name: string, args: Record<string, unknown>) {
@@ -256,6 +263,75 @@ describe("extraction agent contract", () => {
       code: "INVALID_STRUCTURED_OUTPUT",
     });
   });
+
+  it("hard-stops the loop when the model keeps calling submit_tasks with invalid payloads", async () => {
+    const { models, setResponses, getPendingResponseCount } = fauxModels();
+    // A live model can loop forever when every submission fails validation
+    // and each message carries several calls: the batch never terminates.
+    // The invoker must hard-stop the loop after the second submission.
+    const invalidTasks = [
+      {
+        "Task name": "Email supplier",
+        "Task type": "email",
+        "Assigned to": "Ada Lovelace",
+        Deadline: "2026-08-15T15:00:00.000Z",
+      },
+    ];
+    setResponses(
+      Array.from({ length: 5 }, () =>
+        fauxAssistantMessage(
+          [
+            fauxToolCall(EXTRACTION_TOOL_NAME, { tasks: invalidTasks }, { id: "call-a" }),
+            fauxToolCall(EXTRACTION_TOOL_NAME, { tasks: invalidTasks }, { id: "call-b" }),
+          ],
+          { stopReason: "toolUse", timestamp: 0 }
+        )
+      )
+    );
+    const ctx = await makeInvokeContext();
+    const invoker = new PiAiInvoker({
+      models,
+      mode: "live",
+      thinkingLevel: "off",
+      workspace: ctx.workspace,
+      sleep: async () => undefined,
+      jitter: () => 0,
+    });
+    await expect(invoker.invoke(ctx)).rejects.toMatchObject({
+      code: "INVALID_STRUCTURED_OUTPUT",
+    });
+    // Fixed: attempt 0 consumes one response, the retry one more; three remain
+    // unconsumed, proving the loop stopped instead of draining the queue.
+    expect(getPendingResponseCount()).toBe(3);
+  });
+
+  it("caps runaway tool calls for the email agent", async () => {
+    const { models, setResponses, getPendingResponseCount } = fauxModels();
+    setResponses(
+      Array.from({ length: 10 }, () =>
+        scriptedToolCall(CALENDAR_TOOL_NAME, {
+          earliest: "2026-08-17T09:00:00Z",
+          latest: "2026-08-17T17:00:00Z",
+          durationMinutes: 30,
+        })
+      )
+    );
+    const ctx = await makeInvokeContext({ kind: "email", stepId: "maoa1p", taskIndex: 0 });
+    const invoker = new PiAiInvoker({
+      models,
+      mode: "live",
+      thinkingLevel: "off",
+      workspace: ctx.workspace,
+      sleep: async () => undefined,
+      jitter: () => 0,
+    });
+    await expect(invoker.invoke(ctx)).rejects.toMatchObject({
+      code: "INVALID_STRUCTURED_OUTPUT",
+      message: expect.stringContaining("tool call limit"),
+    });
+    expect(getPendingResponseCount()).toBe(1);
+  });
+
 
   it("rejects tasks that violate branch invariants", async () => {
     const { models, setResponses } = fauxModels();
