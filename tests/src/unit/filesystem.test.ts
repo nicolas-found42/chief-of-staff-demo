@@ -8,6 +8,7 @@ import {
   safeFilenameFragment,
   atomicWriteFile,
   TrackingCsv,
+  Workspace,
 } from "@chief-of-staff/workflow";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, realpath, writeFile, mkdir } from "node:fs/promises";
@@ -122,7 +123,7 @@ describe("tracking CSV", () => {
 
   it("upserts idempotently by row_id", async () => {
     const dir = await mkdtemp(join(tmpdir(), "csv-"));
-    const csv = new TrackingCsv(join(dir, "actions.csv"));
+    const csv = new TrackingCsv(new Workspace(dir), "actions.csv");
     const row = {
       row_id: "run:0000",
       run_id: "run",
@@ -150,7 +151,7 @@ describe("tracking CSV", () => {
 
   it("preserves rows for other ids", async () => {
     const dir = await mkdtemp(join(tmpdir(), "csv-"));
-    const csv = new TrackingCsv(join(dir, "actions.csv"));
+    const csv = new TrackingCsv(new Workspace(dir), "actions.csv");
     const base = {
       run_id: "run",
       task_index: 0,
@@ -173,7 +174,7 @@ describe("tracking CSV", () => {
   it("refuses to parse a mismatched header", async () => {
     const dir = await mkdtemp(join(tmpdir(), "csv-"));
     await writeFile(join(dir, "actions.csv"), "other,header\n", "utf8");
-    const csv = new TrackingCsv(join(dir, "actions.csv"));
+    const csv = new TrackingCsv(new Workspace(dir), "actions.csv");
     await expect(csv.readRows()).rejects.toThrow(/header mismatch/);
   });
 });

@@ -7,8 +7,14 @@ export default defineConfig({
       "@chief-of-staff/contracts": fileURLToPath(
         new URL("../packages/contracts/src/index.ts", import.meta.url)
       ),
+      "@chief-of-staff/workflow/browser": fileURLToPath(
+        new URL("../packages/workflow/src/browser.ts", import.meta.url)
+      ),
       "@chief-of-staff/workflow": fileURLToPath(
         new URL("../packages/workflow/src/index.ts", import.meta.url)
+      ),
+      "@chief-of-staff/agents": fileURLToPath(
+        new URL("../packages/agents/src/index.ts", import.meta.url)
       ),
       "@chief-of-staff/service": fileURLToPath(
         new URL("../apps/service/src/index.ts", import.meta.url)

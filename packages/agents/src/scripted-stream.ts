@@ -6,7 +6,7 @@ import {
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { createFauxCore } from "@earendil-works/pi-ai/providers/faux";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { WorkflowError } from "@chief-of-staff/workflow";
+import { WorkflowError } from "@chief-of-staff/workflow/browser";
 
 export interface ScriptedTextMessage {
   kind: "text";

@@ -5,19 +5,24 @@ import {
   type CalendarEvents,
   type ProfileConfig,
 } from "@chief-of-staff/contracts";
-import { ApiClient, ApiError, isProtocolCompatible, type ConfigResponse } from "../api/client";
+import type { AppClient, ApiClient } from "../api/client";
+import { ApiError, isProtocolCompatible, type ConfigResponse } from "../api/client";
+import { OPENROUTER_KEY_STORAGE } from "../runtime/browser-runtime";
 
 interface SetupProps {
-  client: ApiClient;
-  onPaired: () => void;
+  client: AppClient;
+  serviceClient: ApiClient;
+  paired: boolean;
+  onServicePaired: () => void;
+  onUseBrowser: () => void;
   onServiceInfo: (info: { version: string; protocol: number } | null) => void;
 }
 
-export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
+export function SetupPage({ client, serviceClient, paired, onServicePaired, onUseBrowser, onServiceInfo }: SetupProps) {
   const [serviceUrl, setServiceUrl] = useState(client.getBaseUrl() || DEFAULT_SERVICE_URL);
   const [checking, setChecking] = useState(false);
   const [connection, setConnection] = useState<"idle" | "connected" | "unreachable" | "incompatible">("idle");
-  const [health, setHealth] = useState<Awaited<ReturnType<ApiClient["health"]>> | null>(null);
+  const [health, setHealth] = useState<Awaited<ReturnType<AppClient["health"]>> | null>(null);
   const [pairingCode, setPairingCode] = useState("");
   const [pairing, setPairing] = useState<"idle" | "paired" | "invalid" | "error">("idle");
   const [pairError, setPairError] = useState("");
@@ -34,6 +39,8 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
     summary: "",
     status: "busy",
   });
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(OPENROUTER_KEY_STORAGE) ?? "");
+  const browserMode = !paired;
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -51,12 +58,12 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
   const checkConnection = async (): Promise<void> => {
     setChecking(true);
     setConnection("idle");
-    client.setBaseUrl(serviceUrl);
-    client.clearToken();
+    serviceClient.setBaseUrl(serviceUrl);
+    serviceClient.clearToken();
     setPairing("idle");
     setConfig(null);
     try {
-      const value = await client.health();
+      const value = await serviceClient.health();
       setHealth(value);
       if (!isProtocolCompatible(value)) {
         setConnection("incompatible");
@@ -77,9 +84,9 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
     setPairing("idle");
     setPairError("");
     try {
-      await client.pair(pairingCode.trim());
+      await serviceClient.pair(pairingCode.trim());
       setPairing("paired");
-      onPaired();
+      onServicePaired();
       await refreshConfig();
     } catch (error) {
       if (error instanceof ApiError && (error.status === 400)) {
@@ -148,25 +155,69 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
     setCalendar({ ...calendar, events: calendar.events.filter((e) => e.id !== id) });
   };
 
+  const saveApiKey = (value: string): void => {
+    setApiKey(value);
+    localStorage.setItem(OPENROUTER_KEY_STORAGE, value);
+    void refreshConfig();
+  };
+
   useEffect(() => {
-    if (pairing === "paired") {
+    if (browserMode) {
       void refreshConfig();
     }
-  }, [pairing, refreshConfig]);
+  }, [browserMode, refreshConfig]);
+
 
   return (
     <section className="page" aria-labelledby="setup-heading">
       <h1 id="setup-heading">Setup</h1>
       <p>
-        This hosted page is only the user interface. The workflow runs on a
-        local companion service on your own machine; start it first, then
-        connect from here. Live runs send transcript-derived content and
-        prompts to OpenRouter and the model provider selected by OpenRouter.
-        No other application data is sent remotely.
+        The workflow engine runs entirely in this browser tab: paste your
+        OpenRouter API key below, then upload a transcript on the Runs page.
+        Runs, artifacts, and settings stay in this browser (IndexedDB). Live
+        runs send transcript-derived content and prompts to OpenRouter only.
       </p>
 
       <div className="card">
-        <h2>1. Connect to the local service</h2>
+        <h2>1. Run in this browser</h2>
+        <div className="field-row">
+          <label htmlFor="openrouter-key">OpenRouter API key</label>
+          <input
+            id="openrouter-key"
+            aria-label="OpenRouter API key"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={apiKey}
+            onChange={(e) => saveApiKey(e.target.value)}
+            placeholder="sk-or-v1-…"
+          />
+        </div>
+        <p className="muted">
+          The key is used only by this page for direct OpenRouter requests and
+          is stored in this browser&apos;s local storage. Remove it by clearing
+          the field.
+        </p>
+        <p data-testid="browser-key-status" aria-live="polite">
+          {apiKey.trim().length > 0 ? (
+            <span className="ok">key set — this browser is ready to run workflows</span>
+          ) : (
+            <span className="bad">no key yet — paste your OpenRouter API key to run workflows</span>
+          )}
+        </p>
+      </div>
+
+      <div className="card">
+        <h2>2. Connect to a local companion service (optional)</h2>
+        {paired && (
+          <p className="ok">
+            Currently using the local service.{" "}
+            <button type="button" onClick={onUseBrowser}>
+              Switch to the in-browser engine
+            </button>
+          </p>
+        )}
+
         <div className="field-row">
           <label htmlFor="service-url">Service URL</label>
           <input
@@ -228,10 +279,10 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
         </p>
       </div>
 
-      {pairing === "paired" && config && (
+      {(pairing === "paired" || browserMode) && config && (
         <>
           <div className="card">
-            <h2>2. Readiness</h2>
+            <h2>3. Readiness</h2>
             <ul className="checklist">
               <li className={config.readiness.profileValid ? "ok" : "bad"}>
                 Profile configuration {config.readiness.profileValid ? "valid" : "missing"}
@@ -262,7 +313,7 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
           </div>
 
           <div className="card">
-            <h2>3. Profile</h2>
+            <h2>4. Profile</h2>
             {profile && (
               <div className="form-grid">
                 <label htmlFor="profile-name">Your name</label>
@@ -319,16 +370,16 @@ export function SetupPage({ client, onPaired, onServiceInfo }: SetupProps) {
           </div>
 
           <div className="card">
-            <h2>4. Models</h2>
+            <h2>5. Models</h2>
             <p className="muted">
               Model configuration is locked in version 1: provider{" "}
               <code>{config.models.provider}</code>, model <code>{config.models.model}</code>.
-              The OpenRouter API key never passes through this UI.
+              The key never passes through the local service.
             </p>
           </div>
 
           <div className="card">
-            <h2>5. Calendar</h2>
+            <h2>6. Calendar</h2>
             {calendar && (
               <>
                 <div className="field-row">

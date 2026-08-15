@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes, sha256Digest, toBase64Url } from "./crypto.js";
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -40,9 +40,7 @@ export function encodeDeterministicUlid(seedBytes: Uint8Array): string {
   return chars.map((c) => CROCKFORD[c]).join("");
 }
 
-export function sha256Digest(text: string): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(text, "utf8").digest());
-}
+export { sha256Digest } from "./crypto.js";
 
 export interface IdGenerator {
   /** Fresh run id: random ULID in live mode, seeded ULID in tests. */
@@ -58,7 +56,7 @@ export interface IdGenerator {
 }
 
 function cryptoEntropy(bytes: number): Uint8Array {
-  return new Uint8Array(randomBytes(bytes));
+  return randomBytes(bytes);
 }
 
 /** Live generator: ULID timestamps from the wall clock, entropy from crypto. */
@@ -68,7 +66,7 @@ export function createLiveIdGenerator(now: () => number = Date.now): IdGenerator
       return encodeUlid(now(), cryptoEntropy(16));
     },
     randomToken(bytes = 32) {
-      return randomBytes(bytes).toString("base64url");
+      return toBase64Url(randomBytes(bytes));
     },
     artifactId(runId, stepId, taskIndex) {
       return encodeDeterministicUlid(
@@ -103,11 +101,11 @@ export function createDeterministicIdGenerator(seed: string): IdGenerator {
     randomToken(bytes = 32) {
       counter += 1;
       const digest = sha256Digest(`seed:${seed}:token:${counter}`);
-      const out = Buffer.alloc(bytes);
+      const out = new Uint8Array(bytes);
       for (let i = 0; i < bytes; i++) {
         out[i] = digest[i % digest.length];
       }
-      return out.toString("base64url");
+      return toBase64Url(out);
     },
     artifactId(runId, stepId, taskIndex) {
       return encodeDeterministicUlid(

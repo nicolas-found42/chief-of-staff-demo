@@ -15,7 +15,7 @@ import type { WorkflowDefinition, WorkflowPathRuleNode, WorkflowStepDef, Workflo
 import { getIteratorParameterSchema, getIteratorTargetThread, getStep, getThread } from "./definition.js";
 import { WorkflowError, toWorkflowError } from "./errors.js";
 import { EventSink } from "./events.js";
-import { sha256Hex, TrackingCsv } from "./filesystem.js";
+import { bytesEqual, sha256Hex, utf8ByteLength, utf8Bytes } from "./crypto.js";
 import type { IdGenerator } from "./ids.js";
 import {
   addArtifact,
@@ -28,6 +28,7 @@ import {
   writeManifestFile,
 } from "./manifest.js";
 import { ReferenceResolver, type ResolverContext } from "./resolver.js";
+import { TrackingCsv } from "./tracking.js";
 import { substituteProfileStrict } from "./profile.js";
 import type { Workspace } from "./workspace.js";
 export interface RunSourceInfo {
@@ -222,7 +223,6 @@ export async function runWorkflow(
   input: RunInput
 ): Promise<RunManifest> {
   const workspace = services.workspace;
-  const runDir = workspace.runDir(input.runId);
   const nowIso = services.clock().toISOString();
   const configSha = {
     profile: sha256Hex(`${JSON.stringify(services.profile)}\n`),
@@ -259,10 +259,10 @@ function normalizeInputText(text: string): string {
       timezone: services.timezone,
       llm: { mode: services.mode, model: services.models.model },
     }),
-    events: new EventSink(`${runDir}/events.jsonl`, services.clock),
+    events: new EventSink(workspace, `runs/${input.runId}/events.jsonl`, services.clock),
     resolver: new ReferenceResolver(getIteratorParameterSchema(services.definition)),
     nowIso,
-    trackingCsv: new TrackingCsv(workspace.layout.trackingCsv),
+    trackingCsv: new TrackingCsv(workspace, "tracking/actions.csv"),
   };
 
   // Input snapshot (section 12 step 7): normalized transcript plus source
@@ -297,9 +297,9 @@ function normalizeInputText(text: string): string {
     type: "transcript",
     uri: `local://runs/${input.runId}/input/transcript.txt`,
     taskIndex: null,
-    byteSize: Buffer.byteLength(normalizedTranscript, "utf8"),
+    byteSize: utf8ByteLength(normalizedTranscript),
   });
-  await writeManifestFile(`${runDir}/manifest.json`, state.manifest);
+  await writeManifestFile(workspace, `runs/${input.runId}/manifest.json`, state.manifest);
   await state.events.emit({ runId: input.runId, type: "run.started" });
 
   const scope: Scope = {
@@ -425,7 +425,7 @@ function normalizeInputText(text: string): string {
     }
     return a.artifactId.localeCompare(b.artifactId);
   });
-  await writeManifestFile(`${runDir}/manifest.json`, state.manifest);
+  await writeManifestFile(workspace, `runs/${input.runId}/manifest.json`, state.manifest);
   await state.events.emit({
     runId: input.runId,
     type: "run.finished",
@@ -789,7 +789,7 @@ async function executeAdapterStep(
     artifactType: ArtifactType
   ): Promise<number> => {
     const bytes =
-      typeof content === "string" ? new Uint8Array(Buffer.from(content, "utf8")) : content;
+      typeof content === "string" ? utf8Bytes(content) : content;
     return stepSpan.startSpan(
       {
         name: "chief_of_staff.filesystem_commit",
@@ -807,7 +807,7 @@ async function executeAdapterStep(
           const existing = await services.workspace.readBytes(relativePath);
           const identical =
             existing.byteLength === bytes.byteLength &&
-            Buffer.from(existing).equals(Buffer.from(bytes));
+            bytesEqual(existing, bytes);
           if (identical) {
             commitSpan.setStatus({ status: "ok" });
             return bytes.byteLength;
@@ -1236,6 +1236,6 @@ async function writeStepArtifact(
     type: "step-artifact",
     uri: `local://${relativePath}`,
     taskIndex,
-    byteSize: Buffer.byteLength(content, "utf8"),
+    byteSize: utf8ByteLength(content),
   });
 }

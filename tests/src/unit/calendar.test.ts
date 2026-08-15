@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findFreeWindows, formatInTimeZone } from "@chief-of-staff/service";
+import { findFreeWindows, formatInTimeZone } from "@chief-of-staff/agents";
 import type { CalendarEvents } from "@chief-of-staff/contracts";
 
 const calendar: CalendarEvents = {

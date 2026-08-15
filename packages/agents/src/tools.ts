@@ -8,8 +8,8 @@ import {
   type ExtractedTask,
 } from "@chief-of-staff/contracts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { readFile } from "node:fs/promises";
-import { findFreeWindows } from "../calendar.js";
+import type { Workspace } from "@chief-of-staff/workflow/browser";
+import { findFreeWindows } from "./calendar.js";
 
 export interface ExtractionCapture {
   tasks: ExtractedTask[];
@@ -94,9 +94,9 @@ export function createCalendarTool(opts: CalendarToolOptions): AgentTool {
   };
 }
 
-export function calendarToolFromWorkspace(calendarFilePath: string): AgentTool {
+export function calendarToolFromWorkspace(workspace: Workspace, relativePath: string): AgentTool {
   return createCalendarTool({
-    readCalendarFile: async () => readFile(calendarFilePath, "utf8"),
+    readCalendarFile: async () => workspace.readText(relativePath),
   });
 }
 

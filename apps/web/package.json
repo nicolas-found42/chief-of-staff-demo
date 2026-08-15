@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@chief-of-staff/contracts": "*",
+    "mammoth": "^1.12.1",
     "markdown-it": "^15.0.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",

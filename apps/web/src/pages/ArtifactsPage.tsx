@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ArtifactType } from "@chief-of-staff/contracts";
-import { ApiClient } from "../api/client";
+import type { AppClient } from "../api/client";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 
 type FilterKey = "all" | "gmail-draft" | "plan-document" | "task" | "notification" | "tracking-csv";
@@ -22,7 +22,7 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: "tracking-csv", label: "Tracking" },
 ];
 
-export function ArtifactsPage({ client }: { client: ApiClient }) {
+export function ArtifactsPage({ client }: { client: AppClient }) {
   const [entries, setEntries] = useState<ArtifactEntry[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [error, setError] = useState("");

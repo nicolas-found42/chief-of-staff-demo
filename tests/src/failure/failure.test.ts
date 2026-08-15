@@ -9,9 +9,9 @@ import {
 } from "@chief-of-staff/workflow";
 import {
   PiAiInvoker,
-  buildAdapterRegistry,
   createPiModels,
-} from "@chief-of-staff/service";
+} from "@chief-of-staff/agents";
+import { buildAdapterRegistry } from "@chief-of-staff/workflow";
 import { mkdtemp, readFile, writeFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -106,8 +106,9 @@ async function buildServices(
       models: createPiModels(),
       mode: opts.mode ?? "replay",
       thinkingLevel: "off",
-      calendarFilePath: join(workspace.root, "calendar", "events.json"),
+      workspace,
       fixturesDir: opts.fixturesDir,
+      loadFixtureFile: async (filePath) => readFile(filePath, "utf8"),
       sleep: async () => undefined,
       jitter: () => 0,
     }),
@@ -260,8 +261,9 @@ describe("failure and recovery", () => {
         models: createPiModels(),
         mode: "replay",
         thinkingLevel: "off",
-        calendarFilePath: join(run.workspace.root, "calendar", "events.json"),
+        workspace: run.workspace,
         fixturesDir: join(REPO_ROOT, "fixtures", "llm"),
+        loadFixtureFile: async (filePath) => readFile(filePath, "utf8"),
         sleep: async () => undefined,
         jitter: () => 0,
       }),
@@ -315,8 +317,9 @@ describe("failure and recovery", () => {
         models: createPiModels(),
         mode: "replay",
         thinkingLevel: "off",
-        calendarFilePath: join(run.workspace.root, "calendar", "events.json"),
+        workspace: run.workspace,
         fixturesDir: join(REPO_ROOT, "fixtures", "llm"),
+        loadFixtureFile: async (filePath) => readFile(filePath, "utf8"),
         sleep: async () => undefined,
         jitter: () => 0,
       }),
@@ -367,8 +370,9 @@ describe("failure and recovery", () => {
         models: createPiModels(),
         mode: "replay",
         thinkingLevel: "off",
-        calendarFilePath: join(run.workspace.root, "calendar", "events.json"),
+        workspace: run.workspace,
         fixturesDir: join(REPO_ROOT, "fixtures", "llm"),
+        loadFixtureFile: async (filePath) => readFile(filePath, "utf8"),
         sleep: async () => undefined,
         jitter: () => 0,
       }),
@@ -420,7 +424,7 @@ describe("failure and recovery", () => {
 
   it("emits monotonic sequences for every event", async () => {
     const root = await mkdtemp(join(tmpdir(), "events-seq-"));
-    const sink = new EventSink(join(root, "events.jsonl"), () => new Date("2026-08-15T15:00:00.000Z"));
+    const sink = new EventSink(new Workspace(root), "events.jsonl", () => new Date("2026-08-15T15:00:00.000Z"));
     await Promise.all(
       Array.from({ length: 20 }, (_, i) => sink.emit({ runId: "r", type: "progress", data: { i } }))
     );

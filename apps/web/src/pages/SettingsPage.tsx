@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApiClient, isProtocolCompatible } from "../api/client";
+import type { AppClient } from "../api/client";
+import { isProtocolCompatible } from "../api/client";
 import type { ConfigResponse } from "@chief-of-staff/contracts";
 
 export function SettingsPage({
   client,
   serviceInfo,
 }: {
-  client: ApiClient;
+  client: AppClient;
   serviceInfo: { version: string; protocol: number } | null;
 }) {
   const [config, setConfig] = useState<ConfigResponse | null>(null);

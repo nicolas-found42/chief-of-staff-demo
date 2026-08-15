@@ -11,7 +11,7 @@ import type {
   StepWarning,
   UsageSummary,
 } from "@chief-of-staff/contracts";
-import { atomicWriteText } from "./filesystem.js";
+import type { Workspace } from "./workspace.js";
 
 export interface ManifestInit {
   runId: string;
@@ -118,8 +118,12 @@ export function artifactToStepArtifact(
   };
 }
 
-export async function writeManifestFile(path: string, manifest: RunManifest): Promise<void> {
-  await atomicWriteText(path, `${JSON.stringify(manifest, null, 2)}\n`);
+export async function writeManifestFile(
+  workspace: Workspace,
+  relativePath: string,
+  manifest: RunManifest
+): Promise<void> {
+  await workspace.writeText(relativePath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 export type { ArtifactType, RunStatus };

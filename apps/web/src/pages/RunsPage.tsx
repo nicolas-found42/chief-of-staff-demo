@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RunSummary } from "@chief-of-staff/contracts";
-import { ApiClient } from "../api/client";
+import type { AppClient } from "../api/client";
 import { StatusPill } from "../components/StatusPill";
 
 const SUPPORTED = /\.(txt|md|pdf|docx)$/i;
 
-export function RunsPage({ client }: { client: ApiClient }) {
+export function RunsPage({ client }: { client: AppClient }) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [error, setError] = useState("");
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "started" | "error">("idle");

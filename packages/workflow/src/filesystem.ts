@@ -1,48 +1,24 @@
-import { createHash, randomBytes } from "node:crypto";
+/**
+ * Node-only filesystem primitives. The browser entrypoint of the package must
+ * never import this module; portable code lives in crypto.ts, text.ts, and
+ * store.ts.
+ */
 import {
+  appendFile,
   mkdir,
   open,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize, sep } from "node:path";
-import { TRACKING_CSV_HEADER } from "@chief-of-staff/contracts";
-
-/** True when the path is absolute on any platform: a POSIX root or a Windows
- * drive-letter prefix. Workspace-relative paths must reject both regardless of
- * the host OS, so a drive path can never slip through as relative. */
-function isAbsolutePath(p: string): boolean {
-  return isAbsolute(p) || /^[A-Za-z]:[\\/]/.test(p);
-}
-
-/** A local:// URI is a workspace-relative path with forward slashes. */
-export function localUri(relativePath: string): string {
-  const normalized = normalize(relativePath).split(sep).join("/");
-  if (normalized.startsWith("../") || normalized === ".." || isAbsolutePath(normalized)) {
-    throw new Error(`Not a workspace-relative path: ${relativePath}`);
-  }
-  return `local://${normalized}`;
-}
-
-/** Parse a local:// URI back into a workspace-relative path with forward slashes. */
-export function parseLocalUri(uri: string): string {
-  if (!uri.startsWith("local://")) {
-    throw new Error(`Not a local:// URI: ${uri}`);
-  }
-  const rel = uri.slice("local://".length);
-  if (
-    rel.length === 0 ||
-    isAbsolutePath(rel) ||
-    rel.split("/").some((part) => part === "..") ||
-    rel.includes("\\")
-  ) {
-    throw new Error(`Unsafe local:// URI: ${uri}`);
-  }
-  return rel;
-}
+import { dirname, join, normalize, sep } from "node:path";
+import { randomBytes, utf8Bytes } from "./crypto.js";
+import { registerDefaultWorkspaceStore, type WorkspaceStore } from "./store.js";
+import { isAbsolutePath } from "./text.js";
 
 /**
  * Resolve a workspace-relative path against the workspace root and verify
@@ -82,28 +58,13 @@ export async function resolveWithinRoot(root: string, relativePath: string): Pro
   }
 }
 
-/** Sanitize untrusted text into a safe filename fragment. Never use LLM text
- * as a raw path component; derive filenames only through this function. */
-export function safeFilenameFragment(text: string, fallback = "item"): string {
-  const cleaned = text
-    .normalize("NFC")
-    // eslint-disable-next-line no-control-regex
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^\.+/, "")
-    .trim();
-  const limited = cleaned.slice(0, 80);
-  return limited.length > 0 ? limited : fallback;
-}
-
 /** Write a file atomically: temp file in the same directory, then rename. */
 export async function atomicWriteFile(absPath: string, data: Uint8Array | string): Promise<void> {
   const dir = dirname(absPath);
   await mkdir(dir, { recursive: true });
   const tmp = join(
     dir,
-    `.tmp-${process.pid}-${randomBytes(6).toString("hex")}-${Date.now()}`
+    `.tmp-${process.pid}-${randomBytes(6).reduce((hex, byte) => hex + byte.toString(16).padStart(2, "0"), "")}-${Date.now()}`
   );
   try {
     await writeFile(tmp, data);
@@ -125,17 +86,14 @@ export async function atomicWriteText(
   text: string,
   opts: { executable?: boolean } = {}
 ): Promise<void> {
-  await atomicWriteFile(absPath, Buffer.from(text, "utf8"));
+  await atomicWriteFile(absPath, utf8Bytes(text));
   if (opts.executable) {
     // No-op on Windows; kept for parity with POSIX hosts.
   }
 }
 
-export function sha256Hex(data: Uint8Array | string): string {
-  return createHash("sha256").update(data).digest("hex");
-}
-
 export async function sha256OfFile(absPath: string): Promise<string> {
+  const { sha256Hex } = await import("./crypto.js");
   const data = await readFile(absPath);
   return sha256Hex(data);
 }
@@ -144,151 +102,71 @@ export async function readTextFile(absPath: string): Promise<string> {
   return readFile(absPath, "utf8");
 }
 
-/** Normalize text to UTF-8 with LF line endings. */
-export function normalizeTextLf(text: string): string {
-  return text.replace(/\r\n?/g, "\n");
-}
+/** Filesystem-backed WorkspaceStore rooted at an absolute directory. */
+export class NodeWorkspaceStore implements WorkspaceStore {
+  constructor(readonly root: string) {}
 
-export interface CsvRow {
-  row_id: string;
-  run_id: string;
-  task_index: number;
-  task_name: string;
-  task_type: string;
-  assigned_to: string;
-  deadline: string;
-  source_step: string;
-  target_uri: string;
-  status: string;
-  created_at: string;
-  source_validation_error: string;
-}
-
-function csvEscape(value: string | number): string {
-  const text = String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function parseCsvLine(line: string): string[] {
-  const fields: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      fields.push(field);
-      field = "";
-    } else {
-      field += ch;
-    }
-  }
-  fields.push(field);
-  return fields;
-}
-
-function rowToFields(row: CsvRow): string[] {
-  return [
-    row.row_id,
-    row.run_id,
-    String(row.task_index),
-    row.task_name,
-    row.task_type,
-    row.assigned_to,
-    row.deadline,
-    row.source_step,
-    row.target_uri,
-    row.status,
-    row.created_at,
-    row.source_validation_error,
-  ];
-}
-
-function fieldsToRow(fields: string[]): CsvRow {
-  return {
-    row_id: fields[0] ?? "",
-    run_id: fields[1] ?? "",
-    task_index: Number(fields[2] ?? "0"),
-    task_name: fields[3] ?? "",
-    task_type: fields[4] ?? "",
-    assigned_to: fields[5] ?? "",
-    deadline: fields[6] ?? "",
-    source_step: fields[7] ?? "",
-    target_uri: fields[8] ?? "",
-    status: fields[9] ?? "",
-    created_at: fields[10] ?? "",
-    source_validation_error: fields[11] ?? "",
-  };
-}
-
-/** Thread-safe tracker over the actions CSV. All commits are serialized by the
- * engine through a shared mutex; this class also serializes within itself. */
-export class TrackingCsv {
-  private queue: Promise<unknown> = Promise.resolve();
-
-  constructor(private readonly csvPath: string) {}
-
-  private serialize<T>(op: () => Promise<T>): Promise<T> {
-    const run = this.queue.then(op, op);
-    this.queue = run.catch(() => undefined);
-    return run;
+  private abs(relativePath: string): Promise<string> {
+    return resolveWithinRoot(this.root, relativePath);
   }
 
-  async readRows(): Promise<CsvRow[]> {
-    return this.serialize(async () => this.readRowsLocked());
+  async mkdir(relativePath: string): Promise<void> {
+    await mkdir(await this.abs(relativePath), { recursive: true });
   }
 
-  /** Atomic idempotent upsert by row_id. Rows are stored sorted by row_id so
-   * the file content is independent of parallel iteration completion order. */
-  async upsert(row: CsvRow): Promise<CsvRow> {
-    return this.serialize(async () => {
-      const rows = await this.readRowsLocked();
-      const index = rows.findIndex((existing) => existing.row_id === row.row_id);
-      if (index >= 0) {
-        rows[index] = row;
-      } else {
-        rows.push(row);
-      }
-      rows.sort((a, b) => a.row_id.localeCompare(b.row_id));
-      const header = TRACKING_CSV_HEADER.join(",");
-      const body = rows.map((r) => rowToFields(r).map(csvEscape).join(",")).join("\n");
-      await atomicWriteText(this.csvPath, `${header}\n${body}${rows.length ? "\n" : ""}`);
-      return row;
-    });
+  async writeText(relativePath: string, text: string): Promise<void> {
+    await atomicWriteFile(await this.abs(relativePath), utf8Bytes(text));
   }
 
-  private async readRowsLocked(): Promise<CsvRow[]> {
-    let text: string;
+  async writeBytes(relativePath: string, bytes: Uint8Array): Promise<void> {
+    await atomicWriteFile(await this.abs(relativePath), bytes);
+  }
+
+  async writeTextDirect(relativePath: string, text: string): Promise<void> {
+    await writeFile(await this.abs(relativePath), text, "utf8");
+  }
+
+  async appendText(relativePath: string, text: string): Promise<void> {
+    const abs = await this.abs(relativePath);
+    await mkdir(dirname(abs), { recursive: true });
+    await appendFile(abs, text, "utf8");
+  }
+
+  async readText(relativePath: string): Promise<string> {
+    return readFile(await this.abs(relativePath), "utf8");
+  }
+
+  async readBytes(relativePath: string): Promise<Uint8Array> {
+    return new Uint8Array(await readFile(await this.abs(relativePath)));
+  }
+
+  async exists(relativePath: string): Promise<boolean> {
     try {
-      text = await readFile(this.csvPath, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return [];
-      }
-      throw error;
+      await this.stat(relativePath);
+      return true;
+    } catch {
+      return false;
     }
-    const lines = text.split("\n").filter((line) => line.trim().length > 0);
-    if (lines.length === 0) {
-      return [];
+  }
+
+  async stat(relativePath: string): Promise<{ size: number; mtimeMs: number }> {
+    const abs = await this.abs(relativePath);
+    const info = await stat(abs);
+    if (!info.isFile()) {
+      throw new Error(`Not a regular file: ${relativePath}`);
     }
-    if (lines[0] !== TRACKING_CSV_HEADER.join(",")) {
-      throw new Error("Tracking CSV header mismatch; refusing to parse");
-    }
-    return lines.slice(1).map(parseCsvLine).map(fieldsToRow);
+    return { size: info.size, mtimeMs: info.mtimeMs };
+  }
+
+  async readdir(relativePath: string): Promise<string[]> {
+    return readdir(await this.abs(relativePath));
+  }
+
+  async resolvePath(relativePath: string): Promise<string> {
+    return this.abs(relativePath);
   }
 }
+
+// Node entrypoints (tests, service, scripts) import this module via the
+// package index, which registers the filesystem-backed default store.
+registerDefaultWorkspaceStore((root) => new NodeWorkspaceStore(root));

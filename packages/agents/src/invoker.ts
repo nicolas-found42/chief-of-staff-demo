@@ -9,11 +9,11 @@ import {
   type AiInvokeResult,
   type AiInvoker,
   type Logger,
-} from "@chief-of-staff/workflow";
+  type Workspace,
+} from "@chief-of-staff/workflow/browser";
 import { Agent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model, Models } from "@earendil-works/pi-ai";
-import { readFileSync } from "node:fs";
-import { sha256Hex } from "@chief-of-staff/workflow";
+import { sha256Hex } from "@chief-of-staff/workflow/browser";
 import {
   createScriptedStreamFn,
   parseScriptedCase,
@@ -26,9 +26,15 @@ export interface InvokerOptions {
   models: Models;
   mode: "live" | "record" | "replay";
   thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-  calendarFilePath: string;
+  /** Workspace handle for the calendar tool. */
+  workspace: Workspace;
+  /** User-supplied OpenRouter key for live mode; falls back to the process
+   * environment when omitted. */
+  apiKey?: string;
   /** Replay fixture directory; required when mode === "replay". */
   fixturesDir?: string;
+  /** Fixture file loader seam; replay mode requires one. */
+  loadFixtureFile?: (filePath: string) => Promise<string>;
   /** Sleep seam for backoff; defaults to a cancellable timer. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** Jitter seam; defaults to Math.random. */
@@ -259,7 +265,7 @@ export class PiAiInvoker implements AiInvoker {
       tools.push(createSubmitTasksTool(capture));
     } else if (ctx.kind === "email") {
       systemPrompt = EMAIL_SYSTEM_PROMPT;
-      tools.push(calendarToolFromWorkspace(this.opts.calendarFilePath));
+      tools.push(calendarToolFromWorkspace(this.opts.workspace, "calendar/events.json"));
     } else {
       systemPrompt = PLAN_SYSTEM_PROMPT;
     }
@@ -276,8 +282,16 @@ export class PiAiInvoker implements AiInvoker {
     }
 
     const streamFn = replay
-      ? this.loadReplayFixture(ctx)
-      : this.opts.models.streamSimple.bind(this.opts.models);
+      ? await this.loadReplayFixture(ctx)
+      : (
+          model: Model<string>,
+          context: Parameters<StreamFn>[1],
+          options: Parameters<StreamFn>[2]
+        ) =>
+          this.opts.models.streamSimple(model, context, {
+            ...options,
+            ...(this.opts.apiKey !== undefined ? { apiKey: this.opts.apiKey } : {}),
+          });
 
     let lastStatus = 0;
     const agent = new Agent({
@@ -416,15 +430,21 @@ export class PiAiInvoker implements AiInvoker {
     };
   }
 
-  private loadReplayFixture(ctx: AiInvokeContext): StreamFn {
+  private async loadReplayFixture(ctx: AiInvokeContext): Promise<StreamFn> {
     if (!this.opts.fixturesDir) {
       throw new WorkflowError("INVALID_CONFIGURATION", "Replay mode requires a fixtures directory");
+    }
+    if (!this.opts.loadFixtureFile) {
+      throw new WorkflowError(
+        "INVALID_CONFIGURATION",
+        "Replay mode requires a fixture file loader"
+      );
     }
     const key = `${ctx.stepId}:${ctx.taskIndex === null ? "main" : String(ctx.taskIndex).padStart(4, "0")}`;
     const indexFile = `${this.opts.fixturesDir}/index.json`;
     let indexText: string;
     try {
-      indexText = readFileSync(indexFile, "utf8");
+      indexText = await this.opts.loadFixtureFile(indexFile);
     } catch (error) {
       throw new WorkflowError(
         "REPLAY_FIXTURE_MISSING",
@@ -443,7 +463,7 @@ export class PiAiInvoker implements AiInvoker {
     const path = `${this.opts.fixturesDir}/${caseFile}`;
     let caseText: string;
     try {
-      caseText = readFileSync(path, "utf8");
+      caseText = await this.opts.loadFixtureFile(path);
     } catch (error) {
       throw new WorkflowError(
         "REPLAY_FIXTURE_MISSING",

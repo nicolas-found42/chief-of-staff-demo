@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyHttpFailure } from "@chief-of-staff/service";
+import { classifyHttpFailure } from "@chief-of-staff/agents";
 
 describe("OpenRouter retry classification", () => {
   it("retries transient HTTP statuses", () => {

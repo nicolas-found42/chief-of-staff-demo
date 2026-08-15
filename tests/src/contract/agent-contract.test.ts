@@ -29,7 +29,7 @@ import {
   createCalendarTool,
   createSubmitTasksTool,
   type ExtractionCapture,
-} from "@chief-of-staff/service";
+} from "@chief-of-staff/agents";
 
 const MODEL_ID = "nvidia/nemotron-3.5-lightning";
 
@@ -105,7 +105,7 @@ async function makeInvokeContext(overrides: Partial<AiInvokeContext> = {}) {
     "utf8"
   );
   const ids = createDeterministicIdGenerator("contract");
-  const events = new EventSink(join(root, "events.jsonl"), () => new Date("2026-08-15T15:00:00.000Z"));
+  const events = new EventSink(workspace, "events.jsonl", () => new Date("2026-08-15T15:00:00.000Z"));
   const base: AiInvokeContext = {
     runId: "run-contract",
     stepId: "eitxht",
@@ -166,7 +166,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -187,7 +187,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -204,7 +204,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -222,7 +222,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -248,7 +248,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -269,7 +269,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -290,7 +290,7 @@ describe("extraction agent contract", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(first.workspace.root, "calendar", "events.json"),
+      workspace: first.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -304,7 +304,7 @@ describe("extraction agent contract", () => {
       models: modelsB,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(second.workspace.root, "calendar", "events.json"),
+      workspace: second.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -449,7 +449,7 @@ describe("agent progress redaction", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -463,7 +463,7 @@ describe("agent progress redaction", () => {
       models: modelsB,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctxEmail.workspace.root, "calendar", "events.json"),
+      workspace: ctxEmail.workspace,
       sleep: async () => undefined,
       jitter: () => 0,
     });
@@ -541,7 +541,7 @@ describe("agent cancellation", () => {
       models,
       mode: "live",
       thinkingLevel: "off",
-      calendarFilePath: join(ctx.workspace.root, "calendar", "events.json"),
+      workspace: ctx.workspace,
       sleep: async (ms, signal) => {
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, ms);
@@ -576,7 +576,8 @@ describe("calendar tool reads only", () => {
       events: [],
     } satisfies CalendarEvents);
     await writeFile(calendarPath, original, "utf8");
-    const tool = calendarToolFromWorkspace(calendarPath);
+    const workspace = new Workspace(root);
+    const tool = calendarToolFromWorkspace(workspace, "events.json");
     await tool.execute("call-1", {
       earliest: "2026-08-17T09:00:00Z",
       latest: "2026-08-17T17:00:00Z",

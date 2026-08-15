@@ -5,13 +5,10 @@ import {
   type LocalTaskResource,
   type TaskListId,
 } from "@chief-of-staff/contracts";
-import {
-  localUri,
-  type CsvRow,
-  type StepAdapter,
-  type StepAdapterContext,
-  type WorkflowStepDef,
-} from "@chief-of-staff/workflow";
+import type { WorkflowStepDef } from "./definition.js";
+import type { StepAdapter, StepAdapterContext } from "./interpreter.js";
+import { localUri } from "./text.js";
+import type { CsvRow } from "./tracking.js";
 import { stringify as yamlStringify } from "yaml";
 
 const TASK_LIST_BY_STEP: Record<string, TaskListId> = {

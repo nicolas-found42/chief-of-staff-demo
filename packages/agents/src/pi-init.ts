@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { ModelsConfig } from "@chief-of-staff/contracts";
-import { WorkflowError } from "@chief-of-staff/workflow";
+import { WorkflowError } from "@chief-of-staff/workflow/browser";
 
 /** Map the workflow's reasoning-effort vocabulary to pi thinking levels. */
 export function mapReasoningEffort(effort: string | null): ModelThinkingLevel {

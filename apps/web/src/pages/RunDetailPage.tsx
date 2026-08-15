@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RunDetailResponse, WorkflowEvent } from "@chief-of-staff/contracts";
 import { useParams } from "react-router-dom";
-import { ApiClient } from "../api/client";
+import type { AppClient } from "../api/client";
 import { StatusPill } from "../components/StatusPill";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 
@@ -13,7 +13,7 @@ const BRANCH_LABELS: Record<string, string> = {
 
 const MAIN_STEP_ORDER = ["trigger", "eitxht", "yk5itn", "aase0r"];
 
-export function RunDetailPage({ client }: { client: ApiClient }) {
+export function RunDetailPage({ client }: { client: AppClient }) {
   const { runId = "" } = useParams<{ runId: string }>();
   const [detail, setDetail] = useState<RunDetailResponse | null>(null);
   const [error, setError] = useState("");

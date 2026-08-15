@@ -711,14 +711,15 @@ Use a hash router with these routes:
 
 ### 19.2 Setup behavior
 
-The first screen MUST explain that the hosted page is only the UI and that the local companion service must be running. It MUST:
+The first screen MUST explain the two runtime modes: the in-browser engine (default on the Pages build) and the optional local companion service. It MUST:
 
-- default to `http://127.0.0.1:4317`;
+- in browser mode, ask for the user's OpenRouter API key and store it only in that browser's local storage;
+- default the local service URL to `http://127.0.0.1:4317`;
 - check health only after an explicit user action;
 - handle loopback permission denial with browser-specific remediation and the offline fallback URL;
-- request the short-lived pairing code;
-- never ask for or display the OpenRouter API key;
-- block runs until profile, model configuration, calendar schema, workspace writeability, and key presence are valid.
+- request the short-lived pairing code when connecting to the local service;
+- never display the API key value anywhere in the DOM;
+- block runs until profile, model configuration, calendar schema, and key presence are valid.
 
 ### 19.3 Run experience
 
@@ -738,10 +739,11 @@ The UI MUST meet WCAG 2.2 AA for keyboard navigation, focus order, labels, contr
 
 ### 20.1 Secret boundary
 
-- `OPENROUTER_API_KEY` exists only in the local service process environment.
-- The UI receives only `openRouterConfigured: true|false`.
-- The key MUST be redacted from errors and MUST NOT be persisted by this app.
-- GitHub Actions Pages builds MUST not have access to the key.
+- The OpenRouter API key is pasted by the user into the Setup page and used only by that browser for direct OpenRouter requests.
+- The key persists in the browser's local storage (always-persist product decision) and is never sent to the local service, the Pages origin's backend (there is none), or any other party.
+- The local service mode still resolves `OPENROUTER_API_KEY` only from the service process environment.
+- The key MUST be redacted from errors and MUST never appear in the DOM or in rendered artifacts.
+- GitHub Actions Pages builds MUST not have access to any user key (keys exist only at runtime in the user's browser).
 
 ### 20.2 Loopback API protection
 
@@ -867,7 +869,7 @@ Run the same replay fixture twice with the same injected clock/IDs in separate t
 - Pairing success, invalid code, expired code, and service unavailable.
 - GitHub project subpath routing and asset loading.
 - Upload, active run, parallel branches, failure, retry, and artifact preview.
-- No API key or absolute local path reaches rendered DOM or browser storage.
+- No API key value or absolute local path reaches rendered DOM or browser storage outside the dedicated key slot.
 - Keyboard-only flow and automated accessibility checks.
 - Pages origin to loopback behavior in the supported browser matrix.
 
@@ -877,21 +879,19 @@ With `OPENROUTER_API_KEY` explicitly supplied, run a minimal transcript and veri
 
 ## 24. Acceptance criteria
 
-The implementation is complete when all of the following are true:
-
 1. A supported transcript placed in `inbox/transcripts/` automatically starts one run.
-2. The same transcript can be uploaded through the Pages-hosted UI while the local service is running.
+2. The same transcript can be uploaded through the Pages-hosted UI, which runs the full workflow in the browser by default and also supports the local service while it is running.
 3. Only tasks assigned to the configured person are processed.
 4. All three branch behaviors match the export templates and references.
 5. All former external resources exist only as the mapped local files/folders.
-6. Every live LLM call is made through pi-ai’s OpenRouter provider and pi-agent-core.
-7. OpenRouter secrets never enter the frontend bundle, UI API payloads, logs, manifests, or telemetry.
+6. Every live LLM call is made through pi-ai's OpenRouter provider and pi-agent-core.
+7. OpenRouter keys enter only the user's browser local storage at runtime; they never enter the frontend bundle, UI API payloads, logs, manifests, or telemetry.
 8. The iterator processes tasks concurrently without artifact overwrites or nondeterministic aggregation order.
 9. A successful run writes a completion notification; a failed run does not.
 10. Retry/resume produces no duplicate tasks, drafts, documents, or tracking rows.
 11. The UI works at a GitHub Pages project subpath and provides a local-origin fallback.
 12. CI passes type checking, linting, unit tests, replay integration tests, UI tests, dependency audit, and static build without network LLM access.
-13. The prohibited-brand scan reports zero matches in tracked files and the complete production build.
+13. The prohibited-brand scan reports zero matches when run manually against tracked files and the complete production build.
 
 ## 25. Development and GitHub Pages delivery
 
@@ -913,14 +913,12 @@ The Vite build MUST use relative asset URLs (`base: "./"`) and hash routing. The
 
 1. install with `npm ci`;
 2. run type checking and tests;
-3. scan tracked files using `BANNED_VENDOR_TOKEN` supplied as an environment-level CI value;
-4. build only the static web application for deployment;
-5. scan the complete production build with the same case-insensitive rule;
-6. upload `apps/web/dist` with the official Pages artifact action;
-7. deploy with the official Pages deploy action;
-8. expose no production or OpenRouter secret to the build job.
+3. build only the static web application for deployment;
+4. upload `apps/web/dist` with the official Pages artifact action;
+5. deploy with the official Pages deploy action;
+6. expose no production or OpenRouter secret to the build job; user-pasted keys exist only in the visitor's browser at runtime.
 
-The UI footer MUST show the UI commit SHA and local service version so mismatches are diagnosable. The shared API protocol version MUST be checked during health discovery; incompatible versions block pairing with an upgrade message.
+The UI footer MUST show the UI commit SHA and the active engine (in-browser or the local service version) so mismatches are diagnosable. The shared API protocol version MUST be checked during health discovery; incompatible versions block pairing with an upgrade message.
 
 ## 26. Implementation phases
 

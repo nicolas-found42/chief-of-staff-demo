@@ -1,10 +1,14 @@
+/**
+ * Browser-safe entrypoint: every engine module except filesystem.ts (which
+ * imports node:fs). Browser bundles MUST import from this file, never from the
+ * package root, so no node:* module leaks into the bundle.
+ */
 export * from "./errors.js";
+export * from "./adapters.js";
 export * from "./ids.js";
 export * from "./crypto.js";
 export * from "./text.js";
-export * from "./adapters.js";
 export * from "./store.js";
-export * from "./filesystem.js";
 export * from "./workspace.js";
 export * from "./tracking.js";
 export * from "./definition.js";

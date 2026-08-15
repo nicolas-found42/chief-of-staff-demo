@@ -9,7 +9,7 @@ import {
   type WorkflowDefinition,
   WorkflowError,
 } from "@chief-of-staff/workflow";
-import { buildAdapterRegistry } from "@chief-of-staff/service";
+import { buildAdapterRegistry } from "@chief-of-staff/workflow";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { REFERENCE_DIR, REPO_ROOT } from "../helpers/engine.js";

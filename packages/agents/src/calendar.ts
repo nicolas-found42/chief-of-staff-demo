@@ -1,5 +1,5 @@
 import type { CalendarEvent, CalendarEvents } from "@chief-of-staff/contracts";
-import { WorkflowError } from "@chief-of-staff/workflow";
+import { WorkflowError } from "@chief-of-staff/workflow/browser";
 
 export interface CalendarConflict {
   id: string;

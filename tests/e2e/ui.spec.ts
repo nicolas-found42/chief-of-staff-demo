@@ -49,7 +49,7 @@ test("works at a GitHub Pages-style project subpath", async ({ page }) => {
   // Relative-base assets load: the app must render its shell.
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
   await expect(page.getByTestId("ui-commit-sha")).toContainText("UI");
-  await expect(page.getByTestId("service-version")).toContainText("Service");
+  await expect(page.getByTestId("service-version")).toContainText("In-browser engine");
 });
 
 test("upload, active run, parallel branches, failure surface, artifact preview", async ({ page }) => {
@@ -73,7 +73,7 @@ test("upload, active run, parallel branches, failure surface, artifact preview",
   await expect(page.getByTestId("markdown-preview")).toContainText("Delivery timeline update");
 });
 
-test("no API key or absolute local path reaches DOM or browser storage", async ({ page }) => {
+test("no API key value or absolute local path reaches the DOM in service mode", async ({ page }) => {
   await pair(page);
   const keys = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   expect(keys).not.toContain("OPENROUTER_API_KEY");

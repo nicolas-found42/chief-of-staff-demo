@@ -13,6 +13,7 @@ import {
 } from "@chief-of-staff/contracts";
 import {
   EventSink,
+  buildAdapterRegistry,
   ENGINE_STEP_TYPES,
   WorkflowError,
   Workspace,
@@ -36,10 +37,9 @@ import {
   mapReasoningEffort,
   runStartupChecks,
   createPiModels,
-} from "./agents/pi-init.js";
+} from "@chief-of-staff/agents";
 import { JsonlTelemetryContext } from "./telemetry/jsonl.js";
-import { PiAiInvoker } from "./agents/invoker.js";
-import { buildAdapterRegistry } from "./adapters/local-adapters.js";
+import { PiAiInvoker } from "@chief-of-staff/agents";
 import { claimFile, finalizeSource, parseTranscript } from "./ingest.js";
 import { TranscriptWatcher } from "./watcher/watcher.js";
 export interface RuntimeOptions {
@@ -272,8 +272,9 @@ export class ServiceRuntime {
         models: this.models,
         mode: this.options.mode,
         thinkingLevel: mapReasoningEffort(config.models.reasoningEffort),
-        calendarFilePath: this.options.workspace.layout.calendarFile,
+        workspace: this.options.workspace,
         fixturesDir: this.options.fixturesDir,
+        loadFixtureFile: async (filePath) => readFile(filePath, "utf8"),
         logger: this.options.logger,
       }),
       profile: config.profile,
@@ -370,7 +371,11 @@ export class ServiceRuntime {
           `runs/${runId}/manifest.json`,
           `${JSON.stringify(failedManifest, null, 2)}\n`
         );
-        const sink = new EventSink(join(runDir, "events.jsonl"), () => new Date());
+        const sink = new EventSink(
+          this.options.workspace,
+          `runs/${runId}/events.jsonl`,
+          () => new Date()
+        );
         await sink.emit({ runId, type: "run.started" });
         await sink.emit({
           runId,

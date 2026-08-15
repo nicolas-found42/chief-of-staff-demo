@@ -5,7 +5,7 @@ import {
   WORKFLOW_SCHEMA_VERSION,
 } from "@chief-of-staff/contracts";
 import { WorkflowError } from "./errors.js";
-import { sha256Hex } from "./filesystem.js";
+import { sha256Hex } from "./crypto.js";
 
 export interface WorkflowInputDef {
   input: string;

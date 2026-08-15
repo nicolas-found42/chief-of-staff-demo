@@ -6,11 +6,26 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   resolve: {
-    alias: {
-      "@chief-of-staff/contracts": fileURLToPath(
-        new URL("../../packages/contracts/src/index.ts", import.meta.url)
-      ),
-    },
+    alias: [
+      {
+        find: "@chief-of-staff/contracts",
+        replacement: fileURLToPath(
+          new URL("../../packages/contracts/src/index.ts", import.meta.url)
+        ),
+      },
+      {
+        find: "@chief-of-staff/workflow/browser",
+        replacement: fileURLToPath(
+          new URL("../../packages/workflow/src/browser.ts", import.meta.url)
+        ),
+      },
+      {
+        find: "@chief-of-staff/agents",
+        replacement: fileURLToPath(
+          new URL("../../packages/agents/src/index.ts", import.meta.url)
+        ),
+      },
+    ],
   },
   server: {
     port: 5173,

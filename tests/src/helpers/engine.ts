@@ -16,10 +16,10 @@ import {
 import type { RunManifest } from "@chief-of-staff/contracts";
 import { InMemoryTelemetryContext } from "@earendil-works/pi-telemetry";
 import {
-  buildAdapterRegistry,
   createPiModels,
   PiAiInvoker,
-} from "@chief-of-staff/service";
+} from "@chief-of-staff/agents";
+import { buildAdapterRegistry } from "@chief-of-staff/workflow";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -135,8 +135,9 @@ export async function runGoldenTranscript(
       models: createPiModels(),
       mode: "replay",
       thinkingLevel: "off",
-      calendarFilePath: workspace.layout.calendarFile,
+      workspace,
       fixturesDir: FIXTURES_DIR,
+      loadFixtureFile: async (filePath) => readFile(filePath, "utf8"),
     }),
     profile,
     models,

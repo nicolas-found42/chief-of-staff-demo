@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EventSink } from "@chief-of-staff/workflow";
+import { EventSink, Workspace } from "@chief-of-staff/workflow";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ describe("event sink", () => {
   it("assigns monotonic sequence numbers and appends only", async () => {
     const dir = await mkdtemp(join(tmpdir(), "events-"));
     const path = join(dir, "events.jsonl");
-    const sink = new EventSink(path, () => new Date("2026-08-15T15:00:00.000Z"));
+    const sink = new EventSink(new Workspace(dir), "events.jsonl", () => new Date("2026-08-15T15:00:00.000Z"));
     await sink.emit({ runId: "run-1", type: "run.started" });
     await sink.emit({ runId: "run-1", type: "step.started", stepId: "trigger" });
     const first = await readFile(path, "utf8");
@@ -25,7 +25,7 @@ describe("event sink", () => {
   it("serializes concurrent emissions without corrupting lines", async () => {
     const dir = await mkdtemp(join(tmpdir(), "events-"));
     const path = join(dir, "events.jsonl");
-    const sink = new EventSink(path, () => new Date("2026-08-15T15:00:00.000Z"));
+    const sink = new EventSink(new Workspace(dir), "events.jsonl", () => new Date("2026-08-15T15:00:00.000Z"));
     await Promise.all(
       Array.from({ length: 50 }, (_, index) =>
         sink.emit({ runId: "run-1", type: "progress", data: { index } })

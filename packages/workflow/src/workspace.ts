@@ -1,6 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { atomicWriteFile, resolveWithinRoot } from "./filesystem.js";
+import { createDefaultWorkspaceStore, type WorkspaceStore } from "./store.js";
 
 export interface WorkspaceLayout {
   inboxDir: string;
@@ -21,53 +19,71 @@ export interface WorkspaceLayout {
   claimsDir: string;
 }
 
+function joinPath(root: string, ...parts: string[]): string {
+  return [root, ...parts].filter((part) => part.length > 0).join("/");
+}
+
 /**
- * Path and I/O boundary for the local workspace. Every read/write goes through
- * containment-checked resolution against the workspace root.
+ * Path and I/O boundary for the workspace. Every read/write goes through a
+ * WorkspaceStore using workspace-relative paths. With the default Node store
+ * the layout paths are absolute filesystem paths; with a browser store the
+ * root is empty and layout paths stay relative.
  */
 export class Workspace {
-  constructor(readonly root: string) {}
+  readonly store: WorkspaceStore;
+
+  constructor(
+    readonly root: string,
+    store?: WorkspaceStore
+  ) {
+    this.store = store ?? createDefaultWorkspaceStore(root);
+  }
 
   get layout(): WorkspaceLayout {
+    const root = this.root;
     return {
-      inboxDir: join(this.root, "inbox", "transcripts"),
-      sourceProcessingDir: join(this.root, "source", "processing"),
-      sourceProcessedDir: join(this.root, "source", "processed"),
-      sourceFailedDir: join(this.root, "source", "failed"),
-      gmailDraftsDir: join(this.root, "gmail", "drafts"),
-      tasksEmailDraftsDir: join(this.root, "tasks", "email-drafts"),
-      tasksBusinessPlansDir: join(this.root, "tasks", "business-plans"),
-      tasksMyTasksDir: join(this.root, "tasks", "my-tasks"),
-      docsDir: join(this.root, "docs", "strategy-and-planning"),
-      notificationsDir: join(this.root, "notifications"),
-      trackingCsv: join(this.root, "tracking", "actions.csv"),
-      calendarFile: join(this.root, "calendar", "events.json"),
-      configDir: join(this.root, "config"),
-      runsDir: join(this.root, "runs"),
-      serviceDir: join(this.root, "service"),
-      claimsDir: join(this.root, "service", "claims"),
+      inboxDir: joinPath(root, "inbox", "transcripts"),
+      sourceProcessingDir: joinPath(root, "source", "processing"),
+      sourceProcessedDir: joinPath(root, "source", "processed"),
+      sourceFailedDir: joinPath(root, "source", "failed"),
+      gmailDraftsDir: joinPath(root, "gmail", "drafts"),
+      tasksEmailDraftsDir: joinPath(root, "tasks", "email-drafts"),
+      tasksBusinessPlansDir: joinPath(root, "tasks", "business-plans"),
+      tasksMyTasksDir: joinPath(root, "tasks", "my-tasks"),
+      docsDir: joinPath(root, "docs", "strategy-and-planning"),
+      notificationsDir: joinPath(root, "notifications"),
+      trackingCsv: joinPath(root, "tracking", "actions.csv"),
+      calendarFile: joinPath(root, "calendar", "events.json"),
+      configDir: joinPath(root, "config"),
+      runsDir: joinPath(root, "runs"),
+      serviceDir: joinPath(root, "service"),
+      claimsDir: joinPath(root, "service", "claims"),
     };
   }
 
   runDir(runId: string): string {
-    return join(this.root, "runs", runId);
+    return joinPath(this.root, "runs", runId);
   }
 
   stepsDir(runId: string): string {
-    return join(this.root, "runs", runId, "steps");
+    return joinPath(this.root, "runs", runId, "steps");
   }
 
   inputDir(runId: string): string {
-    return join(this.root, "runs", runId, "input");
+    return joinPath(this.root, "runs", runId, "input");
   }
 
   llmDir(runId: string): string {
-    return join(this.root, "runs", runId, "llm");
+    return joinPath(this.root, "runs", runId, "llm");
   }
 
-  /** Resolve a workspace-relative path to an absolute, containment-checked path. */
+  /** Resolve a workspace-relative path to an absolute, containment-checked
+   * path. Node store only; browser stores have no absolute filesystem. */
   async resolve(relativePath: string): Promise<string> {
-    return resolveWithinRoot(this.root, relativePath);
+    if (!this.store.resolvePath) {
+      throw new Error("This workspace store cannot resolve absolute paths");
+    }
+    return this.store.resolvePath(relativePath);
   }
 
   /** Resolve a local:// URI to an absolute, containment-checked path. */
@@ -81,69 +97,57 @@ export class Workspace {
   }
 
   async initialize(): Promise<void> {
-    const { layout } = this;
     const dirs = [
-      layout.inboxDir,
-      layout.sourceProcessingDir,
-      layout.sourceProcessedDir,
-      layout.sourceFailedDir,
-      layout.gmailDraftsDir,
-      layout.tasksEmailDraftsDir,
-      layout.tasksBusinessPlansDir,
-      layout.tasksMyTasksDir,
-      layout.docsDir,
-      layout.notificationsDir,
-      layout.configDir,
-      layout.runsDir,
-      layout.serviceDir,
-      layout.claimsDir,
-      join(this.root, "tracking"),
-      join(this.root, "calendar"),
-      join(this.root, "source"),
+      "inbox/transcripts",
+      "source/processing",
+      "source/processed",
+      "source/failed",
+      "gmail/drafts",
+      "tasks/email-drafts",
+      "tasks/business-plans",
+      "tasks/my-tasks",
+      "docs/strategy-and-planning",
+      "notifications",
+      "config",
+      "runs",
+      "service",
+      "service/claims",
+      "tracking",
+      "calendar",
+      "source",
     ];
-    await Promise.all(dirs.map((dir) => mkdir(dir, { recursive: true })));
+    await Promise.all(dirs.map((dir) => this.store.mkdir(dir)));
   }
 
   async writeText(relativePath: string, text: string): Promise<void> {
-    const abs = await this.resolve(relativePath);
-    await atomicWriteFile(abs, Buffer.from(text, "utf8"));
+    await this.store.writeText(relativePath, text);
   }
 
   async writeBytes(relativePath: string, bytes: Uint8Array): Promise<void> {
-    const abs = await this.resolve(relativePath);
-    await atomicWriteFile(abs, bytes);
+    await this.store.writeBytes(relativePath, bytes);
   }
 
   async writeTextDirect(relativePath: string, text: string): Promise<void> {
-    const abs = await this.resolve(relativePath);
-    await writeFile(abs, text, "utf8");
+    await this.store.writeTextDirect(relativePath, text);
+  }
+
+  async appendText(relativePath: string, text: string): Promise<void> {
+    await this.store.appendText(relativePath, text);
   }
 
   async readText(relativePath: string): Promise<string> {
-    const abs = await this.resolve(relativePath);
-    return readFile(abs, "utf8");
+    return this.store.readText(relativePath);
   }
 
   async readBytes(relativePath: string): Promise<Uint8Array> {
-    const abs = await this.resolve(relativePath);
-    return new Uint8Array(await readFile(abs));
+    return this.store.readBytes(relativePath);
   }
 
   async exists(relativePath: string): Promise<boolean> {
-    try {
-      await this.statFile(relativePath);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.store.exists(relativePath);
   }
 
   async statFile(relativePath: string): Promise<{ size: number; mtimeMs: number }> {
-    const abs = await this.resolve(relativePath);
-    const info = await stat(abs);
-    if (!info.isFile()) {
-      throw new Error(`Not a regular file: ${relativePath}`);
-    }
-    return { size: info.size, mtimeMs: info.mtimeMs };
+    return this.store.stat(relativePath);
   }
 }

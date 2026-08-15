@@ -15,6 +15,31 @@ import {
   type RunsPageResponse,
 } from "@chief-of-staff/contracts";
 
+export interface AppClient {
+  token: string | null;
+  getBaseUrl(): string;
+  setBaseUrl(url: string): void;
+  clearToken(): void;
+  health(): Promise<HealthResponse>;
+  pair(code: string): Promise<void>;
+  getConfig(): Promise<ConfigResponse>;
+  putProfile(profile: ProfileConfig): Promise<ProfileConfig>;
+  putModels(models: ModelsConfig): Promise<ModelsConfig>;
+  putCalendar(calendar: CalendarEvents): Promise<CalendarEvents>;
+  uploadTranscript(file: File): Promise<UploadResponse>;
+  listRuns(): Promise<RunsPageResponse>;
+  getRun(runId: string): Promise<RunDetailResponse>;
+  cancelRun(runId: string): Promise<ActionResponse>;
+  retryRun(runId: string): Promise<ActionResponse>;
+  rerunRun(runId: string): Promise<ActionResponse>;
+  getArtifact(artifactId: string): Promise<string>;
+  streamEvents(
+    runId: string,
+    after: number,
+    onEvent: (event: WorkflowEvent) => void
+  ): Promise<void>;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -28,9 +53,8 @@ export class ApiError extends Error {
 
 const TOKEN_KEY = "chief-of-staff-token";
 
-export class ApiClient {
+export class ApiClient implements AppClient {
   token: string | null = null;
-
   constructor(
     private baseUrl: string = DEFAULT_SERVICE_URL,
     private readonly sessionStorageRef: Storage = window.sessionStorage

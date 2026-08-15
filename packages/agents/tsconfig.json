@@ -7,8 +7,7 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../packages/contracts" },
-    { "path": "../../packages/workflow" },
-    { "path": "../../packages/agents" }
+    { "path": "../contracts" },
+    { "path": "../workflow" }
   ]
 }

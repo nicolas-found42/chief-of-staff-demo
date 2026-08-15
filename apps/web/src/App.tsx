@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
-import { ApiClient } from "./api/client";
+import { ApiClient, type AppClient } from "./api/client";
+import { BrowserRuntime } from "./runtime/browser-runtime";
 import { SetupPage } from "./pages/SetupPage";
 import { RunsPage } from "./pages/RunsPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
@@ -10,13 +11,28 @@ import { SettingsPage } from "./pages/SettingsPage";
 const COMMIT_SHA = (typeof process !== "undefined" && process.env?.VITE_UI_COMMIT_SHA) || "dev";
 
 export function App() {
-  const [client] = useState(() => new ApiClient());
-  const [paired, setPaired] = useState(() => client.token !== null);
+  const [clients] = useState(() => ({
+    browser: new BrowserRuntime(),
+    service: new ApiClient(),
+  }));
+  const [client, setClient] = useState<AppClient>(() =>
+    clients.service.token !== null ? clients.service : clients.browser
+  );
+  const [paired, setPaired] = useState(() => clients.service.token !== null);
   const [serviceInfo, setServiceInfo] = useState<{ version: string; protocol: number } | null>(null);
 
-  const onPaired = useCallback(() => {
+  const onServicePaired = useCallback(() => {
+    setClient(clients.service);
     setPaired(true);
-  }, []);
+  }, [clients]);
+
+  const onUseBrowser = useCallback(() => {
+    clients.service.clearToken();
+    setClient(clients.browser);
+    setPaired(false);
+    setServiceInfo(null);
+  }, [clients]);
+
 
   return (
     <HashRouter>
@@ -42,7 +58,16 @@ export function App() {
           <Routes>
             <Route
               path="/setup"
-              element={<SetupPage client={client} onPaired={onPaired} onServiceInfo={setServiceInfo} />}
+              element={
+                <SetupPage
+                  client={client}
+                  serviceClient={clients.service}
+                  paired={paired}
+                  onServicePaired={onServicePaired}
+                  onUseBrowser={onUseBrowser}
+                  onServiceInfo={setServiceInfo}
+                />
+              }
             />
             <Route path="/runs" element={<RunsPage client={client} />} />
             <Route path="/runs/:runId" element={<RunDetailPage client={client} />} />
@@ -67,9 +92,11 @@ export function App() {
         <footer className="app-footer">
           <span data-testid="ui-commit-sha">UI {COMMIT_SHA}</span>
           <span data-testid="service-version">
-            {serviceInfo
-              ? `Service ${serviceInfo.version} (protocol ${serviceInfo.protocol})`
-              : `Service ${paired ? "unknown" : "not connected"}`}
+            {paired
+              ? serviceInfo
+                ? `Service ${serviceInfo.version} (protocol ${serviceInfo.protocol})`
+                : "Service unknown"
+              : "In-browser engine"}
           </span>
         </footer>
       </div>
