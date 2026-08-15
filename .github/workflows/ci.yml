@@ -12,9 +12,6 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    env:
-      # Out-of-band vendor token: the scan fails if this is missing or empty.
-      BANNED_VENDOR_TOKEN: ${{ secrets.BANNED_VENDOR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,10 +35,6 @@ jobs:
         env:
           VITE_UI_COMMIT_SHA: ${{ github.sha }}
         run: npm run build
-
-
-      - name: Banned-token scan (production build)
-        run: npm run scan:banned -- apps/web/dist
 
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high

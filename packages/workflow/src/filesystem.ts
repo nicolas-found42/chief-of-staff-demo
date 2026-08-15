@@ -11,10 +11,17 @@ import {
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
 import { TRACKING_CSV_HEADER } from "@chief-of-staff/contracts";
 
+/** True when the path is absolute on any platform: a POSIX root or a Windows
+ * drive-letter prefix. Workspace-relative paths must reject both regardless of
+ * the host OS, so a drive path can never slip through as relative. */
+function isAbsolutePath(p: string): boolean {
+  return isAbsolute(p) || /^[A-Za-z]:[\\/]/.test(p);
+}
+
 /** A local:// URI is a workspace-relative path with forward slashes. */
 export function localUri(relativePath: string): string {
   const normalized = normalize(relativePath).split(sep).join("/");
-  if (normalized.startsWith("../") || normalized === ".." || isAbsolute(normalized)) {
+  if (normalized.startsWith("../") || normalized === ".." || isAbsolutePath(normalized)) {
     throw new Error(`Not a workspace-relative path: ${relativePath}`);
   }
   return `local://${normalized}`;
@@ -28,7 +35,7 @@ export function parseLocalUri(uri: string): string {
   const rel = uri.slice("local://".length);
   if (
     rel.length === 0 ||
-    isAbsolute(rel) ||
+    isAbsolutePath(rel) ||
     rel.split("/").some((part) => part === "..") ||
     rel.includes("\\")
   ) {
@@ -43,7 +50,7 @@ export function parseLocalUri(uri: string): string {
  * existing ancestor is realpathed and checked against the realpath of the root.
  */
 export async function resolveWithinRoot(root: string, relativePath: string): Promise<string> {
-  if (isAbsolute(relativePath)) {
+  if (isAbsolutePath(relativePath)) {
     throw new Error(`Absolute paths are not allowed: ${relativePath}`);
   }
   const rootReal = await realpath(root);

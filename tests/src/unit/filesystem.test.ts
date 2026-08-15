@@ -10,7 +10,7 @@ import {
   TrackingCsv,
 } from "@chief-of-staff/workflow";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,9 +78,10 @@ describe("local URIs", () => {
 describe("path containment", () => {
   it("resolves safe paths inside the root", async () => {
     const root = await mkdtemp(join(tmpdir(), "containment-"));
+    const rootReal = await realpath(root);
     await mkdir(join(root, "sub"), { recursive: true });
     const resolved = await resolveWithinRoot(root, "sub/file.txt");
-    expect(resolved.startsWith(root)).toBe(true);
+    expect(resolved.startsWith(rootReal)).toBe(true);
   });
 
   it("rejects traversal and absolute paths", async () => {
