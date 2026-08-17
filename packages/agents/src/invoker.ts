@@ -319,10 +319,10 @@ export class PiAiInvoker implements AiInvoker {
       },
       streamFn: streamFn as StreamFn,
       sessionId: `${ctx.runId}:${ctx.stepId}:${ctx.taskIndex ?? "main"}`,
+      toolExecution: "sequential",
       shouldStopAfterTurn: () =>
         attemptedSubmissions > 1 || invalidToolAttempted || toolCallsSeen > TOOL_CALL_LIMIT,
       onResponse: (info) => {
-        lastStatus = info.status;
         const retryAfter = (info.headers as Record<string, string> | undefined)?.["retry-after"];
         this.lastRetryAfterSeconds = retryAfter ? Number(retryAfter) : null;
       },
