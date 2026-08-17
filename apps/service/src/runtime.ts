@@ -123,7 +123,7 @@ export class ServiceRuntime {
     const workspaceWriteable = true;
     const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
     const profileValid = config !== null;
-    const modelsValid = config !== null && config.models.model === "nvidia/nemotron-3.5-lightning";
+    const modelsValid = config !== null && config.models.model === "google/gemini-3.7-flash";
     const calendarValid = config !== null;
     const appValid = config !== null;
     if (!definitionValid) {

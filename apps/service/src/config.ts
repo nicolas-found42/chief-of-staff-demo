@@ -23,7 +23,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
 
 export const DEFAULT_MODELS_CONFIG: ModelsConfig = {
   provider: "openrouter",
-  model: "nvidia/nemotron-3.5-lightning",
+  model: "google/gemini-3.7-flash",
   reasoningEffort: null,
   maxOutputTokens: null,
 };
@@ -159,10 +159,10 @@ export class ConfigStore {
         `Invalid model configuration:\n- ${result.errors.join("\n- ")}`
       );
     }
-    if (result.value.model !== "nvidia/nemotron-3.5-lightning") {
+    if (result.value.model !== "google/gemini-3.7-flash") {
       throw new WorkflowError(
         "INVALID_CONFIGURATION",
-        "The model configuration is locked to nvidia/nemotron-3.5-lightning in version 1"
+        "The model configuration is locked to google/gemini-3.7-flash in version 1"
       );
     }
     if (result.value.provider !== "openrouter") {

@@ -59,6 +59,7 @@ const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 const EXTRACTION_SYSTEM_PROMPT =
   "You extract action items from meeting transcripts. You MUST call the submit_tasks tool exactly once " +
   "with every task extracted from the transcript, including all required details for each task type. " +
+  'The "Task type" must be exactly one of: "email", "business plan", "other". ' +
   "Do not answer in ordinary prose and do not call any other tool. If there are no tasks, call submit_tasks with an empty tasks array.";
 
 const EMAIL_SYSTEM_PROMPT =

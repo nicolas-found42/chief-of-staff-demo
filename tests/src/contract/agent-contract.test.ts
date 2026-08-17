@@ -31,7 +31,7 @@ import {
   type ExtractionCapture,
 } from "@chief-of-staff/agents";
 
-const MODEL_ID = "nvidia/nemotron-3.5-lightning";
+const MODEL_ID = "google/gemini-3.7-flash";
 
 const EXTRACTION_TASKS: ExtractedTask[] = [
   {

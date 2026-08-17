@@ -60,7 +60,7 @@ describe("workflow definition validation", () => {
     for (const step of definition.threads.flatMap((t) => t.steps)) {
       if (step.stepType === "ai.prompt.object" || step.stepType === "ai.prompt.text") {
         const modelInput = step.inputs.find((i) => i.input === "model");
-        expect(modelInput?.value).toBe("nvidia/nemotron-3.5-lightning");
+        expect(modelInput?.value).toBe("google/gemini-3.7-flash");
       }
     }
   });

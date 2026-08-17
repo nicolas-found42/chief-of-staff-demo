@@ -85,7 +85,7 @@ The implementation does not need to preserve source-platform connection IDs, res
 
 ## 5. Source workflow
 
-The finished project MUST keep a vendor-neutral definition at `reference/workflow-definition.json`. The original automation export is migration input only and MUST NOT be committed, copied into build artifacts, included in fixtures or snapshots, or referenced by project documentation. The committed definition MUST contain only the 15 required steps, prompt text, input templates, schemas, branch rules, and local step metadata described by this specification. It MUST omit former connection IDs, provider descriptions, model namespaces, and editor metadata, and it MUST set every AI step’s model input to `nvidia/nemotron-3.5-lightning`.
+The finished project MUST keep a vendor-neutral definition at `reference/workflow-definition.json`. The original automation export is migration input only and MUST NOT be committed, copied into build artifacts, included in fixtures or snapshots, or referenced by project documentation. The committed definition MUST contain only the 15 required steps, prompt text, input templates, schemas, branch rules, and local step metadata described by this specification. It MUST omit former connection IDs, provider descriptions, model namespaces, and editor metadata, and it MUST set every AI step’s model input to `google/gemini-3.7-flash`.
 
 The retired platform’s brand name is prohibited throughout tracked source, documentation, tests, fixtures, filenames, dependency metadata, generated bundles, and packaged artifacts. CI MUST scan case-insensitively for it, using an out-of-band `BANNED_VENDOR_TOKEN`, and fail on any match. The scanner MUST also fail if that variable is missing or empty.
 
@@ -151,7 +151,7 @@ flowchart TD
 | Email notification to self | `notifications/<run-id>-summary.md` | Completion summary; no delivery occurs. |
 | Source data table | `tracking/actions.csv` | Atomic, idempotent upsert by `row_id`. |
 | Source file/resource URLs | `local://<workspace-relative-path>` | Stored in step artifacts; UI resolves them through the local API. |
-| AI model calls | `nvidia/nemotron-3.5-lightning` through OpenRouter | The sole live network integration. |
+| AI model calls | `google/gemini-3.7-flash` through OpenRouter | The sole live network integration. |
 
 No adapter may silently call a remote service. A test MUST fail if a non-OpenRouter outbound request is attempted.
 
@@ -291,13 +291,13 @@ The service MUST reject a run if any `[YOUR ...]`, `[DESCRIBE ...]`, or `[LIST .
 ```json
 {
   "provider": "openrouter",
-  "model": "nvidia/nemotron-3.5-lightning",
+  "model": "google/gemini-3.7-flash",
   "reasoningEffort": null,
   "maxOutputTokens": null
 }
 ```
 
-`nvidia/nemotron-3.5-lightning` MUST be used for `eitxht`, `maoa1p`, and `ia2vvr`. Per-step model overrides are prohibited in version 1. The model value remains configuration rather than a code constant so availability can be validated at startup and changed only through a future specification revision.
+`google/gemini-3.7-flash` MUST be used for `eitxht`, `maoa1p`, and `ia2vvr`. Per-step model overrides are prohibited in version 1. The model value remains configuration rather than a code constant so availability can be validated at startup and changed only through a future specification revision.
 
 ### 10.3 `config/app.json`
 
@@ -599,7 +599,7 @@ Live runs MUST use OpenRouter through pi-ai. The service MUST send the configure
 Required startup checks:
 
 - `OPENROUTER_API_KEY` is present;
-- `nvidia/nemotron-3.5-lightning` exists in the registered pi catalog;
+- `google/gemini-3.7-flash` exists in the registered pi catalog;
 - the model supports tool calling;
 - extraction model accepts the `submit_tasks` tool schema;
 - configured reasoning effort is supported or null.
@@ -875,7 +875,7 @@ Run the same replay fixture twice with the same injected clock/IDs in separate t
 
 ### 23.6 Opt-in live smoke test
 
-With `OPENROUTER_API_KEY` explicitly supplied, run a minimal transcript and verify `nvidia/nemotron-3.5-lightning` through the pi OpenRouter provider. This test is manual, cost-bearing, never required for pull requests, and MUST redact fixtures before persistence.
+With `OPENROUTER_API_KEY` explicitly supplied, run a minimal transcript and verify `google/gemini-3.7-flash` through the pi OpenRouter provider. This test is manual, cost-bearing, never required for pull requests, and MUST redact fixtures before persistence.
 
 ## 24. Acceptance criteria
 

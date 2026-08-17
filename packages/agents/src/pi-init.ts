@@ -14,7 +14,7 @@ import { WorkflowError } from "@chief-of-staff/workflow/browser";
 /** Map the workflow's reasoning-effort vocabulary to pi thinking levels. */
 export function mapReasoningEffort(effort: string | null): ModelThinkingLevel {
   if (effort === null) {
-    return "off";
+    return "low";
   }
   const normalized = effort.toLowerCase() as ModelThinkingLevel;
   return normalized;
@@ -40,9 +40,35 @@ export interface PiStartupCheck {
   violations: string[];
 }
 
+export const GEMINI_3_7_FLASH_MODEL = {
+  id: "google/gemini-3.7-flash",
+  name: "Google: Gemini 3.7 Flash",
+  api: "openai-completions",
+  baseUrl: "https://openrouter.ai/api/v1",
+  provider: "openrouter",
+  reasoning: true,
+  input: ["text"],
+  cost: {
+    input: 0.05,
+    output: 0.15,
+    cacheRead: 0.025,
+    cacheWrite: 0,
+  },
+  contextWindow: 1048576,
+  maxTokens: 65536,
+  compat: {
+    supportsDeveloperRole: false,
+    thinkingFormat: "openrouter",
+  },
+} as unknown as Model<string>;
+
 export function createPiModels(): Models {
+  const base = openrouterProvider();
   const models = createModels();
-  models.setProvider(openrouterProvider());
+  models.setProvider({
+    ...base,
+    getModels: () => [...base.getModels(), GEMINI_3_7_FLASH_MODEL],
+  });
   return models;
 }
 

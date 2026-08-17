@@ -11,7 +11,7 @@ export const WORKFLOW_REVISION = 219;
 export const WORKFLOW_DEFINITION_PATH = "reference/workflow-definition.json";
 export const WORKFLOW_DEFINITION_HASH_PATH = "reference/workflow-definition.sha256";
 
-export const LLM_MODEL_ID = "nvidia/nemotron-3.5-lightning";
+export const LLM_MODEL_ID = "google/gemini-3.7-flash";
 export const LLM_PROVIDER_ID = "openrouter";
 
 export const TRACKING_CSV_HEADER = [

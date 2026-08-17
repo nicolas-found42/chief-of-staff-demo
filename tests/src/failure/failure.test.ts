@@ -39,7 +39,7 @@ const PROFILE = {
 
 const MODELS = {
   provider: "openrouter" as const,
-  model: "nvidia/nemotron-3.5-lightning",
+  model: "google/gemini-3.7-flash",
   reasoningEffort: null,
   maxOutputTokens: null,
 };
