@@ -40,7 +40,9 @@ test("upload → run detail shows extraction; google_not_connected path visible"
 
 test("settings round-trips with redacted secrets", async ({ page }) => {
   await page.goto("/settings");
-  await expect(page.getByLabel("Provider")).toHaveValue("mock");
+  // Exact: "Provider API key" and the "Extraction provider" group also
+  // contain the substring "Provider".
+  await expect(page.getByLabel("Provider", { exact: true })).toHaveValue("mock");
 
   // Secrets are never echoed back: every password input is empty.
   const secretValues = await page.locator('input[type="password"]').evaluateAll((inputs) =>
@@ -56,4 +58,49 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
   await page.reload();
   await expect(page.getByLabel("Task list name")).toHaveValue("E2E Followups");
   await expect(page.getByText("Not connected", { exact: false })).toBeVisible();
+});
+
+test("primary actions are reachable and operable by keyboard", async ({ page }) => {
+  await page.goto("/");
+
+  // The upload control is a real button, reachable by Tab and fired by Enter.
+  const chooseFiles = page.getByRole("button", { name: "choose files" });
+  await expect(chooseFiles).toBeVisible();
+  const chooser = page.waitForEvent("filechooser");
+  await chooseFiles.press("Enter");
+  await chooser;
+
+  // Uploading through that input still routes to the run detail.
+  await page.setInputFiles('input[type="file"]', sampleTranscript);
+  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+
+  // Arriving at a run moves focus to its heading rather than dropping it.
+  await expect(page.locator("h1.run-title")).toBeFocused();
+
+  // Each route carries its own title.
+  await expect(page).toHaveTitle(/· Transcript → Tasks$/);
+
+  // Runs are reachable from the list without a pointer.
+  await page.goto("/");
+  const runLink = page.locator(".run-link").first();
+  await expect(runLink).toBeVisible();
+  await runLink.press("Enter");
+  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+
+  // The capped-height log and transcript can be scrolled from the keyboard.
+  await expect(page.locator(".events-log")).toHaveAttribute("tabindex", "0");
+  await page.locator("details summary").click();
+  await expect(page.locator(".artifact-pre")).toHaveAttribute("tabindex", "0");
+});
+
+test("the page never scrolls sideways at a 320px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  for (const path of ["/", "/settings"]) {
+    await page.goto(path);
+    const overflows = await page.evaluate(() => {
+      const root = document.documentElement;
+      return root.scrollWidth > root.clientWidth + 1;
+    });
+    expect(overflows, `${path} scrolls horizontally at 320px`).toBe(false);
+  }
 });

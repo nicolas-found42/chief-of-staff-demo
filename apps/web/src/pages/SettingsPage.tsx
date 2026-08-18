@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ProviderId } from "@transcript-tasks/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
+import { useTitle } from "../useTitle";
 
 const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
   { value: "mock", label: "mock (test/demo — reads workspace/mock-result.json)" },
@@ -20,12 +21,14 @@ interface FormState {
   googleClientSecret: string;
   firefliesApiKey: string;
   firefliesEnabled: boolean;
-  pollIntervalMinutes: number;
+  /* Held as the raw string so clearing the field doesn't silently coerce to 0. */
+  pollIntervalMinutes: string;
   watchEnabled: boolean;
   folderPath: string;
 }
 
 export function SettingsPage() {
+  useTitle("Settings");
   const [payload, setPayload] = useState<ConfigPayload | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +53,7 @@ export function SettingsPage() {
           googleClientSecret: "",
           firefliesApiKey: "",
           firefliesEnabled: fetched.config.fireflies.enabled,
-          pollIntervalMinutes: fetched.config.fireflies.pollIntervalMinutes,
+          pollIntervalMinutes: String(fetched.config.fireflies.pollIntervalMinutes),
           watchEnabled: fetched.config.watch.enabled,
           folderPath: fetched.config.watch.folderPath,
         });
@@ -79,12 +82,26 @@ export function SettingsPage() {
     return (
       <div className="page">
         <h1>Settings</h1>
-        {error ? <div className="banner banner-error">{error}</div> : <p className="muted">Loading…</p>}
+        {error ? (
+          <div className="banner banner-error" role="alert">
+            {error}
+          </div>
+        ) : (
+          <p className="muted" role="status">
+            Loading…
+          </p>
+        )}
       </div>
     );
   }
 
   const googleBanner = searchParams.get("google");
+
+  // Validated here rather than left to the browser's `min` attribute: a native
+  // validation bubble is transient, unreadable a second time, and leaves the
+  // field itself unmarked (WCAG 3.3.1).
+  const pollRaw = form.pollIntervalMinutes.trim();
+  const pollInvalid = !/^\d+$/.test(pollRaw) || Number(pollRaw) < 1;
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => (current ? { ...current, [key]: value } : current));
@@ -105,6 +122,14 @@ export function SettingsPage() {
   };
 
   const save = async () => {
+    if (busy) {
+      return;
+    }
+    if (pollInvalid) {
+      setError("Poll interval must be a whole number of minutes, 1 or more.");
+      document.getElementById("poll-interval")?.focus();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -115,7 +140,7 @@ export function SettingsPage() {
         google: { clientId: form.googleClientId },
         fireflies: {
           enabled: form.firefliesEnabled,
-          pollIntervalMinutes: form.pollIntervalMinutes,
+          pollIntervalMinutes: Number(form.pollIntervalMinutes),
         },
         watch: { enabled: form.watchEnabled, folderPath: form.folderPath },
       };
@@ -129,7 +154,7 @@ export function SettingsPage() {
         update.fireflies = {
           enabled: form.firefliesEnabled,
           apiKey: form.firefliesApiKey,
-          pollIntervalMinutes: form.pollIntervalMinutes,
+          pollIntervalMinutes: Number(form.pollIntervalMinutes),
         };
       }
       const savedPayload = await api.saveConfig(update);
@@ -157,6 +182,9 @@ export function SettingsPage() {
   };
 
   const connectGoogle = async () => {
+    if (busy) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -169,6 +197,9 @@ export function SettingsPage() {
   };
 
   const syncFireflies = async () => {
+    if (busy) {
+      return;
+    }
     setBusy(true);
     setSyncResult(null);
     setError(null);
@@ -182,190 +213,256 @@ export function SettingsPage() {
     }
   };
 
-  const secretPlaceholder = (set: boolean, hint: string) =>
-    set ? `stored (${hint}) — leave blank to keep` : "not set";
+  // Persistent hint text rather than a placeholder: this is the instruction
+  // that stops someone from wiping a stored secret, and placeholders vanish
+  // on the first keystroke (3.3.2).
+  const secretHint = (set: boolean, hint: string) =>
+    set ? `Stored (${hint}). Leave blank to keep it.` : "No value stored yet.";
 
   return (
     <div className="page">
       <h1>Settings</h1>
 
       {googleBanner === "connected" && (
-        <div className="banner banner-ok">Google connected.</div>
+        <div className="banner banner-ok" role="status">
+          Google connected.
+        </div>
       )}
       {googleBanner === "error" && (
-        <div className="banner banner-error">Google connection failed — try again.</div>
+        <div className="banner banner-error" role="alert">
+          Google connection failed — try again.
+        </div>
       )}
-      {error && <div className="banner banner-error">{error}</div>}
-      {saved && <div className="banner banner-ok">Saved.</div>}
-
-      <div className="card">
-        <h2>Extraction provider</h2>
-        <div className="form-grid">
-          <label>
-            Provider
-            <select
-              value={form.provider}
-              onChange={(event) => changeProvider(event.target.value as ProviderId)}
-            >
-              {PROVIDER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Model
-            <input
-              value={form.model}
-              placeholder={payload.defaults[form.provider] || "model id"}
-              onChange={(event) => setField("model", event.target.value)}
-            />
-          </label>
-          <label>
-            API key
-            <input
-              type="password"
-              value={form.apiKey}
-              autoComplete="off"
-              placeholder={secretPlaceholder(payload.config.apiKey.set, payload.config.apiKey.hint)}
-              onChange={(event) => setField("apiKey", event.target.value)}
-            />
-          </label>
+      {error && (
+        <div className="banner banner-error" role="alert">
+          {error}
         </div>
-        {form.provider === "mock" && (
+      )}
+      {saved && (
+        <div className="banner banner-ok" role="status">
+          Saved.
+        </div>
+      )}
+
+      <form
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        {/* Each card is a labelled group so the two "API key" fields are
+            distinguishable to anyone navigating by form control (1.3.1). */}
+        <div className="card" role="group" aria-labelledby="group-provider">
+          <h2 id="group-provider">Extraction provider</h2>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="provider">Provider</label>
+              <select
+                id="provider"
+                value={form.provider}
+                onChange={(event) => changeProvider(event.target.value as ProviderId)}
+              >
+                {PROVIDER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="model">Model</label>
+              <input
+                id="model"
+                aria-describedby="model-hint"
+                value={form.model}
+                placeholder={payload.defaults[form.provider] || "model id"}
+                onChange={(event) => setField("model", event.target.value)}
+              />
+              <p id="model-hint" className="muted field-hint">
+                {payload.defaults[form.provider]
+                  ? `Default for this provider: ${payload.defaults[form.provider]}`
+                  : "Enter the model id to use."}
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor="api-key">Provider API key</label>
+              <input
+                id="api-key"
+                aria-describedby="api-key-hint"
+                type="password"
+                value={form.apiKey}
+                autoComplete="off"
+                onChange={(event) => setField("apiKey", event.target.value)}
+              />
+              <p id="api-key-hint" className="muted field-hint">
+                {secretHint(payload.config.apiKey.set, payload.config.apiKey.hint)}
+              </p>
+            </div>
+          </div>
+          {form.provider === "mock" && (
+            <p className="muted">
+              Mock mode returns workspace/mock-result.json (or a skip stub when absent) — useful for
+              demos and tests. No API key needed.
+            </p>
+          )}
+        </div>
+
+        <div className="card" role="group" aria-labelledby="group-google">
+          <h2 id="group-google">Google</h2>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="google-client-id">OAuth client ID</label>
+              <input
+                id="google-client-id"
+                value={form.googleClientId}
+                onChange={(event) => setField("googleClientId", event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="google-client-secret">OAuth client secret</label>
+              <input
+                id="google-client-secret"
+                aria-describedby="google-client-secret-hint"
+                type="password"
+                value={form.googleClientSecret}
+                autoComplete="off"
+                onChange={(event) => setField("googleClientSecret", event.target.value)}
+              />
+              <p id="google-client-secret-hint" className="muted field-hint">
+                {secretHint(
+                  payload.config.google.clientSecret.set,
+                  payload.config.google.clientSecret.hint
+                )}
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor="tasklist-name">Task list name</label>
+              <input
+                id="tasklist-name"
+                value={form.tasklistName}
+                onChange={(event) => setField("tasklistName", event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="field-row">
+            <span role="status">
+              {googleConnected ? (
+                <>
+                  <span className="ok">Connected</span>
+                  {googleEmail ? ` as ${googleEmail}` : ""}
+                </>
+              ) : (
+                <span className="muted">Not connected</span>
+              )}
+            </span>
+            <button type="button" onClick={connectGoogle} aria-disabled={busy}>
+              Connect Google
+            </button>
+          </div>
           <p className="muted">
-            Mock mode returns workspace/mock-result.json (or a skip stub when absent) — useful for
-            demos and tests. No API key needed.
+            Redirect URI to register: <code>http://localhost:4317/api/google/callback</code>. Tasks
+            go to the task list above; drafts land in Gmail Drafts and are never sent.
           </p>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Google</h2>
-        <div className="form-grid">
-          <label>
-            OAuth client ID
-            <input
-              value={form.googleClientId}
-              onChange={(event) => setField("googleClientId", event.target.value)}
-            />
-          </label>
-          <label>
-            OAuth client secret
-            <input
-              type="password"
-              value={form.googleClientSecret}
-              autoComplete="off"
-              placeholder={secretPlaceholder(
-                payload.config.google.clientSecret.set,
-                payload.config.google.clientSecret.hint
-              )}
-              onChange={(event) => setField("googleClientSecret", event.target.value)}
-            />
-          </label>
-          <label>
-            Task list name
-            <input
-              value={form.tasklistName}
-              onChange={(event) => setField("tasklistName", event.target.value)}
-            />
-          </label>
         </div>
+
+        <div className="card" role="group" aria-labelledby="group-fireflies">
+          <h2 id="group-fireflies">Fireflies</h2>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="fireflies-api-key">Fireflies API key</label>
+              <input
+                id="fireflies-api-key"
+                aria-describedby="fireflies-api-key-hint"
+                type="password"
+                value={form.firefliesApiKey}
+                autoComplete="off"
+                onChange={(event) => setField("firefliesApiKey", event.target.value)}
+              />
+              <p id="fireflies-api-key-hint" className="muted field-hint">
+                {secretHint(
+                  payload.config.fireflies.apiKey.set,
+                  payload.config.fireflies.apiKey.hint
+                )}
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor="poll-interval">Poll interval (minutes)</label>
+              <input
+                id="poll-interval"
+                aria-describedby={
+                  pollInvalid ? "poll-interval-error poll-interval-hint" : "poll-interval-hint"
+                }
+                aria-invalid={pollInvalid || undefined}
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={form.pollIntervalMinutes}
+                onChange={(event) => setField("pollIntervalMinutes", event.target.value)}
+              />
+              {pollInvalid && (
+                <p id="poll-interval-error" className="field-error">
+                  Enter a whole number of minutes — 1 or more.
+                </p>
+              )}
+              <p id="poll-interval-hint" className="muted field-hint">
+                One minute or longer.
+              </p>
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.firefliesEnabled}
+                onChange={(event) => setField("firefliesEnabled", event.target.checked)}
+              />
+              Enable polling
+            </label>
+          </div>
+          <div className="field-row">
+            <button type="button" onClick={syncFireflies} aria-disabled={busy}>
+              Sync now
+            </button>
+            <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
+          </div>
+        </div>
+
+        <div className="card" role="group" aria-labelledby="group-watch">
+          <h2 id="group-watch">Watch folder</h2>
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="folder-path">Folder path</label>
+              <input
+                id="folder-path"
+                aria-describedby="folder-path-hint"
+                value={form.folderPath}
+                placeholder="/absolute/path/to/folder"
+                onChange={(event) => setField("folderPath", event.target.value)}
+              />
+              <p id="folder-path-hint" className="muted field-hint">
+                An absolute path, for example /Users/you/Transcripts.
+              </p>
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.watchEnabled}
+                onChange={(event) => setField("watchEnabled", event.target.checked)}
+              />
+              Enable folder watch
+            </label>
+          </div>
+          <p className="muted">
+            Stable files are moved into workspace/watch-archive/ first, then processed — the move is
+            the dedupe.
+          </p>
+        </div>
+
         <div className="field-row">
-          <span>
-            {googleConnected ? (
-              <>
-                <span className="ok">Connected</span>
-                {googleEmail ? ` as ${googleEmail}` : ""}
-              </>
-            ) : (
-              <span className="muted">Not connected</span>
-            )}
-          </span>
-          <button onClick={connectGoogle} disabled={busy}>
-            Connect Google
+          <button type="submit" className="primary" aria-disabled={busy}>
+            {busy ? "Saving…" : "Save settings"}
           </button>
         </div>
-        <p className="muted">
-          Redirect URI to register: <code>http://localhost:4317/api/google/callback</code>. Tasks go
-          to the task list above; drafts land in Gmail Drafts and are never sent.
-        </p>
-      </div>
-
-      <div className="card">
-        <h2>Fireflies</h2>
-        <div className="form-grid">
-          <label>
-            API key
-            <input
-              type="password"
-              value={form.firefliesApiKey}
-              autoComplete="off"
-              placeholder={secretPlaceholder(
-                payload.config.fireflies.apiKey.set,
-                payload.config.fireflies.apiKey.hint
-              )}
-              onChange={(event) => setField("firefliesApiKey", event.target.value)}
-            />
-          </label>
-          <label>
-            Poll interval (minutes)
-            <input
-              type="number"
-              min={1}
-              value={form.pollIntervalMinutes}
-              onChange={(event) => setField("pollIntervalMinutes", Number(event.target.value))}
-            />
-          </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={form.firefliesEnabled}
-              onChange={(event) => setField("firefliesEnabled", event.target.checked)}
-            />
-            Enable polling
-          </label>
-        </div>
-        <div className="field-row">
-          <button onClick={syncFireflies} disabled={busy}>
-            Sync now
-          </button>
-          {syncResult && <span className="ok">{syncResult}</span>}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Watch folder</h2>
-        <div className="form-grid">
-          <label>
-            Folder path
-            <input
-              value={form.folderPath}
-              placeholder="/absolute/path/to/folder"
-              onChange={(event) => setField("folderPath", event.target.value)}
-            />
-          </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={form.watchEnabled}
-              onChange={(event) => setField("watchEnabled", event.target.checked)}
-            />
-            Enable folder watch
-          </label>
-        </div>
-        <p className="muted">
-          Stable files are moved into workspace/watch-archive/ first, then processed — the move is
-          the dedupe.
-        </p>
-      </div>
-
-      <div className="field-row">
-        <button className="primary" onClick={save} disabled={busy}>
-          {busy ? "Saving…" : "Save settings"}
-        </button>
-      </div>
+      </form>
     </div>
   );
 }
