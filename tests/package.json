@@ -1,0 +1,14 @@
+{
+  "name": "@transcript-tasks/tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "vitest": "^3.0.0"
+  }
+}

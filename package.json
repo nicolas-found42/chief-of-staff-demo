@@ -1,0 +1,32 @@
+{
+  "name": "transcript-found42",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local web app that turns meeting transcripts into Google Tasks and Gmail drafts (drafts only, never sent).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tests"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/shared apps/server && npm run build --workspace @transcript-tasks/web",
+    "dev:server": "npm run build --workspace @transcript-tasks/shared && tsx watch apps/server/src/main.ts",
+    "dev:web": "npm run dev --workspace @transcript-tasks/web",
+    "start": "node apps/server/dist/main.js",
+    "test": "npm run test --workspace @transcript-tasks/tests",
+    "test:e2e": "npm run build && npm run test:e2e --workspace @transcript-tasks/tests"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.23.12",
+    "typescript": "~5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
