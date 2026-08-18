@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "messages": [
-    {
-      "kind": "text",
-      "text": "# Pricing\n\nThe tier is priced at a premium over the existing plan to reflect the added value.\n\n## Strategy\n\nPosition the tier as the natural upgrade path for power users.\n\n## Tactics\n\n- Announce at the next product update\n- Offer a limited early-adopter discount\n\n# Rollout\n\n## Strategy\n\nRoll out in two phases: beta cohort first, then general availability.\n\n## Risks and Mitigation\n\n| Risk | Mitigation |\n| --- | --- |\n| Low uptake | Early-adopter pricing |\n| Support load | Dedicated onboarding docs |\n\n# Success Metrics\n\n## Strategy\n\nMeasure weekly active subscribers and net revenue retention.\n\n## Tactics\n\n- Track conversion from trial\n- Track churn after the first month\n"
-    }
-  ]
-}
