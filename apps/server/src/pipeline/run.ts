@@ -51,9 +51,23 @@ export interface PipelineDeps {
   workspaceDir: string;
   /** Fresh per attempt so config edits apply without a restart. */
   getCompleteJson: () => CompleteJson;
+  /** Provider/model recorded on extract_attempt events for diagnosis. */
+  getLlmInfo: () => { provider: string; model: string };
   getGoogle: () => GoogleOutputs | null;
   getTasklistName: () => string;
   log?: (message: string) => void;
+}
+
+const FILE_TIMESTAMP = /(\d{4}-\d{2}-\d{2})T\d{2}[-:]/;
+
+/**
+ * Fireflies exports embed the meeting timestamp in the file name
+ * (`…-2026-06-18T13-00-00.000Z.json`). Recovering the date lets relative
+ * deadlines ("by Monday") resolve against the meeting, not upload time.
+ */
+export function meetingDateFromFileName(fileName: string): string | null {
+  const match = FILE_TIMESTAMP.exec(fileName);
+  return match ? (match[1] ?? null) : null;
 }
 
 export class RunNotFoundError extends Error {
@@ -173,7 +187,10 @@ export class Pipeline {
     writeFileSync(
       join(runDir, "context.json"),
       JSON.stringify(
-        { meetingDate: spec.context?.meetingDate ?? null, attendees: spec.context?.attendees ?? [] },
+        {
+          meetingDate: spec.context?.meetingDate ?? meetingDateFromFileName(spec.fileName),
+          attendees: spec.context?.attendees ?? [],
+        },
         null,
         2
       ) + "\n",
@@ -244,7 +261,8 @@ export class Pipeline {
       for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
         meta.attempts = attempt;
         writeMeta(runDir, meta);
-        appendEvent(runDir, "extract_attempt", { attempt });
+        const llm = this.deps.getLlmInfo();
+        appendEvent(runDir, "extract_attempt", { attempt, provider: llm.provider, model: llm.model });
         try {
           const complete = this.deps.getCompleteJson();
           const promptContext: RunPromptContext = {
@@ -258,7 +276,8 @@ export class Pipeline {
           parsed = normalizeExtractionResult(await complete(messages));
           appendEvent(runDir, "extract_ok", { attempt });
           break;
-        } catch {
+        } catch (error) {
+          appendEvent(runDir, "extract_error", { attempt, error: errorMessage(error) });
           parsed = null;
         }
       }

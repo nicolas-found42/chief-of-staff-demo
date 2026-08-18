@@ -33,6 +33,10 @@ const pipeline = new Pipeline({
       layout.mockResultFile
     );
   },
+  getLlmInfo: () => {
+    const current = configStore.get();
+    return { provider: current.provider, model: current.model };
+  },
   getGoogle: () => googleOutputsFor(configStore.get(), port),
   getTasklistName: () => configStore.get().tasklistName,
   log: (message) => console.log(`[pipeline] ${message}`),

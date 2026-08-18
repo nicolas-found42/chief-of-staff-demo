@@ -8,6 +8,7 @@ import type { GoogleOutputs } from "../../../apps/server/src/google/outputs";
 import {
   Pipeline,
   listRunSummaries,
+  meetingDateFromFileName,
   readRunDetail,
 } from "../../../apps/server/src/pipeline/run";
 import { composeTaskNotes } from "../../../apps/server/src/google/tasks";
@@ -31,9 +32,7 @@ const GOLDEN = {
     },
     { title: "Update help docs" },
   ],
-  drafts: [
-    { to: "", subject: "Updated Q3 pricing", body: "Hello,", reason: "Acme needs telling." },
-  ],
+  drafts: [{ to: "", subject: "Updated Q3 pricing", body: "Hello,", reason: "Acme needs telling." }],
 };
 
 const NON_TRANSCRIPT = {
@@ -98,6 +97,19 @@ function scriptedProvider(script: unknown[]): { complete: CompleteJson; attempts
   };
 }
 
+describe("meetingDateFromFileName", () => {
+  it("recovers the date from a Fireflies-style export name", () => {
+    expect(
+      meetingDateFromFileName("Copy of Abhinav- Richard-transcript-2026-06-18T13-00-00.000Z.json")
+    ).toBe("2026-06-18");
+  });
+
+  it("returns null for names without an embedded timestamp", () => {
+    expect(meetingDateFromFileName("Found42 Stand-Up Meeting_transcript.txt")).toBeNull();
+    expect(meetingDateFromFileName("notes-2026-08-18.md")).toBeNull();
+  });
+});
+
 describe("Pipeline", () => {
   let workspaceDir: string;
   let provider: { complete: CompleteJson; attempts: () => number };
@@ -111,6 +123,7 @@ describe("Pipeline", () => {
     pipeline = new Pipeline({
       workspaceDir,
       getCompleteJson: () => provider.complete,
+      getLlmInfo: () => ({ provider: "mock", model: "test-model" }),
       getGoogle: () => google,
       getTasklistName: () => "Meeting Followups",
     });
@@ -154,6 +167,19 @@ describe("Pipeline", () => {
     expect(summaries[0].taskCount).toBe(2);
   });
 
+  it("sniffs the meeting date from a timestamped upload file name", async () => {
+    const runId = await pipeline.startRun({
+      type: "upload",
+      fileName: "Copy of X-transcript-2026-06-18T13-00-00.000Z.json",
+      text: "Richard: hi",
+    });
+    await pipeline.idle();
+    const context = JSON.parse(
+      readFileSync(join(workspaceDir, "runs", runId, "context.json"), "utf8")
+    ) as { meetingDate: string | null };
+    expect(context.meetingDate).toBe("2026-06-18");
+  });
+
   it("uses externalId as sourceId and honors pre-converted text", async () => {
     const runId = await pipeline.startRun({
       type: "fireflies",
@@ -189,7 +215,7 @@ describe("Pipeline", () => {
     expect(google!.calls.tasks).toHaveLength(0);
   });
 
-  it("provider failure ×3 → failed at extract with 3 attempts", async () => {
+  it("provider failure ×3 → failed at extract, each attempt error recorded", async () => {
     provider = { complete: throwingProvider(), attempts: () => 0 };
     const runId = await pipeline.startRun({
       type: "upload",
@@ -202,6 +228,11 @@ describe("Pipeline", () => {
     expect(detail!.failedStage).toBe("extract");
     expect(detail!.attempts).toBe(3);
     expect(detail!.events.filter((event) => event.type === "extract_attempt")).toHaveLength(3);
+    const attemptErrors = detail!.events.filter((event) => event.type === "extract_error");
+    expect(attemptErrors).toHaveLength(3);
+    expect(attemptErrors[0]?.detail?.error).toBe("boom");
+    const attempt = detail!.events.find((event) => event.type === "extract_attempt");
+    expect(attempt?.detail).toMatchObject({ provider: "mock", model: "test-model" });
   });
 
   it("schema-invalid output ×3 counts as failed attempts", async () => {
@@ -232,9 +263,7 @@ describe("Pipeline", () => {
     expect(failed!.failedStage).toBe("outputs");
     expect(failed!.events.map((event) => event.type)).toContain("google_not_connected");
     // Result was persisted before the outputs stage.
-    const persisted = JSON.parse(
-      readFileSync(join(workspaceDir, "runs", runId, "result.json"), "utf8")
-    );
+    const persisted = JSON.parse(readFileSync(join(workspaceDir, "runs", runId, "result.json"), "utf8"));
     expect(persisted.isTranscript).toBe(true);
 
     google = fakeGoogle();
@@ -321,10 +350,7 @@ describe("Pipeline", () => {
       text: "line\r\nline",
     });
     await pipeline.idle();
-    const transcript = await readFile(
-      join(workspaceDir, "runs", runId, "transcript.txt"),
-      "utf8"
-    );
+    const transcript = await readFile(join(workspaceDir, "runs", runId, "transcript.txt"), "utf8");
     expect(transcript).toBe("line\r\nline");
   });
 });

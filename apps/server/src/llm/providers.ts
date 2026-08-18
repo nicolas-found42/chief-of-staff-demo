@@ -64,17 +64,23 @@ async function postJson(
 ): Promise<{ status: number; text: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
   try {
-    const response = await fetch(url, {
+    response = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    return { status: response.status, text: await response.text() };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }
+  return { status: response.status, text: await response.text() };
 }
 
 function assertHttpOk(provider: string, status: number, text: string): void {

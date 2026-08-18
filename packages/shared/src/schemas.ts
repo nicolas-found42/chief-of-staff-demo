@@ -249,6 +249,7 @@ export interface RunMeta {
 export const RUN_EVENT_TYPES = [
   "created",
   "extract_attempt",
+  "extract_error",
   "extract_ok",
   "classify_skipped",
   "google_task_created",
