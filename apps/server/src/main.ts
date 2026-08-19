@@ -16,6 +16,10 @@ import { workspaceLayout } from "./paths.js";
 import { MAX_UPLOAD_BYTES } from "./text/convert.js";
 
 const port = Number(process.env.PORT ?? 4317);
+/* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
+   loopback interface inside a container is not reachable from the host; the
+   published port is still bound to 127.0.0.1 on the host side. */
+const host = process.env.HOST ?? "127.0.0.1";
 const workspaceDir = process.env.WORKSPACE_DIR ?? "./workspace";
 const layout = workspaceLayout(workspaceDir);
 mkdirSync(layout.runsDir, { recursive: true });
@@ -29,7 +33,12 @@ const pipeline = new Pipeline({
   getCompleteJson: () => {
     const current = configStore.get();
     return makeCompleteJson(
-      { provider: current.provider, model: current.model, apiKey: current.apiKey },
+      {
+        provider: current.provider,
+        model: current.model,
+        apiKey: current.apiKey,
+        baseUrl: current.ollama.baseUrl,
+      },
       layout.mockResultFile
     );
   },
@@ -111,7 +120,7 @@ await registerApi(app, {
   },
 });
 
-await app.listen({ port, host: "127.0.0.1" });
+await app.listen({ port, host });
 console.log(
   `transcript-found42 listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
 );

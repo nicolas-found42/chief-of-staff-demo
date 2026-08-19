@@ -7,6 +7,7 @@ import {
   type SecretHint,
   ConfigSchema,
   DEFAULT_MODELS,
+  DEFAULT_OLLAMA_BASE_URL,
 } from "@transcript-tasks/shared";
 
 /** Recursively merge `patch` over `base`; missing keys keep the base value. */
@@ -36,6 +37,7 @@ export function defaultConfig(): AppConfig {
     google: { clientId: "", clientSecret: "", refreshToken: null },
     fireflies: { enabled: false, apiKey: "", pollIntervalMinutes: 5 },
     watch: { enabled: false, folderPath: "" },
+    ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
   };
 }
 
@@ -127,6 +129,9 @@ export function redactConfig(config: AppConfig): RedactedConfig {
     watch: {
       enabled: config.watch.enabled,
       folderPath: config.watch.folderPath,
+    },
+    ollama: {
+      baseUrl: config.ollama.baseUrl,
     },
   };
 }

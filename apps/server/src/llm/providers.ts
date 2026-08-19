@@ -1,11 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { type ProviderId, ExtractionWireSchema } from "@transcript-tasks/shared";
+import {
+  type ProviderId,
+  DEFAULT_OLLAMA_BASE_URL,
+  ExtractionWireSchema,
+} from "@transcript-tasks/shared";
 
 export interface LlmConfig {
   provider: ProviderId;
   model: string;
   apiKey: string;
+  /** Ollama only: where the local server listens. */
+  baseUrl?: string;
 }
 
 export interface CompletionRequest {
@@ -219,13 +225,19 @@ async function geminiComplete(
   return JSON.parse(readGeminiText(JSON.parse(text)));
 }
 
-async function openrouterComplete(
+/**
+ * OpenAI-shaped chat completion with a structured-output fallback, shared by
+ * OpenRouter and Ollama: both front many models, and some of those models
+ * reject `response_format` outright.
+ */
+async function openAiCompatibleComplete(
+  label: string,
+  url: string,
+  headers: Record<string, string>,
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject
 ): Promise<unknown> {
-  const url = "https://openrouter.ai/api/v1/chat/completions";
-  const headers = { authorization: `Bearer ${cfg.apiKey}` };
   const messages = [
     { role: "system", content: request.system },
     { role: "user", content: request.user },
@@ -243,8 +255,8 @@ async function openrouterComplete(
     response.status < 500 &&
     /response_format|json_schema/i.test(response.text);
   if (schemaRejected) {
-    // Some OpenRouter models reject structured outputs; retry once without
-    // response_format and demand raw JSON in the prompt instead.
+    // Retry once without response_format and demand raw JSON in the prompt
+    // instead.
     response = await postJson(url, headers, {
       model: cfg.model,
       messages: [
@@ -253,8 +265,44 @@ async function openrouterComplete(
       ],
     });
   }
-  assertHttpOk("openrouter", response.status, response.text);
+  assertHttpOk(label, response.status, response.text);
   return JSON.parse(readChatCompletionContent(JSON.parse(response.text)));
+}
+
+function openrouterComplete(
+  cfg: LlmConfig,
+  request: CompletionRequest,
+  schema: JsonObject
+): Promise<unknown> {
+  return openAiCompatibleComplete(
+    "openrouter",
+    "https://openrouter.ai/api/v1/chat/completions",
+    { authorization: `Bearer ${cfg.apiKey}` },
+    cfg,
+    request,
+    schema
+  );
+}
+
+/**
+ * A model served locally by Ollama, through its OpenAI-compatible endpoint. No
+ * key is needed for a local server, so the auth header is sent only when one is
+ * configured (some deployments sit behind a proxy that wants it).
+ */
+function ollamaComplete(
+  cfg: LlmConfig,
+  request: CompletionRequest,
+  schema: JsonObject
+): Promise<unknown> {
+  const base = (cfg.baseUrl ?? DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "");
+  return openAiCompatibleComplete(
+    "ollama",
+    `${base}/v1/chat/completions`,
+    cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
+    cfg,
+    request,
+    schema
+  );
 }
 
 async function mockComplete(mockResultPath: string): Promise<unknown> {
@@ -290,6 +338,8 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
         return openrouterComplete(cfg, request, schema);
       case "gemini":
         return geminiComplete(cfg, request, geminiSchema);
+      case "ollama":
+        return ollamaComplete(cfg, request, schema);
       case "mock":
         return mockComplete(mockResultPath);
     }

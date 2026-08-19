@@ -120,7 +120,7 @@ export function normalizeExtractionResult(payload: unknown): ExtractionResult {
 // Configuration
 // ---------------------------------------------------------------------------
 
-export const PROVIDERS = ["openai", "anthropic", "openrouter", "gemini", "mock"] as const;
+export const PROVIDERS = ["openai", "anthropic", "openrouter", "gemini", "ollama", "mock"] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 export const ProviderIdSchema = z.enum(PROVIDERS);
 
@@ -130,8 +130,12 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
   anthropic: "claude-sonnet-5",
   openrouter: "google/gemini-3.7-flash",
   gemini: "gemini-3.7-flash",
+  ollama: "nemotron",
   mock: "",
 };
+
+/** Ollama's default listen address. `host.docker.internal` inside a container. */
+export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 
 export const ConfigSchema = z.strictObject({
   provider: ProviderIdSchema,
@@ -151,6 +155,9 @@ export const ConfigSchema = z.strictObject({
   watch: z.strictObject({
     enabled: z.boolean().default(false),
     folderPath: z.string(),
+  }),
+  ollama: z.strictObject({
+    baseUrl: z.string().default(DEFAULT_OLLAMA_BASE_URL),
   }),
 });
 
@@ -179,6 +186,11 @@ export const ConfigUpdateSchema = z.strictObject({
     .strictObject({
       enabled: z.boolean().optional(),
       folderPath: z.string().optional(),
+    })
+    .optional(),
+  ollama: z
+    .strictObject({
+      baseUrl: z.string().optional(),
     })
     .optional(),
 });
@@ -210,6 +222,10 @@ export interface RedactedConfig {
   watch: {
     enabled: boolean;
     folderPath: string;
+  };
+  /** Not a secret: a local endpoint address, returned verbatim. */
+  ollama: {
+    baseUrl: string;
   };
 }
 

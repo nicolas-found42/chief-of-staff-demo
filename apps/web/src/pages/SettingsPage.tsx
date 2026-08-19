@@ -11,6 +11,7 @@ const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },
   { value: "openrouter", label: "OpenRouter" },
   { value: "gemini", label: "Google Gemini" },
+  { value: "ollama", label: "Ollama (local model)" },
 ];
 
 interface FormState {
@@ -26,6 +27,7 @@ interface FormState {
   pollIntervalMinutes: string;
   watchEnabled: boolean;
   folderPath: string;
+  ollamaBaseUrl: string;
 }
 
 export function SettingsPage() {
@@ -64,6 +66,7 @@ export function SettingsPage() {
           pollIntervalMinutes: String(fetched.config.fireflies.pollIntervalMinutes),
           watchEnabled: fetched.config.watch.enabled,
           folderPath: fetched.config.watch.folderPath,
+          ollamaBaseUrl: fetched.config.ollama.baseUrl,
         });
       } catch (err) {
         setError(errorMessage(err));
@@ -155,6 +158,7 @@ export function SettingsPage() {
           pollIntervalMinutes: Number(form.pollIntervalMinutes),
         },
         watch: { enabled: form.watchEnabled, folderPath: form.folderPath },
+        ollama: { baseUrl: form.ollamaBaseUrl },
       };
       if (form.apiKey !== "") {
         update.apiKey = form.apiKey;
@@ -179,6 +183,7 @@ export function SettingsPage() {
               model: savedPayload.config.model,
               tasklistName: savedPayload.config.tasklistName,
               googleClientId: savedPayload.config.google.clientId,
+              ollamaBaseUrl: savedPayload.config.ollama.baseUrl,
               apiKey: "",
               googleClientSecret: "",
               firefliesApiKey: "",
@@ -317,6 +322,24 @@ export function SettingsPage() {
               </p>
             </div>
           </div>
+          {form.provider === "ollama" && (
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="ollama-base-url">Ollama base URL</label>
+                <input
+                  id="ollama-base-url"
+                  aria-describedby="ollama-base-url-hint"
+                  value={form.ollamaBaseUrl}
+                  placeholder="http://127.0.0.1:11434"
+                  onChange={(event) => setField("ollamaBaseUrl", event.target.value)}
+                />
+                <p id="ollama-base-url-hint" className="muted field-hint">
+                  Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in
+                  a container and Ollama runs on the host. No API key needed.
+                </p>
+              </div>
+            </div>
+          )}
           {form.provider === "mock" && (
             <p className="muted">
               Mock mode returns workspace/mock-result.json (or a skip stub when absent) — useful for

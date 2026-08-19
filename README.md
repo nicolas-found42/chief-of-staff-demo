@@ -18,12 +18,19 @@ extracts action items with the LLM provider of your choice, and creates Google T
 | Routine step | This app |
 |---|---|
 | Gatekeeping (`isTranscript`) | `apps/server/src/llm/prompt.ts` — non-transcripts persist a result with `skipReason` and create nothing |
-| Extraction (tasks / summary / drafts) | `apps/server/src/llm/prompt.ts` + `providers.ts` (OpenAI, Anthropic, OpenRouter, Gemini, mock) |
+| Extraction (tasks / summary / drafts) | `apps/server/src/llm/prompt.ts` + `providers.ts` (OpenAI, Anthropic, OpenRouter, Gemini, Ollama, mock) |
 | Outbox JSON contract (schema v1) | `packages/shared/src/schemas.ts` (`ExtractionResultSchema`); malformed output is retried, never silently accepted |
 | Task creation (`createTask_`) | `apps/server/src/google/tasks.ts` — identical notes composition order and due-date normalization |
 | Draft-only email | `apps/server/src/google/gmail.ts` — `drafts.create` only; banned-token unit test |
 | Untrusted transcript handling | Injection preamble in the prompt + `<transcript>` block labeled as data |
 | Retry / quarantine | 3 extraction attempts, then the run is `failed` and retryable from the UI |
+
+## Where this is going
+
+This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
+The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
+[docs/adr/](docs/adr/). None of that refactor has landed yet: what's in this repo is still the
+single transcript pipeline described below.
 
 ## Prerequisites
 
@@ -66,6 +73,14 @@ In Settings, pick a provider and paste its API key. Defaults: `gpt-5.2` (OpenAI)
 free text — correct it there if a default 404s. `mock` returns `workspace/mock-result.json` (test
 and demo mode).
 
+`ollama` runs the extraction against a model served locally, through Ollama's OpenAI-compatible
+endpoint. Set the base URL in Settings (`http://127.0.0.1:11434` on the host,
+`http://host.docker.internal:11434` when this app runs in a container and Ollama runs on the host);
+no API key is needed. The default model id is `nemotron` — free text, so set whatever tag you have
+pulled. **Untested against a live Ollama server:** the request shape is covered by unit tests, but
+no local model has been run through it yet, and a 30B model needs more memory than a 16 GB machine
+has.
+
 ## Run
 
 ```bash
@@ -82,7 +97,30 @@ npm run dev:web      # Vite dev server with /api proxied to :4317
 ```
 
 Environment: `PORT` (default 4317 — the Google redirect URI is registered for this port; change
-both together), `WORKSPACE_DIR` (default `./workspace`).
+both together), `WORKSPACE_DIR` (default `./workspace`), `HOST` (default `127.0.0.1`; only a
+container should change this — see below).
+
+## Run in a container
+
+```bash
+docker compose up --build      # http://localhost:4317
+```
+
+One image: Node serves the API and the built web UI. Three things are load-bearing:
+
+- **Port 4317 is published, exactly.** The Google OAuth redirect URI is registered for
+  `http://localhost:4317/api/google/callback`; publish another port and Connect Google breaks.
+- **`workspace/` is a bind mount, never a layer.** Runs and secrets stay on the host; the image
+  holds no state.
+- **The published port binds to `127.0.0.1` on the host.** The app has no authentication
+  ([ADR-0001](docs/adr/0001-local-first-single-user.md)), so it must not be reachable from the
+  network. Inside the container the server listens on `0.0.0.0` (`HOST`), because a container's
+  loopback interface is unreachable from the host — the host-side `127.0.0.1` binding in
+  `docker-compose.yml` is what keeps it private.
+
+Verified: image builds, container serves the UI and API, and an uploaded transcript runs end to end
+with the mock provider, writing `meta.json` / `result.json` / `events.jsonl` through the mount.
+Kubernetes and the EdgeScale cube are **untested** — there is no chart in this repo yet.
 
 Intakes:
 

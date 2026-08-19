@@ -169,6 +169,34 @@ describe("providers", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("ollama: posts to the configured base URL with no auth header", async () => {
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "ollama", model: "nemotron", apiKey: "", baseUrl: "http://ollama.test:11434/" },
+      "/nonexistent/mock-result.json"
+    );
+    const parsed = await complete({ system: "S", user: "U" });
+    expect(parsed).toEqual(RESULT);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("http://ollama.test:11434/v1/chat/completions");
+    expect(calls[0].headers.authorization).toBeUndefined();
+    expect(calls[0].body.model).toBe("nemotron");
+    expect((calls[0].body.response_format as Record<string, unknown>).type).toBe("json_schema");
+  });
+
+  it("ollama: falls back to raw JSON when the model rejects response_format", async () => {
+    responses.push({ status: 400, body: { error: "json_schema is not supported" } });
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "ollama", model: "nemotron", apiKey: "", baseUrl: "http://ollama.test:11434" },
+      "/nonexistent/mock-result.json"
+    );
+    const parsed = await complete({ system: "S", user: "U" });
+    expect(parsed).toEqual(RESULT);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body.response_format).toBeUndefined();
+  });
+
   it("mock: returns the workspace mock-result.json when present", async () => {
     const dir = mkdtempSync(join(tmpdir(), "providers-mock-"));
     writeFileSync(join(dir, "mock-result.json"), JSON.stringify({ ...RESULT, sourceId: "fixture" }));

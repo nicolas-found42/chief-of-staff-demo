@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    # 127.0.0.1 on the left is load-bearing: without it Docker publishes on all
+    # host interfaces and an app with no authentication (ADR-0001) is reachable
+    # from the network. 4317 on the right must match the registered Google
+    # OAuth redirect URI.
+    ports:
+      - "127.0.0.1:4317:4317"
+    volumes:
+      - ./workspace:/app/workspace
+    restart: unless-stopped
