@@ -150,6 +150,7 @@ describe("Pipeline", () => {
     expect(types.filter((type) => type === "google_task_created")).toHaveLength(2);
     expect(types.filter((type) => type === "gmail_draft_created")).toHaveLength(1);
     expect(types[types.length - 1]).toBe("run_done");
+    expect(types.filter((t) => t === "stage_started")).toHaveLength(3);
     expect(google!.calls.tasklists).toEqual(["Meeting Followups"]);
     expect(google!.calls.tasks[0]).toEqual({
       title: "Write up export approach",
@@ -232,6 +233,9 @@ describe("Pipeline", () => {
     expect(attemptErrors[0]?.detail?.error).toBe("boom");
     const attempt = detail!.events.find((event) => event.type === "extract_attempt");
     expect(attempt?.detail).toMatchObject({ provider: "mock", model: "test-model" });
+    expect(detail!.failureHint).toBe("Extraction failed after 3 attempts.");
+    const types = detail!.events.map((event) => event.type);
+    expect(types).toContain("stage_started");
   });
 
   it("schema-invalid output ×3 counts as failed attempts", async () => {
@@ -261,6 +265,7 @@ describe("Pipeline", () => {
     expect(failed!.status).toBe("failed");
     expect(failed!.failedStage).toBe("outputs");
     expect(failed!.events.map((event) => event.type)).toContain("google_not_connected");
+    expect(failed!.failureHint).toBe("Output creation failed. Connect Google in Settings, then retry.");
     // Result was persisted before the outputs stage.
     expect(failed!.result?.isTranscript).toBe(true);
 
@@ -298,7 +303,7 @@ describe("Pipeline", () => {
       text: "hello",
     });
     await pipeline.idle();
-    await expect(pipeline.retryRun(runId)).rejects.toThrow(/not in a failed state/);
+    await expect(pipeline.retryRun(runId)).rejects.toThrow(/not retryable/);
   });
 
   it("conversion failure produces a visible failed run", async () => {
@@ -310,8 +315,11 @@ describe("Pipeline", () => {
     await pipeline.idle();
     const detail = detailOf(runId);
     expect(detail!.status).toBe("failed");
-    expect(detail!.failedStage).toBe("extract");
+    expect(detail!.failedStage).toBe("convert");
     expect(detail!.events[detail!.events.length - 1].type).toBe("run_failed");
+    expect(detail!.failureHint).toBe("This file could not be converted to text.");
+    expect(detail!.events.map((e) => e.type)).toContain("stage_failed");
+    await expect(pipeline.retryRun(runId)).rejects.toThrow(/not retryable/);
   });
 
   it("one bad task does not kill the batch (drainOutbox parity)", async () => {

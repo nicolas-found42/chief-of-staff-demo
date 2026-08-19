@@ -11,7 +11,7 @@ import { api, errorMessage } from "../client";
 import { useIsLoadedEntry } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
-const ACTIVE = new Set(["pending", "extracting", "creating-outputs"]);
+const ACTIVE = new Set(["pending", "running"]);
 
 export function RunDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -188,9 +188,7 @@ export function RunDetailPage() {
 
       {detail.status === "failed" && (
         <div className="banner banner-error" role="alert">
-          {detail.failedStage === "outputs"
-            ? "Output creation failed. Connect Google in Settings, then retry."
-            : "Extraction failed after 3 attempts."}
+          {detail.failureHint ?? "This run failed."}
           {/* aria-disabled, not disabled: a disabled button is blurred and
               dropped from the tab order the moment it is pressed. */}
           <button

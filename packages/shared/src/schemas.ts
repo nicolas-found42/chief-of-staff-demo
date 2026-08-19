@@ -233,20 +233,11 @@ export interface RedactedConfig {
 // Runs
 // ---------------------------------------------------------------------------
 
-export const RUN_STATUSES = [
-  "pending",
-  "extracting",
-  "creating-outputs",
-  "done",
-  "skipped",
-  "failed",
-] as const;
+export const RUN_STATUSES = ["pending", "running", "done", "skipped", "failed"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export const RUN_SOURCES = ["upload", "fireflies", "watch"] as const;
 export type RunSourceType = (typeof RUN_SOURCES)[number];
-
-export type RunFailedStage = "extract" | "outputs";
 
 /** runs/<runId>/meta.json */
 export interface RunMeta {
@@ -258,12 +249,16 @@ export interface RunMeta {
   externalId: string | null;
   status: RunStatus;
   attempts: number;
-  failedStage: RunFailedStage | null;
+  /** Workflow-named stage, e.g. "convert" | "extract" | "outputs" for the transcript workflow. */
+  failedStage: string | null;
   skipReason: string | null;
+  failureHint: string | null;
 }
 
 export const RUN_EVENT_TYPES = [
   "created",
+  "stage_started",
+  "stage_failed",
   "extract_attempt",
   "extract_error",
   "extract_ok",
@@ -298,8 +293,10 @@ export interface RunSummary {
 
 export interface RunDetail extends RunSummary {
   attempts: number;
-  failedStage: RunFailedStage | null;
+  /** Workflow-named stage, e.g. "convert" | "extract" | "outputs" for the transcript workflow. */
+  failedStage: string | null;
   skipReason: string | null;
+  failureHint: string | null;
   result: ExtractionResult | null;
   events: RunEvent[];
   transcript: string;

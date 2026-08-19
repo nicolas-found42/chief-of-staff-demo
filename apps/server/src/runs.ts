@@ -201,6 +201,7 @@ export function openRuns(workspaceDir: string): Runs {
         attempts: 0,
         failedStage: null,
         skipReason: null,
+        failureHint: null,
       };
       writeMeta(dir, meta);
       writeFileSync(
@@ -261,6 +262,7 @@ export function openRuns(workspaceDir: string): Runs {
         attempts: meta.attempts,
         failedStage: meta.failedStage,
         skipReason: meta.skipReason,
+        failureHint: meta.failureHint,
         result,
         events: readEvents(dir),
         transcript: readTranscript(dir),

@@ -4,14 +4,14 @@
    itself rather than disappearing — a diagnostic is better than a blank pill. */
 const STATUS_LABELS: Record<string, string> = {
   pending: "Queued",
-  extracting: "Extracting",
-  "creating-outputs": "Creating outputs",
+  running: "Running",
   done: "Done",
   skipped: "Skipped",
   failed: "Failed",
 };
 
 const STAGE_LABELS: Record<string, string> = {
+  convert: "conversion",
   extract: "extraction",
   outputs: "output creation",
 };

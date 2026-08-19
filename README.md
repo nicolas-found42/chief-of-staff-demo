@@ -29,8 +29,7 @@ extracts action items with the LLM provider of your choice, and creates Google T
 
 This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
 The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
-[docs/adr/](docs/adr/). None of that refactor has landed yet: what's in this repo is still the
-single transcript pipeline described below.
+[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004). The Module registry itself is still ahead.
 
 ## Prerequisites
 

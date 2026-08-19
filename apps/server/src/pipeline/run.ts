@@ -55,13 +55,25 @@ export class RunNotFoundError extends Error {
 
 export class RunNotRetryableError extends Error {
   constructor(runId: string) {
-    super(`Run is not in a failed state: ${runId}`);
+    super(`Run is not retryable: ${runId}`);
     this.name = "RunNotRetryableError";
   }
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function failureHintFor(stage: string, reason: string): string {
+  if (stage === "convert") return "This file could not be converted to text.";
+  if (stage === "outputs") {
+    return reason === "google_not_connected"
+      ? "Output creation failed. Connect Google in Settings, then retry."
+      : "Output creation failed. Retry, or check the events below.";
+  }
+  return reason === "extraction failed after 3 attempts"
+    ? "Extraction failed after 3 attempts."
+    : "Extraction failed. Retry to re-run it.";
 }
 
 export class Pipeline {
@@ -94,21 +106,19 @@ export class Pipeline {
     });
     const meta = run.readMeta();
 
-    let text: string | null = null;
     try {
-      text = spec.text ?? (await convertToText(spec.fileName, spec.bytes ?? Buffer.alloc(0)));
-    } catch (err) {
-      const reason =
-        err instanceof SourceError ? `${err.code}: ${err.message}` : errorMessage(err);
-      meta.status = "failed";
-      meta.failedStage = "extract";
-      run.writeMeta(meta);
-      run.appendEvent("run_failed", { stage: "extract", reason });
-      this.deps.log?.(`Run ${run.id} failed to convert ${spec.fileName}: ${reason}`);
-      return run.id;
+      const text = await this.stage(run, meta, "convert", async () => {
+        try {
+          return spec.text ?? (await convertToText(spec.fileName, spec.bytes ?? Buffer.alloc(0)));
+        } catch (err) {
+          throw err instanceof SourceError ? new Error(`${err.code}: ${err.message}`) : err;
+        }
+      });
+      run.writeTranscript(text);
+      this.enqueue(() => this.processRun(run.id));
+    } catch {
+      this.deps.log?.(`Run ${run.id} failed to convert ${spec.fileName}`);
     }
-    run.writeTranscript(text);
-    this.enqueue(() => this.processRun(run.id));
     return run.id;
   }
 
@@ -119,12 +129,13 @@ export class Pipeline {
       throw new RunNotFoundError(id);
     }
     const meta = run.readMeta();
-    if (meta.status !== "failed" || !meta.failedStage) {
+    if (meta.status !== "failed" || !meta.failedStage || meta.failedStage === "convert") {
       throw new RunNotRetryableError(id);
     }
     const stage = meta.failedStage;
     meta.status = "pending";
     meta.failedStage = null;
+    meta.failureHint = null;
     meta.skipReason = null;
     if (stage === "extract") {
       meta.attempts = 0;
@@ -143,6 +154,27 @@ export class Pipeline {
       });
   }
 
+  private async stage<T>(run: RunHandle, meta: RunMeta, name: string, fn: () => Promise<T>): Promise<T> {
+    meta.status = "running";
+    run.writeMeta(meta);
+    run.appendEvent("stage_started", { stage: name });
+    try {
+      return await fn();
+    } catch (error) {
+      this.failRun(run, meta, name, errorMessage(error));
+      throw error;
+    }
+  }
+
+  private failRun(run: RunHandle, meta: RunMeta, stage: string, reason: string): void {
+    meta.status = "failed";
+    meta.failedStage = stage;
+    meta.failureHint = failureHintFor(stage, reason);
+    run.writeMeta(meta);
+    run.appendEvent("stage_failed", { stage, error: reason });
+    run.appendEvent("run_failed", { stage, reason });
+  }
+
   private async processRun(id: string, resumeOutputs?: "outputs"): Promise<void> {
     const run = this.runs.open(id);
     if (!run) {
@@ -150,65 +182,67 @@ export class Pipeline {
     }
     const meta = run.readMeta();
     const context = run.readContext();
-
-    if (resumeOutputs !== "outputs") {
-      meta.status = "extracting";
-      run.writeMeta(meta);
-      let parsed: ExtractionResult | null = null;
-      for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
-        meta.attempts = attempt;
-        run.writeMeta(meta);
-        const llm = this.deps.getLlmInfo();
-        run.appendEvent("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
-        try {
-          const complete = this.deps.getCompleteJson();
-          const promptContext: RunPromptContext = {
-            fileName: meta.fileName,
-            sourceId: meta.externalId ?? meta.id,
-            sourceUrl: meta.sourceUrl,
-            meetingDate: context.meetingDate,
-            attendees: context.attendees,
-          };
-          const messages = buildExtractionMessages(promptContext, run.readTranscript());
-          parsed = normalizeExtractionResult(await complete(messages));
-          run.appendEvent("extract_ok", { attempt });
-          break;
-        } catch (error) {
-          run.appendEvent("extract_error", { attempt, error: errorMessage(error) });
-          parsed = null;
+    try {
+      if (resumeOutputs !== "outputs") {
+        const result = await this.stage(run, meta, "extract", () => this.extract(run, meta, context));
+        meta.skipReason = result.skipReason;
+        if (!result.isTranscript) {
+          meta.status = "skipped";
+          run.writeMeta(meta);
+          run.appendEvent("classify_skipped", { skipReason: result.skipReason });
+          run.appendEvent("run_done", { status: "skipped" });
+          return;
         }
-      }
-      if (!parsed) {
-        this.failRun(run, meta, "extract", "extraction failed after 3 attempts");
+        await this.stage(run, meta, "outputs", () => this.createOutputs(run, meta, result));
         return;
       }
-      // Identity fields are authoritative server-side values, never LLM output.
-      const result: ExtractionResult = {
-        ...parsed,
-        sourceId: meta.externalId ?? meta.id,
-        sourceFileName: meta.fileName,
-        sourceUrl: meta.sourceUrl,
-        processedAt: new Date().toISOString(),
-      };
-      run.writeResult(result);
-      meta.skipReason = result.skipReason;
-      if (!result.isTranscript) {
-        meta.status = "skipped";
-        run.writeMeta(meta);
-        run.appendEvent("classify_skipped", { skipReason: result.skipReason });
-        run.appendEvent("run_done", { status: "skipped" });
+      const cached = run.readResult();
+      if (!cached) {
+        this.failRun(run, meta, "extract", "retry found no cached result");
         return;
       }
-      await this.createOutputs(run, meta, result);
-      return;
+      await this.stage(run, meta, "outputs", () => this.createOutputs(run, meta, cached));
+    } catch {
+      // Already recorded by the stage wrapper; swallow so the queue doesn't log a crash.
     }
+  }
 
-    const cached = run.readResult();
-    if (!cached) {
-      this.failRun(run, meta, "extract", "retry found no cached result");
-      return;
+  private async extract(run: RunHandle, meta: RunMeta, context: RunContext): Promise<ExtractionResult> {
+    let parsed: ExtractionResult | null = null;
+    for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
+      meta.attempts = attempt;
+      run.writeMeta(meta);
+      const llm = this.deps.getLlmInfo();
+      run.appendEvent("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
+      try {
+        const complete = this.deps.getCompleteJson();
+        const promptContext: RunPromptContext = {
+          fileName: meta.fileName,
+          sourceId: meta.externalId ?? meta.id,
+          sourceUrl: meta.sourceUrl,
+          meetingDate: context.meetingDate,
+          attendees: context.attendees,
+        };
+        parsed = normalizeExtractionResult(await complete(buildExtractionMessages(promptContext, run.readTranscript())));
+        run.appendEvent("extract_ok", { attempt });
+        break;
+      } catch (error) {
+        run.appendEvent("extract_error", { attempt, error: errorMessage(error) });
+        parsed = null;
+      }
     }
-    await this.createOutputs(run, meta, cached);
+    if (!parsed) {
+      throw new Error(`extraction failed after ${MAX_EXTRACT_ATTEMPTS} attempts`);
+    }
+    const result: ExtractionResult = {
+      ...parsed,
+      sourceId: meta.externalId ?? meta.id,
+      sourceFileName: meta.fileName,
+      sourceUrl: meta.sourceUrl,
+      processedAt: new Date().toISOString(),
+    };
+    run.writeResult(result);
+    return result;
   }
 
   private async createOutputs(
@@ -216,9 +250,6 @@ export class Pipeline {
     meta: RunMeta,
     result: ExtractionResult
   ): Promise<void> {
-    meta.status = "creating-outputs";
-    run.writeMeta(meta);
-
     const google = this.deps.getGoogle();
     if (!google) {
       run.appendEvent("google_not_connected");
@@ -266,17 +297,5 @@ export class Pipeline {
       taskErrors,
       draftErrors,
     });
-  }
-
-  private failRun(
-    run: RunHandle,
-    meta: RunMeta,
-    stage: "extract" | "outputs",
-    reason: string
-  ): void {
-    meta.status = "failed";
-    meta.failedStage = stage;
-    run.writeMeta(meta);
-    run.appendEvent("run_failed", { stage, reason });
   }
 }
