@@ -46,6 +46,10 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     const files: { fileName: string; bytes: Buffer }[] = [];
     for await (const part of request.files()) {
       if (part.fieldname !== "files") {
+        /* Skipping a part without consuming its stream stalls the iterator, and
+           the 400 below never reaches the client. Discard it instead of
+           buffering: a wrong field name is not worth 10 MB of memory. */
+        part.file.resume();
         continue;
       }
       const bytes = await part.toBuffer();
