@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { RunDetail } from "@transcript-tasks/shared";
-import { SourceBadge, StatusPill, formatTime } from "../components/StatusPill";
+import {
+  SourceBadge,
+  StatusPill,
+  formatTime,
+  stageLabel,
+} from "../components/StatusPill";
 import { api, errorMessage } from "../client";
+import { useIsLoadedEntry } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
 const ACTIVE = new Set(["pending", "extracting", "creating-outputs"]);
 
 export function RunDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const loadedEntry = useIsLoadedEntry();
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -46,14 +53,22 @@ export function RunDetailPage() {
   // Arriving at a run moves focus to its heading, so keyboard users continue
   // from the new page instead of the top of the document (2.4.3). The ref
   // guard keeps the 3s poll from stealing focus back on every refresh.
+  //
+  // The entry the browser loaded is exempt, for the reason usePageFocus gives:
+  // focus already sits above the skip link there, and moving it down to the
+  // heading puts the skip link, both nav links and "All runs" permanently
+  // behind the user. This is the app's most bookmarked and most shared route,
+  // so that is the load path it matters most on.
   const focusedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!detail || !id || focusedFor.current === id) {
       return;
     }
     focusedFor.current = id;
-    headingRef.current?.focus();
-  }, [detail, id]);
+    if (!loadedEntry) {
+      headingRef.current?.focus();
+    }
+  }, [detail, id, loadedEntry]);
 
   const retry = async () => {
     if (!id || retrying) {
@@ -96,7 +111,9 @@ export function RunDetailPage() {
           {error}
         </div>
         <p>
-          <Link to="/" className="back-link">← All runs</Link>
+          <Link to="/" className="back-link">
+            <span aria-hidden="true">←</span> All runs
+          </Link>
         </p>
       </div>
     );
@@ -115,31 +132,57 @@ export function RunDetailPage() {
   }
 
   const result = detail.result;
+  // A skipped run carries an empty summary. Rendering the heading and card
+  // anyway promised a section that had nothing in it (WCAG 1.3.1).
+  const summary = result?.summary.trim() ?? "";
 
   return (
     <div className="page">
       <p>
-        <Link to="/" className="back-link">← All runs</Link>
+        <Link to="/" className="back-link">
+          {/* Decorative: exposed, it is read as "left arrow" before the link
+              text, the same reason the ↗ below is hidden (WCAG 1.3.1). */}
+          <span aria-hidden="true">←</span> All runs
+        </Link>
       </p>
       <h1 className="run-title" ref={headingRef} tabIndex={-1}>
         {detail.fileName}
       </h1>
+      {/* The gap between these items is flex `gap`, which carries no text, and
+          JSX strips the newline-only nodes between the elements — so the row
+          flattened to "Status: failedupload8/18/2026, 10:20:14 PMattempts: 1".
+          Each item now names itself and opens with a comma: a real character
+          that cannot be collapsed away like a bare space between flex children
+          can, and one that reads as a pause rather than a word (WCAG 1.3.1). */}
       <div className="run-meta">
         <span role="status">
           <span className="visually-hidden">Status: </span>
           <StatusPill status={detail.status} />
         </span>
-        <SourceBadge source={detail.source} />
-        <span className="muted">{formatTime(detail.createdAt)}</span>
+        <span>
+          <span className="visually-hidden">, Source: </span>
+          <SourceBadge source={detail.source} />
+        </span>
+        <span className="muted">
+          <span className="visually-hidden">, Created: </span>
+          {formatTime(detail.createdAt)}
+        </span>
         {detail.sourceUrl && (
           <a href={detail.sourceUrl} target="_blank" rel="noreferrer">
+            <span className="visually-hidden">, </span>
             source <span aria-hidden="true">↗</span>
             <span className="visually-hidden"> (opens in a new tab)</span>
           </a>
         )}
-        {detail.attempts > 0 && <span className="muted">attempts: {detail.attempts}</span>}
+        {detail.attempts > 0 && (
+          <span className="muted">
+            <span className="visually-hidden">, </span>Attempts: {detail.attempts}
+          </span>
+        )}
         {detail.failedStage && (
-          <span className="bad">failed stage: {detail.failedStage}</span>
+          <span className="bad">
+            <span className="visually-hidden">, </span>Failed during {stageLabel(detail.failedStage)}
+          </span>
         )}
       </div>
 
@@ -168,23 +211,24 @@ export function RunDetailPage() {
 
       {result && (
         <>
-          <h2>Summary</h2>
-          <div className="card">
-            <p>{result.summary}</p>
-          </div>
+          {summary && (
+            <>
+              <h2>Summary</h2>
+              <div className="card">
+                <p>{summary}</p>
+              </div>
+            </>
+          )}
 
-          <h2 id="tasks-heading">Tasks ({result.tasks.length})</h2>
+          <h2>Tasks ({result.tasks.length})</h2>
           {result.tasks.length > 0 ? (
             /* Focusable for the same reason as the events log below: the
                container scrolls at narrow widths and high zoom, and without a
                tabindex a keyboard user cannot reach the columns it hides
-               (WCAG 2.1.1). */
-            <div
-              className="table-scroll"
-              tabIndex={0}
-              role="region"
-              aria-labelledby="tasks-heading"
-            >
+               (WCAG 2.1.1). No role="region" — the only name available to it is
+               the heading directly above, so the landmark added a second entry
+               to the landmark list that said what the heading already said. */
+            <div className="table-scroll" tabIndex={0}>
               <table className="tasks-table">
                 <caption className="visually-hidden">
                   Tasks extracted from this transcript
@@ -218,14 +262,15 @@ export function RunDetailPage() {
           <h2>Drafts ({result.drafts.length})</h2>
           {result.drafts.map((draft, index) => (
             <div key={index} className="card draft-card">
-              <div className="draft-headers">
-                <span>
-                  <strong>To:</strong> {draft.to || <span className="muted">(no address known)</span>}
-                </span>
-                <span>
-                  <strong>Subject:</strong> {draft.subject}
-                </span>
-              </div>
+              {/* A <strong> beside its value is a label only to someone who can
+                  see the two are adjacent. dt/dd makes the pairing programmatic
+                  (WCAG 1.3.1). */}
+              <dl className="draft-headers">
+                <dt>To:</dt>
+                <dd>{draft.to || <span className="muted">(no address known)</span>}</dd>
+                <dt>Subject:</dt>
+                <dd>{draft.subject}</dd>
+              </dl>
               <pre className="draft-body">{draft.body}</pre>
               {draft.reason && <p className="muted">Reason: {draft.reason}</p>}
             </div>
@@ -235,6 +280,12 @@ export function RunDetailPage() {
       )}
 
       <h2 id="events-heading">Events</h2>
+      {/* The log prints stage names and raw JSON details. That is what it is
+          for, but a region users can navigate into should say so before they
+          arrive rather than leave them to work it out from the contents. */}
+      <p className="muted" id="events-note">
+        Diagnostic record of the pipeline, oldest first. Technical detail is shown as raw JSON.
+      </p>
       {/* Focusable so the capped-height scroller can be reached and scrolled
           with the keyboard (2.1.1). */}
       <div
@@ -242,6 +293,7 @@ export function RunDetailPage() {
         tabIndex={0}
         role="region"
         aria-labelledby="events-heading"
+        aria-describedby="events-note"
       >
         {detail.events.map((event, index) => (
           <div key={index} className="event-row">

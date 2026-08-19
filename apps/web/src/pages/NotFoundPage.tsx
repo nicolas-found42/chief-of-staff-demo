@@ -21,7 +21,11 @@ export function NotFoundPage() {
         run that has since been removed.
       </p>
       <p>
-        <Link to="/" className="back-link">&larr; All runs</Link>
+        {/* Decorative: exposed, it is read as "left arrow" ahead of the link
+            text (WCAG 1.3.1). */}
+        <Link to="/" className="back-link">
+          <span aria-hidden="true">&larr;</span> All runs
+        </Link>
       </p>
     </div>
   );

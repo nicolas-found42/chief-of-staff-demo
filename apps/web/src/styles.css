@@ -386,11 +386,15 @@ tr:last-child td {
    convenience layered on top of it. */
 .run-link {
   display: inline-block;
+  max-width: 100%;
   /* Matches .back-link: 44px tall, the bar the rest of the app is held to. */
   padding: 0.7rem 0;
   color: var(--accent);
   font-weight: 600;
-  white-space: nowrap;
+  /* The link names the run by its filename now. Those are long and have no
+     spaces to break at, so they break anywhere rather than forcing the row
+     wider than the cell that caps it. */
+  overflow-wrap: anywhere;
 }
 
 /* A button that reads as inline text, used for the dropzone's file picker. */
@@ -416,6 +420,13 @@ tr:last-child td {
 .run-file-name {
   max-width: 340px;
   overflow-wrap: anywhere;
+}
+
+/* The filename cell holds the link, and the link carries 0.7rem of padding to
+   reach a 44px target. Against the shared `vertical-align: top` that left it
+   sitting a line lower than every other cell in its own row. */
+.run-row td {
+  vertical-align: middle;
 }
 
 .ok {
@@ -529,6 +540,23 @@ tr:last-child td {
   margin: 0.25rem 0;
 }
 
+/* The heading keeps its place as the first thing in the page; the control
+   that replaced the endless poll sits beside it rather than after the list it
+   refreshes. */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  /* Carries the margin the <h1> gave up so the gap below is unchanged. */
+  margin-bottom: 0.75rem;
+}
+
+.page-head h1 {
+  margin-bottom: 0;
+}
+
 .run-meta {
   display: flex;
   align-items: center;
@@ -547,10 +575,19 @@ tr:last-child td {
 }
 
 .draft-card .draft-headers {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin-bottom: 0.5rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.15rem 0.4rem;
+  margin: 0 0 0.5rem;
+}
+
+.draft-card .draft-headers dt {
+  font-weight: 700;
+}
+
+.draft-card .draft-headers dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .draft-body {

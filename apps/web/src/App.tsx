@@ -3,8 +3,14 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { useIsLoadedEntry } from "./usePageFocus";
 
 export function App() {
+  // Records the history entry the browser loaded, before any route can navigate
+  // off it. Asked for here rather than in the pages so the capture cannot depend
+  // on which route happened to match first.
+  useIsLoadedEntry();
+
   return (
     <div className="app-shell">
       {/* Bypass block: off-screen until focused. The landmark set already

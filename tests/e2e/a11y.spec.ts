@@ -13,7 +13,7 @@ async function openRun(page: Page): Promise<void> {
   await page.goto("/");
   await page.setInputFiles('input[type="file"]', sampleTranscript);
   await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
-  await expect(page.locator(".status-pill")).toHaveText("failed", { timeout: 15_000 });
+  await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
 }
 
 /** Reports the element that currently holds focus, or a marker if it was dropped. */
@@ -227,12 +227,19 @@ test("drag-selecting a filename copies it instead of opening the run", async ({ 
   // selection and removing the move-away-to-abort escape (WCAG 2.5.2).
   await openRun(page);
   await page.goto("/");
+  // The filename is the link now. A press that starts on an anchor begins no
+  // selection in any browser, so the drag starts in the cell's padding beside
+  // it — which is where a selection starts anyway — and ends over the link, so
+  // the click still lands on the row.
   const cell = page.locator(".run-file-name").first();
+  const link = page.locator(".run-file-name .run-link").first();
   const box = (await cell.boundingBox())!;
-  await page.mouse.move(box.x + 14, box.y + 12);
+  const linkBox = (await link.boundingBox())!;
+  const mid = linkBox.y + linkBox.height / 2;
+  await page.mouse.move(box.x + 3, mid);
   await page.mouse.down();
-  for (let x = box.x + 20; x < box.x + box.width - 14; x += 8) {
-    await page.mouse.move(x, box.y + 12);
+  for (let x = box.x + 8; x < linkBox.x + linkBox.width - 4; x += 8) {
+    await page.mouse.move(x, mid);
     await page.waitForTimeout(5);
   }
   await page.mouse.up();
@@ -377,6 +384,68 @@ test("changing route moves focus into the page it opened", async ({ page }) => {
 
   await page.getByRole("link", { name: "Runs" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Runs" })).toBeFocused();
+});
+
+test("a direct load of a run leaves the header in front of the user", async ({ page }) => {
+  // The suite always reached a run by clicking, which is the one path where
+  // moving focus to the heading is right. On the entry the browser itself
+  // loaded — a bookmark, a refresh, a shared URL — focus already sits above the
+  // skip link, and moving it down to the heading put the skip link, both nav
+  // links and "All runs" permanently behind the user (WCAG 2.4.3, 2.4.1).
+  await openRun(page);
+  const runUrl = page.url();
+
+  await page.goto(runUrl);
+  const heading = page.locator("h1.run-title");
+  await expect(heading).toBeVisible();
+  await expect(heading).not.toBeFocused();
+
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".skip-link")).toBeFocused();
+
+  // Everything the old behaviour skipped past, still in front of the user.
+  for (const name of ["Runs", "Settings"]) {
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name, exact: true })).toBeFocused();
+  }
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: /all runs/i })).toBeFocused();
+
+  // Reaching the same run by clicking still moves focus into the page, which is
+  // the case the guard must not break.
+  await page.goto("/");
+  await page.locator(".run-link").first().click();
+  await expect(heading).toBeFocused();
+});
+
+test("the runs list stops updating itself once nothing can change", async ({ page }) => {
+  // The list polled every 3s for as long as it was open, with no pause, stop or
+  // hide control — including when every run was terminal and the requests could
+  // not return anything new (WCAG 2.2.2).
+  await openRun(page);
+
+  let lists = 0;
+  await page.route("**/api/runs", async (route) => {
+    if (route.request().method() === "GET") {
+      lists += 1;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await expect(page.getByTestId("runs-table")).toBeVisible();
+  // The precondition the fix keys off: nothing left that a poll could change.
+  await expect(page.locator(".status-active")).toHaveCount(0);
+  const settled = lists;
+
+  await page.waitForTimeout(7000);
+  expect(lists - settled, "the list kept polling with every run terminal").toBe(0);
+
+  // Runs also arrive from the watch folder and from a Fireflies sync, so the
+  // idle list keeps a way to ask — otherwise stopping the poll would make them
+  // unreachable rather than merely un-announced.
+  await page.getByRole("button", { name: "Check for new runs" }).click();
+  await expect.poll(() => lists - settled).toBe(1);
 });
 
 test("a skip link bypasses the header", async ({ page }) => {

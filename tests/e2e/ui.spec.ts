@@ -18,7 +18,8 @@ test("upload → run detail shows extraction; google_not_connected path visible"
 
   // The mock provider answers instantly; the run then fails at the outputs
   // stage because Google is not connected in the e2e workspace.
-  await expect(page.locator(".status-pill")).toHaveText("failed", { timeout: 15_000 });
+  // The pill shows prose, not the stored token (WCAG 3.1.3).
+  await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
 
   // Extraction result is still rendered.
   await expect(page.locator("h2", { hasText: "Summary" })).toBeVisible();
@@ -26,7 +27,13 @@ test("upload → run detail shows extraction; google_not_connected path visible"
   await expect(page.locator(".tasks-table tbody tr")).toHaveCount(3);
   await expect(page.locator(".tasks-table").getByRole("cell", { name: "Priya", exact: true })).toBeVisible();
   await expect(page.locator(".draft-card")).toHaveCount(1);
-  await expect(page.locator(".draft-card").getByText("Subject: Updated Q3 pricing ahead of your board meeting")).toBeVisible();
+  // Header and value are a dt/dd pair, so the label is associated rather than
+  // merely adjacent — the value is read from the <dd> that follows its term.
+  const subject = page.locator(".draft-headers dt", { hasText: "Subject:" });
+  await expect(subject).toBeVisible();
+  await expect(subject.locator("+ dd")).toHaveText(
+    "Updated Q3 pricing ahead of your board meeting"
+  );
 
   // The google_not_connected path is visible in the events timeline.
   await expect(page.locator(".events-log")).toContainText("google_not_connected");
