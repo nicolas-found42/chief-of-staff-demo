@@ -16,6 +16,10 @@ One workflow, presented as a tab. A Module contributes what is specific to its w
 relies on the Shell for everything generic.
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
 
+**Hot Take**:
+A planned Module that turns a link or transcript into a draft LinkedIn post. Its Runs, Intakes, and Output Adapters are not yet implemented.
+_Status_: planned
+
 **Run**:
 One execution of one Module, with a status, a persisted result, and an append-only event log.
 _Avoid_: Job, task (a Task is a Google Task), execution

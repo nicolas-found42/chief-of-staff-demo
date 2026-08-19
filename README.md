@@ -1,9 +1,8 @@
-# transcript-found42 — Transcript → Tasks
+# chief-of-staff-demo — Found42 — Chief of Staff
 
-A local web app that turns meeting transcripts into Google Tasks and Gmail drafts. It reproduces
-the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine)
-workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you
-run on your own machine.
+A local web app that hosts Found42's meeting and content workflows as tabs in one app. The first Module, **Transcript → Tasks**, turns meeting transcripts into Google Tasks and Gmail drafts. It reproduces the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine) workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you run on your own machine.
+
+> **Note:** This repo was `transcript-found42`. The GitHub slug now 301s to `chief-of-staff-demo`. Package scope `@transcript-tasks/*` is unchanged in this slice — see `TODO` in `apps/web/src/App.tsx`.
 
 Single user, local only. **Drafts are created and mail is never sent** — enforced structurally:
 the Gmail module only ever calls `drafts.create`, and a unit test greps its source to keep it that

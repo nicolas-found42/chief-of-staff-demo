@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { HotTakePage } from "./pages/HotTakePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
@@ -21,11 +22,17 @@ export function App() {
         Skip to main content
       </a>
       <header className="app-header">
-        <div className="app-title">Transcript → Tasks</div>
-        <nav>
+        {/* TODO: rename package scope @transcript-tasks → @chief-of-staff when slug rename lands */}
+        <div className="app-title">Found42 — Chief of Staff</div>
+        <nav aria-label="Modules">
           <NavLink to="/" end>
-            Runs
+            Transcript → Tasks
           </NavLink>
+          <NavLink to="/hot-take">
+            Hot Take
+          </NavLink>
+        </nav>
+        <nav aria-label="Settings">
           <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
@@ -33,6 +40,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<RunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
+          <Route path="/hot-take" element={<HotTakePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

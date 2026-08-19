@@ -114,6 +114,7 @@ test("every route is free of axe violations", async ({ page }) => {
   for (const path of [
     "/",
     runUrl,
+    "/hot-take",
     "/settings",
     "/settings?google=connected",
     "/settings?google=error",
@@ -382,7 +383,7 @@ test("changing route moves focus into the page it opened", async ({ page }) => {
   await expect(page.getByLabel("Task list name")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
 
-  await page.getByRole("link", { name: "Runs" }).click();
+  await page.getByRole("link", { name: "Transcript → Tasks" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Runs" })).toBeFocused();
 });
 
@@ -404,7 +405,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
   await expect(page.locator(".skip-link")).toBeFocused();
 
   // Everything the old behaviour skipped past, still in front of the user.
-  for (const name of ["Runs", "Settings"]) {
+  for (const name of ["Transcript → Tasks", "Hot Take", "Settings"]) {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name, exact: true })).toBeFocused();
   }
