@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
 /**
@@ -9,9 +10,12 @@ import { useTitle } from "../useTitle";
  */
 export function NotFoundPage() {
   useTitle("Page not found");
+  const headingRef = usePageFocus<HTMLHeadingElement>();
   return (
     <div className="page">
-      <h1>Page not found</h1>
+      <h1 ref={headingRef} tabIndex={-1}>
+        Page not found
+      </h1>
       <p className="muted">
         That address doesn&rsquo;t match a run or a settings page. It may be a mistyped link, or a
         run that has since been removed.

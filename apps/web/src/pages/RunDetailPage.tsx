@@ -173,9 +173,18 @@ export function RunDetailPage() {
             <p>{result.summary}</p>
           </div>
 
-          <h2>Tasks ({result.tasks.length})</h2>
+          <h2 id="tasks-heading">Tasks ({result.tasks.length})</h2>
           {result.tasks.length > 0 ? (
-            <div className="table-scroll">
+            /* Focusable for the same reason as the events log below: the
+               container scrolls at narrow widths and high zoom, and without a
+               tabindex a keyboard user cannot reach the columns it hides
+               (WCAG 2.1.1). */
+            <div
+              className="table-scroll"
+              tabIndex={0}
+              role="region"
+              aria-labelledby="tasks-heading"
+            >
               <table className="tasks-table">
                 <caption className="visually-hidden">
                   Tasks extracted from this transcript

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ProviderId } from "@transcript-tasks/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
+import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
 const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
@@ -29,11 +30,18 @@ interface FormState {
 
 export function SettingsPage() {
   useTitle("Settings");
+  const headingRef = usePageFocus<HTMLHeadingElement>();
   const [payload, setPayload] = useState<ConfigPayload | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /* One flag per action, not one for the page: a shared flag marks controls
+     aria-disabled during a request they have nothing to do with, so a screen
+     reader reports them as unavailable when they are not (WCAG 4.1.2). */
+  const [saving, setSaving] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [modelNotice, setModelNotice] = useState("");
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
@@ -81,7 +89,9 @@ export function SettingsPage() {
   if (!form || !payload) {
     return (
       <div className="page">
-        <h1>Settings</h1>
+        <h1 ref={headingRef} tabIndex={-1}>
+          Settings
+        </h1>
         {error ? (
           <div className="banner banner-error" role="alert">
             {error}
@@ -109,28 +119,30 @@ export function SettingsPage() {
   };
 
   const changeProvider = (provider: ProviderId) => {
-    setForm((current) => {
-      if (!current) {
-        return current;
-      }
-      const defaults = payload.defaults;
-      const previousDefault = Object.values(defaults).includes(current.model);
-      const model = current.model === "" || previousDefault ? defaults[provider] ?? "" : current.model;
-      return { ...current, provider, model };
-    });
+    const defaults = payload.defaults;
+    const previousDefault = Object.values(defaults).includes(form.model);
+    const model = form.model === "" || previousDefault ? defaults[provider] ?? "" : form.model;
+    setForm((current) => (current ? { ...current, provider, model } : current));
+    // Changing Provider rewrites a field the user did not touch. Sighted users
+    // watch it happen; everyone else needs it said (WCAG 3.2.2).
+    setModelNotice(
+      model === form.model ? "" : model ? `Model changed to ${model}.` : "Model cleared."
+    );
     setSaved(false);
   };
 
   const save = async () => {
-    if (busy) {
+    if (saving) {
       return;
     }
     if (pollInvalid) {
       setError("Poll interval must be a whole number of minutes, 1 or more.");
-      document.getElementById("poll-interval")?.focus();
+      // Moving focus in the same frame the role="alert" mounts can cut the
+      // announcement short; the next frame lets it start first (WCAG 3.3.1).
+      requestAnimationFrame(() => document.getElementById("poll-interval")?.focus());
       return;
     }
-    setBusy(true);
+    setSaving(true);
     setError(null);
     try {
       const update: Record<string, unknown> = {
@@ -177,30 +189,30 @@ export function SettingsPage() {
     } catch (err) {
       setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   };
 
   const connectGoogle = async () => {
-    if (busy) {
+    if (connecting) {
       return;
     }
-    setBusy(true);
+    setConnecting(true);
     setError(null);
     try {
       const { authUrl } = await api.googleConnect();
       window.location.assign(authUrl);
     } catch (err) {
       setError(errorMessage(err));
-      setBusy(false);
+      setConnecting(false);
     }
   };
 
   const syncFireflies = async () => {
-    if (busy) {
+    if (syncing) {
       return;
     }
-    setBusy(true);
+    setSyncing(true);
     setSyncResult(null);
     setError(null);
     try {
@@ -209,7 +221,7 @@ export function SettingsPage() {
     } catch (err) {
       setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      setSyncing(false);
     }
   };
 
@@ -221,7 +233,9 @@ export function SettingsPage() {
 
   return (
     <div className="page">
-      <h1>Settings</h1>
+      <h1 ref={headingRef} tabIndex={-1}>
+        Settings
+      </h1>
 
       {googleBanner === "connected" && (
         <div className="banner banner-ok" role="status">
@@ -283,6 +297,9 @@ export function SettingsPage() {
                 {payload.defaults[form.provider]
                   ? `Default for this provider: ${payload.defaults[form.provider]}`
                   : "Enter the model id to use."}
+              </p>
+              <p className="visually-hidden" role="status">
+                {modelNotice}
               </p>
             </div>
             <div className="field">
@@ -356,7 +373,7 @@ export function SettingsPage() {
                 <span className="muted">Not connected</span>
               )}
             </span>
-            <button type="button" onClick={connectGoogle} aria-disabled={busy}>
+            <button type="button" onClick={connectGoogle} aria-disabled={connecting}>
               Connect Google
             </button>
           </div>
@@ -419,7 +436,7 @@ export function SettingsPage() {
             </label>
           </div>
           <div className="field-row">
-            <button type="button" onClick={syncFireflies} aria-disabled={busy}>
+            <button type="button" onClick={syncFireflies} aria-disabled={syncing}>
               Sync now
             </button>
             <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
@@ -458,8 +475,8 @@ export function SettingsPage() {
         </div>
 
         <div className="field-row">
-          <button type="submit" className="primary" aria-disabled={busy}>
-            {busy ? "Saving…" : "Save settings"}
+          <button type="submit" className="primary" aria-disabled={saving}>
+            {saving ? "Saving…" : "Save settings"}
           </button>
         </div>
       </form>

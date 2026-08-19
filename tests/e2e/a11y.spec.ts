@@ -27,6 +27,86 @@ function activeDescription(page: Page): Promise<string> {
   });
 }
 
+/**
+ * Rendered contrast for every control currently marked busy: label against its
+ * own fill, border and focus ring against whatever paints behind it. axe cannot
+ * do this — it does not evaluate opacity-composited colour.
+ */
+function busyControls(page: Page) {
+  return page.evaluate(() => {
+    const channel = (c: number) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    const luminance = (color: string) => {
+      const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+    const ratio = (fg: string, bg: string) => {
+      const a = luminance(fg);
+      const b = luminance(bg);
+      const [hi, lo] = a > b ? [a, b] : [b, a];
+      return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+    };
+    const transparent = (color: string) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+    const backdrop = (el: Element) => {
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        const bg = getComputedStyle(node).backgroundColor;
+        if (!transparent(bg)) {
+          return bg;
+        }
+      }
+      return "rgb(255, 255, 255)";
+    };
+    return [...document.querySelectorAll('button[aria-disabled="true"]')].map((el) => {
+      const style = getComputedStyle(el);
+      const behind = backdrop(el);
+      return {
+        text: (el.textContent ?? "").trim(),
+        opacity: style.opacity,
+        label: ratio(style.color, transparent(style.backgroundColor) ? behind : style.backgroundColor),
+        border: style.borderTopStyle === "none" ? null : ratio(style.borderTopColor, behind),
+        ring: style.outlineStyle === "none" ? null : ratio(style.outlineColor, behind),
+      };
+    });
+  });
+}
+
+/** Asserts the busy state is drawn, not dimmed: nothing falls under its floor. */
+function expectLegible(
+  controls: { text: string; opacity: string; label: number; border: number | null; ring: number | null }[]
+) {
+  expect(controls.length).toBeGreaterThan(0);
+  for (const control of controls) {
+    expect(control.opacity, `${control.text} is dimmed by opacity`).toBe("1");
+    expect(control.label, `${control.text} label`).toBeGreaterThanOrEqual(4.5);
+    if (control.border !== null) {
+      expect(control.border, `${control.text} border`).toBeGreaterThanOrEqual(3);
+    }
+    if (control.ring !== null) {
+      expect(control.ring, `${control.text} focus ring`).toBeGreaterThanOrEqual(3);
+    }
+  }
+}
+
+/** Holds a request open so the transient busy state can be inspected. */
+async function stall(route: { continue: () => Promise<void> }): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await route.continue();
+}
+
+/** Scroll containers that genuinely overflow but carry no tabindex. */
+function unreachableScrollers(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll(".table-scroll, .events-log, .artifact-pre")]
+      .filter((el) => {
+        const overflows = el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight;
+        return overflows && (el as HTMLElement).tabIndex < 0;
+      })
+      .map((el) => `${el.className} ${el.scrollWidth}>${el.clientWidth}`)
+  );
+}
+
 test("every route is free of axe violations", async ({ page }) => {
   await openRun(page);
   const runUrl = page.url();
@@ -82,6 +162,102 @@ test("busy buttons keep focus instead of dropping it to the body", async ({ page
   await sync.click();
   await expect(page.locator(".banner-error")).toBeVisible();
   await expect(sync).toBeFocused();
+});
+
+test("a busy control is styled, not dimmed, and only the pressed one is busy", async ({
+  page,
+}) => {
+  // opacity composites label, border and focus ring alike; at 0.55 all three
+  // dropped under their floors on controls that stay focusable and keep showing
+  // live status text (WCAG 1.4.3, 1.4.11, 2.4.7).
+  await page.route("**/api/config", async (route) => {
+    if (route.request().method() === "PUT") {
+      await stall(route);
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/settings");
+
+  // dispatchEvent, not click(): click() on a submit button does not resolve
+  // until the stalled request finishes, by which time the state is gone.
+  const save = page.locator('button[type="submit"]');
+  await save.focus();
+  await save.dispatchEvent("click");
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  const saving = await busyControls(page);
+  expectLegible(saving);
+  // Finding 5: a page-level busy flag reported all three buttons as disabled.
+  expect(saving.map((control) => control.text)).toEqual(["Saving…"]);
+  await expect(save).toHaveAttribute("aria-disabled", "false", { timeout: 15_000 });
+
+  await page.route("**/api/fireflies/sync", stall);
+  const sync = page.getByRole("button", { name: "Sync now" });
+  await sync.focus();
+  await sync.dispatchEvent("click");
+  await expect(sync).toHaveAttribute("aria-disabled", "true");
+  const syncing = await busyControls(page);
+  expectLegible(syncing);
+  expect(syncing.map((control) => control.text)).toEqual(["Sync now"]);
+});
+
+test("busy controls on tinted surfaces clear their floors too", async ({ page }) => {
+  // The Retry button sits on the error banner and the file picker on the
+  // dropzone, so both are measured against a backdrop that is not the page.
+  await openRun(page);
+  await page.route("**/retry", stall);
+  const retry = page.getByRole("button", { name: /retry/i });
+  await retry.focus();
+  await retry.dispatchEvent("click");
+  await expect(retry).toHaveAttribute("aria-disabled", "true");
+  expectLegible(await busyControls(page));
+
+  await page.route("**/api/runs/upload", stall);
+  await page.goto("/");
+  const picker = page.locator(".dropzone .linklike");
+  await picker.focus();
+  await page.setInputFiles('input[type="file"]', sampleTranscript);
+  await expect(picker).toHaveText("Uploading…");
+  expectLegible(await busyControls(page));
+});
+
+test("drag-selecting a filename copies it instead of opening the run", async ({ page }) => {
+  // The row's onClick fires on the common ancestor of mousedown and mouseup, so
+  // a drag to select text landed on the row and navigated, discarding the
+  // selection and removing the move-away-to-abort escape (WCAG 2.5.2).
+  await openRun(page);
+  await page.goto("/");
+  const cell = page.locator(".run-file-name").first();
+  const box = (await cell.boundingBox())!;
+  await page.mouse.move(box.x + 14, box.y + 12);
+  await page.mouse.down();
+  for (let x = box.x + 20; x < box.x + box.width - 14; x += 8) {
+    await page.mouse.move(x, box.y + 12);
+    await page.waitForTimeout(5);
+  }
+  await page.mouse.up();
+
+  expect(await page.evaluate(() => window.getSelection()?.toString())).not.toBe("");
+  expect(new URL(page.url()).pathname, "drag-select navigated away").toBe("/");
+
+  // The row is still a pointer target when there is nothing selected. (A click
+  // that lands inside the selection dismisses it first — Chrome holds the
+  // selection through mousedown so the text can be dragged — so it takes the
+  // second click to navigate, which is how every selection-guarded row behaves.)
+  await page.goto("/");
+  await page.locator(".run-row").first().click();
+  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+});
+
+test("switching provider announces the model it rewrote", async ({ page }) => {
+  // The Model field is rewritten by a control the user did touch; a sighted user
+  // sees it happen and everyone else needs it said (WCAG 3.2.2).
+  await page.goto("/settings");
+  const notice = page.locator('.field p[role="status"]');
+  await expect(notice).toHaveText("");
+  await page.getByLabel("Provider", { exact: true }).selectOption("anthropic");
+  await expect(notice).toContainText(/^Model (changed to .+|cleared)\.$/);
+  await expect(page.getByLabel("Model")).not.toHaveValue("");
 });
 
 test("retrying a run hands focus to the heading when the button unmounts", async ({ page }) => {
@@ -148,22 +324,70 @@ test("the poll interval reports its error in the page, not a transient bubble", 
   await expect(page.locator("#poll-interval-error")).toHaveCount(0);
 });
 
-test("the file input's description survives an upload in flight", async ({ page }) => {
+test("the file picker button keeps its instructions, and its focus, mid-upload", async ({
+  page,
+}) => {
   await page.goto("/");
+  // The description has to hang off the button, not the file input: the input is
+  // hidden, so it computes to display:none and never reaches the accessibility
+  // tree — an aria-describedby there is inert (WCAG 3.3.2).
+  const picker = page.locator(".dropzone .linklike");
+  await expect(picker).toHaveAttribute("aria-describedby", "upload-formats");
+
   // Hold the upload open so the in-flight render can be inspected.
   await page.route("**/api/runs/upload", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await route.continue();
   });
+  await picker.focus();
   await page.setInputFiles('input[type="file"]', sampleTranscript);
 
   await expect(page.locator(".dropzone")).toContainText("Uploading…");
-  const described = await page
-    .locator('input[type="file"]')
-    .getAttribute("aria-describedby");
-  expect(described).toBe("upload-formats");
-  // The referenced element must still exist, or the input loses its description.
+  // Unmounting the control mid-upload would drop focus to <body> (WCAG 2.4.3).
+  await expect(picker).toBeFocused();
+  expect(await activeDescription(page)).not.toBe("<body — focus lost>");
+  await expect(picker).toHaveAttribute("aria-describedby", "upload-formats");
+  // The referenced element must still exist, or the button loses its description.
   await expect(page.locator("#upload-formats")).toHaveCount(1);
+});
+
+test("every container that scrolls can be reached by keyboard", async ({ page }) => {
+  // 320px is where the 34rem tables genuinely overflow — the same place a 400%
+  // zoom user lives. Without a tabindex the Status and Tasks columns are
+  // unreachable without a pointer (WCAG 2.1.1).
+  await page.setViewportSize({ width: 320, height: 720 });
+  await openRun(page);
+  await page.locator("details summary").click();
+  expect(await unreachableScrollers(page), "run detail").toEqual([]);
+
+  await page.goto("/");
+  await expect(page.getByTestId("runs-table")).toBeVisible();
+  expect(await unreachableScrollers(page), "runs list").toEqual([]);
+});
+
+test("changing route moves focus into the page it opened", async ({ page }) => {
+  // Without this a screen reader user hears nothing between activating the nav
+  // link and exploring the new page for themselves (WCAG 2.4.3 / 4.1.3).
+  await page.goto("/");
+  await page.getByRole("link", { name: "Settings" }).click();
+  // Asserted after the form replaces the loading branch: the heading is focused
+  // while Settings is still loading, so focus has to survive that swap.
+  await expect(page.getByLabel("Task list name")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
+
+  await page.getByRole("link", { name: "Runs" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Runs" })).toBeFocused();
+});
+
+test("a skip link bypasses the header", async ({ page }) => {
+  // The entry the browser loaded keeps focus at the top of the document, so the
+  // first Tab reaches the skip link rather than starting past it.
+  await page.goto("/settings");
+  await page.keyboard.press("Tab");
+  const skip = page.locator(".skip-link");
+  await expect(skip).toBeFocused();
+  await skip.press("Enter");
+  await expect(page.locator("main#main")).toBeFocused();
 });
 
 test("the whole dropzone is a pointer target, not just the inline button", async ({ page }) => {
@@ -191,7 +415,8 @@ test("interactive controls meet a 44px target size", async ({ page }) => {
   await page.goto("/settings");
   const undersized = await page.evaluate(() => {
     const out: string[] = [];
-    const selector = 'button:not(.linklike), select, input:not([type="checkbox"]), .checkbox-label';
+    const selector =
+      'a[href], button:not(.linklike), select, input:not([type="checkbox"]), .checkbox-label';
     for (const el of document.querySelectorAll(selector)) {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) {

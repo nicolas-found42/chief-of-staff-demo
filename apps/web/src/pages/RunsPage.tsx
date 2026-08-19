@@ -3,16 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import type { RunSummary } from "@transcript-tasks/shared";
 import { SourceBadge, StatusPill, formatTime } from "../components/StatusPill";
 import { api, errorMessage } from "../client";
+import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
 const TERMINAL = new Set(["done", "skipped", "failed"]);
 
 export function RunsPage() {
   useTitle("Runs");
+  const headingRef = usePageFocus<HTMLHeadingElement>();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [liveReady, setLiveReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -31,6 +34,14 @@ export function RunsPage() {
     const timer = setInterval(refresh, 3000);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  // A live region only announces what arrives after it is mounted; text already
+  // present on the first paint is skipped (WCAG 4.1.3). This effect runs after
+  // that paint, so the status below is filled in as a change rather than as
+  // initial content.
+  useEffect(() => {
+    setLiveReady(true);
+  }, []);
 
   const upload = async (files: File[]) => {
     if (files.length === 0) {
@@ -60,7 +71,9 @@ export function RunsPage() {
 
   return (
     <div className="page">
-      <h1>Runs</h1>
+      <h1 id="runs-heading" ref={headingRef} tabIndex={-1}>
+        Runs
+      </h1>
 
       {/* Clicking anywhere in the zone opens the picker — the pointer cursor
           promised that already. The button remains the keyboard route, so this
@@ -81,27 +94,33 @@ export function RunsPage() {
           void upload(Array.from(event.dataTransfer.files));
         }}
       >
-        {uploading ? (
-          <p>Uploading…</p>
-        ) : (
-          <p>
-            <strong>Drop transcripts here</strong> or{" "}
-            <button
-              type="button"
-              className="linklike"
-              onClick={(event) => {
-                // The zone's own handler would otherwise open the picker twice.
-                event.stopPropagation();
-                inputRef.current?.click();
-              }}
-            >
-              choose files
-            </button>
-          </p>
-        )}
-        {/* Outside the branch above: the file input references this id
-            permanently, so removing it mid-upload would leave the reference
-            dangling (WCAG 4.1.2). */}
+        {/* The button stays mounted for the whole upload and swaps its label:
+            unmounting the control the user just activated drops focus to
+            <body> and throws them to the top of the document (WCAG 2.4.3),
+            which is the same reason these controls use aria-disabled rather
+            than the disabled attribute. */}
+        <p>
+          <strong>Drop transcripts here</strong> or{" "}
+          <button
+            type="button"
+            className="linklike"
+            aria-describedby="upload-formats"
+            aria-disabled={uploading}
+            onClick={(event) => {
+              // The zone's own handler would otherwise open the picker twice.
+              event.stopPropagation();
+              if (uploading) {
+                return;
+              }
+              inputRef.current?.click();
+            }}
+          >
+            {uploading ? "Uploading…" : "choose files"}
+          </button>
+        </p>
+        {/* The description belongs on the button: the file input is hidden, so
+            it computes to display:none and is absent from the accessibility
+            tree — anything bound to it is inert (WCAG 3.3.2). */}
         <p className="muted" id="upload-formats">
           .txt · .md · .json (Fireflies export) · .pdf · .docx — up to 10 MB each
         </p>
@@ -112,7 +131,6 @@ export function RunsPage() {
           accept=".txt,.md,.json,.pdf,.docx"
           hidden
           aria-label="Choose transcript files"
-          aria-describedby="upload-formats"
           onChange={(event) => {
             void upload(Array.from(event.target.files ?? []));
             event.target.value = "";
@@ -127,10 +145,18 @@ export function RunsPage() {
       )}
 
       <p className="visually-hidden" role="status">
-        {uploading ? "Uploading transcripts…" : listStatus}
+        {liveReady ? (uploading ? "Uploading transcripts…" : listStatus) : ""}
       </p>
 
-      <div className="table-scroll">
+      {/* Focusable so the container can be scrolled with the keyboard at narrow
+          widths and high zoom, where the Status and Tasks columns are otherwise
+          unreachable (WCAG 2.1.1). */}
+      <div
+        className="table-scroll"
+        tabIndex={0}
+        role="region"
+        aria-labelledby="runs-heading"
+      >
         <table data-testid="runs-table">
           <caption className="visually-hidden">
             Transcript runs, newest first. Open a run from the link in its Created column.
@@ -151,7 +177,16 @@ export function RunsPage() {
                 data-testid="run-row"
                 data-run-id={run.id}
                 className="run-row"
-                onClick={() => navigate(`/runs/${run.id}`)}
+                onClick={() => {
+                  // A press that ends with text selected was a drag to select,
+                  // not a click on the row: navigating would discard the
+                  // selection and remove the "move away to abort" escape a
+                  // pointer user is entitled to (WCAG 2.5.2).
+                  if (!window.getSelection()?.isCollapsed) {
+                    return;
+                  }
+                  navigate(`/runs/${run.id}`);
+                }}
               >
                 <td>
                   {/* No aria-label: the row already supplies the filename in

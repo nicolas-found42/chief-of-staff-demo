@@ -7,6 +7,13 @@ import { SettingsPage } from "./pages/SettingsPage";
 export function App() {
   return (
     <div className="app-shell">
+      {/* Bypass block: off-screen until focused. The landmark set already
+          covers 2.4.1 for anyone navigating by landmark, but a magnifier user
+          without those shortcuts otherwise re-traverses the header on every
+          page. */}
+      <a className="skip-link" href="#main">
+        Skip to main content
+      </a>
       <header className="app-header">
         <div className="app-title">Transcript → Tasks</div>
         <nav>
@@ -16,7 +23,7 @@ export function App() {
           <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
-      <main className="app-main">
+      <main className="app-main" id="main" tabIndex={-1}>
         <Routes>
           <Route path="/" element={<RunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
