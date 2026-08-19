@@ -6,3 +6,4 @@ workspace/
 playwright-report/
 test-results/
 ACCESSIBILITY-AUDIT.md
+.archive/
