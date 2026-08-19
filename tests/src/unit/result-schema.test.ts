@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   ExtractionResultSchema,
   normalizeExtractionResult,
-} from "@transcript-tasks/shared";
+} from "@chief-of-staff-demo/shared";
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "../../fixtures");
 

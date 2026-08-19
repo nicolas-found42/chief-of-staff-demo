@@ -22,7 +22,6 @@ export function App() {
         Skip to main content
       </a>
       <header className="app-header">
-        {/* TODO: rename package scope @transcript-tasks → @chief-of-staff when slug rename lands */}
         <div className="app-title">Found42 — Chief of Staff</div>
         <nav aria-label="Modules">
           <NavLink to="/" end>

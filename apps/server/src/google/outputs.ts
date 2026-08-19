@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { AppConfig, DraftItem, ExtractionResult, TaskItem } from "@transcript-tasks/shared";
+import type { AppConfig, DraftItem, ExtractionResult, TaskItem } from "@chief-of-staff-demo/shared";
 import { googleConnected as isConnected } from "../config.js";
 import { buildGoogleAuth, type GoogleAuth } from "./oauth.js";
 import { createGmailDraft, gmailDraftInput } from "./gmail.js";

@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "googleapis-common";
-import type { AppConfig } from "@transcript-tasks/shared";
+import type { AppConfig } from "@chief-of-staff-demo/shared";
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/tasks",

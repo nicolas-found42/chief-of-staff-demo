@@ -1,4 +1,4 @@
-import type { RedactedConfig, RunDetail, RunSummary } from "@transcript-tasks/shared";
+import type { RedactedConfig, RunDetail, RunSummary } from "@chief-of-staff-demo/shared";
 
 export class ApiError extends Error {
   constructor(

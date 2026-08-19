@@ -4,7 +4,7 @@ import {
   type ProviderId,
   DEFAULT_OLLAMA_BASE_URL,
   ExtractionWireSchema,
-} from "@transcript-tasks/shared";
+} from "@chief-of-staff-demo/shared";
 
 export interface LlmConfig {
   provider: ProviderId;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { RunDetail } from "@transcript-tasks/shared";
+import type { RunDetail } from "@chief-of-staff-demo/shared";
 import {
   SourceBadge,
   StatusPill,

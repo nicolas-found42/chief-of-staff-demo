@@ -10,4 +10,4 @@ Home is the Shell's tab bar, not a dashboard. The Transcript Module owns `/` and
 
 ## Consequences
 
-`Settings` stays in the Shell header, not in the tab bar. Tab active state reuses `NavLink` styling with a `role="tablist"` wrapper. Package scope `@transcript-tasks/*` is unchanged in this slice; the GitHub slug rename to `chief-of-staff-demo` is a separate Settings click that 301s the old slug.
+`Settings` stays in the Shell header, not in the tab bar. Tab active state reuses `NavLink` styling. Package scope was renamed to `@chief-of-staff-demo/*` in this slice; the GitHub slug rename to `chief-of-staff-demo` is a separate Settings click that 301s the old slug.

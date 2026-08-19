@@ -16,7 +16,7 @@ import {
   type RunMeta,
   type RunSourceType,
   type RunSummary,
-} from "@transcript-tasks/shared";
+} from "@chief-of-staff-demo/shared";
 import { isRunId, newRunId, workspaceLayout } from "./paths.js";
 
 export interface RunAttendee {

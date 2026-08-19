@@ -1,4 +1,4 @@
-import type { AppConfig } from "@transcript-tasks/shared";
+import type { AppConfig } from "@chief-of-staff-demo/shared";
 import type { RunSourceSpec } from "../pipeline/run.js";
 import { sentencesToText } from "../text/convert.js";
 import { loadState, saveState } from "../state.js";

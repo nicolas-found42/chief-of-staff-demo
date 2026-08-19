@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@transcript-tasks/shared": fileURLToPath(
+      "@chief-of-staff-demo/shared": fileURLToPath(
         new URL("../packages/shared/src/index.ts", import.meta.url)
       ),
     },

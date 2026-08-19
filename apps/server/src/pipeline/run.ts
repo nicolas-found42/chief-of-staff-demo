@@ -3,7 +3,7 @@ import {
   type RunMeta,
   type RunSourceType,
   normalizeExtractionResult,
-} from "@transcript-tasks/shared";
+} from "@chief-of-staff-demo/shared";
 import { type CompleteJson } from "../llm/providers.js";
 import { buildExtractionMessages, type RunPromptContext } from "../llm/prompt.js";
 import type { GoogleOutputs } from "../google/outputs.js";

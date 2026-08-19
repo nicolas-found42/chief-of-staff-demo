@@ -8,7 +8,7 @@ import {
   ConfigSchema,
   DEFAULT_MODELS,
   DEFAULT_OLLAMA_BASE_URL,
-} from "@transcript-tasks/shared";
+} from "@chief-of-staff-demo/shared";
 
 /** Recursively merge `patch` over `base`; missing keys keep the base value. */
 function deepMerge(base: unknown, patch: unknown): unknown {

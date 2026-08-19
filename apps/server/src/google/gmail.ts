@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { DraftItem } from "@transcript-tasks/shared";
+import type { DraftItem } from "@chief-of-staff-demo/shared";
 import type { GoogleAuth } from "./oauth.js";
 
 export interface GmailDraftInput {

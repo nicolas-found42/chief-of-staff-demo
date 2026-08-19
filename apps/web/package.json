@@ -1,5 +1,5 @@
 {
-  "name": "@transcript-tasks/web",
+  "name": "@chief-of-staff-demo/web",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@transcript-tasks/shared": "*",
+    "@chief-of-staff-demo/shared": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"

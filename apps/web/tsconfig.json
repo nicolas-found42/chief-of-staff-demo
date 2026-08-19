@@ -8,7 +8,7 @@
     "noEmit": true,
     "types": ["vite/client"],
     "paths": {
-      "@transcript-tasks/shared": ["../../packages/shared/src/index.ts"]
+      "@chief-of-staff-demo/shared": ["../../packages/shared/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]

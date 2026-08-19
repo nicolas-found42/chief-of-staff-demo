@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { ExtractionResult, TaskItem } from "@transcript-tasks/shared";
+import type { ExtractionResult, TaskItem } from "@chief-of-staff-demo/shared";
 import type { GoogleAuth } from "./oauth.js";
 
 /**

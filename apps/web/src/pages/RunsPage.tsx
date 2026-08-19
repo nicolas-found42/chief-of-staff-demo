@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { RunSummary } from "@transcript-tasks/shared";
+import type { RunSummary } from "@chief-of-staff-demo/shared";
 import { SourceBadge, StatusPill, formatTime } from "../components/StatusPill";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";

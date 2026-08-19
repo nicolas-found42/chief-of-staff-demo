@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
 import multipart from "@fastify/multipart";
-import { DEFAULT_MODELS } from "@transcript-tasks/shared";
+import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { makeCompleteJson } from "./llm/providers.js";
@@ -122,7 +122,7 @@ await registerApi(app, {
 
 await app.listen({ port, host });
 console.log(
-  `transcript-found42 listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
+  `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
 );
 
 fireflies.start();

@@ -1,9 +1,9 @@
 {
-  "name": "transcript-found42",
+  "name": "chief-of-staff-demo",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local web app that turns meeting transcripts into Google Tasks and Gmail drafts (drafts only, never sent).",
+  "description": "Local web app that hosts Found42's meeting and content workflows as tabs in one app.",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -14,12 +14,12 @@
     "tests"
   ],
   "scripts": {
-    "build": "tsc -b packages/shared apps/server && npm run build --workspace @transcript-tasks/web",
-    "dev:server": "npm run build --workspace @transcript-tasks/shared && tsx watch apps/server/src/main.ts",
-    "dev:web": "npm run dev --workspace @transcript-tasks/web",
+    "build": "tsc -b packages/shared apps/server && npm run build --workspace @chief-of-staff-demo/web",
+    "dev:server": "npm run build --workspace @chief-of-staff-demo/shared && tsx watch apps/server/src/main.ts",
+    "dev:web": "npm run dev --workspace @chief-of-staff-demo/web",
     "start": "node apps/server/dist/main.js",
-    "test": "npm run test --workspace @transcript-tasks/tests",
-    "test:e2e": "npm run build && npm run test:e2e --workspace @transcript-tasks/tests"
+    "test": "npm run test --workspace @chief-of-staff-demo/tests",
+    "test:e2e": "npm run build && npm run test:e2e --workspace @chief-of-staff-demo/tests"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

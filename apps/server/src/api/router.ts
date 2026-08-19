@@ -3,7 +3,7 @@ import {
   DEFAULT_MODELS,
   type ConfigUpdate,
   ConfigUpdateSchema,
-} from "@transcript-tasks/shared";
+} from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
 import { googleOutputsFor } from "../google/outputs.js";
