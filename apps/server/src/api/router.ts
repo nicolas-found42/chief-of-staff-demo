@@ -2,11 +2,11 @@ import type { FastifyInstance } from "fastify";
 import {
   DEFAULT_MODELS,
   type ConfigUpdate,
+  type GoogleStatus,
   ConfigUpdateSchema,
 } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
-import { googleOutputsFor } from "../google/outputs.js";
 import { exchangeGoogleCode, googleAuthUrl } from "../google/oauth.js";
 import type { FirefliesIntake } from "../intake/fireflies.js";
 import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
@@ -19,6 +19,8 @@ export interface ApiContext {
   pipeline: Pipeline;
   configStore: ConfigStore;
   fireflies: FirefliesIntake;
+  /** Injected rather than called directly so the API can be tested without Google. */
+  getGoogleStatus: () => Promise<GoogleStatus>;
   onConfigChanged: () => void;
 }
 
@@ -107,13 +109,14 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     return { config: redactConfig(next), defaults: DEFAULT_MODELS };
   });
 
-  app.get("/api/google/status", async () => {
-    const config = ctx.configStore.get();
-    const outputs = googleOutputsFor(config, ctx.port);
-    if (!outputs) {
-      return { connected: false, email: null };
-    }
-    return { connected: true, email: await outputs.profileEmail() };
+  app.get("/api/google/status", async () => ctx.getGoogleStatus());
+
+  /* Clearing the refresh token is the only way back to a chooser once a token
+     is held: Google reuses the last-granted account silently, so switching
+     accounts and recovering from a rejected token both start here. */
+  app.post("/api/google/disconnect", async () => {
+    ctx.configStore.setGoogleRefreshToken(null);
+    return ctx.getGoogleStatus();
   });
 
   app.get("/api/google/connect", async (_request, reply) => {

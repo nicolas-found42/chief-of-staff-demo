@@ -1,4 +1,9 @@
-import type { RedactedConfig, RunDetail, RunSummary } from "@chief-of-staff-demo/shared";
+import type {
+  GoogleStatus,
+  RedactedConfig,
+  RunDetail,
+  RunSummary,
+} from "@chief-of-staff-demo/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -51,8 +56,10 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(update),
     }),
-  googleStatus: () => request<{ connected: boolean; email: string | null }>("/api/google/status"),
+  googleStatus: () => request<GoogleStatus>("/api/google/status"),
   googleConnect: () => request<{ authUrl: string }>("/api/google/connect"),
+  googleDisconnect: () =>
+    request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),
   firefliesSync: () => request<{ created: number }>("/api/fireflies/sync", { method: "POST" }),
 };
 

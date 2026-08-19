@@ -44,6 +44,12 @@ The step that writes a Run's result into a system outside the app: a Google Task
 a Doc.
 _Avoid_: Sink, writer, integration
 
+**Google connection**:
+The Shell's authorization to act on one person's Google account. Each person registers their own
+OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
+expiry being a weekly event rather than a fault.
+_Avoid_: Google auth, login, OAuth (the protocol is not the connection)
+
 **Workspace**:
 The directory holding all state — configuration, secrets, and every Run. There is no database.
 _Avoid_: Data dir, store

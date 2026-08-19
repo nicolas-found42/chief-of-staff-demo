@@ -1,4 +1,3 @@
-import { google } from "googleapis";
 import type { AppConfig, DraftItem, ExtractionResult, TaskItem } from "@chief-of-staff-demo/shared";
 import { googleConnected as isConnected } from "../config.js";
 import { buildGoogleAuth, type GoogleAuth } from "./oauth.js";
@@ -17,7 +16,6 @@ export interface GoogleOutputs {
     source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">
   ): Promise<string>;
   createDraft(draft: DraftItem): Promise<string>;
-  profileEmail(): Promise<string | null>;
 }
 
 export function googleConnected(config: AppConfig): boolean {
@@ -34,14 +32,5 @@ export function googleOutputsFor(config: AppConfig, port: number): GoogleOutputs
     createTask: (tasklistId: string, item: TaskItem, source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">) =>
       createGoogleTask(auth, tasklistId, item, source),
     createDraft: (draft: DraftItem) => createGmailDraft(auth, gmailDraftInput(draft)),
-    profileEmail: async () => {
-      try {
-        const gmail = google.gmail({ version: "v1", auth });
-        const profile = await gmail.users.getProfile({ userId: "me" });
-        return profile.data.emailAddress ?? null;
-      } catch {
-        return null;
-      }
-    },
   };
 }

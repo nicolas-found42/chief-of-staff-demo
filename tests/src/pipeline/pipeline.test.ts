@@ -67,7 +67,6 @@ function fakeGoogle(): FakeGoogle {
       google.calls.drafts.push({ to: draft.to ?? "", subject: draft.subject });
       return `draft-${google.calls.drafts.length}`;
     },
-    profileEmail: async () => "test@example.com",
   };
   return google;
 }

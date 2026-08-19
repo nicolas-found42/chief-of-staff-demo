@@ -28,35 +28,36 @@ extracts action items with the LLM provider of your choice, and creates Google T
 
 This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
 The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
-[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004). The Module registry itself is still ahead.
+[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007). The Module registry itself is still ahead.
 
 ## Prerequisites
 
 - Node 20+, npm
 - An LLM API key (OpenAI / Anthropic / OpenRouter / Google Gemini — any one)
-- Google account, for Tasks + Gmail drafts
+- Google account, for Tasks + Gmail drafts (plus a Google Cloud project — the app walks you through it)
 - Optional: Fireflies API key
 
 ## Setup
 
-### 1. Google Cloud OAuth client (Tasks + Gmail drafts)
+### 1. Google (Tasks + Gmail drafts) — guided in the app
 
-1. At [console.cloud.google.com](https://console.cloud.google.com), create a project and an
-   **OAuth client ID** of type **Web application**.
-2. Add an authorized redirect URI — this exact string, port included:
-   ```
-   http://localhost:4317/api/google/callback
-   ```
-3. OAuth consent screen → add both scopes:
-   ```
-   https://www.googleapis.com/auth/tasks
-   https://www.googleapis.com/auth/gmail.compose
-   ```
-4. Publishing: leave the app **unverified in production** (warning screen at consent, 100-user
-   cap, long-lived refresh token) or use **Testing** mode (refresh token expires weekly —
-   re-connect in Settings). Either works for a single user.
-5. Copy the client ID and client secret into the app's **Settings** page, then click
-   **Connect Google** and consent once.
+Start the app and open **Settings**. The Google card walks you through it: four one-time steps with
+the console links, the scopes and the redirect URI laid out with copy buttons, then
+**Sign in with Google**. Nothing to look up here.
+
+Each person registers their own Google Cloud OAuth client. There is no shared client to ship —
+this repo is public, so a committed client secret would be revoked, and there is no server to hold
+one ([ADR-0007](docs/adr/0007-per-user-google-oauth-client.md)). Budget about five minutes.
+
+Two things worth knowing before you start:
+
+- **Both APIs must be enabled** — Tasks and Gmail — or the first run fails with a 403 rather than
+  at connect time. The wizard links straight to both.
+- **The sign-in expires every seven days.** The consent screen has to be user type **External** to
+  admit personal Google accounts as well as Workspace ones, and External + **Testing** is the only
+  combination Google allows without a verification review for the Gmail scope; it expires refresh
+  tokens after seven days. Settings shows that as **expired** and one click fixes it. To be rid of
+  it, publish your consent screen and take Google's verification.
 
 ### 2. Fireflies (optional)
 
@@ -104,10 +105,14 @@ container should change this — see below).
 docker compose up --build      # http://localhost:4317
 ```
 
+Open it and the Runs page says whether Google still needs connecting, with a link to the setup
+steps — a fresh `workspace/` starts unconnected, and every run ends at the Google outputs stage.
+
 One image: Node serves the API and the built web UI. Three things are load-bearing:
 
-- **Port 4317 is published, exactly.** The Google OAuth redirect URI is registered for
-  `http://localhost:4317/api/google/callback`; publish another port and Connect Google breaks.
+- **Port 4317 is published, exactly.** Google matches the redirect URI character for character, so
+  the one you registered has to be the one the server sends. Settings always shows the URI for the
+  port in use, so if you do change `PORT`, register the URI it shows there.
 - **`workspace/` is a bind mount, never a layer.** Runs and secrets stay on the host; the image
   holds no state.
 - **The published port binds to `127.0.0.1` on the host.** The app has no authentication

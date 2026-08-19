@@ -67,6 +67,69 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
   await expect(page.getByText("Not connected", { exact: false })).toBeVisible();
 });
 
+test("an unconfigured workspace gets the setup steps, not two bare fields", async ({ page }) => {
+  await page.goto("/settings");
+
+  // The four one-time console steps, in the order the console forces them.
+  const steps = page.locator(".setup-steps > li");
+  await expect(steps).toHaveCount(4);
+  await expect(page.getByRole("link", { name: "Enable the Tasks API" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Enable the Gmail API" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open the consent screen" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Create the OAuth client" })).toBeVisible();
+
+  // The redirect URI is built from the port the server is actually on. This
+  // suite runs on 4319, so a value hardcoded to 4317 — as the UI used to carry —
+  // fails here.
+  await expect(page.locator(".setup-copy > code").last()).toHaveText(
+    "http://localhost:4319/api/google/callback"
+  );
+
+  // Both scopes are shown, and offered to copy so neither has to be typed out.
+  await expect(page.locator(".setup-copy > code")).toHaveText([
+    "https://www.googleapis.com/auth/tasks",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "http://localhost:4319/api/google/callback",
+  ]);
+  // Three Copy buttons on one page, each naming what it copies rather than
+  // leaving a screen reader with "Copy, Copy, Copy" (WCAG 2.4.6).
+  await expect(page.locator(".copy-button")).toHaveCount(3);
+  for (const name of [
+    "Copy https://www.googleapis.com/auth/tasks",
+    "Copy https://www.googleapis.com/auth/gmail.compose",
+    "Copy Redirect URI",
+  ]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+
+  // The sign-in button is the last step, and it is a real Google-branded button.
+  await expect(page.getByRole("button", { name: /Save and sign in with Google/ })).toBeVisible();
+});
+
+test("signing in without a client id reports Google's refusal in the page", async ({ page }) => {
+  await page.goto("/settings");
+
+  // Pressing sign-in with nothing filled in saves an empty client and asks the
+  // server for a consent URL, which it refuses. That refusal has to land as
+  // readable text, not a console error (WCAG 3.3.1).
+  const signIn = page.getByRole("button", { name: /Save and sign in with Google/ });
+  await signIn.focus();
+  await signIn.click();
+  await expect(page.locator(".banner-error")).toContainText(/not configured/i);
+  // The control the user pressed keeps focus rather than dropping it (WCAG 2.4.3).
+  await expect(signIn).toBeFocused();
+});
+
+test("the runs page says Google is not set up before a run can fail on it", async ({ page }) => {
+  await page.goto("/");
+  const banner = page.locator(".banner-warn");
+  await expect(banner).toContainText(/Google is not connected yet/);
+  // And routes to the place that fixes it.
+  await banner.getByRole("link", { name: "Set up Google" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.locator(".setup-steps")).toBeVisible();
+});
+
 test("primary actions are reachable and operable by keyboard", async ({ page }) => {
   await page.goto("/");
 

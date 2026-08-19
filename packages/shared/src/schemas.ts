@@ -230,6 +230,45 @@ export interface RedactedConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Google connection
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the Google connection stands. Four states rather than one boolean,
+ * because a stored refresh token that Google has stopped honouring is not an
+ * error case here — it is the documented weekly end state of every OAuth client
+ * whose consent screen is External and whose publishing status is Testing, and
+ * a personal Google account leaves no other option. Reporting that as
+ * "connected" sends the next Run to a failure the Shell could have named.
+ */
+export const GOOGLE_CONNECTION_STATES = [
+  /** No OAuth client credentials stored yet: the setup steps have not been done. */
+  "unconfigured",
+  /** Credentials stored, nobody signed in yet. */
+  "disconnected",
+  /** Google answered a token refresh; Tasks and drafts will be written. */
+  "connected",
+  /** Credentials stored and a token held, but Google rejected it — sign in again. */
+  "expired",
+] as const;
+export type GoogleConnectionState = (typeof GOOGLE_CONNECTION_STATES)[number];
+
+/** GET /api/google/status response. */
+export interface GoogleStatus {
+  state: GoogleConnectionState;
+  /** The signed-in account, when Google told us who it is. */
+  email: string | null;
+  /**
+   * The exact redirect URI to register, derived from the port the server is
+   * actually listening on. Served rather than written into the UI so the two
+   * cannot drift when PORT changes.
+   */
+  redirectUri: string;
+  /** The scopes to add to the consent screen, in the order they are requested. */
+  scopes: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Runs
 // ---------------------------------------------------------------------------
 
@@ -300,9 +339,4 @@ export interface RunDetail extends RunSummary {
   result: ExtractionResult | null;
   events: RunEvent[];
   transcript: string;
-}
-
-export interface GoogleStatus {
-  connected: boolean;
-  email: string | null;
 }

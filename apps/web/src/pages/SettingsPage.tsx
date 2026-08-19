@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { ProviderId } from "@chief-of-staff-demo/shared";
+import type { GoogleStatus, ProviderId } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
+import { GoogleConnect } from "../components/GoogleConnect";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -41,11 +42,11 @@ export function SettingsPage() {
      aria-disabled during a request they have nothing to do with, so a screen
      reader reports them as unavailable when they are not (WCAG 4.1.2). */
   const [saving, setSaving] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
-  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
-  const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
 
@@ -78,12 +79,9 @@ export function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const status = await api.googleStatus();
-        setGoogleConnected(status.connected);
-        setGoogleEmail(status.email);
+        setGoogleStatus(await api.googleStatus());
       } catch {
-        setGoogleConnected(false);
-        setGoogleEmail(null);
+        setGoogleStatus(null);
       }
     };
     void load();
@@ -198,18 +196,45 @@ export function SettingsPage() {
     }
   };
 
-  const connectGoogle = async () => {
-    if (connecting) {
+  /* Saves the client credentials on its own rather than through the form-wide
+     Save: signing in must not be blocked by an unrelated invalid field, and the
+     server can only build the consent URL from credentials it has stored. On
+     success the browser leaves for Google, so the busy flag is never cleared. */
+  const signInGoogle = async () => {
+    if (signingIn) {
       return;
     }
-    setConnecting(true);
+    setSigningIn(true);
     setError(null);
     try {
+      setPayload(
+        await api.saveConfig({
+          google:
+            form.googleClientSecret === ""
+              ? { clientId: form.googleClientId }
+              : { clientId: form.googleClientId, clientSecret: form.googleClientSecret },
+        })
+      );
       const { authUrl } = await api.googleConnect();
       window.location.assign(authUrl);
     } catch (err) {
       setError(errorMessage(err));
-      setConnecting(false);
+      setSigningIn(false);
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    if (disconnecting) {
+      return;
+    }
+    setDisconnecting(true);
+    setError(null);
+    try {
+      setGoogleStatus(await api.googleDisconnect());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -350,32 +375,23 @@ export function SettingsPage() {
 
         <div className="card" role="group" aria-labelledby="group-google">
           <h2 id="group-google">Google</h2>
+          <GoogleConnect
+            status={googleStatus}
+            clientId={form.googleClientId}
+            clientSecret={form.googleClientSecret}
+            secretHint={secretHint(
+              payload.config.google.clientSecret.set,
+              payload.config.google.clientSecret.hint
+            )}
+            onChange={(field, value) =>
+              setField(field === "clientId" ? "googleClientId" : "googleClientSecret", value)
+            }
+            onSignIn={() => void signInGoogle()}
+            onDisconnect={() => void disconnectGoogle()}
+            signingIn={signingIn}
+            disconnecting={disconnecting}
+          />
           <div className="form-grid">
-            <div className="field">
-              <label htmlFor="google-client-id">OAuth client ID</label>
-              <input
-                id="google-client-id"
-                value={form.googleClientId}
-                onChange={(event) => setField("googleClientId", event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="google-client-secret">OAuth client secret</label>
-              <input
-                id="google-client-secret"
-                aria-describedby="google-client-secret-hint"
-                type="password"
-                value={form.googleClientSecret}
-                autoComplete="off"
-                onChange={(event) => setField("googleClientSecret", event.target.value)}
-              />
-              <p id="google-client-secret-hint" className="muted field-hint">
-                {secretHint(
-                  payload.config.google.clientSecret.set,
-                  payload.config.google.clientSecret.hint
-                )}
-              </p>
-            </div>
             <div className="field">
               <label htmlFor="tasklist-name">Task list name</label>
               <input
@@ -385,25 +401,6 @@ export function SettingsPage() {
               />
             </div>
           </div>
-          <div className="field-row">
-            <span role="status">
-              {googleConnected ? (
-                <>
-                  <span className="ok">Connected</span>
-                  {googleEmail ? ` as ${googleEmail}` : ""}
-                </>
-              ) : (
-                <span className="muted">Not connected</span>
-              )}
-            </span>
-            <button type="button" onClick={connectGoogle} aria-disabled={connecting}>
-              Connect Google
-            </button>
-          </div>
-          <p className="muted">
-            Redirect URI to register: <code>http://localhost:4317/api/google/callback</code>. Tasks
-            go to the task list above; drafts land in Gmail Drafts and are never sent.
-          </p>
         </div>
 
         <div className="card" role="group" aria-labelledby="group-fireflies">

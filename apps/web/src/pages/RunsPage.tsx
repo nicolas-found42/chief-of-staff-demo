@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { RunSummary } from "@chief-of-staff-demo/shared";
+import type { GoogleConnectionState, RunSummary } from "@chief-of-staff-demo/shared";
 import { SourceBadge, StatusPill, formatTime } from "../components/StatusPill";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
@@ -17,6 +17,7 @@ export function RunsPage() {
   const [checking, setChecking] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [liveReady, setLiveReady] = useState(false);
+  const [googleState, setGoogleState] = useState<GoogleConnectionState | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -33,6 +34,21 @@ export function RunsPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /* Every run ends at the outputs stage, so a transcript dropped before Google
+     is connected fails there and nothing on this page said why beforehand. Asked
+     once on load: the answer only changes through Settings, which is a full page
+     load away. */
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setGoogleState((await api.googleStatus()).state);
+      } catch {
+        setGoogleState(null);
+      }
+    };
+    void load();
+  }, []);
 
   const activeCount = runs === null ? 0 : runs.filter((run) => !TERMINAL.has(run.status)).length;
 
@@ -115,6 +131,24 @@ export function RunsPage() {
           {checking ? "Checking…" : "Check for new runs"}
         </button>
       </div>
+
+      {/* role="status", not "alert": this is a standing condition the user may
+          have chosen, not an event, and an assertive interruption on every visit
+          to the landing page would be hostile. */}
+      {googleState !== null && googleState !== "connected" && (
+        <div className="banner banner-warn" role="status">
+          <span>
+            {googleState === "unconfigured"
+              ? "Google is not connected yet, so runs will extract tasks but have nowhere to put them."
+              : googleState === "expired"
+                ? "Google stopped accepting the saved sign-in, so runs cannot create tasks or drafts."
+                : "Google is not signed in, so runs cannot create tasks or drafts."}
+          </span>
+          <Link className="step-link" to="/settings">
+            {googleState === "unconfigured" ? "Set up Google" : "Sign in with Google"}
+          </Link>
+        </div>
+      )}
 
       {/* Clicking anywhere in the zone opens the picker — the pointer cursor
           promised that already. The button remains the keyboard route, so this

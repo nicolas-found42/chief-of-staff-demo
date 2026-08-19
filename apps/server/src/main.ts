@@ -8,6 +8,7 @@ import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { makeCompleteJson } from "./llm/providers.js";
+import { googleStatus } from "./google/connection.js";
 import { googleOutputsFor } from "./google/outputs.js";
 import { FirefliesIntake } from "./intake/fireflies.js";
 import { WatchIntake } from "./intake/watch.js";
@@ -114,6 +115,7 @@ await registerApi(app, {
   pipeline,
   configStore,
   fireflies,
+  getGoogleStatus: () => googleStatus(configStore.get(), port),
   onConfigChanged: () => {
     fireflies.start();
     syncWatchIntake();
