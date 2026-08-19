@@ -9,13 +9,8 @@ import { redactConfig } from "../config.js";
 import { googleOutputsFor } from "../google/outputs.js";
 import { exchangeGoogleCode, googleAuthUrl } from "../google/oauth.js";
 import type { FirefliesIntake } from "../intake/fireflies.js";
-import {
-  type Pipeline,
-  RunNotFoundError,
-  RunNotRetryableError,
-  listRunSummaries,
-  readRunDetail,
-} from "../pipeline/run.js";
+import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
+import { openRuns } from "../runs.js";
 import { isSupportedFileName } from "../text/convert.js";
 
 export interface ApiContext {
@@ -28,13 +23,14 @@ export interface ApiContext {
 }
 
 export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promise<void> {
+  const runs = openRuns(ctx.workspaceDir);
   app.get("/api/health", async () => ({ ok: true }));
 
-  app.get("/api/runs", async () => ({ runs: listRunSummaries(ctx.workspaceDir) }));
+  app.get("/api/runs", async () => ({ runs: runs.list() }));
 
   app.get("/api/runs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const detail = readRunDetail(ctx.workspaceDir, id);
+    const detail = runs.detail(id);
     if (!detail) {
       reply.code(404).send({ error: "run not found" });
       return;

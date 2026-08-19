@@ -5,12 +5,8 @@ import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import type { GoogleOutputs } from "../../../apps/server/src/google/outputs";
-import {
-  Pipeline,
-  listRunSummaries,
-  meetingDateFromFileName,
-  readRunDetail,
-} from "../../../apps/server/src/pipeline/run";
+import { Pipeline, meetingDateFromFileName } from "../../../apps/server/src/pipeline/run";
+import { openRuns } from "../../../apps/server/src/runs";
 import { composeTaskNotes } from "../../../apps/server/src/google/tasks";
 
 const GOLDEN = {
@@ -129,6 +125,9 @@ describe("Pipeline", () => {
     });
   });
 
+  const detailOf = (id: string) => openRuns(workspaceDir).detail(id);
+  const summariesOf = () => openRuns(workspaceDir).list();
+
   it("golden transcript → done with task and draft events", async () => {
     const runId = await pipeline.startRun({
       type: "upload",
@@ -136,7 +135,7 @@ describe("Pipeline", () => {
       bytes: Buffer.from("**Dana:** hello\n"),
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail).not.toBeNull();
     expect(detail!.status).toBe("done");
     expect(detail!.attempts).toBe(1);
@@ -163,7 +162,7 @@ describe("Pipeline", () => {
       due: "2026-08-21",
     });
     expect(google!.calls.drafts[0].to).toBe("");
-    const summaries = listRunSummaries(workspaceDir);
+    const summaries = summariesOf();
     expect(summaries[0].taskCount).toBe(2);
   });
 
@@ -189,7 +188,7 @@ describe("Pipeline", () => {
       externalId: "FF123",
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail!.status).toBe("done");
     expect(detail!.result?.sourceId).toBe("FF123");
     expect(detail!.result?.sourceUrl).toBe("https://app.fireflies.ai/t/abc");
@@ -205,7 +204,7 @@ describe("Pipeline", () => {
       text: "A product specification.",
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail!.status).toBe("skipped");
     expect(detail!.skipReason).toContain("not a transcript");
     expect(detail!.result?.isTranscript).toBe(false);
@@ -223,7 +222,7 @@ describe("Pipeline", () => {
       text: "hello",
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail!.status).toBe("failed");
     expect(detail!.failedStage).toBe("extract");
     expect(detail!.attempts).toBe(3);
@@ -243,7 +242,7 @@ describe("Pipeline", () => {
       text: "hello",
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail!.status).toBe("failed");
     expect(detail!.failedStage).toBe("extract");
     expect(detail!.attempts).toBe(3);
@@ -258,18 +257,17 @@ describe("Pipeline", () => {
       text: "hello",
     });
     await pipeline.idle();
-    const failed = readRunDetail(workspaceDir, runId);
+    const failed = detailOf(runId);
     expect(failed!.status).toBe("failed");
     expect(failed!.failedStage).toBe("outputs");
     expect(failed!.events.map((event) => event.type)).toContain("google_not_connected");
     // Result was persisted before the outputs stage.
-    const persisted = JSON.parse(readFileSync(join(workspaceDir, "runs", runId, "result.json"), "utf8"));
-    expect(persisted.isTranscript).toBe(true);
+    expect(failed!.result?.isTranscript).toBe(true);
 
     google = fakeGoogle();
     await pipeline.retryRun(runId);
     await pipeline.idle();
-    const retried = readRunDetail(workspaceDir, runId);
+    const retried = detailOf(runId);
     expect(retried!.status).toBe("done");
     expect(retried!.attempts).toBe(1);
     expect(google!.calls.tasks).toHaveLength(2);
@@ -283,12 +281,12 @@ describe("Pipeline", () => {
       text: "hello",
     });
     await pipeline.idle();
-    expect(readRunDetail(workspaceDir, runId)!.status).toBe("failed");
+    expect(detailOf(runId)!.status).toBe("failed");
 
     provider = scriptedProvider([GOLDEN]);
     await pipeline.retryRun(runId);
     await pipeline.idle();
-    const retried = readRunDetail(workspaceDir, runId);
+    const retried = detailOf(runId);
     expect(retried!.status).toBe("done");
     expect(retried!.attempts).toBe(1);
   });
@@ -310,7 +308,7 @@ describe("Pipeline", () => {
       bytes: Buffer.from('{"not":"sentences"}'),
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail!.status).toBe("failed");
     expect(detail!.failedStage).toBe("extract");
     expect(detail!.events[detail!.events.length - 1].type).toBe("run_failed");
@@ -335,7 +333,7 @@ describe("Pipeline", () => {
       text: "hello",
     });
     await pipeline.idle();
-    const detail = readRunDetail(workspaceDir, runId);
+    const detail = detailOf(runId);
     expect(detail!.status).toBe("done");
     const types = detail!.events.map((event) => event.type);
     expect(types).toContain("google_task_error");
