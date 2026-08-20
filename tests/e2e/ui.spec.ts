@@ -158,8 +158,9 @@ test("primary actions are reachable and operable by keyboard", async ({ page }) 
   // Arriving at a run moves focus to its heading rather than dropping it.
   await expect(page.locator("h1.run-title")).toBeFocused();
 
-  // Each route carries its own title.
-  await expect(page).toHaveTitle(/· Transcript → Tasks$/);
+  // Each route carries its own title, suffixed with the Shell's name — not with
+  // the name of a Module, which is what this used to say.
+  await expect(page).toHaveTitle(/· Chief of Staff$/);
 
   // Runs are reachable from the list without a pointer.
   await page.goto("/");
