@@ -7,13 +7,19 @@ Module.
 ## Language
 
 **Shell**:
-The application that hosts Modules — navigation, settings, Google connection, and the machinery
-that runs and records work.
+The application that hosts Modules — navigation and Home, settings, the Google connection, and the
+machinery that runs and records work.
 _Avoid_: Host app, platform, framework
+
+**Home**:
+The Shell's front door — the surface the app opens on, stating where the workspace stands and
+linking into the Modules. Not a Module: it has no workflow of its own.
+_Avoid_: Dashboard, landing page
 
 **Module**:
 One workflow, presented as a tab. A Module contributes what is specific to its workflow and
-relies on the Shell for everything generic.
+relies on the Shell for everything generic. It is **planned** when its tab exists but its Runs,
+Intakes and Output Adapters do not, and **live** once they do.
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
 
 **Hot Take**:
