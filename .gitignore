@@ -8,6 +8,10 @@ test-results/
 ACCESSIBILITY-AUDIT.md
 .archive/
 
+# Wayfinder maps and their tickets. Local planning artifacts: they record how a
+# decision was reached, which the ADRs and CONTEXT.md already carry once it is.
+.scratch/
+
 # Console walkthrough captures. These contain OAuth client secrets in plaintext
 # (Google shows the secret once, in a dialog people screenshot) and the account
 # email. This repo is public.
