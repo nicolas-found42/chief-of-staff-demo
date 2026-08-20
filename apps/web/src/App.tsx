@@ -1,6 +1,8 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { HotTakePage } from "./pages/HotTakePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+// PROTOTYPE — throwaway route, branch prototype/home-variants. Never merge to main.
+import { HomePrototypePage } from "./prototype/HomePrototypePage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -41,6 +43,8 @@ export function App() {
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/hot-take" element={<HotTakePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* PROTOTYPE — throwaway. Answers .scratch/shell-home/issues/01. */}
+          <Route path="/prototype/home" element={<HomePrototypePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>
