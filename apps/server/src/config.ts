@@ -34,7 +34,13 @@ export function defaultConfig(): AppConfig {
     model: "",
     apiKey: "",
     tasklistName: "Meeting Followups",
-    google: { clientId: "", clientSecret: "", refreshToken: null, lastConnectedAt: null },
+    google: {
+      clientId: "",
+      clientSecret: "",
+      refreshToken: null,
+      lastConnectedAt: null,
+      hasExpiredBefore: false,
+    },
     fireflies: { enabled: false, apiKey: "", pollIntervalMinutes: 5 },
     watch: { enabled: false, folderPath: "" },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
@@ -102,6 +108,20 @@ export class ConfigStore {
         lastConnectedAt: token ? new Date().toISOString() : current.google.lastConnectedAt,
       },
     };
+    this.persist();
+  }
+
+  /**
+   * Record that Google has refused this grant at least once. Latching rather
+   * than toggling: the fact stored is "this consent screen does expire", which
+   * a later successful sign-in does not undo.
+   */
+  markGoogleExpired(): void {
+    const current = this.get();
+    if (current.google.hasExpiredBefore) {
+      return;
+    }
+    this.config = { ...current, google: { ...current.google, hasExpiredBefore: true } };
     this.persist();
   }
 

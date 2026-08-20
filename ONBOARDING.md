@@ -87,13 +87,26 @@ On the same **Settings** page, find the **Google** card. It lists every step, in
 exact values to copy and a link to each Google page. Follow the card, not this guide: it shows the
 values for your own machine, and this guide cannot.
 
-Two things to expect:
+First, tell the card which kind of Google account you will use. This matters:
 
-- **Google shows a warning that says the app is not verified.** This is expected. The app is
-  yours, and Google has not reviewed it. Click **Advanced**, then **Go to localhost (unsafe)**.
-  It is your own machine, and nothing leaves it.
-- **The steps stay on screen until the connection works.** If a step fails, read the message,
-  correct that step, and sign in again.
+- **A work account** (`you@yourcompany.com`) can set the consent screen to **Internal**. That
+  removes one step, removes the weekly sign-in, and removes the warning screen below. Choose this
+  if you have one.
+- **A personal account** (`@gmail.com`) cannot. Google greys Internal out.
+
+Three things to expect:
+
+- **Check the project name in the console's top bar after you create the project.** Google does
+  not switch to a project it has just created. If the rest of the work happens in a different
+  project, the first run fails much later with a permission error.
+- **Google shows the client secret once.** Copy it, or use **Download JSON** and load that file
+  into the card. You cannot look at the secret again.
+- **On a personal account, Google warns that it has not verified the app.** This is expected: the
+  app is yours and Google has not reviewed it. Click **Continue** — the small link at the
+  bottom left. Do **not** click **Back to safety**, which is the large button. On a work account
+  with Internal, this screen does not appear at all.
+
+If a step fails, the steps stay on screen. Read the message, correct that step, and sign in again.
 
 When it works, the card says **Connected** and shows your email address.
 
@@ -121,13 +134,15 @@ If you see all three, you are set up.
 
 ---
 
-## Every week: sign in to Google again
+## Signing in to Google again
 
-Google ends this kind of sign-in after about seven days. **This is normal, and nothing is
-broken.**
+If you used a **work account** and chose **Internal**, skip this section. Your sign-in does not
+expire.
 
-The app tells you before it happens, and the Google card in Settings shows when you last signed
-in. When Google asks:
+If you used a **personal account**, Google ends this kind of sign-in after about seven days.
+**This is normal, and nothing is broken.**
+
+The Google card in Settings shows when you last signed in. When Google asks:
 
 1. Open **Settings**.
 2. Click **Sign in with Google**.
@@ -163,6 +178,8 @@ The app does not start by itself when you turn your computer on. Start it when y
 | A run says **failed** at `extract` | The provider key or the model is wrong. Correct it in Settings, then click **Retry** on the run. |
 | A run says **failed** at `outputs` | Google is not connected. Open Settings, fix the Google card, then click **Retry** on the run. The app does not charge you twice: it reuses the result it already has. |
 | Google refuses the sign-in and names the redirect URI | The value you registered does not match. The Google card shows the exact string to use. Copy it with the Copy button rather than typing it. |
+| **Access blocked … Error 403: access_denied** | The account you signed in with is not on the consent screen's **Test users** list. Add it under Audience → Test users, then sign in again with that same account. There is no way past this screen. |
+| A run fails and the app names a project number | The APIs were enabled on a different project than the one you configured. Compare the number the app shows with the project in the console's top bar. |
 | A run says **skipped** | The app decided the file is not a transcript. It creates nothing. This is correct behaviour, not a fault. |
 
 Anything else: send the person who gave you this repo the run id and what the page says.

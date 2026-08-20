@@ -138,7 +138,12 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   app.get("/api/google/callback", async (request, reply) => {
     const query = request.query as { code?: string; error?: string };
     if (query.error || !query.code) {
-      reply.redirect("/settings?google=error");
+      /* `access_denied` has one cause worth naming: the account that just
+         signed in is not on the consent screen's Test users list, so Google
+         refused before issuing anything. Every other refusal is generic, and
+         only the app knows the attempt happened at all. */
+      const reason = query.error === "access_denied" ? "access_denied" : "error";
+      reply.redirect(`/settings?google=${reason}`);
       return;
     }
     try {

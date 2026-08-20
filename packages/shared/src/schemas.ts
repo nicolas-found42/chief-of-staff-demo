@@ -149,6 +149,12 @@ export const ConfigSchema = z.strictObject({
     /* When a sign-in last succeeded. Null means one never has, which is what
        keeps the setup steps on screen for someone whose first attempt failed. */
     lastConnectedAt: z.string().nullable().default(null),
+    /* Whether Google has ever refused this grant. The seven-day expiry belongs
+       to a consent screen whose publishing status is Testing; an Internal app
+       has no publishing status and never expires. This app cannot read its own
+       publishing status with the scopes it holds, so it does not guess — it
+       predicts an expiry only once it has seen one. */
+    hasExpiredBefore: z.boolean().default(false),
   }),
   fireflies: z.strictObject({
     enabled: z.boolean().default(false),
@@ -277,8 +283,12 @@ export interface GoogleStatus {
   /**
    * When Google will probably stop accepting the sign-in. An estimate, never a
    * promise — Google does not report a refresh token's lifetime, and a password
-   * change or a revoke ends the grant immediately. Null until a sign-in has
-   * succeeded, and always presented as approximate.
+   * change or a revoke ends the grant immediately.
+   *
+   * Null until Google has actually refused this grant once. The seven-day limit
+   * applies to a consent screen in Testing; an Internal app has none, and
+   * predicting one there would warn every week about an event that never
+   * arrives. The prediction is earned by observation, not assumed.
    */
   expiresAbout: string | null;
 }

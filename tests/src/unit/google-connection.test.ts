@@ -307,11 +307,28 @@ describe("lastConnectedAt — whether the console work has ever landed", () => {
     });
   });
 
-  it("is stamped by a sign-in, and dates the expiry seven days out", async () => {
+  it("is stamped by a sign-in, but predicts no expiry from the stamp alone", async () => {
     withToken();
     const status = await signedIn().state();
     expect(status.lastConnectedAt).not.toBeNull();
-    // An estimate derived from the stamp, not a value Google reported.
+    /* The seven-day limit belongs to a consent screen in Testing. An Internal
+       one never expires, and this module cannot read which it is — so it makes
+       no prediction rather than announcing a weekly event that never arrives. */
+    expect(status.expiresAbout).toBeNull();
+  });
+
+  it("predicts seven days out once Google has actually refused a grant", async () => {
+    withToken();
+    const google = connection(async () => ({ email: null }));
+    expect(google.observe(REJECTED)).toBe("expired");
+    expect(configStore.get().google.hasExpiredBefore).toBe(true);
+
+    // Signing back in: the latch is precisely what a later success does not undo.
+    configStore.setGoogleRefreshToken("fresh-refresh-token");
+    google.invalidate();
+
+    const status = await google.state();
+    expect(status.state).toBe("connected");
     expect(new Date(status.expiresAbout!).getTime() - new Date(status.lastConnectedAt!).getTime()).toBe(
       7 * 86_400_000
     );
@@ -367,6 +384,22 @@ describe("verifySetup — asking Google what is missing", () => {
     expect(check.items[0]).toMatchObject({ label: "Google Tasks", ok: false });
     expect(check.items[0].detail).toContain("Tasks API is not enabled");
     expect(check.items[1]).toMatchObject({ label: "Gmail drafts", ok: true });
+  });
+
+  it("names the project Google named, and allows for the propagation delay", async () => {
+    withToken();
+    const check = await checking((surface) => {
+      if (surface === "tasks") {
+        throw API_DISABLED;
+      }
+    }).verifySetup();
+
+    /* The console does not switch to a project it has just created, so enabling
+       the APIs somewhere else is easy and otherwise invisible. Echoing back the
+       project Google named is the only way anyone catches it. */
+    expect(check.items[0].detail).toContain("project 123");
+    // And a correct setup that is merely too new looks identical to a broken one.
+    expect(check.items[0].detail).toMatch(/few minutes/i);
   });
 
   it("names the scope the consent screen is missing", async () => {

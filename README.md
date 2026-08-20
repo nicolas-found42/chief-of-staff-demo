@@ -81,12 +81,14 @@ Two things worth knowing before you start:
 
 - **Both APIs must be enabled** — Tasks and Gmail — or the first run fails with a 403 rather than
   at connect time. **Check my setup** names which one, rather than leaving it to a run.
-- **The sign-in expires about every seven days.** The consent screen has to be user type
-  **External** to admit personal Google accounts as well as Workspace ones, and External +
-  **Testing** is the only combination Google allows without a verification review for the Gmail
-  scope; it expires refresh tokens after seven days. Settings shows when you last signed in and
-  roughly when Google will ask again, and one click fixes it. To be rid of it, publish your
-  consent screen and take Google's verification.
+- **A Workspace account should choose Internal, and then none of this applies.** Internal needs
+  no test users, shows no unverified-app screen, and does not expire. Google greys it out for
+  personal accounts, which must use **External** + **Testing** — the only combination allowed
+  without a verification review for the Gmail scope — and that expires refresh tokens after seven
+  days. The card asks which account you have and renders the matching steps.
+- **The expiry estimate is earned, not assumed.** Settings shows when you last signed in, and only
+  predicts the next expiry once Google has actually refused a grant. An Internal connection
+  therefore never announces an expiry it will not have.
 
 ### Extraction provider
 
@@ -186,7 +188,8 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 |---|---|
 | Run fails at `extract` after 3 attempts | Bad or missing API key, wrong model id, or provider outage. Check the `extract_attempt` events; fix Settings and hit Retry. |
 | Run fails at `outputs` with `google_not_connected` | Google not connected. Fix the Google card in Settings — **Check my setup** names the missing piece — then Retry; the cached result is reused, no re-extraction. |
-| Google consent shows a warning screen | Expected for an unverified personal app: Advanced → Go to localhost (unsafe). |
+| Google consent shows a warning screen | Expected on a personal account: click **Continue** (the small link), not **Back to safety**. A Workspace account using an Internal consent screen never sees it. |
+| Sign-in fails with `Error 403: access_denied` | The account is not on the consent screen's Test users list. Add it under Audience → Test users and sign in again with the same account. |
 | Redirect URI mismatch during connect | The registered redirect URI must be `http://localhost:4317/api/google/callback`, matching the port the server runs on. |
 | Fireflies sync returns 401 | Key is wrong. Polling disables itself; fix the key in Settings and re-enable. |
 | Watch folder does nothing | Folder must exist (or be creatable); files must be stable (still copying? wait 2s) and have a supported extension; check the server console for `[watch]` lines. |

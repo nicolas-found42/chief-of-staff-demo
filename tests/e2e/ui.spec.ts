@@ -70,15 +70,18 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
 test("an unconfigured workspace gets the setup steps, not two bare fields", async ({ page }) => {
   await page.goto("/settings");
 
-  // The six one-time console steps, in the order the console forces them. Google
-  // split the old consent screen into Branding, Audience and Data Access, and a
-  // step that sends someone to the wrong page is a step they cannot finish.
+  // Seven steps, in the order the console forces them, for the personal-account
+  // path the card defaults to. On a project that has never been configured,
+  // Branding, Audience and Data Access all show the same "not configured yet"
+  // wall, so step 3 sends people to the one wizard rather than to three pages
+  // that do not exist yet.
   const steps = page.locator(".setup-steps > li");
-  await expect(steps).toHaveCount(6);
+  await expect(steps).toHaveCount(7);
   for (const name of [
+    "Create a project",
     "Enable the Tasks API",
     "Enable the Gmail API",
-    "Open Branding",
+    "Open the Google Auth Platform",
     "Open Audience",
     "Open Data Access",
     "Open Clients",
@@ -208,7 +211,7 @@ test("credentials saved but no successful sign-in keeps the steps on the page", 
   try {
     await page.goto("/settings");
 
-    await expect(page.locator(".setup-steps > li")).toHaveCount(6);
+    await expect(page.locator(".setup-steps > li")).toHaveCount(7);
     // Open on the page, not behind a summary.
     await expect(page.locator(".setup-details")).toHaveCount(0);
     // And it says why the steps are still here, rather than only "Not connected".
@@ -223,4 +226,27 @@ test("credentials saved but no successful sign-in keeps the steps on the page", 
       data: { google: { clientId: "", clientSecret: "" } },
     });
   }
+});
+
+test("choosing a work account drops the test-user step", async ({ page }) => {
+  await page.goto("/settings");
+
+  // A Workspace account can set the consent screen to Internal, which needs no
+  // test users at all — and skipping test users on External is the one mistake
+  // with no recovery on Google's own page (Error 403: access_denied). So the
+  // step list differs, and the choice is made before the steps rather than
+  // explained inside them.
+  await expect(page.locator(".setup-steps > li")).toHaveCount(7);
+  await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toBeVisible();
+
+  await page.getByRole("radio", { name: /work account/ }).check();
+
+  await expect(page.locator(".setup-steps > li")).toHaveCount(6);
+  await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toHaveCount(0);
+  // And the step that remains tells them which radio to pick in the console.
+  await expect(page.locator(".setup-steps")).toContainText("Internal");
+
+  await page.getByRole("radio", { name: /personal account/ }).check();
+  await expect(page.locator(".setup-steps > li")).toHaveCount(7);
+  await expect(page.locator(".setup-steps")).toContainText("External");
 });

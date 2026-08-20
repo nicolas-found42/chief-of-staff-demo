@@ -31,6 +31,10 @@ export interface GoogleConnectProps {
   onCheck: () => void;
   /** The last answer Google gave, or null if nobody has asked yet. */
   check: SetupCheck | null;
+  /** Reads the client JSON the console offers, so no secret is retyped. */
+  onClientJson: (file: File) => void;
+  /** What came of the last JSON the user picked. */
+  jsonNotice: string | null;
   signingIn: boolean;
   disconnecting: boolean;
   checking: boolean;
@@ -39,17 +43,32 @@ export interface GoogleConnectProps {
 /**
  * Google renamed and split this console: the consent screen is now the Google
  * Auth Platform, and what used to be one page is Branding, Audience and Data
- * Access. One link per page, because a step that sends someone to the wrong
- * page is a step they cannot finish.
+ * Access. On a project that has never been configured all three show the same
+ * "not configured yet" wall, so the flow below sends people to one wizard
+ * rather than to three pages that do not exist yet.
  */
 const CONSOLE = {
+  projectCreate: "https://console.cloud.google.com/projectcreate",
   tasksApi: "https://console.cloud.google.com/apis/library/tasks.googleapis.com",
   gmailApi: "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
-  branding: "https://console.cloud.google.com/auth/branding",
+  authPlatform: "https://console.cloud.google.com/auth/branding",
   audience: "https://console.cloud.google.com/auth/audience",
   dataAccess: "https://console.cloud.google.com/auth/scopes",
   clients: "https://console.cloud.google.com/auth/clients",
 };
+
+/**
+ * Which kind of Google account is signing in. It is not cosmetic: a Workspace
+ * account can set the consent screen to Internal, which removes the test-user
+ * list, the unverified-app warning and the weekly expiry outright. A personal
+ * account has Internal greyed out and must take all three. The step list
+ * differs, so it is chosen before the steps rather than explained inside them.
+ *
+ * Defaults to `personal`, the path that works for everyone: a Workspace user
+ * following it gets more friction than necessary, whereas a personal-account
+ * user following the Workspace path reaches a greyed-out radio and stops.
+ */
+type Audience = "workspace" | "personal";
 
 /** Whole days: the expiry is an estimate, and worth no more precision than that. */
 function daysAgo(iso: string): number {
@@ -64,17 +83,21 @@ const DAY = new Intl.DateTimeFormat(undefined, {
 });
 
 /**
- * One fact and one prediction, with the prediction marked as one. A hard
- * countdown would read as a contract the app cannot honour: Google reports no
- * token lifetime, and a password change or a revoke ends the grant early.
+ * One fact, and a prediction only when there is one to make. `expiresAbout` is
+ * null until Google has actually refused this grant once, because an Internal
+ * consent screen never expires and guessing otherwise would announce a weekly
+ * event that never happens. So the fact stands alone until the app has evidence.
  */
 function expiryNote(status: GoogleStatus): string | null {
-  if (!status.lastConnectedAt || !status.expiresAbout) {
+  if (!status.lastConnectedAt) {
     return null;
   }
   const days = daysAgo(status.lastConnectedAt);
   const signedIn =
     days <= 0 ? "You signed in today" : days === 1 ? "You signed in yesterday" : `You signed in ${days} days ago`;
+  if (!status.expiresAbout) {
+    return `${signedIn}.`;
+  }
   const due = new Date(status.expiresAbout);
   if (due.getTime() <= Date.now()) {
     return `${signedIn}, so Google may ask you to sign in again at any time.`;
@@ -111,6 +134,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
   /* Names what was copied rather than saying "Copied!", so the announcement is
      still unambiguous when three buttons on the page all say Copy (WCAG 4.1.3). */
   const [copied, setCopied] = useState<string | null>(null);
+  const [audience, setAudience] = useState<Audience>("personal");
 
   const copy = async (label: string, value: string) => {
     try {
@@ -128,6 +152,8 @@ export function GoogleConnect(props: GoogleConnectProps) {
       </p>
     );
   }
+
+  const workspace = audience === "workspace";
 
   /* The console work has landed at least once. Not the same as being connected:
      a sign-out and a first attempt that failed are both `disconnected`, and only
@@ -192,107 +218,205 @@ export function GoogleConnect(props: GoogleConnectProps) {
     </div>
   );
 
+  /* The console shows the secret once and offers a JSON download of it. Reading
+     that file here spares the one irreversible piece of transcription in the
+     whole flow. Parsed in the browser and never uploaded: the two values land in
+     the fields above, and the file itself goes nowhere. */
+  const clientJsonField = (
+    <div className="field">
+      <label htmlFor="google-client-json">…or load the JSON the console gave you</label>
+      <input
+        id="google-client-json"
+        type="file"
+        accept="application/json,.json"
+        aria-describedby="google-client-json-hint"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            props.onClientJson(file);
+          }
+          /* Cleared so picking the same file twice fires again. */
+          event.target.value = "";
+        }}
+      />
+      <p id="google-client-json-hint" className="muted field-hint">
+        {props.jsonNotice ??
+          "Reads the client ID and secret out of the file and fills the fields above. The file is not uploaded or stored."}
+      </p>
+    </div>
+  );
+
+  const audienceChoice = (
+    <fieldset className="audience-choice">
+      <legend>Which Google account will you sign in with?</legend>
+      <label>
+        <input
+          type="radio"
+          name="google-audience"
+          value="personal"
+          checked={!workspace}
+          onChange={() => setAudience("personal")}
+        />
+        A personal account (<code>@gmail.com</code>)
+      </label>
+      <label>
+        <input
+          type="radio"
+          name="google-audience"
+          value="workspace"
+          checked={workspace}
+          onChange={() => setAudience("workspace")}
+        />
+        A work account (<code>you@yourcompany.com</code>)
+      </label>
+      <p className="muted field-hint">
+        {workspace
+          ? "A work account can set the consent screen to Internal, which removes the test-user list, the unverified-app warning and the weekly sign-in. One step shorter."
+          : "A personal account cannot use Internal — Google greys it out — so the consent screen stays External and Google asks you to sign in again about weekly."}
+      </p>
+    </fieldset>
+  );
+
   /* One list, rendered whether or not the steps are the main event, so they are
      never unreachable: open for someone who has never got through them, behind a
      summary for someone changing an OAuth client they already have. */
   const setupSteps = (
-    <ol className="setup-steps">
-      <li>
-        <p className="setup-step-title">Turn on the two APIs this app calls.</p>
-        <p className="setup-links">
-          <a className="step-link" href={CONSOLE.tasksApi} target="_blank" rel="noreferrer">
-            Enable the Tasks API
-          </a>
-          <a className="step-link" href={CONSOLE.gmailApi} target="_blank" rel="noreferrer">
-            Enable the Gmail API
-          </a>
-        </p>
-        <p className="muted field-hint">
-          Create a project first if you have none — the console offers one on either page. Skipping
-          this step is the one failure that appears only later, as a 403 on the first run.
-        </p>
-      </li>
-
-      <li>
-        <p className="setup-step-title">Name the app on the Branding page.</p>
-        <p className="setup-links">
-          <a className="step-link" href={CONSOLE.branding} target="_blank" rel="noreferrer">
-            Open Branding
-          </a>
-        </p>
-        <p className="muted field-hint">
-          Any app name and your own email will do — you are the only person who will see this
-          consent screen. Google will not let you create an OAuth client until this page is filled
-          in.
-        </p>
-      </li>
-
-      <li>
-        <p className="setup-step-title">Set the audience to External, and add yourself as a test user.</p>
-        <p className="setup-links">
-          <a className="step-link" href={CONSOLE.audience} target="_blank" rel="noreferrer">
-            Open Audience
-          </a>
-        </p>
-        <p className="muted field-hint">
-          Choose user type <strong>External</strong> — it is the only type that admits both
-          Workspace and personal Google accounts — then add your own address under{" "}
-          <strong>Test users</strong>. Google expires the sign-in every seven days while the app
-          stays in Testing; this card says when that happens, and signing in again is the whole fix.
-        </p>
-      </li>
-
-      <li>
-        <p className="setup-step-title">Add both scopes under Data Access.</p>
-        <p className="setup-links">
-          <a className="step-link" href={CONSOLE.dataAccess} target="_blank" rel="noreferrer">
-            Open Data Access
-          </a>
-        </p>
-        <p className="muted field-hint">
-          Use <strong>Add or remove scopes</strong>, and paste these rather than hunting for them in
-          the list:
-        </p>
-        {status.scopes.map((scope) => (
-          <p className="setup-copy" key={scope}>
-            <code>{scope}</code>
-            {copyButton(scope, scope)}
+    <>
+      {audienceChoice}
+      <ol className="setup-steps">
+        <li>
+          <p className="setup-step-title">Create or choose a Google Cloud project.</p>
+          <p className="setup-links">
+            <a className="step-link" href={CONSOLE.projectCreate} target="_blank" rel="noreferrer">
+              Create a project
+            </a>
           </p>
-        ))}
-      </li>
+          <p className="muted field-hint">
+            Google puts every app inside a project. After creating one, <strong>check the project
+            name in the console's top bar</strong> — the console does not switch to a project it has
+            just created, and every step below has to happen in the same one.
+            {workspace ? " On a work account you will also see an Organization field; leave it as it is." : ""}
+          </p>
+        </li>
 
-      <li>
-        <p className="setup-step-title">
-          Create an OAuth client of type <strong>Web application</strong>.
-        </p>
-        <p className="setup-links">
-          <a className="step-link" href={CONSOLE.clients} target="_blank" rel="noreferrer">
-            Open Clients
-          </a>
-        </p>
-        <p className="muted field-hint">
-          Add this exact string, port included, under <strong>Authorized redirect URIs</strong>.
-          Google matches it character for character, and it is built from the port this server is
-          listening on:
-        </p>
-        <p className="setup-copy">
-          <code>{status.redirectUri}</code>
-          {copyButton("Redirect URI", status.redirectUri)}
-        </p>
-      </li>
+        <li>
+          <p className="setup-step-title">Turn on the two APIs this app calls.</p>
+          <p className="setup-links">
+            <a className="step-link" href={CONSOLE.tasksApi} target="_blank" rel="noreferrer">
+              Enable the Tasks API
+            </a>
+            <a className="step-link" href={CONSOLE.gmailApi} target="_blank" rel="noreferrer">
+              Enable the Gmail API
+            </a>
+          </p>
+          <p className="muted field-hint">
+            Do this before the scopes step below — that list only offers scopes for APIs that are
+            already on. Afterwards the console offers a <strong>Create credentials</strong> button:
+            ignore it, the client comes from a later step.
+          </p>
+        </li>
 
-      <li>
-        <p className="setup-step-title">
-          Paste the client ID and secret the console gave you, then sign in.
-        </p>
-        {credentialFields}
-        <p className="muted field-hint">
-          Google will warn that the app is not verified. That is expected for an app you registered
-          yourself: choose <strong>Advanced</strong>, then <strong>Go to localhost (unsafe)</strong>.
-        </p>
-        <div className="field-row">{signInButton("Save and sign in with Google")}</div>
-      </li>
-    </ol>
+        <li>
+          <p className="setup-step-title">Set up the Google Auth Platform.</p>
+          <p className="setup-links">
+            <a className="step-link" href={CONSOLE.authPlatform} target="_blank" rel="noreferrer">
+              Open the Google Auth Platform
+            </a>
+          </p>
+          <p className="muted field-hint">
+            The page reads <em>Google Auth Platform not configured yet</em> — click{" "}
+            <strong>Get started</strong>. Four short stages: an app name and your email; then{" "}
+            <strong>Audience</strong>, where you choose{" "}
+            <strong>{workspace ? "Internal" : "External"}</strong>; then a contact email; then tick
+            the policy box, press <strong>Continue</strong>, and press <strong>Create</strong>.
+          </p>
+          <p className="muted field-hint">
+            {workspace
+              ? "Internal is what makes your list one step shorter — it needs no test users and no verification."
+              : "If the contact stage turns red just after you type the address, press Next again."}
+          </p>
+        </li>
+
+        {!workspace && (
+          <li>
+            <p className="setup-step-title">Add yourself as a test user.</p>
+            <p className="setup-links">
+              <a className="step-link" href={CONSOLE.audience} target="_blank" rel="noreferrer">
+                Open Audience
+              </a>
+            </p>
+            <p className="muted field-hint">
+              Under <strong>Test users</strong> choose <strong>Add users</strong>, type the Google
+              address you will sign in with, and <strong>Save</strong>. Miss this and the sign-in
+              below fails with <em>Access blocked … Error 403: access_denied</em> and no way through
+              the page — it is the one step with no recovery.
+            </p>
+          </li>
+        )}
+
+        <li>
+          <p className="setup-step-title">Add both scopes under Data Access.</p>
+          <p className="setup-links">
+            <a className="step-link" href={CONSOLE.dataAccess} target="_blank" rel="noreferrer">
+              Open Data Access
+            </a>
+          </p>
+          <p className="muted field-hint">
+            Choose <strong>Add or remove scopes</strong>, paste both of these into{" "}
+            <strong>Manually add scopes</strong>, and press <strong>Add to table</strong> — the list
+            runs to dozens of rows across several pages and neither of these is on the first one.
+          </p>
+          {status.scopes.map((scope) => (
+            <p className="setup-copy" key={scope}>
+              <code>{scope}</code>
+              {copyButton(scope, scope)}
+            </p>
+          ))}
+          <p className="muted field-hint">
+            Then press <strong>Update</strong> in the panel, and <strong>Save</strong> on the page
+            behind it. Both: the panel's Update alone leaves the change unsaved.
+          </p>
+        </li>
+
+        <li>
+          <p className="setup-step-title">Create an OAuth client.</p>
+          <p className="setup-links">
+            <a className="step-link" href={CONSOLE.clients} target="_blank" rel="noreferrer">
+              Open Clients
+            </a>
+          </p>
+          <p className="muted field-hint">
+            <strong>Create client</strong>, then application type <strong>Web application</strong> —
+            not Desktop app, even though this app runs on your machine. Add the string below under{" "}
+            <strong>Authorized redirect URIs</strong>, which is the second of the two Add URI
+            blocks; leave <strong>Authorized JavaScript origins</strong> empty. Google matches this
+            character for character, and <code>http://</code> is correct here because it allows it
+            for localhost.
+          </p>
+          <p className="setup-copy">
+            <code>{status.redirectUri}</code>
+            {copyButton("Redirect URI", status.redirectUri)}
+          </p>
+          <p className="muted field-hint">
+            When you press Create, Google shows the client ID and secret{" "}
+            <strong>once</strong>. Copy both now, or use <strong>Download JSON</strong> — the secret
+            cannot be viewed again afterwards, and a lost one means creating another client.
+          </p>
+        </li>
+
+        <li>
+          <p className="setup-step-title">Paste the client ID and secret, then sign in.</p>
+          {credentialFields}
+          {clientJsonField}
+          <p className="muted field-hint">
+            {workspace
+              ? "Leave both permissions ticked on Google's consent screen. Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."
+              : "Google will warn that it hasn't verified this app. Click Continue — the small link, not the Back to safety button. Leave both permissions ticked: Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."}
+          </p>
+          <div className="field-row">{signInButton("Save and sign in with Google")}</div>
+        </li>
+      </ol>
+    </>
   );
 
   /* Asking Google beats describing Google: a 403 names the missing API or the
@@ -366,8 +490,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
             This is expected roughly weekly, and nothing is broken: while a consent screen's
             publishing status is <strong>Testing</strong>, Google expires its refresh token after
             seven days. Changing the account password voids it too, because the app holds a Gmail
-            scope. Publishing the consent screen removes the seven-day limit, but Google requires app
-            verification for Gmail scopes.
+            scope. A work account can avoid this entirely by setting the consent screen to Internal.
           </p>
         </>
       )}
@@ -396,7 +519,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
         <p role="status">
           <span className="muted">
             Not connected. Google has no way to let an app act on your account until you register an
-            OAuth client for it — six one-time steps, about ten minutes.
+            OAuth client for it — a one-time walk through its console, about fifteen minutes.
           </span>
         </p>
       )}

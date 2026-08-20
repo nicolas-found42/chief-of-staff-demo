@@ -68,7 +68,14 @@ function explainSurfaceFailure(surface: GoogleSurface, error: unknown): string {
   }
   const { reason, message } = apiError(error);
   if (reason === "accessNotConfigured" || /has not been used in project|is disabled/i.test(message)) {
-    return `The ${SURFACE[surface].api} is not enabled for this Google Cloud project. Step 1 links to it.`;
+    /* Google names the project in its own message, and naming it back is the
+       only way someone catches that they configured a different one — the
+       console does not switch to a project it has just created. */
+    const project = message.match(/in project (\d+)/)?.[1];
+    const where = project
+      ? `in project ${project} — is that the project you configured?`
+      : "for this Google Cloud project.";
+    return `The ${SURFACE[surface].api} is not enabled ${where} If you enabled it just now, Google can take a few minutes to catch up; wait and check again.`;
   }
   if (
     reason === "insufficientPermissions" ||
@@ -206,11 +213,17 @@ export function openGoogleConnection(
    */
   const base = (config: AppConfig) => {
     const lastConnectedAt = config.google.lastConnectedAt;
+    /* Withheld until Google has refused this grant once. The seven-day limit
+       belongs to a consent screen whose publishing status is Testing; an
+       Internal app has no publishing status and no expiry, and this module
+       cannot read which it is. Predicting anyway would warn an Internal user
+       every week about an event that never arrives. */
+    const predictable = lastConnectedAt !== null && config.google.hasExpiredBefore;
     return {
       redirectUri: redirectUriForPort(port),
       scopes: [...GOOGLE_SCOPES],
       lastConnectedAt,
-      expiresAbout: lastConnectedAt
+      expiresAbout: predictable
         ? new Date(
             new Date(lastConnectedAt).getTime() + GOOGLE_TESTING_TOKEN_DAYS * 86_400_000
           ).toISOString()
@@ -243,6 +256,9 @@ export function openGoogleConnection(
     if (!isRejectedGrant(error)) {
       return null;
     }
+    /* Latch it before deriving the status: this refusal is what teaches the
+       connection that this consent screen expires at all. */
+    configStore.markGoogleExpired();
     remembered = { state: "expired", email: null, ...base(configStore.get()) };
     return "expired";
   };

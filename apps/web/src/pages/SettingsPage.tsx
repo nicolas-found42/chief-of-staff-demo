@@ -59,6 +59,7 @@ export function SettingsPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [checkingGoogle, setCheckingGoogle] = useState(false);
   const [googleCheck, setGoogleCheck] = useState<SetupCheck | null>(null);
+  const [jsonNotice, setJsonNotice] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
@@ -299,6 +300,36 @@ export function SettingsPage() {
 
   const keyUrl = PROVIDER_KEY_URLS[form.provider];
 
+  /**
+   * Reads the client JSON the console offers on the one screen that shows the
+   * secret. Parsed here and never sent anywhere: the file's only job is to get
+   * two values into the fields, and transcribing a 35-character secret by hand
+   * is the one irreversible mistake in the whole setup.
+   */
+  const loadClientJson = async (file: File) => {
+    setJsonNotice(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      setJsonNotice("That file is not valid JSON — pick the one the console downloaded.");
+      return;
+    }
+    const web = (parsed as { web?: { client_id?: unknown; client_secret?: unknown } } | null)?.web;
+    if (!web || typeof web.client_id !== "string" || typeof web.client_secret !== "string") {
+      /* A Desktop app client arrives under `installed`, and a service-account
+         key has neither shape. Both would store credentials that cannot work
+         against this redirect URI, and would fail much later. */
+      setJsonNotice(
+        "That is not a Web application client. Create the client with application type Web application, then download its JSON."
+      );
+      return;
+    }
+    setField("googleClientId", web.client_id);
+    setField("googleClientSecret", web.client_secret);
+    setJsonNotice("Client ID and secret read from the file. Press Save and sign in with Google.");
+  };
+
   return (
     <div className="page">
       <h1 ref={headingRef} tabIndex={-1}>
@@ -308,6 +339,12 @@ export function SettingsPage() {
       {googleBanner === "connected" && (
         <div className="banner banner-ok" role="status">
           Google connected.
+        </div>
+      )}
+      {googleBanner === "access_denied" && (
+        <div className="banner banner-error" role="alert">
+          Google refused the sign-in because that account is not on your consent screen's Test users
+          list. Add it under Audience → Test users, then sign in again with the same account.
         </div>
       )}
       {googleBanner === "error" && (
@@ -438,6 +475,8 @@ export function SettingsPage() {
             onDisconnect={() => void disconnectGoogle()}
             onCheck={() => void checkGoogle()}
             check={googleCheck}
+            onClientJson={(file) => void loadClientJson(file)}
+            jsonNotice={jsonNotice}
             signingIn={signingIn}
             disconnecting={disconnecting}
             checking={checkingGoogle}
