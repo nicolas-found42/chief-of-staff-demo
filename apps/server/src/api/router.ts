@@ -2,30 +2,29 @@ import type { FastifyInstance } from "fastify";
 import {
   DEFAULT_MODELS,
   type ConfigUpdate,
-  type GoogleStatus,
   ConfigUpdateSchema,
 } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
-import { exchangeGoogleCode, googleAuthUrl } from "../google/oauth.js";
+import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
 import type { FirefliesIntake } from "../intake/fireflies.js";
 import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
-import { openRuns } from "../runs.js";
+import type { Runs } from "../runs.js";
 import { isSupportedFileName } from "../text/convert.js";
 
 export interface ApiContext {
-  workspaceDir: string;
+  runs: Runs;
   port: number;
   pipeline: Pipeline;
   configStore: ConfigStore;
   fireflies: FirefliesIntake;
-  /** Injected rather than called directly so the API can be tested without Google. */
-  getGoogleStatus: () => Promise<GoogleStatus>;
+  /** The only route to Google: the four states, the consent screen, and sign-out. */
+  google: GoogleConnection;
   onConfigChanged: () => void;
 }
 
 export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promise<void> {
-  const runs = openRuns(ctx.workspaceDir);
+  const runs = ctx.runs;
   app.get("/api/health", async () => ({ ok: true }));
 
   app.get("/api/runs", async () => ({ runs: runs.list() }));
@@ -105,29 +104,35 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
     const update = parsed.data as ConfigUpdate;
     const next = ctx.configStore.update(update);
+    /* Credentials may have changed under the connection, so what it remembers
+       about Google is no longer evidence of anything. */
+    ctx.google.invalidate();
     ctx.onConfigChanged();
     return { config: redactConfig(next), defaults: DEFAULT_MODELS };
   });
 
-  app.get("/api/google/status", async () => ctx.getGoogleStatus());
+  app.get("/api/google/status", async () => ctx.google.state());
 
   /* Clearing the refresh token is the only way back to a chooser once a token
      is held: Google reuses the last-granted account silently, so switching
      accounts and recovering from a rejected token both start here. */
   app.post("/api/google/disconnect", async () => {
-    ctx.configStore.setGoogleRefreshToken(null);
-    return ctx.getGoogleStatus();
+    ctx.google.disconnect();
+    return ctx.google.state();
   });
 
+  /* POST, not GET: it spends the refresh token and calls Google twice, so it
+     must not be reachable by a link or a prefetch. Person-initiated only
+     (ADR-0008). */
+  app.post("/api/google/check", async () => ctx.google.verifySetup());
+
   app.get("/api/google/connect", async (_request, reply) => {
-    const config = ctx.configStore.get();
-    if (!config.google.clientId || !config.google.clientSecret) {
-      reply.code(400).send({
-        error: "Google OAuth client not configured — set clientId and clientSecret in Settings first",
-      });
+    const access = ctx.google.authUrl();
+    if (!access.ok) {
+      reply.code(400).send({ error: googleFailureHint(access.state) });
       return;
     }
-    return { authUrl: googleAuthUrl(config, ctx.port) };
+    return { authUrl: access.url };
   });
 
   app.get("/api/google/callback", async (request, reply) => {
@@ -137,8 +142,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       return;
     }
     try {
-      const refreshToken = await exchangeGoogleCode(ctx.configStore.get(), ctx.port, query.code);
-      ctx.configStore.setGoogleRefreshToken(refreshToken);
+      await ctx.google.completeSignIn(query.code);
       reply.redirect("/settings?google=connected");
     } catch (error) {
       request.log.warn(error, "Google OAuth code exchange failed");

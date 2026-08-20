@@ -5,6 +5,9 @@ import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import type { GoogleOutputs } from "../../../apps/server/src/google/outputs";
+import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
+import { googleFailureHint, isRejectedGrant } from "../../../apps/server/src/google/connection";
+import type { GoogleAccess } from "../../../apps/server/src/pipeline/run";
 import { Pipeline, meetingDateFromFileName } from "../../../apps/server/src/pipeline/run";
 import { openRuns } from "../../../apps/server/src/runs";
 import { composeTaskNotes } from "../../../apps/server/src/google/tasks";
@@ -109,17 +112,28 @@ describe("Pipeline", () => {
   let workspaceDir: string;
   let provider: { complete: CompleteJson; attempts: () => number };
   let google: FakeGoogle | null;
+  /** The state `outputs()` refuses with while `google` is null. */
+  let refusal: GoogleConnectionState;
   let pipeline: Pipeline;
+
+  /* The Google connection as a Run sees it: a surface when one is available,
+     and a verdict on whatever a Google call threw. `observe` is the real
+     classifier, so a test cannot decide `expired` into existence. */
+  const googleAccess = (): GoogleAccess => ({
+    outputs: () => (google ? { ok: true, outputs: google } : { ok: false, state: refusal }),
+    observe: (error: unknown) => (isRejectedGrant(error) ? "expired" : null),
+  });
 
   beforeEach(() => {
     workspaceDir = mkdtempSync(join(tmpdir(), "pipeline-"));
     provider = scriptedProvider([GOLDEN]);
     google = fakeGoogle();
+    refusal = "disconnected";
     pipeline = new Pipeline({
-      workspaceDir,
+      runs: openRuns(workspaceDir),
       getCompleteJson: () => provider.complete,
       getLlmInfo: () => ({ provider: "mock", model: "test-model" }),
-      getGoogle: () => google,
+      google: googleAccess(),
       getTasklistName: () => "Meeting Followups",
     });
   });
@@ -252,7 +266,7 @@ describe("Pipeline", () => {
     expect(provider.attempts()).toBe(3);
   });
 
-  it("google disconnected → failed at outputs with google_not_connected; retry after connecting", async () => {
+  it("google disconnected → failed at outputs with google_unavailable; retry after connecting", async () => {
     google = null;
     const runId = await pipeline.startRun({
       type: "upload",
@@ -263,8 +277,8 @@ describe("Pipeline", () => {
     const failed = detailOf(runId);
     expect(failed!.status).toBe("failed");
     expect(failed!.failedStage).toBe("outputs");
-    expect(failed!.events.map((event) => event.type)).toContain("google_not_connected");
-    expect(failed!.failureHint).toBe("Output creation failed. Connect Google in Settings, then retry.");
+    expect(failed!.events.map((event) => event.type)).toContain("google_unavailable");
+    expect(failed!.failureHint).toBe(googleFailureHint("disconnected"));
     // Result was persisted before the outputs stage.
     expect(failed!.result?.isTranscript).toBe(true);
 
@@ -275,6 +289,49 @@ describe("Pipeline", () => {
     expect(retried!.status).toBe("done");
     expect(retried!.attempts).toBe(1);
     expect(google!.calls.tasks).toHaveLength(2);
+  });
+
+  it("expired connection → failed at outputs naming the expiry, not a generic retry", async () => {
+    // The defect: an expired token used to produce a working surface, so the Run
+    // failed with "Retry, or check the events below" and retry could never fix it.
+    google = null;
+    refusal = "expired";
+    const runId = await pipeline.startRun({
+      type: "upload",
+      fileName: "meeting.md",
+      text: "hello",
+    });
+    await pipeline.idle();
+    const failed = detailOf(runId);
+    expect(failed!.status).toBe("failed");
+    expect(failed!.failureHint).toBe(googleFailureHint("expired"));
+    const event = failed!.events.find((entry) => entry.type === "google_unavailable");
+    expect(event?.detail?.state).toBe("expired");
+  });
+
+  it("a grant Google rejects mid-batch stops the batch and names the expiry", async () => {
+    const live = fakeGoogle();
+    google = {
+      ...live,
+      createTask: async () => {
+        throw { response: { data: { error: "invalid_grant" } } };
+      },
+    };
+    const runId = await pipeline.startRun({
+      type: "upload",
+      fileName: "meeting.md",
+      text: "hello",
+    });
+    await pipeline.idle();
+    const failed = detailOf(runId);
+    expect(failed!.status).toBe("failed");
+    expect(failed!.failedStage).toBe("outputs");
+    expect(failed!.failureHint).toBe(googleFailureHint("expired"));
+    /* Not per-item error events: a dead grant is not one bad task, and every
+       remaining call would fail the same way. */
+    expect(failed!.events.filter((entry) => entry.type === "google_task_error")).toHaveLength(0);
+    expect(failed!.events.filter((entry) => entry.type === "gmail_draft_created")).toHaveLength(0);
+    expect(live.calls.drafts).toHaveLength(0);
   });
 
   it("retry of an extract-failed run re-runs extraction from scratch", async () => {

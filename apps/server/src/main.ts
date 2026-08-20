@@ -8,12 +8,12 @@ import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { makeCompleteJson } from "./llm/providers.js";
-import { googleStatus } from "./google/connection.js";
-import { googleOutputsFor } from "./google/outputs.js";
+import { openGoogleConnection } from "./google/connection.js";
 import { FirefliesIntake } from "./intake/fireflies.js";
 import { WatchIntake } from "./intake/watch.js";
 import { Pipeline } from "./pipeline/run.js";
 import { workspaceLayout } from "./paths.js";
+import { openRuns } from "./runs.js";
 import { MAX_UPLOAD_BYTES } from "./text/convert.js";
 
 const port = Number(process.env.PORT ?? 4317);
@@ -29,8 +29,13 @@ mkdirSync(layout.watchArchiveDir, { recursive: true });
 const configStore = new ConfigStore(layout.configFile);
 const config = configStore.load();
 
+const googleConnection = openGoogleConnection(configStore, port);
+/* One owner for the run directory: the Pipeline and the API read and write the
+   same Runs, not two objects over one directory. */
+const runs = openRuns(workspaceDir);
+
 const pipeline = new Pipeline({
-  workspaceDir,
+  runs,
   getCompleteJson: () => {
     const current = configStore.get();
     return makeCompleteJson(
@@ -47,7 +52,7 @@ const pipeline = new Pipeline({
     const current = configStore.get();
     return { provider: current.provider, model: current.model };
   },
-  getGoogle: () => googleOutputsFor(configStore.get(), port),
+  google: googleConnection,
   getTasklistName: () => configStore.get().tasklistName,
   log: (message) => console.log(`[pipeline] ${message}`),
 });
@@ -110,12 +115,12 @@ const syncWatchIntake = (): void => {
 };
 
 await registerApi(app, {
-  workspaceDir,
+  runs,
   port,
   pipeline,
   configStore,
   fireflies,
-  getGoogleStatus: () => googleStatus(configStore.get(), port),
+  google: googleConnection,
   onConfigChanged: () => {
     fireflies.start();
     syncWatchIntake();

@@ -1,6 +1,14 @@
 import { google } from "googleapis";
-import type { AppConfig, GoogleStatus } from "@chief-of-staff-demo/shared";
-import { GOOGLE_SCOPES, buildGoogleAuth, redirectUriForPort } from "./oauth.js";
+import type {
+  AppConfig,
+  GoogleConnectionState,
+  GoogleStatus,
+  SetupCheck,
+} from "@chief-of-staff-demo/shared";
+import { GOOGLE_TESTING_TOKEN_DAYS } from "@chief-of-staff-demo/shared";
+import type { ConfigStore } from "../config.js";
+import { GOOGLE_SCOPES, buildGoogleAuth, exchangeGoogleCode, googleAuthUrl, redirectUriForPort } from "./oauth.js";
+import { googleOutputs, type GoogleOutputs } from "./outputs.js";
 
 /**
  * Google's documented answer for a refresh token it will not honour again:
@@ -20,47 +28,319 @@ export function isRejectedGrant(error: unknown): boolean {
 }
 
 /**
- * The state of the Google connection, and who is signed in. The only thing that
- * proves a stored refresh token still works is spending it, so this asks Google
- * for an access token rather than inferring a connection from the presence of
- * three non-empty strings.
+ * The Google surfaces this app needs, in the order the setup steps introduce
+ * them. Checking both is the whole of "did the console work land?": every other
+ * part of the flow either succeeds visibly or is a credential the app holds.
  */
-export async function googleStatus(config: AppConfig, port: number): Promise<GoogleStatus> {
-  const base = { redirectUri: redirectUriForPort(port), scopes: [...GOOGLE_SCOPES] };
+export const GOOGLE_SURFACES = ["tasks", "gmail"] as const;
+export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
-  if (!config.google.clientId || !config.google.clientSecret) {
-    return { state: "unconfigured", email: null, ...base };
-  }
-  if (!config.google.refreshToken) {
-    return { state: "disconnected", email: null, ...base };
-  }
+const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
+  tasks: { label: "Google Tasks", api: "Tasks API", scope: "tasks" },
+  gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
+};
 
-  const auth = buildGoogleAuth(config, port);
-  try {
-    await auth.getAccessToken();
-  } catch (error) {
-    if (isRejectedGrant(error)) {
-      return { state: "expired", email: null, ...base };
-    }
-    /* Google was unreachable, which is not evidence against the token. The
-       credentials we hold are still the best answer we have. */
-    return { state: "connected", email: null, ...base };
+/**
+ * The reason and message Google attaches to an API error. Distinct from
+ * `isRejectedGrant`, which reads the bare string the *token* endpoint returns:
+ * an API 403 carries an object instead, and the two shapes do not overlap.
+ */
+function apiError(error: unknown): { reason: string; message: string } {
+  const reported = (error as { response?: { data?: { error?: unknown } } } | null | undefined)
+    ?.response?.data?.error;
+  if (reported && typeof reported === "object") {
+    const shaped = reported as { message?: string; errors?: { reason?: string }[] };
+    return { reason: shaped.errors?.[0]?.reason ?? "", message: shaped.message ?? "" };
   }
-
-  return { state: "connected", email: await profileEmail(auth), ...base };
+  return { reason: "", message: error instanceof Error ? error.message : String(error) };
 }
 
 /**
- * The signed-in address, for display only. Best effort: the token has already
- * proven itself by this point, so a Gmail call that fails here costs a name in
- * the UI and nothing else.
+ * Turn what a surface threw into the console step that fixes it. Google's 403
+ * already names the cause precisely — an API that was never enabled reads
+ * differently from a scope that was never granted — so this classifies rather
+ * than guesses, and a cause it does not recognise passes through verbatim
+ * instead of being flattened into "something went wrong".
  */
-async function profileEmail(auth: ReturnType<typeof buildGoogleAuth>): Promise<string | null> {
+function explainSurfaceFailure(surface: GoogleSurface, error: unknown): string {
+  if (isRejectedGrant(error)) {
+    return "Google rejected the saved sign-in. Sign in again.";
+  }
+  const { reason, message } = apiError(error);
+  if (reason === "accessNotConfigured" || /has not been used in project|is disabled/i.test(message)) {
+    return `The ${SURFACE[surface].api} is not enabled for this Google Cloud project. Step 1 links to it.`;
+  }
+  if (
+    reason === "insufficientPermissions" ||
+    /insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(message)
+  ) {
+    return `The consent screen is missing the ${SURFACE[surface].scope} scope. Add it under Data Access, then sign in again.`;
+  }
+  return message || "Google refused the call and gave no reason.";
+}
+
+/**
+ * One deliberate, read-only call per surface. Read-only matters: a check the
+ * user can press at will must not leave Tasks or drafts behind.
+ */
+export type SurfaceProbe = (
+  config: AppConfig,
+  port: number,
+  surface: GoogleSurface
+) => Promise<void>;
+
+const callSurface: SurfaceProbe = async (config, port, surface) => {
+  const auth = buildGoogleAuth(config, port);
+  if (surface === "tasks") {
+    await google.tasks({ version: "v1", auth }).tasklists.list({ maxResults: 1 });
+    return;
+  }
+  /* drafts.list, not users.getProfile: the app only ever asks for
+     gmail.compose, and getProfile is not reachable with that scope alone — it
+     would report a correctly configured Gmail as broken. */
+  await google.gmail({ version: "v1", auth }).users.drafts.list({ userId: "me", maxResults: 1 });
+};
+
+/** The hint a Run shows when the connection is why it could not finish. */
+export function googleFailureHint(state: GoogleConnectionState): string {
+  switch (state) {
+    case "unconfigured":
+      return "Google is not set up. Add your OAuth client in Settings, then retry.";
+    case "disconnected":
+      return "Google is not connected. Sign in from Settings, then retry.";
+    case "expired":
+      return "Google sign-in expired. Reconnect in Settings, then retry.";
+    case "connected":
+      return "Output creation failed. Retry, or check the events below.";
+  }
+}
+
+/** Spending the refresh token, and asking who it belongs to. Throws when Google rejects it. */
+export type GoogleProbe = (config: AppConfig, port: number) => Promise<{ email: string | null }>;
+
+const spendRefreshToken: GoogleProbe = async (config, port) => {
+  const auth = buildGoogleAuth(config, port);
+  await auth.getAccessToken();
+  /* Display only. The token has already proven itself by this point, so a Gmail
+     call that fails here costs a name in the UI and nothing else. */
   try {
     const gmail = google.gmail({ version: "v1", auth });
     const profile = await gmail.users.getProfile({ userId: "me" });
-    return profile.data.emailAddress ?? null;
+    return { email: profile.data.emailAddress ?? null };
   } catch {
-    return null;
+    return { email: null };
   }
+};
+
+export type OutputsAccess =
+  | { ok: true; outputs: GoogleOutputs }
+  | { ok: false; state: GoogleConnectionState };
+
+export type AuthUrlAccess = { ok: true; url: string } | { ok: false; state: GoogleConnectionState };
+
+/**
+ * The Google connection: the app's authorization to act on one person's Google
+ * account, as the four states of ADR-0007 and as the only route to a Google
+ * surface. Nothing outside this module reasons about client credentials or
+ * refresh tokens.
+ *
+ * Nothing proves the token ahead of a Run, and nothing proves it on a schedule
+ * (ADR-0008): `outputs()` answers from what is already known, and `observe()`
+ * turns the error a real Google call threw into the state that explains it. A
+ * person may ask — `state()` for the Settings page, `verifySetup()` for the
+ * setup check — because that is a question asked once, not a cost paid per Run.
+ */
+export interface GoogleConnection {
+  /** The four states, and who is signed in. Proves a stored token by spending it. */
+  state(): Promise<GoogleStatus>;
+  /** A Google surface, or the state that says why not. Never touches the network. */
+  outputs(): OutputsAccess;
+  /**
+   * Classify an error a Google call threw, and record what it proves about the
+   * connection. Returns the state it establishes, or null when the error says
+   * nothing about the connection.
+   */
+  observe(error: unknown): GoogleConnectionState | null;
+  /**
+   * Ask Google whether the console work is done, and name what is missing. Only
+   * ever in answer to a person pressing the button: nothing verifies on a
+   * schedule (ADR-0008).
+   */
+  verifySetup(): Promise<SetupCheck>;
+  /** Google's consent screen, or the state that says why there isn't one yet. */
+  authUrl(): AuthUrlAccess;
+  completeSignIn(code: string): Promise<void>;
+  disconnect(): void;
+  /** Drop the remembered state; the next `state()` asks Google again. */
+  invalidate(): void;
+}
+
+export interface GoogleConnectionOptions {
+  /** Test seam: the default spends the real refresh token. */
+  probe?: GoogleProbe;
+  /** Test seam: the default makes one real read-only call per surface. */
+  surfaceProbe?: SurfaceProbe;
+}
+
+export function openGoogleConnection(
+  configStore: ConfigStore,
+  port: number,
+  options: GoogleConnectionOptions = {}
+): GoogleConnection {
+  const probe = options.probe ?? spendRefreshToken;
+  const surfaceProbe = options.surfaceProbe ?? callSurface;
+  /* Remembered rather than recomputed: every `state()` that reaches Google costs
+     two round-trips, and the answer only changes on events this module sees —
+     a settings save, a sign-in, a disconnect, or a grant Google rejected during
+     a Run (ADR-0008).
+     Only ever holds a state Google told us — `connected` or `expired`. The other
+     two are read from stored config every time, so a credential that changes
+     without passing through this module cannot be masked by a stale answer. */
+  let remembered: GoogleStatus | null = null;
+
+  /**
+   * `expiresAbout` is arithmetic over a stored timestamp, never a value Google
+   * reported — it does not report one. Shown as an estimate everywhere, because
+   * a password change or a revoke ends the grant early and a hard countdown
+   * would be a promise the app cannot keep.
+   */
+  const base = (config: AppConfig) => {
+    const lastConnectedAt = config.google.lastConnectedAt;
+    return {
+      redirectUri: redirectUriForPort(port),
+      scopes: [...GOOGLE_SCOPES],
+      lastConnectedAt,
+      expiresAbout: lastConnectedAt
+        ? new Date(
+            new Date(lastConnectedAt).getTime() + GOOGLE_TESTING_TOKEN_DAYS * 86_400_000
+          ).toISOString()
+        : null,
+    };
+  };
+
+  /** The states decided by what is stored, before any token is spent. */
+  const storedState = (config: AppConfig): GoogleConnectionState | null => {
+    if (!config.google.clientId || !config.google.clientSecret) {
+      return "unconfigured";
+    }
+    if (!config.google.refreshToken) {
+      return "disconnected";
+    }
+    return null;
+  };
+
+  const remember = (status: GoogleStatus): GoogleStatus => {
+    remembered = status;
+    return status;
+  };
+
+  /**
+   * A grant Google refused is a fact about the connection, wherever it came to
+   * light. Shared by `observe` and `verifySetup`, so a check cannot learn
+   * something a Run would then have to rediscover.
+   */
+  const noteRejection = (error: unknown): GoogleConnectionState | null => {
+    if (!isRejectedGrant(error)) {
+      return null;
+    }
+    remembered = { state: "expired", email: null, ...base(configStore.get()) };
+    return "expired";
+  };
+
+  return {
+    async state(): Promise<GoogleStatus> {
+      const config = configStore.get();
+      const stored = storedState(config);
+      if (stored) {
+        return { state: stored, email: null, ...base(config) };
+      }
+      if (remembered) {
+        return remembered;
+      }
+      try {
+        const { email } = await probe(config, port);
+        return remember({ state: "connected", email, ...base(config) });
+      } catch (error) {
+        if (isRejectedGrant(error)) {
+          return remember({ state: "expired", email: null, ...base(config) });
+        }
+        /* Google was unreachable, which is not evidence against the token. The
+           credentials we hold are still the best answer we have — and it is not
+           remembered, so the next call can find out for real. */
+        return { state: "connected", email: null, ...base(config) };
+      }
+    },
+
+    outputs(): OutputsAccess {
+      const config = configStore.get();
+      const stored = storedState(config);
+      if (stored) {
+        return { ok: false, state: stored };
+      }
+      if (remembered?.state === "expired") {
+        return { ok: false, state: "expired" };
+      }
+      return { ok: true, outputs: googleOutputs(config, port) };
+    },
+
+    observe(error: unknown): GoogleConnectionState | null {
+      return noteRejection(error);
+    },
+
+    async verifySetup(): Promise<SetupCheck> {
+      const config = configStore.get();
+      const stored = storedState(config);
+      if (stored) {
+        /* Nothing to ask Google: either no credentials, or no token to spend.
+           The state alone says which, and the card explains both already. */
+        return { state: stored, items: [] };
+      }
+      const items: SetupCheck["items"] = [];
+      let rejected = false;
+      for (const surface of GOOGLE_SURFACES) {
+        try {
+          await surfaceProbe(config, port, surface);
+          items.push({
+            label: SURFACE[surface].label,
+            ok: true,
+            detail: "Google accepted the call.",
+          });
+        } catch (error) {
+          rejected = noteRejection(error) !== null || rejected;
+          items.push({
+            label: SURFACE[surface].label,
+            ok: false,
+            detail: explainSurfaceFailure(surface, error),
+          });
+        }
+      }
+      /* A disabled API is not a broken connection: the token worked, the
+         project is simply missing a switch. Only a refused grant changes the
+         state the rest of the app sees. */
+      return { state: rejected ? "expired" : "connected", items };
+    },
+
+    authUrl(): AuthUrlAccess {
+      const config = configStore.get();
+      if (!config.google.clientId || !config.google.clientSecret) {
+        return { ok: false, state: "unconfigured" };
+      }
+      return { ok: true, url: googleAuthUrl(config, port) };
+    },
+
+    async completeSignIn(code: string): Promise<void> {
+      const refreshToken = await exchangeGoogleCode(configStore.get(), port, code);
+      configStore.setGoogleRefreshToken(refreshToken);
+      remembered = null;
+    },
+
+    disconnect(): void {
+      configStore.setGoogleRefreshToken(null);
+      remembered = null;
+    },
+
+    invalidate(): void {
+      remembered = null;
+    },
+  };
 }

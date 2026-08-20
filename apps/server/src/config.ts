@@ -34,7 +34,7 @@ export function defaultConfig(): AppConfig {
     model: "",
     apiKey: "",
     tasklistName: "Meeting Followups",
-    google: { clientId: "", clientSecret: "", refreshToken: null },
+    google: { clientId: "", clientSecret: "", refreshToken: null, lastConnectedAt: null },
     fireflies: { enabled: false, apiKey: "", pollIntervalMinutes: 5 },
     watch: { enabled: false, folderPath: "" },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
@@ -86,9 +86,22 @@ export class ConfigStore {
     return this.config;
   }
 
+  /**
+   * Stamps `lastConnectedAt` on the way in, because this is the one place a
+   * sign-in is recorded. Clearing the token deliberately — switching accounts —
+   * leaves the stamp alone: the console work is still done, and it is that fact,
+   * not the token, which decides whether the setup steps are still needed.
+   */
   setGoogleRefreshToken(token: string | null): void {
     const current = this.get();
-    this.config = { ...current, google: { ...current.google, refreshToken: token } };
+    this.config = {
+      ...current,
+      google: {
+        ...current.google,
+        refreshToken: token,
+        lastConnectedAt: token ? new Date().toISOString() : current.google.lastConnectedAt,
+      },
+    };
     this.persist();
   }
 
@@ -102,14 +115,6 @@ export function secretHint(value: string): SecretHint {
   return { set: value.length > 0, hint: value ? `…${value.slice(-4)}` : "" };
 }
 
-export function googleConnected(config: AppConfig): boolean {
-  return (
-    config.google.clientId !== "" &&
-    config.google.clientSecret !== "" &&
-    config.google.refreshToken !== null
-  );
-}
-
 export function redactConfig(config: AppConfig): RedactedConfig {
   return {
     provider: config.provider,
@@ -119,7 +124,6 @@ export function redactConfig(config: AppConfig): RedactedConfig {
     google: {
       clientId: config.google.clientId,
       clientSecret: secretHint(config.google.clientSecret),
-      connected: googleConnected(config),
     },
     fireflies: {
       enabled: config.fireflies.enabled,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { GoogleStatus, ProviderId } from "@chief-of-staff-demo/shared";
+import type { GoogleStatus, ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
 import { usePageFocus } from "../usePageFocus";
@@ -14,6 +14,19 @@ const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
   { value: "gemini", label: "Google Gemini" },
   { value: "ollama", label: "Ollama (local model)" },
 ];
+
+/**
+ * Where each provider issues API keys. Without this a beginner has to work out
+ * which of a provider's several consoles holds them, from a Settings page that
+ * only says "Provider API key". `ollama` and `mock` need no key, so they have
+ * no entry and the line does not render.
+ */
+const PROVIDER_KEY_URLS: Partial<Record<ProviderId, string>> = {
+  openai: "https://platform.openai.com/api-keys",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  openrouter: "https://openrouter.ai/keys",
+  gemini: "https://aistudio.google.com/apikey",
+};
 
 interface FormState {
   provider: ProviderId;
@@ -44,6 +57,8 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [checkingGoogle, setCheckingGoogle] = useState(false);
+  const [googleCheck, setGoogleCheck] = useState<SetupCheck | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
@@ -229,12 +244,33 @@ export function SettingsPage() {
     }
     setDisconnecting(true);
     setError(null);
+    /* The old answer described a connection that no longer exists. */
+    setGoogleCheck(null);
     try {
       setGoogleStatus(await api.googleDisconnect());
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  /* The check can establish that the grant is dead, so the status it returns
+     replaces the one on screen rather than sitting beside it. */
+  const checkGoogle = async () => {
+    if (checkingGoogle) {
+      return;
+    }
+    setCheckingGoogle(true);
+    setError(null);
+    try {
+      const result = await api.googleCheck();
+      setGoogleCheck(result);
+      setGoogleStatus(await api.googleStatus());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setCheckingGoogle(false);
     }
   };
 
@@ -260,6 +296,8 @@ export function SettingsPage() {
   // on the first keystroke (3.3.2).
   const secretHint = (set: boolean, hint: string) =>
     set ? `Stored (${hint}). Leave blank to keep it.` : "No value stored yet.";
+
+  const keyUrl = PROVIDER_KEY_URLS[form.provider];
 
   return (
     <div className="page">
@@ -336,7 +374,9 @@ export function SettingsPage() {
               <label htmlFor="api-key">Provider API key</label>
               <input
                 id="api-key"
-                aria-describedby="api-key-hint"
+                aria-describedby={
+                  keyUrl ? "api-key-hint api-key-source" : "api-key-hint"
+                }
                 type="password"
                 value={form.apiKey}
                 autoComplete="off"
@@ -345,6 +385,14 @@ export function SettingsPage() {
               <p id="api-key-hint" className="muted field-hint">
                 {secretHint(payload.config.apiKey.set, payload.config.apiKey.hint)}
               </p>
+              {keyUrl && (
+                <p id="api-key-source" className="muted field-hint">
+                  Sign in and create an API key at{" "}
+                  <a className="step-link" href={keyUrl} target="_blank" rel="noreferrer">
+                    {keyUrl.replace("https://", "")}
+                  </a>
+                </p>
+              )}
             </div>
           </div>
           {form.provider === "ollama" && (
@@ -388,8 +436,11 @@ export function SettingsPage() {
             }
             onSignIn={() => void signInGoogle()}
             onDisconnect={() => void disconnectGoogle()}
+            onCheck={() => void checkGoogle()}
+            check={googleCheck}
             signingIn={signingIn}
             disconnecting={disconnecting}
+            checking={checkingGoogle}
           />
           <div className="form-grid">
             <div className="field">

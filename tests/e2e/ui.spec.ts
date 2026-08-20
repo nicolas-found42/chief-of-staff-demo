@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleTranscript = join(here, "../fixtures/transcripts/sample-transcript.md");
 
-test("upload → run detail shows extraction; google_not_connected path visible", async ({
+test("upload → run detail shows extraction; google_unavailable path visible", async ({
   page,
 }) => {
   await page.goto("/");
@@ -35,8 +35,8 @@ test("upload → run detail shows extraction; google_not_connected path visible"
     "Updated Q3 pricing ahead of your board meeting"
   );
 
-  // The google_not_connected path is visible in the events timeline.
-  await expect(page.locator(".events-log")).toContainText("google_not_connected");
+  // The google_unavailable path is visible in the events timeline.
+  await expect(page.locator(".events-log")).toContainText("google_unavailable");
   await expect(page.getByRole("button", { name: /retry/i })).toBeVisible();
 
   // Transcript is present in the collapsible.
@@ -70,13 +70,21 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
 test("an unconfigured workspace gets the setup steps, not two bare fields", async ({ page }) => {
   await page.goto("/settings");
 
-  // The four one-time console steps, in the order the console forces them.
+  // The six one-time console steps, in the order the console forces them. Google
+  // split the old consent screen into Branding, Audience and Data Access, and a
+  // step that sends someone to the wrong page is a step they cannot finish.
   const steps = page.locator(".setup-steps > li");
-  await expect(steps).toHaveCount(4);
-  await expect(page.getByRole("link", { name: "Enable the Tasks API" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Enable the Gmail API" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open the consent screen" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Create the OAuth client" })).toBeVisible();
+  await expect(steps).toHaveCount(6);
+  for (const name of [
+    "Enable the Tasks API",
+    "Enable the Gmail API",
+    "Open Branding",
+    "Open Audience",
+    "Open Data Access",
+    "Open Clients",
+  ]) {
+    await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+  }
 
   // The redirect URI is built from the port the server is actually on. This
   // suite runs on 4319, so a value hardcoded to 4317 — as the UI used to carry —
@@ -115,7 +123,10 @@ test("signing in without a client id reports Google's refusal in the page", asyn
   const signIn = page.getByRole("button", { name: /Save and sign in with Google/ });
   await signIn.focus();
   await signIn.click();
-  await expect(page.locator(".banner-error")).toContainText(/not configured/i);
+  // The wording is the connection's own (googleFailureHint), so the refusal the
+  // user reads here is the same sentence a Run shows when it fails for this state.
+  await expect(page.locator(".banner-error")).toContainText(/not set up/i);
+  await expect(page.locator(".banner-error")).toContainText(/Settings/);
   // The control the user pressed keeps focus rather than dropping it (WCAG 2.4.3).
   await expect(signIn).toBeFocused();
 });
@@ -172,5 +183,43 @@ test("the page never scrolls sideways at a 320px viewport", async ({ page }) => 
       return root.scrollWidth > root.clientWidth + 1;
     });
     expect(overflows, `${path} scrolls horizontally at 320px`).toBe(false);
+  }
+});
+
+/* Last in the file, and it puts the workspace back: it is the only test here
+   that stores Google credentials, and everything above expects a workspace with
+   none. */
+test("credentials saved but no successful sign-in keeps the steps on the page", async ({ page }) => {
+  // Where a beginner lands when the first sign-in fails — a wrong redirect URI,
+  // an API left disabled, or closing the consent screen. The connection reads
+  // `disconnected`, exactly like a deliberate sign-out, and this used to
+  // collapse every instruction behind a "Change the OAuth client" summary at
+  // precisely the moment they were needed.
+  await page.request.put("/api/config", {
+    data: {
+      google: {
+        clientId: "000000000000-onboarding.apps.googleusercontent.com",
+        clientSecret: "not-a-real-secret",
+      },
+    },
+  });
+
+  try {
+    await page.goto("/settings");
+
+    await expect(page.locator(".setup-steps > li")).toHaveCount(6);
+    // Open on the page, not behind a summary.
+    await expect(page.locator(".setup-details")).toHaveCount(0);
+    // And it says why the steps are still here, rather than only "Not connected".
+    await expect(page.locator(".banner-warn")).toContainText(/no sign-in has succeeded yet/i);
+    // The credentials already stored are the ones in the field, so the person can
+    // see and correct the value that failed.
+    await expect(page.getByLabel("OAuth client ID")).toHaveValue(
+      "000000000000-onboarding.apps.googleusercontent.com"
+    );
+  } finally {
+    await page.request.put("/api/config", {
+      data: { google: { clientId: "", clientSecret: "" } },
+    });
   }
 });

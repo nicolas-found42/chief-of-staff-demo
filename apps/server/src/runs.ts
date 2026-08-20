@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -29,13 +30,38 @@ export interface RunContext {
   attendees: RunAttendee[];
 }
 
+/** How a Run ends. Both are terminal; `failed` has its own transition. */
+export type RunOutcome =
+  | { status: "done"; detail?: Record<string, unknown> }
+  | { status: "skipped"; reason: string | null };
+
+/**
+ * One Run, as the things that can happen to it. Status and the event log are
+ * written together by the transitions below, so no caller can move a Run
+ * without the timeline saying so — the two disagreeing is what the Run detail
+ * page renders side by side.
+ *
+ * A Module names the Stages and decides the policy (which are retryable, what a
+ * failure means); this module only records what happened. See ADR-0009.
+ */
 export interface RunHandle {
   readonly id: string;
-  readonly dir: string;
-  readMeta(): RunMeta;
-  writeMeta(meta: RunMeta): void;
+  /** A snapshot. Runs is the only writer, so a held copy is never authoritative. */
+  read(): Readonly<RunMeta>;
+  /** Enter a Stage: the Run is running, and the start is logged. */
+  started(stage: string): void;
+  /** Leave a Stage as failed, with the wording the failing module supplied. */
+  failed(stage: string, reason: string, hint: string): void;
+  /** End the Run. */
+  finished(outcome: RunOutcome): void;
+  /** Count one attempt at the current Stage; returns the new count. */
+  attemptStarted(): number;
+  /** Start counting attempts again, for a Stage the Module is re-running from scratch. */
+  resetAttempts(): void;
+  /** Back to pending with the failure cleared, ready to run again from `fromStage`. */
+  reopen(fromStage: string): Readonly<RunMeta>;
+  /** Module-named events. The Shell writes the Stage and status ones itself. */
   appendEvent(type: RunEventType, detail?: Record<string, unknown>): void;
-  readEvents(): RunEvent[];
   readResult(): ExtractionResult | null;
   writeResult(result: ExtractionResult): void;
   deleteResult(): void;
@@ -59,8 +85,16 @@ export interface Runs {
   detail(id: string): RunDetail | null;
 }
 
+/**
+ * Written to a sibling and renamed over the target: a torn `meta.json` is the
+ * one failure that makes a Run vanish from the list rather than merely look
+ * stale, and rename is atomic within a directory.
+ */
 function writeMeta(runDir: string, meta: RunMeta): void {
-  writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
+  const path = join(runDir, "meta.json");
+  const temp = `${path}.tmp`;
+  writeFileSync(temp, JSON.stringify(meta, null, 2) + "\n", "utf8");
+  renameSync(temp, path);
 }
 
 function readMeta(runDir: string): RunMeta {
@@ -137,23 +171,101 @@ function toSummary(meta: RunMeta, result: ExtractionResult | null): RunSummary {
 class RunHandleImpl implements RunHandle {
   constructor(
     readonly id: string,
-    readonly dir: string
+    private readonly dir: string
   ) {}
 
-  readMeta(): RunMeta {
+  read(): Readonly<RunMeta> {
     return readMeta(this.dir);
   }
 
-  writeMeta(meta: RunMeta): void {
+  /** Every transition goes through here, so status and timeline cannot drift apart. */
+  private transition(
+    change: (meta: RunMeta) => void,
+    events: { type: RunEventType; detail?: Record<string, unknown> }[]
+  ): RunMeta {
+    const meta = readMeta(this.dir);
+    change(meta);
     writeMeta(this.dir, meta);
+    for (const event of events) {
+      appendEvent(this.dir, event.type, event.detail);
+    }
+    return meta;
+  }
+
+  started(stage: string): void {
+    this.transition(
+      (meta) => {
+        meta.status = "running";
+      },
+      [{ type: "stage_started", detail: { stage } }]
+    );
+  }
+
+  failed(stage: string, reason: string, hint: string): void {
+    this.transition(
+      (meta) => {
+        meta.status = "failed";
+        meta.failedStage = stage;
+        meta.failureHint = hint;
+      },
+      [
+        { type: "stage_failed", detail: { stage, error: reason } },
+        { type: "run_failed", detail: { stage, reason } },
+      ]
+    );
+  }
+
+  finished(outcome: RunOutcome): void {
+    if (outcome.status === "skipped") {
+      this.transition(
+        (meta) => {
+          meta.status = "skipped";
+          meta.skipReason = outcome.reason;
+        },
+        [
+          { type: "classify_skipped", detail: { skipReason: outcome.reason } },
+          { type: "run_done", detail: { status: "skipped" } },
+        ]
+      );
+      return;
+    }
+    this.transition(
+      (meta) => {
+        meta.status = "done";
+        meta.failedStage = null;
+      },
+      [{ type: "run_done", detail: { status: "done", ...outcome.detail } }]
+    );
+  }
+
+  attemptStarted(): number {
+    return this.transition((meta) => {
+      meta.attempts += 1;
+    }, []).attempts;
+  }
+
+  resetAttempts(): void {
+    this.transition((meta) => {
+      meta.attempts = 0;
+    }, []);
+  }
+
+  reopen(fromStage: string): Readonly<RunMeta> {
+    return this.transition(
+      (meta) => {
+        meta.status = "pending";
+        meta.failedStage = null;
+        meta.failureHint = null;
+        meta.skipReason = null;
+      },
+      /* A retry used to leave no trace but a second `stage_started`, so a
+         timeline read later could not tell a resumed Run from a slow one. */
+      [{ type: "run_reopened", detail: { fromStage } }]
+    );
   }
 
   appendEvent(type: RunEventType, detail?: Record<string, unknown>): void {
     appendEvent(this.dir, type, detail);
-  }
-
-  readEvents(): RunEvent[] {
-    return readEvents(this.dir);
   }
 
   readResult(): ExtractionResult | null {

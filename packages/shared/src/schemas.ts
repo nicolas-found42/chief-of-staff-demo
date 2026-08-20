@@ -146,6 +146,9 @@ export const ConfigSchema = z.strictObject({
     clientId: z.string(),
     clientSecret: z.string(),
     refreshToken: z.string().nullable(),
+    /* When a sign-in last succeeded. Null means one never has, which is what
+       keeps the setup steps on screen for someone whose first attempt failed. */
+    lastConnectedAt: z.string().nullable().default(null),
   }),
   fireflies: z.strictObject({
     enabled: z.boolean().default(false),
@@ -212,7 +215,6 @@ export interface RedactedConfig {
   google: {
     clientId: string;
     clientSecret: SecretHint;
-    connected: boolean;
   };
   fireflies: {
     enabled: boolean;
@@ -266,6 +268,41 @@ export interface GoogleStatus {
   redirectUri: string;
   /** The scopes to add to the consent screen, in the order they are requested. */
   scopes: string[];
+  /**
+   * When the last sign-in succeeded, or null if one never has. This is what
+   * separates "set up, merely signed out" from "half-configured, never worked"
+   * without a fifth state: the console steps stay on screen until it is set.
+   */
+  lastConnectedAt: string | null;
+  /**
+   * When Google will probably stop accepting the sign-in. An estimate, never a
+   * promise — Google does not report a refresh token's lifetime, and a password
+   * change or a revoke ends the grant immediately. Null until a sign-in has
+   * succeeded, and always presented as approximate.
+   */
+  expiresAbout: string | null;
+}
+
+/**
+ * How long Google leaves a refresh token alive while a consent screen's
+ * publishing status is Testing. Google's documented behaviour, not a value it
+ * returns, so everything derived from it is an estimate.
+ */
+export const GOOGLE_TESTING_TOKEN_DAYS = 7;
+
+/**
+ * POST /api/google/check response: what Google itself said about each surface
+ * the app needs. Answers "did I finish the console steps?" by asking Google
+ * rather than by describing the console — the console is the part that goes
+ * stale, and a 403 from Google names the missing piece exactly.
+ */
+export interface SetupCheck {
+  state: GoogleConnectionState;
+  /**
+   * One line per surface checked, in the order the setup steps introduce them.
+   * Empty when the connection state made a call impossible at all.
+   */
+  items: { label: string; ok: boolean; detail: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -306,9 +343,10 @@ export const RUN_EVENT_TYPES = [
   "google_task_error",
   "gmail_draft_created",
   "gmail_draft_error",
-  "google_not_connected",
+  "google_unavailable",
   "run_done",
   "run_failed",
+  "run_reopened",
 ] as const;
 export type RunEventType = (typeof RUN_EVENT_TYPES)[number];
 

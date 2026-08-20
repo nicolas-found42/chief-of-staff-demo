@@ -1,12 +1,12 @@
 import type { AppConfig, DraftItem, ExtractionResult, TaskItem } from "@chief-of-staff-demo/shared";
-import { googleConnected as isConnected } from "../config.js";
 import { buildGoogleAuth, type GoogleAuth } from "./oauth.js";
 import { createGmailDraft, gmailDraftInput } from "./gmail.js";
 import { createGoogleTask, findOrCreateTasklist } from "./tasks.js";
 
 /**
- * The only Google surface the pipeline talks to. `null` when Google is not
- * connected (missing client credentials or refresh token).
+ * The only Google surface a Run talks to. Reached through the Google
+ * connection, never built directly: whether the connection can hand one out is
+ * the connection's decision to make.
  */
 export interface GoogleOutputs {
   findOrCreateTasklist(title: string): Promise<string>;
@@ -18,14 +18,7 @@ export interface GoogleOutputs {
   createDraft(draft: DraftItem): Promise<string>;
 }
 
-export function googleConnected(config: AppConfig): boolean {
-  return isConnected(config);
-}
-
-export function googleOutputsFor(config: AppConfig, port: number): GoogleOutputs | null {
-  if (!googleConnected(config)) {
-    return null;
-  }
+export function googleOutputs(config: AppConfig, port: number): GoogleOutputs {
   const auth: GoogleAuth = buildGoogleAuth(config, port);
   return {
     findOrCreateTasklist: (title: string) => findOrCreateTasklist(auth, title),

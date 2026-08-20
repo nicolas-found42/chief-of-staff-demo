@@ -3,6 +3,7 @@ import type {
   RedactedConfig,
   RunDetail,
   RunSummary,
+  SetupCheck,
 } from "@chief-of-staff-demo/shared";
 
 export class ApiError extends Error {
@@ -57,6 +58,7 @@ export const api = {
       body: JSON.stringify(update),
     }),
   googleStatus: () => request<GoogleStatus>("/api/google/status"),
+  googleCheck: () => request<SetupCheck>("/api/google/check", { method: "POST" }),
   googleConnect: () => request<{ authUrl: string }>("/api/google/connect"),
   googleDisconnect: () =>
     request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),

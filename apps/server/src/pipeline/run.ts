@@ -6,9 +6,9 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { type CompleteJson } from "../llm/providers.js";
 import { buildExtractionMessages, type RunPromptContext } from "../llm/prompt.js";
-import type { GoogleOutputs } from "../google/outputs.js";
+import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
 import { SourceError, convertToText } from "../text/convert.js";
-import { openRuns, type RunContext, type RunHandle, type Runs } from "../runs.js";
+import type { RunContext, RunHandle, Runs } from "../runs.js";
 
 const MAX_EXTRACT_ATTEMPTS = 3;
 
@@ -23,13 +23,17 @@ export interface RunSourceSpec {
   context?: RunContext;
 }
 
+/** What a Run needs from the Google connection: a surface, and a verdict on a failure. */
+export type GoogleAccess = Pick<GoogleConnection, "outputs" | "observe">;
+
 export interface PipelineDeps {
-  workspaceDir: string;
+  /** Constructed once by the Shell: the run directory has one owner. */
+  runs: Runs;
   /** Fresh per attempt so config edits apply without a restart. */
   getCompleteJson: () => CompleteJson;
   /** Provider/model recorded on extract_attempt events for diagnosis. */
   getLlmInfo: () => { provider: string; model: string };
-  getGoogle: () => GoogleOutputs | null;
+  google: GoogleAccess;
   getTasklistName: () => string;
   log?: (message: string) => void;
 }
@@ -67,9 +71,7 @@ function errorMessage(error: unknown): string {
 function failureHintFor(stage: string, reason: string): string {
   if (stage === "convert") return "This file could not be converted to text.";
   if (stage === "outputs") {
-    return reason === "google_not_connected"
-      ? "Output creation failed. Connect Google in Settings, then retry."
-      : "Output creation failed. Retry, or check the events below.";
+    return "Output creation failed. Retry, or check the events below.";
   }
   return reason === "extraction failed after 3 attempts"
     ? "Extraction failed after 3 attempts."
@@ -81,7 +83,7 @@ export class Pipeline {
   private readonly runs: Runs;
 
   constructor(private readonly deps: PipelineDeps) {
-    this.runs = openRuns(deps.workspaceDir);
+    this.runs = deps.runs;
   }
 
   /** Resolves when every enqueued job has settled (test seam). */
@@ -104,10 +106,8 @@ export class Pipeline {
         attendees: spec.context?.attendees ?? [],
       },
     });
-    const meta = run.readMeta();
-
     try {
-      const text = await this.stage(run, meta, "convert", async () => {
+      const text = await this.stage(run, "convert", async () => {
         try {
           return spec.text ?? (await convertToText(spec.fileName, spec.bytes ?? Buffer.alloc(0)));
         } catch (err) {
@@ -128,22 +128,20 @@ export class Pipeline {
     if (!run) {
       throw new RunNotFoundError(id);
     }
-    const meta = run.readMeta();
+    const meta = run.read();
+    /* The policy is this Module's: `convert` reads the uploaded bytes, which the
+       Shell does not keep, so there is nothing to re-run. */
     if (meta.status !== "failed" || !meta.failedStage || meta.failedStage === "convert") {
       throw new RunNotRetryableError(id);
     }
     const stage = meta.failedStage;
-    meta.status = "pending";
-    meta.failedStage = null;
-    meta.failureHint = null;
-    meta.skipReason = null;
     if (stage === "extract") {
-      meta.attempts = 0;
+      run.resetAttempts();
       run.deleteResult();
     }
-    run.writeMeta(meta);
+    const reopened = run.reopen(stage);
     this.enqueue(() => (stage === "outputs" ? this.processRun(id, "outputs") : this.processRun(id)));
-    return meta;
+    return reopened;
   }
 
   private enqueue(job: () => Promise<void>): void {
@@ -154,25 +152,19 @@ export class Pipeline {
       });
   }
 
-  private async stage<T>(run: RunHandle, meta: RunMeta, name: string, fn: () => Promise<T>): Promise<T> {
-    meta.status = "running";
-    run.writeMeta(meta);
-    run.appendEvent("stage_started", { stage: name });
+  private async stage<T>(run: RunHandle, name: string, fn: () => Promise<T>): Promise<T> {
+    run.started(name);
     try {
       return await fn();
     } catch (error) {
-      this.failRun(run, meta, name, errorMessage(error));
+      this.failRun(run, name, errorMessage(error));
       throw error;
     }
   }
 
-  private failRun(run: RunHandle, meta: RunMeta, stage: string, reason: string): void {
-    meta.status = "failed";
-    meta.failedStage = stage;
-    meta.failureHint = failureHintFor(stage, reason);
-    run.writeMeta(meta);
-    run.appendEvent("stage_failed", { stage, error: reason });
-    run.appendEvent("run_failed", { stage, reason });
+  /** `hint` overrides the stage default when the failing module supplied its own wording. */
+  private failRun(run: RunHandle, stage: string, reason: string, hint?: string): void {
+    run.failed(stage, reason, hint ?? failureHintFor(stage, reason));
   }
 
   private async processRun(id: string, resumeOutputs?: "outputs"): Promise<void> {
@@ -180,38 +172,33 @@ export class Pipeline {
     if (!run) {
       return;
     }
-    const meta = run.readMeta();
     const context = run.readContext();
     try {
       if (resumeOutputs !== "outputs") {
-        const result = await this.stage(run, meta, "extract", () => this.extract(run, meta, context));
-        meta.skipReason = result.skipReason;
+        const result = await this.stage(run, "extract", () => this.extract(run, context));
         if (!result.isTranscript) {
-          meta.status = "skipped";
-          run.writeMeta(meta);
-          run.appendEvent("classify_skipped", { skipReason: result.skipReason });
-          run.appendEvent("run_done", { status: "skipped" });
+          run.finished({ status: "skipped", reason: result.skipReason });
           return;
         }
-        await this.stage(run, meta, "outputs", () => this.createOutputs(run, meta, result));
+        await this.stage(run, "outputs", () => this.createOutputs(run, result));
         return;
       }
       const cached = run.readResult();
       if (!cached) {
-        this.failRun(run, meta, "extract", "retry found no cached result");
+        this.failRun(run, "extract", "retry found no cached result");
         return;
       }
-      await this.stage(run, meta, "outputs", () => this.createOutputs(run, meta, cached));
+      await this.stage(run, "outputs", () => this.createOutputs(run, cached));
     } catch {
       // Already recorded by the stage wrapper; swallow so the queue doesn't log a crash.
     }
   }
 
-  private async extract(run: RunHandle, meta: RunMeta, context: RunContext): Promise<ExtractionResult> {
+  private async extract(run: RunHandle, context: RunContext): Promise<ExtractionResult> {
+    const meta = run.read();
     let parsed: ExtractionResult | null = null;
-    for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
-      meta.attempts = attempt;
-      run.writeMeta(meta);
+    for (let round = 1; round <= MAX_EXTRACT_ATTEMPTS; round++) {
+      const attempt = run.attemptStarted();
       const llm = this.deps.getLlmInfo();
       run.appendEvent("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
       try {
@@ -245,23 +232,37 @@ export class Pipeline {
     return result;
   }
 
-  private async createOutputs(
-    run: RunHandle,
-    meta: RunMeta,
-    result: ExtractionResult
-  ): Promise<void> {
-    const google = this.deps.getGoogle();
-    if (!google) {
-      run.appendEvent("google_not_connected");
-      this.failRun(run, meta, "outputs", "google_not_connected");
+  /**
+   * A rejected grant is not one bad item: every remaining call would fail the
+   * same way. Record what it proves about the connection and stop the batch.
+   */
+  private failedOnConnection(run: RunHandle, error: unknown): boolean {
+    const state = this.deps.google.observe(error);
+    if (!state) {
+      return false;
+    }
+    run.appendEvent("google_unavailable", { state, error: errorMessage(error) });
+    this.failRun(run, "outputs", `google_${state}`, googleFailureHint(state));
+    return true;
+  }
+
+  private async createOutputs(run: RunHandle, result: ExtractionResult): Promise<void> {
+    const access = this.deps.google.outputs();
+    if (!access.ok) {
+      run.appendEvent("google_unavailable", { state: access.state });
+      this.failRun(run, "outputs", `google_${access.state}`, googleFailureHint(access.state));
       return;
     }
+    const google = access.outputs;
 
     let tasklistId: string;
     try {
       tasklistId = await google.findOrCreateTasklist(this.deps.getTasklistName());
     } catch (error) {
-      this.failRun(run, meta, "outputs", `tasklist: ${errorMessage(error)}`);
+      if (this.failedOnConnection(run, error)) {
+        return;
+      }
+      this.failRun(run, "outputs", `tasklist: ${errorMessage(error)}`);
       return;
     }
 
@@ -273,6 +274,9 @@ export class Pipeline {
         const googleId = await google.createTask(tasklistId, task, result);
         run.appendEvent("google_task_created", { title: task.title, googleId });
       } catch (error) {
+        if (this.failedOnConnection(run, error)) {
+          return;
+        }
         taskErrors += 1;
         run.appendEvent("google_task_error", { title: task.title, error: errorMessage(error) });
       }
@@ -282,20 +286,22 @@ export class Pipeline {
         const googleId = await google.createDraft(draft);
         run.appendEvent("gmail_draft_created", { subject: draft.subject, googleId });
       } catch (error) {
+        if (this.failedOnConnection(run, error)) {
+          return;
+        }
         draftErrors += 1;
         run.appendEvent("gmail_draft_error", { subject: draft.subject, error: errorMessage(error) });
       }
     }
 
-    meta.status = "done";
-    meta.failedStage = null;
-    run.writeMeta(meta);
-    run.appendEvent("run_done", {
+    run.finished({
       status: "done",
-      tasks: result.tasks.length,
-      drafts: result.drafts.length,
-      taskErrors,
-      draftErrors,
+      detail: {
+        tasks: result.tasks.length,
+        drafts: result.drafts.length,
+        taskErrors,
+        draftErrors,
+      },
     });
   }
 }

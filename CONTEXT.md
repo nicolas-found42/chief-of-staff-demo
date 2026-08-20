@@ -47,7 +47,9 @@ _Avoid_: Sink, writer, integration
 **Google connection**:
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
-expiry being a weekly event rather than a fault.
+expiry being a weekly event rather than a fault. It is also the only route to a Google surface:
+nothing else in the app reasons about client credentials or refresh tokens, and an Output Adapter
+is obtained from the connection or not at all.
 _Avoid_: Google auth, login, OAuth (the protocol is not the connection)
 
 **Workspace**:

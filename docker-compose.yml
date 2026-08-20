@@ -9,4 +9,7 @@ services:
       - "127.0.0.1:4317:4317"
     volumes:
       - ./workspace:/app/workspace
-    restart: unless-stopped
+    # Deliberately not `unless-stopped`: that restarts the app every time Docker
+    # Desktop starts, for as long as the image exists, which is not what someone
+    # trying the app out expects of it. Starting it is `docker compose up -d`.
+    restart: "no"

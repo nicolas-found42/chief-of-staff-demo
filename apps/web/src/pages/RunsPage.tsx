@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { GoogleConnectionState, RunSummary } from "@chief-of-staff-demo/shared";
+import type { GoogleStatus, RunSummary } from "@chief-of-staff-demo/shared";
 import { SourceBadge, StatusPill, formatTime } from "../components/StatusPill";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
@@ -17,7 +17,7 @@ export function RunsPage() {
   const [checking, setChecking] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [liveReady, setLiveReady] = useState(false);
-  const [googleState, setGoogleState] = useState<GoogleConnectionState | null>(null);
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -42,15 +42,23 @@ export function RunsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        setGoogleState((await api.googleStatus()).state);
+        setGoogle(await api.googleStatus());
       } catch {
-        setGoogleState(null);
+        setGoogle(null);
       }
     };
     void load();
   }, []);
 
   const activeCount = runs === null ? 0 : runs.filter((run) => !TERMINAL.has(run.status)).length;
+
+  /* Inside a day of the estimate, and silent before that. Someone who only ever
+     operates the app lives on this page and would otherwise meet the weekly
+     expiry as a failed run rather than as a warning. */
+  const expiryNear =
+    google?.state === "connected" &&
+    google.expiresAbout !== null &&
+    new Date(google.expiresAbout).getTime() - Date.now() < 86_400_000;
 
   // The list used to auto-update every 3s for as long as it was open, with no
   // way to pause or stop it and nothing to show for it once every run was
@@ -135,17 +143,29 @@ export function RunsPage() {
       {/* role="status", not "alert": this is a standing condition the user may
           have chosen, not an event, and an assertive interruption on every visit
           to the landing page would be hostile. */}
-      {googleState !== null && googleState !== "connected" && (
+      {google !== null && google.state !== "connected" && (
         <div className="banner banner-warn" role="status">
           <span>
-            {googleState === "unconfigured"
+            {google.state === "unconfigured"
               ? "Google is not connected yet, so runs will extract tasks but have nowhere to put them."
-              : googleState === "expired"
+              : google.state === "expired"
                 ? "Google stopped accepting the saved sign-in, so runs cannot create tasks or drafts."
                 : "Google is not signed in, so runs cannot create tasks or drafts."}
           </span>
           <Link className="step-link" to="/settings">
-            {googleState === "unconfigured" ? "Set up Google" : "Sign in with Google"}
+            {google.state === "unconfigured" ? "Set up Google" : "Sign in with Google"}
+          </Link>
+        </div>
+      )}
+
+      {expiryNear && (
+        <div className="banner banner-warn" role="status">
+          <span>
+            Google will probably ask you to sign in again within a day. This happens about weekly
+            and nothing is broken when it does.
+          </span>
+          <Link className="step-link" to="/settings">
+            Sign in with Google
           </Link>
         </div>
       )}

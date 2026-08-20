@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GoogleStatus } from "@chief-of-staff-demo/shared";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
 import { ConfigStore } from "../../../apps/server/src/config";
-import { googleStatus } from "../../../apps/server/src/google/connection";
+import { googleFailureHint, openGoogleConnection } from "../../../apps/server/src/google/connection";
 
 const PORT = 4317;
 
@@ -26,10 +26,14 @@ beforeEach(async () => {
     workspaceDir,
     port: PORT,
     configStore,
-    /* The real composition, so the states below are the ones the server derives
-       rather than ones the test asserts into existence. Neither reaches Google:
-       both are decided before a token is spent. */
-    getGoogleStatus: () => googleStatus(configStore.get(), PORT),
+    /* The real module, so the states below are the ones the server derives
+       rather than ones the test asserts into existence. Its probe never runs:
+       every state here is decided before a token is spent. */
+    google: openGoogleConnection(configStore, PORT, {
+      probe: async () => {
+        throw new Error("no test reaches Google");
+      },
+    }),
   } as unknown as ApiContext);
   await app.ready();
 });
@@ -83,7 +87,7 @@ describe("GET /api/google/connect", () => {
   it("refuses with a 400 that names what is missing", async () => {
     const response = await app.inject({ method: "GET", url: "/api/google/connect" });
     expect(response.statusCode).toBe(400);
-    expect(response.json().error).toContain("not configured");
+    expect(response.json().error).toBe(googleFailureHint("unconfigured"));
   });
 
   it("hands back a Google consent URL carrying the redirect URI and both scopes", async () => {
@@ -103,5 +107,22 @@ describe("GET /api/google/connect", () => {
     expect(authUrl.searchParams.get("prompt")).toBe("consent");
     expect(authUrl.searchParams.get("scope")).toContain("gmail.compose");
     expect(authUrl.searchParams.get("scope")).toContain("tasks");
+  });
+});
+
+describe("POST /api/google/check", () => {
+  it("is a POST, because it spends the token and calls Google", async () => {
+    // A GET would be reachable by a link or a browser prefetch, and this is not
+    // a read: it is two deliberate calls on the user's Google account.
+    const asGet = await app.inject({ method: "GET", url: "/api/google/check" });
+    expect(asGet.statusCode).toBe(404);
+  });
+
+  it("asks Google nothing, and says so, while the connection is unconfigured", async () => {
+    const response = await app.inject({ method: "POST", url: "/api/google/check" });
+    expect(response.statusCode).toBe(200);
+    // No credentials to call with. The empty item list is what the card turns
+    // into "finish the steps and sign in, then check".
+    expect(response.json()).toEqual({ state: "unconfigured", items: [] });
   });
 });

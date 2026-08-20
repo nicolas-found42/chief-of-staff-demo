@@ -28,93 +28,32 @@ extracts action items with the LLM provider of your choice, and creates Google T
 
 This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
 The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
-[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007). The Module registry itself is still ahead.
+[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007) and the single route to any Google surface (ADR-0008). The Module registry itself is still ahead.
 
-## Prerequisites
+## Getting started
 
-- Node 20+, npm
-- An LLM API key (OpenAI / Anthropic / OpenRouter / Google Gemini — any one)
-- Google account, for Tasks + Gmail drafts (plus a Google Cloud project — the app walks you through it)
-- Optional: Fireflies API key
+Docker Desktop runs the whole app. Node, npm and a toolchain are only needed to work on the code
+(see [Working on the code](#working-on-the-code)).
 
-## Setup
+1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/). It has to
+   be **running**, not just installed — the whale in the menu bar stops animating when it is ready.
+2. `docker compose up -d --build` — first run only; drop `--build` afterwards.
+3. Open http://localhost:4317.
+4. Configure the extraction provider and the Google connection in **Settings** (below).
 
-### 1. Google (Tasks + Gmail drafts) — guided in the app
+`docker compose down` stops it. `restart: "no"` is deliberate: the app does not come back on its
+own when Docker Desktop starts.
 
-Start the app and open **Settings**. The Google card walks you through it: four one-time steps with
-the console links, the scopes and the redirect URI laid out with copy buttons, then
-**Sign in with Google**. Nothing to look up here.
+**[ONBOARDING.md](ONBOARDING.md) is the same path written for someone who has never used Docker
+or Google Cloud** — send that, not this file, to anyone setting the app up for the first time.
 
-Each person registers their own Google Cloud OAuth client. There is no shared client to ship —
-this repo is public, so a committed client secret would be revoked, and there is no server to hold
-one ([ADR-0007](docs/adr/0007-per-user-google-oauth-client.md)). Budget about five minutes.
-
-Two things worth knowing before you start:
-
-- **Both APIs must be enabled** — Tasks and Gmail — or the first run fails with a 403 rather than
-  at connect time. The wizard links straight to both.
-- **The sign-in expires every seven days.** The consent screen has to be user type **External** to
-  admit personal Google accounts as well as Workspace ones, and External + **Testing** is the only
-  combination Google allows without a verification review for the Gmail scope; it expires refresh
-  tokens after seven days. Settings shows that as **expired** and one click fixes it. To be rid of
-  it, publish your consent screen and take Google's verification.
-
-### 2. Fireflies (optional)
-
-API key from [app.fireflies.ai/settings → Developer](https://app.fireflies.ai/settings). Enable
-polling in Settings; the app polls every N minutes with a 24h lookback and dedupes by transcript
-id. "Sync now" runs one poll immediately.
-
-### 3. LLM provider
-
-In Settings, pick a provider and paste its API key. Defaults: `gpt-5.2` (OpenAI),
-`claude-sonnet-5` (Anthropic), `google/gemini-3.7-flash` (OpenRouter / Gemini). The model field is
-free text — correct it there if a default 404s. `mock` returns `workspace/mock-result.json` (test
-and demo mode).
-
-`ollama` runs the extraction against a model served locally, through Ollama's OpenAI-compatible
-endpoint. Set the base URL in Settings (`http://127.0.0.1:11434` on the host,
-`http://host.docker.internal:11434` when this app runs in a container and Ollama runs on the host);
-no API key is needed. The default model id is `nemotron` — free text, so set whatever tag you have
-pulled. **Untested against a live Ollama server:** the request shape is covered by unit tests, but
-no local model has been run through it yet, and a 30B model needs more memory than a 16 GB machine
-has.
-
-## Run
-
-```bash
-npm install
-npm run build
-npm start            # http://localhost:4317
-```
-
-Development:
-
-```bash
-npm run dev:server   # tsx watch on :4317
-npm run dev:web      # Vite dev server with /api proxied to :4317
-```
-
-Environment: `PORT` (default 4317 — the Google redirect URI is registered for this port; change
-both together), `WORKSPACE_DIR` (default `./workspace`), `HOST` (default `127.0.0.1`; only a
-container should change this — see below).
-
-## Run in a container
-
-```bash
-docker compose up --build      # http://localhost:4317
-```
-
-Open it and the Runs page says whether Google still needs connecting, with a link to the setup
-steps — a fresh `workspace/` starts unconnected, and every run ends at the Google outputs stage.
-
-One image: Node serves the API and the built web UI. Three things are load-bearing:
+Three things about the container are load-bearing:
 
 - **Port 4317 is published, exactly.** Google matches the redirect URI character for character, so
   the one you registered has to be the one the server sends. Settings always shows the URI for the
   port in use, so if you do change `PORT`, register the URI it shows there.
 - **`workspace/` is a bind mount, never a layer.** Runs and secrets stay on the host; the image
-  holds no state.
+  holds no state. `workspace/` is gitignored, so a fresh clone has none and Docker creates it.
 - **The published port binds to `127.0.0.1` on the host.** The app has no authentication
   ([ADR-0001](docs/adr/0001-local-first-single-user.md)), so it must not be reachable from the
   network. Inside the container the server listens on `0.0.0.0` (`HOST`), because a container's
@@ -125,7 +64,49 @@ Verified: image builds, container serves the UI and API, and an uploaded transcr
 with the mock provider, writing `meta.json` / `result.json` / `events.jsonl` through the mount.
 Kubernetes and the EdgeScale cube are **untested** — there is no chart in this repo yet.
 
-Intakes:
+## Configuration
+
+### Google (Tasks + Gmail drafts) — guided in the app
+
+Open **Settings**. The Google card is the setup flow: the console steps in the order Google's own
+console imposes them, each with a deep link, the scopes and redirect URI with copy buttons, and
+**Check my setup**, which asks Google and names whichever piece is missing. Nothing to look up
+here, and nothing in this README to hold in your head while you tab through a console.
+
+Each person registers their own Google Cloud OAuth client. There is no shared client to ship —
+this repo is public, so a committed client secret would be revoked, and there is no server to hold
+one ([ADR-0007](docs/adr/0007-per-user-google-oauth-client.md)). Budget about ten minutes.
+
+Two things worth knowing before you start:
+
+- **Both APIs must be enabled** — Tasks and Gmail — or the first run fails with a 403 rather than
+  at connect time. **Check my setup** names which one, rather than leaving it to a run.
+- **The sign-in expires about every seven days.** The consent screen has to be user type
+  **External** to admit personal Google accounts as well as Workspace ones, and External +
+  **Testing** is the only combination Google allows without a verification review for the Gmail
+  scope; it expires refresh tokens after seven days. Settings shows when you last signed in and
+  roughly when Google will ask again, and one click fixes it. To be rid of it, publish your
+  consent screen and take Google's verification.
+
+### Extraction provider
+
+In Settings, pick a provider and paste its API key; the card links straight to that provider's key
+page. Defaults: `gpt-5.2` (OpenAI), `claude-sonnet-5` (Anthropic), `google/gemini-3.7-flash`
+(OpenRouter / Gemini). The model field is free text — correct it there if a default 404s.
+
+`mock` returns `workspace/mock-result.json` and needs no key. It backs the hermetic test suite and
+is the default in a fresh workspace, so an upload before any configuration produces a harmless
+skip rather than an authentication error. It is not part of the onboarding path.
+
+`ollama` runs the extraction against a model served locally, through Ollama's OpenAI-compatible
+endpoint. Set the base URL in Settings (`http://127.0.0.1:11434` on the host,
+`http://host.docker.internal:11434` when this app runs in a container and Ollama runs on the host);
+no API key is needed. The default model id is `nemotron` — free text, so set whatever tag you have
+pulled. **Untested against a live Ollama server:** the request shape is covered by unit tests, but
+no local model has been run through it yet, and a 30B model needs more memory than a 16 GB machine
+has.
+
+### Intakes
 
 - **Upload** — drag & drop or file picker on the Runs page (.txt .md .json .pdf .docx, ≤10 MB).
   `.json` must be a Fireflies-style sentences array.
@@ -133,6 +114,31 @@ Intakes:
   link back to Fireflies. Ingested ids are remembered in `workspace/state.json` (capped at 1000).
 - **Watch folder** — set a path in Settings; stable files (size+mtime unchanged 2s) are moved to
   `workspace/watch-archive/` first — the move is the dedupe — then processed.
+
+### Fireflies (optional)
+
+API key from [app.fireflies.ai/settings → Developer](https://app.fireflies.ai/settings). Enable
+polling in Settings; the app polls every N minutes with a 24h lookback and dedupes by transcript
+id. "Sync now" runs one poll immediately.
+
+## Working on the code
+
+Not needed to run the app — Docker covers that. This is the native path, for changing it.
+
+```bash
+npm install
+npm run build
+npm start            # http://localhost:4317
+```
+
+```bash
+npm run dev:server   # tsx watch on :4317
+npm run dev:web      # Vite dev server with /api proxied to :4317
+```
+
+Node 20+ and npm. Environment: `PORT` (default 4317 — the Google redirect URI is registered for
+this port; change both together), `WORKSPACE_DIR` (default `./workspace`), `HOST` (default
+`127.0.0.1`; only a container should change this).
 
 ## Workspace layout
 
@@ -179,14 +185,16 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 | Symptom | Cause and fix |
 |---|---|
 | Run fails at `extract` after 3 attempts | Bad or missing API key, wrong model id, or provider outage. Check the `extract_attempt` events; fix Settings and hit Retry. |
-| Run fails at `outputs` with `google_not_connected` | Google not connected. Set clientId/secret in Settings, click Connect Google, then Retry — the cached result is reused, no re-extraction. |
-| Google consent shows a warning screen | Expected for an unverified personal app. Click through (Advanced → continue) or switch the OAuth client to Testing mode and re-connect weekly. |
+| Run fails at `outputs` with `google_not_connected` | Google not connected. Fix the Google card in Settings — **Check my setup** names the missing piece — then Retry; the cached result is reused, no re-extraction. |
+| Google consent shows a warning screen | Expected for an unverified personal app: Advanced → Go to localhost (unsafe). |
 | Redirect URI mismatch during connect | The registered redirect URI must be `http://localhost:4317/api/google/callback`, matching the port the server runs on. |
 | Fireflies sync returns 401 | Key is wrong. Polling disables itself; fix the key in Settings and re-enable. |
 | Watch folder does nothing | Folder must exist (or be creatable); files must be stable (still copying? wait 2s) and have a supported extension; check the server console for `[watch]` lines. |
 | Tasks appear but some are missing | A bad item logs `google_task_error` and the batch continues — check the run's events timeline; Retry recreates everything (move/delete the partials first if you care about duplicates). |
 | `.json` upload fails with `SOURCE_INVALID` | JSON must be an array of Fireflies sentence objects (`speaker_name` + `text`), not an arbitrary document. |
 | Due dates show no time | Expected — the Tasks API stores a date and discards any time component. |
+| Google asks for a new sign-in about weekly | Expected while the consent screen is in Testing. Settings shows when you last signed in and roughly when Google will ask again; one click fixes it. |
+| `docker compose` fails on a socket or daemon | Docker Desktop is not running. Start it and wait for the whale to stop animating. |
 
 ## Security posture
 

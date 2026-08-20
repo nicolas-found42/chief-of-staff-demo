@@ -730,6 +730,24 @@ code {
   flex: none;
 }
 
+.setup-check {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.setup-check-list {
+  margin: 0.75rem 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.setup-check-list > li {
+  line-height: 1.5;
+}
+
 .setup-details {
   margin-top: 0.5rem;
 }
