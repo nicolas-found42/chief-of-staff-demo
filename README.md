@@ -28,7 +28,7 @@ extracts action items with the LLM provider of your choice, and creates Google T
 
 This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
 The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
-[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007) and the single route to any Google surface (ADR-0008). The Module registry itself is still ahead.
+[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007) and the single route to any Google surface (ADR-0008). The Shell now has a front door of its own — Home at `/`, stating where the workspace stands, with the connection banner rendered once for every page (ADR-0010, ADR-0011); the Transcript Module moved to `/transcript`. The Module registry itself is still ahead.
 
 ## Getting started
 
@@ -110,7 +110,8 @@ has.
 
 ### Intakes
 
-- **Upload** — drag & drop or file picker on the Runs page (.txt .md .json .pdf .docx, ≤10 MB).
+- **Upload** — drag & drop or file picker on the **Transcript → Tasks** tab (.txt .md .json .pdf
+  .docx, ≤10 MB).
   `.json` must be a Fireflies-style sentences array.
 - **Fireflies** — polls `transcripts(fromDate: now-24h)`; new meetings become runs with a source
   link back to Fireflies. Ingested ids are remembered in `workspace/state.json` (capped at 1000).

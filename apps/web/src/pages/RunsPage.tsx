@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { GoogleStatus, RunSummary } from "@chief-of-staff-demo/shared";
+import type { RunSummary } from "@chief-of-staff-demo/shared";
 import { SourceBadge, StatusPill, formatTime } from "../components/StatusPill";
 import { api, errorMessage } from "../client";
+import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -17,9 +18,12 @@ export function RunsPage() {
   const [checking, setChecking] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [liveReady, setLiveReady] = useState(false);
-  const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  /* The connection is the Shell's, and its banner renders above this page
+     (ADR-0011). All this page owes it is a refresh on the tick below, since the
+     poll here is live in the one window where a Run can reject a grant. */
+  const { refresh: refreshConnection } = useGoogleConnection();
 
   const refresh = useCallback(async () => {
     try {
@@ -35,30 +39,7 @@ export function RunsPage() {
     void refresh();
   }, [refresh]);
 
-  /* Every run ends at the outputs stage, so a transcript dropped before Google
-     is connected fails there and nothing on this page said why beforehand. Asked
-     once on load: the answer only changes through Settings, which is a full page
-     load away. */
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setGoogle(await api.googleStatus());
-      } catch {
-        setGoogle(null);
-      }
-    };
-    void load();
-  }, []);
-
   const activeCount = runs === null ? 0 : runs.filter((run) => !TERMINAL.has(run.status)).length;
-
-  /* Inside a day of the estimate, and silent before that. Someone who only ever
-     operates the app lives on this page and would otherwise meet the weekly
-     expiry as a failed run rather than as a warning. */
-  const expiryNear =
-    google?.state === "connected" &&
-    google.expiresAbout !== null &&
-    new Date(google.expiresAbout).getTime() - Date.now() < 86_400_000;
 
   // The list used to auto-update every 3s for as long as it was open, with no
   // way to pause or stop it and nothing to show for it once every run was
@@ -71,9 +52,12 @@ export function RunsPage() {
     if (activeCount === 0) {
       return;
     }
-    const timer = setInterval(refresh, 3000);
+    const timer = setInterval(() => {
+      void refresh();
+      void refreshConnection();
+    }, 3000);
     return () => clearInterval(timer);
-  }, [activeCount, refresh]);
+  }, [activeCount, refresh, refreshConnection]);
 
   // A live region only announces what arrives after it is mounted; text already
   // present on the first paint is skipped (WCAG 4.1.3). This effect runs after
@@ -139,36 +123,6 @@ export function RunsPage() {
           {checking ? "Checking…" : "Check for new runs"}
         </button>
       </div>
-
-      {/* role="status", not "alert": this is a standing condition the user may
-          have chosen, not an event, and an assertive interruption on every visit
-          to the landing page would be hostile. */}
-      {google !== null && google.state !== "connected" && (
-        <div className="banner banner-warn" role="status">
-          <span>
-            {google.state === "unconfigured"
-              ? "Google is not connected yet, so runs will extract tasks but have nowhere to put them."
-              : google.state === "expired"
-                ? "Google stopped accepting the saved sign-in, so runs cannot create tasks or drafts."
-                : "Google is not signed in, so runs cannot create tasks or drafts."}
-          </span>
-          <Link className="step-link" to="/settings">
-            {google.state === "unconfigured" ? "Set up Google" : "Sign in with Google"}
-          </Link>
-        </div>
-      )}
-
-      {expiryNear && (
-        <div className="banner banner-warn" role="status">
-          <span>
-            Google will probably ask you to sign in again within a day. This happens about weekly
-            and nothing is broken when it does.
-          </span>
-          <Link className="step-link" to="/settings">
-            Sign in with Google
-          </Link>
-        </div>
-      )}
 
       {/* Clicking anywhere in the zone opens the picker — the pointer cursor
           promised that already. The button remains the keyboard route, so this

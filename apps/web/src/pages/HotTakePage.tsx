@@ -1,14 +1,20 @@
+import { useModules } from "../useModules";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
 export function HotTakePage() {
   useTitle("Hot Take");
   const headingRef = usePageFocus<HTMLHeadingElement>();
+  /* Read from the shared Module list rather than asserted here, so this page and
+     Home's card cannot end up describing the same Module differently. */
+  const planned = useModules().some(
+    (module) => module.id === "hot-take" && module.status === "planned"
+  );
 
   return (
     <div className="page">
       <h1 ref={headingRef} tabIndex={-1}>
-        Hot Take <span className="status-pill status-active">Coming soon</span>
+        Hot Take {planned && <span className="status-pill status-active">Planned</span>}
       </h1>
       <p className="muted">
         Turn a link or transcript into a draft LinkedIn post. This Module is planned — Runs, Intakes

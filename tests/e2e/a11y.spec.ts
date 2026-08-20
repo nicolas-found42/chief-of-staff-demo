@@ -10,7 +10,7 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
 /** Uploads the sample and lands on its run detail page. */
 async function openRun(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/transcript");
   await page.setInputFiles('input[type="file"]', sampleTranscript);
   await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
   await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
@@ -113,6 +113,7 @@ test("every route is free of axe violations", async ({ page }) => {
 
   for (const path of [
     "/",
+    "/transcript",
     runUrl,
     "/hot-take",
     "/settings",
@@ -142,7 +143,7 @@ test("an unknown route is a real page, not a blank one", async ({ page }) => {
   await page.goto("/no-such-page");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Page not found");
   await expect(page).toHaveTitle(/^Page not found ·/);
-  await expect(page.getByRole("link", { name: /all runs/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /home/i })).toBeVisible();
 });
 
 test("busy buttons keep focus instead of dropping it to the body", async ({ page }) => {
@@ -214,7 +215,7 @@ test("busy controls on tinted surfaces clear their floors too", async ({ page })
   expectLegible(await busyControls(page));
 
   await page.route("**/api/runs/upload", stall);
-  await page.goto("/");
+  await page.goto("/transcript");
   const picker = page.locator(".dropzone .linklike");
   await picker.focus();
   await page.setInputFiles('input[type="file"]', sampleTranscript);
@@ -227,7 +228,7 @@ test("drag-selecting a filename copies it instead of opening the run", async ({ 
   // a drag to select text landed on the row and navigated, discarding the
   // selection and removing the move-away-to-abort escape (WCAG 2.5.2).
   await openRun(page);
-  await page.goto("/");
+  await page.goto("/transcript");
   // The filename is the link now. A press that starts on an anchor begins no
   // selection in any browser, so the drag starts in the cell's padding beside
   // it — which is where a selection starts anyway — and ends over the link, so
@@ -246,13 +247,13 @@ test("drag-selecting a filename copies it instead of opening the run", async ({ 
   await page.mouse.up();
 
   expect(await page.evaluate(() => window.getSelection()?.toString())).not.toBe("");
-  expect(new URL(page.url()).pathname, "drag-select navigated away").toBe("/");
+  expect(new URL(page.url()).pathname, "drag-select navigated away").toBe("/transcript");
 
   // The row is still a pointer target when there is nothing selected. (A click
   // that lands inside the selection dismisses it first — Chrome holds the
   // selection through mousedown so the text can be dragged — so it takes the
   // second click to navigate, which is how every selection-guarded row behaves.)
-  await page.goto("/");
+  await page.goto("/transcript");
   await page.locator(".run-row").first().click();
   await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
 });
@@ -335,7 +336,7 @@ test("the poll interval reports its error in the page, not a transient bubble", 
 test("the file picker button keeps its instructions, and its focus, mid-upload", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/transcript");
   // The description has to hang off the button, not the file input: the input is
   // hidden, so it computes to display:none and never reaches the accessibility
   // tree — an aria-describedby there is inert (WCAG 3.3.2).
@@ -368,7 +369,7 @@ test("every container that scrolls can be reached by keyboard", async ({ page })
   await page.locator("details summary").click();
   expect(await unreachableScrollers(page), "run detail").toEqual([]);
 
-  await page.goto("/");
+  await page.goto("/transcript");
   await expect(page.getByTestId("runs-table")).toBeVisible();
   expect(await unreachableScrollers(page), "runs list").toEqual([]);
 });
@@ -404,17 +405,24 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
   await page.keyboard.press("Tab");
   await expect(page.locator(".skip-link")).toBeFocused();
 
-  // Everything the old behaviour skipped past, still in front of the user.
-  for (const name of ["Transcript → Tasks", "Hot Take", "Settings"]) {
+  // Everything the old behaviour skipped past, still in front of the user —
+  // starting with the wordmark, which is the link to Home.
+  for (const name of ["Found42 — Chief of Staff", "Transcript → Tasks", "Hot Take", "Settings"]) {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name, exact: true })).toBeFocused();
   }
+  // The Shell's connection banner sits inside <main>, above the route outlet —
+  // which is exactly where the skip link lands, so it is met before the page's
+  // own content instead of being jumped over (ADR-0011).
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Set up Google", exact: true })).toBeFocused();
+
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: /all runs/i })).toBeFocused();
 
   // Reaching the same run by clicking still moves focus into the page, which is
   // the case the guard must not break.
-  await page.goto("/");
+  await page.goto("/transcript");
   await page.locator(".run-link").first().click();
   await expect(heading).toBeFocused();
 });
@@ -433,7 +441,7 @@ test("the runs list stops updating itself once nothing can change", async ({ pag
     await route.continue();
   });
 
-  await page.goto("/");
+  await page.goto("/transcript");
   await expect(page.getByTestId("runs-table")).toBeVisible();
   // The precondition the fix keys off: nothing left that a poll could change.
   await expect(page.locator(".status-active")).toHaveCount(0);
@@ -461,7 +469,7 @@ test("a skip link bypasses the header", async ({ page }) => {
 });
 
 test("the whole dropzone is a pointer target, not just the inline button", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/transcript");
   const zone = page.getByTestId("dropzone");
   await expect(zone).toHaveCSS("cursor", "pointer");
 

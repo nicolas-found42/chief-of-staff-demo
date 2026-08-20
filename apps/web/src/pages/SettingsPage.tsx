@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { GoogleStatus, ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
+import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
+import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -62,7 +63,11 @@ export function SettingsPage() {
   const [jsonNotice, setJsonNotice] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
-  const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
+  /* The connection is the Shell's, held once for the three surfaces that show
+     it (ADR-0011). This card is the one that changes it, so it writes through
+     the provider rather than keeping a copy that could disagree with the
+     banner. */
+  const { status: googleStatus, refresh: refreshGoogle } = useGoogleConnection();
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
 
@@ -92,16 +97,15 @@ export function SettingsPage() {
     void load();
   }, []);
 
+  /* A save can change the connection — new client credentials leave it
+     `disconnected` where it was `unconfigured` — so the stored status is stale
+     the moment the config comes back. The provider has already asked once on
+     mount, which is why this waits for a payload. */
   useEffect(() => {
-    const load = async () => {
-      try {
-        setGoogleStatus(await api.googleStatus());
-      } catch {
-        setGoogleStatus(null);
-      }
-    };
-    void load();
-  }, [payload]);
+    if (payload) {
+      void refreshGoogle();
+    }
+  }, [payload, refreshGoogle]);
 
   if (!form || !payload) {
     return (
@@ -248,7 +252,8 @@ export function SettingsPage() {
     /* The old answer described a connection that no longer exists. */
     setGoogleCheck(null);
     try {
-      setGoogleStatus(await api.googleDisconnect());
+      await api.googleDisconnect();
+      await refreshGoogle();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -267,7 +272,7 @@ export function SettingsPage() {
     try {
       const result = await api.googleCheck();
       setGoogleCheck(result);
-      setGoogleStatus(await api.googleStatus());
+      await refreshGoogle();
     } catch (err) {
       setError(errorMessage(err));
     } finally {

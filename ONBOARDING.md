@@ -61,8 +61,9 @@ When you see your prompt again, the app is running.
 
 Go to **http://localhost:4317** in your browser.
 
-You see the **Runs** page, and a yellow bar saying Google is not connected yet. That is correct
-for now. You fix it in step 7.
+You see **Home**, and a yellow bar saying Google is not set up yet. That is correct for now — you
+fix it in step 7. Home is the app's front door: it tells you where things stand and links to the
+tabs. Transcripts go in on the **Transcript → Tasks** tab.
 
 ## 6. Choose an extraction provider
 

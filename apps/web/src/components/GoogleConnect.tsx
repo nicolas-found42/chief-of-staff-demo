@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { GoogleStatus, SetupCheck } from "@chief-of-staff-demo/shared";
+import { expiryNote } from "../connectionNotice";
 
 /**
  * The Google connection, as four states rather than a pair of credential fields
@@ -69,41 +70,6 @@ const CONSOLE = {
  * user following the Workspace path reaches a greyed-out radio and stops.
  */
 type Audience = "workspace" | "personal";
-
-/** Whole days: the expiry is an estimate, and worth no more precision than that. */
-function daysAgo(iso: string): number {
-  return Math.round((Date.now() - new Date(iso).getTime()) / 86_400_000);
-}
-
-/** Date without a time, for the same reason. */
-const DAY = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-});
-
-/**
- * One fact, and a prediction only when there is one to make. `expiresAbout` is
- * null until Google has actually refused this grant once, because an Internal
- * consent screen never expires and guessing otherwise would announce a weekly
- * event that never happens. So the fact stands alone until the app has evidence.
- */
-function expiryNote(status: GoogleStatus): string | null {
-  if (!status.lastConnectedAt) {
-    return null;
-  }
-  const days = daysAgo(status.lastConnectedAt);
-  const signedIn =
-    days <= 0 ? "You signed in today" : days === 1 ? "You signed in yesterday" : `You signed in ${days} days ago`;
-  if (!status.expiresAbout) {
-    return `${signedIn}.`;
-  }
-  const due = new Date(status.expiresAbout);
-  if (due.getTime() <= Date.now()) {
-    return `${signedIn}, so Google may ask you to sign in again at any time.`;
-  }
-  return `${signedIn}, so Google will probably ask again around ${DAY.format(due)}.`;
-}
 
 /** Google's "G", from their sign-in branding. Decorative: the label carries it. */
 function GoogleMark() {

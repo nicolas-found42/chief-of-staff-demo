@@ -8,7 +8,7 @@ const sampleTranscript = join(here, "../fixtures/transcripts/sample-transcript.m
 test("upload → run detail shows extraction; google_unavailable path visible", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/transcript");
   await expect(page.getByTestId("dropzone")).toBeVisible();
 
   await page.setInputFiles('input[type="file"]', sampleTranscript);
@@ -134,18 +134,37 @@ test("signing in without a client id reports Google's refusal in the page", asyn
   await expect(signIn).toBeFocused();
 });
 
-test("the runs page says Google is not set up before a run can fail on it", async ({ page }) => {
+test("the Shell says Google is not set up on every page, and not on Settings", async ({ page }) => {
+  // The banner used to belong to the runs page, so it reached the one Module
+  // that happened to own `/` and nowhere else. Scoped to the Shell's own live
+  // region, because the Settings card renders warnings of its own.
+  const shellBanner = page.locator('main > [role="status"] .banner-warn');
+
+  for (const path of ["/", "/transcript", "/hot-take"]) {
+    await page.goto(path);
+    // Shell vocabulary: Tasks and Gmail are Google surfaces, where the old
+    // string named Transcript's own pipeline stages.
+    await expect(shellBanner, `banner on ${path}`).toContainText(
+      "Google is not set up, so nothing can be created in Tasks or Gmail."
+    );
+  }
+
+  // Absent on Settings, where it would sit directly above a card that says the
+  // same thing in detail. The region itself stays mounted — a live region that
+  // unmounts re-announces itself on the next navigation.
+  await page.goto("/settings");
+  await expect(shellBanner).toHaveCount(0);
+  await expect(page.locator('main > [role="status"]')).toHaveCount(1);
+
+  // And it routes to the place that fixes it.
   await page.goto("/");
-  const banner = page.locator(".banner-warn");
-  await expect(banner).toContainText(/Google is not connected yet/);
-  // And routes to the place that fixes it.
-  await banner.getByRole("link", { name: "Set up Google" }).click();
+  await shellBanner.getByRole("link", { name: "Set up Google" }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.locator(".setup-steps")).toBeVisible();
 });
 
 test("primary actions are reachable and operable by keyboard", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/transcript");
 
   // The upload control is a real button, reachable by Tab and fired by Enter.
   const chooseFiles = page.getByRole("button", { name: "choose files" });
@@ -166,7 +185,7 @@ test("primary actions are reachable and operable by keyboard", async ({ page }) 
   await expect(page).toHaveTitle(/· Chief of Staff$/);
 
   // Runs are reachable from the list without a pointer.
-  await page.goto("/");
+  await page.goto("/transcript");
   const runLink = page.locator(".run-link").first();
   await expect(runLink).toBeVisible();
   await runLink.press("Enter");
@@ -180,7 +199,7 @@ test("primary actions are reachable and operable by keyboard", async ({ page }) 
 
 test("the page never scrolls sideways at a 320px viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
-  for (const path of ["/", "/settings"]) {
+  for (const path of ["/", "/transcript", "/settings"]) {
     await page.goto(path);
     const overflows = await page.evaluate(() => {
       const root = document.documentElement;
@@ -188,6 +207,77 @@ test("the page never scrolls sideways at a 320px viewport", async ({ page }) => 
     });
     expect(overflows, `${path} scrolls horizontally at 320px`).toBe(false);
   }
+});
+
+test("the front door is Home, and Transcript keeps the runs list", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
+  // Titled after the Shell with no suffix, so opening the most-visited route
+  // never re-titles the tab (WCAG 2.4.2 is satisfied by the app's own name).
+  await expect(page).toHaveTitle("Chief of Staff");
+
+  // A status surface, not Transcript with different chrome: Intake and the runs
+  // table stay with the Module that owns them.
+  await expect(page.getByTestId("dropzone")).toHaveCount(0);
+  await expect(page.getByTestId("runs-table")).toHaveCount(0);
+
+  // One card per Module, from the same list the tab bar renders, so the two
+  // cannot disagree about what exists.
+  const cards = page.locator(".module-card");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.filter({ hasText: "Hot Take" })).toContainText("Planned");
+
+  // Into the Module, and back out by the wordmark.
+  await cards.first().getByRole("link").click();
+  await expect(page).toHaveURL(/\/transcript$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
+  await expect(page.getByTestId("dropzone")).toBeVisible();
+
+  await page.getByRole("link", { name: "Found42 — Chief of Staff" }).click();
+  await expect(page).toHaveURL(/:\d+\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
+});
+
+test("Home enumerates what needs doing, and the rail itemises it", async ({ page }) => {
+  // Guarantees one failed Run whatever ran before this: the mock provider
+  // answers instantly and the Run then fails at outputs, because this workspace
+  // has no Google connection.
+  await page.goto("/transcript");
+  await page.setInputFiles('input[type="file"]', sampleTranscript);
+  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+  await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
+
+  await page.goto("/");
+  // One clause per rail condition, in the rail's order, with the true total of
+  // failures rather than the number of rows shown. No "Nothing needs you." —
+  // there plainly is.
+  await expect(page.locator(".home-sentence")).toHaveText(
+    /^\d+ runs? failed, and the extraction provider is a stand-in\.$/
+  );
+
+  // The rail is labelled for heading navigation even though the label is not
+  // drawn: a sighted reader takes it from the sentence above.
+  await expect(page.getByRole("heading", { level: 2, name: "Needs your attention" })).toHaveCount(1);
+
+  // The provider row carries the consequence and the way out, which is what the
+  // sentence deliberately leaves out — and it claims nothing about what
+  // extraction would have produced, since that is a Module's stage.
+  const mockRow = page.locator(".home-rail li", { hasText: "mock provider" });
+  await expect(mockRow).toContainText(
+    "Runs are using the mock provider, so nothing real is extracted"
+  );
+  await expect(mockRow.getByRole("link", { name: "Choose a provider" })).toBeVisible();
+
+  // The connection is not a row: the Shell banner above says it on every page.
+  await expect(page.locator(".home-rail")).not.toContainText(/Google/);
+  // And no identity line, because this connection is not healthy.
+  await expect(page.locator(".home-identity")).toHaveCount(0);
+
+  // Rows link; they do not act. "Open", never "Retry".
+  const failedRow = page.locator(".home-rail li").first();
+  await expect(failedRow.getByRole("link", { name: "Open" })).toBeVisible();
+  await failedRow.getByRole("link", { name: "Open" }).click();
+  await expect(page).toHaveURL(/\/runs\/run_/);
 });
 
 /* Last in the file, and it puts the workspace back: it is the only test here

@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+import type { RunStatus, RunSummary } from "@chief-of-staff-demo/shared";
+import { homeStatus } from "../../../apps/web/src/homeStatus";
+
+/**
+ * Home's sentence and rail, unit-tested rather than driven through the browser.
+ *
+ * Two of the five states are unreachable end to end: `quiet` needs a connected
+ * Google account, which the e2e workspace has no way to obtain, and `live` needs
+ * a Run that stays non-terminal, which the mock provider never produces. The
+ * sentence is a pure function of what the Shell observes precisely so those
+ * states can be asserted somewhere.
+ */
+function run(id: string, status: RunStatus, fileName = `${id}.txt`): RunSummary {
+  return {
+    id,
+    createdAt: "2026-08-20T10:00:00.000Z",
+    source: "upload",
+    fileName,
+    sourceUrl: null,
+    status,
+    taskCount: null,
+  };
+}
+
+const REAL = "openai";
+
+describe("Home's sentence", () => {
+  it("says nothing has run yet, and never claims an all-clear there", () => {
+    // No Runs is not good news, so the reassurance is absent whether or not the
+    // banner has anything to say.
+    expect(homeStatus([], REAL, false).sentence).toBe("Nothing has run yet.");
+    expect(homeStatus([], REAL, true).sentence).toBe("Nothing has run yet.");
+  });
+
+  it("capitalises a leading provider clause, behind the no-Runs prefix", () => {
+    // The fresh workspace: nothing uploaded, and the provider still the default
+    // stand-in. The clause is written lowercase so it can be joined mid-sentence,
+    // so leading with it has to capitalise — and the prefix goes on afterwards.
+    expect(homeStatus([], "mock", true).sentence).toBe(
+      "Nothing has run yet. The extraction provider is a stand-in."
+    );
+  });
+
+  it("enumerates the rail's conditions in the rail's order", () => {
+    const runs = [run("r2", "failed"), run("r1", "done")];
+    expect(homeStatus(runs, "mock", true).sentence).toBe(
+      "1 run failed, and the extraction provider is a stand-in."
+    );
+  });
+
+  it("counts the true total of failures, not the rows the rail shows", () => {
+    const runs = Array.from({ length: 5 }, (_, i) => run(`r${i}`, "failed"));
+    expect(homeStatus(runs, REAL, true).sentence).toBe("5 runs failed.");
+  });
+
+  it("reports work in progress, and reassures when nothing is asking", () => {
+    const runs = [run("r3", "running"), run("r2", "pending"), run("r1", "done")];
+    expect(homeStatus(runs, REAL, false).sentence).toBe("2 runs in progress. Nothing needs you.");
+    expect(homeStatus([run("r1", "running")], REAL, false).sentence).toBe(
+      "1 run in progress. Nothing needs you."
+    );
+  });
+
+  it("is quiet and clear when every Run is terminal and nothing is asking", () => {
+    const runs = [run("r2", "done"), run("r1", "skipped")];
+    expect(homeStatus(runs, REAL, false).sentence).toBe("All quiet. Nothing needs you.");
+  });
+
+  it("drops the all-clear whenever the connection notice is showing", () => {
+    // The branch ticket 08 settled. `Nothing needs you.` is a claim about the
+    // reader's obligations, so Home cannot make it under a banner asking for a
+    // sign-in — while "All quiet." stays true, because quiet is about Runs.
+    const signedOutAfterSuccess = [run("r2", "done"), run("r1", "done")];
+    expect(homeStatus(signedOutAfterSuccess, REAL, true).sentence).toBe("All quiet.");
+
+    // Reachable on day one, with no successful Run and no sign-out: a skipped
+    // Run never reaches the outputs stage, so it never fails on the connection.
+    const everythingSkipped = [run("r2", "skipped"), run("r1", "skipped")];
+    expect(homeStatus(everythingSkipped, REAL, true).sentence).toBe("All quiet.");
+
+    // Same rule for work in progress.
+    expect(homeStatus([run("r1", "running")], REAL, true).sentence).toBe("1 run in progress.");
+  });
+});
+
+describe("Home's attention rail", () => {
+  it("is empty when nothing needs action, so the rail is omitted", () => {
+    expect(homeStatus([run("r1", "done")], REAL, false).rows).toEqual([]);
+  });
+
+  it("opens a failed Run rather than offering to retry it", () => {
+    const { rows } = homeStatus([run("r1", "failed", "Pricing call.docx")], REAL, true);
+    expect(rows).toEqual([
+      { id: "r1", text: "Pricing call.docx failed", cta: "Open", to: "/runs/r1" },
+    ]);
+  });
+
+  it("names an untitled transcript the way the runs table does", () => {
+    const { rows } = homeStatus([run("r1", "failed", "")], REAL, true);
+    expect(rows[0].text).toBe("Untitled transcript failed");
+  });
+
+  it("shows three failures and summarises the rest, rather than rebuilding the list", () => {
+    const runs = Array.from({ length: 5 }, (_, i) => run(`r${i}`, "failed"));
+    const { rows } = homeStatus(runs, REAL, true);
+    expect(rows.map((row) => row.text)).toEqual([
+      "r0.txt failed",
+      "r1.txt failed",
+      "r2.txt failed",
+      "2 more runs failed",
+    ]);
+    // The tail links to the full list, which is Transcript's, not Home's.
+    expect(rows[3].to).toBe("/transcript");
+  });
+
+  it("speaks about the mock provider without claiming what extraction would have found", () => {
+    const { rows } = homeStatus([], "mock", true);
+    expect(rows).toEqual([
+      {
+        id: "mock-provider",
+        text: "Runs are using the mock provider, so nothing real is extracted",
+        cta: "Choose a provider",
+        to: "/settings",
+      },
+    ]);
+  });
+
+  it("never carries the Google connection, whatever state it is in", () => {
+    // It fails the "already visible where the user is standing" test: the Shell
+    // banner says it on every page, including this one (ADR-0010).
+    const { rows } = homeStatus([run("r1", "failed")], REAL, true);
+    expect(rows.some((row) => /google/i.test(`${row.text} ${row.cta}`))).toBe(false);
+  });
+});

@@ -21,10 +21,12 @@ export function NotFoundPage() {
         run that has since been removed.
       </p>
       <p>
-        {/* Decorative: exposed, it is read as "left arrow" ahead of the link
+        {/* Home, not the runs list: the address matched nothing, so the app
+            cannot know which Module the visitor wanted. The arrow is
+            decorative — exposed, it is read as "left arrow" ahead of the link
             text (WCAG 1.3.1). */}
         <Link to="/" className="back-link">
-          <span aria-hidden="true">&larr;</span> All runs
+          <span aria-hidden="true">&larr;</span> Home
         </Link>
       </p>
     </div>

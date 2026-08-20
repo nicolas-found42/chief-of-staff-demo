@@ -111,7 +111,7 @@ export function RunDetailPage() {
           {error}
         </div>
         <p>
-          <Link to="/" className="back-link">
+          <Link to="/transcript" className="back-link">
             <span aria-hidden="true">←</span> All runs
           </Link>
         </p>
@@ -139,7 +139,7 @@ export function RunDetailPage() {
   return (
     <div className="page">
       <p>
-        <Link to="/" className="back-link">
+        <Link to="/transcript" className="back-link">
           {/* Decorative: exposed, it is read as "left arrow" before the link
               text, the same reason the ↗ below is hidden (WCAG 1.3.1). */}
           <span aria-hidden="true">←</span> All runs
