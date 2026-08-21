@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import type { AppConfig } from "@chief-of-staff-demo/shared";
 import { buildGoogleAuth } from "../google/oauth.js";
 import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
-import { loadState, saveState } from "../state.js";
+import { loadState, saveState, type WorkspaceState } from "../state.js";
 import { workspaceLayout } from "../paths.js";
 import { isSupportedFileName, MAX_UPLOAD_BYTES } from "../text/convert.js";
 import { meetingDateFromFileName } from "../pipeline/run.js";
@@ -56,6 +56,20 @@ function buildDriveClient(config: AppConfig, port: number) {
 export class DriveIntake {
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * The poll currently running, if any. Three things start a poll — the
+   * interval, the immediate poll `start()` fires on every settings save, and
+   * `Sync now` — and two of them overlapping used to ingest the whole folder
+   * twice: each pass held its own `ingestedIds` snapshot taken before the other
+   * had written to it, so every file looked new and every transcript produced
+   * two Runs, two sets of Google Tasks and two Gmail drafts. Saving the folder
+   * and then saving again to enable polling was enough to do it. A poll in
+   * flight is therefore shared rather than duplicated: a second caller awaits
+   * the same answer instead of starting a second pass. `stop()` cannot cancel
+   * an in-flight poll, which is why the guard lives here and not on the timer.
+   */
+  private inFlight: Promise<{ created: number }> | null = null;
+
   constructor(private readonly deps: DriveIntakeDeps) {}
 
   start(): void {
@@ -85,8 +99,22 @@ export class DriveIntake {
   }
 
   async pollOnce(): Promise<{ created: number }> {
+    if (this.inFlight) {
+      return this.inFlight;
+    }
+    /* Assigned before the first await inside `runPoll` can yield, so no second
+       caller can slip past the guard. */
+    const poll = this.runPoll();
+    this.inFlight = poll;
+    try {
+      return await poll;
+    } finally {
+      this.inFlight = null;
+    }
+  }
+
+  private async runPoll(): Promise<{ created: number }> {
     const config = this.deps.getConfig();
-    const layout = workspaceLayout(this.deps.workspaceDir);
     try {
       if (!config.drive.enabled || !config.drive.folderId) {
         return { created: 0 };
@@ -104,16 +132,28 @@ export class DriveIntake {
       } catch {}
       throw error;
     } finally {
-      const state = loadState(layout.stateFile);
-      state.drive.lastPollAt = new Date().toISOString();
-      saveState(layout.stateFile, state);
+      this.updateState((state) => {
+        state.drive.lastPollAt = new Date().toISOString();
+      });
     }
+  }
+
+  /**
+   * Load-modify-save against the state file as it stands. Reading a snapshot
+   * once and writing it back later loses whatever another writer recorded in
+   * between — with `ingestedIds` that means re-ingesting files that were
+   * already turned into Runs.
+   */
+  private updateState(mutate: (state: WorkspaceState) => void): void {
+    const layout = workspaceLayout(this.deps.workspaceDir);
+    const state = loadState(layout.stateFile);
+    mutate(state);
+    saveState(layout.stateFile, state);
   }
 
   private async ingestNewFiles(config: AppConfig): Promise<number> {
     const layout = workspaceLayout(this.deps.workspaceDir);
-    const state = loadState(layout.stateFile);
-    const ingested = new Set(state.drive.ingestedIds);
+    const ingested = new Set(loadState(layout.stateFile).drive.ingestedIds);
 
     const drive = this.deps.getDriveClient
       ? this.deps.getDriveClient(config, this.deps.port)
@@ -233,11 +273,17 @@ export class DriveIntake {
         }
         created += 1;
         ingested.add(fileId);
-        state.drive.ingestedIds.push(fileId);
-        if (state.drive.ingestedIds.length > MAX_INGESTED) {
-          state.drive.ingestedIds.splice(0, state.drive.ingestedIds.length - MAX_INGESTED);
-        }
-        saveState(layout.stateFile, state);
+        /* Recorded only once the Run exists, so a file the pipeline rejected is
+           retried on the next poll rather than silently swallowed. */
+        this.updateState((state) => {
+          if (state.drive.ingestedIds.includes(fileId)) {
+            return;
+          }
+          state.drive.ingestedIds.push(fileId);
+          if (state.drive.ingestedIds.length > MAX_INGESTED) {
+            state.drive.ingestedIds.splice(0, state.drive.ingestedIds.length - MAX_INGESTED);
+          }
+        });
       }
 
       pageToken = response?.data?.nextPageToken ?? undefined;

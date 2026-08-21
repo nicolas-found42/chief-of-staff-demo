@@ -296,6 +296,94 @@ describe.sequential("DriveIntake", () => {
     expect(state.drive.ingestedIds).toEqual(["dup1", "dup2"]);
   });
 
+  it("dedupe: two overlapping polls ingest each file exactly once", async () => {
+    /* The field failure: saving the Drive folder and then saving again to enable
+       polling fires two immediate polls, and each one held its own ingestedIds
+       snapshot taken before the other had written — so every transcript ran
+       twice and produced two sets of Google Tasks and Gmail drafts. */
+    const files = [
+      { id: "c1", name: "a.txt", mimeType: "text/plain" },
+      { id: "c2", name: "b.md", mimeType: "text/markdown" },
+      { id: "c3", name: "c.txt", mimeType: "text/plain" },
+    ];
+    let listCalls = 0;
+    const drive: DriveFileClient = {
+      files: {
+        list: async () => {
+          listCalls += 1;
+          /* Yield the microtask queue so a second poll would genuinely
+             interleave here rather than depending on scheduling luck. */
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return { data: { files, nextPageToken: undefined } };
+        },
+        get: async (params: Record<string, unknown>) => {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return { data: Buffer.from(`Alice: ${params.fileId as string}\n`) };
+        },
+        export: async () => ({ data: Buffer.from("") }),
+      },
+    };
+    const intake = intakeWith(drive);
+
+    const [first, second] = await Promise.all([intake.pollOnce(), intake.pollOnce()]);
+    await pipeline.idle();
+
+    /* One pass over the folder, not two. */
+    expect(listCalls).toBe(1);
+    expect(first.created).toBe(3);
+    /* The second caller shares the running poll's answer instead of reporting a
+       second batch of its own. */
+    expect(second.created).toBe(3);
+
+    const runs = openRuns(workspaceDir).list();
+    expect(runs).toHaveLength(3);
+    const fileNames = runs
+      .map((r) => openRuns(workspaceDir).detail(r.id)!.fileName)
+      .sort();
+    expect(fileNames).toEqual(["a.txt", "b.md", "c.txt"]);
+
+    const state = loadState(join(workspaceDir, "state.json"));
+    expect(state.drive.ingestedIds).toEqual(["c1", "c2", "c3"]);
+
+    /* One task and one draft per transcript, so nothing is duplicated in the
+       operator's own Google account. */
+    expect(google.calls.tasks).toHaveLength(3);
+    expect(google.calls.drafts).toHaveLength(3);
+  });
+
+  it("dedupe: a poll starting during an in-flight poll creates no extra Runs", async () => {
+    const files = [{ id: "s1", name: "only.txt", mimeType: "text/plain" }];
+    let listCalls = 0;
+    const drive: DriveFileClient = {
+      files: {
+        list: async () => {
+          listCalls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return { data: { files, nextPageToken: undefined } };
+        },
+        get: async () => ({ data: Buffer.from("Dana: hi\n") }),
+        export: async () => ({ data: Buffer.from("") }),
+      },
+    };
+    const intake = intakeWith(drive);
+
+    const running = intake.pollOnce();
+    const joined = intake.pollOnce();
+    await Promise.all([running, joined]);
+    await pipeline.idle();
+
+    expect(listCalls).toBe(1);
+    expect(openRuns(workspaceDir).list()).toHaveLength(1);
+
+    /* Once the poll has settled the guard is released, so a later poll runs for
+       real — and finds nothing new. */
+    const later = await intake.pollOnce();
+    await pipeline.idle();
+    expect(listCalls).toBe(2);
+    expect(later.created).toBe(0);
+    expect(openRuns(workspaceDir).list()).toHaveLength(1);
+  });
+
   it("Google Doc export via drive.files.export creates a Run with .txt effectiveName", async () => {
     const files = [{ id: "doc1", name: "Meeting Notes", mimeType: "application/vnd.google-apps.document", webViewLink: "https://docs.google.com/document/d/doc1" }];
     const drive: DriveFileClient = {
