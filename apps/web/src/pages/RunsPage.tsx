@@ -85,7 +85,7 @@ export function RunsPage() {
     runs === null
       ? "Loading runs…"
       : `${runs.length} run${runs.length === 1 ? "" : "s"}, ${activeCount} in progress.` +
-        (activeCount === 0 ? " Updates paused — use Check for new runs." : "");
+        (activeCount === 0 ? " Updates paused — use Refresh." : "");
 
   return (
     <div className="page">
@@ -96,7 +96,7 @@ export function RunsPage() {
         {/* aria-disabled rather than disabled, like every other busy control
             here: the pressed button has to survive its own request. */}
         <button type="button" onClick={check} aria-disabled={checking}>
-          {checking ? "Checking…" : "Check for new runs"}
+          {checking ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 

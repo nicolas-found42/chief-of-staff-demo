@@ -419,10 +419,10 @@ test("the runs list stops updating itself once nothing can change", async ({ pag
   await page.waitForTimeout(7000);
   expect(lists - settled, "the list kept polling with every run terminal").toBe(0);
 
-  // Runs also arrive from the watch folder and from a Fireflies sync, so the
-  // idle list keeps a way to ask — otherwise stopping the poll would make them
-  // unreachable rather than merely un-announced.
-  await page.getByRole("button", { name: "Check for new runs" }).click();
+  // Runs also arrive from the Drive folder poll, so the idle list keeps a way to
+  // ask — otherwise stopping the poll would make them unreachable rather than
+  // merely un-announced.
+  await page.getByRole("button", { name: "Refresh" }).click();
   await expect.poll(() => lists - settled).toBe(1);
 });
 
