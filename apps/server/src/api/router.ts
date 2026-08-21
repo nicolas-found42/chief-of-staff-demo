@@ -1,7 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   DEFAULT_MODELS,
   type ConfigUpdate,
@@ -9,7 +6,7 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
-import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
+import { googleFailureHint, IncompleteGrantError, type GoogleConnection } from "../google/connection.js";
 import type { DriveIntake } from "../intake/drive.js";
 import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
 import type { Runs } from "../runs.js";
@@ -103,6 +100,20 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     return { authUrl: access.url };
   });
 
+  app.get("/api/google/picker-token", async (_request, reply) => {
+    try {
+      const access = await ctx.google.pickerToken();
+      if (!access.ok) {
+        reply.code(400).send({ error: googleFailureHint(access.state) });
+        return;
+      }
+      return { token: access.token, expiresAt: access.expiresAt };
+    } catch (error) {
+      reply.code(502).send({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+  });
+
   app.get("/api/google/callback", async (request, reply) => {
     const query = request.query as { code?: string; error?: string };
     if (query.error || !query.code) {
@@ -118,6 +129,12 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       await ctx.google.completeSignIn(query.code);
       reply.redirect("/settings?google=connected");
     } catch (error) {
+      if (error instanceof IncompleteGrantError) {
+        request.log.warn(error, "Google OAuth incomplete grant");
+        const missing = error.missingScopes.join(",");
+        reply.redirect(`/settings?google=scope_missing&missing=${encodeURIComponent(missing)}`);
+        return;
+      }
       request.log.warn(error, "Google OAuth code exchange failed");
       reply.redirect("/settings?google=error");
     }
@@ -134,38 +151,4 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
   });
 
-  // Test seam: create a Drive-type Run from the sample transcript without
-  // needing a real Drive folder. Not part of the user-facing API; used only
-  // by hermetic e2e tests that need a Run to exist.
-  app.post("/api/test/seed", async (_request, reply) => {
-    if (process.env.NODE_ENV === "production") {
-      reply.code(404).send({ error: "Not found" });
-      return;
-    }
-    try {
-      let bytes: Buffer | null = null;
-      const candidates = [
-        join(dirname(fileURLToPath(import.meta.url)), "../../../tests/fixtures/transcripts/sample-transcript.md"),
-        join(process.cwd(), "tests/fixtures/transcripts/sample-transcript.md"),
-      ];
-      for (const cand of candidates) {
-        try {
-          bytes = await readFile(cand);
-          break;
-        } catch {}
-      }
-      if (!bytes) {
-        bytes = Buffer.from("# Weekly Product Sync\n\nAlice: hello\nBob: hi\n");
-      }
-      const runId = await ctx.pipeline.startRun({
-        type: "drive",
-        fileName: "sample-transcript.md",
-        bytes,
-      });
-      reply.code(201);
-      return { runId };
-    } catch (error) {
-      reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
-    }
-  });
 }

@@ -168,10 +168,8 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 | Google consent shows a warning screen | Expected on a personal account: click **Continue** (the small link), not **Back to safety**. A Workspace account using an Internal consent screen never sees it. |
 | Sign-in fails with `Error 403: access_denied` | The account is not on the consent screen's Test users list. Add it under Audience → Test users and sign in again with the same account. |
 | Redirect URI mismatch during connect | The registered redirect URI must be `http://localhost:4317/api/google/callback`, matching the port the server runs on. |
-| Fireflies sync returns 401 | Key is wrong. Polling disables itself; fix the key in Settings and re-enable. |
-| Watch folder does nothing | Folder must exist (or be creatable); files must be stable (still copying? wait 2s) and have a supported extension; check the server console for `[watch]` lines. |
 | Tasks appear but some are missing | A bad item logs `google_task_error` and the batch continues — check the run's events timeline; Retry recreates everything (move/delete the partials first if you care about duplicates). |
-| `.json` upload fails with `SOURCE_INVALID` | JSON must be an array of Fireflies sentence objects (`speaker_name` + `text`), not an arbitrary document. |
+| Drive `.json` file fails with `SOURCE_INVALID` | JSON must be an array of sentence objects (`speaker_name` + `text`), not an arbitrary document. The file came from Drive, not an upload. |
 | Due dates show no time | Expected — the Tasks API stores a date and discards any time component. |
 | Google asks for a new sign-in about weekly | Expected while the consent screen is in Testing. Settings shows when you last signed in and roughly when Google will ask again; one click fixes it. |
 | `docker compose` fails on a socket or daemon | Docker Desktop is not running. Start it and wait for the whale to stop animating. |
@@ -185,3 +183,4 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 - The server binds to `127.0.0.1` only.
 - Mail can never be sent: `google/gmail.ts` contains no delivery call, and
   `tests/src/unit/draft-mime.test.ts` fails the build if one appears.
+- The Settings page is the only place the app loads remote code (Google's Picker script at `https://apis.google.com/js/api.js`, fetched on click only). The per-pick access token is short-lived, never persisted, never logged, and carries all three scopes.

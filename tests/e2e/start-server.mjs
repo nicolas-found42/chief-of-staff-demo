@@ -32,7 +32,7 @@ copyFileSync(
 
 const child = spawn(process.execPath, [join(root, "apps/server/dist/main.js")], {
   cwd: root,
-  env: { ...process.env, PORT: "4319", WORKSPACE_DIR: workspace },
+  env: { ...process.env, PORT: "4319", WORKSPACE_DIR: workspace, ENABLE_TEST_SEED: "1" },
   stdio: ["ignore", "inherit", "inherit"],
 });
 

@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
+import { registerTestSeed } from "./api/testSeed.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
 import { DriveIntake } from "./intake/drive.js";
@@ -59,6 +60,7 @@ const driveIntake = new DriveIntake({
   port,
   startRun: (spec) => pipeline.startRun(spec),
   log: (message) => console.log(`[drive] ${message}`),
+  google: googleConnection,
 });
 
 const app = fastify({ logger: false });
@@ -96,6 +98,10 @@ await registerApi(app, {
   },
 });
 
+if (process.env.ENABLE_TEST_SEED === "1") {
+  await registerTestSeed(app, { pipeline });
+}
+
 await app.listen({ port, host });
 console.log(
   `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
@@ -106,6 +112,7 @@ driveIntake.start();
 const shutdown = async (): Promise<void> => {
   driveIntake.stop();
   await app.close();
+  process.exit(0);
 };
 process.on("SIGINT", () => {
   void shutdown();

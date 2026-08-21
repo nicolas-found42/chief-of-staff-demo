@@ -9,9 +9,9 @@ import { Pipeline } from "../../../apps/server/src/pipeline/run";
 import { openRuns } from "../../../apps/server/src/runs";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import type { GoogleOutputs } from "../../../apps/server/src/google/outputs";
+import type { GoogleConnection } from "../../../apps/server/src/google/connection";
 import { composeTaskNotes } from "../../../apps/server/src/google/tasks";
 import { workspaceLayout } from "../../../apps/server/src/paths";
-
 const PORT = 4317;
 
 const GOLDEN = {
@@ -76,8 +76,8 @@ describe.sequential("DriveIntake", () => {
   let pipeline: Pipeline;
   let provider: { complete: CompleteJson; attempts: () => number };
   let google: FakeGoogle;
+  let intakeGoogle: GoogleConnection;
   let logs: string[];
-
   beforeEach(() => {
     workspaceDir = mkdtempSync(join(tmpdir(), "drive-intake-"));
     configStore = new ConfigStore(join(workspaceDir, "config.json"));
@@ -100,8 +100,27 @@ describe.sequential("DriveIntake", () => {
       getTasklistName: () => "Meeting Followups",
     });
     logs = [];
+    intakeGoogle = {
+      state: async () => {
+        const cfg = configStore.get();
+        if (!cfg.google.clientId || !cfg.google.clientSecret) {
+          return { state: "unconfigured", email: null, redirectUri: "", scopes: [], lastConnectedAt: null, expiresAbout: null } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
+        }
+        if (!cfg.google.refreshToken) {
+          return { state: "disconnected", email: null, redirectUri: "", scopes: [], lastConnectedAt: null, expiresAbout: null } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
+        }
+        return { state: "connected", email: "test@example.com", redirectUri: "", scopes: [], lastConnectedAt: new Date().toISOString(), expiresAbout: null } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
+      },
+      outputs: () => ({ ok: true, outputs: google } as unknown as ReturnType<GoogleConnection["outputs"]>),
+      observe: vi.fn(() => null),
+      verifySetup: async () => ({ state: "connected", items: [] }),
+      authUrl: () => ({ ok: false, state: "unconfigured" }),
+      completeSignIn: async () => {},
+      disconnect: () => {},
+      invalidate: () => {},
+      pickerToken: async () => ({ ok: false, state: "disconnected" }),
+    } as unknown as GoogleConnection;
   });
-
   function makeDrive(
     files: Array<{ id: string; name: string; mimeType?: string; webViewLink?: string | null; size?: string }>,
     fileData: Record<string, Buffer | string> = {}
@@ -125,13 +144,14 @@ describe.sequential("DriveIntake", () => {
     };
   }
 
-  function intakeWith(drive: DriveFileClient) {
+  function intakeWith(drive: DriveFileClient, overrideGoogle?: GoogleConnection) {
     return new DriveIntake({
       getConfig: () => configStore.get(),
       workspaceDir,
       port: PORT,
       startRun: (spec) => pipeline.startRun(spec),
       log: (m) => logs.push(m),
+      google: overrideGoogle ?? intakeGoogle,
       getDriveClient: () => drive,
     });
   }
@@ -170,7 +190,7 @@ describe.sequential("DriveIntake", () => {
     await pipeline.idle();
     expect(created).toBe(0);
     expect(listSpy).not.toHaveBeenCalled();
-    expect(logs.join(" ")).toMatch(/Google not connected/);
+    expect(logs.join(" ")).toMatch(/not connected/i);
   });
 
   it("inaccessible folder (404) logs and creates no Runs", async () => {

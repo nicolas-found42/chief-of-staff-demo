@@ -7,7 +7,14 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import { GOOGLE_TESTING_TOKEN_DAYS } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
-import { GOOGLE_SCOPES, buildGoogleAuth, exchangeGoogleCode, googleAuthUrl, redirectUriForPort } from "./oauth.js";
+import {
+  GOOGLE_SCOPES,
+  buildGoogleAuth,
+  exchangeGoogleCode,
+  googleAuthUrl,
+  mintAccessToken,
+  redirectUriForPort,
+} from "./oauth.js";
 import { googleOutputs, type GoogleOutputs } from "./outputs.js";
 
 /**
@@ -40,6 +47,46 @@ const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string
   gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
   drive: { label: "Google Drive", api: "Drive API", scope: "drive.readonly" },
 };
+
+const SCOPE_LABELS: Record<string, string> = {
+  "https://www.googleapis.com/auth/tasks": "Google Tasks",
+  "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
+  "https://www.googleapis.com/auth/drive.readonly": "Google Drive",
+};
+
+/**
+ * Pure predicate: which required scopes Google did not grant. An empty or
+ * absent echo is treated as a full grant rather than a failure — some Google
+ * responses omit the list entirely and rejecting that would lock the operator
+ * out on an unusual but valid answer.
+ */
+export function findMissingScopes(
+  grantedScopes: string[] | null | undefined
+): string[] {
+  if (!grantedScopes || grantedScopes.length === 0) {
+    return [];
+  }
+  const granted = new Set(grantedScopes);
+  return GOOGLE_SCOPES.filter((required) => !granted.has(required));
+}
+
+/** Backwards-compatible alias. */
+export const getMissingScopes = findMissingScopes;
+
+export class IncompleteGrantError extends Error {
+  public readonly missingScopes: string[];
+  public readonly missingLabels: string[];
+  constructor(missingScopes: string[]) {
+    const labels = missingScopes.map((s) => SCOPE_LABELS[s] ?? s);
+    const labelText = labels.join(", ");
+    super(
+      `Google did not grant ${labelText}. Sign in again and leave all three permissions ticked — the missing ${labels.length === 1 ? "permission is" : "permissions are"} ${labelText}.`
+    );
+    this.name = "IncompleteGrantError";
+    this.missingScopes = missingScopes;
+    this.missingLabels = labels;
+  }
+}
 
 /**
  * The reason and message Google attaches to an API error. Distinct from
@@ -84,6 +131,24 @@ function explainSurfaceFailure(surface: GoogleSurface, error: unknown): string {
   ) {
     return `The consent screen is missing the ${SURFACE[surface].scope} scope. Add it under Data Access, then sign in again.`;
   }
+  if (surface === "drive") {
+    const raw = error as {
+      code?: number;
+      status?: number;
+      response?: { status?: number };
+    };
+    const status = raw?.code ?? raw?.status ?? raw?.response?.status;
+    if (
+      status === 404 ||
+      /notFound|File not found|not_found|notAccessible/i.test(message) ||
+      reason === "notFound"
+    ) {
+      return "Drive folder not found or not accessible — pick the folder again in Settings.";
+    }
+    if (status === 403 && /notFound|File not found|not_found/i.test(message)) {
+      return "Drive folder not found or not accessible — pick the folder again in Settings.";
+    }
+  }
   return message || "Google refused the call and gave no reason.";
 }
 
@@ -108,6 +173,14 @@ const callSurface: SurfaceProbe = async (config, port, surface) => {
        gmail.compose, and getProfile is not reachable with that scope alone — it
        would report a correctly configured Gmail as broken. */
     await google.gmail({ version: "v1", auth }).users.drafts.list({ userId: "me", maxResults: 1 });
+    return;
+  }
+  if (config.drive.folderId) {
+    await google.drive({ version: "v3", auth }).files.get({
+      fileId: config.drive.folderId,
+      fields: "id, name",
+      supportsAllDrives: true,
+    });
     return;
   }
   await google.drive({ version: "v3", auth }).files.list({ pageSize: 1, fields: "files(id)" });
@@ -150,6 +223,21 @@ export type OutputsAccess =
 
 export type AuthUrlAccess = { ok: true; url: string } | { ok: false; state: GoogleConnectionState };
 
+export type PickerTokenAccess =
+  | { ok: true; token: string; expiresAt: string | null }
+  | { ok: false; state: GoogleConnectionState };
+
+export type ExchangeCode = (
+  config: AppConfig,
+  port: number,
+  code: string
+) => Promise<{ refreshToken: string; grantedScopes: string[] }>;
+
+export type MintAccessTokenFn = (
+  config: AppConfig,
+  port: number
+) => Promise<{ token: string; expiresAt: string | null }>;
+
 /**
  * The Google connection: the app's authorization to act on one person's Google
  * account, as the four states of ADR-0007 and as the only route to a Google
@@ -185,6 +273,14 @@ export interface GoogleConnection {
   disconnect(): void;
   /** Drop the remembered state; the next `state()` asks Google again. */
   invalidate(): void;
+  /**
+   * A short-lived OAuth access token for the Picker, minted from the stored
+   * refresh token. Available only when `connected`; every other state returns
+   * that state instead. The token carries all three scopes — Workspace APIs
+   * offer no down-scoping — and is minted fresh on every call for the life of
+   * one pick.
+   */
+  pickerToken(): Promise<PickerTokenAccess>;
 }
 
 export interface GoogleConnectionOptions {
@@ -192,6 +288,10 @@ export interface GoogleConnectionOptions {
   probe?: GoogleProbe;
   /** Test seam: the default makes one real read-only call per surface. */
   surfaceProbe?: SurfaceProbe;
+  /** Test seam: exchange a code for a refresh token and granted scopes. */
+  exchangeCode?: ExchangeCode;
+  /** Test seam: mint a short-lived access token for the Picker. */
+  mintAccessToken?: MintAccessTokenFn;
 }
 
 export function openGoogleConnection(
@@ -201,6 +301,8 @@ export function openGoogleConnection(
 ): GoogleConnection {
   const probe = options.probe ?? spendRefreshToken;
   const surfaceProbe = options.surfaceProbe ?? callSurface;
+  const exchange = options.exchangeCode ?? exchangeGoogleCode;
+  const mint = options.mintAccessToken ?? mintAccessToken;
   /* Remembered rather than recomputed: every `state()` that reaches Google costs
      two round-trips, and the answer only changes on events this module sees —
      a settings save, a sign-in, a disconnect, or a grant Google rejected during
@@ -350,8 +452,12 @@ export function openGoogleConnection(
     },
 
     async completeSignIn(code: string): Promise<void> {
-      const refreshToken = await exchangeGoogleCode(configStore.get(), port, code);
-      configStore.setGoogleRefreshToken(refreshToken);
+      const grant = await exchange(configStore.get(), port, code);
+      const missing = findMissingScopes(grant.grantedScopes);
+      if (missing.length > 0) {
+        throw new IncompleteGrantError(missing);
+      }
+      configStore.setGoogleRefreshToken(grant.refreshToken);
       remembered = null;
     },
 
@@ -362,6 +468,44 @@ export function openGoogleConnection(
 
     invalidate(): void {
       remembered = null;
+    },
+
+    async pickerToken(): Promise<PickerTokenAccess> {
+      const config = configStore.get();
+      const stored = storedState(config);
+      if (stored) {
+        return { ok: false, state: stored };
+      }
+      if (remembered?.state === "expired") {
+        return { ok: false, state: "expired" };
+      }
+      // If we have not yet proved the token, ask once; a remembered "connected"
+      // stays fast, while a fresh "expired" is discovered here rather than after
+      // minting.
+      if (!remembered) {
+        try {
+          await probe(config, port);
+          // Probe success implies we could remember connected, but we don't need
+          // to — mint will prove it again. Keeping remembered null is fine.
+        } catch (error) {
+          if (isRejectedGrant(error)) {
+            noteRejection(error);
+            return { ok: false, state: "expired" };
+          }
+          // Unreachable — still try to mint; the mint will throw with the same
+          // underlying cause.
+        }
+      }
+      try {
+        const result = await mint(config, port);
+        return { ok: true, token: result.token, expiresAt: result.expiresAt };
+      } catch (error) {
+        const rejected = noteRejection(error);
+        if (rejected) {
+          return { ok: false, state: rejected };
+        }
+        throw error;
+      }
     },
   };
 }

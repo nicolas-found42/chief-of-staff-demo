@@ -303,6 +303,12 @@ export interface SetupCheck {
   items: { label: string; ok: boolean; detail: string }[];
 }
 
+/** GET /api/google/picker-token response: short-lived token for the Picker. */
+export interface PickerTokenResponse {
+  token: string;
+  expiresAt: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Runs
 // ---------------------------------------------------------------------------

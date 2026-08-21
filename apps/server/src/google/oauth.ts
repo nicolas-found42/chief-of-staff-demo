@@ -43,7 +43,7 @@ export async function exchangeGoogleCode(
   config: AppConfig,
   port: number,
   code: string
-): Promise<string> {
+): Promise<{ refreshToken: string; grantedScopes: string[] }> {
   const client = new google.auth.OAuth2(
     config.google.clientId,
     config.google.clientSecret,
@@ -54,5 +54,25 @@ export async function exchangeGoogleCode(
   if (!refresh) {
     throw new Error("Google did not return a refresh token");
   }
-  return refresh;
+  const scopeString = (tokens as { scope?: string }).scope ?? (tokens as { scopes?: string[] }).scopes?.join(" ") ?? "";
+  const grantedScopes = scopeString
+    .split(" ")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return { refreshToken: refresh, grantedScopes };
+}
+
+export async function mintAccessToken(
+  config: AppConfig,
+  port: number
+): Promise<{ token: string; expiresAt: string | null }> {
+  const auth = buildGoogleAuth(config, port);
+  const result = await auth.getAccessToken();
+  const token = (result as { token?: string | null }).token ?? auth.credentials.access_token ?? null;
+  if (!token) {
+    throw new Error("Google did not return an access token");
+  }
+  const expiry = auth.credentials.expiry_date ?? null;
+  const expiresAt = expiry ? new Date(expiry).toISOString() : null;
+  return { token, expiresAt };
 }

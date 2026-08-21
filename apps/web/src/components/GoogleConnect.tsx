@@ -52,6 +52,8 @@ const CONSOLE = {
   projectCreate: "https://console.cloud.google.com/projectcreate",
   tasksApi: "https://console.cloud.google.com/apis/library/tasks.googleapis.com",
   gmailApi: "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
+  driveApi: "https://console.cloud.google.com/apis/library/drive.googleapis.com",
+  pickerApi: "https://console.cloud.google.com/apis/library/picker.googleapis.com",
   authPlatform: "https://console.cloud.google.com/auth/branding",
   audience: "https://console.cloud.google.com/auth/audience",
   dataAccess: "https://console.cloud.google.com/auth/scopes",
@@ -266,7 +268,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
         </li>
 
         <li>
-          <p className="setup-step-title">Turn on the two APIs this app calls.</p>
+          <p className="setup-step-title">Turn on the APIs this app calls.</p>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.tasksApi} target="_blank" rel="noreferrer">
               Enable the Tasks API
@@ -274,11 +276,20 @@ export function GoogleConnect(props: GoogleConnectProps) {
             <a className="step-link" href={CONSOLE.gmailApi} target="_blank" rel="noreferrer">
               Enable the Gmail API
             </a>
+            <a className="step-link" href={CONSOLE.driveApi} target="_blank" rel="noreferrer">
+              Enable the Drive API
+            </a>
+            <a className="step-link" href={CONSOLE.pickerApi} target="_blank" rel="noreferrer">
+              Enable the Picker API
+            </a>
           </p>
           <p className="muted field-hint">
             Do this before the scopes step below — that list only offers scopes for APIs that are
             already on. Afterwards the console offers a <strong>Create credentials</strong> button:
             ignore it, the client comes from a later step.
+          </p>
+          <p className="muted field-hint">
+            The Picker API runs in the browser and has no server-side check — <strong>Check my setup</strong> verifies the other three and cannot verify the Picker.
           </p>
         </li>
 
@@ -321,16 +332,16 @@ export function GoogleConnect(props: GoogleConnectProps) {
         )}
 
         <li>
-          <p className="setup-step-title">Add both scopes under Data Access.</p>
+          <p className="setup-step-title">Add all three scopes under Data Access.</p>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.dataAccess} target="_blank" rel="noreferrer">
               Open Data Access
             </a>
           </p>
           <p className="muted field-hint">
-            Choose <strong>Add or remove scopes</strong>, paste both of these into{" "}
+            Choose <strong>Add or remove scopes</strong>, paste all three of these into{" "}
             <strong>Manually add scopes</strong>, and press <strong>Add to table</strong> — the list
-            runs to dozens of rows across several pages and neither of these is on the first one.
+            runs to dozens of rows across several pages and none of these is on the first one.
           </p>
           {status.scopes.map((scope) => (
             <p className="setup-copy" key={scope}>
@@ -376,8 +387,8 @@ export function GoogleConnect(props: GoogleConnectProps) {
           {clientJsonField}
           <p className="muted field-hint">
             {workspace
-              ? "Leave both permissions ticked on Google's consent screen. Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."
-              : "Google will warn that it hasn't verified this app. Click Continue — the small link, not the Back to safety button. Leave both permissions ticked: Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."}
+              ? "Leave all three permissions ticked on Google's consent screen — Google Drive to read the folder, plus Tasks and Gmail. Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."
+              : "Google will warn that it hasn't verified this app. Click Continue — the small link, not the Back to safety button. Leave all three permissions ticked — Google Drive to read the folder, plus Tasks and Gmail: Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."}
           </p>
           <div className="field-row">{signInButton("Save and sign in with Google")}</div>
         </li>

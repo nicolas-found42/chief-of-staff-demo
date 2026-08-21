@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
+import { pickDriveFolder } from "../googlePicker";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -44,18 +45,6 @@ interface FormState {
   ollamaBaseUrl: string;
 }
 
-function extractFolderId(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return "";
-  // Handle full Drive URL https://drive.google.com/drive/folders/ID?usp=...
-  const match = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (match && match[1]) return match[1];
-  // Handle https://drive.google.com/drive/u/0/folders/ID
-  // Also handle id= param
-  const idParam = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (idParam && idParam[1]) return idParam[1];
-  return trimmed;
-}
 
 export function SettingsPage() {
   useTitle("Settings");
@@ -71,10 +60,12 @@ export function SettingsPage() {
   const [signingIn, setSigningIn] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [checkingGoogle, setCheckingGoogle] = useState(false);
-  const [googleCheck, setGoogleCheck] = useState<SetupCheck | null>(null);
   const [jsonNotice, setJsonNotice] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [googleCheck, setGoogleCheck] = useState<SetupCheck | null>(null);
   /* The connection is the Shell's, held once for the three surfaces that show
      it (ADR-0011). This card is the one that changes it, so it writes through
      the provider rather than keeping a copy that could disagree with the
@@ -305,26 +296,21 @@ export function SettingsPage() {
     }
   };
 
-  const chooseFolder = () => {
-    const input = window.prompt(
-      "Paste the Google Drive folder link or ID (open the folder in Drive and copy the URL, e.g. https://drive.google.com/drive/folders/1AbC...):",
-      form.driveFolderId ? `https://drive.google.com/drive/folders/${form.driveFolderId}` : ""
-    );
-    if (input === null) return;
-    const trimmed = input.trim();
-    if (!trimmed) {
-      setField("driveFolderId", "");
-      setField("driveFolderName", "");
-      return;
-    }
-    const folderId = extractFolderId(trimmed);
-    setField("driveFolderId", folderId);
-    // Folder name will be resolved on next poll / save; prompt for it now
-    const nameInput = window.prompt("Folder name (for display, optional):", form.driveFolderName || folderId);
-    if (nameInput !== null) {
-      setField("driveFolderName", nameInput.trim() || folderId);
-    } else {
-      setField("driveFolderName", folderId);
+  const chooseFolder = async () => {
+    if (picking) return;
+    setPickerError(null);
+    setPicking(true);
+    try {
+      const { token } = await api.googlePickerToken();
+      const picked = await pickDriveFolder(token);
+      if (picked) {
+        setField("driveFolderId", picked.id);
+        setField("driveFolderName", picked.name);
+      }
+    } catch (err) {
+      setPickerError(errorMessage(err));
+    } finally {
+      setPicking(false);
     }
   };
 
@@ -381,6 +367,25 @@ export function SettingsPage() {
         <div className="banner banner-error" role="alert">
           Google refused the sign-in because that account is not on your consent screen's Test users
           list. Add it under Audience → Test users, then sign in again with the same account.
+        </div>
+      )}
+      {googleBanner === "scope_missing" && (
+        <div className="banner banner-error" role="alert">
+          {(() => {
+            const missing = searchParams.get("missing") ?? "";
+            const scopes = missing ? missing.split(",").map((s) => s.trim()).filter(Boolean) : [];
+            const labelMap: Record<string, string> = {
+              "https://www.googleapis.com/auth/tasks": "Google Tasks",
+              "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
+              "https://www.googleapis.com/auth/drive.readonly": "Google Drive",
+              tasks: "Google Tasks",
+              "gmail.compose": "Gmail drafts",
+              "drive.readonly": "Google Drive",
+            };
+            const labels = scopes.map((s) => labelMap[s] ?? s);
+            const labelText = labels.length ? labels.join(", ") : "a required permission";
+            return `Google did not grant ${labelText}. Sign in again and leave all three permissions ticked.`;
+          })()}
         </div>
       )}
       {googleBanner === "error" && (
@@ -543,12 +548,27 @@ export function SettingsPage() {
                   placeholder="No folder chosen"
                   readOnly
                 />
-                <button type="button" onClick={chooseFolder}>
-                  {form.driveFolderId ? "Change folder" : "Choose folder"}
+                <button
+                  type="button"
+                  onClick={() => void chooseFolder()}
+                  disabled={googleStatus?.state !== "connected" || picking}
+                  aria-describedby={googleStatus?.state !== "connected" ? "drive-picker-disabled-hint" : undefined}
+                >
+                  {picking ? "Opening…" : form.driveFolderId ? "Change folder" : "Choose folder"}
                 </button>
               </div>
+              {googleStatus?.state !== "connected" ? (
+                <p id="drive-picker-disabled-hint" className="muted field-hint">
+                  Sign in with Google first — the picker needs your Drive access.
+                </p>
+              ) : null}
+              {pickerError ? (
+                <p className="field-error" role="alert">
+                  {pickerError}
+                </p>
+              ) : null}
               <p id="drive-folder-hint" className="muted field-hint">
-                Open the folder in Drive and copy its URL, or paste the folder ID. Requires drive.readonly — sign in with Google again after enabling the Drive API.
+                The picker shows your Drive folders — no folder ID to copy. Requires Google Drive access; sign in again after enabling the Drive API.
               </p>
             </div>
             <div className="field">
@@ -593,7 +613,6 @@ export function SettingsPage() {
             Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs (exported as text). Other files are ignored.
           </p>
         </div>
-
         <div className="field-row">
           <button type="submit" className="primary" aria-disabled={saving}>
             {saving ? "Saving…" : "Save settings"}

@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import type { AppConfig } from "@chief-of-staff-demo/shared";
 import { buildGoogleAuth } from "../google/oauth.js";
+import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
 import { loadState, saveState } from "../state.js";
 import { workspaceLayout } from "../paths.js";
 import { isSupportedFileName, MAX_UPLOAD_BYTES } from "../text/convert.js";
@@ -43,6 +44,7 @@ export interface DriveIntakeDeps {
   port: number;
   startRun: (spec: { type: "drive"; fileName: string; bytes: Buffer; sourceUrl?: string | null; externalId: string | null; context?: { meetingDate: string | null; attendees: { name: string; email: string | null }[] } }) => Promise<string>;
   log: (message: string) => void;
+  google: GoogleConnection;
   /** Test seam: override Drive client. */
   getDriveClient?: (config: AppConfig, port: number) => DriveFileClient;
 }
@@ -89,12 +91,18 @@ export class DriveIntake {
       if (!config.drive.enabled || !config.drive.folderId) {
         return { created: 0 };
       }
-      if (!config.google.refreshToken) {
-        this.deps.log("Drive poll skipped: Google not connected");
+      const status = await this.deps.google.state();
+      if (status.state !== "connected") {
+        this.deps.log(`Drive poll skipped: ${googleFailureHint(status.state)}`);
         return { created: 0 };
       }
       const created = await this.ingestNewFiles(config);
       return { created };
+    } catch (error) {
+      try {
+        this.deps.google.observe(error);
+      } catch {}
+      throw error;
     } finally {
       const state = loadState(layout.stateFile);
       state.drive.lastPollAt = new Date().toISOString();
@@ -127,6 +135,9 @@ export class DriveIntake {
           supportsAllDrives: true,
         }) as { data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string; modifiedTime?: string }>; nextPageToken?: string | null } };
       } catch (error: unknown) {
+        try {
+          this.deps.google.observe(error);
+        } catch {}
         const err = error as { code?: number; status?: number; response?: { status?: number }; message?: string };
         const status = err?.code ?? err?.status ?? err?.response?.status;
         const message = err?.message ?? String(error);
@@ -193,6 +204,9 @@ export class DriveIntake {
             }
           }
         } catch (error: unknown) {
+          try {
+            this.deps.google.observe(error);
+          } catch {}
           this.deps.log(`Failed to fetch Drive file ${fileName} (${fileId}): ${error instanceof Error ? error.message : String(error)}`);
           continue;
         }
@@ -211,6 +225,9 @@ export class DriveIntake {
             context: { meetingDate, attendees: [] },
           });
         } catch (error: unknown) {
+          try {
+            this.deps.google.observe(error);
+          } catch {}
           this.deps.log(`Pipeline rejected Drive file ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
           continue;
         }

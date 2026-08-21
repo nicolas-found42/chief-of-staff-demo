@@ -55,6 +55,7 @@ export const api = {
   googleConnect: () => request<{ authUrl: string }>("/api/google/connect"),
   googleDisconnect: () =>
     request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),
+  googlePickerToken: () => request<{ token: string; expiresAt: string | null }>("/api/google/picker-token"),
   driveSync: () => request<{ created: number }>("/api/drive/sync", { method: "POST" }),
 };
 

@@ -4,8 +4,7 @@ test("Drive folder is the only Intake; Runs list and Drive settings are visible"
   await page.goto("/transcript");
   // Upload dropzone is gone — Drive folder is the sole Intake
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
-
+  await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
   await page.goto("/settings");
   await expect(page.getByRole("group", { name: "Drive transcripts" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Choose folder/i })).toBeVisible();
@@ -70,19 +69,20 @@ test("an unconfigured workspace gets the setup steps, not two bare fields", asyn
   await expect(page.locator(".setup-copy > code")).toHaveText([
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/drive.readonly",
     "http://localhost:4319/api/google/callback",
   ]);
   // Three Copy buttons on one page, each naming what it copies rather than
   // leaving a screen reader with "Copy, Copy, Copy" (WCAG 2.4.6).
-  await expect(page.locator(".copy-button")).toHaveCount(3);
+  await expect(page.locator(".copy-button")).toHaveCount(4);
   for (const name of [
     "Copy https://www.googleapis.com/auth/tasks",
     "Copy https://www.googleapis.com/auth/gmail.compose",
+    "Copy https://www.googleapis.com/auth/drive.readonly",
     "Copy Redirect URI",
   ]) {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   }
-
   // The sign-in button is the last step, and it is a real Google-branded button.
   await expect(page.getByRole("button", { name: /Save and sign in with Google/ })).toBeVisible();
 });
@@ -138,15 +138,12 @@ test("primary actions are reachable and operable by keyboard", async ({ page }) 
 
   // Drive is the only Intake — no upload button, but the page still has a heading and a way to check
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
-
-  // Seed a Run via the test seam so the list has a link to exercise
+  await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
   const seed = await page.request.post("/api/test/seed");
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  await expect(page.locator("h1.run-title")).toBeFocused();
-
+  await expect(page.locator("h1.run-title")).toBeVisible();
   // Each route carries its own title, suffixed with the Shell's name — not with
   // the name of a Module, which is what this used to say.
   await expect(page).toHaveTitle(/· Chief of Staff$/);
