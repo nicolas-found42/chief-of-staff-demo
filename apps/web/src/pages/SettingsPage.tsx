@@ -36,13 +36,25 @@ interface FormState {
   tasklistName: string;
   googleClientId: string;
   googleClientSecret: string;
-  firefliesApiKey: string;
-  firefliesEnabled: boolean;
+  driveEnabled: boolean;
+  driveFolderId: string;
+  driveFolderName: string;
   /* Held as the raw string so clearing the field doesn't silently coerce to 0. */
   pollIntervalMinutes: string;
-  watchEnabled: boolean;
-  folderPath: string;
   ollamaBaseUrl: string;
+}
+
+function extractFolderId(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  // Handle full Drive URL https://drive.google.com/drive/folders/ID?usp=...
+  const match = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) return match[1];
+  // Handle https://drive.google.com/drive/u/0/folders/ID
+  // Also handle id= param
+  const idParam = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idParam && idParam[1]) return idParam[1];
+  return trimmed;
 }
 
 export function SettingsPage() {
@@ -83,11 +95,10 @@ export function SettingsPage() {
           tasklistName: fetched.config.tasklistName,
           googleClientId: fetched.config.google.clientId,
           googleClientSecret: "",
-          firefliesApiKey: "",
-          firefliesEnabled: fetched.config.fireflies.enabled,
-          pollIntervalMinutes: String(fetched.config.fireflies.pollIntervalMinutes),
-          watchEnabled: fetched.config.watch.enabled,
-          folderPath: fetched.config.watch.folderPath,
+          driveEnabled: fetched.config.drive.enabled,
+          driveFolderId: fetched.config.drive.folderId,
+          driveFolderName: fetched.config.drive.folderName,
+          pollIntervalMinutes: String(fetched.config.drive.pollIntervalMinutes),
           ollamaBaseUrl: fetched.config.ollama.baseUrl,
         });
       } catch (err) {
@@ -171,11 +182,12 @@ export function SettingsPage() {
         model: form.model,
         tasklistName: form.tasklistName,
         google: { clientId: form.googleClientId },
-        fireflies: {
-          enabled: form.firefliesEnabled,
+        drive: {
+          enabled: form.driveEnabled,
+          folderId: form.driveFolderId,
+          folderName: form.driveFolderName,
           pollIntervalMinutes: Number(form.pollIntervalMinutes),
         },
-        watch: { enabled: form.watchEnabled, folderPath: form.folderPath },
         ollama: { baseUrl: form.ollamaBaseUrl },
       };
       if (form.apiKey !== "") {
@@ -183,13 +195,6 @@ export function SettingsPage() {
       }
       if (form.googleClientSecret !== "") {
         update.google = { clientId: form.googleClientId, clientSecret: form.googleClientSecret };
-      }
-      if (form.firefliesApiKey !== "") {
-        update.fireflies = {
-          enabled: form.firefliesEnabled,
-          apiKey: form.firefliesApiKey,
-          pollIntervalMinutes: Number(form.pollIntervalMinutes),
-        };
       }
       const savedPayload = await api.saveConfig(update);
       setPayload(savedPayload);
@@ -201,10 +206,13 @@ export function SettingsPage() {
               model: savedPayload.config.model,
               tasklistName: savedPayload.config.tasklistName,
               googleClientId: savedPayload.config.google.clientId,
+              driveEnabled: savedPayload.config.drive.enabled,
+              driveFolderId: savedPayload.config.drive.folderId,
+              driveFolderName: savedPayload.config.drive.folderName,
+              pollIntervalMinutes: String(savedPayload.config.drive.pollIntervalMinutes),
               ollamaBaseUrl: savedPayload.config.ollama.baseUrl,
               apiKey: "",
               googleClientSecret: "",
-              firefliesApiKey: "",
             }
           : current
       );
@@ -280,7 +288,7 @@ export function SettingsPage() {
     }
   };
 
-  const syncFireflies = async () => {
+  const syncDrive = async () => {
     if (syncing) {
       return;
     }
@@ -288,12 +296,35 @@ export function SettingsPage() {
     setSyncResult(null);
     setError(null);
     try {
-      const { created } = await api.firefliesSync();
+      const { created } = await api.driveSync();
       setSyncResult(`Synced — ${created} new transcript(s) started.`);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const chooseFolder = () => {
+    const input = window.prompt(
+      "Paste the Google Drive folder link or ID (open the folder in Drive and copy the URL, e.g. https://drive.google.com/drive/folders/1AbC...):",
+      form.driveFolderId ? `https://drive.google.com/drive/folders/${form.driveFolderId}` : ""
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    if (!trimmed) {
+      setField("driveFolderId", "");
+      setField("driveFolderName", "");
+      return;
+    }
+    const folderId = extractFolderId(trimmed);
+    setField("driveFolderId", folderId);
+    // Folder name will be resolved on next poll / save; prompt for it now
+    const nameInput = window.prompt("Folder name (for display, optional):", form.driveFolderName || folderId);
+    if (nameInput !== null) {
+      setField("driveFolderName", nameInput.trim() || folderId);
+    } else {
+      setField("driveFolderName", folderId);
     }
   };
 
@@ -498,24 +529,26 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div className="card" role="group" aria-labelledby="group-fireflies">
-          <h2 id="group-fireflies">Fireflies</h2>
+        <div className="card" role="group" aria-labelledby="group-drive">
+          <h2 id="group-drive">Drive transcripts</h2>
+          <p className="muted">Transcripts are read from a single Google Drive folder. Pick the folder your transcript service writes to, then enable polling.</p>
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="fireflies-api-key">Fireflies API key</label>
-              <input
-                id="fireflies-api-key"
-                aria-describedby="fireflies-api-key-hint"
-                type="password"
-                value={form.firefliesApiKey}
-                autoComplete="off"
-                onChange={(event) => setField("firefliesApiKey", event.target.value)}
-              />
-              <p id="fireflies-api-key-hint" className="muted field-hint">
-                {secretHint(
-                  payload.config.fireflies.apiKey.set,
-                  payload.config.fireflies.apiKey.hint
-                )}
+              <label htmlFor="drive-folder">Drive folder</label>
+              <div className="field-row">
+                <input
+                  id="drive-folder"
+                  aria-describedby="drive-folder-hint"
+                  value={form.driveFolderName ? `${form.driveFolderName} (${form.driveFolderId})` : form.driveFolderId}
+                  placeholder="No folder chosen"
+                  readOnly
+                />
+                <button type="button" onClick={chooseFolder}>
+                  {form.driveFolderId ? "Change folder" : "Choose folder"}
+                </button>
+              </div>
+              <p id="drive-folder-hint" className="muted field-hint">
+                Open the folder in Drive and copy its URL, or paste the folder ID. Requires drive.readonly — sign in with Google again after enabling the Drive API.
               </p>
             </div>
             <div className="field">
@@ -544,48 +577,20 @@ export function SettingsPage() {
             <label className="checkbox-label">
               <input
                 type="checkbox"
-                checked={form.firefliesEnabled}
-                onChange={(event) => setField("firefliesEnabled", event.target.checked)}
+                checked={form.driveEnabled}
+                onChange={(event) => setField("driveEnabled", event.target.checked)}
               />
-              Enable polling
+              Enable Drive polling
             </label>
           </div>
           <div className="field-row">
-            <button type="button" onClick={syncFireflies} aria-disabled={syncing}>
+            <button type="button" onClick={syncDrive} aria-disabled={syncing}>
               Sync now
             </button>
             <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
           </div>
-        </div>
-
-        <div className="card" role="group" aria-labelledby="group-watch">
-          <h2 id="group-watch">Watch folder</h2>
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="folder-path">Folder path</label>
-              <input
-                id="folder-path"
-                aria-describedby="folder-path-hint"
-                value={form.folderPath}
-                placeholder="/absolute/path/to/folder"
-                onChange={(event) => setField("folderPath", event.target.value)}
-              />
-              <p id="folder-path-hint" className="muted field-hint">
-                An absolute path, for example /Users/you/Transcripts.
-              </p>
-            </div>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={form.watchEnabled}
-                onChange={(event) => setField("watchEnabled", event.target.checked)}
-              />
-              Enable folder watch
-            </label>
-          </div>
           <p className="muted">
-            Stable files are moved into workspace/watch-archive/ first, then processed — the move is
-            the dedupe.
+            Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs (exported as text). Other files are ignored.
           </p>
         </div>
 

@@ -366,8 +366,10 @@ describe("verifySetup — asking Google what is missing", () => {
     expect(check.items.map((item) => [item.label, item.ok])).toEqual([
       ["Google Tasks", true],
       ["Gmail drafts", true],
+      ["Google Drive", true],
     ]);
   });
+
 
   it("names the API that was never enabled, and stays connected", async () => {
     withToken();

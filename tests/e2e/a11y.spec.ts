@@ -1,18 +1,14 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const sampleTranscript = join(here, "../fixtures/transcripts/sample-transcript.md");
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
-/** Uploads the sample and lands on its run detail page. */
+/** Create a Run via the test seam and land on its detail page. */
 async function openRun(page: Page): Promise<void> {
-  await page.goto("/transcript");
-  await page.setInputFiles('input[type="file"]', sampleTranscript);
-  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+  const res = await page.request.post("/api/test/seed");
+  if (!res.ok()) throw new Error(`seed failed: ${res.status()} ${await res.text()}`);
+  const { runId } = (await res.json()) as { runId: string };
+  await page.goto(`/runs/${runId}`);
   await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
 }
 
@@ -193,7 +189,7 @@ test("a busy control is styled, not dimmed, and only the pressed one is busy", a
   expect(saving.map((control) => control.text)).toEqual(["Saving…"]);
   await expect(save).toHaveAttribute("aria-disabled", "false", { timeout: 15_000 });
 
-  await page.route("**/api/fireflies/sync", stall);
+  await page.route("**/api/drive/sync", stall);
   const sync = page.getByRole("button", { name: "Sync now" });
   await sync.focus();
   await sync.dispatchEvent("click");
@@ -204,22 +200,13 @@ test("a busy control is styled, not dimmed, and only the pressed one is busy", a
 });
 
 test("busy controls on tinted surfaces clear their floors too", async ({ page }) => {
-  // The Retry button sits on the error banner and the file picker on the
-  // dropzone, so both are measured against a backdrop that is not the page.
+  // The Retry button sits on the error banner, so it is measured against a backdrop that is not the page.
   await openRun(page);
   await page.route("**/retry", stall);
   const retry = page.getByRole("button", { name: /retry/i });
   await retry.focus();
   await retry.dispatchEvent("click");
   await expect(retry).toHaveAttribute("aria-disabled", "true");
-  expectLegible(await busyControls(page));
-
-  await page.route("**/api/runs/upload", stall);
-  await page.goto("/transcript");
-  const picker = page.locator(".dropzone .linklike");
-  await picker.focus();
-  await page.setInputFiles('input[type="file"]', sampleTranscript);
-  await expect(picker).toHaveText("Uploading…");
   expectLegible(await busyControls(page));
 });
 
@@ -333,32 +320,6 @@ test("the poll interval reports its error in the page, not a transient bubble", 
   await expect(page.locator("#poll-interval-error")).toHaveCount(0);
 });
 
-test("the file picker button keeps its instructions, and its focus, mid-upload", async ({
-  page,
-}) => {
-  await page.goto("/transcript");
-  // The description has to hang off the button, not the file input: the input is
-  // hidden, so it computes to display:none and never reaches the accessibility
-  // tree — an aria-describedby there is inert (WCAG 3.3.2).
-  const picker = page.locator(".dropzone .linklike");
-  await expect(picker).toHaveAttribute("aria-describedby", "upload-formats");
-
-  // Hold the upload open so the in-flight render can be inspected.
-  await page.route("**/api/runs/upload", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    await route.continue();
-  });
-  await picker.focus();
-  await page.setInputFiles('input[type="file"]', sampleTranscript);
-
-  await expect(page.locator(".dropzone")).toContainText("Uploading…");
-  // Unmounting the control mid-upload would drop focus to <body> (WCAG 2.4.3).
-  await expect(picker).toBeFocused();
-  expect(await activeDescription(page)).not.toBe("<body — focus lost>");
-  await expect(picker).toHaveAttribute("aria-describedby", "upload-formats");
-  // The referenced element must still exist, or the button loses its description.
-  await expect(page.locator("#upload-formats")).toHaveCount(1);
-});
 
 test("every container that scrolls can be reached by keyboard", async ({ page }) => {
   // 320px is where the 34rem tables genuinely overflow — the same place a 400%
@@ -468,17 +429,6 @@ test("a skip link bypasses the header", async ({ page }) => {
   await expect(page.locator("main#main")).toBeFocused();
 });
 
-test("the whole dropzone is a pointer target, not just the inline button", async ({ page }) => {
-  await page.goto("/transcript");
-  const zone = page.getByTestId("dropzone");
-  await expect(zone).toHaveCSS("cursor", "pointer");
-
-  // The pointer cursor promised a click target; clicking the zone body opens the
-  // picker, and the button remains the keyboard route.
-  const chooser = page.waitForEvent("filechooser");
-  await zone.click({ position: { x: 24, y: 14 } });
-  await chooser;
-});
 
 test("the current page is marked by more than a background colour", async ({ page }) => {
   await page.goto("/settings");

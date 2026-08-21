@@ -41,8 +41,7 @@ from. Derived on read; nothing writes to it.
 _Avoid_: Table, store, database
 
 **Intake**:
-The thing that starts a Run — an upload, a poll of an external service, a watched folder, a
-schedule.
+The thing that starts a Run — a poll of a user-selected Google Drive folder, scheduled and retried by the Shell.
 _Avoid_: Trigger, source, input
 
 **Output Adapter**:
@@ -53,9 +52,9 @@ _Avoid_: Sink, writer, integration
 **Google connection**:
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
-expiry being a weekly event rather than a fault. It is also the only route to a Google surface:
-nothing else in the app reasons about client credentials or refresh tokens, and an Output Adapter
-is obtained from the connection or not at all.
+expiry being a weekly event rather than a fault. It is the only route to a Google surface
+(Tasks, Gmail, Drive) and the only holder of client credentials and refresh tokens; an Output
+Adapter or Intake is obtained from the connection or not at all.
 _Avoid_: Google auth, login, OAuth (the protocol is not the connection)
 
 **Workspace**:

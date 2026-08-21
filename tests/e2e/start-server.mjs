@@ -9,7 +9,6 @@ const root = resolve(here, "../..");
 
 const workspace = mkdtempSync(join(tmpdir(), "tf-e2e-"));
 mkdirSync(join(workspace, "runs"), { recursive: true });
-mkdirSync(join(workspace, "watch-archive"), { recursive: true });
 writeFileSync(
   join(workspace, "config.json"),
   JSON.stringify(
@@ -18,9 +17,9 @@ writeFileSync(
       model: "",
       apiKey: "",
       tasklistName: "Meeting Followups",
-      google: { clientId: "", clientSecret: "", refreshToken: null },
-      fireflies: { enabled: false, apiKey: "", pollIntervalMinutes: 5 },
-      watch: { enabled: false, folderPath: "" },
+      google: { clientId: "", clientSecret: "", refreshToken: null, lastConnectedAt: null, hasExpiredBefore: false },
+      drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
+      ollama: { baseUrl: "http://127.0.0.1:11434" },
     },
     null,
     2

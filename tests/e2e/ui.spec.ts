@@ -1,48 +1,18 @@
 import { expect, test } from "@playwright/test";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const sampleTranscript = join(here, "../fixtures/transcripts/sample-transcript.md");
-
-test("upload → run detail shows extraction; google_unavailable path visible", async ({
-  page,
-}) => {
+test("Drive folder is the only Intake; Runs list and Drive settings are visible", async ({ page }) => {
   await page.goto("/transcript");
-  await expect(page.getByTestId("dropzone")).toBeVisible();
+  // Upload dropzone is gone — Drive folder is the sole Intake
+  await expect(page.getByTestId("dropzone")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
 
-  await page.setInputFiles('input[type="file"]', sampleTranscript);
-
-  // Single upload navigates straight to the run detail.
-  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
-
-  // The mock provider answers instantly; the run then fails at the outputs
-  // stage because Google is not connected in the e2e workspace.
-  // The pill shows prose, not the stored token (WCAG 3.1.3).
-  await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
-
-  // Extraction result is still rendered.
-  await expect(page.locator("h2", { hasText: "Summary" })).toBeVisible();
-  await expect(page.locator(".card").getByText("Weekly product sync", { exact: false })).toBeVisible();
-  await expect(page.locator(".tasks-table tbody tr")).toHaveCount(3);
-  await expect(page.locator(".tasks-table").getByRole("cell", { name: "Priya", exact: true })).toBeVisible();
-  await expect(page.locator(".draft-card")).toHaveCount(1);
-  // Header and value are a dt/dd pair, so the label is associated rather than
-  // merely adjacent — the value is read from the <dd> that follows its term.
-  const subject = page.locator(".draft-headers dt", { hasText: "Subject:" });
-  await expect(subject).toBeVisible();
-  await expect(subject.locator("+ dd")).toHaveText(
-    "Updated Q3 pricing ahead of your board meeting"
-  );
-
-  // The google_unavailable path is visible in the events timeline.
-  await expect(page.locator(".events-log")).toContainText("google_unavailable");
-  await expect(page.getByRole("button", { name: /retry/i })).toBeVisible();
-
-  // Transcript is present in the collapsible.
-  const summary = page.locator("details summary", { hasText: "transcript" });
-  await summary.click();
-  await expect(page.locator(".artifact-pre")).toContainText("Weekly Product Sync");
+  await page.goto("/settings");
+  await expect(page.getByRole("group", { name: "Drive transcripts" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Choose folder/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
+  // Fireflies and local watch UI are gone
+  await expect(page.getByRole("group", { name: "Fireflies" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Watch folder" })).toHaveCount(0);
 });
 
 test("settings round-trips with redacted secrets", async ({ page }) => {
@@ -166,18 +136,15 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
 test("primary actions are reachable and operable by keyboard", async ({ page }) => {
   await page.goto("/transcript");
 
-  // The upload control is a real button, reachable by Tab and fired by Enter.
-  const chooseFiles = page.getByRole("button", { name: "choose files" });
-  await expect(chooseFiles).toBeVisible();
-  const chooser = page.waitForEvent("filechooser");
-  await chooseFiles.press("Enter");
-  await chooser;
+  // Drive is the only Intake — no upload button, but the page still has a heading and a way to check
+  await expect(page.getByTestId("dropzone")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
 
-  // Uploading through that input still routes to the run detail.
-  await page.setInputFiles('input[type="file"]', sampleTranscript);
-  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
-
-  // Arriving at a run moves focus to its heading rather than dropping it.
+  // Seed a Run via the test seam so the list has a link to exercise
+  const seed = await page.request.post("/api/test/seed");
+  if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
+  const { runId } = (await seed.json()) as { runId: string };
+  await page.goto(`/runs/${runId}`);
   await expect(page.locator("h1.run-title")).toBeFocused();
 
   // Each route carries its own title, suffixed with the Shell's name — not with
@@ -231,8 +198,9 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await cards.first().getByRole("link").click();
   await expect(page).toHaveURL(/\/transcript$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
-  await expect(page.getByTestId("dropzone")).toBeVisible();
-
+  // Dropzone is gone — Drive folder is the Intake; Runs list stays
+  await expect(page.getByTestId("dropzone")).toHaveCount(0);
+  await expect(page.getByTestId("runs-table")).toBeVisible();
   await page.getByRole("link", { name: "Found42 — Chief of Staff" }).click();
   await expect(page).toHaveURL(/:\d+\/$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
@@ -242,9 +210,10 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   // Guarantees one failed Run whatever ran before this: the mock provider
   // answers instantly and the Run then fails at outputs, because this workspace
   // has no Google connection.
-  await page.goto("/transcript");
-  await page.setInputFiles('input[type="file"]', sampleTranscript);
-  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+  const seed = await page.request.post("/api/test/seed");
+  if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
+  const { runId } = (await seed.json()) as { runId: string };
+  await page.goto(`/runs/${runId}`);
   await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
 
   await page.goto("/");

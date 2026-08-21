@@ -489,17 +489,6 @@ tr:last-child td {
   color: var(--muted);
 }
 
-.source-fireflies {
-  background: #f3ecfa;
-  border-color: #d9c8ee;
-  color: #6b3fa0;
-}
-
-.source-watch {
-  background: #fdf3e0;
-  border-color: #ecd9b0;
-  color: var(--warn);
-}
 
 .banner {
   padding: 0.6rem 1rem;

@@ -13,7 +13,7 @@ beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-runs-"));
   runs = openRuns(workspaceDir);
   run = runs.create({
-    source: "upload",
+    source: "drive",
     fileName: "meeting.md",
     sourceUrl: null,
     externalId: null,

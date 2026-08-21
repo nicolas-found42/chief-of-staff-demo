@@ -4,7 +4,6 @@ import { join } from "node:path";
 export interface WorkspaceLayout {
   root: string;
   runsDir: string;
-  watchArchiveDir: string;
   configFile: string;
   stateFile: string;
   mockResultFile: string;
@@ -16,7 +15,6 @@ export function workspaceLayout(root: string): WorkspaceLayout {
   return {
     root,
     runsDir,
-    watchArchiveDir: join(root, "watch-archive"),
     configFile: join(root, "config.json"),
     stateFile: join(root, "state.json"),
     mockResultFile: join(root, "mock-result.json"),

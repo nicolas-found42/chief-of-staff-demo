@@ -116,11 +116,9 @@ names the exact part that is missing.
 
 ## 8. Run a transcript
 
-1. Click **Runs**.
-2. Drag the file `tests/fixtures/transcripts/sample-transcript.md` from the project folder onto
-   the upload area. You can also click the area and pick the file.
-3. The run appears in the table. Click it to watch it work.
-
+1. In **Settings**, find **Drive transcripts**. Click **Choose folder** and pick the Drive folder your transcript service writes to (or create a new one for testing). Check **Enable Drive polling**, set **Poll interval** to 1, and click **Save settings**.
+2. Upload `tests/fixtures/transcripts/sample-transcript.md` to that Drive folder (open the folder in Drive → **New → File upload**). You can also drag any `.txt`, `.md`, `.json`, `.jsonc`, `.pdf`, `.docx`, or native Google Doc there.
+3. Wait up to a minute. Click **Runs** — the new run appears in the table. Click it to watch it work. If you don't want to wait, click **Sync now** in Settings.
 ## 9. Check the result
 
 Open Google and confirm all three:

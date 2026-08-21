@@ -6,10 +6,10 @@ const SUPPORTED_EXTENSIONS: Record<string, true> = {
   ".txt": true,
   ".md": true,
   ".json": true,
+  ".jsonc": true,
   ".pdf": true,
   ".docx": true,
 };
-
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export type SourceErrorCode = "SOURCE_INVALID" | "SOURCE_UNSUPPORTED";
@@ -88,7 +88,7 @@ export function sentencesToText(data: unknown): string {
   return sentences.map((s) => `${s.speaker_name}: ${s.text}`).join("\n");
 }
 
-/** Parse an uploaded/watched file into normalized UTF-8 text with LF endings. */
+/** Parse a Drive file into normalized UTF-8 text with LF endings. */
 export async function convertToText(fileName: string, bytes: Buffer): Promise<string> {
   const ext = extname(fileName).toLowerCase();
   if (!SUPPORTED_EXTENSIONS[ext]) {
@@ -97,10 +97,14 @@ export async function convertToText(fileName: string, bytes: Buffer): Promise<st
   if (ext === ".txt" || ext === ".md") {
     return normalizeTextLf(bytes.toString("utf8"));
   }
-  if (ext === ".json") {
+  if (ext === ".json" || ext === ".jsonc") {
+    let raw = bytes.toString("utf8");
+    if (ext === ".jsonc") {
+      raw = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(bytes.toString("utf8"));
+      parsed = JSON.parse(raw);
     } catch (err) {
       throw new SourceError(
         "SOURCE_INVALID",

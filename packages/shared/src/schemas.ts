@@ -156,20 +156,16 @@ export const ConfigSchema = z.strictObject({
        predicts an expiry only once it has seen one. */
     hasExpiredBefore: z.boolean().default(false),
   }),
-  fireflies: z.strictObject({
+  drive: z.strictObject({
     enabled: z.boolean().default(false),
-    apiKey: z.string(),
-    pollIntervalMinutes: z.number().int().positive().default(5),
-  }),
-  watch: z.strictObject({
-    enabled: z.boolean().default(false),
-    folderPath: z.string(),
+    folderId: z.string().default(""),
+    folderName: z.string().default(""),
+    pollIntervalMinutes: z.number().int().positive().default(2),
   }),
   ollama: z.strictObject({
     baseUrl: z.string().default(DEFAULT_OLLAMA_BASE_URL),
   }),
 });
-
 export type AppConfig = z.infer<typeof ConfigSchema>;
 
 /** PUT /api/config body. Absent secret fields keep their stored values. */
@@ -184,17 +180,12 @@ export const ConfigUpdateSchema = z.strictObject({
       clientSecret: z.string().optional(),
     })
     .optional(),
-  fireflies: z
+  drive: z
     .strictObject({
       enabled: z.boolean().optional(),
-      apiKey: z.string().optional(),
+      folderId: z.string().optional(),
+      folderName: z.string().optional(),
       pollIntervalMinutes: z.number().int().positive().optional(),
-    })
-    .optional(),
-  watch: z
-    .strictObject({
-      enabled: z.boolean().optional(),
-      folderPath: z.string().optional(),
     })
     .optional(),
   ollama: z
@@ -222,14 +213,11 @@ export interface RedactedConfig {
     clientId: string;
     clientSecret: SecretHint;
   };
-  fireflies: {
+  drive: {
     enabled: boolean;
-    apiKey: SecretHint;
+    folderId: string;
+    folderName: string;
     pollIntervalMinutes: number;
-  };
-  watch: {
-    enabled: boolean;
-    folderPath: string;
   };
   /** Not a secret: a local endpoint address, returned verbatim. */
   ollama: {
@@ -322,9 +310,8 @@ export interface SetupCheck {
 export const RUN_STATUSES = ["pending", "running", "done", "skipped", "failed"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
-export const RUN_SOURCES = ["upload", "fireflies", "watch"] as const;
+export const RUN_SOURCES = ["drive"] as const;
 export type RunSourceType = (typeof RUN_SOURCES)[number];
-
 /** runs/<runId>/meta.json */
 export interface RunMeta {
   id: string;

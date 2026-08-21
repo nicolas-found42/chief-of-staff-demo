@@ -1,4 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_MODELS,
   type ConfigUpdate,
@@ -7,17 +10,15 @@ import {
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
 import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
-import type { FirefliesIntake } from "../intake/fireflies.js";
+import type { DriveIntake } from "../intake/drive.js";
 import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
 import type { Runs } from "../runs.js";
-import { isSupportedFileName } from "../text/convert.js";
-
 export interface ApiContext {
   runs: Runs;
   port: number;
   pipeline: Pipeline;
   configStore: ConfigStore;
-  fireflies: FirefliesIntake;
+  driveIntake: DriveIntake;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void;
@@ -39,39 +40,6 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     return detail;
   });
 
-  app.post("/api/runs/upload", async (request, reply) => {
-    const files: { fileName: string; bytes: Buffer }[] = [];
-    for await (const part of request.files()) {
-      if (part.fieldname !== "files") {
-        /* Skipping a part without consuming its stream stalls the iterator, and
-           the 400 below never reaches the client. Discard it instead of
-           buffering: a wrong field name is not worth 10 MB of memory. */
-        part.file.resume();
-        continue;
-      }
-      const bytes = await part.toBuffer();
-      files.push({ fileName: part.filename, bytes });
-    }
-    if (files.length === 0) {
-      reply.code(400).send({ error: "no files uploaded (multipart field name must be 'files')" });
-      return;
-    }
-    const unsupported = files.filter((file) => !isSupportedFileName(file.fileName));
-    if (unsupported.length > 0) {
-      reply.code(400).send({
-        error: `unsupported file type: ${unsupported.map((file) => file.fileName).join(", ")}`,
-      });
-      return;
-    }
-    const runIds: string[] = [];
-    for (const file of files) {
-      runIds.push(
-        await ctx.pipeline.startRun({ type: "upload", fileName: file.fileName, bytes: file.bytes })
-      );
-    }
-    reply.code(202);
-    return { runIds };
-  });
 
   app.post("/api/runs/:id/retry", async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -155,14 +123,49 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
   });
 
-  app.post("/api/fireflies/sync", async (_request, reply) => {
+  app.post("/api/drive/sync", async (_request, reply) => {
     try {
-      const { created } = await ctx.fireflies.pollOnce();
+      const { created } = await ctx.driveIntake.pollOnce();
       return { created };
     } catch (error) {
       reply.code(502).send({
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  });
+
+  // Test seam: create a Drive-type Run from the sample transcript without
+  // needing a real Drive folder. Not part of the user-facing API; used only
+  // by hermetic e2e tests that need a Run to exist.
+  app.post("/api/test/seed", async (_request, reply) => {
+    if (process.env.NODE_ENV === "production") {
+      reply.code(404).send({ error: "Not found" });
+      return;
+    }
+    try {
+      let bytes: Buffer | null = null;
+      const candidates = [
+        join(dirname(fileURLToPath(import.meta.url)), "../../../tests/fixtures/transcripts/sample-transcript.md"),
+        join(process.cwd(), "tests/fixtures/transcripts/sample-transcript.md"),
+      ];
+      for (const cand of candidates) {
+        try {
+          bytes = await readFile(cand);
+          break;
+        } catch {}
+      }
+      if (!bytes) {
+        bytes = Buffer.from("# Weekly Product Sync\n\nAlice: hello\nBob: hi\n");
+      }
+      const runId = await ctx.pipeline.startRun({
+        type: "drive",
+        fileName: "sample-transcript.md",
+        bytes,
+      });
+      reply.code(201);
+      return { runId };
+    } catch (error) {
+      reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 }

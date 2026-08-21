@@ -41,13 +41,6 @@ export interface ConfigPayload {
 export const api = {
   listRuns: () => request<{ runs: RunSummary[] }>("/api/runs"),
   getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
-  upload: (files: File[]) => {
-    const form = new FormData();
-    for (const file of files) {
-      form.append("files", file);
-    }
-    return request<{ runIds: string[] }>("/api/runs/upload", { method: "POST", body: form });
-  },
   retry: (id: string) =>
     request<{ status: string }>(`/api/runs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
   getConfig: () => request<ConfigPayload>("/api/config"),
@@ -62,7 +55,7 @@ export const api = {
   googleConnect: () => request<{ authUrl: string }>("/api/google/connect"),
   googleDisconnect: () =>
     request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),
-  firefliesSync: () => request<{ created: number }>("/api/fireflies/sync", { method: "POST" }),
+  driveSync: () => request<{ created: number }>("/api/drive/sync", { method: "POST" }),
 };
 
 export function errorMessage(error: unknown): string {

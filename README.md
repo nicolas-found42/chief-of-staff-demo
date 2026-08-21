@@ -10,8 +10,8 @@ way.
 
 ## What it does
 
-Drop a transcript in (upload, Fireflies polling, or a watched folder). The app classifies it,
-extracts action items with the LLM provider of your choice, and creates Google Tasks in a
+Pick a Google Drive folder in Settings; every transcript dropped there is polled, classified,
+extracted with the LLM provider of your choice, and created as Google Tasks in a
 "Meeting Followups" list plus Gmail drafts — automatically, with no review step (routine parity).
 
 | Routine step | This app |
@@ -59,14 +59,13 @@ Three things about the container are load-bearing:
   network. Inside the container the server listens on `0.0.0.0` (`HOST`), because a container's
   loopback interface is unreachable from the host — the host-side `127.0.0.1` binding in
   `docker-compose.yml` is what keeps it private.
-
-Verified: image builds, container serves the UI and API, and an uploaded transcript runs end to end
-with the mock provider, writing `meta.json` / `result.json` / `events.jsonl` through the mount.
+Verified: image builds, container serves the UI and API, and a transcript dropped in the configured
+Drive folder runs end to end with the mock provider, writing `meta.json` / `result.json` / `events.jsonl` through the mount.
 Kubernetes and the EdgeScale cube are **untested** — there is no chart in this repo yet.
 
 ## Configuration
 
-### Google (Tasks + Gmail drafts) — guided in the app
+### Google (Tasks + Gmail drafts + Drive) — guided in the app
 
 Open **Settings**. The Google card is the setup flow: the console steps in the order Google's own
 console imposes them, each with a deep link, the scopes and redirect URI with copy buttons, and
@@ -79,18 +78,19 @@ one ([ADR-0007](docs/adr/0007-per-user-google-oauth-client.md)). Budget about te
 
 Two things worth knowing before you start:
 
-- **Both APIs must be enabled** — Tasks and Gmail — or the first run fails with a 403 rather than
+- **All three APIs must be enabled** — Tasks, Gmail, and Drive — or the first run fails with a 403 rather than
   at connect time. **Check my setup** names which one, rather than leaving it to a run.
 - **A Workspace account should choose Internal, and then none of this applies.** Internal needs
   no test users, shows no unverified-app screen, and does not expire. Google greys it out for
   personal accounts, which must use **External** + **Testing** — the only combination allowed
-  without a verification review for the Gmail scope — and that expires refresh tokens after seven
+  without a verification review for the Gmail/Drive scopes — and that expires refresh tokens after seven
   days. The card asks which account you have and renders the matching steps.
 - **The expiry estimate is earned, not assumed.** Settings shows when you last signed in, and only
   predicts the next expiry once Google has actually refused a grant. An Internal connection
   therefore never announces an expiry it will not have.
 
 ### Extraction provider
+
 
 In Settings, pick a provider and paste its API key; the card links straight to that provider's key
 page. Defaults: `gpt-5.2` (OpenAI), `claude-sonnet-5` (Anthropic), `google/gemini-3.7-flash`
@@ -108,21 +108,9 @@ pulled. **Untested against a live Ollama server:** the request shape is covered 
 no local model has been run through it yet, and a 30B model needs more memory than a 16 GB machine
 has.
 
-### Intakes
+### Intake
 
-- **Upload** — drag & drop or file picker on the **Transcript → Tasks** tab (.txt .md .json .pdf
-  .docx, ≤10 MB).
-  `.json` must be a Fireflies-style sentences array.
-- **Fireflies** — polls `transcripts(fromDate: now-24h)`; new meetings become runs with a source
-  link back to Fireflies. Ingested ids are remembered in `workspace/state.json` (capped at 1000).
-- **Watch folder** — set a path in Settings; stable files (size+mtime unchanged 2s) are moved to
-  `workspace/watch-archive/` first — the move is the dedupe — then processed.
-
-### Fireflies (optional)
-
-API key from [app.fireflies.ai/settings → Developer](https://app.fireflies.ai/settings). Enable
-polling in Settings; the app polls every N minutes with a 24h lookback and dedupes by transcript
-id. "Sync now" runs one poll immediately.
+**Drive folder** — pick one Google Drive folder in Settings (**Drive transcripts** card). Every `.txt`, `.md`, `.json`, `.jsonc`, `.pdf`, `.docx`, or native Google Doc added there is polled (default 2 min) and becomes a Run. Ingested Drive `fileId`s are remembered in `workspace/state.json` (`drive.ingestedIds`, capped at 1000); files stay in Drive (`drive.readonly`). Unsupported types are ignored. `Sync now` runs one poll immediately.
 
 ## Working on the code
 
@@ -143,6 +131,7 @@ Node 20+ and npm. Environment: `PORT` (default 4317 — the Google redirect URI 
 this port; change both together), `WORKSPACE_DIR` (default `./workspace`), `HOST` (default
 `127.0.0.1`; only a container should change this).
 
+
 ## Workspace layout
 
 All state lives on disk, no database:
@@ -150,28 +139,15 @@ All state lives on disk, no database:
 ```
 workspace/
   config.json             settings (secrets redacted via the API, never echoed back)
-  state.json              { fireflies: { ingestedIds, lastPollAt } }
+  state.json              { drive: { ingestedIds, lastPollAt } }
   mock-result.json        mock-provider fixture
-  watch-archive/          ingested watch-folder files land here
   runs/<runId>/
     meta.json             status machine: pending → extracting → creating-outputs → done | skipped | failed
     transcript.txt        normalized text fed to the LLM
-    context.json          { meetingDate, attendees } (Fireflies only)
+    context.json          { meetingDate, attendees }
     result.json           ExtractionResult — persisted even for skips and output failures
     events.jsonl          one JSON line per event (extract_attempt, google_task_created, …)
 ```
-
-Run ids: `run_<UTC yyyymmdd>-<hhmmss>_<8 hex>`. A failed run names its `failedStage`
-(`extract` retries extraction; `outputs` recreates tasks/drafts from the cached result).
-
-## Verify it works
-
-Use `tests/fixtures/transcripts/sample-transcript.md` (vendored from the routine repo). After a
-successful run you should see, exactly as in the routine's setup guide:
-
-1. Three tasks in the **Meeting Followups** list — owner in the notes (`Owner: Priya`), the due
-   date on the right task (Aug 21 for the write-up, Aug 31 for Acme).
-2. One Gmail draft to Acme procurement, sitting **unsent**.
 3. Drop any non-transcript PDF → run `skipped` with a `skipReason`, nothing created.
 
 ## Tests

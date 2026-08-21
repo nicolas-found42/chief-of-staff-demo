@@ -3,18 +3,15 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
-import multipart from "@fastify/multipart";
 import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
-import { FirefliesIntake } from "./intake/fireflies.js";
-import { WatchIntake } from "./intake/watch.js";
+import { DriveIntake } from "./intake/drive.js";
 import { Pipeline } from "./pipeline/run.js";
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
-import { MAX_UPLOAD_BYTES } from "./text/convert.js";
 
 const port = Number(process.env.PORT ?? 4317);
 /* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
@@ -24,7 +21,6 @@ const host = process.env.HOST ?? "127.0.0.1";
 const workspaceDir = process.env.WORKSPACE_DIR ?? "./workspace";
 const layout = workspaceLayout(workspaceDir);
 mkdirSync(layout.runsDir, { recursive: true });
-mkdirSync(layout.watchArchiveDir, { recursive: true });
 
 const configStore = new ConfigStore(layout.configFile);
 const config = configStore.load();
@@ -57,36 +53,19 @@ const pipeline = new Pipeline({
   log: (message) => console.log(`[pipeline] ${message}`),
 });
 
-const fireflies = new FirefliesIntake({
+const driveIntake = new DriveIntake({
   getConfig: () => configStore.get(),
   workspaceDir,
+  port,
   startRun: (spec) => pipeline.startRun(spec),
-  log: (message) => console.log(`[fireflies] ${message}`),
-});
-
-const watchIntake = new WatchIntake({
-  archiveDir: layout.watchArchiveDir,
-  onFile: async ({ fileName, bytes }) => {
-    await pipeline.startRun({ type: "watch", fileName, bytes });
-  },
-  log: (message) => console.log(`[watch] ${message}`),
+  log: (message) => console.log(`[drive] ${message}`),
 });
 
 const app = fastify({ logger: false });
 
 app.setErrorHandler((error: FastifyError, _request, reply) => {
-  if (
-    error.code === "FST_PART_FILE_TOO_LARGE" ||
-    error.code === "FST_FILES_OVERSIZE" ||
-    error.code === "FST_REQ_FILE_TOO_LARGE"
-  ) {
-    reply.code(413).send({ error: "file exceeds the 10 MB upload limit" });
-    return;
-  }
   reply.code(error.statusCode ?? 500).send({ error: error.message });
 });
-
-await app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 50 } });
 
 const webDist = fileURLToPath(new URL("../../web/dist", import.meta.url));
 const webIndex = existsSync(`${webDist}/index.html`);
@@ -105,25 +84,15 @@ app.setNotFoundHandler((request, reply) => {
   reply.code(404).send({ error: "not found" });
 });
 
-const syncWatchIntake = (): void => {
-  const current = configStore.get();
-  if (current.watch.enabled && current.watch.folderPath) {
-    void watchIntake.start(current.watch.folderPath);
-  } else {
-    void watchIntake.stop();
-  }
-};
-
 await registerApi(app, {
   runs,
   port,
   pipeline,
   configStore,
-  fireflies,
+  driveIntake,
   google: googleConnection,
   onConfigChanged: () => {
-    fireflies.start();
-    syncWatchIntake();
+    driveIntake.start();
   },
 });
 
@@ -132,12 +101,10 @@ console.log(
   `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
 );
 
-fireflies.start();
-syncWatchIntake();
+driveIntake.start();
 
 const shutdown = async (): Promise<void> => {
-  fireflies.stop();
-  await watchIntake.stop();
+  driveIntake.stop();
   await app.close();
 };
 process.on("SIGINT", () => {

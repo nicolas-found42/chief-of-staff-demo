@@ -32,12 +32,13 @@ export function isRejectedGrant(error: unknown): boolean {
  * them. Checking both is the whole of "did the console work land?": every other
  * part of the flow either succeeds visibly or is a credential the app holds.
  */
-export const GOOGLE_SURFACES = ["tasks", "gmail"] as const;
+export const GOOGLE_SURFACES = ["tasks", "gmail", "drive"] as const;
 export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
 const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
   tasks: { label: "Google Tasks", api: "Tasks API", scope: "tasks" },
   gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
+  drive: { label: "Google Drive", api: "Drive API", scope: "drive.readonly" },
 };
 
 /**
@@ -102,10 +103,14 @@ const callSurface: SurfaceProbe = async (config, port, surface) => {
     await google.tasks({ version: "v1", auth }).tasklists.list({ maxResults: 1 });
     return;
   }
-  /* drafts.list, not users.getProfile: the app only ever asks for
-     gmail.compose, and getProfile is not reachable with that scope alone — it
-     would report a correctly configured Gmail as broken. */
-  await google.gmail({ version: "v1", auth }).users.drafts.list({ userId: "me", maxResults: 1 });
+  if (surface === "gmail") {
+    /* drafts.list, not users.getProfile: the app only ever asks for
+       gmail.compose, and getProfile is not reachable with that scope alone — it
+       would report a correctly configured Gmail as broken. */
+    await google.gmail({ version: "v1", auth }).users.drafts.list({ userId: "me", maxResults: 1 });
+    return;
+  }
+  await google.drive({ version: "v3", auth }).files.list({ pageSize: 1, fields: "files(id)" });
 };
 
 /** The hint a Run shows when the connection is why it could not finish. */

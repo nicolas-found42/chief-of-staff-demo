@@ -41,8 +41,7 @@ export function defaultConfig(): AppConfig {
       lastConnectedAt: null,
       hasExpiredBefore: false,
     },
-    fireflies: { enabled: false, apiKey: "", pollIntervalMinutes: 5 },
-    watch: { enabled: false, folderPath: "" },
+    drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
   };
 }
@@ -71,7 +70,11 @@ export class ConfigStore {
         );
       }
     }
-    const parsed = ConfigSchema.parse(deepMerge(defaultConfig(), stored));
+    const merged = deepMerge(defaultConfig(), stored) as Record<string, unknown>;
+    // Old configs had fireflies/watch — strictObject would reject them; drop before parse.
+    delete merged.fireflies;
+    delete merged.watch;
+    const parsed = ConfigSchema.parse(merged);
     this.config = normalize(parsed);
     this.persist();
     return this.config;
@@ -145,14 +148,11 @@ export function redactConfig(config: AppConfig): RedactedConfig {
       clientId: config.google.clientId,
       clientSecret: secretHint(config.google.clientSecret),
     },
-    fireflies: {
-      enabled: config.fireflies.enabled,
-      apiKey: secretHint(config.fireflies.apiKey),
-      pollIntervalMinutes: config.fireflies.pollIntervalMinutes,
-    },
-    watch: {
-      enabled: config.watch.enabled,
-      folderPath: config.watch.folderPath,
+    drive: {
+      enabled: config.drive.enabled,
+      folderId: config.drive.folderId,
+      folderName: config.drive.folderName,
+      pollIntervalMinutes: config.drive.pollIntervalMinutes,
     },
     ollama: {
       baseUrl: config.ollama.baseUrl,
