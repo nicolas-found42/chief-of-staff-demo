@@ -77,3 +77,14 @@ with one Module and one field.
 **Relay execution** enters the glossary as a term. The argument against Run leaned on "84 Runs
 still parked", and those are Relay's records, not Runs — this app has never had a parked Run.
 Keeping the two words apart is what let the question be answered.
+
+**The Runs already on disk are discarded rather than migrated.** Fifteen existed when this ADR was
+written — ten created inside a five-second burst, seven from files named `"Copy of …"` — so they
+are Runs made to watch the app work, which is what ADR-0012 meant by discardable test data. The
+discard is cheap because of ADR-0005: the 96 Google Tasks and 2 Gmail drafts they produced live in
+Google and survive it, and only the local log is lost. No compatibility layer was ever required —
+`readMeta` is an unvalidated `JSON.parse`, so an old `meta.json` reads cleanly under the new shape;
+ADR-0004's read-time default would have been needed only for the two fields this format change
+*adds* (`module`, `moduleVersion`), and there is now nothing old to default. One operator note
+belongs with the deletion: `state.json` holds `drive.ingestedIds`, so removing it alongside the Run
+directories would make the next poll re-ingest every file and duplicate all 96 Tasks.
