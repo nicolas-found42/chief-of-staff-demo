@@ -226,7 +226,7 @@ describe("retry", () => {
     expect(runs.open(id)!.readArtifact("scratch.json")).toBeNull();
     expect(detail.events.map((e) => e.type)).toContain("run_reopened");
     /* Retried in place: one Run, not two. */
-    expect(runs.list()).toHaveLength(1);
+    expect(runs.list().runs).toHaveLength(1);
   });
 
   it("refuses a Run its Module will not re-run, and one that is not there", async () => {

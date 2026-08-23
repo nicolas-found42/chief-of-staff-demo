@@ -177,7 +177,7 @@ describe("durability", () => {
     // holds a half-written meta for `list()` to trip over.
     const parsed = JSON.parse(readFileSync(join(workspaceDir, "runs", run.id, "meta.json"), "utf8"));
     expect(parsed.status).toBe("done");
-    expect(runs.list()).toHaveLength(1);
+    expect(runs.list().runs).toHaveLength(1);
   });
 
   it("keeps listing the other Runs when one directory is unreadable", () => {
@@ -191,7 +191,7 @@ describe("durability", () => {
     });
     writeFileSync(join(workspaceDir, "runs", other.id, "meta.json"), "{ torn", "utf8");
 
-    const listed = runs.list();
+    const listed = runs.list().runs;
     expect(listed).toHaveLength(1);
     expect(listed[0]!.id).toBe(run.id);
   });
@@ -246,7 +246,7 @@ describe("optional fileName", () => {
     });
     expect(noFile.read().fileName).toBeUndefined();
     expect(noFile.read().intake).toBe("drive");
-    const listed = runs.list();
+    const listed = runs.list().runs;
     expect(listed.find((r) => r.id === noFile.id)?.fileName).toBeUndefined();
     expect(listed.find((r) => r.id === noFile.id)?.intake).toBe("drive");
     const detail = runs.detail(noFile.id);

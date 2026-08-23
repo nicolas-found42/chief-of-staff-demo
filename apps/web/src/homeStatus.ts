@@ -104,7 +104,7 @@ export function homeStatus(
       id: "more-failed",
       text: `${hidden} more run${hidden === 1 ? "" : "s"} failed`,
       cta: "See all runs",
-      to: "/transcript",
+      to: "/runs",
     });
   }
   if (mock) {
@@ -122,20 +122,18 @@ export function homeStatus(
   const finished = runs
     .filter((run) => run.status === "done" || run.status === "skipped")
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
-  const feed: FeedEntry[] = finished.slice(0, MAX_FEED).map((run) => ({
-    id: run.id,
-    title: runTitle(run.fileName ?? run.id),
-    outcome:
-      run.status === "skipped"
-        ? run.skipReason
-          ? `${statusLabel(run.status)} — ${run.skipReason}`
-          : statusLabel(run.status)
-        : run.taskCount !== null
-          ? `${statusLabel(run.status)} — ${run.taskCount === 1 ? "1 task" : `${run.taskCount} tasks`}`
-          : statusLabel(run.status),
-    at: run.createdAt,
-    to: `/runs/${run.id}`,
-  }));
+  const feed: FeedEntry[] = finished.slice(0, MAX_FEED).map((run) => {
+    /* The Module's own line about what it did, or why it stopped. The Shell
+       does not derive either — it renders what the Run recorded. */
+    const detail = run.status === "skipped" ? run.skipReason : run.summary;
+    return {
+      id: run.id,
+      title: runTitle(run.fileName ?? run.id),
+      outcome: detail ? `${statusLabel(run.status)} — ${detail}` : statusLabel(run.status),
+      at: run.createdAt,
+      to: `/runs/${run.id}`,
+    };
+  });
 
   /* One clause per rail condition, in the rail's order. The count is the true
      total, not the capped row count. */

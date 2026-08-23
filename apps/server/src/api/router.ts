@@ -30,11 +30,30 @@ export interface ApiContext {
   onConfigChanged: () => void;
 }
 
+/** A page nobody asked for by hand, and nothing the UI needs beyond it. */
+const MAX_RUN_PAGE = 200;
+
 export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promise<void> {
   const runs = ctx.runs;
   app.get("/api/health", async () => ({ ok: true }));
 
-  app.get("/api/runs", async () => ({ runs: runs.list() }));
+  /**
+   * One list of Runs with a filter, rather than two endpoints that can
+   * disagree. `module` is what each Module's own page passes; `limit` and
+   * `cursor` are what the Runs list pages with. No `limit` means every Run,
+   * which is what Home asks for because its sentence counts every failure.
+   */
+  app.get("/api/runs", async (request) => {
+    const query = request.query as { module?: string; limit?: string; cursor?: string };
+    const limit = query.limit === undefined ? undefined : Number(query.limit);
+    return runs.list({
+      ...(query.module ? { module: query.module } : {}),
+      ...(limit !== undefined && Number.isFinite(limit) && limit > 0
+        ? { limit: Math.min(Math.floor(limit), MAX_RUN_PAGE) }
+        : {}),
+      ...(query.cursor ? { cursor: query.cursor } : {}),
+    });
+  });
 
   app.get("/api/runs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };

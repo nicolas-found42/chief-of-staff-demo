@@ -13,6 +13,7 @@ import {
   type RunDetail,
   type RunEvent,
   type RunMeta,
+  type RunPage,
   type RunSummary,
   type ShellEventType,
 } from "@chief-of-staff-demo/shared";
@@ -21,7 +22,13 @@ import { isRunId, newRunId, workspaceLayout } from "./paths.js";
 
 /** How a Run ends. Both are terminal; `failed` has its own transition. */
 export type RunOutcome =
-  | { status: "done"; detail?: Record<string, unknown> }
+  | {
+      status: "done";
+      /** One line about what the Module did, for the Runs list. Stored as
+       *  written and interpreted nowhere. */
+      summary?: string;
+      detail?: Record<string, unknown>;
+    }
   | { status: "skipped"; reason: string | null };
 
 /**
@@ -66,10 +73,20 @@ export interface NewRun {
   sourceUrl: string | null;
   externalId: string | null;
 }
+/** Which Runs to list, and how many. */
+export interface RunQuery {
+  /** Only this Module's Runs. Absent lists every Module's. */
+  module?: string;
+  /** Page size. Absent lists every Run. */
+  limit?: number;
+  /** Continue below this Run id. */
+  cursor?: string | null;
+}
+
 export interface Runs {
   create(input: NewRun): RunHandle;
   open(id: string): RunHandle | null;
-  list(): RunSummary[];
+  list(query?: RunQuery): RunPage;
   detail(id: string): RunDetail | null;
 }
 
@@ -127,37 +144,38 @@ function validateArtifactName(name: string): void {
   }
 }
 
-/* The one place the Shell reads inside a Module's result, and it should not
-   exist. `taskCount` is on RunSummary until a Module supplies its own summary
-   line — see .scratch/relay-to-modules/issues/06-design-the-shell-runs-list.md.
-   Deleting that ticket's field deletes this function. */
-function transcriptTaskCount(runDir: string): number | null {
-  const path = join(runDir, "result.json");
-  if (!existsSync(path)) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as { tasks?: unknown };
-    return Array.isArray(parsed.tasks) ? parsed.tasks.length : null;
-  } catch {
-    return null;
-  }
-}
-
-function toSummary(meta: RunMeta, runDir: string): RunSummary {
+/**
+ * One row of the Runs list, from `meta.json` alone. Nothing here opens a
+ * Module's result: the summary line was written by the Module when the Run
+ * ended, so the list costs one small file per Run and the Shell reads inside
+ * none of them.
+ */
+function toSummary(meta: RunMeta): RunSummary {
   return {
     id: meta.id,
     createdAt: meta.createdAt,
+    module: meta.module,
     intake: meta.intake,
     ...(meta.fileName !== undefined ? { fileName: meta.fileName } : {}),
     sourceUrl: meta.sourceUrl,
     status: meta.status,
     skipReason: meta.skipReason,
+    summary: meta.summary ?? null,
     /* Additive (D6): present only on connection-caused failures, so legacy
        clients and old metas see no change. */
     ...(meta.connectionCaused ? { connectionCaused: true } : {}),
-    taskCount: transcriptTaskCount(runDir),
   };
+}
+
+/** The Run's own files, so the Shell can link them without reading one. */
+function artifactNames(runDir: string): string[] {
+  try {
+    return readdirSync(runDir)
+      .filter((name) => name !== "meta.json" && name !== "events.jsonl" && !name.endsWith(".tmp"))
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 class RunHandleImpl implements RunHandle {
@@ -235,6 +253,10 @@ class RunHandleImpl implements RunHandle {
       (meta) => {
         meta.status = "done";
         meta.failedStage = null;
+        /* The Module's line, recorded when the Run ended rather than derived
+           later — so it survives the Module being renamed or removed, and
+           cannot change after the fact. */
+        meta.summary = outcome.summary ?? null;
       },
       [{ type: "run_done", detail: { status: "done", ...outcome.detail } }]
     );
@@ -314,6 +336,7 @@ export function openRuns(workspaceDir: string): Runs {
         failedStage: null,
         skipReason: null,
         failureHint: null,
+        summary: null,
       };
       writeMeta(dir, meta);
       appendEvent(dir, "created", {
@@ -334,27 +357,50 @@ export function openRuns(workspaceDir: string): Runs {
       return new RunHandleImpl(id, dir);
     },
 
-    list(): RunSummary[] {
+    /**
+     * Newest first, one page at a time. A run id carries its own UTC timestamp
+     * to the second, so the directory names sort chronologically without
+     * reading anything — which is what lets a page of 25 read 25 files rather
+     * than every Run on disk.
+     */
+    list(query: RunQuery = {}): RunPage {
       let entries: string[] = [];
       try {
         entries = readdirSync(layout.runsDir);
       } catch {
-        return [];
+        return { runs: [], nextCursor: null };
       }
-      const summaries: RunSummary[] = [];
-      for (const entry of entries) {
-        if (!isRunId(entry)) {
-          continue;
+      const cursor = query.cursor ?? null;
+      const ordered = entries
+        .filter((entry) => isRunId(entry) && (cursor === null || entry < cursor))
+        .sort()
+        .reverse();
+      const limit = query.limit ?? Infinity;
+      const runs: RunSummary[] = [];
+      let examined = 0;
+      for (const entry of ordered) {
+        if (runs.length >= limit) {
+          break;
         }
-        const runDir = layout.runDir(entry);
+        examined += 1;
+        let meta: RunMeta;
         try {
-          summaries.push(toSummary(readMeta(runDir), runDir));
+          meta = readMeta(layout.runDir(entry));
         } catch {
           // Incomplete run dir (e.g. crashed mid-write); skip it.
+          continue;
         }
+        if (query.module !== undefined && meta.module !== query.module) {
+          continue;
+        }
+        runs.push(toSummary(meta));
       }
-      summaries.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-      return summaries;
+      /* A cursor only when this page filled and something is left below it.
+         With a Module filter what is left may all belong to another Module, so
+         the next page can come back empty — a page too many, never a Run
+         missed. */
+      const more = runs.length >= limit && examined < ordered.length;
+      return { runs, nextCursor: more ? (runs[runs.length - 1]?.id ?? null) : null };
     },
 
     detail(id: string): RunDetail | null {
@@ -376,8 +422,9 @@ export function openRuns(workspaceDir: string): Runs {
         }
       }
       return {
-        ...toSummary(meta, dir),
+        ...toSummary(meta),
         attempts: meta.attempts,
+        files: artifactNames(dir),
         failedStage: meta.failedStage,
         skipReason: meta.skipReason,
         failureHint: meta.failureHint,

@@ -67,6 +67,22 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * The one line this Module's Runs show in the Runs list. A noun phrase about
+ * what landed in the world, counted from what Google actually accepted rather
+ * than from what was extracted.
+ */
+export function transcriptSummary(tasks: number, drafts: number): string {
+  const parts: string[] = [];
+  if (tasks > 0) {
+    parts.push(tasks === 1 ? "1 task" : `${tasks} tasks`);
+  }
+  if (drafts > 0) {
+    parts.push(drafts === 1 ? "1 draft" : `${drafts} drafts`);
+  }
+  return parts.length > 0 ? parts.join(", ") : "Nothing created";
+}
+
 function readContext(ctx: RunContext): TranscriptRunContext {
   const raw = ctx.readFile("context.json");
   if (!raw) {
@@ -195,6 +211,7 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
 
     return {
       status: "done",
+      summary: transcriptSummary(result.tasks.length - taskErrors, result.drafts.length - draftErrors),
       detail: {
         tasks: result.tasks.length,
         drafts: result.drafts.length,

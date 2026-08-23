@@ -7,7 +7,7 @@
  * itself rather than disappearing: a diagnostic is better than a blank pill.
  */
 
-import type { ExtractionResult, RunEvent } from "@chief-of-staff-demo/shared";
+import type { RunEvent } from "@chief-of-staff-demo/shared";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Queued",
@@ -17,7 +17,11 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
-/** Module-owned human names for the transcript workflow's stages. */
+/**
+ * Human names for every Module's Stages. A Module names its own Stages and the
+ * Shell never holds a list of them (ADR-0003), so this is display vocabulary
+ * only: a Stage with no entry renders its own key rather than disappearing.
+ */
 const STAGE_LABELS: Record<string, string> = {
   convert: "Read transcript",
   extract: "Find follow-ups",
@@ -170,8 +174,6 @@ export interface TimelineEntry {
   state: "running" | "done" | "failed";
   /** Milliseconds across every attempt; null while the stage is still open. */
   durationMs: number | null;
-  /** The plain-language line under the name; null says nothing happened worth a sentence. */
-  outcome: string | null;
 }
 
 
@@ -180,51 +182,15 @@ function stageKeyOf(event: RunEvent): string | null {
   return typeof stage === "string" ? stage : null;
 }
 
-function stageOutcome(
-  stage: string,
-  skippedReason: string | null,
-  result: ExtractionResult | null
-): string | null {
-  if (stage === "convert") {
-    return "Document converted to transcript text.";
-  }
-  if (stage === "extract") {
-    if (skippedReason) {
-      return `Not a transcript — ${skippedReason}`;
-    }
-    if (result) {
-      const count = result.tasks.length;
-      return count === 1
-        ? "Identified 1 action item."
-        : `Identified ${count} action items.`;
-    }
-    return "Extraction finished.";
-  }
-  if (stage === "outputs") {
-    if (!result) {
-      return null;
-    }
-    const parts: string[] = [];
-    if (result.tasks.length > 0) {
-      parts.push(result.tasks.length === 1 ? "1 task created" : `${result.tasks.length} tasks created`);
-    }
-    if (result.drafts.length > 0) {
-      parts.push(
-        result.drafts.length === 1 ? "1 draft prepared" : `${result.drafts.length} drafts prepared`
-      );
-    }
-    return parts.length > 0 ? `${parts.join(", ")} — nothing was sent.` : "Nothing to create.";
-  }
-  return null;
-}
-
 /**
  * Replays `events` in order: each `stage_started` opens a stage (closing
  * whatever was open), failures and run boundaries close them. A stage still
- * open at the end of the log is the one a running run is sitting in; a
- * `run_done(status: skipped)` is carried as the extract stage's outcome.
+ * open at the end of the log is the one a running run is sitting in.
+ *
+ * What each Stage *meant* is not here: that is the Module's own vocabulary, and
+ * it belongs to the Module's half of the Run detail page.
  */
-export function buildTimeline(events: RunEvent[], result: ExtractionResult | null): TimelineEntry[] {
+export function buildTimeline(events: RunEvent[]): TimelineEntry[] {
   interface Acc {
     startedAt: number | null;
     durationMs: number;
@@ -232,7 +198,6 @@ export function buildTimeline(events: RunEvent[], result: ExtractionResult | nul
   }
   const accs = new Map<string, Acc>();
   let open: string | null = null;
-  let skipReason: string | null = null;
 
   const closeOpen = (at: number | null) => {
     if (open === null) {
@@ -266,8 +231,6 @@ export function buildTimeline(events: RunEvent[], result: ExtractionResult | nul
       accs.get(stage)!.failed = true;
       closeOpen(Number.isNaN(at) ? null : at);
     } else if (event.type === "classify_skipped") {
-      const reason = event.detail?.skipReason;
-      skipReason = typeof reason === "string" ? reason : null;
       closeOpen(Number.isNaN(at) ? null : at);
     } else if (event.type === "run_done" || event.type === "run_failed") {
       closeOpen(Number.isNaN(at) ? null : at);
@@ -282,8 +245,6 @@ export function buildTimeline(events: RunEvent[], result: ExtractionResult | nul
       label: stageLabel(stage),
       state: acc.failed ? ("failed" as const) : stillOpen ? ("running" as const) : ("done" as const),
       durationMs: stillOpen || acc.durationMs === 0 ? null : acc.durationMs,
-      outcome:
-        acc.failed || stillOpen ? null : stageOutcome(stage, skipReason, result),
     };
   });
 }

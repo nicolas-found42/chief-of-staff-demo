@@ -163,7 +163,9 @@ export function HomePage() {
               </li>
             ))}
             <li>
-              <Link to="/transcript" className="muted">
+              {/* The feed is capped (ADR-0014), so what has scrolled past it
+                  needs somewhere to be — the Shell's cross-Module list. */}
+              <Link to="/runs" className="muted">
                 All runs
               </Link>
             </li>

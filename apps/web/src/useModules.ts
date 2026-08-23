@@ -10,6 +10,10 @@
  * becomes a fetch, a const forces both callers to become async, and that is the
  * callers changing.
  */
+import type { ComponentType } from "react";
+import type { RunDetail } from "@chief-of-staff-demo/shared";
+import { TranscriptResultView } from "./modules/transcript/ResultView";
+
 export interface ModuleDescriptor {
   /** Stable identity. Survives a route rename; never derived from `path`. */
   id: string;
@@ -21,6 +25,14 @@ export interface ModuleDescriptor {
   description: string;
   /** A planned Module has a tab and no Runs yet (CONTEXT.md). */
   status: "live" | "planned";
+  /**
+   * The Module's own view of one of its Runs, rendered under the Shell's half
+   * of the Run detail page. Absent is a real answer: a Module's first phase
+   * gets the Shell's half and links to its files, which is what it needs. A
+   * formatted dump of the result would be a permanent "we will design this
+   * later" shipped to somebody who cannot read it.
+   */
+  resultView?: ComponentType<{ detail: RunDetail }>;
 }
 
 /* Array order is display order, in the nav and on Home alike. */
@@ -31,6 +43,7 @@ const MODULES: ModuleDescriptor[] = [
     label: "Transcript → Tasks",
     description: "Meeting transcripts become Google Tasks and Gmail drafts.",
     status: "live",
+    resultView: TranscriptResultView,
   },
   {
     id: "hot-take",
@@ -47,4 +60,18 @@ const MODULES: ModuleDescriptor[] = [
  */
 export function useModules(): ModuleDescriptor[] {
   return MODULES;
+}
+
+/**
+ * How a Module's identity is spoken aloud. A Run whose Module is no longer
+ * hosted keeps its raw identifier rather than vanishing: history does not
+ * disappear because a Module was removed.
+ */
+export function useModuleLabel(): (id: string) => string {
+  return (id: string) => MODULES.find((module) => module.id === id)?.label ?? id;
+}
+
+/** The Module that made a Run, when this Shell still hosts it. */
+export function useModule(id: string | undefined): ModuleDescriptor | null {
+  return MODULES.find((module) => module.id === id) ?? null;
 }

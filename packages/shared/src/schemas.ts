@@ -237,6 +237,12 @@ export interface RunMeta {
   failedStage: string | null;
   skipReason: string | null;
   failureHint: string | null;
+  /**
+   * One line the Module wrote about what it did, recorded when the Run ended.
+   * The Shell stores and renders it and interprets it nowhere. Null when the
+   * Module wrote none, and on every Run that has not finished.
+   */
+  summary: string | null;
   /** True when the Google connection caused the failure (D6). Legacy metas
    *  predate the marker; absent reads as an ordinary failure. */
   connectionCaused?: boolean;
@@ -267,14 +273,17 @@ export interface RunEvent {
 export interface RunSummary {
   id: string;
   createdAt: string;
+  /** Which Module made the Run. The cross-Module list renders it as that
+   *  Module's label, or as this raw identifier when no Module claims it. */
+  module: string;
   intake: string;
   fileName?: string;
   sourceUrl: string | null;
   status: RunStatus;
   /** Why the Run was skipped; null unless status is "skipped". */
   skipReason: string | null;
-  /** Task count from result.json; null before a result exists. */
-  taskCount: number | null;
+  /** The line the Module wrote about what it did; null when it wrote none. */
+  summary: string | null;
   /** Present only when the Google connection caused a failure (D6). */
   connectionCaused?: boolean;
 }
@@ -287,4 +296,23 @@ export interface RunDetail extends RunSummary {
   failureHint: string | null;
   result: unknown;
   events: RunEvent[];
+  /** The Run's own files, so the Shell can link them for a Module that
+   *  contributes no result view. It never reads inside one. */
+  files: string[];
 }
+
+/**
+ * GET /api/runs. Newest first, filtered to one Module or across all of them.
+ *
+ * `nextCursor` is the id of the last Run on this page; asking again with it
+ * continues below. Null means this page reached the end. Absent `limit` means
+ * every Run: Home counts every failure, so it asks for the lot, while the Runs
+ * list pages.
+ */
+export interface RunPage {
+  runs: RunSummary[];
+  nextCursor: string | null;
+}
+
+/** How many Runs the Runs list asks for at a time. */
+export const RUNS_PAGE_SIZE = 25;

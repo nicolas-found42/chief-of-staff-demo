@@ -220,6 +220,43 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
 });
 
+test("the Shell lists every Module's runs, and a Module's page lists only its own", async ({ page }) => {
+  const seed = await page.request.post("/api/test/seed");
+  if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
+
+  // The cross-Module list is a Shell page, reached by route rather than by tab:
+  // a Runs tab would be the bar's first entry that is not a Module (ADR-0014).
+  await page.goto("/runs");
+  await expect(page.getByRole("heading", { level: 1, name: "All runs" })).toBeVisible();
+  await expect(page.getByTestId("runs-table")).toBeVisible();
+  await expect(page.locator(".runs-table thead")).toContainText("Module");
+  // The label the tab bar shows, not the identifier on disk.
+  await expect(page.locator(".runs-table tbody")).toContainText("Transcript → Tasks");
+  // An Intake's name is a Module's private vocabulary, so it is not a column here.
+  await expect(page.locator(".runs-table thead")).not.toContainText("Source");
+  await expect(page.getByRole("navigation", { name: "Modules" })).not.toContainText("runs");
+
+  // The Module's own page is the same list filtered to itself, with its own
+  // chrome around it — and the Intake back, where it belongs.
+  await page.goto("/transcript");
+  await expect(page.getByTestId("runs-table")).toBeVisible();
+  await expect(page.locator(".runs-table thead")).toContainText("Source");
+  await expect(page.locator(".runs-table thead")).not.toContainText("Module");
+  await expect(page.locator(".runs-table tbody")).not.toContainText("Transcript → Tasks");
+
+  // And the way from a Module's page to the Shell's list.
+  await page.getByRole("link", { name: /Every Module's runs/ }).click();
+  await expect(page).toHaveURL(/\/runs$/);
+
+  // A Run's detail page carries the Shell's half plus the Module's own view,
+  // looked up by the Run's Module.
+  await page.locator(".run-link").first().click();
+  await page.waitForURL(/\/runs\/run_/);
+  await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
+  await expect(page.locator(".receipt")).toBeVisible();
+  await expect(page.locator(".run-meta")).toContainText("Transcript → Tasks");
+});
+
 test("Home enumerates what needs doing, and the rail itemises it", async ({ page }) => {
   // Guarantees one failed Run whatever ran before this: the mock provider
   // answers instantly and the Run then fails at outputs, because this workspace

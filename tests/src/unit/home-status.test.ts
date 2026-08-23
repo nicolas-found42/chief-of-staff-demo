@@ -15,12 +15,13 @@ function run(id: string, status: RunStatus, fileName = `${id}.txt`): RunSummary 
   return {
     id,
     createdAt: "2026-08-20T10:00:00.000Z",
+    module: "transcript",
     intake: "drive",
     fileName,
     sourceUrl: null,
     status,
     skipReason: null,
-    taskCount: null,
+    summary: null,
   };
 }
 
@@ -106,6 +107,16 @@ describe("Home's activity feed", () => {
     expect(feed.every((entry) => entry.to === `/runs/${entry.id}`)).toBe(true);
   });
 
+  it("carries the line the Module wrote, and never derives one of its own", () => {
+    const wrote = { ...run("r1", "done"), summary: "2 tasks, 1 draft" };
+    const said = { ...run("r2", "skipped"), skipReason: "agenda only" };
+    const { feed } = homeStatus([wrote, said], REAL, false);
+    expect(feed.map((entry) => entry.outcome)).toEqual([
+      "Completed — 2 tasks, 1 draft",
+      "Skipped — agenda only",
+    ]);
+  });
+
   it("is empty when nothing has finished — no zeroes, ever", () => {
     expect(homeStatus([run("r1", "failed")], REAL, true).feed).toEqual([]);
   });
@@ -150,8 +161,8 @@ describe("Home's attention rail", () => {
       "r2 failed",
       "2 more runs failed",
     ]);
-    // The tail links to the full list, which is Transcript's, not Home's.
-    expect(rows[3].to).toBe("/transcript");
+    // The tail links to the Shell's cross-Module list, not to one Module's.
+    expect(rows[3].to).toBe("/runs");
   });
 
   it("speaks about the mock provider without claiming what extraction would have found", () => {

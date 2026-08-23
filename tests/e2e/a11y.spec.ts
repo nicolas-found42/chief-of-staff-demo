@@ -115,6 +115,7 @@ test("every route is free of axe violations", async ({ page }) => {
   for (const path of [
     "/",
     "/transcript",
+    "/runs",
     runUrl,
     "/hot-take",
     "/settings",
@@ -415,12 +416,18 @@ test("the runs list stops updating itself once nothing can change", async ({ pag
   await openRun(page);
 
   let lists = 0;
-  await page.route("**/api/runs", async (route) => {
-    if (route.request().method() === "GET") {
-      lists += 1;
+  /* A predicate rather than a glob: the list endpoint now carries a Module
+     filter and a page size, so a pattern matching the bare path would count
+     nothing at all. */
+  await page.route(
+    (url) => url.pathname === "/api/runs",
+    async (route) => {
+      if (route.request().method() === "GET") {
+        lists += 1;
+      }
+      await route.continue();
     }
-    await route.continue();
-  });
+  );
 
   await page.goto("/transcript");
   await expect(page.getByTestId("runs-table")).toBeVisible();

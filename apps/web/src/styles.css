@@ -1075,3 +1075,25 @@ code {
     border-color: Highlight;
   }
 }
+
+/* The line a Module wrote about one of its Runs. Rendered as given — the Shell
+   interprets it nowhere — so it gets the weight of a sentence, not a badge. */
+.run-summary {
+  margin: 0 0 1rem;
+}
+
+.run-summary-cell {
+  font-size: 0.9rem;
+}
+
+/* The list's own controls sit above the table rather than in the page header,
+   because `/runs` and a Module's page share the list and not the page. */
+.runs-toolbar {
+  margin-bottom: 0.5rem;
+}
+
+/* The Run's own files, for a Module that contributes no result view. */
+.run-files {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.2rem;
+}

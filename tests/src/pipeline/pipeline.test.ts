@@ -139,7 +139,7 @@ describe("Pipeline", () => {
   });
 
   const detailOf = (id: string) => openRuns(workspaceDir).detail(id);
-  const summariesOf = () => openRuns(workspaceDir).list();
+  const summariesOf = () => openRuns(workspaceDir).list().runs;
 
   it("golden transcript → done with task and draft events", async () => {
     const runId = await pipeline.startRun({
@@ -177,7 +177,9 @@ describe("Pipeline", () => {
     });
     expect(google!.calls.drafts[0].to).toBe("");
     const summaries = summariesOf();
-    expect(summaries[0].taskCount).toBe(2);
+    /* The Module's own line, written when the Run ended — the Shell derives
+       nothing from the result. */
+    expect(summaries[0].summary).toBe("2 tasks, 1 draft");
   });
 
   it("sniffs the meeting date from a timestamped upload file name", async () => {

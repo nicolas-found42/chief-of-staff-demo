@@ -1,0 +1,249 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { RUNS_PAGE_SIZE, type RunSummary } from "@chief-of-staff-demo/shared";
+import { IntakeBadge, StatusPill } from "./StatusPill";
+import { formatTime, relativeTime, runTitle } from "../display";
+import { api, errorMessage } from "../client";
+import { useGoogleConnection } from "../useGoogleConnection";
+import { useModuleLabel } from "../useModules";
+
+const TERMINAL = new Set(["done", "skipped", "failed"]);
+
+export interface RunsListProps {
+  /**
+   * Only this Module's Runs, which also decides the columns. A Module's own
+   * page implies whose Runs these are and shows the Intake that started each;
+   * the cross-Module list names the Module instead and drops the Intake, whose
+   * name is a Module's private vocabulary (ADR-0019).
+   */
+  module?: string;
+  /** What to say when there is nothing to list. */
+  empty: React.ReactNode;
+  /** Refreshed on the same tick as the list, for a page with a line of its own. */
+  onRefresh?: () => void;
+}
+
+/**
+ * The Runs list: newest first, paged, filtered to one Module or across all of
+ * them. `/runs` and each Module's page render this same component — what they
+ * share is the list, not the page, so each keeps its own chrome and neither can
+ * disagree with the other about what a Run's row says.
+ */
+export function RunsList({ module, empty, onRefresh }: RunsListProps) {
+  const showModule = module === undefined;
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [liveReady, setLiveReady] = useState(false);
+  const moduleLabel = useModuleLabel();
+  /* The connection is the Shell's, and its banner renders above this page
+     (ADR-0011). All this list owes it is a refresh on the tick below, since the
+     poll here is live in the one window where a Run can reject a grant. */
+  const { refresh: refreshConnection } = useGoogleConnection();
+
+  /* Re-reads the first page only: a refresh must not silently discard the
+     older pages the reader asked for, nor claim to have re-checked them. */
+  const refresh = useCallback(async () => {
+    try {
+      const page = await api.listRuns({ ...(module ? { module } : {}), limit: RUNS_PAGE_SIZE });
+      setRuns((current) => {
+        if (current === null || current.length <= page.runs.length) {
+          return page.runs;
+        }
+        /* Keep everything already loaded below the first page, replacing the
+           rows the fresh page covers. */
+        const fresh = new Set(page.runs.map((run) => run.id));
+        return [...page.runs, ...current.filter((run) => !fresh.has(run.id))];
+      });
+      setCursor(page.nextCursor);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+    onRefresh?.();
+  }, [module, onRefresh]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const activeCount = runs === null ? 0 : runs.filter((run) => !TERMINAL.has(run.status)).length;
+
+  // The list used to auto-update every 3s for as long as it was open, with no
+  // way to pause or stop it and nothing to show for it once every run was
+  // terminal (WCAG 2.2.2). The interval now exists only while a run can still
+  // change, which is what RunDetailPage already does.
+  //
+  // activeCount is a number, not the array, so a poll that changes nothing does
+  // not tear down and rebuild its own interval.
+  useEffect(() => {
+    if (activeCount === 0) return;
+    const id = setInterval(() => {
+      void refresh();
+      void refreshConnection();
+    }, 3000);
+    return () => clearInterval(id);
+  }, [activeCount, refresh, refreshConnection]);
+
+  // A live region only announces what arrives after it is mounted; text already
+  // present on the first paint is skipped (WCAG 4.1.3). This effect runs after
+  // that paint, so the status below is filled in as a change rather than as
+  // initial content.
+  useEffect(() => {
+    setLiveReady(true);
+  }, []);
+
+  // Runs arrive from a Module's Intake, not from this tab. Stopping the poll
+  // without this would mean an idle list could never show them; it is also the
+  // recovery path when the request that would have restarted the poll is the one
+  // that failed.
+  const check = async () => {
+    if (checking) {
+      return;
+    }
+    setChecking(true);
+    try {
+      await refresh();
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const showMore = async () => {
+    if (loadingMore || cursor === null) {
+      return;
+    }
+    setLoadingMore(true);
+    try {
+      const page = await api.listRuns({
+        ...(module ? { module } : {}),
+        limit: RUNS_PAGE_SIZE,
+        cursor,
+      });
+      setRuns((current) => [...(current ?? []), ...page.runs]);
+      setCursor(page.nextCursor);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Recomputed on every poll, but the string only changes when the counts do,
+  // so the live region stays quiet while nothing is happening. When the poll
+  // stops, it says so: an auto-updating region that goes still without a word
+  // is indistinguishable from one that is broken.
+  const listStatus =
+    runs === null
+      ? "Loading runs…"
+      : `${runs.length} run${runs.length === 1 ? "" : "s"}, ${activeCount} in progress.` +
+        (activeCount === 0 ? " Updates paused — use Refresh." : "");
+
+  return (
+    <>
+      <div className="field-row runs-toolbar">
+        {/* aria-disabled rather than disabled, like every other busy control
+            here: the pressed button has to survive its own request. */}
+        <button type="button" className="action-button" onClick={check} aria-disabled={checking}>
+          {checking ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="banner banner-error" role="alert">
+          {error}
+        </div>
+      )}
+
+      <p className="visually-hidden" role="status">
+        {liveReady ? (checking ? "Checking for new runs…" : listStatus) : ""}
+      </p>
+
+      {runs === null ? (
+        <p className="muted" role="status">
+          Loading…
+        </p>
+      ) : runs.length === 0 ? (
+        <div className="card">{empty}</div>
+      ) : (
+        <>
+          <div className="table-scroll" tabIndex={0}>
+            <table className="runs-table" data-testid="runs-table">
+              <thead>
+                <tr>
+                  <th scope="col">Run</th>
+                  {showModule ? (
+                    <th scope="col">Module</th>
+                  ) : (
+                    <th scope="col">Source</th>
+                  )}
+                  <th scope="col">Outcome</th>
+                  <th scope="col">What it did</th>
+                  <th scope="col">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr key={run.id} className="run-row">
+                    {/* What happened leads: the title is derived at render so
+                        legacy runs read the same way, and the raw filename is
+                        demoted to metadata (D4). The link stays the keyboard and
+                        screen-reader route into the run. */}
+                    <td className="run-file-name">
+                      <Link
+                        to={`/runs/${run.id}`}
+                        className="run-link"
+                        title={run.fileName ?? run.id}
+                      >
+                        {runTitle(run.fileName ?? run.id)}
+                      </Link>
+                      {run.fileName ? <span className="muted run-file-meta">{run.fileName}</span> : null}
+                    </td>
+                    {showModule ? (
+                      /* The tab bar's own words, not an identifier from disk —
+                         except for a Run whose Module is gone, which keeps its
+                         raw id rather than disappearing. */
+                      <td className="muted">{moduleLabel(run.module)}</td>
+                    ) : (
+                      <td>
+                        <IntakeBadge intake={run.intake} />
+                      </td>
+                    )}
+                    <td>
+                      <StatusPill status={run.status} connectionCaused={run.connectionCaused} />
+                    </td>
+                    <td className="muted run-summary-cell">
+                      {run.status === "skipped" && run.skipReason
+                        ? run.skipReason
+                        : (run.summary ?? "")}
+                    </td>
+                    <td>
+                      <time dateTime={run.createdAt} title={formatTime(run.createdAt)}>
+                        {relativeTime(run.createdAt)}
+                      </time>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {cursor !== null && (
+            <div className="field-row">
+              <button
+                type="button"
+                className="action-button"
+                onClick={() => void showMore()}
+                aria-disabled={loadingMore}
+              >
+                {loadingMore ? "Loading…" : "Show older runs"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}

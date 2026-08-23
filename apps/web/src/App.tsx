@@ -1,4 +1,5 @@
 import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
 import { HotTakePage } from "./pages/HotTakePage";
@@ -61,6 +62,9 @@ export function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/transcript" element={<RunsPage />} />
+          {/* A Shell page, not a tab: the bar renders Modules (ADR-0014), and
+              Home's capped feed links in here for everything older. */}
+          <Route path="/runs" element={<AllRunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/hot-take" element={<HotTakePage />} />
           <Route path="/settings" element={<SettingsPage />} />

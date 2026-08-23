@@ -165,7 +165,7 @@ describe.sequential("DriveIntake", () => {
     await pipeline.idle();
     expect(created).toBe(0);
     expect(listSpy).not.toHaveBeenCalled();
-    expect(openRuns(workspaceDir).list()).toHaveLength(0);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(0);
     /* A gated poll is not an attempt: recording a time would teach the
        Runs-page liveness line to claim a check that never happened. */
     expect(loadState(join(workspaceDir, "state.json")).drive.lastPollAt).toBeNull();
@@ -209,7 +209,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(0);
-    expect(openRuns(workspaceDir).list()).toHaveLength(0);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(0);
     expect(logs.join(" ")).toMatch(/not found or not accessible/);
     const state = loadState(join(workspaceDir, "state.json"));
     expect(state.drive.ingestedIds).toHaveLength(0);
@@ -238,7 +238,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(0);
-    expect(openRuns(workspaceDir).list()).toHaveLength(0);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(0);
   });
 
   it("mixed folder: two supported, one image, one subfolder → 2 Runs, image/subfolder ignored", async () => {
@@ -257,7 +257,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(2);
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(2);
     expect(logs.join(" ")).toMatch(/Ignoring unsupported file.*photo\.png/);
     const failed = runs.filter((r) => r.status === "failed");
@@ -287,12 +287,12 @@ describe.sequential("DriveIntake", () => {
     const first = await intake.pollOnce();
     await pipeline.idle();
     expect(first.created).toBe(2);
-    expect(openRuns(workspaceDir).list()).toHaveLength(2);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(2);
 
     const second = await intake.pollOnce();
     await pipeline.idle();
     expect(second.created).toBe(0);
-    expect(openRuns(workspaceDir).list()).toHaveLength(2);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(2);
     const state = loadState(join(workspaceDir, "state.json"));
     expect(state.drive.ingestedIds).toEqual(["dup1", "dup2"]);
   });
@@ -336,7 +336,7 @@ describe.sequential("DriveIntake", () => {
        second batch of its own. */
     expect(second.created).toBe(3);
 
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(3);
     const fileNames = runs
       .map((r) => openRuns(workspaceDir).detail(r.id)!.fileName)
@@ -374,7 +374,7 @@ describe.sequential("DriveIntake", () => {
     await pipeline.idle();
 
     expect(listCalls).toBe(1);
-    expect(openRuns(workspaceDir).list()).toHaveLength(1);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(1);
 
     /* Once the poll has settled the guard is released, so a later poll runs for
        real — and finds nothing new. */
@@ -382,7 +382,7 @@ describe.sequential("DriveIntake", () => {
     await pipeline.idle();
     expect(listCalls).toBe(2);
     expect(later.created).toBe(0);
-    expect(openRuns(workspaceDir).list()).toHaveLength(1);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(1);
   });
 
   it("Google Doc export via drive.files.export creates a Run with .txt effectiveName", async () => {
@@ -404,7 +404,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(1);
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.fileName).toBe("Meeting Notes.txt");
@@ -452,7 +452,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(1);
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.status).not.toBe("failed");
@@ -473,7 +473,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const transcript = readFileSync(join(workspaceDir, "runs", openRuns(workspaceDir).list()[0].id, "transcript.txt"), "utf8");
+    const transcript = readFileSync(join(workspaceDir, "runs", openRuns(workspaceDir).list().runs[0].id, "transcript.txt"), "utf8");
     expect(transcript).toBe("A: one\nB: two");
   });
 
@@ -485,7 +485,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(1);
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.status).toBe("failed");
@@ -495,7 +495,7 @@ describe.sequential("DriveIntake", () => {
     const second = await intake.pollOnce();
     await pipeline.idle();
     expect(second.created).toBe(0);
-    expect(openRuns(workspaceDir).list()).toHaveLength(1);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(1);
   });
 
   it("malformed JSONC that is not a sentences array also fails at convert", async () => {
@@ -507,7 +507,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const detail = openRuns(workspaceDir).detail(openRuns(workspaceDir).list()[0].id)!;
+    const detail = openRuns(workspaceDir).detail(openRuns(workspaceDir).list().runs[0].id)!;
     expect(detail.failedStage).toBe("convert");
   });
 
@@ -532,7 +532,7 @@ describe.sequential("DriveIntake", () => {
     expect(created).toBe(1);
     expect(bigFetched).toBe(false);
     expect(logs.join(" ")).toMatch(/Skipping oversized.*huge\.pdf/);
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(1);
     expect(runs[0].fileName).toBe("ok.txt");
     const state = loadState(join(workspaceDir, "state.json"));
@@ -553,7 +553,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(0);
-    expect(openRuns(workspaceDir).list()).toHaveLength(0);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(0);
     expect(logs.join(" ")).toMatch(/Skipping oversized/);
   });
 
@@ -657,7 +657,7 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const runs = openRuns(workspaceDir).list();
+    const runs = openRuns(workspaceDir).list().runs;
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.intake).toBe("drive");
     expect(detail.result?.sourceId).toBe("meet1");
@@ -690,6 +690,6 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(2);
-    expect(openRuns(workspaceDir).list()).toHaveLength(2);
+    expect(openRuns(workspaceDir).list().runs).toHaveLength(2);
   });
 });

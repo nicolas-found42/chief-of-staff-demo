@@ -82,8 +82,7 @@ describe("buildTimeline", () => {
         started("extract", "2026-08-21T10:00:05Z"),
         started("outputs", "2026-08-21T10:00:35Z"),
         done("2026-08-21T10:00:40Z"),
-      ],
-      null
+      ]
     );
     expect(timeline.map((entry) => [entry.label, entry.state])).toEqual([
       ["Read transcript", "done"],
@@ -94,7 +93,7 @@ describe("buildTimeline", () => {
   });
 
   it("names an unknown stage by its raw key instead of hiding it", () => {
-    const timeline = buildTimeline([started("mystery", "2026-08-21T10:00:00Z"), done("2026-08-21T10:00:01Z")], null);
+    const timeline = buildTimeline([started("mystery", "2026-08-21T10:00:00Z"), done("2026-08-21T10:00:01Z")]);
     expect(timeline[0].label).toBe("mystery");
   });
 
@@ -103,37 +102,33 @@ describe("buildTimeline", () => {
       [
         started("convert", "2026-08-21T10:00:00Z"),
         started("extract", "2026-08-21T10:00:02Z"),
-      ],
-      null
+      ]
     );
     expect(timeline[0]).toMatchObject({ state: "done", durationMs: 2000 });
-    expect(timeline[1]).toMatchObject({ state: "running", durationMs: null, outcome: null });
+    expect(timeline[1]).toMatchObject({ state: "running", durationMs: null });
   });
 
-  it("records the failing stage as failed, without inventing an outcome", () => {
-    const timeline = buildTimeline(
-      [
-        started("convert", "2026-08-21T10:00:00Z"),
-        started("extract", "2026-08-21T10:00:03Z"),
-        failed("extract", "2026-08-21T10:00:09Z", "boom"),
-        { at: "2026-08-21T10:00:09Z", type: "run_failed", detail: {} },
-      ],
-      null
-    );
-    expect(timeline[1]).toMatchObject({ state: "failed", outcome: null });
+  it("records the failing stage as failed", () => {
+    const timeline = buildTimeline([
+      started("convert", "2026-08-21T10:00:00Z"),
+      started("extract", "2026-08-21T10:00:03Z"),
+      failed("extract", "2026-08-21T10:00:09Z", "boom"),
+      { at: "2026-08-21T10:00:09Z", type: "run_failed", detail: {} },
+    ]);
+    expect(timeline[1]).toMatchObject({ state: "failed" });
   });
 
-  it("carries a skip through the extract stage's outcome", () => {
-    const timeline = buildTimeline(
-      [
-        started("convert", "2026-08-21T10:00:00Z"),
-        started("extract", "2026-08-21T10:00:01Z"),
-        { at: "2026-08-21T10:00:07Z", type: "classify_skipped", detail: { skipReason: "agenda only" } },
-        { at: "2026-08-21T10:00:07Z", type: "run_done", detail: { status: "skipped" } },
-      ],
-      null
-    );
-    expect(timeline[1].outcome).toBe("Not a transcript — agenda only");
+  /* What a Stage meant is the Module's own vocabulary and lives in the Module's
+     half of the Run detail page. The timeline closes the open Stage on a skip
+     and says nothing about why. */
+  it("closes the open stage when a Module ends the Run early", () => {
+    const timeline = buildTimeline([
+      started("convert", "2026-08-21T10:00:00Z"),
+      started("extract", "2026-08-21T10:00:01Z"),
+      { at: "2026-08-21T10:00:07Z", type: "classify_skipped", detail: { skipReason: "agenda only" } },
+      { at: "2026-08-21T10:00:07Z", type: "run_done", detail: { status: "skipped" } },
+    ]);
+    expect(timeline[1]).toMatchObject({ state: "done", durationMs: 6000 });
   });
   it("sums durations across a retry's second attempt", () => {
     const timeline = buildTimeline(
@@ -143,8 +138,7 @@ describe("buildTimeline", () => {
         { at: "2026-08-21T10:05:00Z", type: "run_reopened", detail: { fromStage: "outputs" } },
         started("outputs", "2026-08-21T10:05:05Z"),
         done("2026-08-21T10:05:20Z"),
-      ],
-      null
+      ]
     );
     expect(timeline[0]).toMatchObject({ state: "done", durationMs: 25000 });
   });

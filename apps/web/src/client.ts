@@ -3,7 +3,7 @@ import type {
   GoogleStatus,
   RedactedConfig,
   RunDetail,
-  RunSummary,
+  RunPage,
   SetupCheck,
 } from "@chief-of-staff-demo/shared";
 
@@ -56,8 +56,30 @@ export interface ConfigPayload {
   defaults: Record<string, string>;
 }
 
+/** What the Runs list asks for: one Module's Runs or every Module's, a page at a time. */
+export interface RunListQuery {
+  module?: string;
+  limit?: number;
+  cursor?: string | null;
+}
+
+function runsPath(query: RunListQuery = {}): string {
+  const params = new URLSearchParams();
+  if (query.module) {
+    params.set("module", query.module);
+  }
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.cursor) {
+    params.set("cursor", query.cursor);
+  }
+  const search = params.toString();
+  return search ? `/api/runs?${search}` : "/api/runs";
+}
+
 export const api = {
-  listRuns: () => request<{ runs: RunSummary[] }>("/api/runs"),
+  listRuns: (query?: RunListQuery) => request<RunPage>(runsPath(query)),
   getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   retry: (id: string) =>
     request<{ status: string }>(`/api/runs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
