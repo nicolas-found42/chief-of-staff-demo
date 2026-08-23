@@ -1,26 +1,28 @@
 import {
   type ExtractionResult,
   type RunMeta,
-  type RunSourceType,
   normalizeExtractionResult,
 } from "@chief-of-staff-demo/shared";
 import { type CompleteJson } from "../llm/providers.js";
-import { buildExtractionMessages, type RunPromptContext } from "../llm/prompt.js";
+import { buildExtractionMessages, type RunPromptContext, type TranscriptRunContext } from "../llm/prompt.js";
 import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
 import { SourceError, convertToText } from "../text/convert.js";
-import type { RunContext, RunHandle, Runs } from "../runs.js";
+import type { RunHandle, Runs } from "../runs.js";
 
 const MAX_EXTRACT_ATTEMPTS = 3;
 
+const MODULE_ID = "transcript";
+const MODULE_VERSION = 1;
+
 export interface RunSourceSpec {
-  type: RunSourceType;
+  intake: string;
   fileName: string;
   bytes?: Buffer;
   /** Pre-converted transcript text (Fireflies intake). */
   text?: string;
   sourceUrl?: string | null;
   externalId?: string | null;
-  context?: RunContext;
+  context?: TranscriptRunContext;
 }
 
 /** What a Run needs from the Google connection: a surface, and a verdict on a failure. */
@@ -97,15 +99,24 @@ export class Pipeline {
    */
   async startRun(spec: RunSourceSpec): Promise<string> {
     const run = this.runs.create({
-      source: spec.type,
+      module: MODULE_ID,
+      moduleVersion: MODULE_VERSION,
+      intake: spec.intake,
       fileName: spec.fileName,
       sourceUrl: spec.sourceUrl ?? null,
       externalId: spec.externalId ?? null,
-      context: {
-        meetingDate: spec.context?.meetingDate ?? meetingDateFromFileName(spec.fileName),
-        attendees: spec.context?.attendees ?? [],
-      },
     });
+    run.writeArtifact(
+      "context.json",
+      JSON.stringify(
+        {
+          meetingDate: spec.context?.meetingDate ?? meetingDateFromFileName(spec.fileName),
+          attendees: spec.context?.attendees ?? [],
+        },
+        null,
+        2
+      ) + "\n"
+    );
     try {
       const text = await this.stage(run, "convert", async () => {
         try {
@@ -114,7 +125,7 @@ export class Pipeline {
           throw err instanceof SourceError ? new Error(`${err.code}: ${err.message}`) : err;
         }
       });
-      run.writeTranscript(text);
+      run.writeArtifact("transcript.txt", text);
       this.enqueue(() => this.processRun(run.id));
     } catch {
       this.deps.log?.(`Run ${run.id} failed to convert ${spec.fileName}`);
@@ -137,7 +148,7 @@ export class Pipeline {
     const stage = meta.failedStage;
     if (stage === "extract") {
       run.resetAttempts();
-      run.deleteResult();
+      run.deleteArtifact("result.json");
     }
     const reopened = run.reopen(stage);
     this.enqueue(() => (stage === "outputs" ? this.processRun(id, "outputs") : this.processRun(id)));
@@ -179,7 +190,23 @@ export class Pipeline {
     if (!run) {
       return;
     }
-    const context = run.readContext();
+    let context: TranscriptRunContext;
+    {
+      const raw = run.readArtifact("context.json");
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as TranscriptRunContext;
+          context = {
+            meetingDate: parsed.meetingDate ?? null,
+            attendees: Array.isArray(parsed.attendees) ? parsed.attendees : [],
+          };
+        } catch {
+          context = { meetingDate: null, attendees: [] };
+        }
+      } else {
+        context = { meetingDate: null, attendees: [] };
+      }
+    }
     try {
       if (resumeOutputs !== "outputs") {
         const result = await this.stage(run, "extract", () => this.extract(run, context));
@@ -190,7 +217,15 @@ export class Pipeline {
         await this.stage(run, "outputs", () => this.createOutputs(run, result));
         return;
       }
-      const cached = run.readResult();
+      const raw = run.readArtifact("result.json");
+      let cached: ExtractionResult | null = null;
+      if (raw) {
+        try {
+          cached = JSON.parse(raw) as ExtractionResult;
+        } catch {
+          cached = null;
+        }
+      }
       if (!cached) {
         this.failRun(run, "extract", "retry found no cached result");
         return;
@@ -201,7 +236,7 @@ export class Pipeline {
     }
   }
 
-  private async extract(run: RunHandle, context: RunContext): Promise<ExtractionResult> {
+  private async extract(run: RunHandle, context: TranscriptRunContext): Promise<ExtractionResult> {
     const meta = run.read();
     let parsed: ExtractionResult | null = null;
     for (let round = 1; round <= MAX_EXTRACT_ATTEMPTS; round++) {
@@ -211,13 +246,13 @@ export class Pipeline {
       try {
         const complete = this.deps.getCompleteJson();
         const promptContext: RunPromptContext = {
-          fileName: meta.fileName,
+          fileName: meta.fileName ?? "",
           sourceId: meta.externalId ?? meta.id,
           sourceUrl: meta.sourceUrl,
           meetingDate: context.meetingDate,
           attendees: context.attendees,
         };
-        parsed = normalizeExtractionResult(await complete(buildExtractionMessages(promptContext, run.readTranscript())));
+        parsed = normalizeExtractionResult(await complete(buildExtractionMessages(promptContext, run.readArtifact("transcript.txt") ?? "")));
         run.appendEvent("extract_ok", { attempt });
         break;
       } catch (error) {
@@ -231,11 +266,11 @@ export class Pipeline {
     const result: ExtractionResult = {
       ...parsed,
       sourceId: meta.externalId ?? meta.id,
-      sourceFileName: meta.fileName,
+      sourceFileName: meta.fileName ?? "",
       sourceUrl: meta.sourceUrl,
       processedAt: new Date().toISOString(),
     };
-    run.writeResult(result);
+    run.writeArtifact("result.json", JSON.stringify(result, null, 2) + "\n");
     return result;
   }
 

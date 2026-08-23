@@ -267,9 +267,9 @@ describe.sequential("DriveIntake", () => {
       const d = openRuns(workspaceDir).detail(r.id)!;
       return [d.fileName, d];
     }));
-    expect(byName["meeting.txt"]?.source).toBe("drive");
+    expect(byName["meeting.txt"]?.intake).toBe("drive");
     expect(byName["meeting.txt"]?.sourceUrl).toBe("https://drive.google.com/file/d/1/view");
-    expect(byName["notes.md"]?.source).toBe("drive");
+    expect(byName["notes.md"]?.intake).toBe("drive");
     // notes.md had no webViewLink, so null is fine
     expect(byName["notes.md"] !== undefined).toBe(true);
   });
@@ -408,7 +408,7 @@ describe.sequential("DriveIntake", () => {
     expect(runs).toHaveLength(1);
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.fileName).toBe("Meeting Notes.txt");
-    expect(detail.source).toBe("drive");
+    expect(detail.intake).toBe("drive");
     expect(detail.result?.sourceId).toBe("doc1");
     expect(detail.sourceUrl).toBe("https://docs.google.com/document/d/doc1");
     const context = JSON.parse(readFileSync(join(workspaceDir, "runs", runs[0].id, "context.json"), "utf8")) as { meetingDate: string | null };
@@ -659,7 +659,7 @@ describe.sequential("DriveIntake", () => {
     expect(created).toBe(1);
     const runs = openRuns(workspaceDir).list();
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
-    expect(detail.source).toBe("drive");
+    expect(detail.intake).toBe("drive");
     expect(detail.result?.sourceId).toBe("meet1");
     expect(detail.sourceUrl).toBe("https://drive.google.com/file/d/meet1/view");
     expect(detail.fileName).toBe("Copy of Call-transcript-2026-06-18T13-00-00.000Z.txt");

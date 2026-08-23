@@ -15,7 +15,7 @@ function run(id: string, status: RunStatus, fileName = `${id}.txt`): RunSummary 
   return {
     id,
     createdAt: "2026-08-20T10:00:00.000Z",
-    source: "drive",
+    intake: "drive",
     fileName,
     sourceUrl: null,
     status,

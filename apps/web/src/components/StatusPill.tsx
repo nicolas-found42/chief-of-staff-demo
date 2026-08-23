@@ -30,6 +30,6 @@ export function StatusPill({
   );
 }
 
-export function SourceBadge({ source }: { source: string }) {
-  return <span className="status-badge status-source">{source}</span>;
+export function IntakeBadge({ intake }: { intake: string }) {
+  return <span className="status-badge status-source">{intake}</span>;
 }

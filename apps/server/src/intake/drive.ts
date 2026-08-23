@@ -42,7 +42,7 @@ export interface DriveIntakeDeps {
   getConfig: () => AppConfig;
   workspaceDir: string;
   port: number;
-  startRun: (spec: { type: "drive"; fileName: string; bytes: Buffer; sourceUrl?: string | null; externalId: string | null; context?: { meetingDate: string | null; attendees: { name: string; email: string | null }[] } }) => Promise<string>;
+  startRun: (spec: { intake: "drive"; fileName: string; bytes: Buffer; sourceUrl?: string | null; externalId: string | null; context?: { meetingDate: string | null; attendees: { name: string; email: string | null }[] } }) => Promise<string>;
   log: (message: string) => void;
   google: GoogleConnection;
   /** Test seam: override Drive client. */
@@ -285,7 +285,7 @@ export class DriveIntake {
 
         try {
           await this.deps.startRun({
-            type: "drive",
+            intake: "drive",
             fileName: effectiveName,
             bytes,
             sourceUrl,

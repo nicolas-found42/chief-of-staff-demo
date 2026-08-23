@@ -85,13 +85,13 @@ export function homeStatus(
     run.connectionCaused
       ? {
           id: run.id,
-          text: `${runTitle(run.fileName)} could not finish because Google needs reconnecting`,
+          text: `${runTitle(run.fileName ?? run.id)} could not finish because Google needs reconnecting`,
           cta: "Reconnect",
           to: "/settings",
         }
       : {
           id: run.id,
-          text: `${runTitle(run.fileName)} failed`,
+          text: `${runTitle(run.fileName ?? run.id)} failed`,
           cta: "Open",
           to: `/runs/${run.id}`,
         }
@@ -124,7 +124,7 @@ export function homeStatus(
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   const feed: FeedEntry[] = finished.slice(0, MAX_FEED).map((run) => ({
     id: run.id,
-    title: runTitle(run.fileName),
+    title: runTitle(run.fileName ?? run.id),
     outcome:
       run.status === "skipped"
         ? run.skipReason

@@ -13,11 +13,12 @@ beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-runs-"));
   runs = openRuns(workspaceDir);
   run = runs.create({
-    source: "drive",
+    module: "transcript",
+    moduleVersion: 1,
+    intake: "drive",
     fileName: "meeting.md",
     sourceUrl: null,
     externalId: null,
-    context: { meetingDate: "2026-08-18", attendees: [] },
   });
 });
 
@@ -31,7 +32,12 @@ describe("create", () => {
     expect(meta.status).toBe("pending");
     expect(meta.attempts).toBe(0);
     expect(meta.failedStage).toBeNull();
+    expect(meta.module).toBe("transcript");
+    expect(meta.moduleVersion).toBe(1);
+    expect(meta.intake).toBe("drive");
+    expect(meta.fileName).toBe("meeting.md");
     expect(types()).toEqual(["created"]);
+    expect(detailOf("created")).toEqual({ intake: "drive", fileName: "meeting.md" });
   });
 });
 
@@ -64,13 +70,13 @@ describe("transitions", () => {
     /* The connection-caused failure sets the flag and nothing else about the
        shape of meta changes (D6). */
     const other = runs.create({
-      source: "drive",
+      module: "transcript",
+      moduleVersion: 1,
+      intake: "drive",
       fileName: "other.md",
       sourceUrl: null,
       externalId: null,
-      context: { meetingDate: null, attendees: [] },
     });
-    other.started("outputs");
     other.failed("outputs", "google_expired", "Google sign-in expired.", {
       connectionCaused: true,
     });
@@ -176,11 +182,12 @@ describe("durability", () => {
 
   it("keeps listing the other Runs when one directory is unreadable", () => {
     const other = runs.create({
-      source: "watch",
+      module: "transcript",
+      moduleVersion: 1,
+      intake: "watch",
       fileName: "second.md",
       sourceUrl: null,
       externalId: null,
-      context: { meetingDate: null, attendees: [] },
     });
     writeFileSync(join(workspaceDir, "runs", other.id, "meta.json"), "{ torn", "utf8");
 
@@ -203,5 +210,59 @@ describe("open", () => {
     expect(runs.open("../etc")).toBeNull();
     expect(runs.open("run_20260819-000000_deadbeef")).toBeNull();
     expect(runs.open(run.id)).not.toBeNull();
+  });
+});
+
+describe("artifacts", () => {
+  it("write/read/delete round-trip", () => {
+    run.writeArtifact("result.json", JSON.stringify({ tasks: [{ title: "a" }] }));
+    expect(run.readArtifact("result.json")).toBe(JSON.stringify({ tasks: [{ title: "a" }] }));
+    run.deleteArtifact("result.json");
+    expect(run.readArtifact("result.json")).toBeNull();
+  });
+
+  it("rejects bad names", () => {
+    expect(() => run.writeArtifact("../evil", "x")).toThrow(/Invalid artifact name/);
+    expect(() => run.readArtifact("bad/name")).toThrow(/Invalid artifact name/);
+    expect(() => run.deleteArtifact("")).toThrow(/Invalid artifact name/);
+  });
+
+  it("refuses reserved names", () => {
+    expect(() => run.writeArtifact("meta.json", "{}")).toThrow(/Invalid artifact name/);
+    expect(() => run.writeArtifact("events.jsonl", "{}")).toThrow(/Invalid artifact name/);
+    expect(() => run.readArtifact("meta.json")).toThrow(/Invalid artifact name/);
+    expect(() => run.readArtifact("events.jsonl")).toThrow(/Invalid artifact name/);
+  });
+});
+
+describe("optional fileName", () => {
+  it("lists and details a Run with no fileName without throwing", () => {
+    const noFile = runs.create({
+      module: "transcript",
+      moduleVersion: 1,
+      intake: "drive",
+      sourceUrl: null,
+      externalId: null,
+    });
+    expect(noFile.read().fileName).toBeUndefined();
+    expect(noFile.read().intake).toBe("drive");
+    const listed = runs.list();
+    expect(listed.find((r) => r.id === noFile.id)?.fileName).toBeUndefined();
+    expect(listed.find((r) => r.id === noFile.id)?.intake).toBe("drive");
+    const detail = runs.detail(noFile.id);
+    expect(detail?.fileName).toBeUndefined();
+    expect(detail?.intake).toBe("drive");
+    const createdDetail = detail?.events.find((e) => e.type === "created")?.detail;
+    expect(createdDetail).toEqual({ intake: "drive" });
+  });
+});
+
+describe("module events", () => {
+  it("round-trips a Module-named event the Shell has never heard of", () => {
+    run.appendEvent("transcript_custom_event", { foo: "bar" });
+    const found = runs.detail(run.id)!.events.find((e) => e.type === "transcript_custom_event");
+    expect(found).toBeDefined();
+    expect(found?.detail).toEqual({ foo: "bar" });
+    expect(types()).toContain("transcript_custom_event");
   });
 });

@@ -34,6 +34,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestText(path: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) {
+        message = body.error;
+      }
+    } catch {
+      // Non-JSON error body; keep the status text.
+    }
+    throw new ApiError(response.status, message);
+  }
+  return await response.text();
+}
+
 export interface ConfigPayload {
   config: RedactedConfig;
   defaults: Record<string, string>;
@@ -44,6 +61,8 @@ export const api = {
   getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   retry: (id: string) =>
     request<{ status: string }>(`/api/runs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
+  getArtifact: (runId: string, name: string) =>
+    requestText(`/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`),
   getConfig: () => request<ConfigPayload>("/api/config"),
   saveConfig: (update: Record<string, unknown>) =>
     request<ConfigPayload>("/api/config", {

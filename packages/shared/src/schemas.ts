@@ -1,120 +1,5 @@
 import { z } from "zod";
 
-/**
- * Extraction result — mirror of the routine's `routine/outbox-schema.json` v1,
- * with two adaptations for this app:
- *  - `drafts[].body` added: this app composes the draft text itself and creates
- *    the Gmail draft from it.
- *  - `sourceId` / `sourceUrl` generalized: a run id or Fireflies transcript id
- *    and any source URL, instead of Drive file id / url.
- */
-export const ExtractionResultSchema = z.strictObject({
-  version: z.literal(1),
-  sourceId: z.string(),
-  sourceFileName: z.string(),
-  sourceUrl: z.string().nullable(),
-  processedAt: z.string(),
-  isTranscript: z.boolean(),
-  skipReason: z.string().nullable(),
-  summary: z.string(),
-  tasks: z.array(
-    z.strictObject({
-      title: z.string().min(1),
-      owner: z.string().optional(),
-      due: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "due must be YYYY-MM-DD")
-        .optional(),
-      notes: z.string().optional(),
-      sourceQuote: z.string().optional(),
-    })
-  ),
-  drafts: z.array(
-    z.strictObject({
-      /** Empty string when the recipient is unknown. */
-      to: z.string().optional(),
-      subject: z.string(),
-      body: z.string(),
-      reason: z.string().optional(),
-    })
-  ),
-});
-
-export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
-export type TaskItem = ExtractionResult["tasks"][number];
-export type DraftItem = ExtractionResult["drafts"][number];
-
-/**
- * Wire schema handed to LLM providers as the structured-output contract.
- * Identical to `ExtractionResultSchema` except every optional field is
- * required-but-nullable: OpenAI strict json_schema demands that all properties
- * appear in `required`. The pipeline normalizes nulls away and re-validates
- * with `ExtractionResultSchema` before trusting the payload.
- */
-export const ExtractionWireSchema = z.strictObject({
-  version: z.literal(1),
-  sourceId: z.string(),
-  sourceFileName: z.string(),
-  sourceUrl: z.string().nullable(),
-  processedAt: z.string(),
-  isTranscript: z.boolean(),
-  skipReason: z.string().nullable(),
-  summary: z.string(),
-  tasks: z.array(
-    z.strictObject({
-      title: z.string(),
-      owner: z.string().nullable(),
-      due: z.string().nullable(),
-      notes: z.string().nullable(),
-      sourceQuote: z.string().nullable(),
-    })
-  ),
-  drafts: z.array(
-    z.strictObject({
-      to: z.string(),
-      subject: z.string(),
-      body: z.string(),
-      reason: z.string().nullable(),
-    })
-  ),
-});
-
-/**
- * Convert a provider payload into the canonical shape. Accepts either the
- * wire shape (all fields required, null for absent optionals — what strict
- * structured-output providers emit) or the canonical shape (optional fields
- * omitted, e.g. a hand-edited mock-result.json). Throws when neither
- * validates.
- */
-export function normalizeExtractionResult(payload: unknown): ExtractionResult {
-  const wire = ExtractionWireSchema.safeParse(payload);
-  if (wire.success) {
-    return ExtractionResultSchema.parse({
-      ...wire.data,
-      tasks: wire.data.tasks.map((task) => {
-        const out: Record<string, unknown> = { title: task.title };
-        for (const key of ["owner", "due", "notes", "sourceQuote"] as const) {
-          if (task[key] !== null && task[key] !== undefined) {
-            out[key] = task[key];
-          }
-        }
-        return out;
-      }),
-      drafts: wire.data.drafts.map((draft) => {
-        const out: Record<string, unknown> = {
-          to: draft.to ?? "",
-          subject: draft.subject,
-          body: draft.body,
-        };
-        if (draft.reason !== null && draft.reason !== undefined) {
-          out.reason = draft.reason;
-        }
-        return out;
-      }),
-    });
-  }
-  return ExtractionResultSchema.parse(payload);
-}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -329,14 +214,21 @@ export interface DriveIntakeStatus {
 export const RUN_STATUSES = ["pending", "running", "done", "skipped", "failed"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
-export const RUN_SOURCES = ["drive"] as const;
-export type RunSourceType = (typeof RUN_SOURCES)[number];
 /** runs/<runId>/meta.json */
 export interface RunMeta {
   id: string;
   createdAt: string;
-  source: RunSourceType;
-  fileName: string;
+  /** Which Module owns this Run. Required: a Run with no Module cannot be
+   *  listed under one. */
+  module: string;
+  /** The Module's own version when the Run was created, so a Module can
+   *  recognise a Run its older self wrote. */
+  moduleVersion: number;
+  /** Which of that Module's Intakes produced the Run. The Module names its
+   *  own; the Shell never holds a list of them. */
+  intake: string;
+  /** The file this Run started from, when it started from one at all. */
+  fileName?: string;
   sourceUrl: string | null;
   externalId: string | null;
   status: RunStatus;
@@ -350,37 +242,33 @@ export interface RunMeta {
   connectionCaused?: boolean;
 }
 
-export const RUN_EVENT_TYPES = [
+export const SHELL_EVENT_TYPES = [
   "created",
   "stage_started",
   "stage_failed",
-  "extract_attempt",
-  "extract_error",
-  "extract_ok",
-  "classify_skipped",
-  "google_task_created",
-  "google_task_error",
-  "gmail_draft_created",
-  "gmail_draft_error",
-  "google_unavailable",
   "run_done",
   "run_failed",
   "run_reopened",
+  /* A transcript-Module word the Shell writes from `finished()`. It is in this
+     list because the list states what the Shell writes today, not what it
+     should write. See §5. */
+  "classify_skipped",
 ] as const;
-export type RunEventType = (typeof RUN_EVENT_TYPES)[number];
+export type ShellEventType = (typeof SHELL_EVENT_TYPES)[number];
 
 /** One JSON line in runs/<runId>/events.jsonl */
 export interface RunEvent {
   at: string;
-  type: RunEventType;
+  /** A Shell event name or any name a Module chooses. */
+  type: string;
   detail?: Record<string, unknown>;
 }
 
 export interface RunSummary {
   id: string;
   createdAt: string;
-  source: RunSourceType;
-  fileName: string;
+  intake: string;
+  fileName?: string;
   sourceUrl: string | null;
   status: RunStatus;
   /** Why the Run was skipped; null unless status is "skipped". */
@@ -397,7 +285,6 @@ export interface RunDetail extends RunSummary {
   failedStage: string | null;
   skipReason: string | null;
   failureHint: string | null;
-  result: ExtractionResult | null;
+  result: unknown;
   events: RunEvent[];
-  transcript: string;
 }

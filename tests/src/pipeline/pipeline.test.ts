@@ -143,7 +143,7 @@ describe("Pipeline", () => {
 
   it("golden transcript → done with task and draft events", async () => {
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       bytes: Buffer.from("**Dana:** hello\n"),
     });
@@ -182,7 +182,7 @@ describe("Pipeline", () => {
 
   it("sniffs the meeting date from a timestamped upload file name", async () => {
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "Copy of X-transcript-2026-06-18T13-00-00.000Z.json",
       text: "Richard: hi",
     });
@@ -195,7 +195,7 @@ describe("Pipeline", () => {
 
   it("uses externalId as sourceId and honors pre-converted text", async () => {
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "Weekly Sync",
       text: "Dana: hello\n",
       sourceUrl: "https://drive.google.com/file/d/abc/view",
@@ -206,14 +206,14 @@ describe("Pipeline", () => {
     expect(detail!.status).toBe("done");
     expect(detail!.result?.sourceId).toBe("drive-123");
     expect(detail!.result?.sourceUrl).toBe("https://drive.google.com/file/d/abc/view");
-    expect(detail!.transcript).toBe("Dana: hello\n");
-    expect(detail!.source).toBe("drive");
+    expect(openRuns(workspaceDir).open(runId)!.readArtifact("transcript.txt")).toBe("Dana: hello\n");
+    expect(detail!.intake).toBe("drive");
   });
 
   it("non-transcript → skipped with persisted result and no google calls", async () => {
     provider = scriptedProvider([NON_TRANSCRIPT]);
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "spec.pdf",
       text: "A product specification.",
     });
@@ -231,7 +231,7 @@ describe("Pipeline", () => {
   it("provider failure ×3 → failed at extract, each attempt error recorded", async () => {
     provider = { complete: throwingProvider(), attempts: () => 0 };
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -254,7 +254,7 @@ describe("Pipeline", () => {
   it("schema-invalid output ×3 counts as failed attempts", async () => {
     provider = scriptedProvider([{ ...GOLDEN, version: 2 }]);
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -269,7 +269,7 @@ describe("Pipeline", () => {
   it("google disconnected → failed at outputs with google_unavailable; retry after connecting", async () => {
     google = null;
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -297,7 +297,7 @@ describe("Pipeline", () => {
     google = null;
     refusal = "expired";
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -319,7 +319,7 @@ describe("Pipeline", () => {
       },
     };
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -341,7 +341,7 @@ describe("Pipeline", () => {
   it("retry of an extract-failed run re-runs extraction from scratch", async () => {
     provider = scriptedProvider([{ ...GOLDEN, version: 2 }]);
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -358,7 +358,7 @@ describe("Pipeline", () => {
 
   it("rejects retry of a run that is not failed", async () => {
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -368,7 +368,7 @@ describe("Pipeline", () => {
 
   it("conversion failure produces a visible failed run", async () => {
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "garbage.json",
       bytes: Buffer.from('{"not":"sentences"}'),
     });
@@ -396,7 +396,7 @@ describe("Pipeline", () => {
     };
     google = flaky;
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "hello",
     });
@@ -411,7 +411,7 @@ describe("Pipeline", () => {
 
   it("writes transcript text and context to the run directory", async () => {
     const runId = await pipeline.startRun({
-      type: "drive",
+      intake: "drive",
       fileName: "meeting.md",
       text: "line\r\nline",
     });

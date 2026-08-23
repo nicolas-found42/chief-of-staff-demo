@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { RunDetail } from "@chief-of-staff-demo/shared";
-import { SourceBadge, StatusPill } from "../components/StatusPill";
+import type { ExtractionResult, RunDetail } from "@chief-of-staff-demo/shared";
+import { IntakeBadge, StatusPill } from "../components/StatusPill";
 import { buildTimeline, formatDuration, formatTime, stageLabel } from "../display";
-import { api, errorMessage } from "../client";
+import { ApiError, api, errorMessage } from "../client";
 import { useIsLoadedEntry } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -13,6 +13,7 @@ export function RunDetailPage() {
   const { id } = useParams<{ id: string }>();
   const loadedEntry = useIsLoadedEntry();
   const [detail, setDetail] = useState<RunDetail | null>(null);
+  const [transcript, setTranscript] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -20,7 +21,6 @@ export function RunDetailPage() {
   const retryRef = useRef<HTMLButtonElement>(null);
 
   useTitle(detail?.fileName ?? "Run");
-
   const load = useCallback(async () => {
     if (!id) {
       return;
@@ -45,6 +45,36 @@ export function RunDetailPage() {
     const timer = setInterval(load, 3000);
     return () => clearInterval(timer);
   }, [detail, load]);
+
+  useEffect(() => {
+    setTranscript(null);
+  }, [id]);
+
+  useEffect(() => {
+    if (!detail || !id || transcript !== null) {
+      return;
+    }
+    let cancelled = false;
+    void api
+      .getArtifact(id, "transcript.txt")
+      .then((text) => {
+        if (!cancelled) {
+          setTranscript(text);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        if (err instanceof ApiError && err.status === 404) {
+          return;
+        }
+        // Other errors are ignored; the next detail poll will retry while null.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail, id, transcript]);
 
   // Arriving at a run moves focus to its heading, so keyboard users continue
   // from the new page instead of the top of the document (2.4.3). The ref
@@ -127,7 +157,7 @@ export function RunDetailPage() {
     );
   }
 
-  const result = detail.result;
+  const result = detail.result as ExtractionResult | null;
   // A skipped run carries an empty summary. Rendering the heading and card
   // anyway promised a section that had nothing in it (WCAG 1.3.1).
   const summary = result?.summary.trim() ?? "";
@@ -199,7 +229,7 @@ export function RunDetailPage() {
         </Link>
       </p>
       <h1 className="run-title" ref={headingRef} tabIndex={-1}>
-        {detail.fileName}
+        {detail.fileName ?? detail.id}
       </h1>
       {/* The gap between these items is flex `gap`, which carries no text, and
           JSX strips the newline-only nodes between the elements — so the row
@@ -214,7 +244,7 @@ export function RunDetailPage() {
         </span>
         <span>
           <span className="visually-hidden">, Source: </span>
-          <SourceBadge source={detail.source} />
+          <IntakeBadge intake={detail.intake} />
         </span>
         <span className="muted">
           <span className="visually-hidden">, Created: </span>
@@ -294,7 +324,7 @@ export function RunDetailPage() {
           <div className="receipt-row">
             <dt>Came in</dt>
             <dd>
-              {detail.fileName}
+              {detail.fileName ?? detail.id}
               {detail.sourceUrl && (
                 <>
                   {" — "}
@@ -504,7 +534,7 @@ export function RunDetailPage() {
             role="region"
             aria-label="Transcript text"
           >
-            {detail.transcript}
+            {transcript ?? ""}
           </pre>
         </div>
       </details>

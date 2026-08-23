@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { RunSummary } from "@chief-of-staff-demo/shared";
-import { SourceBadge, StatusPill } from "../components/StatusPill";
+import { IntakeBadge, StatusPill } from "../components/StatusPill";
 import { formatTime, relativeTime, runTitle } from "../display";
 import { api, errorMessage } from "../client";
 import type { DriveIntakeStatus } from "@chief-of-staff-demo/shared";
@@ -172,11 +172,11 @@ export function RunsPage() {
                   <Link
                     to={`/runs/${run.id}`}
                     className="run-link"
-                    title={run.fileName}
+                    title={run.fileName ?? run.id}
                   >
-                    {runTitle(run.fileName)}
+                    {runTitle(run.fileName ?? run.id)}
                   </Link>
-                  <span className="muted run-file-meta">{run.fileName}</span>
+                  {run.fileName ? <span className="muted run-file-meta">{run.fileName}</span> : null}
                 </td>
                 <td>
                   <StatusPill status={run.status} connectionCaused={run.connectionCaused} />
@@ -197,7 +197,7 @@ export function RunsPage() {
                   </time>
                 </td>
                 <td>
-                  <SourceBadge source={run.source} />
+                  <IntakeBadge intake={run.intake} />
                 </td>
               </tr>
             ))}

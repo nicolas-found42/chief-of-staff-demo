@@ -61,6 +61,28 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
   });
 
+  app.get("/api/runs/:id/artifacts/:name", async (request, reply) => {
+    const { id, name } = request.params as { id: string; name: string };
+    const handle = runs.open(id);
+    if (!handle) {
+      reply.code(404).send({ error: "run not found" });
+      return;
+    }
+    let text: string | null;
+    try {
+      text = handle.readArtifact(name);
+    } catch {
+      reply.code(400).send({ error: "invalid artifact name" });
+      return;
+    }
+    if (text === null) {
+      reply.code(404).send({ error: "artifact not found" });
+      return;
+    }
+    reply.header("content-type", "text/plain; charset=utf-8").send(text);
+  });
+
+
   app.get("/api/config", async () => ({
     config: redactConfig(ctx.configStore.get()),
     defaults: DEFAULT_MODELS,

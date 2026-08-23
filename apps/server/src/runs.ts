@@ -10,25 +10,14 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
-  type ExtractionResult,
   type RunDetail,
   type RunEvent,
-  type RunEventType,
   type RunMeta,
-  type RunSourceType,
   type RunSummary,
+  type ShellEventType,
 } from "@chief-of-staff-demo/shared";
 import { isRunId, newRunId, workspaceLayout } from "./paths.js";
 
-export interface RunAttendee {
-  name: string;
-  email: string | null;
-}
-
-export interface RunContext {
-  meetingDate: string | null;
-  attendees: RunAttendee[];
-}
 
 /** How a Run ends. Both are terminal; `failed` has its own transition. */
 export type RunOutcome =
@@ -61,23 +50,22 @@ export interface RunHandle {
   /** Back to pending with the failure cleared, ready to run again from `fromStage`. */
   reopen(fromStage: string): Readonly<RunMeta>;
   /** Module-named events. The Shell writes the Stage and status ones itself. */
-  appendEvent(type: RunEventType, detail?: Record<string, unknown>): void;
-  readResult(): ExtractionResult | null;
-  writeResult(result: ExtractionResult): void;
-  deleteResult(): void;
-  readContext(): RunContext;
-  readTranscript(): string;
-  writeTranscript(text: string): void;
+  appendEvent(type: string, detail?: Record<string, unknown>): void;
+  /** Module-owned per-Run files. The Shell stores, serves and deletes them and
+   *  never reads inside one. */
+  readArtifact(name: string): string | null;
+  writeArtifact(name: string, text: string): void;
+  deleteArtifact(name: string): void;
 }
 
 export interface NewRun {
-  source: RunSourceType;
-  fileName: string;
+  module: string;
+  moduleVersion: number;
+  intake: string;
+  fileName?: string;
   sourceUrl: string | null;
   externalId: string | null;
-  context: RunContext;
 }
-
 export interface Runs {
   create(input: NewRun): RunHandle;
   open(id: string): RunHandle | null;
@@ -103,7 +91,7 @@ function readMeta(runDir: string): RunMeta {
 
 function appendEvent(
   runDir: string,
-  type: RunEventType,
+  type: string,
   detail?: Record<string, unknown>
 ): void {
   const event: RunEvent = { at: new Date().toISOString(), type };
@@ -132,43 +120,43 @@ function readEvents(runDir: string): RunEvent[] {
   return events;
 }
 
-function readResult(runDir: string): ExtractionResult | null {
+
+function validateArtifactName(name: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name === "meta.json" || name === "events.jsonl") {
+    throw new Error(`Invalid artifact name: ${name}`);
+  }
+}
+
+/* The one place the Shell reads inside a Module's result, and it should not
+   exist. `taskCount` is on RunSummary until a Module supplies its own summary
+   line — see .scratch/relay-to-modules/issues/06-design-the-shell-runs-list.md.
+   Deleting that ticket's field deletes this function. */
+function transcriptTaskCount(runDir: string): number | null {
   const path = join(runDir, "result.json");
   if (!existsSync(path)) {
     return null;
   }
-  return JSON.parse(readFileSync(path, "utf8")) as ExtractionResult;
-}
-
-function readContext(runDir: string): RunContext {
-  const path = join(runDir, "context.json");
-  if (!existsSync(path)) {
-    return { meetingDate: null, attendees: [] };
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { tasks?: unknown };
+    return Array.isArray(parsed.tasks) ? parsed.tasks.length : null;
+  } catch {
+    return null;
   }
-  return JSON.parse(readFileSync(path, "utf8")) as RunContext;
 }
 
-function readTranscript(runDir: string): string {
-  const path = join(runDir, "transcript.txt");
-  if (!existsSync(path)) {
-    return "";
-  }
-  return readFileSync(path, "utf8");
-}
-
-function toSummary(meta: RunMeta, result: ExtractionResult | null): RunSummary {
+function toSummary(meta: RunMeta, runDir: string): RunSummary {
   return {
     id: meta.id,
     createdAt: meta.createdAt,
-    source: meta.source,
-    fileName: meta.fileName,
+    intake: meta.intake,
+    ...(meta.fileName !== undefined ? { fileName: meta.fileName } : {}),
     sourceUrl: meta.sourceUrl,
     status: meta.status,
     skipReason: meta.skipReason,
     /* Additive (D6): present only on connection-caused failures, so legacy
        clients and old metas see no change. */
     ...(meta.connectionCaused ? { connectionCaused: true } : {}),
-    taskCount: result ? result.tasks.length : null,
+    taskCount: transcriptTaskCount(runDir),
   };
 }
 
@@ -185,7 +173,7 @@ class RunHandleImpl implements RunHandle {
   /** Every transition goes through here, so status and timeline cannot drift apart. */
   private transition(
     change: (meta: RunMeta) => void,
-    events: { type: RunEventType; detail?: Record<string, unknown> }[]
+    events: { type: ShellEventType; detail?: Record<string, unknown> }[]
   ): RunMeta {
     const meta = readMeta(this.dir);
     change(meta);
@@ -278,33 +266,29 @@ class RunHandleImpl implements RunHandle {
     );
   }
 
-  appendEvent(type: RunEventType, detail?: Record<string, unknown>): void {
+  appendEvent(type: string, detail?: Record<string, unknown>): void {
     appendEvent(this.dir, type, detail);
   }
 
-  readResult(): ExtractionResult | null {
-    return readResult(this.dir);
+  readArtifact(name: string): string | null {
+    validateArtifactName(name);
+    const path = join(this.dir, name);
+    if (!existsSync(path)) {
+      return null;
+    }
+    return readFileSync(path, "utf8");
   }
 
-  writeResult(result: ExtractionResult): void {
-    writeFileSync(join(this.dir, "result.json"), JSON.stringify(result, null, 2) + "\n", "utf8");
+  writeArtifact(name: string, text: string): void {
+    validateArtifactName(name);
+    writeFileSync(join(this.dir, name), text, "utf8");
   }
 
-  deleteResult(): void {
-    rmSync(join(this.dir, "result.json"), { force: true });
+  deleteArtifact(name: string): void {
+    validateArtifactName(name);
+    rmSync(join(this.dir, name), { force: true });
   }
 
-  readContext(): RunContext {
-    return readContext(this.dir);
-  }
-
-  readTranscript(): string {
-    return readTranscript(this.dir);
-  }
-
-  writeTranscript(text: string): void {
-    writeFileSync(join(this.dir, "transcript.txt"), text, "utf8");
-  }
 }
 
 export function openRuns(workspaceDir: string): Runs {
@@ -319,8 +303,10 @@ export function openRuns(workspaceDir: string): Runs {
       const meta: RunMeta = {
         id,
         createdAt: new Date().toISOString(),
-        source: input.source,
-        fileName: input.fileName,
+        module: input.module,
+        moduleVersion: input.moduleVersion,
+        intake: input.intake,
+        ...(input.fileName !== undefined ? { fileName: input.fileName } : {}),
         sourceUrl: input.sourceUrl,
         externalId: input.externalId,
         status: "pending",
@@ -330,12 +316,10 @@ export function openRuns(workspaceDir: string): Runs {
         failureHint: null,
       };
       writeMeta(dir, meta);
-      writeFileSync(
-        join(dir, "context.json"),
-        JSON.stringify(input.context, null, 2) + "\n",
-        "utf8"
-      );
-      appendEvent(dir, "created", { source: input.source, fileName: input.fileName });
+      appendEvent(dir, "created", {
+        intake: input.intake,
+        ...(input.fileName !== undefined ? { fileName: input.fileName } : {}),
+      });
       return new RunHandleImpl(id, dir);
     },
 
@@ -364,7 +348,7 @@ export function openRuns(workspaceDir: string): Runs {
         }
         const runDir = layout.runDir(entry);
         try {
-          summaries.push(toSummary(readMeta(runDir), readResult(runDir)));
+          summaries.push(toSummary(readMeta(runDir), runDir));
         } catch {
           // Incomplete run dir (e.g. crashed mid-write); skip it.
         }
@@ -382,16 +366,23 @@ export function openRuns(workspaceDir: string): Runs {
         return null;
       }
       const meta = readMeta(dir);
-      const result = readResult(dir);
+      let result: unknown = null;
+      const resultPath = join(dir, "result.json");
+      if (existsSync(resultPath)) {
+        try {
+          result = JSON.parse(readFileSync(resultPath, "utf8"));
+        } catch {
+          result = null;
+        }
+      }
       return {
-        ...toSummary(meta, result),
+        ...toSummary(meta, dir),
         attempts: meta.attempts,
         failedStage: meta.failedStage,
         skipReason: meta.skipReason,
         failureHint: meta.failureHint,
         result,
         events: readEvents(dir),
-        transcript: readTranscript(dir),
       };
     },
   };

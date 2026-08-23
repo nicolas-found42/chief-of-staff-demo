@@ -3,6 +3,11 @@ export interface RunAttendee {
   email: string | null;
 }
 
+export interface TranscriptRunContext {
+  meetingDate: string | null;
+  attendees: RunAttendee[];
+}
+
 export interface RunPromptContext {
   fileName: string;
   sourceId: string;

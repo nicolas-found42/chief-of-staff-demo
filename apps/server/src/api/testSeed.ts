@@ -35,7 +35,7 @@ export async function registerTestSeed(
         bytes = Buffer.from("# Weekly Product Sync\n\nAlice: hello\nBob: hi\n");
       }
       const runId = await ctx.pipeline.startRun({
-        type: "drive",
+        intake: "drive",
         fileName: "sample-transcript.md",
         bytes,
       });
