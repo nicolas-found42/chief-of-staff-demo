@@ -20,8 +20,6 @@ beforeEach(async () => {
   const runs = openRuns(workspaceDir);
 
   app = fastify({ logger: false });
-  const dummyPipeline = { retryRun: async () => ({ status: "pending" }) };
-  const dummyDrive = { status: () => ({ configured: false }) };
   const dummyGoogle = {
     state: async () => ({ state: "unconfigured" }),
     verifySetup: async () => ({}),
@@ -33,9 +31,8 @@ beforeEach(async () => {
   await registerApi(app, {
     runs,
     port: PORT,
-    pipeline: dummyPipeline,
     configStore,
-    driveIntake: dummyDrive,
+    modules: [],
     google: dummyGoogle,
     onConfigChanged: () => {},
   } as unknown as ApiContext);

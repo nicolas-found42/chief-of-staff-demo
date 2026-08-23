@@ -26,6 +26,7 @@ beforeEach(async () => {
     workspaceDir,
     port: PORT,
     configStore,
+    modules: [],
     /* The real module, so the states below are the ones the server derives
        rather than ones the test asserts into existence. Its probe never runs:
        every state here is decided before a token is spent. */

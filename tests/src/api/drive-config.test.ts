@@ -20,11 +20,6 @@ beforeEach(async () => {
   configStore.load();
 
   app = fastify({ logger: false });
-  const dummyDrive = {
-    pollOnce: async () => ({ created: 0 }),
-    start: () => {},
-    stop: () => {},
-  };
   const dummyRuns = {
     list: () => [],
     detail: () => null,
@@ -34,9 +29,8 @@ beforeEach(async () => {
   await registerApi(app, {
     runs: dummyRuns as unknown as ApiContext["runs"],
     port: PORT,
-    pipeline: {} as ApiContext["pipeline"],
     configStore,
-    driveIntake: dummyDrive as unknown as ApiContext["driveIntake"],
+    modules: [],
     google: openGoogleConnection(configStore, PORT, {
       probe: async () => {
         throw new Error("no probe");

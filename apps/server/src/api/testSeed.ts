@@ -2,10 +2,10 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import type { Pipeline } from "../pipeline/run.js";
+import type { RunSourceSpec } from "../modules/transcript/module.js";
 
 export interface TestSeedContext {
-  pipeline: Pipeline;
+  startRun: (spec: RunSourceSpec) => Promise<string>;
 }
 
 /**
@@ -34,7 +34,7 @@ export async function registerTestSeed(
       if (!bytes) {
         bytes = Buffer.from("# Weekly Product Sync\n\nAlice: hello\nBob: hi\n");
       }
-      const runId = await ctx.pipeline.startRun({
+      const runId = await ctx.startRun({
         intake: "drive",
         fileName: "sample-transcript.md",
         bytes,

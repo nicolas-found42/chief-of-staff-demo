@@ -7,10 +7,10 @@ import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { registerTestSeed } from "./api/testSeed.js";
+import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
-import { DriveIntake } from "./intake/drive.js";
-import { Pipeline } from "./pipeline/run.js";
+import { TranscriptHost } from "./modules/transcript/host.js";
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 
@@ -27,12 +27,15 @@ const configStore = new ConfigStore(layout.configFile);
 const config = configStore.load();
 
 const googleConnection = openGoogleConnection(configStore, port);
-/* One owner for the run directory: the Pipeline and the API read and write the
-   same Runs, not two objects over one directory. */
+/* One owner for the run directory: every Module and the API read and write the
+   same Runs, not one object per Module over one directory. */
 const runs = openRuns(workspaceDir);
 
-const pipeline = new Pipeline({
+const transcript = new TranscriptHost({
   runs,
+  workspaceDir,
+  port,
+  getConfig: () => configStore.get(),
   getCompleteJson: () => {
     const current = configStore.get();
     return makeCompleteJson(
@@ -50,18 +53,12 @@ const pipeline = new Pipeline({
     return { provider: current.provider, model: current.model };
   },
   google: googleConnection,
-  getTasklistName: () => configStore.get().tasklistName,
-  log: (message) => console.log(`[pipeline] ${message}`),
+  log: (message) => console.log(`[transcript] ${message}`),
 });
 
-const driveIntake = new DriveIntake({
-  getConfig: () => configStore.get(),
-  workspaceDir,
-  port,
-  startRun: (spec) => pipeline.startRun(spec),
-  log: (message) => console.log(`[drive] ${message}`),
-  google: googleConnection,
-});
+/* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
+   person sees is the web app's Module list, not this one. */
+const modules: HostedModule[] = [transcript];
 
 const app = fastify({ logger: false });
 
@@ -89,17 +86,18 @@ app.setNotFoundHandler((request, reply) => {
 await registerApi(app, {
   runs,
   port,
-  pipeline,
   configStore,
-  driveIntake,
+  modules,
   google: googleConnection,
   onConfigChanged: () => {
-    driveIntake.start();
+    for (const module of modules) {
+      module.start?.();
+    }
   },
 });
 
 if (process.env.ENABLE_TEST_SEED === "1") {
-  await registerTestSeed(app, { pipeline });
+  await registerTestSeed(app, { startRun: (spec) => transcript.startRun(spec) });
 }
 
 await app.listen({ port, host });
@@ -107,10 +105,14 @@ console.log(
   `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
 );
 
-driveIntake.start();
+for (const module of modules) {
+  module.start?.();
+}
 
 const shutdown = async (): Promise<void> => {
-  driveIntake.stop();
+  for (const module of modules) {
+    module.stop?.();
+  }
   await app.close();
   process.exit(0);
 };

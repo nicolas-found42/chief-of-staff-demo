@@ -12,15 +12,19 @@ import {
   RedirectUriMismatchError,
   type GoogleConnection,
 } from "../google/connection.js";
-import type { DriveIntake } from "../intake/drive.js";
-import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
+import type { HostedModule } from "../engine/host.js";
+import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
 export interface ApiContext {
   runs: Runs;
   port: number;
-  pipeline: Pipeline;
   configStore: ConfigStore;
-  driveIntake: DriveIntake;
+  /**
+   * Every Module this Shell hosts. A collection rather than one of each thing:
+   * no route below reaches for "the" Module, and a Run is retried by whichever
+   * Module made it.
+   */
+  modules: HostedModule[];
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void;
@@ -45,8 +49,21 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
 
   app.post("/api/runs/:id/retry", async (request, reply) => {
     const { id } = request.params as { id: string };
+    /* Retried by the Module that made it, found from the Run itself. A Run
+       whose Module this Shell no longer hosts is not retryable — there is
+       nobody left who knows what re-running it would mean. */
+    const handle = runs.open(id);
+    if (!handle) {
+      reply.code(404).send({ error: `Run not found: ${id}` });
+      return;
+    }
+    const owner = ctx.modules.find((module) => module.id === handle.read().module);
+    if (!owner) {
+      reply.code(409).send({ error: `Run is not retryable: ${id}` });
+      return;
+    }
     try {
-      const meta = await ctx.pipeline.retryRun(id);
+      const meta = await owner.retryRun(id);
       return { status: meta.status };
     } catch (error) {
       if (error instanceof RunNotFoundError) {
@@ -172,19 +189,9 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
   });
 
-  app.post("/api/drive/sync", async (_request, reply) => {
-
-    try {
-      const { created } = await ctx.driveIntake.pollOnce();
-      return { created };
-    } catch (error) {
-      reply.code(502).send({
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  /* Remembered intake facts only (D14): served from config and the state
-     file, it makes zero Google calls. */
-  app.get("/api/intake/drive", async () => ctx.driveIntake.status());
+  /* Each Module's own endpoints, mounted last so the Shell's routes are in
+     place first. The Shell holds no list of what a Module serves. */
+  for (const module of ctx.modules) {
+    await module.routes?.(app);
+  }
 }
