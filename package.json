@@ -14,7 +14,7 @@
     "tests"
   ],
   "scripts": {
-    "build": "tsc -b packages/shared apps/server && npm run build --workspace @chief-of-staff-demo/web",
+    "build": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && npm run build --workspace @chief-of-staff-demo/web",
     "dev:server": "npm run build --workspace @chief-of-staff-demo/shared && tsx watch apps/server/src/main.ts",
     "dev:web": "npm run dev --workspace @chief-of-staff-demo/web",
     "start": "node apps/server/dist/main.js",

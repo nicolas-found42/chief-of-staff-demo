@@ -36,11 +36,11 @@ function loadGapi(): Promise<void> {
   document.head.appendChild(script);
 
   gapiPromise = promise;
-  gapiPromise.catch(() => {
+  promise.catch(() => {
     gapiPromise = null;
   });
 
-  return gapiPromise;
+  return promise;
 }
 
 /**
