@@ -5,6 +5,7 @@ test("Drive folder is the only Intake; Runs list and Drive settings are visible"
   // Upload dropzone is gone — Drive folder is the sole Intake
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
+  await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Connections" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Transcript → Tasks" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Choose folder/i })).toBeVisible();
@@ -83,6 +84,12 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
 test("signing in without a client id reports Google's refusal in the page", async ({ page }) => {
   await page.goto("/settings");
 
+  // Credential fields live in the last wizard step (ADR-0013); open it first
+  // (steps are collapsed by default, only step 0 open). The previous layout
+  // kept them always visible, so the test failed when they moved.
+  const steps = page.locator(".setup-steps > li");
+  const last = steps.last().locator("button.wizard-step-toggle");
+  await last.click();
   // Pressing sign-in with nothing filled in saves an empty client and asks the
   // server for a consent URL, which it refuses. That refusal has to land as
   // readable text, not a console error (WCAG 3.3.1).
@@ -173,6 +180,10 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   // never re-titles the tab (WCAG 2.4.2 is satisfied by the app's own name).
   await expect(page).toHaveTitle("Chief of Staff");
 
+  // Home loads provider + runs async (shows Loading… first). Wait for the
+  // sentence that only exists after both resolve.
+  await expect(page.locator(".home-sentence")).toBeVisible();
+
   // A status surface, not Transcript with different chrome: Intake and the runs
   // table stay with the Module that owns them.
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
@@ -185,15 +196,18 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
 
   // Ticket 12 honesty rule: with Google disconnected the Runs page stays
   // silent about watching — no liveness line, no stale promise.
-  await page.goto("/runs");
+  await page.goto("/transcript");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
   await expect(page.getByTestId("intake-liveness")).toHaveCount(0);
 
   // One card per Module, from the same list the tab bar renders, so the two
   // cannot disagree about what exists.
+  await page.goto("/");
+  await expect(page.locator(".home-sentence")).toBeVisible();
   const cards = page.locator(".module-card");
   await expect(cards).toHaveCount(2);
   await expect(cards.filter({ hasText: "Hot Take" })).toContainText("Planned");
-
+ 
   // Into the Module, and back out by the wordmark.
   await cards.first().getByRole("link").click();
   await expect(page).toHaveURL(/\/transcript$/);
@@ -214,8 +228,7 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  await expect(page.locator(".status-badge")).toHaveText("Needs attention", { timeout: 15_000 });
-
+  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText("Needs attention", { timeout: 15_000 });
   await page.goto("/");
   // One clause per rail condition, in the rail's order, with the true total of
   // failures rather than the number of rows shown. No "Nothing needs you." —
@@ -277,6 +290,9 @@ test("credentials saved but no successful sign-in keeps the steps on the page", 
     await expect(page.locator(".wizard")).toBeVisible();
     // And it says why the steps are still here, rather than only "Not connected".
     await expect(page.locator(".banner-warn")).toContainText(/no sign-in has succeeded yet/i);
+    // Credential fields are in the last wizard step, collapsed by default
+    const credSteps = page.locator(".setup-steps > li");
+    await credSteps.last().locator("button.wizard-step-toggle").click();
     // The credentials already stored are the ones in the field, so the person can
     // see and correct the value that failed.
     await expect(page.getByLabel("OAuth client ID")).toHaveValue(
@@ -309,10 +325,11 @@ test("choosing a work account drops the test-user step", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toHaveCount(0);
   // And the step that remains tells them which radio to pick in the console.
   // The open index survives the switch, so progress renumbers against the
-  // shorter list.
+  // shorter list. "Internal" lives in step 3's body (Google Auth Platform)
+  // which is collapsed as done — open it to read the body, or check the
+  // audience hint that is always visible.
+  await expect(page.getByText("Internal")).toBeVisible();
   await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 6");
-  await expect(page.locator(".setup-steps")).toContainText("Internal");
-
   await page.getByRole("radio", { name: /personal account/ }).check();
   await expect(page.locator(".setup-steps > li")).toHaveCount(7);
   await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 7");

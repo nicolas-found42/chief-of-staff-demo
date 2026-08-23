@@ -641,6 +641,7 @@ export function SettingsPage() {
                   disabled={googleStatus?.state !== "connected" || picking}
                   aria-describedby={googleStatus?.state !== "connected" ? "drive-picker-disabled-hint" : undefined}
                 >
+                  {picking ? "Opening…" : form.driveFolderId ? "Change folder" : "Choose folder"}
                 </button>
               </div>
               {googleStatus?.state !== "connected" ? (
