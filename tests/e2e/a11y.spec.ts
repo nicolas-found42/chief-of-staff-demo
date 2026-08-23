@@ -9,7 +9,11 @@ async function openRun(page: Page): Promise<void> {
   if (!res.ok()) throw new Error(`seed failed: ${res.status()} ${await res.text()}`);
   const { runId } = (await res.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
+  // Scoped: the detail page also renders source badges and per-task status
+  // badges, and a bare .status-badge is a strict-mode violation.
+  await expect(page.locator(".run-meta .status-badge")).toHaveText("Needs attention", {
+    timeout: 15_000,
+  });
 }
 
 /** Reports the element that currently holds focus, or a marker if it was dropped. */
@@ -252,6 +256,12 @@ test("switching provider announces the model it rewrote", async ({ page }) => {
   // The Model field is rewritten by a control the user did touch; a sighted user
   // sees it happen and everyone else needs it said (WCAG 3.2.2).
   await page.goto("/settings");
+  // Settled connections live behind Manage (D11); the fields are still there.
+  await page.getByRole("heading", { name: "Connections" }).waitFor();
+  const manage = page.getByText("Manage provider", { exact: true });
+  if (await manage.isVisible()) {
+    await manage.click();
+  }
   const notice = page.locator('.field p[role="status"]');
   await expect(notice).toHaveText("");
   await page.getByLabel("Provider", { exact: true }).selectOption("anthropic");
@@ -376,7 +386,8 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
-  for (const name of ["Found42 — Chief of Staff", "Transcript → Tasks", "Hot Take", "Settings"]) {
+  // A planned Module holds no tab (ADR-0014): the bar lists live Modules only.
+  for (const name of ["Found42 — Chief of Staff", "Transcript → Tasks", "Settings"]) {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name, exact: true })).toBeFocused();
   }

@@ -32,8 +32,10 @@ The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape ar
 
 ## Getting started
 
-Docker Desktop runs the whole app. Node, npm and a toolchain are only needed to work on the code
-(see [Working on the code](#working-on-the-code)).
+**Docker is the only supported way to run this app.** Running it and changing it both happen in
+the container (see [Working on the code](#working-on-the-code)), so the one port, the one workspace
+mount and the one registered Google redirect URI hold everywhere — there is no native path to keep
+in sync with them.
 
 1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/). It has to
    be **running**, not just installed — the whale in the menu bar stops animating when it is ready.
@@ -114,22 +116,39 @@ has.
 
 ## Working on the code
 
-Not needed to run the app — Docker covers that. This is the native path, for changing it.
+Same container, one extra flag. `--watch` rebuilds the image and restarts the app whenever
+`apps/server`, `apps/web`, `packages/shared`, `tsconfig.base.json`, the `Dockerfile` or a manifest
+changes ([`docker-compose.yml`](docker-compose.yml), `develop.watch`):
 
 ```bash
-npm install
-npm run build
-npm start            # http://localhost:4317
+docker compose up --build --watch
 ```
+
+Run it in the foreground, as above: the rebuild log and the server's own log are the feedback, and
+`Ctrl-C` stops it. It is a rebuild loop, not hot reload — a change costs about half a minute
+(`npm ci` stays cached until a manifest changes; the `npm run build` layer is what re-runs), and
+the browser needs a refresh afterwards. That is the price of having no second runtime: no Vite dev
+server on 5173, so no second origin and no second redirect URI to register with Google.
+
+[`.claude/launch.json`](.claude/launch.json) runs exactly this command, so an agent previewing the
+app gets the same container you do. It pins port 4317 (`autoPort: false`) rather than letting the
+harness pick a free one, for the same redirect-URI reason.
+
+Node and npm are for the test suite and typechecking only — never for serving the app:
 
 ```bash
-npm run dev:server   # tsx watch on :4317
-npm run dev:web      # Vite dev server with /api proxied to :4317
+npm install          # once, for tests and editor typechecking
+npm run build        # compile without a rebuild, to see type errors fast
 ```
 
-Node 20+ and npm. Environment: `PORT` (default 4317 — the Google redirect URI is registered for
-this port; change both together), `WORKSPACE_DIR` (default `./workspace`), `HOST` (default
-`127.0.0.1`; only a container should change this).
+The `start`, `dev:server` and `dev:web` scripts in `package.json` predate this and are unsupported
+leftovers; nothing in the image uses them (the `Dockerfile` runs `node apps/server/dist/main.js`
+directly).
+
+Environment (set in the `Dockerfile`, not on the host): `PORT` (4317 — the Google redirect URI is
+registered for this port; change both together), `WORKSPACE_DIR` (`/app/workspace`, the bind
+mount), `HOST` (`0.0.0.0` inside the container; the host-side `127.0.0.1` binding in
+`docker-compose.yml` is what keeps the app private).
 
 
 ## Workspace layout

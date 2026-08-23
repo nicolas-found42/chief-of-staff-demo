@@ -17,10 +17,18 @@ linking into the Modules. Not a Module: it has no workflow of its own.
 _Avoid_: Dashboard, landing page
 
 **Module**:
-One workflow, presented as a tab. A Module contributes what is specific to its workflow and
-relies on the Shell for everything generic. It is **planned** when its tab exists but its Runs,
-Intakes and Output Adapters do not, and **live** once they do.
+One workflow. A Module contributes what is specific to its workflow and relies on the Shell for
+everything generic. It is **planned** until its Runs, Intakes and Output Adapters exist and
+**live** once they do; independently of that, it either has something for a person to look at,
+and is presented as a tab, or it is **headless**. A planned Module is announced on Home and
+holds no tab.
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
+
+**Headless Module**:
+A live Module with nothing for a person to look at. It holds no tab, and its only presence is
+its Runs in Home's recent activity. Headless is not a stage of building: a headless Module is
+finished.
+_Avoid_: Background Module, planned Module (a planned Module is unbuilt; a headless one works)
 
 **Hot Take**:
 A planned Module that turns a link or transcript into a draft LinkedIn post. Its Runs, Intakes, and Output Adapters are not yet implemented.
@@ -65,6 +73,7 @@ _Avoid_: Data dir, store
 The third-party workflow tool Found42 is migrating off. Its export is the source list of
 candidate Modules.
 _Avoid_: relay.app, the automation tool
+
 
 **EdgeScale cube**:
 The 3U on-premise server (Intel CPU, Nvidia GPU) that will eventually host this app and run

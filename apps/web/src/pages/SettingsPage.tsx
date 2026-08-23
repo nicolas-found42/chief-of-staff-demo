@@ -17,6 +17,16 @@ const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
   { value: "ollama", label: "Ollama (local model)" },
 ];
 
+/** Compact one-word names for the settled-connection line (D11). */
+const PROVIDER_SHORT: Record<ProviderId, string> = {
+  mock: "Mock",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  openrouter: "OpenRouter",
+  gemini: "Google Gemini",
+  ollama: "Ollama",
+};
+
 /**
  * Where each provider issues API keys. Without this a beginner has to work out
  * which of a provider's several consoles holds them, from a Settings page that
@@ -56,12 +66,13 @@ export function SettingsPage() {
   /* One flag per action, not one for the page: a shared flag marks controls
      aria-disabled during a request they have nothing to do with, so a screen
      reader reports them as unavailable when they are not (WCAG 4.1.2). */
+  const [copiedCorrectUri, setCopiedCorrectUri] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [checkingGoogle, setCheckingGoogle] = useState(false);
   const [jsonNotice, setJsonNotice] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [modelNotice, setModelNotice] = useState("");
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
@@ -352,6 +363,123 @@ export function SettingsPage() {
     setJsonNotice("Client ID and secret read from the file. Press Save and sign in with Google.");
   };
 
+  /* D11: two sections. Settled connections shrink to one line plus a Manage
+     disclosure; fresh or broken things keep their full weight. */
+  const googleSettled = googleStatus?.state === "connected";
+  const providerNeedsKey = form.provider !== "mock" && form.provider !== "ollama";
+  const providerSettled = !providerNeedsKey || payload.config.apiKey.set;
+
+  const providerFields = (
+    <>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="provider">Provider</label>
+          <select
+            id="provider"
+            value={form.provider}
+            onChange={(event) => changeProvider(event.target.value as ProviderId)}
+          >
+            {PROVIDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="model">Model</label>
+          <input
+            id="model"
+            aria-describedby="model-hint"
+            value={form.model}
+            placeholder={payload.defaults[form.provider] || "model id"}
+            onChange={(event) => setField("model", event.target.value)}
+          />
+          <p id="model-hint" className="muted field-hint">
+            {payload.defaults[form.provider]
+              ? `Default for this provider: ${payload.defaults[form.provider]}`
+              : "Enter the model id to use."}
+          </p>
+          <p className="visually-hidden" role="status">
+            {modelNotice}
+          </p>
+        </div>
+        <div className="field">
+          <label htmlFor="api-key">Provider API key</label>
+          <input
+            id="api-key"
+            aria-describedby={keyUrl ? "api-key-hint api-key-source" : "api-key-hint"}
+            type="password"
+            value={form.apiKey}
+            autoComplete="off"
+            onChange={(event) => setField("apiKey", event.target.value)}
+          />
+          <p id="api-key-hint" className="muted field-hint">
+            {secretHint(payload.config.apiKey.set, payload.config.apiKey.hint)}
+          </p>
+          {keyUrl && (
+            <p id="api-key-source" className="muted field-hint">
+              Sign in and create an API key at{" "}
+              <a className="step-link" href={keyUrl} target="_blank" rel="noreferrer">
+                {keyUrl.replace("https://", "")}
+              </a>
+            </p>
+          )}
+        </div>
+      </div>
+      {form.provider === "ollama" && (
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="ollama-base-url">Ollama base URL</label>
+            <input
+              id="ollama-base-url"
+              aria-describedby="ollama-base-url-hint"
+              value={form.ollamaBaseUrl}
+              placeholder="http://127.0.0.1:11434"
+              onChange={(event) => setField("ollamaBaseUrl", event.target.value)}
+            />
+            <p id="ollama-base-url-hint" className="muted field-hint">
+              Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in
+              a container and Ollama runs on the host. No API key needed.
+            </p>
+          </div>
+        </div>
+      )}
+      {form.provider === "mock" && (
+        <p className="muted">
+          Mock mode returns workspace/mock-result.json (or a skip stub when absent) — useful for
+          demos and tests. No API key needed.
+        </p>
+      )}
+    </>
+  );
+
+  /* The connection's own card — sign-in state, disconnect, client replacement,
+     check — exactly as before, only sometimes behind Manage (D11). */
+  const googleCard = (
+    <GoogleConnect
+      status={googleStatus}
+      clientId={form.googleClientId}
+      clientSecret={form.googleClientSecret}
+      secretHint={secretHint(
+        payload.config.google.clientSecret.set,
+        payload.config.google.clientSecret.hint
+      )}
+      onChange={(field, value) =>
+        setField(field === "clientId" ? "googleClientId" : "googleClientSecret", value)
+      }
+      onSignIn={() => void signInGoogle()}
+      onDisconnect={() => void disconnectGoogle()}
+      onCheck={() => void checkGoogle()}
+      check={googleCheck}
+      onClientJson={(file) => void loadClientJson(file)}
+      jsonNotice={jsonNotice}
+      signingIn={signingIn}
+      disconnecting={disconnecting}
+      checking={checkingGoogle}
+    />
+  );
+
   return (
     <div className="page">
       <h1 ref={headingRef} tabIndex={-1}>
@@ -393,6 +521,30 @@ export function SettingsPage() {
           Google connection failed — try again.
         </div>
       )}
+      {googleBanner === "redirect_uri_mismatch" && (
+        <div className="banner banner-error" role="alert">
+          {/* D13: the one OAuth failure with a mechanical fix gets the fix in
+              the message — the correct value, one click away, instead of an
+              error to decode against the console. */}
+          <span>
+            Google refused the sign-in because the redirect URI registered on your OAuth client
+            does not match this app&apos;s. Copy the correct value and paste it into your
+            client&apos;s Authorized redirect URIs exactly as-is, then sign in again.
+          </span>
+          <button
+            type="button"
+            className="action-button"
+            onClick={() => {
+              void navigator.clipboard.writeText(googleStatus?.redirectUri ?? "").then(
+                () => setCopiedCorrectUri(true),
+                () => setCopiedCorrectUri(false)
+              );
+            }}
+          >
+            {copiedCorrectUri ? "Copied — paste it into Google" : "Copy correct URI"}
+          </button>
+        </div>
+      )}
       {error && (
         <div className="banner banner-error" role="alert">
           {error}
@@ -411,132 +563,66 @@ export function SettingsPage() {
           void save();
         }}
       >
-        {/* Each card is a labelled group so the two "API key" fields are
+        {/* Each card is a labelled group so same-named fields stay
             distinguishable to anyone navigating by form control (1.3.1). */}
-        <div className="card" role="group" aria-labelledby="group-provider">
-          <h2 id="group-provider">Extraction provider</h2>
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="provider">Provider</label>
-              <select
-                id="provider"
-                value={form.provider}
-                onChange={(event) => changeProvider(event.target.value as ProviderId)}
-              >
-                {PROVIDER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="model">Model</label>
-              <input
-                id="model"
-                aria-describedby="model-hint"
-                value={form.model}
-                placeholder={payload.defaults[form.provider] || "model id"}
-                onChange={(event) => setField("model", event.target.value)}
-              />
-              <p id="model-hint" className="muted field-hint">
-                {payload.defaults[form.provider]
-                  ? `Default for this provider: ${payload.defaults[form.provider]}`
-                  : "Enter the model id to use."}
-              </p>
-              <p className="visually-hidden" role="status">
-                {modelNotice}
-              </p>
-            </div>
-            <div className="field">
-              <label htmlFor="api-key">Provider API key</label>
-              <input
-                id="api-key"
-                aria-describedby={
-                  keyUrl ? "api-key-hint api-key-source" : "api-key-hint"
-                }
-                type="password"
-                value={form.apiKey}
-                autoComplete="off"
-                onChange={(event) => setField("apiKey", event.target.value)}
-              />
-              <p id="api-key-hint" className="muted field-hint">
-                {secretHint(payload.config.apiKey.set, payload.config.apiKey.hint)}
-              </p>
-              {keyUrl && (
-                <p id="api-key-source" className="muted field-hint">
-                  Sign in and create an API key at{" "}
-                  <a className="step-link" href={keyUrl} target="_blank" rel="noreferrer">
-                    {keyUrl.replace("https://", "")}
-                  </a>
+        <section className="settings-section" aria-labelledby="section-connections">
+          <h2 id="section-connections">Connections</h2>
+
+          <div className="card" role="group" aria-labelledby="group-google">
+            <h3 id="group-google">Google</h3>
+            {googleSettled ? (
+              <>
+                <p className="connection-summary" role="status">
+                  <span className="ok">Connected</span>
+                  {googleStatus?.email ? ` as ${googleStatus.email}` : ""}
                 </p>
-              )}
-            </div>
+                <details className="disclosure">
+                  <summary>Manage Google connection</summary>
+                  <div className="disclosure-body">{googleCard}</div>
+                </details>
+              </>
+            ) : (
+              /* Fresh or broken: the full card keeps its weight, because the
+                 fix is on it. */
+              googleCard
+            )}
           </div>
-          {form.provider === "ollama" && (
+
+          <div className="card" role="group" aria-labelledby="group-provider">
+            <h3 id="group-provider">Extraction provider</h3>
+            {providerSettled ? (
+              <>
+                <p className="connection-summary">
+                  {PROVIDER_SHORT[form.provider]}
+                  {form.model ? ` · ${form.model}` : ""}
+                </p>
+                <details className="disclosure">
+                  <summary>Manage provider</summary>
+                  <div className="disclosure-body">{providerFields}</div>
+                </details>
+              </>
+            ) : (
+              /* A provider that needs a key and has none stored is not settled:
+                 the fields stay out where they can be filled. */
+              providerFields
+            )}
+          </div>
+        </section>
+
+        <section className="settings-section" aria-labelledby="section-tuning">
+          <h2 id="section-tuning">Transcript → Tasks</h2>
+          <div className="card" role="group" aria-labelledby="group-drive">
             <div className="form-grid">
               <div className="field">
-                <label htmlFor="ollama-base-url">Ollama base URL</label>
+                <label htmlFor="tasklist-name">Task list name</label>
                 <input
-                  id="ollama-base-url"
-                  aria-describedby="ollama-base-url-hint"
-                  value={form.ollamaBaseUrl}
-                  placeholder="http://127.0.0.1:11434"
-                  onChange={(event) => setField("ollamaBaseUrl", event.target.value)}
+                  id="tasklist-name"
+                  value={form.tasklistName}
+                  onChange={(event) => setField("tasklistName", event.target.value)}
                 />
-                <p id="ollama-base-url-hint" className="muted field-hint">
-                  Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in
-                  a container and Ollama runs on the host. No API key needed.
-                </p>
               </div>
             </div>
-          )}
-          {form.provider === "mock" && (
-            <p className="muted">
-              Mock mode returns workspace/mock-result.json (or a skip stub when absent) — useful for
-              demos and tests. No API key needed.
-            </p>
-          )}
-        </div>
-
-        <div className="card" role="group" aria-labelledby="group-google">
-          <h2 id="group-google">Google</h2>
-          <GoogleConnect
-            status={googleStatus}
-            clientId={form.googleClientId}
-            clientSecret={form.googleClientSecret}
-            secretHint={secretHint(
-              payload.config.google.clientSecret.set,
-              payload.config.google.clientSecret.hint
-            )}
-            onChange={(field, value) =>
-              setField(field === "clientId" ? "googleClientId" : "googleClientSecret", value)
-            }
-            onSignIn={() => void signInGoogle()}
-            onDisconnect={() => void disconnectGoogle()}
-            onCheck={() => void checkGoogle()}
-            check={googleCheck}
-            onClientJson={(file) => void loadClientJson(file)}
-            jsonNotice={jsonNotice}
-            signingIn={signingIn}
-            disconnecting={disconnecting}
-            checking={checkingGoogle}
-          />
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="tasklist-name">Task list name</label>
-              <input
-                id="tasklist-name"
-                value={form.tasklistName}
-                onChange={(event) => setField("tasklistName", event.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="card" role="group" aria-labelledby="group-drive">
-          <h2 id="group-drive">Drive transcripts</h2>
-          <p className="muted">Transcripts are read from a single Google Drive folder. Pick the folder your transcript service writes to, then enable polling.</p>
+            <p className="muted">Transcripts are read from a single Google Drive folder. Pick the folder your transcript service writes to, then enable polling.</p>
           <div className="form-grid">
             <div className="field">
               <label htmlFor="drive-folder">Drive folder</label>
@@ -550,11 +636,11 @@ export function SettingsPage() {
                 />
                 <button
                   type="button"
+                  className="action-button"
                   onClick={() => void chooseFolder()}
                   disabled={googleStatus?.state !== "connected" || picking}
                   aria-describedby={googleStatus?.state !== "connected" ? "drive-picker-disabled-hint" : undefined}
                 >
-                  {picking ? "Opening…" : form.driveFolderId ? "Change folder" : "Choose folder"}
                 </button>
               </div>
               {googleStatus?.state !== "connected" ? (
@@ -604,7 +690,7 @@ export function SettingsPage() {
             </label>
           </div>
           <div className="field-row">
-            <button type="button" onClick={syncDrive} aria-disabled={syncing}>
+            <button type="button" className="action-button" onClick={syncDrive} aria-disabled={syncing}>
               Sync now
             </button>
             <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
@@ -613,8 +699,10 @@ export function SettingsPage() {
             Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs (exported as text). Other files are ignored.
           </p>
         </div>
+        </section>
+
         <div className="field-row">
-          <button type="submit" className="primary" aria-disabled={saving}>
+          <button type="submit" className="primary action-button" aria-disabled={saving}>
             {saving ? "Saving…" : "Save settings"}
           </button>
         </div>

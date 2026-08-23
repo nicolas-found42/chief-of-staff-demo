@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { RunDetail } from "@chief-of-staff-demo/shared";
-import {
-  SourceBadge,
-  StatusPill,
-  formatTime,
-  stageLabel,
-} from "../components/StatusPill";
+import { SourceBadge, StatusPill } from "../components/StatusPill";
+import { buildTimeline, formatDuration, formatTime, stageLabel } from "../display";
 import { api, errorMessage } from "../client";
 import { useIsLoadedEntry } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -135,6 +131,63 @@ export function RunDetailPage() {
   // A skipped run carries an empty summary. Rendering the heading and card
   // anyway promised a section that had nothing in it (WCAG 1.3.1).
   const summary = result?.summary.trim() ?? "";
+  const timeline = buildTimeline(detail.events, result);
+  const completedStages = timeline.filter((entry) => entry.state === "done");
+  const failedEntry = timeline.find((entry) => entry.state === "failed");
+  /* The transcript Module's stage sequence (ADR-0003): a stage the timeline
+     never met, past the one that failed, did not run. Presentation only — the
+     server owns the retry policy this mirrors. */
+  const STAGE_SEQUENCE = ["convert", "extract", "outputs"];
+  const notCompleted: string[] = [];
+  if (failedEntry) {
+    notCompleted.push(`${failedEntry.label} did not finish.`);
+  }
+  for (const stage of STAGE_SEQUENCE) {
+    if (!timeline.some((entry) => entry.stage === stage)) {
+      notCompleted.push(`${stageLabel(stage)} never ran.`);
+    }
+  }
+  /* Mirrors Pipeline.retryRun's policy: a convert failure has nothing cached
+     to resume from. */
+  const retryable =
+    detail.status === "failed" && detail.failedStage !== null && detail.failedStage !== "convert";
+  /* The failure records its cause additively (D6); a legacy meta without the
+     marker reads — truthfully — as an ordinary failure. */
+  const connectionCaused = detail.connectionCaused === true;
+  /* The receipt (D9): counts and links come from the event log — the record —
+     never from re-deriving what the pipeline must have done. */
+  const createdTaskCount = detail.events.filter((e) => e.type === "google_task_created").length;
+  const createdDraftCount = detail.events.filter((e) => e.type === "gmail_draft_created").length;
+  const notDone = detail.events
+    .filter((e) => e.type === "google_task_error" || e.type === "gmail_draft_error")
+    .map((e) => {
+      const what = e.detail?.title ?? e.detail?.subject;
+      return {
+        what: typeof what === "string" ? what : "An item",
+        kind: e.type === "google_task_error" ? "task" : "draft",
+        why: typeof e.detail?.error === "string" ? e.detail.error : "it could not be created",
+      };
+    });
+  /* Deep links: Google returned each task's webViewLink at creation time, so
+     the URL is Google's own, not one this app guessed. Queued per title and
+     consumed in order, so duplicate titles still pair correctly. Rebuilt every
+     render, so the consume is safe. */
+  const taskLinkQueues = new Map<string, string[]>();
+  for (const event of detail.events) {
+    if (event.type !== "google_task_created") {
+      continue;
+    }
+    const title = event.detail?.title;
+    if (typeof title !== "string") {
+      continue;
+    }
+    const link = event.detail?.webViewLink;
+    const queue = taskLinkQueues.get(title) ?? [];
+    if (typeof link === "string") {
+      queue.push(link);
+    }
+    taskLinkQueues.set(title, queue);
+  }
 
   return (
     <div className="page">
@@ -157,7 +210,7 @@ export function RunDetailPage() {
       <div className="run-meta">
         <span role="status">
           <span className="visually-hidden">Status: </span>
-          <StatusPill status={detail.status} />
+          <StatusPill status={detail.status} connectionCaused={detail.connectionCaused} />
         </span>
         <span>
           <span className="visually-hidden">, Source: </span>
@@ -188,17 +241,44 @@ export function RunDetailPage() {
 
       {detail.status === "failed" && (
         <div className="banner banner-error" role="alert">
-          {detail.failureHint ?? "This run failed."}
-          {/* aria-disabled, not disabled: a disabled button is blurred and
-              dropped from the tab order the moment it is pressed. */}
-          <button
-            type="button"
-            ref={retryRef}
-            onClick={retry}
-            aria-disabled={retrying}
-          >
-            {retrying ? "Retrying…" : "Retry"}
-          </button>
+          {/* Impact first (D10): the plain-language cause, then what landed in
+              the world versus what did not, then the way out. Retry resumes
+              from the failed stage — that semantics already exist; this is
+              presentation only. */}
+          <div className="failure-impact">
+            <p className="failure-cause">
+              {detail.failureHint ?? "This run failed."}
+            </p>
+            {completedStages.length > 0 && (
+              <p>
+                Already completed:{" "}
+                {completedStages.map((entry) => entry.label).join(", ")}.
+              </p>
+            )}
+            {notCompleted.length > 0 && (
+              <p>Not completed: {notCompleted.join(" ")}</p>
+            )}
+          </div>
+          <div className="field-row">
+            {/* aria-disabled, not disabled: a disabled button is blurred and
+                dropped from the tab order the moment it is pressed. */}
+            {retryable && (
+              <button
+                type="button"
+                className="action-button"
+                ref={retryRef}
+                onClick={retry}
+                aria-disabled={retrying}
+              >
+                {retrying ? "Retrying…" : "Retry"}
+              </button>
+            )}
+            {connectionCaused && (
+              <Link to="/settings" className="action-button step-link">
+                Reconnect
+              </Link>
+            )}
+          </div>
         </div>
       )}
       {detail.status === "skipped" && detail.skipReason && (
@@ -206,19 +286,103 @@ export function RunDetailPage() {
           Not a transcript — {detail.skipReason}
         </div>
       )}
+      {/* The receipt (D9): what came in, what was concluded, what was created
+          in the world, what was not. Renders whatever the run has — a skipped
+          or failed run still gets came-in and not-done. */}
+      <div className="card receipt">
+        <dl className="receipt-grid">
+          <div className="receipt-row">
+            <dt>Came in</dt>
+            <dd>
+              {detail.fileName}
+              {detail.sourceUrl && (
+                <>
+                  {" — "}
+                  <a href={detail.sourceUrl} target="_blank" rel="noreferrer">
+                    in Drive<span className="visually-hidden"> (opens in a new tab)</span>
+                  </a>
+                </>
+              )}
+            </dd>
+          </div>
+          {summary && (
+            <div className="receipt-row">
+              <dt>Concluded</dt>
+              <dd>{summary}</dd>
+            </div>
+          )}
+          <div className="receipt-row">
+            <dt>Created</dt>
+            <dd>
+              {detail.status === "skipped" && !result
+                ? "Nothing — the file was not a transcript."
+                : detail.status === "failed" && createdTaskCount + createdDraftCount === 0
+                  ? "Nothing — the run did not reach output creation."
+                  : `${createdTaskCount === 1 ? "1 task" : `${createdTaskCount} tasks`} in Google Tasks, ${
+                      createdDraftCount === 1 ? "1 Gmail draft" : `${createdDraftCount} Gmail drafts`
+                    } prepared — nothing was sent.`}
+            </dd>
+          </div>
+          <div className="receipt-row">
+            <dt>Not done</dt>
+            <dd>
+              {notDone.length === 0 ? (
+                "Nothing outstanding."
+              ) : (
+                <ul className="not-done-list">
+                  {notDone.map((item, index) => (
+                    <li key={index}>
+                      {item.what} — {item.kind} not created: {item.why}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* The default view answers "what did my chief of staff do?" before
+          "what did the engine do?" (D8): one entry per Stage, derived at
+          render from the append-only log. */}
+      {timeline.length > 0 && (
+        <>
+          <h2>What happened</h2>
+          <ol className="timeline" aria-label="Stage timeline">
+            {timeline.map((entry) => (
+              <li key={entry.stage} className="timeline-row">
+                <div className="timeline-head">
+                  <span className="timeline-name">{entry.label}</span>
+                  <span
+                    className={`status-badge ${
+                      entry.state === "failed"
+                        ? "status-failed"
+                        : entry.state === "running"
+                          ? "status-active"
+                          : "status-done"
+                    }`}
+                  >
+                    {entry.state === "failed" ? "Failed" : entry.state === "running" ? "Running" : "Done"}
+                  </span>
+                  {entry.durationMs !== null && (
+                    <span className="muted">{formatDuration(entry.durationMs)}</span>
+                  )}
+                </div>
+                {entry.outcome && <p className="timeline-outcome">{entry.outcome}</p>}
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
 
       {result && (
         <>
-          {summary && (
-            <>
-              <h2>Summary</h2>
-              <div className="card">
-                <p>{summary}</p>
-              </div>
-            </>
-          )}
-
           <h2>Tasks ({result.tasks.length})</h2>
+          <p className="muted">
+            {createdTaskCount === result.tasks.length
+              ? `All ${createdTaskCount === 1 ? "1 task was" : `${createdTaskCount} tasks were`} created in Google Tasks.`
+              : `${createdTaskCount} of ${result.tasks.length} were created in Google Tasks.`}
+          </p>
           {result.tasks.length > 0 ? (
             /* Focusable for the same reason as the events log below: the
                container scrolls at narrow widths and high zoom, and without a
@@ -241,15 +405,30 @@ export function RunDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {result.tasks.map((task, index) => (
-                    <tr key={index}>
-                      <td>{task.title}</td>
-                      <td>{task.owner ?? "—"}</td>
-                      <td>{task.due ?? "—"}</td>
-                      <td>{task.notes ?? ""}</td>
-                      <td className="muted">{task.sourceQuote ? `“${task.sourceQuote}”` : ""}</td>
-                    </tr>
-                  ))}
+                  {result.tasks.map((task, index) => {
+                    const queue = taskLinkQueues.get(task.title);
+                    const link = queue?.shift() ?? null;
+                    return (
+                      <tr key={index}>
+                        <td>
+                          {task.title}
+                          {link && (
+                            <>
+                              {" — "}
+                              <a href={link} target="_blank" rel="noreferrer">
+                                Open in Google Tasks
+                                <span className="visually-hidden"> (opens in a new tab)</span>
+                              </a>
+                            </>
+                          )}
+                        </td>
+                        <td>{task.owner ?? "—"}</td>
+                        <td>{task.due ?? "—"}</td>
+                        <td>{task.notes ?? ""}</td>
+                        <td className="muted">{task.sourceQuote ? `“${task.sourceQuote}”` : ""}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -258,6 +437,13 @@ export function RunDetailPage() {
           )}
 
           <h2>Drafts ({result.drafts.length})</h2>
+          {result.drafts.length > 0 && (
+            <p className="muted">
+              Prepared{" "}
+              {result.drafts.length === 1 ? "1 Gmail draft" : `${result.drafts.length} Gmail drafts`} —
+              nothing was sent.
+            </p>
+          )}
           {result.drafts.map((draft, index) => (
             <div key={index} className="card draft-card">
               {/* A <strong> beside its value is a label only to someone who can
@@ -277,41 +463,50 @@ export function RunDetailPage() {
         </>
       )}
 
-      <h2 id="events-heading">Events</h2>
-      {/* The log prints stage names and raw JSON details. That is what it is
-          for, but a region users can navigate into should say so before they
-          arrive rather than leave them to work it out from the contents. */}
-      <p className="muted" id="events-note">
-        Diagnostic record of the pipeline, oldest first. Technical detail is shown as raw JSON.
-      </p>
-      {/* Focusable so the capped-height scroller can be reached and scrolled
-          with the keyboard (2.1.1). */}
-      <div
-        className="events-log"
-        tabIndex={0}
-        role="region"
-        aria-labelledby="events-heading"
-        aria-describedby="events-note"
-      >
-        {detail.events.map((event, index) => (
-          <div key={index} className="event-row">
-            <span className="muted">{formatTime(event.at)}</span> <strong>{event.type}</strong>
-            {event.detail ? <span className="muted"> {JSON.stringify(event.detail)}</span> : null}
+      {/* Everything engine-facing sits one disclosure level down (D8). The
+          events log and transcript render exactly as they did — they are the
+          record, not a summary of it. */}
+      <details className="disclosure">
+        <summary>Technical details</summary>
+        <div className="disclosure-body">
+          <h2 id="events-heading">Events</h2>
+          {/* The log prints stage names and raw JSON details. That is what it
+              is for, but a region users can navigate into should say so before
+              they arrive rather than leave them to work it out from the
+              contents. */}
+          <p className="muted" id="events-note">
+            Diagnostic record of the pipeline, oldest first. Technical detail is shown as raw JSON.
+          </p>
+          {/* Focusable so the capped-height scroller can be reached and
+              scrolled with the keyboard (2.1.1). */}
+          <div
+            className="events-log"
+            tabIndex={0}
+            role="region"
+            aria-labelledby="events-heading"
+            aria-describedby="events-note"
+          >
+            {detail.events.map((event, index) => (
+              <div key={index} className="event-row">
+                <span className="muted">{formatTime(event.at)}</span>{" "}
+                <strong>{event.type}</strong>
+                {event.detail ? (
+                  <span className="muted"> {JSON.stringify(event.detail)}</span>
+                ) : null}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <h2>Transcript</h2>
-      <details>
-        <summary className="muted">Show transcript text</summary>
-        <pre
-          className="artifact-pre"
-          tabIndex={0}
-          role="region"
-          aria-label="Transcript text"
-        >
-          {detail.transcript}
-        </pre>
+          <h2>Transcript</h2>
+          <pre
+            className="artifact-pre"
+            tabIndex={0}
+            role="region"
+            aria-label="Transcript text"
+          >
+            {detail.transcript}
+          </pre>
+        </div>
       </details>
     </div>
   );

@@ -64,7 +64,7 @@ function fakeGoogle(): FakeGoogle {
         ...(item.due ? { due: item.due } : {}),
       };
       google.calls.tasks.push(task);
-      return `task-${google.calls.tasks.length}`;
+      return { googleId: `task-${google.calls.tasks.length}`, webViewLink: `https://tasks.google.com/task/task-${google.calls.tasks.length}` };
     },
     createDraft: async (draft) => {
       google.calls.drafts.push({ to: draft.to ?? "", subject: draft.subject });
@@ -305,6 +305,7 @@ describe("Pipeline", () => {
     const failed = detailOf(runId);
     expect(failed!.status).toBe("failed");
     expect(failed!.failureHint).toBe(googleFailureHint("expired"));
+    expect(failed!.connectionCaused).toBe(true);
     const event = failed!.events.find((entry) => entry.type === "google_unavailable");
     expect(event?.detail?.state).toBe("expired");
   });
@@ -327,6 +328,9 @@ describe("Pipeline", () => {
     expect(failed!.status).toBe("failed");
     expect(failed!.failedStage).toBe("outputs");
     expect(failed!.failureHint).toBe(googleFailureHint("expired"));
+    /* Classified at the failure site where the connection already knows (D6):
+       the marker is how every surface later renders Needs attention. */
+    expect(failed!.connectionCaused).toBe(true);
     /* Not per-item error events: a dead grant is not one bad task, and every
        remaining call would fail the same way. */
     expect(failed!.events.filter((entry) => entry.type === "google_task_error")).toHaveLength(0);

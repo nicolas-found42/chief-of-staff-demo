@@ -309,6 +309,19 @@ export interface PickerTokenResponse {
   expiresAt: string | null;
 }
 
+/** GET /api/intake/drive response: what the Drive Intake remembers (D14).
+ *  Served from config and the state file; it never asks Google anything. */
+export interface DriveIntakeStatus {
+  enabled: boolean;
+  configured: boolean;
+  folderName: string;
+  pollIntervalMinutes: number;
+  /** Null until the first poll of this process completes — after a restart
+   *  there is no last-checked time to claim. */
+  lastPollAt: string | null;
+  lastPollOutcome: "ok" | "failed" | null;
+}
+
 // ---------------------------------------------------------------------------
 // Runs
 // ---------------------------------------------------------------------------
@@ -332,6 +345,9 @@ export interface RunMeta {
   failedStage: string | null;
   skipReason: string | null;
   failureHint: string | null;
+  /** True when the Google connection caused the failure (D6). Legacy metas
+   *  predate the marker; absent reads as an ordinary failure. */
+  connectionCaused?: boolean;
 }
 
 export const RUN_EVENT_TYPES = [
@@ -367,8 +383,12 @@ export interface RunSummary {
   fileName: string;
   sourceUrl: string | null;
   status: RunStatus;
+  /** Why the Run was skipped; null unless status is "skipped". */
+  skipReason: string | null;
   /** Task count from result.json; null before a result exists. */
   taskCount: number | null;
+  /** Present only when the Google connection caused a failure (D6). */
+  connectionCaused?: boolean;
 }
 
 export interface RunDetail extends RunSummary {

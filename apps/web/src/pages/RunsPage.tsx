@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { RunSummary } from "@chief-of-staff-demo/shared";
-import { StatusPill, formatTime } from "../components/StatusPill";
+import { SourceBadge, StatusPill } from "../components/StatusPill";
+import { formatTime, relativeTime, runTitle } from "../display";
 import { api, errorMessage } from "../client";
+import type { DriveIntakeStatus } from "@chief-of-staff-demo/shared";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -14,17 +16,27 @@ export function RunsPage() {
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [intake, setIntake] = useState<DriveIntakeStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [liveReady, setLiveReady] = useState(false);
   /* The connection is the Shell's, and its banner renders above this page
      (ADR-0011). All this page owes it is a refresh on the tick below, since the
      poll here is live in the one window where a Run can reject a grant. */
-  const { refresh: refreshConnection } = useGoogleConnection();
+  const { status: googleStatus, refresh: refreshConnection } = useGoogleConnection();
 
   const refresh = useCallback(async () => {
     try {
-      const { runs: next } = await api.listRuns();
+      /* The liveness line rides along with every list refresh: mount, manual
+         Refresh, and the active-run interval. Its own failure must not blank
+         the list, so it degrades to the last known (or no) status. */
+      const [{ runs: next }, nextIntake] = await Promise.all([
+        api.listRuns(),
+        api.driveIntakeStatus().catch(() => null),
+      ]);
       setRuns(next);
+      if (nextIntake) {
+        setIntake(nextIntake);
+      }
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -89,16 +101,32 @@ export function RunsPage() {
 
   return (
     <div className="page">
-      <div className="page-head">
+      <div className="page-header">
         <h1 ref={headingRef} tabIndex={-1}>
           Runs
         </h1>
         {/* aria-disabled rather than disabled, like every other busy control
             here: the pressed button has to survive its own request. */}
-        <button type="button" onClick={check} aria-disabled={checking}>
+        <button type="button" className="action-button" onClick={check} aria-disabled={checking}>
           {checking ? "Refreshing…" : "Refresh"}
         </button>
       </div>
+
+      {/* Ticket 12: the liveness line. Remembered facts only — the endpoint
+          makes zero Google calls, and after a restart, before the first poll,
+          it claims no last-checked time it does not have. Hidden entirely when
+          the connection or folder is missing: silence, not a stale promise. */}
+      {googleStatus?.state === "connected" && intake?.configured && intake.enabled && (
+        <p className="muted" data-testid="intake-liveness">
+          Watching {intake.folderName || "your Drive folder"}
+          {intake.lastPollAt
+            ? ` · last checked ${relativeTime(intake.lastPollAt)}` +
+              (intake.lastPollOutcome === "failed" ? " (that check failed)" : "")
+            : ""}
+          {" · "}
+          every {intake.pollIntervalMinutes} min
+        </p>
+      )}
 
       <p className="muted">
         Transcripts are read from your Google Drive folder. Choose it in <Link to="/settings">Settings → Drive transcripts</Link> and click <strong>Sync now</strong> if you don&apos;t want to wait for the next poll.
@@ -127,33 +155,50 @@ export function RunsPage() {
         <table className="runs-table" data-testid="runs-table">
           <thead>
             <tr>
-              <th>File</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Tasks</th>
+              <th scope="col">Run</th>
+              <th scope="col">Outcome</th>
+              <th scope="col">When</th>
+              <th scope="col">Source</th>
             </tr>
           </thead>
           <tbody>
             {runs.map((run) => (
               <tr key={run.id} className="run-row">
+                {/* What happened leads: the title is derived at render so
+                    legacy runs read the same way, and the raw filename is
+                    demoted to metadata (D4). The link stays the keyboard and
+                    screen-reader route into the run. */}
                 <td className="run-file-name">
                   <Link
                     to={`/runs/${run.id}`}
                     className="run-link"
-                    // The entire row is clickable for pointer users, but the
-                    // filename link is the keyboard route and the screen-reader
-                    // name. A click that originates on the link itself must not
-                    // be handled twice.
-                    onClick={(event) => event.stopPropagation()}
+                    title={run.fileName}
                   >
-                    {run.fileName || "Untitled transcript"}
+                    {runTitle(run.fileName)}
                   </Link>
+                  <span className="muted run-file-meta">{run.fileName}</span>
                 </td>
                 <td>
-                  <StatusPill status={run.status} />
+                  <StatusPill status={run.status} connectionCaused={run.connectionCaused} />
+                  {run.status === "skipped" && run.skipReason && (
+                    <span className="muted skip-reason"> · {run.skipReason}</span>
+                  )}
+                  {run.status === "done" && run.taskCount !== null && (
+                    <span className="muted skip-reason">
+                      {" "}
+                      ·{" "}
+                      {run.taskCount === 1 ? "1 task" : `${run.taskCount} tasks`}
+                    </span>
+                  )}
                 </td>
-                <td>{formatTime(run.createdAt)}</td>
-                <td>{run.taskCount ?? "—"}</td>
+                <td>
+                  <time dateTime={run.createdAt} title={formatTime(run.createdAt)}>
+                    {relativeTime(run.createdAt)}
+                  </time>
+                </td>
+                <td>
+                  <SourceBadge source={run.source} />
+                </td>
               </tr>
             ))}
           </tbody>

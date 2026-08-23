@@ -5,13 +5,10 @@ test("Drive folder is the only Intake; Runs list and Drive settings are visible"
   // Upload dropzone is gone — Drive folder is the sole Intake
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
-  await page.goto("/settings");
-  await expect(page.getByRole("group", { name: "Drive transcripts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connections" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Transcript → Tasks" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Choose folder/i })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
-  // Fireflies and local watch UI are gone
-  await expect(page.getByRole("group", { name: "Fireflies" })).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "Watch folder" })).toHaveCount(0);
 });
 
 test("settings round-trips with redacted secrets", async ({ page }) => {
@@ -36,54 +33,50 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
   await expect(page.getByText("Not connected", { exact: false })).toBeVisible();
 });
 
-test("an unconfigured workspace gets the setup steps, not two bare fields", async ({ page }) => {
+test("an unconfigured workspace gets the setup wizard, not two bare fields", async ({ page }) => {
   await page.goto("/settings");
 
-  // Seven steps, in the order the console forces them, for the personal-account
-  // path the card defaults to. On a project that has never been configured,
-  // Branding, Audience and Data Access all show the same "not configured yet"
-  // wall, so step 3 sends people to the one wizard rather than to three pages
-  // that do not exist yet.
+  // Seven steps, in the order the console forces them (ADR-0013 froze the
+  // sequence), rendered as a wizard: progress visible, exactly one step open.
   const steps = page.locator(".setup-steps > li");
+  const toggle = (index: number) => steps.nth(index).locator("button.wizard-step-toggle");
   await expect(steps).toHaveCount(7);
-  for (const name of [
-    "Create a project",
-    "Enable the Tasks API",
-    "Enable the Gmail API",
-    "Open the Google Auth Platform",
-    "Open Audience",
-    "Open Data Access",
-    "Open Clients",
-  ]) {
-    await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
-  }
+  await expect(page.locator(".wizard-progress")).toHaveText("Step 1 of 7");
+  await expect(toggle(0)).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("link", { name: "Create a project", exact: true })).toBeVisible();
 
-  // The redirect URI is built from the port the server is actually on. This
-  // suite runs on 4319, so a value hardcoded to 4317 — as the UI used to carry —
-  // fails here.
-  await expect(page.locator(".setup-copy > code").last()).toHaveText(
-    "http://localhost:4319/api/google/callback"
-  );
+  // Moving on collapses the walked-past step to a ✓ line and opens one more.
+  await toggle(1).click();
+  await expect(page.locator(".wizard-progress")).toHaveText("Step 2 of 7");
+  await expect(toggle(0)).toHaveAttribute("aria-expanded", "false");
+  await expect(steps.nth(0)).toHaveClass(/done/);
+  await expect(page.getByRole("link", { name: "Enable the Tasks API", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Create a project", exact: true })).toHaveCount(0);
 
-  // Both scopes are shown, and offered to copy so neither has to be typed out.
+  // The scopes step carries its three exact values, each offered to copy so
+  // none has to be typed out.
+  await toggle(4).click();
   await expect(page.locator(".setup-copy > code")).toHaveText([
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/drive.readonly",
+  ]);
+  await expect(page.locator(".copy-button")).toHaveCount(3);
+  await expect(
+    page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true })
+  ).toBeVisible();
+
+  // The redirect URI is built from the port the server is actually on. This
+  // suite runs on 4319, so a value hardcoded to 4317 — as the UI used to carry —
+  // fails here.
+  await toggle(5).click();
+  await expect(page.locator(".setup-copy > code")).toHaveText([
     "http://localhost:4319/api/google/callback",
   ]);
-  // Three Copy buttons on one page, each naming what it copies rather than
-  // leaving a screen reader with "Copy, Copy, Copy" (WCAG 2.4.6).
-  await expect(page.locator(".copy-button")).toHaveCount(4);
-  for (const name of [
-    "Copy https://www.googleapis.com/auth/tasks",
-    "Copy https://www.googleapis.com/auth/gmail.compose",
-    "Copy https://www.googleapis.com/auth/drive.readonly",
-    "Copy Redirect URI",
-  ]) {
-    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
-  }
-  // The sign-in button is the last step, and it is a real Google-branded button.
+  await expect(page.getByRole("button", { name: "Copy Redirect URI", exact: true })).toBeVisible();
+
+  // The credential step is the last, and its sign-in button is Google-branded.
+  await toggle(6).click();
   await expect(page.getByRole("button", { name: /Save and sign in with Google/ })).toBeVisible();
 });
 
@@ -185,6 +178,16 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(page.getByTestId("runs-table")).toHaveCount(0);
 
+  // Every Run this workspace can produce fails at outputs (mock provider, no
+  // Google), so nothing has ever finished and the activity feed is omitted
+  // entirely rather than rendering zeroes (ADR-0014).
+  await expect(page.getByRole("heading", { name: "Recent activity" })).toHaveCount(0);
+
+  // Ticket 12 honesty rule: with Google disconnected the Runs page stays
+  // silent about watching — no liveness line, no stale promise.
+  await page.goto("/runs");
+  await expect(page.getByTestId("intake-liveness")).toHaveCount(0);
+
   // One card per Module, from the same list the tab bar renders, so the two
   // cannot disagree about what exists.
   const cards = page.locator(".module-card");
@@ -211,7 +214,7 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  await expect(page.locator(".status-pill")).toHaveText("Failed", { timeout: 15_000 });
+  await expect(page.locator(".status-badge")).toHaveText("Needs attention", { timeout: 15_000 });
 
   await page.goto("/");
   // One clause per rail condition, in the rail's order, with the true total of
@@ -234,16 +237,17 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   );
   await expect(mockRow.getByRole("link", { name: "Choose a provider" })).toBeVisible();
 
-  // The connection is not a row: the Shell banner above says it on every page.
-  await expect(page.locator(".home-rail")).not.toContainText(/Google/);
-  // And no identity line, because this connection is not healthy.
-  await expect(page.locator(".home-identity")).toHaveCount(0);
+  // The connection is not a row on its own: the Shell banner above says it on
+  // every page. But a run the connection broke names Google in its fix.
 
-  // Rows link; they do not act. "Open", never "Retry".
+  // The seeded Run fails because Google was never connected (D6): the row
+  // names the reconnect fix and routes to where it lives, instead of pointing
+  // at the run as a generic failure.
   const failedRow = page.locator(".home-rail li").first();
-  await expect(failedRow.getByRole("link", { name: "Open" })).toBeVisible();
-  await failedRow.getByRole("link", { name: "Open" }).click();
-  await expect(page).toHaveURL(/\/runs\/run_/);
+  await expect(failedRow).toContainText("could not finish because Google needs reconnecting");
+  await expect(failedRow.getByRole("link", { name: "Reconnect" })).toBeVisible();
+  await failedRow.getByRole("link", { name: "Reconnect" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
 });
 
 /* Last in the file, and it puts the workspace back: it is the only test here
@@ -268,8 +272,9 @@ test("credentials saved but no successful sign-in keeps the steps on the page", 
     await page.goto("/settings");
 
     await expect(page.locator(".setup-steps > li")).toHaveCount(7);
-    // Open on the page, not behind a summary.
-    await expect(page.locator(".setup-details")).toHaveCount(0);
+    // Open on the page, not behind a Manage summary (D11), and not collapsed
+    // into a wizard someone must first discover (D12).
+    await expect(page.locator(".wizard")).toBeVisible();
     // And it says why the steps are still here, rather than only "Not connected".
     await expect(page.locator(".banner-warn")).toContainText(/no sign-in has succeeded yet/i);
     // The credentials already stored are the ones in the field, so the person can
@@ -293,6 +298,9 @@ test("choosing a work account drops the test-user step", async ({ page }) => {
   // step list differs, and the choice is made before the steps rather than
   // explained inside them.
   await expect(page.locator(".setup-steps > li")).toHaveCount(7);
+  const steps = page.locator(".setup-steps > li");
+  await expect(steps.nth(3).locator("button.wizard-step-toggle")).toContainText("test user");
+  await steps.nth(3).locator("button.wizard-step-toggle").click();
   await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toBeVisible();
 
   await page.getByRole("radio", { name: /work account/ }).check();
@@ -300,9 +308,12 @@ test("choosing a work account drops the test-user step", async ({ page }) => {
   await expect(page.locator(".setup-steps > li")).toHaveCount(6);
   await expect(page.getByRole("link", { name: "Open Audience", exact: true })).toHaveCount(0);
   // And the step that remains tells them which radio to pick in the console.
+  // The open index survives the switch, so progress renumbers against the
+  // shorter list.
+  await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 6");
   await expect(page.locator(".setup-steps")).toContainText("Internal");
 
   await page.getByRole("radio", { name: /personal account/ }).check();
   await expect(page.locator(".setup-steps > li")).toHaveCount(7);
-  await expect(page.locator(".setup-steps")).toContainText("External");
+  await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 7");
 });

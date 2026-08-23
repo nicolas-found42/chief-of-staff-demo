@@ -1,7 +1,7 @@
 import type { AppConfig, DraftItem, ExtractionResult, TaskItem } from "@chief-of-staff-demo/shared";
 import { buildGoogleAuth, type GoogleAuth } from "./oauth.js";
 import { createGmailDraft, gmailDraftInput } from "./gmail.js";
-import { createGoogleTask, findOrCreateTasklist } from "./tasks.js";
+import { createGoogleTask, findOrCreateTasklist, type CreatedTask } from "./tasks.js";
 
 /**
  * The only Google surface a Run talks to. Reached through the Google
@@ -14,9 +14,10 @@ export interface GoogleOutputs {
     tasklistId: string,
     item: TaskItem,
     source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">
-  ): Promise<string>;
+  ): Promise<CreatedTask>;
   createDraft(draft: DraftItem): Promise<string>;
 }
+
 
 export function googleOutputs(config: AppConfig, port: number): GoogleOutputs {
   const auth: GoogleAuth = buildGoogleAuth(config, port);

@@ -13,3 +13,27 @@ services:
     # Desktop starts, for as long as the image exists, which is not what someone
     # trying the app out expects of it. Starting it is `docker compose up -d`.
     restart: "no"
+    # `docker compose up --build --watch` is the code-editing loop: the whole
+    # loop stays inside Docker, so there is no native way to run the app and no
+    # second port to register with Google. `rebuild` and not `sync`, because the
+    # runtime image holds only build output — there is no source in it to sync
+    # onto, and both the server and the web bundle are compiled.
+    develop:
+      watch:
+        - action: rebuild
+          path: ./apps/server
+          ignore: [dist, node_modules]
+        - action: rebuild
+          path: ./apps/web
+          ignore: [dist, node_modules]
+        - action: rebuild
+          path: ./packages/shared
+          ignore: [dist, node_modules]
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./tsconfig.base.json
+        - action: rebuild
+          path: ./Dockerfile

@@ -1,49 +1,35 @@
-/* Run statuses, stages and sources are storage tokens. Nothing stops them
-   reaching the screen verbatim except this file, so the mapping lives next to
-   the components that render them (WCAG 3.1.3). An unknown token falls back to
-   itself rather than disappearing — a diagnostic is better than a blank pill. */
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Queued",
-  running: "Running",
-  done: "Done",
-  skipped: "Skipped",
-  failed: "Failed",
-};
+import { statusLabel } from "../display";
 
-const STAGE_LABELS: Record<string, string> = {
-  convert: "conversion",
-  extract: "extraction",
-  outputs: "output creation",
-};
-
-export function statusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status;
-}
-
-export function stageLabel(stage: string): string {
-  return STAGE_LABELS[stage] ?? stage;
-}
-
-export function StatusPill({ status }: { status: string }) {
-  const cls =
-    status === "done"
+/* Run statuses, stages and sources are storage tokens; their display names live
+   in ../display so every surface shares one vocabulary (spec D5–D7). This file
+   is the pill itself: which state class a token earns, and the fallback that
+   shows an unknown token instead of hiding it. */
+export function StatusPill({
+  status,
+  connectionCaused,
+}: {
+  status: string;
+  /** D6: a failure the Google connection caused is Needs attention (fix:
+   *  reconnect), not Failed (fix: retry). The enum stays frozen. */
+  connectionCaused?: boolean;
+}) {
+  const needsAttention = status === "failed" && connectionCaused === true;
+  const cls = needsAttention
+    ? "status-attention"
+    : status === "done"
       ? "status-done"
       : status === "failed"
         ? "status-failed"
         : status === "skipped"
           ? "status-skipped"
           : "status-active";
-  return <span className={`status-pill ${cls}`}>{statusLabel(status)}</span>;
+  return (
+    <span className={`status-badge ${cls}`}>
+      {needsAttention ? "Needs attention" : statusLabel(status)}
+    </span>
+  );
 }
 
 export function SourceBadge({ source }: { source: string }) {
-  return <span className={`source-badge source-${source}`}>{source}</span>;
-}
-
-export function formatTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-  return date.toLocaleString();
+  return <span className="status-badge status-source">{source}</span>;
 }

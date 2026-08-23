@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { AppConfig } from "@chief-of-staff-demo/shared";
+import type { AppConfig, DriveIntakeStatus } from "@chief-of-staff-demo/shared";
 import { buildGoogleAuth } from "../google/oauth.js";
 import { googleFailureHint, type GoogleConnection } from "../google/connection.js";
 import { loadState, saveState, type WorkspaceState } from "../state.js";
@@ -117,6 +117,7 @@ export class DriveIntake {
     const config = this.deps.getConfig();
     try {
       if (!config.drive.enabled || !config.drive.folderId) {
+        /* Not an attempt; recording one would teach the liveness line to lie. */
         return { created: 0 };
       }
       const status = await this.deps.google.state();
@@ -125,17 +126,44 @@ export class DriveIntake {
         return { created: 0 };
       }
       const created = await this.ingestNewFiles(config);
+      this.rememberPoll("ok");
       return { created };
     } catch (error) {
+      this.rememberPoll("failed");
       try {
         this.deps.google.observe(error);
       } catch {}
       throw error;
-    } finally {
-      this.updateState((state) => {
-        state.drive.lastPollAt = new Date().toISOString();
-      });
     }
+  }
+
+  /** Remembered fact only (D14): what happened, never a prediction. */
+  private rememberPoll(outcome: "ok" | "failed"): void {
+    this.updateState((state) => {
+      state.drive.lastPollAt = new Date().toISOString();
+      state.drive.lastPollOutcome = outcome;
+    });
+  }
+
+  /**
+   * What the intake remembers (D14): configuration and the last completed
+   * poll attempt, read from the workspace. It never asks Google anything —
+   * ADR-0008 economics apply here too.
+   */
+  status(): DriveIntakeStatus {
+    const config = this.deps.getConfig();
+    const layout = workspaceLayout(this.deps.workspaceDir);
+    const state = loadState(layout.stateFile);
+    return {
+      enabled: config.drive.enabled,
+      configured: Boolean(config.drive.folderId),
+      folderName: config.drive.folderName,
+      pollIntervalMinutes: config.drive.pollIntervalMinutes,
+      /* Null until the first poll of this process finishes: after a restart
+         the line must not claim a last-checked time it does not have. */
+      lastPollAt: state.drive.lastPollAt,
+      lastPollOutcome: state.drive.lastPollOutcome,
+    };
   }
 
   /**

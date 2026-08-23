@@ -162,9 +162,16 @@ export class Pipeline {
     }
   }
 
-  /** `hint` overrides the stage default when the failing module supplied its own wording. */
-  private failRun(run: RunHandle, stage: string, reason: string, hint?: string): void {
-    run.failed(stage, reason, hint ?? failureHintFor(stage, reason));
+  /** `hint` overrides the stage default; `flags.connectionCaused` records (D6)
+   *  that reconnecting, not retrying, is the fix. */
+  private failRun(
+    run: RunHandle,
+    stage: string,
+    reason: string,
+    hint?: string,
+    flags?: { connectionCaused?: boolean }
+  ): void {
+    run.failed(stage, reason, hint ?? failureHintFor(stage, reason), flags);
   }
 
   private async processRun(id: string, resumeOutputs?: "outputs"): Promise<void> {
@@ -242,7 +249,9 @@ export class Pipeline {
       return false;
     }
     run.appendEvent("google_unavailable", { state, error: errorMessage(error) });
-    this.failRun(run, "outputs", `google_${state}`, googleFailureHint(state));
+    this.failRun(run, "outputs", `google_${state}`, googleFailureHint(state), {
+      connectionCaused: true,
+    });
     return true;
   }
 
@@ -250,7 +259,9 @@ export class Pipeline {
     const access = this.deps.google.outputs();
     if (!access.ok) {
       run.appendEvent("google_unavailable", { state: access.state });
-      this.failRun(run, "outputs", `google_${access.state}`, googleFailureHint(access.state));
+      this.failRun(run, "outputs", `google_${access.state}`, googleFailureHint(access.state), {
+        connectionCaused: true,
+      });
       return;
     }
     const google = access.outputs;
@@ -271,8 +282,8 @@ export class Pipeline {
     // Per-item try/catch: one bad item never kills the batch (drainOutbox parity).
     for (const task of result.tasks) {
       try {
-        const googleId = await google.createTask(tasklistId, task, result);
-        run.appendEvent("google_task_created", { title: task.title, googleId });
+        const { googleId, webViewLink } = await google.createTask(tasklistId, task, result);
+        run.appendEvent("google_task_created", { title: task.title, googleId, webViewLink });
       } catch (error) {
         if (this.failedOnConnection(run, error)) {
           return;

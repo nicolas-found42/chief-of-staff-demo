@@ -5,6 +5,7 @@ import { api, errorMessage } from "../client";
 import { connectionNotice } from "../connectionNotice";
 import { homeStatus } from "../homeStatus";
 import { useGoogleConnection } from "../useGoogleConnection";
+import { formatTime, relativeTime } from "../display";
 import { useModules } from "../useModules";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -13,17 +14,14 @@ const TERMINAL = new Set(["done", "skipped", "failed"]);
 
 /**
  * The Shell's front door: where the workspace stands, and the way into the
- * Modules (ADR-0010).
+ * Modules (ADR-0010). Since ADR-0014 it distinguishes attention from activity:
+ * the rail above carries what needs you, the feed below carries what happened
+ * anyway, and the two are different lists with different contracts.
  *
  * `useTitle(null)` resolves to the bare Shell name, which is identical to the
  * `<title>` in index.html — so opening the front door never re-titles the tab,
  * where `useTitle("Home")` would flash "Chief of Staff" → "Home · Chief of
  * Staff" on every visit to the most-visited route.
- *
- * Home shows no Runs list (that is Transcript's, and a short copy beside the
- * real one is worse than a link), no metrics (a fresh workspace renders them as
- * zeroes, at the one moment Home matters most to someone new) and no drop target
- * (Intake is a Module concern).
  */
 export function HomePage() {
   useTitle(null);
@@ -98,7 +96,7 @@ export function HomePage() {
   }
 
   const notice = connectionNotice(status);
-  const { sentence, rows } = homeStatus(runs, provider, notice !== null);
+  const { sentence, rows, feed } = homeStatus(runs, provider, notice !== null);
 
   return (
     <div className="page">
@@ -147,6 +145,32 @@ export function HomePage() {
         </>
       )}
 
+      {/* Attention ≠ activity (ADR-0014): even a quiet Home says what happened.
+          Omitted entirely when nothing has ever finished — no zeroes, ever. */}
+      {feed.length > 0 && (
+        <>
+          <h2>Recent activity</h2>
+          <ul className="home-feed">
+            {feed.map((entry) => (
+              <li key={entry.id}>
+                <Link to={entry.to}>{entry.title}</Link>{" "}
+                <span className="muted">
+                  — {entry.outcome} ·{" "}
+                  <time dateTime={entry.at} title={formatTime(entry.at)}>
+                    {relativeTime(entry.at)}
+                  </time>
+                </span>
+              </li>
+            ))}
+            <li>
+              <Link to="/transcript" className="muted">
+                All runs
+              </Link>
+            </li>
+          </ul>
+        </>
+      )}
+
       <h2>Modules</h2>
       <div className="module-grid">
         {modules.map((module) => (
@@ -154,7 +178,7 @@ export function HomePage() {
             <h3>
               <Link to={module.path}>{module.label}</Link>
               {module.status === "planned" && (
-                <span className="status-pill status-active">Planned</span>
+                <span className="status-badge status-active">Planned</span>
               )}
             </h3>
             <p className="muted">{module.description}</p>

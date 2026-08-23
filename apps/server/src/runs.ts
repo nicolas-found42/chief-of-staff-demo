@@ -51,7 +51,7 @@ export interface RunHandle {
   /** Enter a Stage: the Run is running, and the start is logged. */
   started(stage: string): void;
   /** Leave a Stage as failed, with the wording the failing module supplied. */
-  failed(stage: string, reason: string, hint: string): void;
+  failed(stage: string, reason: string, hint: string, flags?: { connectionCaused?: boolean }): void;
   /** End the Run. */
   finished(outcome: RunOutcome): void;
   /** Count one attempt at the current Stage; returns the new count. */
@@ -164,6 +164,10 @@ function toSummary(meta: RunMeta, result: ExtractionResult | null): RunSummary {
     fileName: meta.fileName,
     sourceUrl: meta.sourceUrl,
     status: meta.status,
+    skipReason: meta.skipReason,
+    /* Additive (D6): present only on connection-caused failures, so legacy
+       clients and old metas see no change. */
+    ...(meta.connectionCaused ? { connectionCaused: true } : {}),
     taskCount: result ? result.tasks.length : null,
   };
 }
@@ -201,12 +205,22 @@ class RunHandleImpl implements RunHandle {
     );
   }
 
-  failed(stage: string, reason: string, hint: string): void {
+  failed(
+    stage: string,
+    reason: string,
+    hint: string,
+    flags?: { connectionCaused?: boolean }
+  ): void {
     this.transition(
       (meta) => {
         meta.status = "failed";
         meta.failedStage = stage;
         meta.failureHint = hint;
+        /* Additive (D6): set only when the connection caused it, so legacy
+           metas without the field read and display exactly as before. */
+        if (flags?.connectionCaused) {
+          meta.connectionCaused = true;
+        }
       },
       [
         { type: "stage_failed", detail: { stage, error: reason } },

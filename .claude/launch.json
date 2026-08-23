@@ -3,15 +3,10 @@
   "configurations": [
     {
       "name": "app",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
-      "port": 4317
-    },
-    {
-      "name": "web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:web"],
-      "port": 5173
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "--build", "--watch"],
+      "port": 4317,
+      "autoPort": false
     }
   ]
 }

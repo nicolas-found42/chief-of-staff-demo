@@ -1,6 +1,6 @@
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
+import { runTitle, statusLabel } from "./display";
 
-/** One thing needing action. Rows link; they do not act — "Open", never "Retry". */
 export interface RailRow {
   /** React key, and the identity of the thing the row is about. */
   id: string;
@@ -9,11 +9,28 @@ export interface RailRow {
   to: string;
 }
 
+/** One finished Run in Home's activity feed (ADR-0014). */
+export interface FeedEntry {
+  id: string;
+  title: string;
+  /** Outcome in display vocabulary, with the detail that earns it. */
+  outcome: string;
+  /** ISO timestamp of the Run, for the relative time beside it. */
+  at: string;
+  to: string;
+}
+
 export interface HomeStatus {
   /** One line stating where you stand. Always present, whatever the state. */
   sentence: string;
   /** A row per thing needing action; empty means the rail is omitted entirely. */
   rows: RailRow[];
+  /**
+   * Recently finished Runs, newest first, capped — attention is not activity
+   * (ADR-0014). Failed Runs stay out: the rail above already owns them, and a
+   * second list to scan for problems is what ADR-0010 rejected.
+   */
+  feed: FeedEntry[];
 }
 
 /**
@@ -25,6 +42,9 @@ export interface HomeStatus {
 const MAX_FAILED_ROWS = 3;
 
 const TERMINAL = new Set(["done", "skipped", "failed"]);
+
+/** The feed is a headline, not an inventory (ADR-0014). */
+const MAX_FEED = 5;
 
 /**
  * Home's sentence and attention rail, from what the Shell can observe.
@@ -41,7 +61,7 @@ const TERMINAL = new Set(["done", "skipped", "failed"]);
  * the row carries the consequence and the way out.
  *
  * `hasNotice` is whether the Shell banner is saying anything — see the
- * `Nothing needs you.` clause below, which is the one part of the sentence that
+ * `Nothing needs your attention.` clause below, the one part of the sentence that
  * speaks for the whole page rather than for the part Home owns.
  */
 export function homeStatus(
@@ -58,12 +78,24 @@ export function homeStatus(
      extraction would have produced. */
   const mock = provider === "mock";
 
-  const rows: RailRow[] = failed.slice(0, MAX_FAILED_ROWS).map((run) => ({
-    id: run.id,
-    text: `${run.fileName || "Untitled transcript"} failed`,
-    cta: "Open",
-    to: `/runs/${run.id}`,
-  }));
+  /* D6: a failure the connection caused is reconnect-fixable, so the rail
+     names that fix instead of pointing at the run. Rows still link, they do
+     not act — Reconnect goes to Settings, where the fix lives. */
+  const rows: RailRow[] = failed.slice(0, MAX_FAILED_ROWS).map((run) =>
+    run.connectionCaused
+      ? {
+          id: run.id,
+          text: `${runTitle(run.fileName)} could not finish because Google needs reconnecting`,
+          cta: "Reconnect",
+          to: "/settings",
+        }
+      : {
+          id: run.id,
+          text: `${runTitle(run.fileName)} failed`,
+          cta: "Open",
+          to: `/runs/${run.id}`,
+        }
+  );
   /* The tail of the failed rows, not a condition of its own — so it sits with
      the rows it summarises rather than after the provider. */
   if (failed.length > MAX_FAILED_ROWS) {
@@ -84,6 +116,27 @@ export function homeStatus(
     });
   }
 
+  /* Newest first: the feed is what happened lately, not an inventory. Runs
+     without a stored createdAt sort last by falling back to their id — a
+     comparison that never lies about being arbitrary. */
+  const finished = runs
+    .filter((run) => run.status === "done" || run.status === "skipped")
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  const feed: FeedEntry[] = finished.slice(0, MAX_FEED).map((run) => ({
+    id: run.id,
+    title: runTitle(run.fileName),
+    outcome:
+      run.status === "skipped"
+        ? run.skipReason
+          ? `${statusLabel(run.status)} — ${run.skipReason}`
+          : statusLabel(run.status)
+        : run.taskCount !== null
+          ? `${statusLabel(run.status)} — ${run.taskCount === 1 ? "1 task" : `${run.taskCount} tasks`}`
+          : statusLabel(run.status),
+    at: run.createdAt,
+    to: `/runs/${run.id}`,
+  }));
+
   /* One clause per rail condition, in the rail's order. The count is the true
      total, not the capped row count. */
   const clauses: string[] = [];
@@ -94,7 +147,7 @@ export function homeStatus(
     clauses.push("the extraction provider is a stand-in");
   }
 
-  return { sentence: sentenceFor(clauses, runs.length, active.length, hasNotice), rows };
+  return { sentence: sentenceFor(clauses, runs.length, active.length, hasNotice), rows, feed };
 }
 
 function sentenceFor(
@@ -119,14 +172,16 @@ function sentenceFor(
   const standing =
     activeCount > 0
       ? `${activeCount} run${activeCount === 1 ? "" : "s"} in progress.`
-      : "All quiet.";
+      : "All caught up.";
 
   /* The enumeration above is rail-scoped; this clause is page-scoped, because
      it is a claim about the reader's obligations rather than about the
      workspace. Home cannot make it while the banner above is asking for
      something — including a banner that is only warning about an expiry due
-     soon, which exists to get a sign-in *before* a Run fails. */
-  return hasNotice ? standing : `${standing} Nothing needs you.`;
+     soon, which exists to get a sign-in *before* a Run fails. The feed below
+     the sentence carries the activity, so quiet no longer has to mean silent
+     (ADR-0014). */
+  return hasNotice ? standing : `${standing} Nothing needs your attention.`;
 }
 
 function join(parts: string[]): string {

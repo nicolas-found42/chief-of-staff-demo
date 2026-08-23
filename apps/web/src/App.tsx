@@ -7,6 +7,7 @@ import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useIsLoadedEntry } from "./usePageFocus";
+import { useModules } from "./useModules";
 
 export function App() {
   // Records the history entry the browser loaded, before any route can navigate
@@ -34,13 +35,18 @@ export function App() {
         <Link className="app-title" to="/">
           Found42 — Chief of Staff
         </Link>
+        {/* A tab promises function (ADR-0014): the bar renders live Modules
+            only, from the same list Home's cards read. A planned Module keeps
+            its route mounted below and is announced from Home instead; going
+            live here is what restores its tab. */}
         <nav aria-label="Modules">
-          <NavLink to="/transcript">
-            Transcript → Tasks
-          </NavLink>
-          <NavLink to="/hot-take">
-            Hot Take
-          </NavLink>
+          {useModules()
+            .filter((module) => module.status === "live")
+            .map((module) => (
+              <NavLink key={module.id} to={module.path}>
+                {module.label}
+              </NavLink>
+            ))}
         </nav>
         <nav aria-label="Settings">
           <NavLink to="/settings">Settings</NavLink>

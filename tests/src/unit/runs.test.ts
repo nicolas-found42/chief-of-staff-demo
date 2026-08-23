@@ -55,6 +55,30 @@ describe("transitions", () => {
     expect(detailOf("run_failed")).toEqual({ stage: "outputs", reason: "google_expired" });
   });
 
+  it("records the connection as the cause only when told to, and additively", () => {
+    /* A plain failure must look exactly like a legacy one: no marker field. */
+    run.started("outputs");
+    run.failed("outputs", "boom", "Output creation failed.");
+    expect(run.read().connectionCaused).toBeUndefined();
+
+    /* The connection-caused failure sets the flag and nothing else about the
+       shape of meta changes (D6). */
+    const other = runs.create({
+      source: "drive",
+      fileName: "other.md",
+      sourceUrl: null,
+      externalId: null,
+      context: { meetingDate: null, attendees: [] },
+    });
+    other.started("outputs");
+    other.failed("outputs", "google_expired", "Google sign-in expired.", {
+      connectionCaused: true,
+    });
+    const meta = other.read();
+    expect(meta.connectionCaused).toBe(true);
+    expect(meta.status).toBe("failed");
+  });
+
   it("finished(done) clears the failed Stage and carries the Module's own counts", () => {
     run.started("outputs");
     run.finished({ status: "done", detail: { tasks: 2, drafts: 1 } });

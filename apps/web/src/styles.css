@@ -150,6 +150,17 @@ body {
   margin: 1.25rem 0 0.5rem;
 }
 
+/* ---------------------------------------------------------------------------
+   Primitives (ADR-0015). Five named classes the whole UI composes from; a new
+   surface reaches for these before inventing chrome:
+   .page-header    title, one context line, the page's primary action
+   .card           bordered grouping for one object or configuration topic
+   .status-badge   the small pill classifying a thing's state (+ .status-* states)
+   .action-button  the boxed call to action (+ .primary); .step-link is its
+                   boxed-anchor mapping, .google-signin its branded one
+   .disclosure     the expandable row; the unit of progressive disclosure
+   --------------------------------------------------------------------------- */
+
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -263,7 +274,11 @@ h1[tabindex="-1"]:focus:not(:focus-visible) {
   outline: none;
 }
 
-button {
+/* The action button is a class, not just the element default, so markup names
+   the primitive it means (ADR-0015); the bare `button` selector stays as the
+   fallback that keeps an unclassed control presentable. */
+button,
+.action-button {
   font: inherit;
   display: inline-flex;
   align-items: center;
@@ -281,7 +296,8 @@ button:hover:not(:disabled):not([aria-disabled="true"]) {
   border-color: var(--accent);
 }
 
-button.primary {
+button.primary,
+.action-button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
@@ -297,7 +313,9 @@ button.primary {
    ring) on a control that stays focusable and keeps showing live status text
    (WCAG 1.4.3, 1.4.11, 2.4.7). */
 button:disabled,
-button[aria-disabled="true"] {
+.action-button:disabled,
+button[aria-disabled="true"],
+.action-button[aria-disabled="true"] {
   cursor: default;
   background: var(--surface-alt);
   /* 5.50:1 on --surface-alt; the border keeps 3.57:1 on it and 3.15:1 against
@@ -307,7 +325,9 @@ button[aria-disabled="true"] {
 }
 
 button.primary:disabled,
-button.primary[aria-disabled="true"] {
+.action-button.primary:disabled,
+button.primary[aria-disabled="true"],
+.action-button.primary[aria-disabled="true"] {
   background: var(--accent-busy);
   border-color: var(--accent-busy);
   color: var(--accent-ink);
@@ -430,6 +450,48 @@ tr:last-child td {
   overflow-wrap: anywhere;
 }
 
+/* The raw filename, demoted to metadata under the humanized title (D4). */
+.run-file-meta {
+  display: block;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* Inline outcome detail beside the badge: skip reasons, task counts. */
+.skip-reason {
+  font-size: 0.85rem;
+}
+
+/* Timeline rows: the other face of the disclosure primitive (ADR-0015) — the
+   same unit where the expandable row does not expand. */
+.timeline {
+  margin: 1rem 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.timeline-row {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.timeline-name {
+  font-weight: 600;
+}
+
+.timeline-outcome {
+  margin: 0.25rem 0 0;
+}
 /* The filename cell holds the link, and the link carries 0.7rem of padding to
    reach a 44px target. Against the shared `vertical-align: top` that left it
    sitting a line lower than every other cell in its own row. */
@@ -440,7 +502,6 @@ tr:last-child td {
 .ok {
   color: var(--ok);
 }
-
 .bad {
   color: var(--bad);
 }
@@ -449,7 +510,10 @@ tr:last-child td {
   color: var(--muted);
 }
 
-.status-pill {
+/* The status badge classifies a thing's state; the .status-* classes are its
+   state vocabulary. An unknown token falls back to itself in text, never to a
+   blank pill. */
+.status-badge {
   display: inline-block;
   padding: 0.1rem 0.6rem;
   border-radius: 999px;
@@ -457,6 +521,16 @@ tr:last-child td {
   font-weight: 600;
   white-space: nowrap;
 }
+
+.status-source {
+  border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 0.05rem 0.5rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
 
 .status-done {
   background: #e3f2e8;
@@ -476,17 +550,6 @@ tr:last-child td {
 .status-active {
   background: #e3ecf9;
   color: var(--accent);
-}
-
-.source-badge {
-  display: inline-block;
-  padding: 0.05rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: var(--surface-alt);
-  border: 1px solid var(--line);
-  color: var(--muted);
 }
 
 
@@ -531,6 +594,13 @@ tr:last-child td {
   margin: 0 0 1.5rem;
 }
 
+/* D6: a failure the connection caused. Same warn pairing the banner uses, so
+   the contrast is the one already vetted. */
+.status-attention {
+  background: #fdf3e0;
+  color: var(--warn);
+}
+
 .home-rail {
   list-style: none;
   padding: 0;
@@ -541,6 +611,27 @@ tr:last-child td {
    the list itself. */
 .home-rail li {
   margin: 0 0 0.5rem;
+}
+
+/* D11: the two Settings sections. */
+.settings-section {
+  margin-top: 1.5rem;
+}
+
+.connection-summary {
+  margin: 0.25rem 0 0.75rem;
+}
+
+/* The activity feed (ADR-0014): a plain list — it is a headline, not the
+   Runs list, and it must not grow card chrome. */
+.home-feed {
+  margin: 0.5rem 0 1.25rem;
+  padding-left: 0;
+  list-style: none;
+}
+
+.home-feed li {
+  margin-bottom: 0.35rem;
 }
 
 /* auto-fit rather than a column count: the grid collapses to one column at a
@@ -588,10 +679,10 @@ tr:last-child td {
   margin: 0.25rem 0;
 }
 
-/* The heading keeps its place as the first thing in the page; the control
-   that replaced the endless poll sits beside it rather than after the list it
-   refreshes. */
-.page-head {
+/* Page header: the title, its context, and the page's primary action on one
+   row (ADR-0015). The heading keeps its place as the first thing in the page;
+   the control sits beside it rather than after the list it refreshes. */
+.page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -601,7 +692,7 @@ tr:last-child td {
   margin-bottom: 0.75rem;
 }
 
-.page-head h1 {
+.page-header h1 {
   margin-bottom: 0;
 }
 
@@ -611,6 +702,53 @@ tr:last-child td {
   gap: 0.9rem;
   flex-wrap: wrap;
   margin-bottom: 0.5rem;
+}
+
+/* Impact-first failure screen (D10): cause, completed vs not, way out. */
+.failure-impact {
+  min-width: 0;
+}
+
+.failure-impact p {
+  margin: 0 0 0.25rem;
+}
+
+.failure-cause {
+  font-weight: 600;
+}
+
+/* The receipt (D9): what came in, what was concluded, what was created, what
+   was not — one labelled row each, paired programmatically like the draft
+   headers above. */
+.receipt-grid {
+  margin: 0;
+}
+
+.receipt-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+}
+
+.receipt-row dt {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.receipt-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .receipt-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.not-done-list {
+  margin: 0;
+  padding-left: 1.25rem;
 }
 
 .run-title {
@@ -682,6 +820,29 @@ summary {
   padding: 0.7rem 0;
 }
 
+/* Disclosure row: the expandable row, the unit of progressive disclosure
+   (ADR-0015). A bordered box whose summary is the row; content that needs to
+   clear it sits in .disclosure-body. */
+.disclosure {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+.disclosure > summary {
+  padding: 0.7rem 1rem;
+  font-weight: 600;
+}
+
+.disclosure[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.disclosure-body {
+  padding: 0.75rem 1rem;
+}
+
 code {
   background: var(--surface-alt);
   border: 1px solid var(--line);
@@ -714,19 +875,57 @@ code {
   }
 }
 
+/* D12: the wizard accordion. One step open at a time; the toggle row is the
+   whole step's hit target. */
 .setup-steps {
   margin: 0.5rem 0 0;
-  /* Narrow enough that the markers still fit inside the card at 320px. */
-  padding-left: 1.4rem;
+  padding-left: 0;
+  list-style: none;
 }
 
-.setup-steps > li {
-  margin-bottom: 1.25rem;
-}
-
-.setup-step-title {
-  margin: 0 0 0.4rem;
+.wizard-progress {
   font-weight: 600;
+  margin: 0.75rem 0;
+}
+
+.wizard-step {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.wizard-step.done .wizard-step-marker {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.wizard-step-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: 600;
+  border: none;
+  background: none;
+}
+
+.wizard-step-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-size: 0.85rem;
+}
+
+.wizard-panel {
+  padding: 0.25rem 0.9rem 0.9rem;
 }
 
 /* .field-hint zeroes its margins for the tight label/field/hint stack; inside a
@@ -813,10 +1012,6 @@ code {
 
 .setup-check-list > li {
   line-height: 1.5;
-}
-
-.setup-details {
-  margin-top: 0.5rem;
 }
 
 /* Reflow: usable down to a 320px viewport without horizontal page scrolling. */

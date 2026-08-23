@@ -19,6 +19,7 @@ function run(id: string, status: RunStatus, fileName = `${id}.txt`): RunSummary 
     fileName,
     sourceUrl: null,
     status,
+    skipReason: null,
     taskCount: null,
   };
 }
@@ -56,31 +57,70 @@ describe("Home's sentence", () => {
 
   it("reports work in progress, and reassures when nothing is asking", () => {
     const runs = [run("r3", "running"), run("r2", "pending"), run("r1", "done")];
-    expect(homeStatus(runs, REAL, false).sentence).toBe("2 runs in progress. Nothing needs you.");
+    expect(homeStatus(runs, REAL, false).sentence).toBe(
+      "2 runs in progress. Nothing needs your attention."
+    );
     expect(homeStatus([run("r1", "running")], REAL, false).sentence).toBe(
-      "1 run in progress. Nothing needs you."
+      "1 run in progress. Nothing needs your attention."
     );
   });
 
   it("is quiet and clear when every Run is terminal and nothing is asking", () => {
     const runs = [run("r2", "done"), run("r1", "skipped")];
-    expect(homeStatus(runs, REAL, false).sentence).toBe("All quiet. Nothing needs you.");
+    expect(homeStatus(runs, REAL, false).sentence).toBe(
+      "All caught up. Nothing needs your attention."
+    );
   });
 
   it("drops the all-clear whenever the connection notice is showing", () => {
-    // The branch ticket 08 settled. `Nothing needs you.` is a claim about the
-    // reader's obligations, so Home cannot make it under a banner asking for a
-    // sign-in — while "All quiet." stays true, because quiet is about Runs.
+    // The branch ticket 08 settled. `Nothing needs your attention.` is a claim
+    // about the reader's obligations, so Home cannot make it under a banner
+    // asking for a sign-in — while "All caught up." stays true, because caught
+    // up is about Runs.
     const signedOutAfterSuccess = [run("r2", "done"), run("r1", "done")];
-    expect(homeStatus(signedOutAfterSuccess, REAL, true).sentence).toBe("All quiet.");
+    expect(homeStatus(signedOutAfterSuccess, REAL, true).sentence).toBe("All caught up.");
 
     // Reachable on day one, with no successful Run and no sign-out: a skipped
     // Run never reaches the outputs stage, so it never fails on the connection.
     const everythingSkipped = [run("r2", "skipped"), run("r1", "skipped")];
-    expect(homeStatus(everythingSkipped, REAL, true).sentence).toBe("All quiet.");
+    expect(homeStatus(everythingSkipped, REAL, true).sentence).toBe("All caught up.");
 
     // Same rule for work in progress.
     expect(homeStatus([run("r1", "running")], REAL, true).sentence).toBe("1 run in progress.");
+  });
+});
+
+describe("Home's activity feed", () => {
+  it("shows finished Runs newest first, capped, with humanized titles", () => {
+    const runs = [
+      run("r1", "done", "Stand-up - 2026-06-18T13-00-00.000Z.json"),
+      run("r2", "skipped"),
+      run("r3", "failed"),
+      run("r4", "running"),
+    ];
+    const { feed } = homeStatus(runs, REAL, false);
+    expect(feed.map((entry) => [entry.title, entry.outcome])).toEqual([
+      ["Stand-up — Jun 18", "Completed"],
+      ["r2", "Skipped"],
+    ]);
+    expect(feed.every((entry) => entry.to === `/runs/${entry.id}`)).toBe(true);
+  });
+
+  it("is empty when nothing has finished — no zeroes, ever", () => {
+    expect(homeStatus([run("r1", "failed")], REAL, true).feed).toEqual([]);
+  });
+
+  it("frames a connection-caused failure as reconnect-fixable, in Settings", () => {
+    const failed = { ...run("r1", "failed", "Pricing call.docx"), connectionCaused: true };
+    const { rows } = homeStatus([failed], REAL, true);
+    expect(rows).toEqual([
+      {
+        id: "r1",
+        text: "Pricing call could not finish because Google needs reconnecting",
+        cta: "Reconnect",
+        to: "/settings",
+      },
+    ]);
   });
 });
 
@@ -92,7 +132,7 @@ describe("Home's attention rail", () => {
   it("opens a failed Run rather than offering to retry it", () => {
     const { rows } = homeStatus([run("r1", "failed", "Pricing call.docx")], REAL, true);
     expect(rows).toEqual([
-      { id: "r1", text: "Pricing call.docx failed", cta: "Open", to: "/runs/r1" },
+      { id: "r1", text: "Pricing call failed", cta: "Open", to: "/runs/r1" },
     ]);
   });
 
@@ -105,9 +145,9 @@ describe("Home's attention rail", () => {
     const runs = Array.from({ length: 5 }, (_, i) => run(`r${i}`, "failed"));
     const { rows } = homeStatus(runs, REAL, true);
     expect(rows.map((row) => row.text)).toEqual([
-      "r0.txt failed",
-      "r1.txt failed",
-      "r2.txt failed",
+      "r0 failed",
+      "r1 failed",
+      "r2 failed",
       "2 more runs failed",
     ]);
     // The tail links to the full list, which is Transcript's, not Home's.

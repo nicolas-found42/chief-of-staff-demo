@@ -1,4 +1,5 @@
 import type {
+  DriveIntakeStatus,
   GoogleStatus,
   RedactedConfig,
   RunDetail,
@@ -57,6 +58,8 @@ export const api = {
     request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),
   googlePickerToken: () => request<{ token: string; expiresAt: string | null }>("/api/google/picker-token"),
   driveSync: () => request<{ created: number }>("/api/drive/sync", { method: "POST" }),
+  /* Remembered intake facts only (D14): the endpoint makes zero Google calls. */
+  driveIntakeStatus: () => request<DriveIntakeStatus>("/api/intake/drive"),
 };
 
 export function errorMessage(error: unknown): string {

@@ -55,12 +55,18 @@ export async function findOrCreateTasklist(auth: GoogleAuth, title: string): Pro
   return created.data.id;
 }
 
+export interface CreatedTask {
+  googleId: string;
+  /** Absolute link to the task in Google's Tasks Web UI, as Google returned it. */
+  webViewLink: string | null;
+}
+
 export async function createGoogleTask(
   auth: GoogleAuth,
   tasklistId: string,
   item: TaskItem,
   source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">
-): Promise<string> {
+): Promise<CreatedTask> {
   const tasks = google.tasks({ version: "v1", auth });
   const requestBody: Record<string, string> = {
     title: item.title,
@@ -69,9 +75,10 @@ export async function createGoogleTask(
   if (item.due) {
     requestBody.due = normalizeDue(item.due);
   }
+
   const res = await tasks.tasks.insert({ tasklist: tasklistId, requestBody });
   if (!res.data.id) {
     throw new Error(`task insert returned no id for "${item.title}"`);
   }
-  return res.data.id;
+  return { googleId: res.data.id, webViewLink: res.data.webViewLink ?? null };
 }

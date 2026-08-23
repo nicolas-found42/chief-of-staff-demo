@@ -14,7 +14,7 @@ export function HotTakePage() {
   return (
     <div className="page">
       <h1 ref={headingRef} tabIndex={-1}>
-        Hot Take {planned && <span className="status-pill status-active">Planned</span>}
+        Hot Take {planned && <span className="status-badge status-active">Planned</span>}
       </h1>
       <p className="muted">
         Turn a link or transcript into a draft LinkedIn post. This Module is planned — Runs, Intakes

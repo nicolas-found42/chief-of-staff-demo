@@ -89,6 +89,25 @@ export class IncompleteGrantError extends Error {
 }
 
 /**
+ * The token endpoint refused the exchange because the redirect URI registered
+ * on the OAuth client does not match the one this app sent (D13). Named so the
+ * UI can answer with the correct value instead of a generic failure.
+ */
+export class RedirectUriMismatchError extends Error {
+  constructor() {
+    super("The redirect URI registered in Google does not match this app's.");
+    this.name = "RedirectUriMismatchError";
+  }
+}
+
+/** Shape-tolerant: googleapis nests the reason at different depths per call. */
+export function isRedirectUriMismatch(error: unknown): boolean {
+  return /redirect_uri_mismatch/.test(
+    typeof error === "object" && error !== null ? JSON.stringify(error) : String(error)
+  );
+}
+
+/**
  * The reason and message Google attaches to an API error. Distinct from
  * `isRejectedGrant`, which reads the bare string the *token* endpoint returns:
  * an API 403 carries an object instead, and the two shapes do not overlap.
@@ -452,7 +471,15 @@ export function openGoogleConnection(
     },
 
     async completeSignIn(code: string): Promise<void> {
-      const grant = await exchange(configStore.get(), port, code);
+      let grant: { refreshToken: string; grantedScopes: string[] };
+      try {
+        grant = await exchange(configStore.get(), port, code);
+      } catch (error) {
+        if (isRedirectUriMismatch(error)) {
+          throw new RedirectUriMismatchError();
+        }
+        throw error;
+      }
       const missing = findMissingScopes(grant.grantedScopes);
       if (missing.length > 0) {
         throw new IncompleteGrantError(missing);

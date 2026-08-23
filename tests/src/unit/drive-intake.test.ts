@@ -47,7 +47,7 @@ function fakeGoogle(): FakeGoogle {
     },
     createTask: async (_id, item, source) => {
       g.calls.tasks.push({ title: item.title, notes: composeTaskNotes(item, source) });
-      return `task-${g.calls.tasks.length}`;
+      return { googleId: `task-${g.calls.tasks.length}`, webViewLink: null };
     },
     createDraft: async (draft) => {
       g.calls.drafts.push({ subject: draft.subject });
@@ -166,8 +166,9 @@ describe.sequential("DriveIntake", () => {
     expect(created).toBe(0);
     expect(listSpy).not.toHaveBeenCalled();
     expect(openRuns(workspaceDir).list()).toHaveLength(0);
-    const state = loadState(join(workspaceDir, "state.json"));
-    expect(state.drive.lastPollAt).not.toBeNull();
+    /* A gated poll is not an attempt: recording a time would teach the
+       Runs-page liveness line to claim a check that never happened. */
+    expect(loadState(join(workspaceDir, "state.json")).drive.lastPollAt).toBeNull();
   });
 
   it("gates: does nothing when folderId is empty", async () => {
@@ -575,16 +576,71 @@ describe.sequential("DriveIntake", () => {
     expect(nextState.drive.ingestedIds).toContain("new-1");
   });
 
-  it("updates state.drive.lastPollAt on every poll attempt (even when gated)", async () => {
+  it("a disabled intake records no lastPollAt — the line stays silent instead of lying", async () => {
     configStore.update({ drive: { enabled: false } } as unknown as Record<string, unknown>);
     const drive = makeDrive([]);
     const intake = intakeWith(drive);
-    const before = loadState(join(workspaceDir, "state.json")).drive.lastPollAt;
-    expect(before).toBeNull();
     await intake.pollOnce();
-    const after = loadState(join(workspaceDir, "state.json")).drive.lastPollAt;
-    expect(after).not.toBeNull();
-    expect(new Date(after as string).getTime()).toBeGreaterThan(Date.now() - 5000);
+    expect(loadState(join(workspaceDir, "state.json")).drive.lastPollAt).toBeNull();
+    expect(loadState(join(workspaceDir, "state.json")).drive.lastPollOutcome).toBeNull();
+  });
+
+  it("status() reports remembered facts and never touches Google", async () => {
+    /* The real poll runs against the normal fake connection... */
+    const polled = intakeWith(makeDrive([]));
+    expect(polled.status()).toMatchObject({
+      enabled: true,
+      configured: true,
+      folderName: "Test",
+      pollIntervalMinutes: 2,
+      lastPollAt: null,
+      lastPollOutcome: null,
+    });
+    await polled.pollOnce();
+    await pipeline.idle();
+    const after = polled.status();
+    expect(after.lastPollAt).not.toBeNull();
+    expect(after.lastPollOutcome).toBe("ok");
+
+    /* ...while this one would explode if anything asked Google — proving
+       status() itself costs no call (ADR-0008 economics). */
+    const stateCalls: number[] = [];
+    const counting: GoogleConnection = {
+      ...intakeGoogle,
+      state: async () => {
+        stateCalls.push(1);
+        throw new Error("status() must not ask Google");
+      },
+    } as unknown as GoogleConnection;
+    const readback = intakeWith(makeDrive([]), counting);
+    expect(readback.status()).toMatchObject({
+      lastPollAt: after.lastPollAt,
+      lastPollOutcome: "ok",
+    });
+    expect(stateCalls).toHaveLength(0);
+  });
+  it("status() remembers a failed attempt as failed", async () => {
+    const failing: GoogleConnection = {
+      ...intakeGoogle,
+      state: async () => {
+        throw new Error("drive exploded");
+      },
+    } as unknown as GoogleConnection;
+    const intake = intakeWith(makeDrive([]), failing);
+    await expect(intake.pollOnce()).rejects.toThrow(/drive exploded/);
+    const status = intake.status();
+    expect(status.lastPollOutcome).toBe("failed");
+    expect(status.lastPollAt).not.toBeNull();
+  });
+
+  it("a skipped poll records nothing — the line cannot claim a check that did not happen", async () => {
+    configStore.setGoogleRefreshToken(null);
+    const drive = makeDrive([{ id: "1", name: "a.txt" }]);
+    const listSpy = vi.spyOn(drive.files, "list");
+    const intake = intakeWith(drive);
+    await intake.pollOnce();
+    expect(intake.status().lastPollAt).toBeNull();
+    expect(listSpy).not.toHaveBeenCalled();
   });
 
   it("sets Run sourceUrl, externalId, fileName, and meetingDate from file name", async () => {

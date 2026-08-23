@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { GoogleStatus, SetupCheck } from "@chief-of-staff-demo/shared";
 import { expiryNote } from "../connectionNotice";
 
@@ -103,6 +103,12 @@ export function GoogleConnect(props: GoogleConnectProps) {
      still unambiguous when three buttons on the page all say Copy (WCAG 4.1.3). */
   const [copied, setCopied] = useState<string | null>(null);
   const [audience, setAudience] = useState<Audience>("personal");
+  /* D12: exactly one wizard step open at a time. `furthest` remembers how far
+     the operator has got, so steps they walked past collapse to ✓ — a local
+     fact about the visit, never a claim that Google verified anything (D13
+     rejects probing console state). */
+  const [openStep, setOpenStep] = useState(0);
+  const [furthestStep, setFurthestStep] = useState(0);
 
   const copy = async (label: string, value: string) => {
     try {
@@ -141,7 +147,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
   const signInButton = (label: string) => (
     <button
       type="button"
-      className="google-signin"
+      className="google-signin action-button"
       onClick={props.onSignIn}
       aria-disabled={signingIn}
     >
@@ -149,10 +155,11 @@ export function GoogleConnect(props: GoogleConnectProps) {
       {signingIn ? "Signing in…" : label}
     </button>
   );
-
   const copyButton = (label: string, value: string) => (
     <button type="button" className="copy-button" onClick={() => void copy(label, value)}>
-      Copy <span className="visually-hidden">{label}</span>
+      {/* The visible swap is the point-of-action confirmation (D13); the live
+          region above announces it too. */}
+      {copied === label ? "Copied" : "Copy"} <span className="visually-hidden">{label}</span>
     </button>
   );
 
@@ -245,15 +252,15 @@ export function GoogleConnect(props: GoogleConnectProps) {
     </fieldset>
   );
 
-  /* One list, rendered whether or not the steps are the main event, so they are
-     never unreachable: open for someone who has never got through them, behind a
-     summary for someone changing an OAuth client they already have. */
-  const setupSteps = (
-    <>
-      {audienceChoice}
-      <ol className="setup-steps">
-        <li>
-          <p className="setup-step-title">Create or choose a Google Cloud project.</p>
+  /* D12: the console walkthrough as a wizard — one step expanded at a time,
+     completed steps collapsed to a ✓ line, progress always visible. The
+     sequence and the per-step content are exactly what ADR-0013 froze; only
+     the presentation changed. */
+  const stepDefs: { title: string; body: ReactNode }[] = [
+    {
+      title: "Create or choose a Google Cloud project.",
+      body: (
+        <>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.projectCreate} target="_blank" rel="noreferrer">
               Create a project
@@ -262,13 +269,16 @@ export function GoogleConnect(props: GoogleConnectProps) {
           <p className="muted field-hint">
             Google puts every app inside a project. After creating one, <strong>check the project
             name in the console's top bar</strong> — the console does not switch to a project it has
-            just created, and every step below has to happen in the same one.
+            just made.
             {workspace ? " On a work account you will also see an Organization field; leave it as it is." : ""}
           </p>
-        </li>
-
-        <li>
-          <p className="setup-step-title">Turn on the APIs this app calls.</p>
+        </>
+      ),
+    },
+    {
+      title: "Turn on the APIs this app calls.",
+      body: (
+        <>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.tasksApi} target="_blank" rel="noreferrer">
               Enable the Tasks API
@@ -291,10 +301,13 @@ export function GoogleConnect(props: GoogleConnectProps) {
           <p className="muted field-hint">
             The Picker API runs in the browser and has no server-side check — <strong>Check my setup</strong> verifies the other three and cannot verify the Picker.
           </p>
-        </li>
-
-        <li>
-          <p className="setup-step-title">Set up the Google Auth Platform.</p>
+        </>
+      ),
+    },
+    {
+      title: "Set up the Google Auth Platform.",
+      body: (
+        <>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.authPlatform} target="_blank" rel="noreferrer">
               Open the Google Auth Platform
@@ -312,27 +325,35 @@ export function GoogleConnect(props: GoogleConnectProps) {
               ? "Internal is what makes your list one step shorter — it needs no test users and no verification."
               : "If the contact stage turns red just after you type the address, press Next again."}
           </p>
-        </li>
-
-        {!workspace && (
-          <li>
-            <p className="setup-step-title">Add yourself as a test user.</p>
-            <p className="setup-links">
-              <a className="step-link" href={CONSOLE.audience} target="_blank" rel="noreferrer">
-                Open Audience
-              </a>
-            </p>
-            <p className="muted field-hint">
-              Under <strong>Test users</strong> choose <strong>Add users</strong>, type the Google
-              address you will sign in with, and <strong>Save</strong>. Miss this and the sign-in
-              below fails with <em>Access blocked … Error 403: access_denied</em> and no way through
-              the page — it is the one step with no recovery.
-            </p>
-          </li>
-        )}
-
-        <li>
-          <p className="setup-step-title">Add all three scopes under Data Access.</p>
+        </>
+      ),
+    },
+    ...(workspace
+      ? []
+      : [
+          {
+            title: "Add yourself as a test user.",
+            body: (
+              <>
+                <p className="setup-links">
+                  <a className="step-link" href={CONSOLE.audience} target="_blank" rel="noreferrer">
+                    Open Audience
+                  </a>
+                </p>
+                <p className="muted field-hint">
+                  Under <strong>Test users</strong> choose <strong>Add users</strong>, type the Google
+                  address you will sign in with, and <strong>Save</strong>. Miss this and the sign-in
+                  below fails with <em>Access blocked … Error 403: access_denied</em> and no way through
+                  the page — it is the one step with no recovery.
+                </p>
+              </>
+            ),
+          },
+        ]),
+    {
+      title: "Add all three scopes under Data Access.",
+      body: (
+        <>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.dataAccess} target="_blank" rel="noreferrer">
               Open Data Access
@@ -353,10 +374,13 @@ export function GoogleConnect(props: GoogleConnectProps) {
             Then press <strong>Update</strong> in the panel, and <strong>Save</strong> on the page
             behind it. Both: the panel's Update alone leaves the change unsaved.
           </p>
-        </li>
-
-        <li>
-          <p className="setup-step-title">Create an OAuth client.</p>
+        </>
+      ),
+    },
+    {
+      title: "Create an OAuth client.",
+      body: (
+        <>
           <p className="setup-links">
             <a className="step-link" href={CONSOLE.clients} target="_blank" rel="noreferrer">
               Open Clients
@@ -366,23 +390,31 @@ export function GoogleConnect(props: GoogleConnectProps) {
             <strong>Create client</strong>, then application type <strong>Web application</strong> —
             not Desktop app, even though this app runs on your machine. Add the string below under{" "}
             <strong>Authorized redirect URIs</strong>, which is the second of the two Add URI
-            blocks; leave <strong>Authorized JavaScript origins</strong> empty. Google matches this
-            character for character, and <code>http://</code> is correct here because it allows it
-            for localhost.
+            blocks; leave <strong>Authorized JavaScript origins</strong> empty.
           </p>
           <p className="setup-copy">
             <code>{status.redirectUri}</code>
             {copyButton("Redirect URI", status.redirectUri)}
+          </p>
+          {/* D13: the one value Google compares character for character; the
+              warning sits at the value, not in a paragraph after it. */}
+          <p className="muted field-hint">
+            <strong>Paste it exactly — do not edit.</strong> One changed character and sign-in
+            fails with a redirect mismatch. (<code>http://</code> is correct here: Google allows
+            it for localhost.)
           </p>
           <p className="muted field-hint">
             When you press Create, Google shows the client ID and secret{" "}
             <strong>once</strong>. Copy both now, or use <strong>Download JSON</strong> — the secret
             cannot be viewed again afterwards, and a lost one means creating another client.
           </p>
-        </li>
-
-        <li>
-          <p className="setup-step-title">Paste the client ID and secret, then sign in.</p>
+        </>
+      ),
+    },
+    {
+      title: "Paste the client ID and secret, then sign in.",
+      body: (
+        <>
           {credentialFields}
           {clientJsonField}
           <p className="muted field-hint">
@@ -391,10 +423,10 @@ export function GoogleConnect(props: GoogleConnectProps) {
               : "Google will warn that it hasn't verified this app. Click Continue — the small link, not the Back to safety button. Leave all three permissions ticked — Google Drive to read the folder, plus Tasks and Gmail: Google calls the Gmail one “Manage drafts and send emails” because that is the permission's name; this app has no code that can send, and a test fails the build if any appears."}
           </p>
           <div className="field-row">{signInButton("Save and sign in with Google")}</div>
-        </li>
-      </ol>
-    </>
-  );
+        </>
+      ),
+    },
+  ];
 
   /* Asking Google beats describing Google: a 403 names the missing API or the
      missing scope exactly, and unlike the steps above it cannot go stale when
@@ -402,7 +434,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
   const setupCheck = (
     <div className="setup-check">
       <div className="field-row">
-        <button type="button" onClick={props.onCheck} aria-disabled={checking}>
+        <button type="button" className="action-button" onClick={props.onCheck} aria-disabled={checking}>
           {checking ? "Checking…" : "Check my setup"}
         </button>
         <span className="muted">Asks Google what is missing, and creates nothing.</span>
@@ -428,6 +460,49 @@ export function GoogleConnect(props: GoogleConnectProps) {
     </div>
   );
 
+  /* The wizard itself: progress line, one-open accordion, and Check my setup
+     inside the flow after the credential step (D12) rather than floating
+     beneath the whole card. */
+  const wizardFlow = (
+    <div className="wizard">
+      {audienceChoice}
+      <p className="wizard-progress" role="status">
+        Step {openStep + 1} of {stepDefs.length}
+      </p>
+      <ol className="setup-steps wizard-steps">
+        {stepDefs.map((step, index) => {
+          const open = index === openStep;
+          const done = index < Math.max(openStep, furthestStep);
+          return (
+            <li key={step.title} className={done ? "wizard-step done" : "wizard-step"}>
+              <button
+                type="button"
+                className="wizard-step-toggle"
+                aria-expanded={open}
+                aria-controls={`wizard-panel-${index}`}
+                onClick={() => {
+                  setOpenStep(index);
+                  setFurthestStep((current) => Math.max(current, index));
+                }}
+              >
+                <span className="wizard-step-marker" aria-hidden="true">
+                  {done ? "✓" : index + 1}
+                </span>
+                {step.title}
+              </button>
+              {open && (
+                <div id={`wizard-panel-${index}`} className="wizard-panel">
+                  {step.body}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {setupCheck}
+    </div>
+  );
+
   return (
     <>
       {/* One live region for every copy button, so the confirmation is announced
@@ -443,7 +518,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
               <span className="ok">Connected</span>
               {status.email ? ` as ${status.email}` : ""}
             </span>
-            <button type="button" onClick={props.onDisconnect} aria-disabled={disconnecting}>
+            <button type="button" className="action-button" onClick={props.onDisconnect} aria-disabled={disconnecting}>
               {disconnecting ? "Disconnecting…" : "Disconnect"}
             </button>
           </div>
@@ -511,15 +586,13 @@ export function GoogleConnect(props: GoogleConnectProps) {
       )}
 
       {setupDone ? (
-        <details className="setup-details">
+        <details className="disclosure">
           <summary>Set up a different OAuth client</summary>
-          {setupSteps}
+          {wizardFlow}
         </details>
       ) : (
-        setupSteps
+        wizardFlow
       )}
-
-      {setupCheck}
     </>
   );
 }

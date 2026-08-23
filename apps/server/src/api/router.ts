@@ -6,7 +6,12 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
-import { googleFailureHint, IncompleteGrantError, type GoogleConnection } from "../google/connection.js";
+import {
+  googleFailureHint,
+  IncompleteGrantError,
+  RedirectUriMismatchError,
+  type GoogleConnection,
+} from "../google/connection.js";
 import type { DriveIntake } from "../intake/drive.js";
 import { type Pipeline, RunNotFoundError, RunNotRetryableError } from "../pipeline/run.js";
 import type { Runs } from "../runs.js";
@@ -135,12 +140,18 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
         reply.redirect(`/settings?google=scope_missing&missing=${encodeURIComponent(missing)}`);
         return;
       }
+      if (error instanceof RedirectUriMismatchError) {
+        request.log.warn(error, "Google OAuth redirect URI mismatch");
+        reply.redirect("/settings?google=redirect_uri_mismatch");
+        return;
+      }
       request.log.warn(error, "Google OAuth code exchange failed");
       reply.redirect("/settings?google=error");
     }
   });
 
   app.post("/api/drive/sync", async (_request, reply) => {
+
     try {
       const { created } = await ctx.driveIntake.pollOnce();
       return { created };
@@ -151,4 +162,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
   });
 
+  /* Remembered intake facts only (D14): served from config and the state
+     file, it makes zero Google calls. */
+  app.get("/api/intake/drive", async () => ctx.driveIntake.status());
 }
