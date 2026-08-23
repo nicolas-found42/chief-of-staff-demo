@@ -49,7 +49,7 @@ function loadGapi(): Promise<void> {
  *
  * No developer key and no appId: an API key authorises public-data views while
  * this picker is private-data access authorised by the OAuth token; setAppId is
- * for the drive.file scope while this app holds drive.readonly.
+ * for the drive.file scope while this app holds drive.
  */
 export async function pickDriveFolder(oauthToken: string): Promise<{ id: string; name: string } | null> {
   await loadGapi();

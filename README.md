@@ -112,8 +112,7 @@ has.
 
 ### Intake
 
-**Drive folder** — pick one Google Drive folder in Settings (**Drive transcripts** card). Every `.txt`, `.md`, `.json`, `.jsonc`, `.pdf`, `.docx`, or native Google Doc added there is polled (default 2 min) and becomes a Run. Ingested Drive `fileId`s are remembered in `workspace/state.json` (`drive.ingestedIds`, capped at 1000); files stay in Drive (`drive.readonly`). Unsupported types are ignored. `Sync now` runs one poll immediately.
-
+**Drive folder** — pick one Google Drive folder in Settings (**Drive transcripts** card). Every `.txt`, `.md`, `.json`, `.jsonc`, `.pdf`, `.docx`, or native Google Doc added there is polled (default 2 min) and becomes a Run. Ingested Drive `fileId`s are remembered in `workspace/state.json` (`drive.ingestedIds`, capped at 1000); files stay in Drive (`drive` scope, allows future Module writes). Unsupported types are ignored. `Sync now` runs one poll immediately.
 ## Working on the code
 
 Same container, one extra flag. `--watch` rebuilds the image and restarts the app whenever

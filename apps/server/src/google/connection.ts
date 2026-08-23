@@ -45,13 +45,13 @@ export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
   tasks: { label: "Google Tasks", api: "Tasks API", scope: "tasks" },
   gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
-  drive: { label: "Google Drive", api: "Drive API", scope: "drive.readonly" },
+  drive: { label: "Google Drive", api: "Drive API", scope: "drive" },
 };
 
 const SCOPE_LABELS: Record<string, string> = {
   "https://www.googleapis.com/auth/tasks": "Google Tasks",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
-  "https://www.googleapis.com/auth/drive.readonly": "Google Drive",
+  "https://www.googleapis.com/auth/drive": "Google Drive",
 };
 
 /**

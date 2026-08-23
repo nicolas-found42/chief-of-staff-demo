@@ -60,7 +60,7 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
   await expect(page.locator(".setup-copy > code")).toHaveText([
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive",
   ]);
   await expect(page.locator(".copy-button")).toHaveCount(3);
   await expect(

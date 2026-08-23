@@ -5,7 +5,7 @@ import type { AppConfig } from "@chief-of-staff-demo/shared";
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/gmail.compose",
-  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/drive",
 ];
 
 /** The exact redirect URI that must be registered in Google Cloud Console. */

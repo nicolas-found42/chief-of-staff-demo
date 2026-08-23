@@ -505,9 +505,10 @@ export function SettingsPage() {
             const labelMap: Record<string, string> = {
               "https://www.googleapis.com/auth/tasks": "Google Tasks",
               "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
-              "https://www.googleapis.com/auth/drive.readonly": "Google Drive",
+              "https://www.googleapis.com/auth/drive": "Google Drive",
               tasks: "Google Tasks",
               "gmail.compose": "Gmail drafts",
+              drive: "Google Drive",
               "drive.readonly": "Google Drive",
             };
             const labels = scopes.map((s) => labelMap[s] ?? s);
