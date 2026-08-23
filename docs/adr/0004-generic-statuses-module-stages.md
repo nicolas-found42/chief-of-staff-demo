@@ -1,5 +1,9 @@
 # Run status is generic; detail lives in Stages
 
+**Amended by [ADR-0020](0020-shell-owns-the-durable-wait.md).** The `blocked` status this
+ADR pre-authorised is now spent: a Run holds it while a durable wait stands against it. The
+shared set is `pending`, `running`, `blocked`, `done`, `skipped`, `failed`.
+
 A Run's status is one of `pending`, `running`, `done`, `skipped`, `failed` for every Module. The
 original statuses (`extracting`, `creating-outputs`) were the transcript workflow's vocabulary, and
 keeping them would force every later Module to claim it is "extracting" when it is not. Per-Module
