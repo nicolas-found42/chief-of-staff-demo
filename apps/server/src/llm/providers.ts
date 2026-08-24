@@ -14,7 +14,7 @@ export interface LlmConfig {
   baseUrl?: string;
 }
 
-export interface CompletionRequest {
+interface CompletionRequest {
   system: string;
   user: string;
 }

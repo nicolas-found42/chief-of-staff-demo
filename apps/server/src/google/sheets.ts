@@ -37,7 +37,7 @@ export async function createSpreadsheet(
 }
 
 /** The tabs a spreadsheet has, by title. Throws if the spreadsheet is gone. */
-export async function tabTitles(auth: GoogleAuth, spreadsheetId: string): Promise<string[]> {
+async function tabTitles(auth: GoogleAuth, spreadsheetId: string): Promise<string[]> {
   const sheets = google.sheets({ version: "v4", auth });
   const found = await sheets.spreadsheets.get({
     spreadsheetId,

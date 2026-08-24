@@ -9,7 +9,6 @@ import {
 import type { Runs } from "../runs.js";
 import { type CompleteJson } from "../llm/providers.js";
 
-export { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 export { meetingDateFromFileName } from "../modules/transcript/module.js";
 export type { GoogleAccess, RunSourceSpec } from "../modules/transcript/module.js";
 

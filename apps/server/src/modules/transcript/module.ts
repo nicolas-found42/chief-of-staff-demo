@@ -64,7 +64,7 @@ export function meetingDateFromFileName(fileName: string): string | null {
  * what landed in the world, counted from what Google actually accepted rather
  * than from what was extracted.
  */
-export function transcriptSummary(tasks: number, drafts: number): string {
+function transcriptSummary(tasks: number, drafts: number): string {
   const parts: string[] = [];
   if (tasks > 0) {
     parts.push(tasks === 1 ? "1 task" : `${tasks} tasks`);

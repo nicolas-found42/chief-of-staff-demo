@@ -73,7 +73,7 @@ export interface NewRun {
   externalId: string | null;
 }
 /** Which Runs to list, and how many. */
-export interface RunQuery {
+interface RunQuery {
   /** Only this Module's Runs. Absent lists every Module's. */
   module?: string;
   /** Page size. Absent lists every Run. */

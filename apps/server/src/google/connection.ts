@@ -44,7 +44,7 @@ export function isRejectedGrant(error: unknown): boolean {
  * API key — and unlike the Picker it has a server-side surface, so **Check my
  * setup** probes it exactly as it probes the others.
  */
-export const GOOGLE_SURFACES = ["tasks", "gmail", "drive", "youtube"] as const;
+const GOOGLE_SURFACES = ["tasks", "gmail", "drive", "youtube"] as const;
 export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
 const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
@@ -67,16 +67,13 @@ const SCOPE_LABELS: Record<string, string> = {
  * responses omit the list entirely and rejecting that would lock the operator
  * out on an unusual but valid answer.
  */
-export function findMissingScopes(grantedScopes: string[] | null | undefined): string[] {
+function findMissingScopes(grantedScopes: string[] | null | undefined): string[] {
   if (!grantedScopes || grantedScopes.length === 0) {
     return [];
   }
   const granted = new Set(grantedScopes);
   return GOOGLE_SCOPES.filter((required) => !granted.has(required));
 }
-
-/** Backwards-compatible alias. */
-export const getMissingScopes = findMissingScopes;
 
 export class IncompleteGrantError extends Error {
   public readonly missingScopes: string[];
@@ -106,7 +103,7 @@ export class RedirectUriMismatchError extends Error {
 }
 
 /** Shape-tolerant: googleapis nests the reason at different depths per call. */
-export function isRedirectUriMismatch(error: unknown): boolean {
+function isRedirectUriMismatch(error: unknown): boolean {
   return /redirect_uri_mismatch/.test(
     typeof error === "object" && error !== null ? JSON.stringify(error) : String(error),
   );
@@ -259,29 +256,28 @@ const spendRefreshToken: GoogleProbe = async (config, port) => {
   }
 };
 
-export type OutputsAccess =
+type OutputsAccess =
   { ok: true; outputs: GoogleOutputs } | { ok: false; state: GoogleConnectionState };
 
 /**
  * Credentials for a Module that makes its own Google calls (ADR-0018): the
  * Shell holds the authorization, the Module does the calling.
  */
-export type AuthAccess =
-  { ok: true; auth: GoogleAuth } | { ok: false; state: GoogleConnectionState };
+type AuthAccess = { ok: true; auth: GoogleAuth } | { ok: false; state: GoogleConnectionState };
 
-export type AuthUrlAccess = { ok: true; url: string } | { ok: false; state: GoogleConnectionState };
+type AuthUrlAccess = { ok: true; url: string } | { ok: false; state: GoogleConnectionState };
 
-export type PickerTokenAccess =
+type PickerTokenAccess =
   | { ok: true; token: string; expiresAt: string | null }
   | { ok: false; state: GoogleConnectionState };
 
-export type ExchangeCode = (
+type ExchangeCode = (
   config: AppConfig,
   port: number,
   code: string,
 ) => Promise<{ refreshToken: string; grantedScopes: string[] }>;
 
-export type MintAccessTokenFn = (
+type MintAccessTokenFn = (
   config: AppConfig,
   port: number,
 ) => Promise<{ token: string; expiresAt: string | null }>;

@@ -19,7 +19,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run knip && npm test",
     "check:all": "npm run check && npm run test:e2e",
     "knip": "knip",
     "dev:server": "npm run build --workspace @chief-of-staff-demo/shared && tsx watch apps/server/src/main.ts",

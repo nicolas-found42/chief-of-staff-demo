@@ -32,7 +32,7 @@ function deepMerge(base: unknown, patch: unknown): unknown {
   return patch;
 }
 
-export function defaultConfig(): AppConfig {
+function defaultConfig(): AppConfig {
   return {
     provider: "mock",
     model: "",
@@ -152,7 +152,7 @@ export class ConfigStore {
   }
 }
 
-export function secretHint(value: string): SecretHint {
+function secretHint(value: string): SecretHint {
   return { set: value.length > 0, hint: value ? `…${value.slice(-4)}` : "" };
 }
 

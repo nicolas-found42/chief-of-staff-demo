@@ -9,7 +9,7 @@ import type { TrendPoint } from "@chief-of-staff-demo/shared";
  * between Friday and Monday is a number nobody measured, and a chart that
  * invents one is worse than a chart with a hole in it.
  */
-export interface ChartPoint {
+interface ChartPoint {
   x: number;
   y: number;
   day: string;

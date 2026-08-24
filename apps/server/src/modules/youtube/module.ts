@@ -53,7 +53,7 @@ export type YoutubeInput = { kind: "measure" } | { kind: "publish" };
  * in — and the videos YouTube would not answer for, because three deleted
  * videos should not read as a broken automation.
  */
-export function youtubeSummary(channels: number, videos: number, failed: number): string {
+function youtubeSummary(channels: number, videos: number, failed: number): string {
   const parts = [
     channels === 1 ? "1 channel" : `${channels} channels`,
     videos === 1 ? "1 video" : `${videos} videos`,

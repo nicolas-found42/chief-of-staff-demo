@@ -1,4 +1,4 @@
-export interface RunAttendee {
+interface RunAttendee {
   name: string;
   email: string | null;
 }
@@ -26,7 +26,7 @@ export interface ExtractionMessages {
  * the task-field rules, the draft rule, and the untrusted-data preamble are
  * load-bearing; keep them verbatim when editing.
  */
-export const EXTRACTION_SYSTEM_PROMPT = `You extract action items from meeting transcripts and hand them off for task creation.
+const EXTRACTION_SYSTEM_PROMPT = `You extract action items from meeting transcripts and hand them off for task creation.
 
 ## Steps
 

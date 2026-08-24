@@ -28,7 +28,7 @@ function toBuffer(data: unknown): Buffer {
   return Buffer.from(JSON.stringify(data), "utf8");
 }
 
-export class DriveError extends Error {
+class DriveError extends Error {
   constructor(
     message: string,
     public readonly status?: number,

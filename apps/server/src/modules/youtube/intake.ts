@@ -8,13 +8,13 @@ import { localDay } from "./day.js";
  * due is the remembered date, not the interval, so the interval only bounds how
  * long after 06:00 the day's Run starts.
  */
-export const TICK_MINUTES = 15;
+const TICK_MINUTES = 15;
 
 /**
  * The hour, local time, from which the day's Run may start. A machine woken at
  * nine still records that day, and a machine left on records it in the morning.
  */
-export const RUN_FROM_HOUR = 6;
+const RUN_FROM_HOUR = 6;
 
 /** The Intake's whole decision, as a pure function of the clock and what it remembers. */
 export function dueNow(now: Date, lastRunDay: string | null): boolean {

@@ -17,7 +17,7 @@ export interface YouTubeClient {
   videoStatistics(ids: string[]): Promise<{ videos: YoutubeVideoCount[]; failedIds: string[] }>;
 }
 
-export interface ResolvedChannel {
+interface ResolvedChannel {
   id: string;
   handle: string;
   title: string;

@@ -2,25 +2,20 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["eslint.config.js"],
       "project": ["*.js"]
     },
     "apps/server": {
-      "entry": ["src/main.ts"],
       "project": ["src/**/*.ts"]
     },
     "apps/web": {
-      "entry": ["src/main.tsx", "vite.config.ts"],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "packages/shared": {
-      "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },
     "tests": {
       "entry": ["src/**/*.test.ts", "e2e/**/*.spec.ts", "e2e/start-server.mjs"],
       "project": ["src/**/*.ts", "e2e/**/*.{ts,mjs}"]
     }
-  },
-  "ignoreBinaries": ["docker"]
+  }
 }

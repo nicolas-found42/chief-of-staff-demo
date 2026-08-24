@@ -128,9 +128,3 @@ export async function pickDriveFolder(
 
   return promise;
 }
-
-/** Exposed for tests to reset the remembered load state. */
-export function __resetPickerForTests(): void {
-  gapiReady = false;
-  gapiPromise = null;
-}

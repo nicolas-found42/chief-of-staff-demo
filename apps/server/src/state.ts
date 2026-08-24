@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-export interface DriveState {
+interface DriveState {
   ingestedIds: string[];
   /** Remembered fact about the last completed poll attempt (D14). */
   lastPollAt: string | null;
@@ -13,7 +13,7 @@ export interface DriveState {
  * timer: an interval timer resets on every restart, so a laptop restarted every
  * few days would never fire one.
  */
-export interface YoutubeTrendsState {
+interface YoutubeTrendsState {
   /** The last calendar day a Run was started for, local time. */
   lastRunDay: string | null;
 }

@@ -1,7 +1,7 @@
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
 import { runTitle, statusLabel } from "./display";
 
-export interface RailRow {
+interface RailRow {
   /** React key, and the identity of the thing the row is about. */
   id: string;
   text: string;
@@ -10,7 +10,7 @@ export interface RailRow {
 }
 
 /** One finished Run in Home's activity feed (ADR-0014). */
-export interface FeedEntry {
+interface FeedEntry {
   id: string;
   title: string;
   /** Outcome in display vocabulary, with the detail that earns it. */
