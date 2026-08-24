@@ -147,9 +147,9 @@ describe("Home's attention rail", () => {
     ]);
   });
 
-  it("names an untitled transcript the way the runs table does", () => {
+  it("names an untitled Run the way the runs table does", () => {
     const { rows } = homeStatus([run("r1", "failed", "")], REAL, true);
-    expect(rows[0].text).toBe("Untitled transcript failed");
+    expect(rows[0].text).toBe("Untitled run failed");
   });
 
   it("shows three failures and summarises the rest, rather than rebuilding the list", () => {

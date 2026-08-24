@@ -252,6 +252,9 @@ export interface RunMeta {
   /** The file this Run started from, when it started from one at all. */
   fileName?: string;
   sourceUrl: string | null;
+  /** The Module's own key for what this Run is about in the world outside: a
+   *  Drive file id for the transcript Module, a calendar day for YouTube
+   *  Trends. The Shell stores it and reads nothing into it. */
   externalId: string | null;
   status: RunStatus;
   attempts: number;

@@ -27,10 +27,11 @@ describe("runTitle", () => {
     expect(runTitle("2026-06-18T13-00-00.000Z.json")).toBe("Jun 18");
   });
 
-  it("falls back to Untitled transcript when there is nothing to show", () => {
-    expect(runTitle("")).toBe("Untitled transcript");
-    expect(runTitle("   ")).toBe("Untitled transcript");
-    expect(runTitle(".json")).toBe("Untitled transcript");
+  it("falls back to Untitled run when there is nothing to show", () => {
+    /* Not "Untitled transcript": these helpers name every Module's Runs now. */
+    expect(runTitle("")).toBe("Untitled run");
+    expect(runTitle("   ")).toBe("Untitled run");
+    expect(runTitle(".json")).toBe("Untitled run");
   });
 });
 

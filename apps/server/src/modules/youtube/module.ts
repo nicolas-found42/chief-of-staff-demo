@@ -11,7 +11,12 @@ import {
   type ShellModule,
 } from "../../engine/module.js";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
-import { googleFailureHint, googleSurfaceHint } from "../../google/connection.js";
+import {
+  connectionFailure,
+  connectionUnavailable,
+  errorMessage,
+} from "../../engine/failure.js";
+import { googleSurfaceHint } from "../../google/connection.js";
 import type { RunOutcome } from "../../runs.js";
 import { STATISTICS_CHUNK, chunk, type YouTubeClient } from "./client.js";
 import { localDay } from "./day.js";
@@ -48,10 +53,6 @@ export interface YoutubeDeps {
  */
 export type YoutubeInput = { kind: "measure" } | { kind: "publish" };
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * One line for the Runs list. What was measured, in the units a person thinks
  * in — and the videos YouTube would not answer for, because three deleted
@@ -78,25 +79,9 @@ export function youtubeSummary(channels: number, videos: number, failed: number)
  * "nothing was measured" must never look like "nothing changed".
  */
 export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput> {
-  /**
-   * What an error proves about the connection, if anything. A rejected grant is
-   * not one bad call: every remaining one would fail the same way, and
-   * reconnecting rather than retrying is the fix.
-   */
-  const connectionFailure = (ctx: RunContext, error: unknown): StageFailure | null => {
-    const state = deps.observe(error);
-    if (!state) {
-      return null;
-    }
-    ctx.event("google_unavailable", { state, error: errorMessage(error) });
-    return new StageFailure(`google_${state}`, googleFailureHint(state), {
-      connectionCaused: true,
-    });
-  };
-
   /** Whatever a YouTube call threw, worded for the person who has to fix it. */
   const failed = (ctx: RunContext, error: unknown): StageFailure =>
-    connectionFailure(ctx, error) ??
+    connectionFailure(ctx, deps.observe, error) ??
     /* A missing scope, a disabled API or an exhausted quota: Google's own 403
        names the cause precisely, and the setup check's classifier already turns
        it into the console step that fixes it. */
@@ -105,10 +90,7 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
   const client = (ctx: RunContext): YouTubeClient => {
     const access = deps.getClient();
     if (!access.ok) {
-      ctx.event("google_unavailable", { state: access.state });
-      throw new StageFailure(`google_${access.state}`, googleFailureHint(access.state), {
-        connectionCaused: true,
-      });
+      throw connectionUnavailable(ctx, access.state);
     }
     return access.client;
   };
@@ -152,10 +134,7 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
     }
     await ctx.stage("publish", async () => {
       if (!access.ok) {
-        ctx.event("google_unavailable", { state: access.state });
-        throw new StageFailure(`google_${access.state}`, googleFailureHint(access.state), {
-          connectionCaused: true,
-        });
+        throw connectionUnavailable(ctx, access.state);
       }
       const sheet = access.spreadsheet!;
       for (const channel of measured.channels) {
@@ -181,7 +160,7 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
           /* Anything else keeps this Stage's own hint: whatever went wrong with
              Sheets, the counts are already recorded — which is the fact the
              person needs before deciding whether to retry. */
-          throw connectionFailure(ctx, error) ?? error;
+          throw connectionFailure(ctx, deps.observe, error) ?? error;
         }
         ctx.event("rows_appended", { channelId: channel.channelId, tab, rows: rows.length });
       }

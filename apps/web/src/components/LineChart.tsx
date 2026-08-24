@@ -44,7 +44,9 @@ export function LineChart({
     `${label}: ${first.views.toLocaleString()} views on ${first.day}, ` +
     `${last.views.toLocaleString()} on ${last.day}, ` +
     `${geometry.points.length} days measured` +
-    (broken ? `, with ${broken && geometry.segments.length === 2 ? "a gap" : "gaps"} where nothing ran.` : ".");
+    (broken
+      ? `, with ${geometry.segments.length === 2 ? "a gap" : "gaps"} where nothing ran.`
+      : ".");
 
   return (
     <svg

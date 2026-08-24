@@ -1,5 +1,9 @@
 # A live Module may be headless: lifecycle and presence are separate axes
 
+**Amended by:** ADR-0025 — the two axes below stand, but this ADR's worked example is withdrawn:
+the YouTube Module was built and holds a tab, so no committed Module is headless. ADR-0025 also
+closes the gap this one leaves open at the end, about where a headless Module's Runs are read.
+
 ADR-0014 removed planned Modules from the tab bar and settled promotion in one sentence: a
 planned Module "is promoted into the tab bar by becoming live, not by a second decision." That
 rule carries an assumption nothing had tested yet — that every live Module has something for a

@@ -2,8 +2,11 @@ import { z } from "zod";
 
 /**
  * YouTube Trends: the Module's own shapes. Here beside the transcript Module's
- * for the same reason — the web app and the server both need them — and read by
- * the Shell nowhere.
+ * for the same reason — the web app and the server both need them.
+ *
+ * The Shell's `ConfigSchema` names the channel shape, because it validates the
+ * one config file and a strict schema cannot hold an unknown slot. That is the
+ * whole of its knowledge: it stores what is below and interprets none of it.
  */
 
 /**

@@ -1,5 +1,6 @@
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import type { NewRun, RunHandle, Runs } from "../runs.js";
+import { errorMessage } from "./failure.js";
 import {
   OutsideStageError,
   StageFailure,
@@ -29,10 +30,6 @@ export interface RunnerDeps<Input> {
   runs: Runs;
   module: ShellModule<Input>;
   log?: (message: string) => void;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const TERMINAL = new Set(["done", "skipped", "failed"]);

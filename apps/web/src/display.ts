@@ -74,8 +74,9 @@ function shortDate(isoDay: string): string | null {
 
 /**
  * A human title for a stored filename: "Stand-up - 2026-06-18T13-00-00.000Z.json"
- * becomes "Stand-up — Jun 18". Falls back to "Untitled transcript" when there is
- * nothing left to show.
+ * becomes "Stand-up — Jun 18". Falls back to "Untitled run" when there is
+ * nothing left to show — this renders every Module's Runs now, so the fallback
+ * cannot be one Module's noun.
  */
 export function runTitle(fileName: string): string {
   const trimmed = fileName.trim();
@@ -90,7 +91,7 @@ export function runTitle(fileName: string): string {
   /* A name that was only a timestamp still has its date to offer; a truly
      empty cell falls back to the untitled sentence. */
   if (!name) {
-    return date ?? "Untitled transcript";
+    return date ?? "Untitled run";
   }
   return date ? `${name} — ${date}` : name;
 }

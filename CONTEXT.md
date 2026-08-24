@@ -42,7 +42,8 @@ its tab shows one sub-tab per channel, and its spreadsheet keeps the same number
 app. Named for what it produces, as Hot Take is — the Relay original it replaces keeps its own
 name, Weekly YouTube View Count.
 _Status_: live
-_Avoid_: YouTube Module, view counts (the Module is the trend, not the reading)
+_Avoid_: YouTube Module, Weekly YouTube View Count (that is the Relay original). "YouTube
+view counts" names the Google surface (ADR-0016), never this Module.
 
 **Run**:
 One scope of work owned by one Module, with a status and an append-only event log. Its result is

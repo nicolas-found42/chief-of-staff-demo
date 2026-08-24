@@ -223,7 +223,6 @@ export class YoutubeHost implements HostedModule {
         spreadsheetId: created.id,
         spreadsheetUrl: created.url,
       });
-      this.trend.invalidate();
       reply.code(201);
       return { spreadsheet: created };
     });
@@ -278,8 +277,9 @@ export class YoutubeHost implements HostedModule {
   }
 
   private setChannels(channels: YoutubeChannel[]): void {
+    /* No invalidation: the trend reads the channel list fresh on every read, so
+       only the Stage that writes a day's counts ever invalidates the scan. */
     this.deps.configStore.setModuleConfig(YOUTUBE_MODULE_ID, { ...this.config(), channels });
-    this.trend.invalidate();
   }
 
   /**

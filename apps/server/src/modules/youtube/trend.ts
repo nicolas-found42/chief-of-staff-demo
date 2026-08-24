@@ -26,31 +26,27 @@ export interface TrendIndexDeps {
  * ADR but is exactly the ambiguity it ruled out, and it becomes the right answer
  * against a measurement rather than against a guess.
  *
- * Derived on read and cached in memory. The day's counts are the only thing that
- * can change it, so the Stage that writes them is the only invalidator, and one
- * invalidator cannot drift.
+ * Derived on read, and the scan of the Runs is cached in memory. **Only the scan
+ * is cached.** The channel list, the spreadsheet link and what the Intake
+ * remembers change for their own reasons and are read fresh every time, so the
+ * one thing that can invalidate the cache is the Stage that writes a day's
+ * counts. A cache covering more than its one invalidator knows about is exactly
+ * the drift this rule exists to prevent.
  */
 export class TrendIndex {
-  private cached: YoutubeTrends | null = null;
+  /** The measured days, oldest first. Null until the first read scans them. */
+  private days: YoutubeRunResult[] | null = null;
 
   constructor(private readonly deps: TrendIndexDeps) {}
 
   read(): YoutubeTrends {
-    if (this.cached === null) {
-      this.cached = this.build();
+    if (this.days === null) {
+      /* Oldest first, so every series reads left to right. Days with no Run are
+         simply absent: no API returns a past day's view count, so a gap is the
+         truth about what was measured and is never filled in. */
+      this.days = this.results().sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
     }
-    return this.cached;
-  }
-
-  invalidate(): void {
-    this.cached = null;
-  }
-
-  private build(): YoutubeTrends {
-    /* Oldest first, so every series reads left to right. Days with no Run are
-       simply absent: no API returns a past day's view count, so a gap is the
-       truth about what was measured and is never filled in. */
-    const days = this.results().sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+    const days = this.days;
     const status = this.deps.status();
     return {
       channels: this.deps.getChannels().map((channel) => trendFor(channel, days)),
@@ -58,6 +54,11 @@ export class TrendIndex {
       todayRecorded: status.todayRecorded,
       spreadsheet: this.deps.spreadsheet(),
     };
+  }
+
+  /** Called by the Stage that writes a day's counts, and by nothing else. */
+  invalidate(): void {
+    this.days = null;
   }
 
   /** Every Run's own counts file. The Shell stores them; this Module reads them. */

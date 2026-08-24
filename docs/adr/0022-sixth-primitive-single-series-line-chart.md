@@ -28,6 +28,15 @@ that rule is testable without a browser.
 The expanding row that reveals a video's line is not new — it is the fifth primitive, the
 disclosure, applied to a table row.
 
+**A Module's sub-navigation is not a seventh primitive.** YouTube Trends renders one sub-tab per
+channel, and ADR-0015 asks that new chrome be a considered change rather than an accident, so the
+consideration is here. The sub-tab strip is the header's own navigation pattern one level down:
+a `<nav>` of controls, the current one marked with `aria-current` and distinguished by border and
+weight rather than by colour alone, exactly as the tab bar marks the current page. It reuses that
+pattern rather than inventing chrome, and it stays inside the Module's page — the Shell's tab bar
+gains exactly one entry per Module (ADR-0006) and does not model a Module's internal sections. If a
+second Module wants sub-navigation, it gets this; if one wants something else, that is an ADR.
+
 ## Considered Options
 
 - **A charting dependency.** Rejected on the same grounds ADR-0015 rejected a component library:

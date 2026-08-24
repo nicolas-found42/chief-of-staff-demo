@@ -1,5 +1,8 @@
 # Five local UI primitives, no design system
 
+**Amended by:** ADR-0022 — there are six. The sixth is a single-series line chart, and that ADR
+also records why a Module's sub-navigation is not a seventh.
+
 The app is plain React with browser-default styling. That was a fine default while there was one
 Module, but it makes every kind of information weigh the same: default blue underlined links,
 uniformly bordered boxes, native form controls, large empty regions. The fix adopted here is

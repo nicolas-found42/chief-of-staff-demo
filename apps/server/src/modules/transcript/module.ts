@@ -9,7 +9,8 @@ import {
   type RunContext,
   type ShellModule,
 } from "../../engine/module.js";
-import { googleFailureHint, type GoogleConnection } from "../../google/connection.js";
+import { connectionFailure, connectionUnavailable, errorMessage } from "../../engine/failure.js";
+import type { GoogleConnection } from "../../google/connection.js";
 import { buildExtractionMessages, type RunPromptContext, type TranscriptRunContext } from "../../llm/prompt.js";
 import { type CompleteJson } from "../../llm/providers.js";
 import { SourceError, convertToText } from "../../text/convert.js";
@@ -61,10 +62,6 @@ const FILE_TIMESTAMP = /(\d{4}-\d{2}-\d{2})T\d{2}[-:]/;
 export function meetingDateFromFileName(fileName: string): string | null {
   const match = FILE_TIMESTAMP.exec(fileName);
   return match ? (match[1] ?? null) : null;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -147,28 +144,10 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
     return result;
   };
 
-  /**
-   * A rejected grant is not one bad item: every remaining call would fail the
-   * same way. Record what it proves about the connection and stop the batch.
-   */
-  const connectionFailure = (ctx: RunContext, error: unknown): StageFailure | null => {
-    const state = deps.google.observe(error);
-    if (!state) {
-      return null;
-    }
-    ctx.event("google_unavailable", { state, error: errorMessage(error) });
-    return new StageFailure(`google_${state}`, googleFailureHint(state), {
-      connectionCaused: true,
-    });
-  };
-
   const createOutputs = async (ctx: RunContext, result: ExtractionResult): Promise<RunOutcome> => {
     const access = deps.google.outputs();
     if (!access.ok) {
-      ctx.event("google_unavailable", { state: access.state });
-      throw new StageFailure(`google_${access.state}`, googleFailureHint(access.state), {
-        connectionCaused: true,
-      });
+      throw connectionUnavailable(ctx, access.state);
     }
     const google = access.outputs;
 
@@ -176,7 +155,10 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
     try {
       tasklistId = await google.findOrCreateTasklist(deps.getTasklistName());
     } catch (error) {
-      throw connectionFailure(ctx, error) ?? new Error(`tasklist: ${errorMessage(error)}`);
+      throw (
+        connectionFailure(ctx, deps.google.observe, error) ??
+        new Error(`tasklist: ${errorMessage(error)}`)
+      );
     }
 
     let taskErrors = 0;
@@ -187,7 +169,7 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
         const { googleId, webViewLink } = await google.createTask(tasklistId, task, result);
         ctx.event("google_task_created", { title: task.title, googleId, webViewLink });
       } catch (error) {
-        const dead = connectionFailure(ctx, error);
+        const dead = connectionFailure(ctx, deps.google.observe, error);
         if (dead) {
           throw dead;
         }
@@ -200,7 +182,7 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
         const googleId = await google.createDraft(draft);
         ctx.event("gmail_draft_created", { subject: draft.subject, googleId });
       } catch (error) {
-        const dead = connectionFailure(ctx, error);
+        const dead = connectionFailure(ctx, deps.google.observe, error);
         if (dead) {
           throw dead;
         }

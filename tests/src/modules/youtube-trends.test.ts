@@ -508,7 +508,7 @@ describe("the trend, derived from the Runs", () => {
     ]);
   });
 
-  it("is cached until the day's counts change it", () => {
+  it("caches the scan of the Runs, and nothing else", () => {
     recordDay("2026-08-01", { v1: 100 });
     const trend = index();
     expect(trend.read().channels[0]!.latest).toBe(100);
@@ -519,5 +519,20 @@ describe("the trend, derived from the Runs", () => {
     expect(trend.read().channels[0]!.latest).toBe(100);
     trend.invalidate();
     expect(trend.read().channels[0]!.latest).toBe(120);
+  });
+
+  it("reads everything that is not a measured day fresh, so one invalidator is enough", () => {
+    /* The cache covering more than its one invalidator knows about is the drift
+       this rule exists to prevent: a channel added or removed, or a spreadsheet
+       created, changes the answer without any day being measured. */
+    recordDay("2026-08-01", { v1: 100 });
+    const trend = index();
+    expect(trend.read().channels).toHaveLength(1);
+
+    channels = [];
+    expect(trend.read().channels).toEqual([]);
+
+    channels = [CHANNEL];
+    expect(trend.read().channels).toHaveLength(1);
   });
 });
