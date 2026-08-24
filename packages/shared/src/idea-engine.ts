@@ -98,6 +98,8 @@ export interface IdeaEngineIndex {
   }>;
   /** Distinct ideas across all Runs, filterable by ContentType. */
   ideas: IdeaEngineIdea[];
+  /** Spreadsheet where ideas are copied, if configured. */
+  spreadsheet: { id: string; url: string } | null;
 }
 
 /** Header for the single tab `All RA Content Ideas`. ContentType beside Format. */
@@ -123,16 +125,28 @@ export const IDEA_VALIDATOR_RETRIES = 3;
 
 /** Default prompts versioned with the Module (12 distinct). */
 export const IDEA_DEFAULT_PROMPTS: Record<IdeaContentType, string> = {
-  Live_thread: "Extract Live_thread ideas: long-form live discussion hooks, threaded narrative arc, real-time audience interaction. Focus on statements by the workspace owner that could seed a live audio/threaded conversation.",
-  Vertical_short: "Extract Vertical_short ideas: 0-30s hook, on-screen text, punchline, vertical video for Shorts/TikTok/Reels. Focus on owner's one-line hooks and visual moments.",
-  "X/Twitter": "Extract X/Twitter ideas: concise, timely, opinionated takes suited to a single X post or short thread. Focus on owner's positions.",
-  LinkedIn_Carousel: "Extract LinkedIn_Carousel ideas: swipeable carousel narrative, each slide a point, suited to LinkedIn document post. Focus on owner's frameworks or lists.",
-  video: "Extract video ideas: long-form YouTube video story arc, hook, visual proof, chapters. Focus on owner's deep stories.",
-  blog_post: "Extract blog_post ideas: blog headline, thesis, proof points, SEO-friendly outline. Focus on owner's written insights.",
-  article: "Extract article ideas: headline, thesis, proof, long-form editorial arc for publication. Focus on owner's positions with evidence.",
-  how_to_guide: "Extract how_to_guide ideas: step-by-step instructional promise, prerequisites, steps, outcomes. Focus on owner's playbooks.",
-  case_study_article: "Extract case_study_article ideas: client context, challenge, approach, outcome, proof. Focus on owner's delivered work.",
-  LinkedIn_post_image: "Extract LinkedIn_post_image ideas: single image post hook, insight, visual cue. Focus on owner's sharable moments.",
-  LinkedIn_post_video: "Extract LinkedIn_post_video ideas: talking-head video hook, script beats, CTA for LinkedIn video. Focus on owner's camera-ready statements.",
-  email: "Extract email ideas: subject, audience, narrative, CTA for newsletter/sales email. Focus on owner's offers or narratives.",
+  Live_thread:
+    "Extract Live_thread ideas: long-form live discussion hooks, threaded narrative arc, real-time audience interaction. Focus on statements by the workspace owner that could seed a live audio/threaded conversation.",
+  Vertical_short:
+    "Extract Vertical_short ideas: 0-30s hook, on-screen text, punchline, vertical video for Shorts/TikTok/Reels. Focus on owner's one-line hooks and visual moments.",
+  "X/Twitter":
+    "Extract X/Twitter ideas: concise, timely, opinionated takes suited to a single X post or short thread. Focus on owner's positions.",
+  LinkedIn_Carousel:
+    "Extract LinkedIn_Carousel ideas: swipeable carousel narrative, each slide a point, suited to LinkedIn document post. Focus on owner's frameworks or lists.",
+  video:
+    "Extract video ideas: long-form YouTube video story arc, hook, visual proof, chapters. Focus on owner's deep stories.",
+  blog_post:
+    "Extract blog_post ideas: blog headline, thesis, proof points, SEO-friendly outline. Focus on owner's written insights.",
+  article:
+    "Extract article ideas: headline, thesis, proof, long-form editorial arc for publication. Focus on owner's positions with evidence.",
+  how_to_guide:
+    "Extract how_to_guide ideas: step-by-step instructional promise, prerequisites, steps, outcomes. Focus on owner's playbooks.",
+  case_study_article:
+    "Extract case_study_article ideas: client context, challenge, approach, outcome, proof. Focus on owner's delivered work.",
+  LinkedIn_post_image:
+    "Extract LinkedIn_post_image ideas: single image post hook, insight, visual cue. Focus on owner's sharable moments.",
+  LinkedIn_post_video:
+    "Extract LinkedIn_post_video ideas: talking-head video hook, script beats, CTA for LinkedIn video. Focus on owner's camera-ready statements.",
+  email:
+    "Extract email ideas: subject, audience, narrative, CTA for newsletter/sales email. Focus on owner's offers or narratives.",
 };

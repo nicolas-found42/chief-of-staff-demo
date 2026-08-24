@@ -1,9 +1,14 @@
-import type { IdeaEngineIndex, IdeaEngineRunResult, IdeaEngineIdea } from "@chief-of-staff-demo/shared";
+import type {
+  IdeaEngineIndex,
+  IdeaEngineRunResult,
+  IdeaEngineIdea,
+} from "@chief-of-staff-demo/shared";
 import { IDEA_ENGINE_MODULE_ID } from "@chief-of-staff-demo/shared";
 import type { Runs } from "../../runs.js";
 
 export interface IdeaIndexDeps {
   runs: Runs;
+  spreadsheet: () => { id: string; url: string } | null;
 }
 
 export class IdeaIndex {
@@ -35,7 +40,7 @@ export class IdeaIndex {
       try {
         const parsed = JSON.parse(raw) as IdeaEngineRunResult;
         if (!Array.isArray(parsed.ideas)) continue;
-        const ideas = parsed.ideas as IdeaEngineIdea[];
+        const ideas = parsed.ideas;
         const entry: IdeaEngineIndex["runs"][number] = {
           runId: summary.id,
           createdAt: summary.createdAt,
@@ -55,6 +60,6 @@ export class IdeaIndex {
     // runEntries already newest first via list order; ensure sorted newest first by createdAt as fallback
     runEntries.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
-    return { runs: runEntries, ideas: allIdeas };
+    return { runs: runEntries, ideas: allIdeas, spreadsheet: this.deps.spreadsheet() };
   }
 }

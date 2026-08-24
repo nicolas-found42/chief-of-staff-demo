@@ -11,7 +11,11 @@ import { IdeaIndex } from "./index.js";
 import type { GoogleConnection } from "../../google/connection.js";
 import { googleFailureHint } from "../../google/connection.js";
 import { createGmailDraft } from "../../google/gmail.js";
-import { appendRowsWithUserEntered, ensureTabWithMigration, isSpreadsheetMissing } from "../../google/sheets.js";
+import {
+  appendRowsWithUserEntered,
+  ensureTabWithMigration,
+  isSpreadsheetMissing,
+} from "../../google/sheets.js";
 import type { GoogleAuth } from "../../google/oauth.js";
 import { makeCompleteJson } from "../../llm/providers.js";
 import { workspaceLayout } from "../../paths.js";
@@ -37,7 +41,13 @@ export class IdeaEngineHost implements HostedModule {
   private readonly index: IdeaIndex;
 
   constructor(private readonly deps: IdeaEngineHostDeps) {
-    this.index = new IdeaIndex({ runs: deps.runs });
+    this.index = new IdeaIndex({
+      runs: deps.runs,
+      spreadsheet: () => {
+        const cfg = deps.configStore.get().modules["idea-engine"];
+        return cfg.spreadsheetId ? { id: cfg.spreadsheetId, url: cfg.spreadsheetUrl } : null;
+      },
+    });
 
     this.runner = new Runner({
       runs: deps.runs,
@@ -48,7 +58,12 @@ export class IdeaEngineHost implements HostedModule {
           const cfg = deps.configStore.get();
           const layout = workspaceLayout(deps.workspaceDir);
           return makeCompleteJson(
-            { provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey, baseUrl: cfg.ollama.baseUrl },
+            {
+              provider: cfg.provider,
+              model: cfg.model,
+              apiKey: cfg.apiKey,
+              baseUrl: cfg.ollama.baseUrl,
+            },
             layout.mockResultFile,
           );
         },
@@ -86,7 +101,10 @@ export class IdeaEngineHost implements HostedModule {
         ),
       log: deps.log,
       google: deps.google,
-      getDriveClient: deps.getDriveClient as unknown as (config: AppConfig, port: number) => import("./intake.js").DriveFileClient,
+      getDriveClient: deps.getDriveClient as unknown as (
+        config: AppConfig,
+        port: number,
+      ) => import("./intake.js").DriveFileClient,
     });
   }
 
@@ -149,22 +167,13 @@ export class IdeaEngineHost implements HostedModule {
         return;
       }
     });
-
-    // Convenience: trigger poll now
-    app.post("/api/idea-engine/sync", async (_request, reply) => {
-      try {
-        const { created } = await this.intake.pollOnce();
-        return { created };
-      } catch (error) {
-        reply.code(502).send({ error: error instanceof Error ? error.message : String(error) });
-        return;
-      }
-    });
   }
 
   private sheets(): import("./module.js").SheetsAccess {
     const cfg = this.deps.configStore.get().modules["idea-engine"];
-    const spreadsheet = cfg.spreadsheetId ? { id: cfg.spreadsheetId, url: cfg.spreadsheetUrl } : null;
+    const spreadsheet = cfg.spreadsheetId
+      ? { id: cfg.spreadsheetId, url: cfg.spreadsheetUrl }
+      : null;
     // If no spreadsheet configured, we still return ok with null spreadsheet -> module will skip publish unless it decides to fail.
     // But spec says spreadsheet is existing All RA Content Ideas; if not configured, we treat as ok with null to allow run to complete without sheet.
     const authAccess = this.deps.google.auth();
@@ -174,7 +183,8 @@ export class IdeaEngineHost implements HostedModule {
       ? this.deps.getSheetsClient(auth)
       : {
           ensureTab: (id, title, header) => ensureTabWithMigration(auth, id, title, header),
-          ensureTabWithMigration: (id, title, header) => ensureTabWithMigration(auth, id, title, header),
+          ensureTabWithMigration: (id, title, header) =>
+            ensureTabWithMigration(auth, id, title, header),
           appendRows: (id, tab, rows) => appendRowsWithUserEntered(auth, id, tab, rows),
           isMissing: isSpreadsheetMissing,
         };

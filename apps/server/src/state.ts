@@ -31,8 +31,6 @@ export interface WorkspaceState {
 const MAX_INGESTED = 1000;
 const IDEA_ENGINE_MODULE_ID = "idea-engine";
 
-
-
 export function loadState(stateFile: string): WorkspaceState {
   const empty: WorkspaceState = {
     drive: { ingestedIds: [], lastPollAt: null, lastPollOutcome: null },
@@ -95,11 +93,7 @@ export function hasSeen(stateFile: string, externalId: string): boolean {
   return state.drive.ingestedIds.includes(externalId);
 }
 
-export function hasSeenForModule(
-  stateFile: string,
-  moduleId: string,
-  externalId: string,
-): boolean {
+export function hasSeenForModule(stateFile: string, moduleId: string, externalId: string): boolean {
   const state = loadState(stateFile);
   if (moduleId === IDEA_ENGINE_MODULE_ID) {
     return state.ideaEngine.ingestedIds.includes(externalId);
@@ -136,4 +130,3 @@ export function rememberSeenForModule(
   }
   rememberSeen(stateFile, externalId);
 }
-

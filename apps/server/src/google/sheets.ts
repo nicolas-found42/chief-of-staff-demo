@@ -107,7 +107,6 @@ export async function ensureTabWithMigration(
   }
 }
 
-
 /**
  * Append rows to the bottom of one tab. One call per tab rather than a batched
  * multi-range write: Google documents no maximum number of ranges for the

@@ -24,7 +24,10 @@ function toBuffer(data: unknown): Buffer {
 }
 
 class DriveError extends Error {
-  constructor(message: string, public readonly status?: number) {
+  constructor(
+    message: string,
+    public readonly status?: number,
+  ) {
     super(message);
     this.name = "DriveError";
   }
@@ -32,9 +35,26 @@ class DriveError extends Error {
 
 export interface DriveFileClient {
   files: {
-    list: (params: Record<string, unknown>) => Promise<{ data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string }>; nextPageToken?: string | null } }>;
-    get: (params: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<{ data: unknown }>;
-    export: (params: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<{ data: unknown }>;
+    list: (params: Record<string, unknown>) => Promise<{
+      data?: {
+        files?: Array<{
+          id?: string;
+          name?: string;
+          mimeType?: string;
+          webViewLink?: string;
+          size?: string;
+        }>;
+        nextPageToken?: string | null;
+      };
+    }>;
+    get: (
+      params: Record<string, unknown>,
+      opts?: Record<string, unknown>,
+    ) => Promise<{ data: unknown }>;
+    export: (
+      params: Record<string, unknown>,
+      opts?: Record<string, unknown>,
+    ) => Promise<{ data: unknown }>;
   };
 }
 
@@ -42,7 +62,12 @@ export interface IdeaEngineIntakeDeps {
   getConfig: () => AppConfig;
   workspaceDir: string;
   port: number;
-  startRun: (spec: { fileName: string; bytes: Buffer; sourceUrl: string | null; externalId: string }) => Promise<string>;
+  startRun: (spec: {
+    fileName: string;
+    bytes: Buffer;
+    sourceUrl: string | null;
+    externalId: string;
+  }) => Promise<string>;
   log: (message: string) => void;
   google: GoogleConnection;
   getDriveClient?: (config: AppConfig, port: number) => DriveFileClient;
@@ -79,7 +104,9 @@ export class IdeaEngineIntake {
 
   private pollSafely(): void {
     this.pollOnce().catch((error) => {
-      this.deps.log(`IdeaEngine poll failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.deps.log(
+        `IdeaEngine poll failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     });
   }
 
@@ -129,21 +156,39 @@ export class IdeaEngineIntake {
     let created = 0;
 
     for (;;) {
-      let response: { data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string }>; nextPageToken?: string | null } };
+      let response: {
+        data?: {
+          files?: Array<{
+            id?: string;
+            name?: string;
+            mimeType?: string;
+            webViewLink?: string;
+            size?: string;
+          }>;
+          nextPageToken?: string | null;
+        };
+      };
       try {
-        response = (await drive.files.list({
+        response = await drive.files.list({
           q: `'${folderId}' in parents and trashed=false`,
           fields: "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, size)",
           pageSize: 100,
           ...(pageToken === undefined ? {} : { pageToken }),
           includeItemsFromAllDrives: true,
           supportsAllDrives: true,
-        })) as typeof response;
+        });
       } catch (error: unknown) {
         try {
           this.deps.google.observe(error);
-        } catch {}
-        const err = error as { code?: number; status?: number; response?: { status?: number }; message?: string };
+        } catch {
+          void 0;
+        }
+        const err = error as {
+          code?: number;
+          status?: number;
+          response?: { status?: number };
+          message?: string;
+        };
         const status = err.code ?? err.status ?? err.response?.status;
         const message = err.message ?? String(error);
         if (status === 401) {
@@ -175,40 +220,59 @@ export class IdeaEngineIntake {
         if (isFolder) continue;
         const isGoogleDoc = mimeType === GOOGLE_DOC_MIME;
         if (!isGoogleDoc && !isSupportedFileName(fileName)) {
-          this.deps.log(`IdeaEngine ignoring unsupported file ${fileName} (${mimeType || "unknown type"})`);
+          this.deps.log(
+            `IdeaEngine ignoring unsupported file ${fileName} (${mimeType || "unknown type"})`,
+          );
           continue;
         }
         if (file.size && Number(file.size) > MAX_UPLOAD_BYTES) {
-          this.deps.log(`IdeaEngine skipping oversized Drive file ${fileName} (${file.size} bytes)`);
+          this.deps.log(
+            `IdeaEngine skipping oversized Drive file ${fileName} (${file.size} bytes)`,
+          );
           continue;
         }
         let bytes: Buffer;
         const sourceUrl: string | null = file.webViewLink ?? null;
         try {
           if (isGoogleDoc) {
-            const exported = await drive.files.export({ fileId, mimeType: "text/plain" }, { responseType: "arraybuffer" } as unknown as Record<string, unknown>);
+            const exported = await drive.files.export(
+              { fileId, mimeType: "text/plain" },
+              { responseType: "arraybuffer" },
+            );
             bytes = toBuffer(exported.data);
             if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-              this.deps.log(`IdeaEngine skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`);
+              this.deps.log(
+                `IdeaEngine skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`,
+              );
               continue;
             }
           } else {
-            const fetched = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" } as unknown as Record<string, unknown>);
+            const fetched = await drive.files.get(
+              { fileId, alt: "media" },
+              { responseType: "arraybuffer" },
+            );
             bytes = toBuffer(fetched.data);
             if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-              this.deps.log(`IdeaEngine skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`);
+              this.deps.log(
+                `IdeaEngine skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`,
+              );
               continue;
             }
           }
         } catch (error: unknown) {
           try {
             this.deps.google.observe(error);
-          } catch {}
-          this.deps.log(`IdeaEngine failed to fetch Drive file ${fileName} (${fileId}): ${error instanceof Error ? error.message : String(error)}`);
+          } catch {
+            void 0;
+          }
+          this.deps.log(
+            `IdeaEngine failed to fetch Drive file ${fileName} (${fileId}): ${error instanceof Error ? error.message : String(error)}`,
+          );
           continue;
         }
 
-        const effectiveName = isGoogleDoc && !isSupportedFileName(fileName) ? `${fileName}.txt` : fileName;
+        const effectiveName =
+          isGoogleDoc && !isSupportedFileName(fileName) ? `${fileName}.txt` : fileName;
 
         try {
           await this.deps.startRun({
@@ -220,8 +284,12 @@ export class IdeaEngineIntake {
         } catch (error: unknown) {
           try {
             this.deps.google.observe(error);
-          } catch {}
-          this.deps.log(`IdeaEngine rejected Drive file ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
+          } catch {
+            void 0;
+          }
+          this.deps.log(
+            `IdeaEngine rejected Drive file ${fileName}: ${error instanceof Error ? error.message : String(error)}`,
+          );
           continue;
         }
         created += 1;
@@ -256,23 +324,36 @@ export class IdeaEngineIntake {
     const layout = workspaceLayout(this.deps.workspaceDir);
 
     for (;;) {
-      let response: { data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string }>; nextPageToken?: string | null } };
+      let response: {
+        data?: {
+          files?: Array<{
+            id?: string;
+            name?: string;
+            mimeType?: string;
+            webViewLink?: string;
+            size?: string;
+          }>;
+          nextPageToken?: string | null;
+        };
+      };
       try {
-        response = (await drive.files.list({
+        response = await drive.files.list({
           q: `'${folderId}' in parents and trashed=false`,
           fields: "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, size)",
           pageSize: 100,
           ...(pageToken === undefined ? {} : { pageToken }),
           includeItemsFromAllDrives: true,
           supportsAllDrives: true,
-        })) as typeof response;
+        });
       } catch (error: unknown) {
-        throw new DriveError(`Drive list failed for backfill: ${error instanceof Error ? error.message : String(error)}`);
+        throw new DriveError(
+          `Drive list failed for backfill: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       const files = response.data?.files ?? [];
       for (const file of files) {
-        const fileId = file.id as string | undefined;
-        const fileName = file.name as string | undefined;
+        const fileId = file.id;
+        const fileName = file.name;
         if (!fileId || !fileName) continue;
         const mimeType = file.mimeType ?? "";
         if (mimeType === "application/vnd.google-apps.folder") continue;
@@ -292,19 +373,31 @@ export class IdeaEngineIntake {
         const sourceUrl: string | null = file.webViewLink ?? null;
         try {
           if (isGoogleDoc) {
-            const exported = await drive.files.export({ fileId, mimeType: "text/plain" }, { responseType: "arraybuffer" } as unknown as Record<string, unknown>);
+            const exported = await drive.files.export(
+              { fileId, mimeType: "text/plain" },
+              { responseType: "arraybuffer" },
+            );
             bytes = toBuffer(exported.data);
           } else {
-            const fetched = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" } as unknown as Record<string, unknown>);
+            const fetched = await drive.files.get(
+              { fileId, alt: "media" },
+              { responseType: "arraybuffer" },
+            );
             bytes = toBuffer(fetched.data);
           }
         } catch {
           skipped += 1;
           continue;
         }
-        const effectiveName = isGoogleDoc && !isSupportedFileName(fileName) ? `${fileName}.txt` : fileName;
+        const effectiveName =
+          isGoogleDoc && !isSupportedFileName(fileName) ? `${fileName}.txt` : fileName;
         try {
-          await this.deps.startRun({ fileName: effectiveName, bytes, sourceUrl, externalId: fileId });
+          await this.deps.startRun({
+            fileName: effectiveName,
+            bytes,
+            sourceUrl,
+            externalId: fileId,
+          });
           rememberSeenForModule(layout.stateFile, IDEA_ENGINE_MODULE_ID, fileId);
           created += 1;
         } catch {

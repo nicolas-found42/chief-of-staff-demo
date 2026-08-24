@@ -3,9 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
-import { IDEA_CONTENT_TYPES, IDEA_FORMAT_VALUES, type IdeaEngineRunResult } from "@chief-of-staff-demo/shared";
+import {
+  IDEA_CONTENT_TYPES,
+  IDEA_FORMAT_VALUES,
+  type IdeaEngineRunResult,
+} from "@chief-of-staff-demo/shared";
 import { Runner } from "../../../apps/server/src/engine/runner";
-import { ideaEngineModule, type IdeaEngineInput, type SheetsAccess, type GmailAccess, type SheetsClient, type GmailClient } from "../../../apps/server/src/modules/idea-engine/module";
+import {
+  ideaEngineModule,
+  type IdeaEngineInput,
+  type SheetsAccess,
+  type GmailAccess,
+  type SheetsClient,
+  type GmailClient,
+} from "../../../apps/server/src/modules/idea-engine/module";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 
@@ -36,7 +47,7 @@ interface FakeSheets extends SheetsClient {
   appended: Array<{ tab: string; rows: (string | number)[][] }>;
   tabs: string[];
   header: string[] | null;
-  throws: unknown | null;
+  throws: unknown;
   ensureCalls: number;
   appendCalls: number;
 }
@@ -49,7 +60,8 @@ function fakeSheets(): FakeSheets {
     ensureCalls: 0,
     appendCalls: 0,
     async ensureTab(_spreadsheetId: string, title: string, header: string[]) {
-      if (s.throws) throw s.throws;
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+      if (s.throws) throw s.throws instanceof Error ? s.throws : new Error(String(s.throws));
       s.ensureCalls += 1;
       if (!s.tabs.includes(title)) {
         s.tabs.push(title);
@@ -57,7 +69,8 @@ function fakeSheets(): FakeSheets {
       }
     },
     async appendRows(_spreadsheetId: string, tab: string, rows: (string | number)[][]) {
-      if (s.throws) throw s.throws;
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+      if (s.throws) throw s.throws instanceof Error ? s.throws : new Error(String(s.throws));
       s.appendCalls += 1;
       s.appended.push({ tab, rows });
     },
@@ -73,14 +86,15 @@ function fakeSheets(): FakeSheets {
 
 interface FakeGmail extends GmailClient {
   drafts: Array<{ to: string; subject: string; body: string }>;
-  throws: unknown | null;
+  throws: unknown;
 }
 function fakeGmail(): FakeGmail {
   const g: FakeGmail = {
     drafts: [],
     throws: null,
     async createDraft(draft) {
-      if (g.throws) throw g.throws;
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+      if (g.throws) throw g.throws instanceof Error ? g.throws : new Error(String(g.throws));
       g.drafts.push(draft);
       return `draft-${g.drafts.length}`;
     },
@@ -92,8 +106,9 @@ function scriptedProvider(script: Record<string, unknown[]>): CompleteJson {
   const calls = new Map<string, number>();
   return async ({ system, user: _user }) => {
     // Detect contentType from system prompt: contains `ContentType: "X"` or `for type "X"`
-    const m = system.match(/for type \"([^\"]+)\"/) ?? _user.match(/ContentType: ([^\n]+)/);
-    const ct = (m?.[1]?.trim() as string) ?? "unknown";
+    const m = system.match(/for type "([^"]+)"/) ?? _user.match(/ContentType: ([^\n]+)/);
+    const ct = m?.[1]?.trim() ?? "unknown";
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const arr = script[ct] ?? script["*"] ?? [];
     const idx = calls.get(ct) ?? 0;
     calls.set(ct, idx + 1);
@@ -121,26 +136,42 @@ function runner(): Runner<IdeaEngineInput> {
   return new Runner({
     runs,
     module: ideaEngineModule({
-      getConfig: () => ({
-        provider: "mock",
-        model: "test-model",
-        apiKey: "",
-        tasklistName: "Meeting Followups",
-        google: { clientId: "", clientSecret: "", refreshToken: null, lastConnectedAt: null, hasExpiredBefore: false },
-        drive: { enabled: true, folderId: "folder-1", folderName: "Transcripts", pollIntervalMinutes: 2 },
-        ollama: { baseUrl: "http://127.0.0.1:11434" },
-        modules: {
-          "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
-          "idea-engine": { spreadsheetId: "sheet-123", spreadsheetUrl: "https://docs.google.com/spreadsheets/d/sheet-123", prompts: {} },
-        },
-      } as unknown as import("@chief-of-staff-demo/shared").AppConfig),
+      getConfig: () =>
+        ({
+          provider: "mock",
+          model: "test-model",
+          apiKey: "",
+          tasklistName: "Meeting Followups",
+          google: {
+            clientId: "",
+            clientSecret: "",
+            refreshToken: null,
+            lastConnectedAt: null,
+            hasExpiredBefore: false,
+          },
+          drive: {
+            enabled: true,
+            folderId: "folder-1",
+            folderName: "Transcripts",
+            pollIntervalMinutes: 2,
+          },
+          ollama: { baseUrl: "http://127.0.0.1:11434" },
+          modules: {
+            "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
+            "idea-engine": {
+              spreadsheetId: "sheet-123",
+              spreadsheetUrl: "https://docs.google.com/spreadsheets/d/sheet-123",
+              prompts: {},
+            },
+          },
+        }) as unknown as import("@chief-of-staff-demo/shared").AppConfig,
       getCompleteJson,
       getLlmInfo: () => ({ provider: "mock", model: "test-model" }),
       getSheets: sheetsAccess,
       getGmail: gmailAccess,
       observe: (error: unknown) => {
         const msg = error instanceof Error ? error.message : String(error);
-        if (/invalid_grant|expired/i.test(msg)) return "expired" as GoogleConnectionState;
+        if (/invalid_grant|expired/i.test(msg)) return "expired";
         if (/notFound|404/i.test(msg) && msg.includes("spreadsheet")) return null;
         return null;
       },
@@ -149,11 +180,25 @@ function runner(): Runner<IdeaEngineInput> {
   });
 }
 
-async function runFresh(fileName = "meeting-2026-08-24T10-00-00.000Z.md", text = TRANSCRIPT): Promise<string> {
+async function runFresh(
+  fileName = "meeting-2026-08-24T10-00-00.000Z.md",
+  text = TRANSCRIPT,
+): Promise<string> {
   const engine = runner();
   const id = await engine.startRun(
-    { intake: "drive", fileName, sourceUrl: "https://drive.google.com/file/d/abc/view", externalId: "drive-abc" },
-    { kind: "fresh", fileName, text, sourceUrl: "https://drive.google.com/file/d/abc/view", externalId: "drive-abc" },
+    {
+      intake: "drive",
+      fileName,
+      sourceUrl: "https://drive.google.com/file/d/abc/view",
+      externalId: "drive-abc",
+    },
+    {
+      kind: "fresh",
+      fileName,
+      text,
+      sourceUrl: "https://drive.google.com/file/d/abc/view",
+      externalId: "drive-abc",
+    },
   );
   await engine.idle();
   return id;
@@ -164,7 +209,11 @@ beforeEach(() => {
   runs = openRuns(workspaceDir);
   sheets = fakeSheets();
   gmail = fakeGmail();
-  sheetsAccess = () => ({ ok: true, client: sheets, spreadsheet: { id: "sheet-123", url: "https://docs.google.com/spreadsheets/d/sheet-123" } });
+  sheetsAccess = () => ({
+    ok: true,
+    client: sheets,
+    spreadsheet: { id: "sheet-123", url: "https://docs.google.com/spreadsheets/d/sheet-123" },
+  });
   gmailAccess = () => ({ ok: true, client: gmail });
   providerScript = {};
   // Default: each content type returns one idea
@@ -219,7 +268,9 @@ describe("Idea Engine Module", () => {
     const id = await runFresh();
     const detail = runs.detail(id)!;
     expect(detail.status).toBe("done");
-    expect(detail.summary).toBe("0 ideas — no hook / no arc — from meeting-2026-08-24T10-00-00.000Z.md");
+    expect(detail.summary).toBe(
+      "0 ideas — no hook / no arc — from meeting-2026-08-24T10-00-00.000Z.md",
+    );
     const result = detail.result as IdeaEngineRunResult;
     expect(result.ideas).toHaveLength(0);
     expect(result.reason).toContain("0 ideas");
@@ -254,12 +305,13 @@ describe("Idea Engine Module", () => {
 
   it("validator retry on Format enum drift then succeeds", async () => {
     const bad = { ...makeIdea("video", "Bad Format"), Format: "bad_format" as unknown as string };
-    providerScript["video"] = [[ [bad] ], [ [makeIdea("video", "Good Title")] ]];
+    providerScript["video"] = [[[bad]], [[makeIdea("video", "Good Title")]]];
     // Need to shape provider to return array per call: our script expects per contentType array of responses where each response is array of ideas
     // For video, first call returns bad, second returns good
     // Our earlier default for other types remains single idea
-    completeJson = async ({ system, user: _user2 }) => {
-      const ctMatch = system.match(/for type \"([^\"]+)\"/);
+    completeJson = async ({ system, user: _user2 }: { system: string; user: string }) => {
+      void _user2;
+      const ctMatch = system.match(/for type "([^"]+)"/);
       const ct = ctMatch?.[1] ?? "video";
       if (ct === "video") {
         const count = (completeJson as unknown as { _vCount?: number })._vCount ?? 0;
@@ -272,9 +324,13 @@ describe("Idea Engine Module", () => {
     const id = await runFresh();
     const detail = runs.detail(id)!;
     expect(detail.status).toBe("done");
-    const videoIdeas = (detail.result as IdeaEngineRunResult).ideas.filter((i) => i.ContentType === "video");
+    const videoIdeas = (detail.result as IdeaEngineRunResult).ideas.filter(
+      (i) => i.ContentType === "video",
+    );
     expect(videoIdeas[0].Title).toBe("Good Title");
-    expect(detail.events.filter((e) => e.type === "extract_error").length).toBeGreaterThanOrEqual(1);
+    expect(detail.events.filter((e) => e.type === "extract_error").length).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
   it("single-attendee short-circuit: still extracts without speaker filter", async () => {
@@ -284,7 +340,14 @@ describe("Idea Engine Module", () => {
     const engine = runner();
     const id = await engine.startRun(
       { intake: "drive", fileName: "solo.md", sourceUrl: null, externalId: "drive-solo" },
-      { kind: "fresh", fileName: "solo.md", text: singleTranscript, sourceUrl: null, externalId: "drive-solo", context: { meetingDate: null, attendees: [{ name: "Richard", email: null }] } },
+      {
+        kind: "fresh",
+        fileName: "solo.md",
+        text: singleTranscript,
+        sourceUrl: null,
+        externalId: "drive-solo",
+        context: { meetingDate: null, attendees: [{ name: "Richard", email: null }] },
+      },
     );
     await engine.idle();
     expect(runs.detail(id)!.status).toBe("done");
@@ -293,7 +356,9 @@ describe("Idea Engine Module", () => {
 
   it("expired vs disconnected: expired throws connectionCaused, disconnected fails with hint", async () => {
     // expired via Sheets throws invalid_grant
-    sheets.throws = Object.assign(new Error("invalid_grant"), { response: { data: { error: "invalid_grant" } } });
+    sheets.throws = Object.assign(new Error("invalid_grant"), {
+      response: { data: { error: "invalid_grant" } },
+    });
     // Sheets access ok but append will fail with expired
     const id = await runFresh();
     const detail = runs.detail(id)!;
@@ -301,7 +366,6 @@ describe("Idea Engine Module", () => {
     expect(detail.failedStage).toBe("publish");
     expect(detail.connectionCaused).toBe(true);
     expect(detail.failureHint).toContain("Reconnect");
-
   });
 
   it("disconnected gmail fails draft stage with hint", async () => {
@@ -310,14 +374,24 @@ describe("Idea Engine Module", () => {
     sheets = fakeSheets();
     gmail = fakeGmail();
     gmailAccess = () => ({ ok: false, state: "disconnected" as GoogleConnectionState });
-    sheetsAccess = () => ({ ok: true, client: sheets, spreadsheet: { id: "sheet-123", url: "https://docs.google.com/spreadsheets/d/sheet-123" } });
+    sheetsAccess = () => ({
+      ok: true,
+      client: sheets,
+      spreadsheet: { id: "sheet-123", url: "https://docs.google.com/spreadsheets/d/sheet-123" },
+    });
     // need fresh provider
-    for (const ct of IDEA_CONTENT_TYPES) providerScript[ct] = [[makeIdea(ct, `Title ${ct}`)] ];
+    for (const ct of IDEA_CONTENT_TYPES) providerScript[ct] = [[makeIdea(ct, `Title ${ct}`)]];
     completeJson = scriptedProvider(providerScript);
     const engine2 = runner();
     const id2 = await engine2.startRun(
       { intake: "drive", fileName: "meeting2.md", sourceUrl: null, externalId: "drive-2" },
-      { kind: "fresh", fileName: "meeting2.md", text: TRANSCRIPT, sourceUrl: null, externalId: "drive-2" },
+      {
+        kind: "fresh",
+        fileName: "meeting2.md",
+        text: TRANSCRIPT,
+        sourceUrl: null,
+        externalId: "drive-2",
+      },
     );
     await engine2.idle();
     const detail2 = runs.detail(id2)!;

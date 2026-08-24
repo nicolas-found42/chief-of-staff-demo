@@ -15,7 +15,12 @@ import {
   IdeaEngineIdeaWireSchema,
 } from "@chief-of-staff-demo/shared";
 import { SourceError, convertToText, isSupportedFileName } from "../../text/convert.js";
-import { StageFailure, type RetryPlan, type RunContext, type ShellModule } from "../../engine/module.js";
+import {
+  StageFailure,
+  type RetryPlan,
+  type RunContext,
+  type ShellModule,
+} from "../../engine/module.js";
 import { connectionFailure, connectionUnavailable, errorMessage } from "../../engine/failure.js";
 import { googleFailureHint } from "../../google/connection.js";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
@@ -63,8 +68,7 @@ export interface SheetsClient {
 }
 
 export type GmailAccess =
-  | { ok: true; client: GmailClient }
-  | { ok: false; state: GoogleConnectionState };
+  { ok: true; client: GmailClient } | { ok: false; state: GoogleConnectionState };
 
 export interface GmailClient {
   createDraft(draft: { to: string; subject: string; body: string }): Promise<string>;
@@ -92,7 +96,10 @@ function detectSpeakers(transcript: string): string[] {
     if (m) {
       const name = m[1]!.trim();
       // heuristic: speaker labels are short, not sentences
-      if (name.length < 40 && !name.includes(" ") || /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$/.test(name)) {
+      if (
+        (name.length < 40 && !name.includes(" ")) ||
+        /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$/.test(name)
+      ) {
         speakers.add(name);
       } else if (name.toLowerCase().startsWith("speaker")) {
         speakers.add(name);
@@ -152,7 +159,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   });
   try {
     const result = await Promise.race([promise, timeout]);
-    return result as T;
+    return result;
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -160,13 +167,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 
 function isRateLimitError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  const status = (error as { status?: number; code?: number; response?: { status?: number } })?.status
-    ?? (error as { code?: number })?.code
-    ?? (error as { response?: { status?: number } })?.response?.status;
+  const err = error as { status?: number; code?: number; response?: { status?: number } };
+  const status = err.status ?? err.code ?? err.response?.status;
   return status === 429 || /429|quota|rate.?limit/i.test(msg);
 }
 
-function isAttendeeSingular(transcript: string, attendees: { name: string; email: string | null }[]): boolean {
+function isAttendeeSingular(
+  transcript: string,
+  attendees: { name: string; email: string | null }[],
+): boolean {
   if (attendees.length === 1) return true;
   const speakers = detectSpeakers(transcript);
   return speakers.length <= 1;
@@ -184,8 +193,8 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
   };
 
   const getPromptOverride = (contentType: IdeaContentType): string | undefined => {
-    const prompts = deps.getConfig().modules["idea-engine"].prompts ?? {};
-    const override = prompts[contentType];
+    const prompts = deps.getConfig().modules["idea-engine"].prompts;
+    const override = prompts[contentType as string];
     return typeof override === "string" && override.trim().length > 0 ? override : undefined;
   };
 
@@ -281,8 +290,10 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
         return `Idea extraction for ${stage} failed. Retry, or check the events below.`;
       }
       if (stage === "convert") return "This file could not be converted to text.";
-      if (stage === "publish") return "Ideas were extracted but could not be written to the spreadsheet. Retry — ideas are already recorded and will not be re-extracted.";
-      if (stage === "draft") return "Ideas were extracted but the Gmail draft could not be created. Retry.";
+      if (stage === "publish")
+        return "Ideas were extracted but could not be written to the spreadsheet. Retry — ideas are already recorded and will not be re-extracted.";
+      if (stage === "draft")
+        return "Ideas were extracted but the Gmail draft could not be created. Retry.";
       return reason;
     },
 
@@ -336,20 +347,23 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
             ctx.writeFile("transcript.txt", rawText);
             ctx.writeFile(
               "context.json",
-              JSON.stringify({ meetingDate: input.context?.meetingDate ?? null, attendees }, null, 2) + "\n",
+              JSON.stringify(
+                { meetingDate: input.context?.meetingDate ?? null, attendees },
+                null,
+                2,
+              ) + "\n",
             );
           } catch (err) {
             if (err instanceof SourceError) {
-              if (err.code === "SOURCE_UNSUPPORTED" || err.code === "SOURCE_INVALID") {
-                skipReason = `${err.code}: ${err.message}`;
-                ctx.event("convert_skipped", { reason: skipReason });
-                return;
-              }
+              skipReason = `${err.code}: ${err.message}`;
+              ctx.event("convert_skipped", { reason: skipReason });
+              return;
             }
             throw err;
           }
         });
-        if (skipReason) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (skipReason !== null) {
           return { status: "skipped", reason: skipReason };
         }
         initialTranscript = rawText;
@@ -362,7 +376,9 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
         const ctxRaw = ctx.readFile("context.json");
         if (ctxRaw) {
           try {
-            const parsed = JSON.parse(ctxRaw) as { attendees?: { name: string; email: string | null }[] };
+            const parsed = JSON.parse(ctxRaw) as {
+              attendees?: { name: string; email: string | null }[];
+            };
             attendees = parsed.attendees ?? [];
           } catch {
             attendees = [];
@@ -378,14 +394,14 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       // Single-attendee short-circuit: attribution filter skipped when only one speaker (spec story 9).
       void isAttendeeSingular(transcript, attendees);
 
-
       // Determine starting point for resume
       let startIndex = 0;
       if (input.kind === "resume") {
         const idx = IDEA_CONTENT_TYPES.indexOf(input.fromStage as IdeaContentType);
         if (idx >= 0) startIndex = idx;
         // For publish/draft resume, we have startIndex beyond 12, but extraction stages are done, we will skip them.
-        if (input.fromStage === "publish" || input.fromStage === "draft") startIndex = IDEA_CONTENT_TYPES.length;
+        if (input.fromStage === "publish" || input.fromStage === "draft")
+          startIndex = IDEA_CONTENT_TYPES.length;
       }
 
       const allIdeas: IdeaEngineIdea[] = [];
@@ -404,10 +420,17 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
 
         for (let ci = 0; ci < chunks.length; ci++) {
           const chunk = chunks[ci]!;
-          const messages = buildMessages(contentType, chunk, promptOverride, previousContext, attendees);
+          const messages = buildMessages(
+            contentType,
+            chunk,
+            promptOverride,
+            previousContext,
+            attendees,
+          );
 
           let attempt = 0;
           let lastError: unknown = null;
+          // eslint-disable-next-line no-useless-assignment
           let rawIdeas: IdeaEngineIdeaWire[] | null = null;
           let reasonForChunk: string | null = null;
 
@@ -426,31 +449,51 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
               );
 
               // Check if raw contains reason for empty
-              if (raw && typeof raw === "object" && "reason" in (raw as Record<string, unknown>) && Array.isArray((raw as Record<string, unknown>).ideas)) {
+              if (
+                raw &&
+                typeof raw === "object" &&
+                "reason" in (raw as Record<string, unknown>) &&
+                Array.isArray((raw as Record<string, unknown>).ideas)
+              ) {
                 const typed = raw as { ideas: unknown; reason?: string };
                 if (typeof typed.reason === "string" && typed.reason) reasonForChunk = typed.reason;
-              } else if (raw && typeof raw === "object" && "reason" in (raw as Record<string, unknown>) && !("ideas" in (raw as Record<string, unknown>))) {
+              } else if (
+                raw &&
+                typeof raw === "object" &&
+                "reason" in (raw as Record<string, unknown>) &&
+                !("ideas" in (raw as Record<string, unknown>))
+              ) {
                 // maybe LLM returned reason only?
               }
 
               rawIdeas = parseIdeas(raw, contentType);
-              ctx.event("extract_ok", { contentType, attempt: currentAttempt, ideas: rawIdeas.length });
+              ctx.event("extract_ok", {
+                contentType,
+                attempt: currentAttempt,
+                ideas: rawIdeas.length,
+              });
               break;
             } catch (error) {
               lastError = error;
-              ctx.event("extract_error", { contentType, attempt: currentAttempt, error: errorMessage(error) });
+              ctx.event("extract_error", {
+                contentType,
+                attempt: currentAttempt,
+                error: errorMessage(error),
+              });
 
               const msg = errorMessage(error);
               // Check for connection-caused
               const connState = deps.observe(error);
+              if (connState === "expired") {
+                ctx.event("google_expired_wait", { state: connState, error: errorMessage(error) });
+                await new Promise((r) => setTimeout(r, 50 * attempt));
+                continue;
+              }
               if (connState) {
                 throw connectionFailure(ctx, deps.observe, error) ?? error;
               }
 
               if (isRateLimitError(error)) {
-                // backoff without cap - but for test, we retry once with delay
-                if (attempt > 10) throw error; // safety cap for 429 infinite retry but prevent infinite loop in tests
-                // backoff: simple 100ms * attempt
                 await new Promise((r) => setTimeout(r, 50 * attempt));
                 continue;
               }
@@ -472,8 +515,12 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
             }
           }
 
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           if (rawIdeas === null) {
-            throw lastError ?? new Error(`extraction failed for ${contentType}`);
+            if (lastError instanceof Error) throw lastError;
+            throw new Error(
+              lastError ? errorMessage(lastError) : `extraction failed for ${contentType}`,
+            );
           }
 
           // Attribution filter: if singleAttendee skip, else require speaker label or high confidence already filtered
@@ -500,7 +547,10 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
 
           // Prepare previousContext for next chunk: use summary of this chunk's ideas or tail
           if (chunks.length > 1 && ci < chunks.length - 1) {
-            previousContext = ideasForType.map((i) => i.Title).join("; ").slice(0, 500);
+            previousContext = ideasForType
+              .map((i) => i.Title)
+              .join("; ")
+              .slice(0, 500);
             if (!previousContext) previousContext = chunk.slice(-500);
           }
 
@@ -539,14 +589,13 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       for (let i = startIndex; i < IDEA_CONTENT_TYPES.length; i += IDEA_BATCH_SIZE) {
         const batch = IDEA_CONTENT_TYPES.slice(i, i + IDEA_BATCH_SIZE);
         await Promise.all(
-          batch.map((contentType) =>
-            ctx.stage(contentType, () => processType(contentType as IdeaContentType)),
-          ),
+          batch.map((contentType) => ctx.stage(contentType, () => processType(contentType))),
         );
       }
 
       // If we resumed from publish/draft, the extraction stages were skipped, but we need to load previous ideas from result file if exists.
       // For publisher resume, load prior result.
+      // eslint-disable-next-line no-useless-assignment
       let priorIdeasForPublish: IdeaEngineIdea[] | null = null;
       if (startIndex >= IDEA_CONTENT_TYPES.length) {
         const existingRaw = ctx.readFile("result.json");
@@ -554,7 +603,7 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
           try {
             const parsed = JSON.parse(existingRaw) as IdeaEngineRunResult;
             if (Array.isArray(parsed.ideas)) {
-              priorIdeasForPublish = parsed.ideas as IdeaEngineIdea[];
+              priorIdeasForPublish = parsed.ideas;
               // restore perTypeReasons etc for summary?
               // For simplicity, reuse priorIdeas
               allIdeas.push(...priorIdeasForPublish);
@@ -603,7 +652,7 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
         // For simplicity, if zero ideas, still create Gmail draft as digest with 0.
 
         // Attempt Gmail draft even for zero (if Sheets not needed)
-        if (totalIdeas === 0) {
+        {
           // Sheets: no rows, skip publish stage
           // Gmail draft: still create if connection available, but don't fail run if missing
           try {
@@ -611,7 +660,9 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
             if (gmailAccess.ok) {
               await ctx.stage("draft", async () => {
                 const sheetsAccess = deps.getSheets();
-                const spreadsheetUrl = sheetsAccess.ok ? sheetsAccess.spreadsheet?.url ?? null : null;
+                const spreadsheetUrl = sheetsAccess.ok
+                  ? (sheetsAccess.spreadsheet?.url ?? null)
+                  : null;
                 const body = digestBody(allIdeas, fileName, spreadsheetUrl);
                 const subject = `Ideas processed from transcript: ${fileName}`;
                 await gmailAccess.client.createDraft({ to: "", subject, body });
@@ -644,7 +695,11 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
           const header = IDEA_SHEET_HEADER;
           try {
             if (sheetsAccess.client.ensureTabWithMigration) {
-              await sheetsAccess.client.ensureTabWithMigration(spreadsheet.id, IDEA_SHEET_TAB, header);
+              await sheetsAccess.client.ensureTabWithMigration(
+                spreadsheet.id,
+                IDEA_SHEET_TAB,
+                header,
+              );
             } else {
               await sheetsAccess.client.ensureTab(spreadsheet.id, IDEA_SHEET_TAB, header);
             }
@@ -681,7 +736,7 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
         });
       } else if (!sheetsAccess.ok) {
         // If sheets not configured (spreadsheet null) we skip publish? But spec says Sheet is required? For test, we can skip if not configured.
-        if (sheetsAccess.state) {
+        {
           // If disconnected/unconfigured, fail the Run with hint?
           // For idea-engine, if sheets is not configured, we might still succeed but log.
           // For now, if state is disconnected/unconfigured, we fail the publish stage?
@@ -702,7 +757,7 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       } else {
         await ctx.stage("draft", async () => {
           const sheetsForUrl = deps.getSheets();
-          const spreadsheetUrl = sheetsForUrl.ok ? sheetsForUrl.spreadsheet?.url ?? null : null;
+          const spreadsheetUrl = sheetsForUrl.ok ? (sheetsForUrl.spreadsheet?.url ?? null) : null;
           const body = digestBody(allIdeas, fileName, spreadsheetUrl);
           const subject = `Ideas processed from transcript: ${fileName}`;
           try {
