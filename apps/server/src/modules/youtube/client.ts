@@ -96,10 +96,11 @@ export function youtubeClient(auth: GoogleAuth): YouTubeClient {
     },
 
     async videoStatistics(ids) {
+      /* No maxResults: Google documents it as unsupported alongside `id`, and
+         the chunk is already the page. */
       const response = await api.videos.list({
         part: ["snippet", "statistics"],
         id: ids,
-        maxResults: ids.length,
       });
       const videos: YoutubeVideoCount[] = [];
       for (const item of response.data.items ?? []) {
