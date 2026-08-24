@@ -70,7 +70,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### Issue tracker
 
-Issues and specs live as local markdown under `.scratch/<feature>/`, not in GitHub Issues. See `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues on `nicolas-found42/chief-of-staff-demo`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

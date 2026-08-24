@@ -2,8 +2,8 @@
 
 The skills speak in terms of five canonical triage roles. This file maps those roles to the actual strings used in this repo's issue tracker.
 
-Because the tracker is local markdown (see `issue-tracker.md`), these are values on the
-`Status:` line of an issue file, not GitHub labels.
+On this tracker these are literal GitHub label strings, applied with
+`gh issue edit <n> --add-label "<label>"`.
 
 | Label in mattpocock/skills | Label in our tracker | Meaning                                  |
 | -------------------------- | -------------------- | ---------------------------------------- |
