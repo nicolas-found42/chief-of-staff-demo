@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ExtractionResultSchema } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { DriveIntake, type DriveFileClient } from "../../../apps/server/src/intake/drive";
 import { loadState, saveState } from "../../../apps/server/src/state";
@@ -152,14 +153,14 @@ describe.sequential("DriveIntake", () => {
       id: string;
       name: string;
       mimeType?: string;
-      webViewLink?: string | null;
+      webViewLink?: string;
       size?: string;
     }>,
     fileData: Record<string, Buffer | string> = {},
   ): DriveFileClient {
     return {
       files: {
-        list: async () => ({ data: { files, nextPageToken: undefined } }),
+        list: async () => ({ data: { files } }),
         get: async (params: Record<string, unknown>) => {
           const fileId = params.fileId as string;
           const data = fileData[fileId];
@@ -356,7 +357,7 @@ describe.sequential("DriveIntake", () => {
           /* Yield the microtask queue so a second poll would genuinely
              interleave here rather than depending on scheduling luck. */
           await new Promise((resolve) => setTimeout(resolve, 5));
-          return { data: { files, nextPageToken: undefined } };
+          return { data: { files } };
         },
         get: async (params: Record<string, unknown>) => {
           await new Promise((resolve) => setTimeout(resolve, 5));
@@ -399,7 +400,7 @@ describe.sequential("DriveIntake", () => {
         list: async () => {
           listCalls += 1;
           await new Promise((resolve) => setTimeout(resolve, 10));
-          return { data: { files, nextPageToken: undefined } };
+          return { data: { files } };
         },
         get: async () => ({ data: Buffer.from("Dana: hi\n") }),
         export: async () => ({ data: Buffer.from("") }),
@@ -435,7 +436,7 @@ describe.sequential("DriveIntake", () => {
     ];
     const drive: DriveFileClient = {
       files: {
-        list: async () => ({ data: { files, nextPageToken: undefined } }),
+        list: async () => ({ data: { files } }),
         get: async () => {
           throw new Error("should not call get for Docs");
         },
@@ -455,7 +456,7 @@ describe.sequential("DriveIntake", () => {
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.fileName).toBe("Meeting Notes.txt");
     expect(detail.intake).toBe("drive");
-    expect(detail.result?.sourceId).toBe("doc1");
+    expect(ExtractionResultSchema.parse(detail.result).sourceId).toBe("doc1");
     expect(detail.sourceUrl).toBe("https://docs.google.com/document/d/doc1");
     const context = JSON.parse(
       readFileSync(join(workspaceDir, "runs", runs[0].id, "context.json"), "utf8"),
@@ -474,7 +475,7 @@ describe.sequential("DriveIntake", () => {
     let getCalled = false;
     const drive: DriveFileClient = {
       files: {
-        list: async () => ({ data: { files, nextPageToken: undefined } }),
+        list: async () => ({ data: { files } }),
         get: async (params: Record<string, unknown>) => {
           expect(params.fileId).toBe("f1");
           getCalled = true;
@@ -605,7 +606,7 @@ describe.sequential("DriveIntake", () => {
     const files = [{ id: "big2", name: "huge2.txt", mimeType: "text/plain" }];
     const drive: DriveFileClient = {
       files: {
-        list: async () => ({ data: { files, nextPageToken: undefined } }),
+        list: async () => ({ data: { files } }),
         get: async () => ({ data: Buffer.alloc(11 * 1024 * 1024, "a") }),
         export: async () => ({ data: Buffer.from("") }),
       },
@@ -721,7 +722,7 @@ describe.sequential("DriveIntake", () => {
     const runs = openRuns(workspaceDir).list().runs;
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.intake).toBe("drive");
-    expect(detail.result?.sourceId).toBe("meet1");
+    expect(ExtractionResultSchema.parse(detail.result).sourceId).toBe("meet1");
     expect(detail.sourceUrl).toBe("https://drive.google.com/file/d/meet1/view");
     expect(detail.fileName).toBe("Copy of Call-transcript-2026-06-18T13-00-00.000Z.txt");
     const context = JSON.parse(
@@ -743,7 +744,7 @@ describe.sequential("DriveIntake", () => {
             return { data: { files: page1, nextPageToken: "tok" } };
           }
           expect(params.pageToken).toBe("tok");
-          return { data: { files: page2, nextPageToken: undefined } };
+          return { data: { files: page2 } };
         },
         get: async () => ({ data: Buffer.from("Alice: hi\n") }),
         export: async () => ({ data: Buffer.from("") }),

@@ -104,8 +104,8 @@ export async function pickDriveFolder(
       .setOAuthToken(oauthToken)
       .addView(anyView)
       .setCallback((data: { action: string; docs?: Array<{ id: string; name: string }> }) => {
-        if (data.action === pickerNs.Action.PICKED && data.docs && data.docs.length > 0) {
-          const doc = data.docs[0];
+        const doc = data.docs?.[0];
+        if (data.action === pickerNs.Action.PICKED && doc) {
           resolve({ id: doc.id, name: doc.name });
         } else if (data.action === pickerNs.Action.CANCEL) {
           resolve(null);

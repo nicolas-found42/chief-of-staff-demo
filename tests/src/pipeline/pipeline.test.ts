@@ -5,7 +5,11 @@ import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import type { GoogleOutputs } from "../../../apps/server/src/google/outputs";
-import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
+import {
+  ExtractionResultSchema,
+  type ExtractionResult,
+  type GoogleConnectionState,
+} from "@chief-of-staff-demo/shared";
 import { googleFailureHint, isRejectedGrant } from "../../../apps/server/src/google/connection";
 import type { GoogleAccess } from "../../../apps/server/src/pipeline/run";
 import { Pipeline, meetingDateFromFileName } from "../../../apps/server/src/pipeline/run";
@@ -144,6 +148,11 @@ describe("Pipeline", () => {
   });
 
   const detailOf = (id: string) => openRuns(workspaceDir).detail(id);
+  /* A Run's result is opaque to the Shell (`RunDetail.result: unknown`). This
+     Module's result is an ExtractionResult, so parsing it here both narrows the
+     type and asserts the stored shape really is the one the Module promises. */
+  const resultOf = (detail: { result: unknown } | null): ExtractionResult =>
+    ExtractionResultSchema.parse(detail?.result);
   const summariesOf = () => openRuns(workspaceDir).list().runs;
 
   it("golden transcript → done with task and draft events", async () => {
@@ -157,11 +166,11 @@ describe("Pipeline", () => {
     expect(detail).not.toBeNull();
     expect(detail!.status).toBe("done");
     expect(detail!.attempts).toBe(1);
-    expect(detail!.result?.tasks).toHaveLength(2);
+    expect(resultOf(detail).tasks).toHaveLength(2);
     // Identity fields are server-authoritative, not LLM output.
-    expect(detail!.result?.sourceId).toBe(runId);
-    expect(detail!.result?.sourceFileName).toBe("meeting.md");
-    expect(detail!.result?.processedAt).not.toBe("2026-08-18T00:00:00.000Z");
+    expect(resultOf(detail).sourceId).toBe(runId);
+    expect(resultOf(detail).sourceFileName).toBe("meeting.md");
+    expect(resultOf(detail).processedAt).not.toBe("2026-08-18T00:00:00.000Z");
     const types = detail!.events.map((event) => event.type);
     expect(types).toContain("extract_attempt");
     expect(types).toContain("extract_ok");
@@ -211,8 +220,8 @@ describe("Pipeline", () => {
     await pipeline.idle();
     const detail = detailOf(runId);
     expect(detail!.status).toBe("done");
-    expect(detail!.result?.sourceId).toBe("drive-123");
-    expect(detail!.result?.sourceUrl).toBe("https://drive.google.com/file/d/abc/view");
+    expect(resultOf(detail).sourceId).toBe("drive-123");
+    expect(resultOf(detail).sourceUrl).toBe("https://drive.google.com/file/d/abc/view");
     expect(openRuns(workspaceDir).open(runId)!.readArtifact("transcript.txt")).toBe(
       "Dana: hello\n",
     );
@@ -230,7 +239,7 @@ describe("Pipeline", () => {
     const detail = detailOf(runId);
     expect(detail!.status).toBe("skipped");
     expect(detail!.skipReason).toContain("not a transcript");
-    expect(detail!.result?.isTranscript).toBe(false);
+    expect(resultOf(detail).isTranscript).toBe(false);
     const types = detail!.events.map((event) => event.type);
     expect(types).toContain("classify_skipped");
     expect(types).toContain("run_done");
@@ -289,7 +298,7 @@ describe("Pipeline", () => {
     expect(failed!.events.map((event) => event.type)).toContain("google_unavailable");
     expect(failed!.failureHint).toBe(googleFailureHint("disconnected"));
     // Result was persisted before the outputs stage.
-    expect(failed!.result?.isTranscript).toBe(true);
+    expect(resultOf(failed).isTranscript).toBe(true);
 
     google = fakeGoogle();
     await pipeline.retryRun(runId);

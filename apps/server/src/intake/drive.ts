@@ -32,9 +32,7 @@ export class DriveError extends Error {
 
 export interface DriveFileClient {
   files: {
-    list: (
-      params: Record<string, unknown>,
-    ) => Promise<{
+    list: (params: Record<string, unknown>) => Promise<{
       data?: {
         files?: Array<{
           id?: string;
@@ -237,7 +235,7 @@ export class DriveIntake {
           q: `'${folderId}' in parents and trashed=false`,
           fields: "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, size)",
           pageSize: 100,
-          pageToken,
+          ...(pageToken === undefined ? {} : { pageToken }),
           includeItemsFromAllDrives: true,
           supportsAllDrives: true,
         })) as {

@@ -59,7 +59,6 @@ describe("relativeTime", () => {
 });
 
 describe("buildTimeline", () => {
-  const at = (t: string) => ({ at: t }) as RunEvent;
   const started = (stage: string, t: string): RunEvent => ({
     at: t,
     type: "stage_started",

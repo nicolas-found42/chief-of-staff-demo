@@ -76,6 +76,7 @@ export class TranscriptHost implements HostedModule {
         reply.code(502).send({
           error: error instanceof Error ? error.message : String(error),
         });
+        return;
       }
     });
 

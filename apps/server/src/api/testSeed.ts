@@ -43,6 +43,7 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
       return { runId };
     } catch (error) {
       reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+      return;
     }
   });
 }

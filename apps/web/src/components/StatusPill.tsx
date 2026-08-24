@@ -10,8 +10,9 @@ export function StatusPill({
 }: {
   status: string;
   /** D6: a failure the Google connection caused is Needs attention (fix:
-   *  reconnect), not Failed (fix: retry). The enum stays frozen. */
-  connectionCaused?: boolean;
+   *  reconnect), not Failed (fix: retry). The enum stays frozen. Absent and
+   *  `undefined` both mean "not known to be the connection's fault". */
+  connectionCaused?: boolean | undefined;
 }) {
   const needsAttention = status === "failed" && connectionCaused === true;
   const cls = needsAttention

@@ -1,11 +1,6 @@
 import { type ExtractionResult, normalizeExtractionResult } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
-import {
-  StageFailure,
-  type RetryPlan,
-  type RunContext,
-  type ShellModule,
-} from "../../engine/module.js";
+import type { RetryPlan, RunContext, ShellModule } from "../../engine/module.js";
 import { connectionFailure, connectionUnavailable, errorMessage } from "../../engine/failure.js";
 import type { GoogleConnection } from "../../google/connection.js";
 import {

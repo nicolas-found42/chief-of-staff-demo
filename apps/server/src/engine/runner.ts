@@ -24,7 +24,8 @@ export interface RunnerDeps<Input> {
   /** Constructed once by the Shell: the run directory has one owner. */
   runs: Runs;
   module: ShellModule<Input>;
-  log?: (message: string) => void;
+  /** Absent and `undefined` both mean: do not log. */
+  log?: ((message: string) => void) | undefined;
 }
 
 const TERMINAL = new Set(["done", "skipped", "failed"]);

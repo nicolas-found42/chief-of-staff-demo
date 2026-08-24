@@ -35,8 +35,9 @@ export function normalizeTextLf(text: string): string {
 interface SentenceLike {
   speaker_name: string;
   text: string;
-  index?: number;
-  start_time?: number;
+  /** Absent and `undefined` alike mean the export carried no ordering key. */
+  index?: number | undefined;
+  start_time?: number | undefined;
 }
 
 function invalidSentence(position: number): SourceError {

@@ -14,6 +14,7 @@ import {
   YOUTUBE_INTAKE,
   youtubeTrendsModule,
   type ClientAccess,
+  type YoutubeInput,
 } from "../../../apps/server/src/modules/youtube/module";
 import { TrendIndex } from "../../../apps/server/src/modules/youtube/trend";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
@@ -131,7 +132,7 @@ let sheetsAccess: () => SheetsAccess;
 let channels: YoutubeChannel[];
 let invalidated: number;
 
-function runner(): Runner<{ kind: "measure" }> {
+function runner(): Runner<YoutubeInput> {
   return new Runner({
     runs,
     module: youtubeTrendsModule({
