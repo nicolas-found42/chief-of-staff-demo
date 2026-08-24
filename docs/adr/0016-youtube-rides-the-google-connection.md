@@ -1,5 +1,26 @@
 # YouTube view counts ride the Google connection, not an API key
 
+**Note (2026-08-24, correction):** an earlier draft of this ADR named `videos.batchGetStats` as
+the statistics call and said it returns a `failedVideoIds` list. What is built calls `videos.list`
+and derives the failed ids from the ids that did not come back. **The code is right and this ADR
+was wrong**, for two reasons that were checked against Google's reference and against
+`googleapis@175.0.0` rather than assumed:
+
+- `batchGetStats` returns a `videoStat` resource, whose snippet carries **`publishTime` and nothing
+  else**. It cannot supply a video's title, and `YoutubeVideoCount` in `packages/shared` records a
+  title. Using it would mean two calls where there is now one.
+- The `failedVideoIds` summary is documented on the reference page but **is not present in the
+  installed client's response schema** (`Schema$BatchGetStatsResponse` carries `etag`, `items` and
+  `kind` only). The single advantage that would have justified the switch is not reachable from
+  here.
+
+The method is real, it costs 1 unit, and it does state that authentication is not required for
+public videos — so the API-key argument below stands unchanged. What does not stand is the
+recommendation to read failures rather than derive them. One documented limit moves with it:
+`batchGetStats` caps `id` at fifty explicitly, whereas `videos.list` documents no maximum for that
+parameter, which is what the `STATISTICS_CHUNK` comment in
+`apps/server/src/modules/youtube/client.ts` refers to.
+
 **Note (2026-08-24):** this decision is unchanged by YouTube Trends as built. The Module also
 writes the day's counts into a spreadsheet it creates for itself, and those writes need no further
 scope: the full Drive scope this app already holds after ADR-0021 authorizes creating a spreadsheet
@@ -72,8 +93,8 @@ ADR rather than incidental, and it means a weekly view-count refresh is skipped 
 expiry window rather than degrading to an unauthenticated read.
 
 Quota is not a design constraint: `videos.list` costs 1 unit against a 10,000-unit daily
-bucket, and `videos.batchGetStats` takes up to 50 video ids in one call while returning a
-`failedVideoIds` list.
+bucket, and it accepts a chunk of ids in that one call. The statistics read is `videos.list`, not
+`videos.batchGetStats` — see the note below for why.
 
 This decision settles nothing about credentials that are not Google's. HubSpot, Jotform and a
 Google Chat webhook still have no home in the Shell, and the first Module to need one will
