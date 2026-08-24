@@ -15,6 +15,13 @@
   ],
   "scripts": {
     "build": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && npm run build --workspace @chief-of-staff-demo/web",
+    "typecheck": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && tsc -p tests --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "check:all": "npm run check && npm run test:e2e",
+    "knip": "knip",
     "dev:server": "npm run build --workspace @chief-of-staff-demo/shared && tsx watch apps/server/src/main.ts",
     "dev:web": "npm run dev --workspace @chief-of-staff-demo/web",
     "start": "node apps/server/dist/main.js",
@@ -22,9 +29,17 @@
     "test:e2e": "npm run build && npm run test:e2e --workspace @chief-of-staff-demo/tests"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.10.0",
+    "eslint": "^10.9.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "knip": "^6.32.2",
+    "prettier": "^3.9.6",
     "tsx": "^4.23.12",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.67.0"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
