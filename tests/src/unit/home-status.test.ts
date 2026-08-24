@@ -40,14 +40,14 @@ describe("Home's sentence", () => {
     // stand-in. The clause is written lowercase so it can be joined mid-sentence,
     // so leading with it has to capitalise — and the prefix goes on afterwards.
     expect(homeStatus([], "mock", true).sentence).toBe(
-      "Nothing has run yet. The extraction provider is a stand-in."
+      "Nothing has run yet. The extraction provider is a stand-in.",
     );
   });
 
   it("enumerates the rail's conditions in the rail's order", () => {
     const runs = [run("r2", "failed"), run("r1", "done")];
     expect(homeStatus(runs, "mock", true).sentence).toBe(
-      "1 run failed, and the extraction provider is a stand-in."
+      "1 run failed, and the extraction provider is a stand-in.",
     );
   });
 
@@ -59,17 +59,17 @@ describe("Home's sentence", () => {
   it("reports work in progress, and reassures when nothing is asking", () => {
     const runs = [run("r3", "running"), run("r2", "pending"), run("r1", "done")];
     expect(homeStatus(runs, REAL, false).sentence).toBe(
-      "2 runs in progress. Nothing needs your attention."
+      "2 runs in progress. Nothing needs your attention.",
     );
     expect(homeStatus([run("r1", "running")], REAL, false).sentence).toBe(
-      "1 run in progress. Nothing needs your attention."
+      "1 run in progress. Nothing needs your attention.",
     );
   });
 
   it("is quiet and clear when every Run is terminal and nothing is asking", () => {
     const runs = [run("r2", "done"), run("r1", "skipped")];
     expect(homeStatus(runs, REAL, false).sentence).toBe(
-      "All caught up. Nothing needs your attention."
+      "All caught up. Nothing needs your attention.",
     );
   });
 
@@ -142,9 +142,7 @@ describe("Home's attention rail", () => {
 
   it("opens a failed Run rather than offering to retry it", () => {
     const { rows } = homeStatus([run("r1", "failed", "Pricing call.docx")], REAL, true);
-    expect(rows).toEqual([
-      { id: "r1", text: "Pricing call failed", cta: "Open", to: "/runs/r1" },
-    ]);
+    expect(rows).toEqual([{ id: "r1", text: "Pricing call failed", cta: "Open", to: "/runs/r1" }]);
   });
 
   it("names an untitled Run the way the runs table does", () => {

@@ -13,7 +13,7 @@ describe("composeTaskNotes (createTask_ parity)", () => {
         notes: "Renewal is end of month; hold at current tier.",
         sourceQuote: "I'll send them the sheet with that reflected",
       },
-      source
+      source,
     );
     expect(notes).toBe(
       [
@@ -22,17 +22,23 @@ describe("composeTaskNotes (createTask_ parity)", () => {
         'Quote: "I\'ll send them the sheet with that reflected"',
         "Source: sample-transcript.md",
         "https://example/t",
-      ].join("\n")
+      ].join("\n"),
     );
   });
 
   it("omits absent lines entirely", () => {
-    const notes = composeTaskNotes({ title: "Do the thing" }, { sourceFileName: "a.md", sourceUrl: null });
+    const notes = composeTaskNotes(
+      { title: "Do the thing" },
+      { sourceFileName: "a.md", sourceUrl: null },
+    );
     expect(notes).toBe("Source: a.md");
   });
 
   it("handles a task with no source file name", () => {
-    const notes = composeTaskNotes({ title: "T", owner: "Sam" }, { sourceFileName: "", sourceUrl: null });
+    const notes = composeTaskNotes(
+      { title: "T", owner: "Sam" },
+      { sourceFileName: "", sourceUrl: null },
+    );
     expect(notes).toBe("Owner: Sam");
   });
 });

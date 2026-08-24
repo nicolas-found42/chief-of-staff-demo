@@ -64,7 +64,11 @@ function fakeYouTube(): FakeYouTube {
       }
       const answered = ids.filter((id) => !client.unavailable.has(id));
       return {
-        videos: answered.map((id) => ({ id, title: `Video ${id}`, viewCount: client.views[id] ?? 0 })),
+        videos: answered.map((id) => ({
+          id,
+          title: `Video ${id}`,
+          viewCount: client.views[id] ?? 0,
+        })),
         failedIds: ids.filter((id) => client.unavailable.has(id)),
       };
     },
@@ -148,14 +152,13 @@ async function measure(day = "2026-08-23"): Promise<string> {
   const engine = runner();
   const id = await engine.startRun(
     { intake: YOUTUBE_INTAKE, sourceUrl: null, externalId: day },
-    { kind: "measure" }
+    { kind: "measure" },
   );
   await engine.idle();
   return id;
 }
 
-const resultOf = (id: string): YoutubeRunResult =>
-  runs.detail(id)!.result as YoutubeRunResult;
+const resultOf = (id: string): YoutubeRunResult => runs.detail(id)!.result as YoutubeRunResult;
 
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-youtube-"));
@@ -300,7 +303,7 @@ describe("the spreadsheet", () => {
       },
     ]);
     expect(runs.detail(id)!.events.find((event) => event.type === "rows_appended")?.detail).toEqual(
-      { channelId: "UC_found42", tab: "Found42", rows: 2 }
+      { channelId: "UC_found42", tab: "Found42", rows: 2 },
     );
   });
 
@@ -502,10 +505,11 @@ describe("the trend, derived from the Runs", () => {
        with the gap visible rather than a fabricated line across it. */
     channels = [CHANNEL];
     recordDay("2026-08-20", { v1: 400 });
-    expect(index().read().channels[0]!.totals.map((point) => point.day)).toEqual([
-      "2026-08-01",
-      "2026-08-20",
-    ]);
+    expect(
+      index()
+        .read()
+        .channels[0]!.totals.map((point) => point.day),
+    ).toEqual(["2026-08-01", "2026-08-20"]);
   });
 
   it("caches the scan of the Runs, and nothing else", () => {

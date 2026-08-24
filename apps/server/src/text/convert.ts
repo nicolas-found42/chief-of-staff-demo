@@ -17,7 +17,7 @@ export type SourceErrorCode = "SOURCE_INVALID" | "SOURCE_UNSUPPORTED";
 export class SourceError extends Error {
   constructor(
     public readonly code: SourceErrorCode,
-    message: string
+    message: string,
   ) {
     super(message);
     this.name = "SourceError";
@@ -42,7 +42,7 @@ interface SentenceLike {
 function invalidSentence(position: number): SourceError {
   return new SourceError(
     "SOURCE_INVALID",
-    `JSON entry ${position} is not a sentence object: expected { speaker_name, text, start_time } (Fireflies sentences export)`
+    `JSON entry ${position} is not a sentence object: expected { speaker_name, text, start_time } (Fireflies sentences export)`,
   );
 }
 
@@ -55,7 +55,7 @@ export function sentencesToText(data: unknown): string {
   if (!Array.isArray(data) || data.length === 0) {
     throw new SourceError(
       "SOURCE_INVALID",
-      "JSON transcript must be a non-empty array of sentence objects"
+      "JSON transcript must be a non-empty array of sentence objects",
     );
   }
   const sentences: SentenceLike[] = data.map((entry, position) => {
@@ -92,7 +92,10 @@ export function sentencesToText(data: unknown): string {
 export async function convertToText(fileName: string, bytes: Buffer): Promise<string> {
   const ext = extname(fileName).toLowerCase();
   if (!SUPPORTED_EXTENSIONS[ext]) {
-    throw new SourceError("SOURCE_UNSUPPORTED", `Unsupported file type: ${ext || "(no extension)"}`);
+    throw new SourceError(
+      "SOURCE_UNSUPPORTED",
+      `Unsupported file type: ${ext || "(no extension)"}`,
+    );
   }
   if (ext === ".txt" || ext === ".md") {
     return normalizeTextLf(bytes.toString("utf8"));
@@ -108,7 +111,7 @@ export async function convertToText(fileName: string, bytes: Buffer): Promise<st
     } catch (err) {
       throw new SourceError(
         "SOURCE_INVALID",
-        `File is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+        `File is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     return sentencesToText(parsed);
@@ -128,7 +131,7 @@ export async function convertToText(fileName: string, bytes: Buffer): Promise<st
             }
             return "";
           })
-          .join(" ")
+          .join(" "),
       );
     }
     return normalizeTextLf(pages.join("\n"));

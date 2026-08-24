@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("Drive folder is the only Intake; Runs list and Drive settings are visible", async ({ page }) => {
+test("Drive folder is the only Intake; Runs list and Drive settings are visible", async ({
+  page,
+}) => {
   await page.goto("/transcript");
   // Upload dropzone is gone — Drive folder is the sole Intake
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
@@ -19,9 +21,9 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
   await expect(page.getByLabel("Provider", { exact: true })).toHaveValue("mock");
 
   // Secrets are never echoed back: every password input is empty.
-  const secretValues = await page.locator('input[type="password"]').evaluateAll((inputs) =>
-    inputs.map((input) => (input as HTMLInputElement).value)
-  );
+  const secretValues = await page
+    .locator('input[type="password"]')
+    .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
   expect(secretValues.length).toBeGreaterThan(0);
   expect(secretValues.every((value) => value === "")).toBe(true);
 
@@ -66,7 +68,7 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
   ]);
   await expect(page.locator(".copy-button")).toHaveCount(4);
   await expect(
-    page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true })
+    page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true }),
   ).toBeVisible();
 
   // The redirect URI is built from the port the server is actually on. This
@@ -117,7 +119,7 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
     // Shell vocabulary: Tasks and Gmail are Google surfaces, where the old
     // string named Transcript's own pipeline stages.
     await expect(shellBanner, `banner on ${path}`).toContainText(
-      "Google is not set up, so nothing can be created in Tasks or Gmail."
+      "Google is not set up, so nothing can be created in Tasks or Gmail.",
     );
   }
 
@@ -209,7 +211,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   const cards = page.locator(".module-card");
   await expect(cards).toHaveCount(3);
   await expect(cards.filter({ hasText: "Hot Take" })).toContainText("Planned");
- 
+
   // Into the Module, and back out by the wordmark.
   await cards.first().getByRole("link").click();
   await expect(page).toHaveURL(/\/transcript$/);
@@ -222,7 +224,9 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
 });
 
-test("the Shell lists every Module's runs, and a Module's page lists only its own", async ({ page }) => {
+test("the Shell lists every Module's runs, and a Module's page lists only its own", async ({
+  page,
+}) => {
   const seed = await page.request.post("/api/test/seed");
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
 
@@ -299,7 +303,7 @@ test("YouTube Trends holds a tab, and refuses a bad paste while you are looking 
   await expect(create).toBeVisible();
   await create.click();
   await expect(page.locator("section:has(#section-youtube) .field-error")).toContainText(
-    /not set up/i
+    /not set up/i,
   );
 });
 
@@ -311,25 +315,30 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText("Needs attention", { timeout: 15_000 });
+  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText(
+    "Needs attention",
+    { timeout: 15_000 },
+  );
   await page.goto("/");
   // One clause per rail condition, in the rail's order, with the true total of
   // failures rather than the number of rows shown. No "Nothing needs you." —
   // there plainly is.
   await expect(page.locator(".home-sentence")).toHaveText(
-    /^\d+ runs? failed, and the extraction provider is a stand-in\.$/
+    /^\d+ runs? failed, and the extraction provider is a stand-in\.$/,
   );
 
   // The rail is labelled for heading navigation even though the label is not
   // drawn: a sighted reader takes it from the sentence above.
-  await expect(page.getByRole("heading", { level: 2, name: "Needs your attention" })).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 2, name: "Needs your attention" })).toHaveCount(
+    1,
+  );
 
   // The provider row carries the consequence and the way out, which is what the
   // sentence deliberately leaves out — and it claims nothing about what
   // extraction would have produced, since that is a Module's stage.
   const mockRow = page.locator(".home-rail li", { hasText: "mock provider" });
   await expect(mockRow).toContainText(
-    "Runs are using the mock provider, so nothing real is extracted"
+    "Runs are using the mock provider, so nothing real is extracted",
   );
   await expect(mockRow.getByRole("link", { name: "Choose a provider" })).toBeVisible();
 
@@ -349,7 +358,9 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
 /* Last in the file, and it puts the workspace back: it is the only test here
    that stores Google credentials, and everything above expects a workspace with
    none. */
-test("credentials saved but no successful sign-in keeps the steps on the page", async ({ page }) => {
+test("credentials saved but no successful sign-in keeps the steps on the page", async ({
+  page,
+}) => {
   // Where a beginner lands when the first sign-in fails — a wrong redirect URI,
   // an API left disabled, or closing the consent screen. The connection reads
   // `disconnected`, exactly like a deliberate sign-out, and this used to
@@ -379,7 +390,7 @@ test("credentials saved but no successful sign-in keeps the steps on the page", 
     // The credentials already stored are the ones in the field, so the person can
     // see and correct the value that failed.
     await expect(page.getByLabel("OAuth client ID")).toHaveValue(
-      "000000000000-onboarding.apps.googleusercontent.com"
+      "000000000000-onboarding.apps.googleusercontent.com",
     );
   } finally {
     await page.request.put("/api/config", {

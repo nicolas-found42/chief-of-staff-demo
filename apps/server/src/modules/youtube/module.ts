@@ -11,11 +11,7 @@ import {
   type ShellModule,
 } from "../../engine/module.js";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
-import {
-  connectionFailure,
-  connectionUnavailable,
-  errorMessage,
-} from "../../engine/failure.js";
+import { connectionFailure, connectionUnavailable, errorMessage } from "../../engine/failure.js";
 import { googleSurfaceHint } from "../../google/connection.js";
 import type { RunOutcome } from "../../runs.js";
 import { STATISTICS_CHUNK, chunk, type YouTubeClient } from "./client.js";
@@ -30,8 +26,7 @@ export const YOUTUBE_INTAKE = "daily";
 
 /** A YouTube client, or the connection state that says why there is none. */
 export type ClientAccess =
-  | { ok: true; client: YouTubeClient }
-  | { ok: false; state: GoogleConnectionState };
+  { ok: true; client: YouTubeClient } | { ok: false; state: GoogleConnectionState };
 
 export interface YoutubeDeps {
   /** Never touches the network: the same cheap check the outputs surface makes. */
@@ -154,7 +149,7 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
                is live is a worse failure than a red Run. */
             throw new StageFailure(
               "spreadsheet not found",
-              "The spreadsheet is gone. Create a new one in Settings → YouTube Trends, then retry."
+              "The spreadsheet is gone. Create a new one in Settings → YouTube Trends, then retry.",
             );
           }
           /* Anything else keeps this Stage's own hint: whatever went wrong with

@@ -67,7 +67,7 @@ const MAX_FEED = 5;
 export function homeStatus(
   runs: RunSummary[],
   provider: ProviderId,
-  hasNotice: boolean
+  hasNotice: boolean,
 ): HomeStatus {
   const failed = runs.filter((run) => run.status === "failed");
   const active = runs.filter((run) => !TERMINAL.has(run.status));
@@ -94,7 +94,7 @@ export function homeStatus(
           text: `${runTitle(run.fileName ?? run.id)} failed`,
           cta: "Open",
           to: `/runs/${run.id}`,
-        }
+        },
   );
   /* The tail of the failed rows, not a condition of its own — so it sits with
      the rows it summarises rather than after the provider. */
@@ -152,7 +152,7 @@ function sentenceFor(
   clauses: string[],
   runCount: number,
   activeCount: number,
-  hasNotice: boolean
+  hasNotice: boolean,
 ): string {
   if (clauses.length > 0) {
     /* Capitalised before the prefix, not after: the provider clause starts

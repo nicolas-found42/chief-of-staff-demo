@@ -55,10 +55,7 @@ const COPY_PREFIX = /^(?:copy of\s+)+/i;
    coarsest part worth matching; seconds and fractional seconds optional. */
 const TIMESTAMP_TAIL = /[ _-]*\d{4}-\d{2}-\d{2}T\d{2}[-:]\d{2}([-:]\d{2})?(?:\.\d+)?Z?$/;
 
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function shortDate(isoDay: string): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
@@ -87,7 +84,10 @@ export function runTitle(fileName: string): string {
     date = shortDate(/\d{4}-\d{2}-\d{2}/.exec(tail[0])![0]);
     name = name.slice(0, tail.index);
   }
-  name = name.replace(COPY_PREFIX, "").replace(/[\s_\-.,;:]+$/, "").trim();
+  name = name
+    .replace(COPY_PREFIX, "")
+    .replace(/[\s_\-.,;:]+$/, "")
+    .trim();
   /* A name that was only a timestamp still has its date to offer; a truly
      empty cell falls back to the untitled sentence. */
   if (!name) {
@@ -136,9 +136,7 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   }
   const date = new Date(time);
   const day = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
-  return date.getFullYear() === new Date(now).getFullYear()
-    ? day
-    : `${day}, ${date.getFullYear()}`;
+  return date.getFullYear() === new Date(now).getFullYear() ? day : `${day}, ${date.getFullYear()}`;
 }
 
 /**
@@ -178,7 +176,6 @@ export interface TimelineEntry {
   /** Milliseconds across every attempt; null while the stage is still open. */
   durationMs: number | null;
 }
-
 
 function stageKeyOf(event: RunEvent): string | null {
   const stage = event.detail?.stage;
@@ -246,7 +243,11 @@ export function buildTimeline(events: RunEvent[]): TimelineEntry[] {
     return {
       stage,
       label: stageLabel(stage),
-      state: acc.failed ? ("failed" as const) : stillOpen ? ("running" as const) : ("done" as const),
+      state: acc.failed
+        ? ("failed" as const)
+        : stillOpen
+          ? ("running" as const)
+          : ("done" as const),
       durationMs: stillOpen || acc.durationMs === 0 ? null : acc.durationMs,
     };
   });

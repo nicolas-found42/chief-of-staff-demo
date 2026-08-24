@@ -64,7 +64,7 @@ export function parseChannelUrl(input: string): ChannelRef {
   }
   if (first === "c") {
     throw new ChannelUrlError(
-      `A youtube.com/c/… URL cannot be looked up: Google publishes no way to turn a custom URL into a channel id. Open the channel on YouTube and copy the address bar there instead — it will be a handle or an id. ${FORMS}`
+      `A youtube.com/c/… URL cannot be looked up: Google publishes no way to turn a custom URL into a channel id. Open the channel on YouTube and copy the address bar there instead — it will be a handle or an id. ${FORMS}`,
     );
   }
   throw new ChannelUrlError(`That is not a channel URL. ${FORMS}`);

@@ -81,7 +81,7 @@ export class StageFailure extends Error {
   constructor(
     reason: string,
     readonly hint: string,
-    readonly flags?: { connectionCaused?: boolean }
+    readonly flags?: { connectionCaused?: boolean },
   ) {
     super(reason);
     this.name = "StageFailure";

@@ -48,7 +48,11 @@ export function expiryNote(status: GoogleStatus): string | null {
   }
   const days = daysAgo(status.lastConnectedAt);
   const signedIn =
-    days <= 0 ? "You signed in today" : days === 1 ? "You signed in yesterday" : `You signed in ${days} days ago`;
+    days <= 0
+      ? "You signed in today"
+      : days === 1
+        ? "You signed in yesterday"
+        : `You signed in ${days} days ago`;
   if (!status.expiresAbout) {
     return `${signedIn}.`;
   }

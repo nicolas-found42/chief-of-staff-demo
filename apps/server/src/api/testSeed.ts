@@ -14,15 +14,15 @@ export interface TestSeedContext {
  * never registered unless the explicit test flag is set, so an unset variable
  * cannot expose it (no NODE_ENV string compare).
  */
-export async function registerTestSeed(
-  app: FastifyInstance,
-  ctx: TestSeedContext
-): Promise<void> {
+export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContext): Promise<void> {
   app.post("/api/test/seed", async (_request, reply) => {
     try {
       let bytes: Buffer | null = null;
       const candidates = [
-        join(dirname(fileURLToPath(import.meta.url)), "../../../tests/fixtures/transcripts/sample-transcript.md"),
+        join(
+          dirname(fileURLToPath(import.meta.url)),
+          "../../../tests/fixtures/transcripts/sample-transcript.md",
+        ),
         join(process.cwd(), "tests/fixtures/transcripts/sample-transcript.md"),
       ];
       for (const cand of candidates) {

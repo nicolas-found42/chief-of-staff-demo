@@ -31,7 +31,9 @@ const GOLDEN = {
     },
     { title: "Update help docs" },
   ],
-  drafts: [{ to: "", subject: "Updated Q3 pricing", body: "Hello,", reason: "Acme needs telling." }],
+  drafts: [
+    { to: "", subject: "Updated Q3 pricing", body: "Hello,", reason: "Acme needs telling." },
+  ],
 };
 
 const NON_TRANSCRIPT = {
@@ -64,7 +66,10 @@ function fakeGoogle(): FakeGoogle {
         ...(item.due ? { due: item.due } : {}),
       };
       google.calls.tasks.push(task);
-      return { googleId: `task-${google.calls.tasks.length}`, webViewLink: `https://tasks.google.com/task/task-${google.calls.tasks.length}` };
+      return {
+        googleId: `task-${google.calls.tasks.length}`,
+        webViewLink: `https://tasks.google.com/task/task-${google.calls.tasks.length}`,
+      };
     },
     createDraft: async (draft) => {
       google.calls.drafts.push({ to: draft.to ?? "", subject: draft.subject });
@@ -98,7 +103,7 @@ function scriptedProvider(script: unknown[]): { complete: CompleteJson; attempts
 describe("meetingDateFromFileName", () => {
   it("recovers the date from a Fireflies-style export name", () => {
     expect(
-      meetingDateFromFileName("Copy of Abhinav- Richard-transcript-2026-06-18T13-00-00.000Z.json")
+      meetingDateFromFileName("Copy of Abhinav- Richard-transcript-2026-06-18T13-00-00.000Z.json"),
     ).toBe("2026-06-18");
   });
 
@@ -190,7 +195,7 @@ describe("Pipeline", () => {
     });
     await pipeline.idle();
     const context = JSON.parse(
-      readFileSync(join(workspaceDir, "runs", runId, "context.json"), "utf8")
+      readFileSync(join(workspaceDir, "runs", runId, "context.json"), "utf8"),
     ) as { meetingDate: string | null };
     expect(context.meetingDate).toBe("2026-06-18");
   });
@@ -208,7 +213,9 @@ describe("Pipeline", () => {
     expect(detail!.status).toBe("done");
     expect(detail!.result?.sourceId).toBe("drive-123");
     expect(detail!.result?.sourceUrl).toBe("https://drive.google.com/file/d/abc/view");
-    expect(openRuns(workspaceDir).open(runId)!.readArtifact("transcript.txt")).toBe("Dana: hello\n");
+    expect(openRuns(workspaceDir).open(runId)!.readArtifact("transcript.txt")).toBe(
+      "Dana: hello\n",
+    );
     expect(detail!.intake).toBe("drive");
   });
 

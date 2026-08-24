@@ -33,7 +33,11 @@ body {
 }
 
 body {
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family:
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
   /* 15px at the default 16px root, but relative so it still tracks a reader's
      own font-size setting (WCAG 1.4.4). An absolute px value here would leave
      body copy fixed while the rem-based headings scaled around it. */
@@ -531,7 +535,6 @@ tr:last-child td {
   color: var(--muted);
 }
 
-
 .status-done {
   background: #e3f2e8;
   color: var(--ok);
@@ -551,7 +554,6 @@ tr:last-child td {
   background: #e3ecf9;
   color: var(--accent);
 }
-
 
 .banner {
   padding: 0.6rem 1rem;

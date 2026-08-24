@@ -176,7 +176,9 @@ export function YoutubePage() {
           <div className="field-row">
             <input
               id="channel-url"
-              aria-describedby={addError ? "channel-url-error channel-url-hint" : "channel-url-hint"}
+              aria-describedby={
+                addError ? "channel-url-error channel-url-hint" : "channel-url-hint"
+              }
               aria-invalid={addError ? true : undefined}
               value={url}
               placeholder="https://www.youtube.com/@name"
@@ -192,8 +194,8 @@ export function YoutubePage() {
             </p>
           )}
           <p id="channel-url-hint" className="muted field-hint">
-            A handle address (youtube.com/@name) or an id address
-            (youtube.com/channel/UC…). It is checked against YouTube now, not tomorrow.
+            A handle address (youtube.com/@name) or an id address (youtube.com/channel/UC…). It is
+            checked against YouTube now, not tomorrow.
           </p>
         </div>
       </form>
@@ -326,7 +328,10 @@ export function YoutubePage() {
                                         rel="noreferrer"
                                       >
                                         Watch on YouTube
-                                        <span className="visually-hidden"> (opens in a new tab)</span>
+                                        <span className="visually-hidden">
+                                          {" "}
+                                          (opens in a new tab)
+                                        </span>
                                       </a>
                                     </p>
                                   </td>

@@ -1,12 +1,7 @@
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import type { NewRun, RunHandle, Runs } from "../runs.js";
 import { errorMessage } from "./failure.js";
-import {
-  OutsideStageError,
-  StageFailure,
-  type RunContext,
-  type ShellModule,
-} from "./module.js";
+import { OutsideStageError, StageFailure, type RunContext, type ShellModule } from "./module.js";
 
 /** What a Module's host knows about a new Run that the Shell does not. */
 export type RunRecord = Omit<NewRun, "module" | "moduleVersion">;
@@ -131,12 +126,7 @@ export class Runner<Input> {
         } catch (error) {
           const failure = error instanceof StageFailure ? error : null;
           const reason = errorMessage(error);
-          run.failed(
-            name,
-            reason,
-            failure?.hint ?? mod.failureHint(name, reason),
-            failure?.flags
-          );
+          run.failed(name, reason, failure?.hint ?? mod.failureHint(name, reason), failure?.flags);
           throw error;
         } finally {
           open = outer;

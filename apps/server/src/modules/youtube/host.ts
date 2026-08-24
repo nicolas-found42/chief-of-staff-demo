@@ -85,7 +85,7 @@ export class YoutubeHost implements HostedModule {
       startRun: (day) =>
         this.runner.startRun(
           { intake: YOUTUBE_INTAKE, sourceUrl: null, externalId: day },
-          { kind: "measure" }
+          { kind: "measure" },
         ),
       now: deps.now ?? (() => new Date()),
       log: deps.log,
@@ -256,14 +256,10 @@ export class YoutubeHost implements HostedModule {
       return;
     }
     try {
-      await access.client.ensureTab(
-        access.spreadsheet.id,
-        tabNameFor(channel),
-        SPREADSHEET_HEADER
-      );
+      await access.client.ensureTab(access.spreadsheet.id, tabNameFor(channel), SPREADSHEET_HEADER);
     } catch (error) {
       this.deps.log(
-        `Could not add a spreadsheet tab for ${channel.title}: ${error instanceof Error ? error.message : String(error)}`
+        `Could not add a spreadsheet tab for ${channel.title}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

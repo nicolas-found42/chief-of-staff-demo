@@ -12,7 +12,7 @@ import type {
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -97,9 +97,9 @@ export const api = {
   googleStatus: () => request<GoogleStatus>("/api/google/status"),
   googleCheck: () => request<SetupCheck>("/api/google/check", { method: "POST" }),
   googleConnect: () => request<{ authUrl: string }>("/api/google/connect"),
-  googleDisconnect: () =>
-    request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),
-  googlePickerToken: () => request<{ token: string; expiresAt: string | null }>("/api/google/picker-token"),
+  googleDisconnect: () => request<GoogleStatus>("/api/google/disconnect", { method: "POST" }),
+  googlePickerToken: () =>
+    request<{ token: string; expiresAt: string | null }>("/api/google/picker-token"),
   driveSync: () => request<{ created: number }>("/api/drive/sync", { method: "POST" }),
   /* Remembered intake facts only (D14): the endpoint makes zero Google calls. */
   driveIntakeStatus: () => request<DriveIntakeStatus>("/api/intake/drive"),

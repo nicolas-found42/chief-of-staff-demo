@@ -57,12 +57,18 @@ describe("GET /api/runs/:id/artifacts/:name", () => {
     handle.writeArtifact("transcript.txt", "hello transcript");
     const id = handle.id;
 
-    const hit = await app.inject({ method: "GET", url: `/api/runs/${id}/artifacts/transcript.txt` });
+    const hit = await app.inject({
+      method: "GET",
+      url: `/api/runs/${id}/artifacts/transcript.txt`,
+    });
     expect(hit.statusCode).toBe(200);
     expect(hit.headers["content-type"]).toMatch(/text\/plain/);
     expect(hit.body).toBe("hello transcript");
 
-    const missing = await app.inject({ method: "GET", url: `/api/runs/${id}/artifacts/missing.txt` });
+    const missing = await app.inject({
+      method: "GET",
+      url: `/api/runs/${id}/artifacts/missing.txt`,
+    });
     expect(missing.statusCode).toBe(404);
 
     const bad = await app.inject({ method: "GET", url: `/api/runs/${id}/artifacts/meta.json` });
@@ -73,7 +79,10 @@ describe("GET /api/runs/:id/artifacts/:name", () => {
     // If router treats as separate segment, may be 404; accept either 400 or 404 as invalid
     expect([400, 404]).toContain(bad2.statusCode);
 
-    const noRun = await app.inject({ method: "GET", url: `/api/runs/run_20260101-000000_deadbeef/artifacts/transcript.txt` });
+    const noRun = await app.inject({
+      method: "GET",
+      url: `/api/runs/run_20260101-000000_deadbeef/artifacts/transcript.txt`,
+    });
     expect(noRun.statusCode).toBe(404);
   });
 });

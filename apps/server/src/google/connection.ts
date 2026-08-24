@@ -67,9 +67,7 @@ const SCOPE_LABELS: Record<string, string> = {
  * responses omit the list entirely and rejecting that would lock the operator
  * out on an unusual but valid answer.
  */
-export function findMissingScopes(
-  grantedScopes: string[] | null | undefined
-): string[] {
+export function findMissingScopes(grantedScopes: string[] | null | undefined): string[] {
   if (!grantedScopes || grantedScopes.length === 0) {
     return [];
   }
@@ -87,7 +85,7 @@ export class IncompleteGrantError extends Error {
     const labels = missingScopes.map((s) => SCOPE_LABELS[s] ?? s);
     const labelText = labels.join(", ");
     super(
-      `Google did not grant ${labelText}. Sign in again and leave every permission ticked — the missing ${labels.length === 1 ? "permission is" : "permissions are"} ${labelText}.`
+      `Google did not grant ${labelText}. Sign in again and leave every permission ticked — the missing ${labels.length === 1 ? "permission is" : "permissions are"} ${labelText}.`,
     );
     this.name = "IncompleteGrantError";
     this.missingScopes = missingScopes;
@@ -110,7 +108,7 @@ export class RedirectUriMismatchError extends Error {
 /** Shape-tolerant: googleapis nests the reason at different depths per call. */
 export function isRedirectUriMismatch(error: unknown): boolean {
   return /redirect_uri_mismatch/.test(
-    typeof error === "object" && error !== null ? JSON.stringify(error) : String(error)
+    typeof error === "object" && error !== null ? JSON.stringify(error) : String(error),
   );
 }
 
@@ -145,7 +143,10 @@ export function googleSurfaceHint(surface: GoogleSurface, error: unknown): strin
     return "Google rejected the saved sign-in. Sign in again.";
   }
   const { reason, message } = apiError(error);
-  if (reason === "accessNotConfigured" || /has not been used in project|is disabled/i.test(message)) {
+  if (
+    reason === "accessNotConfigured" ||
+    /has not been used in project|is disabled/i.test(message)
+  ) {
     /* Google names the project in its own message, and naming it back is the
        only way someone catches that they configured a different one — the
        console does not switch to a project it has just created. */
@@ -189,7 +190,7 @@ export function googleSurfaceHint(surface: GoogleSurface, error: unknown): strin
 export type SurfaceProbe = (
   config: AppConfig,
   port: number,
-  surface: GoogleSurface
+  surface: GoogleSurface,
 ) => Promise<void>;
 
 const callSurface: SurfaceProbe = async (config, port, surface) => {
@@ -259,16 +260,14 @@ const spendRefreshToken: GoogleProbe = async (config, port) => {
 };
 
 export type OutputsAccess =
-  | { ok: true; outputs: GoogleOutputs }
-  | { ok: false; state: GoogleConnectionState };
+  { ok: true; outputs: GoogleOutputs } | { ok: false; state: GoogleConnectionState };
 
 /**
  * Credentials for a Module that makes its own Google calls (ADR-0018): the
  * Shell holds the authorization, the Module does the calling.
  */
 export type AuthAccess =
-  | { ok: true; auth: GoogleAuth }
-  | { ok: false; state: GoogleConnectionState };
+  { ok: true; auth: GoogleAuth } | { ok: false; state: GoogleConnectionState };
 
 export type AuthUrlAccess = { ok: true; url: string } | { ok: false; state: GoogleConnectionState };
 
@@ -279,12 +278,12 @@ export type PickerTokenAccess =
 export type ExchangeCode = (
   config: AppConfig,
   port: number,
-  code: string
+  code: string,
 ) => Promise<{ refreshToken: string; grantedScopes: string[] }>;
 
 export type MintAccessTokenFn = (
   config: AppConfig,
-  port: number
+  port: number,
 ) => Promise<{ token: string; expiresAt: string | null }>;
 
 /**
@@ -352,7 +351,7 @@ export interface GoogleConnectionOptions {
 export function openGoogleConnection(
   configStore: ConfigStore,
   port: number,
-  options: GoogleConnectionOptions = {}
+  options: GoogleConnectionOptions = {},
 ): GoogleConnection {
   const probe = options.probe ?? spendRefreshToken;
   const surfaceProbe = options.surfaceProbe ?? callSurface;
@@ -387,7 +386,7 @@ export function openGoogleConnection(
       lastConnectedAt,
       expiresAbout: predictable
         ? new Date(
-            new Date(lastConnectedAt).getTime() + GOOGLE_TESTING_TOKEN_DAYS * 86_400_000
+            new Date(lastConnectedAt).getTime() + GOOGLE_TESTING_TOKEN_DAYS * 86_400_000,
           ).toISOString()
         : null,
     };

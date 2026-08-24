@@ -49,14 +49,14 @@ describe("the Shell's connection notice", () => {
     expect(connectionNotice(status("connected", { lastConnectedAt: inHours(-48) }))).toBeNull();
     expect(
       connectionNotice(
-        status("connected", { lastConnectedAt: inHours(-48), expiresAbout: inHours(72) })
-      )
+        status("connected", { lastConnectedAt: inHours(-48), expiresAbout: inHours(72) }),
+      ),
     ).toBeNull();
   });
 
   it("speaks inside a day of the estimate, in the Settings card's own words", () => {
     const notice = connectionNotice(
-      status("connected", { lastConnectedAt: inHours(-6), expiresAbout: inHours(12) })
+      status("connected", { lastConnectedAt: inHours(-6), expiresAbout: inHours(12) }),
     );
     expect(notice?.action).toBe("Sign in with Google");
     expect(notice?.text).toMatch(/^You signed in today, so Google will probably ask again around /);

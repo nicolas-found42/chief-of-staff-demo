@@ -175,11 +175,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
               <thead>
                 <tr>
                   <th scope="col">Run</th>
-                  {showModule ? (
-                    <th scope="col">Module</th>
-                  ) : (
-                    <th scope="col">Source</th>
-                  )}
+                  {showModule ? <th scope="col">Module</th> : <th scope="col">Source</th>}
                   <th scope="col">Outcome</th>
                   <th scope="col">What it did</th>
                   <th scope="col">When</th>
@@ -200,7 +196,9 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                       >
                         {runTitle(run.fileName ?? run.id)}
                       </Link>
-                      {run.fileName ? <span className="muted run-file-meta">{run.fileName}</span> : null}
+                      {run.fileName ? (
+                        <span className="muted run-file-meta">{run.fileName}</span>
+                      ) : null}
                     </td>
                     {showModule ? (
                       /* The tab bar's own words, not an identifier from disk —

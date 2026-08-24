@@ -2,10 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  encodeDraftRaw,
-  gmailDraftInput,
-} from "../../../apps/server/src/google/gmail";
+import { encodeDraftRaw, gmailDraftInput } from "../../../apps/server/src/google/gmail";
 
 function decode(raw: string): string {
   return Buffer.from(raw, "base64url").toString("utf8");
@@ -27,7 +24,7 @@ describe("encodeDraftRaw", () => {
         "Hello,",
         "",
         "Here is the sheet.",
-      ].join("\r\n")
+      ].join("\r\n"),
     );
   });
 
@@ -55,7 +52,7 @@ describe("gmail module is draft-only (structural guarantee)", () => {
   it("contains no reference to the delivery API", () => {
     const sourcePath = join(
       fileURLToPath(new URL(".", import.meta.url)),
-      "../../../apps/server/src/google/gmail.ts"
+      "../../../apps/server/src/google/gmail.ts",
     );
     const source = readFileSync(sourcePath, "utf8");
     expect(source).not.toMatch(/send/i);

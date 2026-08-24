@@ -46,7 +46,7 @@ const transcript = new TranscriptHost({
         apiKey: current.apiKey,
         baseUrl: current.ollama.baseUrl,
       },
-      layout.mockResultFile
+      layout.mockResultFile,
     );
   },
   getLlmInfo: () => {
@@ -112,7 +112,7 @@ if (process.env.ENABLE_TEST_SEED === "1") {
 
 await app.listen({ port, host });
 console.log(
-  `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`
+  `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`,
 );
 
 for (const module of modules) {

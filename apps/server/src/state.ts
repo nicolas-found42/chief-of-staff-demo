@@ -23,7 +23,6 @@ export interface WorkspaceState {
   youtubeTrends: YoutubeTrendsState;
 }
 
-
 export function loadState(stateFile: string): WorkspaceState {
   const empty: WorkspaceState = {
     drive: { ingestedIds: [], lastPollAt: null, lastPollOutcome: null },
@@ -55,8 +54,7 @@ export function loadState(stateFile: string): WorkspaceState {
       youtubeTrends: {
         /* A state file written before this Module existed has no day, which
            reads as "no Run yet" — exactly right. */
-        lastRunDay:
-          typeof youtubeTrends.lastRunDay === "string" ? youtubeTrends.lastRunDay : null,
+        lastRunDay: typeof youtubeTrends.lastRunDay === "string" ? youtubeTrends.lastRunDay : null,
       },
     };
   } catch {

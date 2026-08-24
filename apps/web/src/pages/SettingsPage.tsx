@@ -56,7 +56,6 @@ interface FormState {
   ollamaBaseUrl: string;
 }
 
-
 export function SettingsPage() {
   useTitle("Settings");
   const headingRef = usePageFocus<HTMLHeadingElement>();
@@ -156,12 +155,12 @@ export function SettingsPage() {
   const changeProvider = (provider: ProviderId) => {
     const defaults = payload.defaults;
     const previousDefault = Object.values(defaults).includes(form.model);
-    const model = form.model === "" || previousDefault ? defaults[provider] ?? "" : form.model;
+    const model = form.model === "" || previousDefault ? (defaults[provider] ?? "") : form.model;
     setForm((current) => (current ? { ...current, provider, model } : current));
     // Changing Provider rewrites a field the user did not touch. Sighted users
     // watch it happen; everyone else needs it said (WCAG 3.2.2).
     setModelNotice(
-      model === form.model ? "" : model ? `Model changed to ${model}.` : "Model cleared."
+      model === form.model ? "" : model ? `Model changed to ${model}.` : "Model cleared.",
     );
     setSaved(false);
   };
@@ -217,7 +216,7 @@ export function SettingsPage() {
               apiKey: "",
               googleClientSecret: "",
             }
-          : current
+          : current,
       );
       setSaved(true);
     } catch (err) {
@@ -244,7 +243,7 @@ export function SettingsPage() {
             form.googleClientSecret === ""
               ? { clientId: form.googleClientId }
               : { clientId: form.googleClientId, clientSecret: form.googleClientSecret },
-        })
+        }),
       );
       const { authUrl } = await api.googleConnect();
       window.location.assign(authUrl);
@@ -355,7 +354,7 @@ export function SettingsPage() {
          key has neither shape. Both would store credentials that cannot work
          against this redirect URI, and would fail much later. */
       setJsonNotice(
-        "That is not a Web application client. Create the client with application type Web application, then download its JSON."
+        "That is not a Web application client. Create the client with application type Web application, then download its JSON.",
       );
       return;
     }
@@ -440,8 +439,8 @@ export function SettingsPage() {
               onChange={(event) => setField("ollamaBaseUrl", event.target.value)}
             />
             <p id="ollama-base-url-hint" className="muted field-hint">
-              Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in
-              a container and Ollama runs on the host. No API key needed.
+              Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in a
+              container and Ollama runs on the host. No API key needed.
             </p>
           </div>
         </div>
@@ -464,7 +463,7 @@ export function SettingsPage() {
       clientSecret={form.googleClientSecret}
       secretHint={secretHint(
         payload.config.google.clientSecret.set,
-        payload.config.google.clientSecret.hint
+        payload.config.google.clientSecret.hint,
       )}
       onChange={(field, value) =>
         setField(field === "clientId" ? "googleClientId" : "googleClientSecret", value)
@@ -502,7 +501,12 @@ export function SettingsPage() {
         <div className="banner banner-error" role="alert">
           {(() => {
             const missing = searchParams.get("missing") ?? "";
-            const scopes = missing ? missing.split(",").map((s) => s.trim()).filter(Boolean) : [];
+            const scopes = missing
+              ? missing
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : [];
             const labelMap: Record<string, string> = {
               "https://www.googleapis.com/auth/tasks": "Google Tasks",
               "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
@@ -531,9 +535,9 @@ export function SettingsPage() {
               the message — the correct value, one click away, instead of an
               error to decode against the console. */}
           <span>
-            Google refused the sign-in because the redirect URI registered on your OAuth client
-            does not match this app&apos;s. Copy the correct value and paste it into your
-            client&apos;s Authorized redirect URIs exactly as-is, then sign in again.
+            Google refused the sign-in because the redirect URI registered on your OAuth client does
+            not match this app&apos;s. Copy the correct value and paste it into your client&apos;s
+            Authorized redirect URIs exactly as-is, then sign in again.
           </span>
           <button
             type="button"
@@ -541,7 +545,7 @@ export function SettingsPage() {
             onClick={() => {
               void navigator.clipboard.writeText(googleStatus?.redirectUri ?? "").then(
                 () => setCopiedCorrectUri(true),
-                () => setCopiedCorrectUri(false)
+                () => setCopiedCorrectUri(false),
               );
             }}
           >
@@ -626,84 +630,100 @@ export function SettingsPage() {
                 />
               </div>
             </div>
-            <p className="muted">Transcripts are read from a single Google Drive folder. Pick the folder your transcript service writes to, then enable polling.</p>
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="drive-folder">Drive folder</label>
-              <div className="field-row">
-                <input
-                  id="drive-folder"
-                  aria-describedby="drive-folder-hint"
-                  value={form.driveFolderName ? `${form.driveFolderName} (${form.driveFolderId})` : form.driveFolderId}
-                  placeholder="No folder chosen"
-                  readOnly
-                />
-                <button
-                  type="button"
-                  className="action-button"
-                  onClick={() => void chooseFolder()}
-                  disabled={googleStatus?.state !== "connected" || picking}
-                  aria-describedby={googleStatus?.state !== "connected" ? "drive-picker-disabled-hint" : undefined}
-                >
-                  {picking ? "Opening…" : form.driveFolderId ? "Change folder" : "Choose folder"}
-                </button>
+            <p className="muted">
+              Transcripts are read from a single Google Drive folder. Pick the folder your
+              transcript service writes to, then enable polling.
+            </p>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="drive-folder">Drive folder</label>
+                <div className="field-row">
+                  <input
+                    id="drive-folder"
+                    aria-describedby="drive-folder-hint"
+                    value={
+                      form.driveFolderName
+                        ? `${form.driveFolderName} (${form.driveFolderId})`
+                        : form.driveFolderId
+                    }
+                    placeholder="No folder chosen"
+                    readOnly
+                  />
+                  <button
+                    type="button"
+                    className="action-button"
+                    onClick={() => void chooseFolder()}
+                    disabled={googleStatus?.state !== "connected" || picking}
+                    aria-describedby={
+                      googleStatus?.state !== "connected" ? "drive-picker-disabled-hint" : undefined
+                    }
+                  >
+                    {picking ? "Opening…" : form.driveFolderId ? "Change folder" : "Choose folder"}
+                  </button>
+                </div>
+                {googleStatus?.state !== "connected" ? (
+                  <p id="drive-picker-disabled-hint" className="muted field-hint">
+                    Sign in with Google first — the picker needs your Drive access.
+                  </p>
+                ) : null}
+                {pickerError ? (
+                  <p className="field-error" role="alert">
+                    {pickerError}
+                  </p>
+                ) : null}
+                <p id="drive-folder-hint" className="muted field-hint">
+                  The picker shows your Drive folders — no folder ID to copy. Requires Google Drive
+                  access; sign in again after enabling the Drive API.
+                </p>
               </div>
-              {googleStatus?.state !== "connected" ? (
-                <p id="drive-picker-disabled-hint" className="muted field-hint">
-                  Sign in with Google first — the picker needs your Drive access.
+              <div className="field">
+                <label htmlFor="poll-interval">Poll interval (minutes)</label>
+                <input
+                  id="poll-interval"
+                  aria-describedby={
+                    pollInvalid ? "poll-interval-error poll-interval-hint" : "poll-interval-hint"
+                  }
+                  aria-invalid={pollInvalid || undefined}
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  value={form.pollIntervalMinutes}
+                  onChange={(event) => setField("pollIntervalMinutes", event.target.value)}
+                />
+                {pollInvalid && (
+                  <p id="poll-interval-error" className="field-error">
+                    Enter a whole number of minutes — 1 or more.
+                  </p>
+                )}
+                <p id="poll-interval-hint" className="muted field-hint">
+                  One minute or longer.
                 </p>
-              ) : null}
-              {pickerError ? (
-                <p className="field-error" role="alert">
-                  {pickerError}
-                </p>
-              ) : null}
-              <p id="drive-folder-hint" className="muted field-hint">
-                The picker shows your Drive folders — no folder ID to copy. Requires Google Drive access; sign in again after enabling the Drive API.
-              </p>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={form.driveEnabled}
+                  onChange={(event) => setField("driveEnabled", event.target.checked)}
+                />
+                Enable Drive polling
+              </label>
             </div>
-            <div className="field">
-              <label htmlFor="poll-interval">Poll interval (minutes)</label>
-              <input
-                id="poll-interval"
-                aria-describedby={
-                  pollInvalid ? "poll-interval-error poll-interval-hint" : "poll-interval-hint"
-                }
-                aria-invalid={pollInvalid || undefined}
-                type="number"
-                min={1}
-                inputMode="numeric"
-                value={form.pollIntervalMinutes}
-                onChange={(event) => setField("pollIntervalMinutes", event.target.value)}
-              />
-              {pollInvalid && (
-                <p id="poll-interval-error" className="field-error">
-                  Enter a whole number of minutes — 1 or more.
-                </p>
-              )}
-              <p id="poll-interval-hint" className="muted field-hint">
-                One minute or longer.
-              </p>
+            <div className="field-row">
+              <button
+                type="button"
+                className="action-button"
+                onClick={syncDrive}
+                aria-disabled={syncing}
+              >
+                Sync now
+              </button>
+              <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
             </div>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={form.driveEnabled}
-                onChange={(event) => setField("driveEnabled", event.target.checked)}
-              />
-              Enable Drive polling
-            </label>
+            <p className="muted">
+              Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs (exported as
+              text). Other files are ignored.
+            </p>
           </div>
-          <div className="field-row">
-            <button type="button" className="action-button" onClick={syncDrive} aria-disabled={syncing}>
-              Sync now
-            </button>
-            <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
-          </div>
-          <p className="muted">
-            Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs (exported as text). Other files are ignored.
-          </p>
-        </div>
         </section>
 
         <div className="field-row">

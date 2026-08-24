@@ -13,18 +13,20 @@ export interface GoogleOutputs {
   createTask(
     tasklistId: string,
     item: TaskItem,
-    source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">
+    source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">,
   ): Promise<CreatedTask>;
   createDraft(draft: DraftItem): Promise<string>;
 }
-
 
 export function googleOutputs(config: AppConfig, port: number): GoogleOutputs {
   const auth: GoogleAuth = buildGoogleAuth(config, port);
   return {
     findOrCreateTasklist: (title: string) => findOrCreateTasklist(auth, title),
-    createTask: (tasklistId: string, item: TaskItem, source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">) =>
-      createGoogleTask(auth, tasklistId, item, source),
+    createTask: (
+      tasklistId: string,
+      item: TaskItem,
+      source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">,
+    ) => createGoogleTask(auth, tasklistId, item, source),
     createDraft: (draft: DraftItem) => createGmailDraft(auth, gmailDraftInput(draft)),
   };
 }

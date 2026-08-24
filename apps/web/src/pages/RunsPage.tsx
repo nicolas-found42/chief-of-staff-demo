@@ -61,7 +61,9 @@ export function RunsPage() {
       )}
 
       <p className="muted">
-        Transcripts are read from your Google Drive folder. Choose it in <Link to="/settings">Settings → Drive transcripts</Link> and click <strong>Sync now</strong> if you don&apos;t want to wait for the next poll.
+        Transcripts are read from your Google Drive folder. Choose it in{" "}
+        <Link to="/settings">Settings → Drive transcripts</Link> and click <strong>Sync now</strong>{" "}
+        if you don&apos;t want to wait for the next poll.
       </p>
 
       <RunsList
@@ -69,8 +71,12 @@ export function RunsPage() {
         onRefresh={loadIntake}
         empty={
           <>
-            <p className="muted">No runs yet. Add a transcript to your Drive folder and it will appear here.</p>
-            <p className="muted">Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs.</p>
+            <p className="muted">
+              No runs yet. Add a transcript to your Drive folder and it will appear here.
+            </p>
+            <p className="muted">
+              Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs.
+            </p>
           </>
         }
       />

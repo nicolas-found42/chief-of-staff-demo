@@ -43,7 +43,7 @@ export function chartGeometry(
   points: TrendPoint[],
   width: number,
   height: number,
-  padding = 4
+  padding = 4,
 ): ChartGeometry | null {
   if (points.length < 2) {
     return null;
@@ -63,10 +63,7 @@ export function chartGeometry(
     /* Spaced by real time, not by index: two days apart looks two days apart,
        so a gap is visible as distance even before the line breaks. */
     x: (daysBetween(first.day, point.day) / span) * width,
-    y:
-      range === 0
-        ? padding + inner / 2
-        : padding + inner - ((point.views - low) / range) * inner,
+    y: range === 0 ? padding + inner / 2 : padding + inner - ((point.views - low) / range) * inner,
     day: point.day,
     views: point.views,
   }));

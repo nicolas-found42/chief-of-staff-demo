@@ -1,7 +1,4 @@
-import {
-  type ExtractionResult,
-  normalizeExtractionResult,
-} from "@chief-of-staff-demo/shared";
+import { type ExtractionResult, normalizeExtractionResult } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
 import {
   StageFailure,
@@ -11,7 +8,11 @@ import {
 } from "../../engine/module.js";
 import { connectionFailure, connectionUnavailable, errorMessage } from "../../engine/failure.js";
 import type { GoogleConnection } from "../../google/connection.js";
-import { buildExtractionMessages, type RunPromptContext, type TranscriptRunContext } from "../../llm/prompt.js";
+import {
+  buildExtractionMessages,
+  type RunPromptContext,
+  type TranscriptRunContext,
+} from "../../llm/prompt.js";
 import { type CompleteJson } from "../../llm/providers.js";
 import { SourceError, convertToText } from "../../text/convert.js";
 
@@ -37,8 +38,7 @@ export interface RunSourceSpec {
  * retried one from what is already in the Run's own files.
  */
 export type TranscriptInput =
-  | { kind: "fresh"; spec: RunSourceSpec }
-  | { kind: "resume"; fromStage: "extract" | "outputs" };
+  { kind: "fresh"; spec: RunSourceSpec } | { kind: "resume"; fromStage: "extract" | "outputs" };
 
 /** What a Run needs from the Google connection: a surface, and a verdict on a failure. */
 export type GoogleAccess = Pick<GoogleConnection, "outputs" | "observe">;
@@ -121,7 +121,9 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
           attendees: context.attendees,
         };
         parsed = normalizeExtractionResult(
-          await complete(buildExtractionMessages(promptContext, ctx.readFile("transcript.txt") ?? ""))
+          await complete(
+            buildExtractionMessages(promptContext, ctx.readFile("transcript.txt") ?? ""),
+          ),
         );
         ctx.event("extract_ok", { attempt });
         break;
@@ -193,7 +195,10 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
 
     return {
       status: "done",
-      summary: transcriptSummary(result.tasks.length - taskErrors, result.drafts.length - draftErrors),
+      summary: transcriptSummary(
+        result.tasks.length - taskErrors,
+        result.drafts.length - draftErrors,
+      ),
       detail: {
         tasks: result.tasks.length,
         drafts: result.drafts.length,
@@ -246,8 +251,8 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
                 attendees: spec.context?.attendees ?? [],
               },
               null,
-              2
-            ) + "\n"
+              2,
+            ) + "\n",
           );
           let text: string;
           try {

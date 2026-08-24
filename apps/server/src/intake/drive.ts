@@ -23,7 +23,7 @@ function toBuffer(data: unknown): Buffer {
 export class DriveError extends Error {
   constructor(
     message: string,
-    public readonly status?: number
+    public readonly status?: number,
   ) {
     super(message);
     this.name = "DriveError";
@@ -32,9 +32,29 @@ export class DriveError extends Error {
 
 export interface DriveFileClient {
   files: {
-    list: (params: Record<string, unknown>) => Promise<{ data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string; modifiedTime?: string }>; nextPageToken?: string | null } }>;
-    get: (params: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<{ data?: unknown }>;
-    export: (params: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<{ data?: unknown }>;
+    list: (
+      params: Record<string, unknown>,
+    ) => Promise<{
+      data?: {
+        files?: Array<{
+          id?: string;
+          name?: string;
+          mimeType?: string;
+          webViewLink?: string;
+          size?: string;
+          modifiedTime?: string;
+        }>;
+        nextPageToken?: string | null;
+      };
+    }>;
+    get: (
+      params: Record<string, unknown>,
+      opts?: Record<string, unknown>,
+    ) => Promise<{ data?: unknown }>;
+    export: (
+      params: Record<string, unknown>,
+      opts?: Record<string, unknown>,
+    ) => Promise<{ data?: unknown }>;
   };
 }
 
@@ -42,7 +62,14 @@ export interface DriveIntakeDeps {
   getConfig: () => AppConfig;
   workspaceDir: string;
   port: number;
-  startRun: (spec: { intake: "drive"; fileName: string; bytes: Buffer; sourceUrl?: string | null; externalId: string | null; context?: { meetingDate: string | null; attendees: { name: string; email: string | null }[] } }) => Promise<string>;
+  startRun: (spec: {
+    intake: "drive";
+    fileName: string;
+    bytes: Buffer;
+    sourceUrl?: string | null;
+    externalId: string | null;
+    context?: { meetingDate: string | null; attendees: { name: string; email: string | null }[] };
+  }) => Promise<string>;
   log: (message: string) => void;
   google: GoogleConnection;
   /** Test seam: override Drive client. */
@@ -192,39 +219,79 @@ export class DriveIntake {
     let created = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      let response: { data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string; modifiedTime?: string }>; nextPageToken?: string | null } } | null = null;
+      let response: {
+        data?: {
+          files?: Array<{
+            id?: string;
+            name?: string;
+            mimeType?: string;
+            webViewLink?: string;
+            size?: string;
+            modifiedTime?: string;
+          }>;
+          nextPageToken?: string | null;
+        };
+      } | null = null;
       try {
-        response = await drive.files.list({
+        response = (await drive.files.list({
           q: `'${folderId}' in parents and trashed=false`,
           fields: "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, size)",
           pageSize: 100,
           pageToken,
           includeItemsFromAllDrives: true,
           supportsAllDrives: true,
-        }) as { data?: { files?: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string; modifiedTime?: string }>; nextPageToken?: string | null } };
+        })) as {
+          data?: {
+            files?: Array<{
+              id?: string;
+              name?: string;
+              mimeType?: string;
+              webViewLink?: string;
+              size?: string;
+              modifiedTime?: string;
+            }>;
+            nextPageToken?: string | null;
+          };
+        };
       } catch (error: unknown) {
         try {
           this.deps.google.observe(error);
         } catch {}
-        const err = error as { code?: number; status?: number; response?: { status?: number }; message?: string };
+        const err = error as {
+          code?: number;
+          status?: number;
+          response?: { status?: number };
+          message?: string;
+        };
         const status = err?.code ?? err?.status ?? err?.response?.status;
         const message = err?.message ?? String(error);
         if (status === 401) {
           this.deps.log("Drive poll skipped: Google not connected");
           return created;
         }
-        if (status === 403 || status === 404 || /notFound/i.test(message) || /notAccessible|not_found|File not found/i.test(message)) {
+        if (
+          status === 403 ||
+          status === 404 ||
+          /notFound/i.test(message) ||
+          /notAccessible|not_found|File not found/i.test(message)
+        ) {
           this.deps.log(`Drive folder not found or not accessible: ${folderId}`);
           return created;
         }
         throw new DriveError(`Drive list failed: ${message}`, status);
       }
 
-      const files: Array<{ id?: string; name?: string; mimeType?: string; webViewLink?: string; size?: string; modifiedTime?: string }> =
-        response?.data?.files ?? [];
+      const files: Array<{
+        id?: string;
+        name?: string;
+        mimeType?: string;
+        webViewLink?: string;
+        size?: string;
+        modifiedTime?: string;
+      }> = response?.data?.files ?? [];
 
       const fresh = files.filter(
-        (f) => typeof f.id === "string" && typeof f.name === "string" && !ingested.has(f.id)
+        (f) => typeof f.id === "string" && typeof f.name === "string" && !ingested.has(f.id),
       );
 
       for (const file of fresh) {
@@ -251,23 +318,25 @@ export class DriveIntake {
 
         try {
           if (isGoogleDoc) {
-            const exported = await drive.files.export(
-              { fileId, mimeType: "text/plain" },
-              { responseType: "arraybuffer" } as unknown as Record<string, unknown>
-            );
+            const exported = await drive.files.export({ fileId, mimeType: "text/plain" }, {
+              responseType: "arraybuffer",
+            } as unknown as Record<string, unknown>);
             bytes = toBuffer(exported.data);
             if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-              this.deps.log(`Skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`);
+              this.deps.log(
+                `Skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`,
+              );
               continue;
             }
           } else {
-            const fetched = await drive.files.get(
-              { fileId, alt: "media" },
-              { responseType: "arraybuffer" } as unknown as Record<string, unknown>
-            );
+            const fetched = await drive.files.get({ fileId, alt: "media" }, {
+              responseType: "arraybuffer",
+            } as unknown as Record<string, unknown>);
             bytes = toBuffer(fetched.data);
             if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-              this.deps.log(`Skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`);
+              this.deps.log(
+                `Skipping oversized Drive file ${fileName} (${bytes.byteLength} bytes)`,
+              );
               continue;
             }
           }
@@ -275,12 +344,15 @@ export class DriveIntake {
           try {
             this.deps.google.observe(error);
           } catch {}
-          this.deps.log(`Failed to fetch Drive file ${fileName} (${fileId}): ${error instanceof Error ? error.message : String(error)}`);
+          this.deps.log(
+            `Failed to fetch Drive file ${fileName} (${fileId}): ${error instanceof Error ? error.message : String(error)}`,
+          );
           continue;
         }
 
         // For Google Docs the Drive name has no extension; add .txt so convertToText can handle it as plain text
-        const effectiveName = isGoogleDoc && !isSupportedFileName(fileName) ? `${fileName}.txt` : fileName;
+        const effectiveName =
+          isGoogleDoc && !isSupportedFileName(fileName) ? `${fileName}.txt` : fileName;
         const meetingDate = meetingDateFromFileName(effectiveName);
 
         try {
@@ -296,7 +368,9 @@ export class DriveIntake {
           try {
             this.deps.google.observe(error);
           } catch {}
-          this.deps.log(`Pipeline rejected Drive file ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
+          this.deps.log(
+            `Pipeline rejected Drive file ${fileName}: ${error instanceof Error ? error.message : String(error)}`,
+          );
           continue;
         }
         created += 1;

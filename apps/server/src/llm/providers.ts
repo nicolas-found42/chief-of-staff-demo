@@ -66,7 +66,7 @@ function stripUnsupportedKeys(node: unknown): unknown {
 async function postJson(
   url: string,
   headers: Record<string, string>,
-  body: unknown
+  body: unknown,
 ): Promise<{ status: number; text: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -98,15 +98,20 @@ function assertHttpOk(provider: string, status: number, text: string): void {
 /** Read `choices[0].message.content` from an OpenAI-shaped chat completion. */
 function readChatCompletionContent(payload: unknown): string {
   if (
-    typeof payload === "object" && payload !== null &&
-    "choices" in payload && Array.isArray(payload.choices) && payload.choices.length > 0
+    typeof payload === "object" &&
+    payload !== null &&
+    "choices" in payload &&
+    Array.isArray(payload.choices) &&
+    payload.choices.length > 0
   ) {
     const first = payload.choices[0];
     if (typeof first === "object" && first !== null && "message" in first) {
       const message = first.message;
       if (
-        typeof message === "object" && message !== null &&
-        "content" in message && typeof message.content === "string"
+        typeof message === "object" &&
+        message !== null &&
+        "content" in message &&
+        typeof message.content === "string"
       ) {
         return message.content;
       }
@@ -118,13 +123,18 @@ function readChatCompletionContent(payload: unknown): string {
 /** Read the first `tool_use` block's input from an Anthropic messages response. */
 function readToolUseInput(payload: unknown): unknown {
   if (
-    typeof payload === "object" && payload !== null &&
-    "content" in payload && Array.isArray(payload.content)
+    typeof payload === "object" &&
+    payload !== null &&
+    "content" in payload &&
+    Array.isArray(payload.content)
   ) {
     for (const block of payload.content) {
       if (
-        typeof block === "object" && block !== null &&
-        "type" in block && block.type === "tool_use" && "input" in block
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "tool_use" &&
+        "input" in block
       ) {
         return block.input;
       }
@@ -136,18 +146,29 @@ function readToolUseInput(payload: unknown): unknown {
 /** Read `candidates[0].content.parts[0].text` from a Gemini response. */
 function readGeminiText(payload: unknown): string {
   if (
-    typeof payload === "object" && payload !== null &&
-    "candidates" in payload && Array.isArray(payload.candidates) && payload.candidates.length > 0
+    typeof payload === "object" &&
+    payload !== null &&
+    "candidates" in payload &&
+    Array.isArray(payload.candidates) &&
+    payload.candidates.length > 0
   ) {
     const first = payload.candidates[0];
     if (typeof first === "object" && first !== null && "content" in first) {
       const content = first.content;
       if (
-        typeof content === "object" && content !== null &&
-        "parts" in content && Array.isArray(content.parts) && content.parts.length > 0
+        typeof content === "object" &&
+        content !== null &&
+        "parts" in content &&
+        Array.isArray(content.parts) &&
+        content.parts.length > 0
       ) {
         const part = content.parts[0];
-        if (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string") {
+        if (
+          typeof part === "object" &&
+          part !== null &&
+          "text" in part &&
+          typeof part.text === "string"
+        ) {
           return part.text;
         }
       }
@@ -159,7 +180,7 @@ function readGeminiText(payload: unknown): string {
 async function openaiComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
-  schema: JsonObject
+  schema: JsonObject,
 ): Promise<unknown> {
   const { status, text } = await postJson(
     "https://api.openai.com/v1/chat/completions",
@@ -174,7 +195,7 @@ async function openaiComplete(
         type: "json_schema",
         json_schema: { name: "extraction_result", strict: true, schema },
       },
-    }
+    },
   );
   assertHttpOk("openai", status, text);
   return JSON.parse(readChatCompletionContent(JSON.parse(text)));
@@ -183,7 +204,7 @@ async function openaiComplete(
 async function anthropicComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
-  schema: JsonObject
+  schema: JsonObject,
 ): Promise<unknown> {
   const { status, text } = await postJson(
     "https://api.anthropic.com/v1/messages",
@@ -201,7 +222,7 @@ async function anthropicComplete(
         },
       ],
       tool_choice: { type: "tool", name: "save_extraction" },
-    }
+    },
   );
   assertHttpOk("anthropic", status, text);
   return readToolUseInput(JSON.parse(text));
@@ -210,17 +231,21 @@ async function anthropicComplete(
 async function geminiComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
-  responseSchema: JsonObject
+  responseSchema: JsonObject,
 ): Promise<unknown> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`;
-  const { status, text } = await postJson(url, {}, {
-    systemInstruction: { parts: [{ text: request.system }] },
-    contents: [{ role: "user", parts: [{ text: request.user }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema,
+  const { status, text } = await postJson(
+    url,
+    {},
+    {
+      systemInstruction: { parts: [{ text: request.system }] },
+      contents: [{ role: "user", parts: [{ text: request.user }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema,
+      },
     },
-  });
+  );
   assertHttpOk("gemini", status, text);
   return JSON.parse(readGeminiText(JSON.parse(text)));
 }
@@ -236,7 +261,7 @@ async function openAiCompatibleComplete(
   headers: Record<string, string>,
   cfg: LlmConfig,
   request: CompletionRequest,
-  schema: JsonObject
+  schema: JsonObject,
 ): Promise<unknown> {
   const messages = [
     { role: "system", content: request.system },
@@ -272,7 +297,7 @@ async function openAiCompatibleComplete(
 function openrouterComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
-  schema: JsonObject
+  schema: JsonObject,
 ): Promise<unknown> {
   return openAiCompatibleComplete(
     "openrouter",
@@ -280,7 +305,7 @@ function openrouterComplete(
     { authorization: `Bearer ${cfg.apiKey}` },
     cfg,
     request,
-    schema
+    schema,
   );
 }
 
@@ -292,7 +317,7 @@ function openrouterComplete(
 function ollamaComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
-  schema: JsonObject
+  schema: JsonObject,
 ): Promise<unknown> {
   const base = (cfg.baseUrl ?? DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "");
   return openAiCompatibleComplete(
@@ -301,7 +326,7 @@ function ollamaComplete(
     cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
     cfg,
     request,
-    schema
+    schema,
   );
 }
 

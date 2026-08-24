@@ -6,11 +6,7 @@ import { DriveIntake } from "../../intake/drive.js";
 import type { CompleteJson } from "../../llm/providers.js";
 import { Pipeline } from "../../pipeline/run.js";
 import type { Runs } from "../../runs.js";
-import {
-  TRANSCRIPT_MODULE_ID,
-  TRANSCRIPT_MODULE_VERSION,
-  type RunSourceSpec,
-} from "./module.js";
+import { TRANSCRIPT_MODULE_ID, TRANSCRIPT_MODULE_VERSION, type RunSourceSpec } from "./module.js";
 
 export interface TranscriptHostDeps {
   runs: Runs;

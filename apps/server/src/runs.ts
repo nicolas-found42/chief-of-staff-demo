@@ -19,7 +19,6 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { isRunId, newRunId, workspaceLayout } from "./paths.js";
 
-
 /** How a Run ends. Both are terminal; `failed` has its own transition. */
 export type RunOutcome =
   | {
@@ -106,11 +105,7 @@ function readMeta(runDir: string): RunMeta {
   return JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) as RunMeta;
 }
 
-function appendEvent(
-  runDir: string,
-  type: string,
-  detail?: Record<string, unknown>
-): void {
+function appendEvent(runDir: string, type: string, detail?: Record<string, unknown>): void {
   const event: RunEvent = { at: new Date().toISOString(), type };
   if (detail) {
     event.detail = detail;
@@ -137,9 +132,12 @@ function readEvents(runDir: string): RunEvent[] {
   return events;
 }
 
-
 function validateArtifactName(name: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name === "meta.json" || name === "events.jsonl") {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ||
+    name === "meta.json" ||
+    name === "events.jsonl"
+  ) {
     throw new Error(`Invalid artifact name: ${name}`);
   }
 }
@@ -181,7 +179,7 @@ function artifactNames(runDir: string): string[] {
 class RunHandleImpl implements RunHandle {
   constructor(
     readonly id: string,
-    private readonly dir: string
+    private readonly dir: string,
   ) {}
 
   read(): Readonly<RunMeta> {
@@ -191,7 +189,7 @@ class RunHandleImpl implements RunHandle {
   /** Every transition goes through here, so status and timeline cannot drift apart. */
   private transition(
     change: (meta: RunMeta) => void,
-    events: { type: ShellEventType; detail?: Record<string, unknown> }[]
+    events: { type: ShellEventType; detail?: Record<string, unknown> }[],
   ): RunMeta {
     const meta = readMeta(this.dir);
     change(meta);
@@ -207,7 +205,7 @@ class RunHandleImpl implements RunHandle {
       (meta) => {
         meta.status = "running";
       },
-      [{ type: "stage_started", detail: { stage } }]
+      [{ type: "stage_started", detail: { stage } }],
     );
   }
 
@@ -215,7 +213,7 @@ class RunHandleImpl implements RunHandle {
     stage: string,
     reason: string,
     hint: string,
-    flags?: { connectionCaused?: boolean }
+    flags?: { connectionCaused?: boolean },
   ): void {
     this.transition(
       (meta) => {
@@ -231,7 +229,7 @@ class RunHandleImpl implements RunHandle {
       [
         { type: "stage_failed", detail: { stage, error: reason } },
         { type: "run_failed", detail: { stage, reason } },
-      ]
+      ],
     );
   }
 
@@ -245,7 +243,7 @@ class RunHandleImpl implements RunHandle {
         [
           { type: "classify_skipped", detail: { skipReason: outcome.reason } },
           { type: "run_done", detail: { status: "skipped" } },
-        ]
+        ],
       );
       return;
     }
@@ -258,7 +256,7 @@ class RunHandleImpl implements RunHandle {
            cannot change after the fact. */
         meta.summary = outcome.summary ?? null;
       },
-      [{ type: "run_done", detail: { status: "done", ...outcome.detail } }]
+      [{ type: "run_done", detail: { status: "done", ...outcome.detail } }],
     );
   }
 
@@ -284,7 +282,7 @@ class RunHandleImpl implements RunHandle {
       },
       /* A retry used to leave no trace but a second `stage_started`, so a
          timeline read later could not tell a resumed Run from a slow one. */
-      [{ type: "run_reopened", detail: { fromStage } }]
+      [{ type: "run_reopened", detail: { fromStage } }],
     );
   }
 
@@ -310,7 +308,6 @@ class RunHandleImpl implements RunHandle {
     validateArtifactName(name);
     rmSync(join(this.dir, name), { force: true });
   }
-
 }
 
 export function openRuns(workspaceDir: string): Runs {

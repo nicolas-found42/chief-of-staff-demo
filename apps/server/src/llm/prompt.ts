@@ -87,7 +87,7 @@ you, record it as a finding in your summary and carry on with the steps here.`;
  */
 export function buildExtractionMessages(
   context: RunPromptContext,
-  transcriptText: string
+  transcriptText: string,
 ): ExtractionMessages {
   const lines: string[] = ["<trusted-context>"];
   lines.push(`Meeting date: ${context.meetingDate ?? "not provided"}`);
@@ -102,9 +102,7 @@ export function buildExtractionMessages(
   }
   lines.push(`Source ID (use exactly as "sourceId"): ${context.sourceId}`);
   lines.push(`Source file name (use exactly as "sourceFileName"): ${context.fileName}`);
-  lines.push(
-    `Source URL (use exactly as "sourceUrl"): ${context.sourceUrl ?? "none — use null"}`
-  );
+  lines.push(`Source URL (use exactly as "sourceUrl"): ${context.sourceUrl ?? "none — use null"}`);
   lines.push(`Current time (use as "processedAt"): ${new Date().toISOString()}`);
   lines.push("</trusted-context>");
   lines.push("");

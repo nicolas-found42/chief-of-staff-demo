@@ -1,9 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import {
-  DEFAULT_MODELS,
-  type ConfigUpdate,
-  ConfigUpdateSchema,
-} from "@chief-of-staff-demo/shared";
+import { DEFAULT_MODELS, type ConfigUpdate, ConfigUpdateSchema } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
 import {
@@ -65,7 +61,6 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     return detail;
   });
 
-
   app.post("/api/runs/:id/retry", async (request, reply) => {
     const { id } = request.params as { id: string };
     /* Retried by the Module that made it, found from the Run itself. A Run
@@ -117,7 +112,6 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
     reply.header("content-type", "text/plain; charset=utf-8").send(text);
   });
-
 
   app.get("/api/config", async () => ({
     config: redactConfig(ctx.configStore.get()),

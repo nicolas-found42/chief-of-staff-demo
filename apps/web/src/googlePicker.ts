@@ -17,8 +17,13 @@ function loadGapi(): Promise<void> {
   script.src = "https://apis.google.com/js/api.js";
   script.async = true;
   script.onload = () => {
-    const gapi = (window as unknown as { gapi?: { load: (name: string, opts: { callback: () => void; onerror?: () => void }) => void } })
-      .gapi;
+    const gapi = (
+      window as unknown as {
+        gapi?: {
+          load: (name: string, opts: { callback: () => void; onerror?: () => void }) => void;
+        };
+      }
+    ).gapi;
     if (!gapi) {
       reject(new Error("Google API loader did not initialise"));
       return;
@@ -32,7 +37,9 @@ function loadGapi(): Promise<void> {
     });
   };
   script.onerror = () =>
-    reject(new Error("Failed to reach Google's picker script — check your connection and try again."));
+    reject(
+      new Error("Failed to reach Google's picker script — check your connection and try again."),
+    );
   document.head.appendChild(script);
 
   gapiPromise = promise;
@@ -51,7 +58,9 @@ function loadGapi(): Promise<void> {
  * this picker is private-data access authorised by the OAuth token; setAppId is
  * for the drive.file scope while this app holds drive.
  */
-export async function pickDriveFolder(oauthToken: string): Promise<{ id: string; name: string } | null> {
+export async function pickDriveFolder(
+  oauthToken: string,
+): Promise<{ id: string; name: string } | null> {
   await loadGapi();
 
   const { promise, resolve, reject } = Promise.withResolvers<{ id: string; name: string } | null>();
@@ -67,7 +76,9 @@ export async function pickDriveFolder(oauthToken: string): Promise<{ id: string;
           PickerBuilder: new () => {
             setOAuthToken: (token: string) => unknown;
             addView: (view: unknown) => unknown;
-            setCallback: (cb: (data: { action: string; docs?: Array<{ id: string; name: string }> }) => void) => unknown;
+            setCallback: (
+              cb: (data: { action: string; docs?: Array<{ id: string; name: string }> }) => void,
+            ) => unknown;
             build: () => { setVisible: (v: boolean) => void };
           };
           Action: { PICKED: string; CANCEL: string };

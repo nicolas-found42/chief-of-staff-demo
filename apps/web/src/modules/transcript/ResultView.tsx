@@ -116,7 +116,9 @@ export function TranscriptResultView({ detail }: { detail: RunDetail }) {
                 : detail.status === "failed" && createdTaskCount + createdDraftCount === 0
                   ? "Nothing — the run did not reach output creation."
                   : `${createdTaskCount === 1 ? "1 task" : `${createdTaskCount} tasks`} in Google Tasks, ${
-                      createdDraftCount === 1 ? "1 Gmail draft" : `${createdDraftCount} Gmail drafts`
+                      createdDraftCount === 1
+                        ? "1 Gmail draft"
+                        : `${createdDraftCount} Gmail drafts`
                     } prepared — nothing was sent.`}
             </dd>
           </div>
@@ -156,9 +158,7 @@ export function TranscriptResultView({ detail }: { detail: RunDetail }) {
                landmark list that said what the heading already said. */
             <div className="table-scroll" tabIndex={0}>
               <table className="tasks-table">
-                <caption className="visually-hidden">
-                  Tasks extracted from this transcript
-                </caption>
+                <caption className="visually-hidden">Tasks extracted from this transcript</caption>
                 <thead>
                   <tr>
                     <th scope="col">Title</th>
@@ -204,8 +204,10 @@ export function TranscriptResultView({ detail }: { detail: RunDetail }) {
           {result.drafts.length > 0 && (
             <p className="muted">
               Prepared{" "}
-              {result.drafts.length === 1 ? "1 Gmail draft" : `${result.drafts.length} Gmail drafts`} —
-              nothing was sent.
+              {result.drafts.length === 1
+                ? "1 Gmail draft"
+                : `${result.drafts.length} Gmail drafts`}{" "}
+              — nothing was sent.
             </p>
           )}
           {result.drafts.map((draft, index) => (

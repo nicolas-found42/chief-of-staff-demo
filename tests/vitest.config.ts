@@ -5,7 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@chief-of-staff-demo/shared": fileURLToPath(
-        new URL("../packages/shared/src/index.ts", import.meta.url)
+        new URL("../packages/shared/src/index.ts", import.meta.url),
       ),
     },
   },

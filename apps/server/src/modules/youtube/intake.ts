@@ -27,7 +27,7 @@ export function dueNow(now: Date, lastRunDay: string | null): boolean {
 export class DayAlreadyRecordedError extends Error {
   constructor(readonly day: string) {
     super(
-      `${day} is already recorded. There is one Run per day, so today's numbers are already in.`
+      `${day} is already recorded. There is one Run per day, so today's numbers are already in.`,
     );
     this.name = "DayAlreadyRecordedError";
   }
@@ -88,7 +88,7 @@ export class YoutubeIntake {
       await this.tick();
     } catch (error) {
       this.deps.log(
-        `Daily check failed: ${error instanceof Error ? error.message : String(error)}`
+        `Daily check failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

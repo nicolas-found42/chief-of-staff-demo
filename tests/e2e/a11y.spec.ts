@@ -12,9 +12,12 @@ async function openRun(page: Page): Promise<void> {
   // Detail page renders both StatusPill (Needs attention / Failed / Done…) and
   // IntakeBadge (drive) inside .run-meta, both with `status-badge`. A bare
   // `.status-badge` is therefore a strict-mode violation.
-  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText("Needs attention", {
-    timeout: 15_000,
-  });
+  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText(
+    "Needs attention",
+    {
+      timeout: 15_000,
+    },
+  );
 }
 
 /** Reports the element that currently holds focus, or a marker if it was dropped. */
@@ -65,7 +68,10 @@ function busyControls(page: Page) {
       return {
         text: (el.textContent ?? "").trim(),
         opacity: style.opacity,
-        label: ratio(style.color, transparent(style.backgroundColor) ? behind : style.backgroundColor),
+        label: ratio(
+          style.color,
+          transparent(style.backgroundColor) ? behind : style.backgroundColor,
+        ),
         border: style.borderTopStyle === "none" ? null : ratio(style.borderTopColor, behind),
         ring: style.outlineStyle === "none" ? null : ratio(style.outlineColor, behind),
       };
@@ -75,7 +81,13 @@ function busyControls(page: Page) {
 
 /** Asserts the busy state is drawn, not dimmed: nothing falls under its floor. */
 function expectLegible(
-  controls: { text: string; opacity: string; label: number; border: number | null; ring: number | null }[]
+  controls: {
+    text: string;
+    opacity: string;
+    label: number;
+    border: number | null;
+    ring: number | null;
+  }[],
 ) {
   expect(controls.length).toBeGreaterThan(0);
   for (const control of controls) {
@@ -104,7 +116,7 @@ function unreachableScrollers(page: Page): Promise<string[]> {
         const overflows = el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight;
         return overflows && (el as HTMLElement).tabIndex < 0;
       })
-      .map((el) => `${el.className} ${el.scrollWidth}>${el.clientWidth}`)
+      .map((el) => `${el.className} ${el.scrollWidth}>${el.clientWidth}`),
   );
 }
 
@@ -131,7 +143,10 @@ test("every route is free of axe violations", async ({ page }) => {
       await summary.first().click();
     }
     const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
-    expect(violations.map((v) => `${v.id} (${v.impact})`), `axe violations on ${path}`).toEqual([]);
+    expect(
+      violations.map((v) => `${v.id} (${v.impact})`),
+      `axe violations on ${path}`,
+    ).toEqual([]);
   }
 });
 
@@ -171,9 +186,7 @@ test("busy buttons keep focus instead of dropping it to the body", async ({ page
   await expect(sync).toBeFocused();
 });
 
-test("a busy control is styled, not dimmed, and only the pressed one is busy", async ({
-  page,
-}) => {
+test("a busy control is styled, not dimmed, and only the pressed one is busy", async ({ page }) => {
   // opacity composites label, border and focus ring alike; at 0.55 all three
   // dropped under their floors on controls that stay focusable and keep showing
   // live status text (WCAG 1.4.3, 1.4.11, 2.4.7).
@@ -340,7 +353,6 @@ test("the poll interval reports its error in the page, not a transient bubble", 
   await expect(page.locator("#poll-interval-error")).toHaveCount(0);
 });
 
-
 test("every container that scrolls can be reached by keyboard", async ({ page }) => {
   // 320px is where the 34rem tables genuinely overflow — the same place a 400%
   // zoom user lives. Without a tabindex the Status and Tasks columns are
@@ -431,7 +443,7 @@ test("the runs list stops updating itself once nothing can change", async ({ pag
         lists += 1;
       }
       await route.continue();
-    }
+    },
   );
 
   await page.goto("/transcript");
@@ -461,7 +473,6 @@ test("a skip link bypasses the header", async ({ page }) => {
   await expect(page.locator("main#main")).toBeFocused();
 });
 
-
 test("the current page is marked by more than a background colour", async ({ page }) => {
   await page.goto("/settings");
   // aria-current is what the styling keys off, so the visual state cannot drift
@@ -473,26 +484,28 @@ test("the current page is marked by more than a background colour", async ({ pag
 
 test("interactive controls meet a 44px target size", async ({ page }) => {
   for (const path of ["/settings", "/youtube"]) {
-  await page.goto(path);
-  const undersized = await page.evaluate(() => {
-    const out: string[] = [];
-    /* `.text-link` opts a link out: WCAG 2.5.8 exempts a target inside a
+    await page.goto(path);
+    const undersized = await page.evaluate(() => {
+      const out: string[] = [];
+      /* `.text-link` opts a link out: WCAG 2.5.8 exempts a target inside a
        sentence, whose height is set by the line-height of the text around it.
        Boxed links (.step-link and friends) are not exempt and are not marked. */
-    const selector =
-      'a[href]:not(.text-link), button:not(.linklike), select, input:not([type="checkbox"]), .checkbox-label';
-    for (const el of document.querySelectorAll(selector)) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) {
-        continue;
+      const selector =
+        'a[href]:not(.text-link), button:not(.linklike), select, input:not([type="checkbox"]), .checkbox-label';
+      for (const el of document.querySelectorAll(selector)) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+          continue;
+        }
+        if (rect.height < 44) {
+          out.push(
+            `${el.tagName.toLowerCase()} ${Math.round(rect.width)}x${Math.round(rect.height)}`,
+          );
+        }
       }
-      if (rect.height < 44) {
-        out.push(`${el.tagName.toLowerCase()} ${Math.round(rect.width)}x${Math.round(rect.height)}`);
-      }
-    }
-    return out;
-  });
-  expect(undersized, `undersized controls on ${path}`).toEqual([]);
+      return out;
+    });
+    expect(undersized, `undersized controls on ${path}`).toEqual([]);
   }
 });
 

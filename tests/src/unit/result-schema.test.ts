@@ -2,16 +2,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  ExtractionResultSchema,
-  normalizeExtractionResult,
-} from "@chief-of-staff-demo/shared";
+import { ExtractionResultSchema, normalizeExtractionResult } from "@chief-of-staff-demo/shared";
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "../../fixtures");
 
-const golden = JSON.parse(
-  readFileSync(join(fixturesDir, "mock-result.json"), "utf8")
-) as Record<string, unknown>;
+const golden = JSON.parse(readFileSync(join(fixturesDir, "mock-result.json"), "utf8")) as Record<
+  string,
+  unknown
+>;
 
 describe("ExtractionResultSchema", () => {
   it("accepts the golden result", () => {

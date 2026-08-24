@@ -52,9 +52,7 @@ describe("sentencesToText", () => {
 describe("convertToText", () => {
   it("decodes .txt/.md as UTF-8 with normalized LF endings", async () => {
     const bytes = Buffer.from("line one\r\nline two\rline three\n", "utf8");
-    expect(await convertToText("notes.md", bytes)).toBe(
-      "line one\nline two\nline three\n"
-    );
+    expect(await convertToText("notes.md", bytes)).toBe("line one\nline two\nline three\n");
   });
 
   it("round-trips a Fireflies sentences JSON export", async () => {
@@ -68,7 +66,7 @@ describe("convertToText", () => {
 
   it("throws SOURCE_INVALID for JSON that is not a sentences array", async () => {
     await expect(
-      convertToText("data.json", Buffer.from('{"kind": "report"}'))
+      convertToText("data.json", Buffer.from('{"kind": "report"}')),
     ).rejects.toThrowError(SourceError);
   });
 

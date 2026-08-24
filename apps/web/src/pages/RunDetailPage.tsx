@@ -198,7 +198,8 @@ export function RunDetailPage() {
         )}
         {detail.failedStage && (
           <span className="bad">
-            <span className="visually-hidden">, </span>Failed during {stageLabel(detail.failedStage)}
+            <span className="visually-hidden">, </span>Failed during{" "}
+            {stageLabel(detail.failedStage)}
           </span>
         )}
       </div>
@@ -214,14 +215,9 @@ export function RunDetailPage() {
               from the failed stage — that semantics already exist; this is
               presentation only. */}
           <div className="failure-impact">
-            <p className="failure-cause">
-              {detail.failureHint ?? "This run failed."}
-            </p>
+            <p className="failure-cause">{detail.failureHint ?? "This run failed."}</p>
             {completedStages.length > 0 && (
-              <p>
-                Already completed:{" "}
-                {completedStages.map((entry) => entry.label).join(", ")}.
-              </p>
+              <p>Already completed: {completedStages.map((entry) => entry.label).join(", ")}.</p>
             )}
             {failedEntry && <p>Not completed: {failedEntry.label} did not finish.</p>}
           </div>
@@ -273,7 +269,11 @@ export function RunDetailPage() {
                           : "status-done"
                     }`}
                   >
-                    {entry.state === "failed" ? "Failed" : entry.state === "running" ? "Running" : "Done"}
+                    {entry.state === "failed"
+                      ? "Failed"
+                      : entry.state === "running"
+                        ? "Running"
+                        : "Done"}
                   </span>
                   {entry.durationMs !== null && (
                     <span className="muted">{formatDuration(entry.durationMs)}</span>
@@ -314,8 +314,7 @@ export function RunDetailPage() {
           >
             {detail.events.map((event, index) => (
               <div key={index} className="event-row">
-                <span className="muted">{formatTime(event.at)}</span>{" "}
-                <strong>{event.type}</strong>
+                <span className="muted">{formatTime(event.at)}</span> <strong>{event.type}</strong>
                 {event.detail ? (
                   <span className="muted"> {JSON.stringify(event.detail)}</span>
                 ) : null}

@@ -27,7 +27,7 @@ export const ExtractionResultSchema = z.strictObject({
         .optional(),
       notes: z.string().optional(),
       sourceQuote: z.string().optional(),
-    })
+    }),
   ),
   drafts: z.array(
     z.strictObject({
@@ -36,7 +36,7 @@ export const ExtractionResultSchema = z.strictObject({
       subject: z.string(),
       body: z.string(),
       reason: z.string().optional(),
-    })
+    }),
   ),
 });
 
@@ -67,7 +67,7 @@ export const ExtractionWireSchema = z.strictObject({
       due: z.string().nullable(),
       notes: z.string().nullable(),
       sourceQuote: z.string().nullable(),
-    })
+    }),
   ),
   drafts: z.array(
     z.strictObject({
@@ -75,7 +75,7 @@ export const ExtractionWireSchema = z.strictObject({
       subject: z.string(),
       body: z.string(),
       reason: z.string().nullable(),
-    })
+    }),
   ),
 });
 

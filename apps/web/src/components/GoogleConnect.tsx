@@ -268,10 +268,12 @@ export function GoogleConnect(props: GoogleConnectProps) {
             </a>
           </p>
           <p className="muted field-hint">
-            Google puts every app inside a project. After creating one, <strong>check the project
-            name in the console's top bar</strong> — the console does not switch to a project it has
-            just made.
-            {workspace ? " On a work account you will also see an Organization field; leave it as it is." : ""}
+            Google puts every app inside a project. After creating one,{" "}
+            <strong>check the project name in the console's top bar</strong> — the console does not
+            switch to a project it has just made.
+            {workspace
+              ? " On a work account you will also see an Organization field; leave it as it is."
+              : ""}
           </p>
         </>
       ),
@@ -303,7 +305,8 @@ export function GoogleConnect(props: GoogleConnectProps) {
             ignore it, the client comes from a later step.
           </p>
           <p className="muted field-hint">
-            The Picker API runs in the browser and has no server-side check — <strong>Check my setup</strong> verifies the other four and cannot verify the Picker.
+            The Picker API runs in the browser and has no server-side check —{" "}
+            <strong>Check my setup</strong> verifies the other four and cannot verify the Picker.
           </p>
         </>
       ),
@@ -345,10 +348,10 @@ export function GoogleConnect(props: GoogleConnectProps) {
                   </a>
                 </p>
                 <p className="muted field-hint">
-                  Under <strong>Test users</strong> choose <strong>Add users</strong>, type the Google
-                  address you will sign in with, and <strong>Save</strong>. Miss this and the sign-in
-                  below fails with <em>Access blocked … Error 403: access_denied</em> and no way through
-                  the page — it is the one step with no recovery.
+                  Under <strong>Test users</strong> choose <strong>Add users</strong>, type the
+                  Google address you will sign in with, and <strong>Save</strong>. Miss this and the
+                  sign-in below fails with <em>Access blocked … Error 403: access_denied</em> and no
+                  way through the page — it is the one step with no recovery.
                 </p>
               </>
             ),
@@ -403,14 +406,14 @@ export function GoogleConnect(props: GoogleConnectProps) {
           {/* D13: the one value Google compares character for character; the
               warning sits at the value, not in a paragraph after it. */}
           <p className="muted field-hint">
-            <strong>Paste it exactly — do not edit.</strong> One changed character and sign-in
-            fails with a redirect mismatch. (<code>http://</code> is correct here: Google allows
-            it for localhost.)
+            <strong>Paste it exactly — do not edit.</strong> One changed character and sign-in fails
+            with a redirect mismatch. (<code>http://</code> is correct here: Google allows it for
+            localhost.)
           </p>
           <p className="muted field-hint">
-            When you press Create, Google shows the client ID and secret{" "}
-            <strong>once</strong>. Copy both now, or use <strong>Download JSON</strong> — the secret
-            cannot be viewed again afterwards, and a lost one means creating another client.
+            When you press Create, Google shows the client ID and secret <strong>once</strong>. Copy
+            both now, or use <strong>Download JSON</strong> — the secret cannot be viewed again
+            afterwards, and a lost one means creating another client.
           </p>
         </>
       ),
@@ -438,7 +441,12 @@ export function GoogleConnect(props: GoogleConnectProps) {
   const setupCheck = (
     <div className="setup-check">
       <div className="field-row">
-        <button type="button" className="action-button" onClick={props.onCheck} aria-disabled={checking}>
+        <button
+          type="button"
+          className="action-button"
+          onClick={props.onCheck}
+          aria-disabled={checking}
+        >
           {checking ? "Checking…" : "Check my setup"}
         </button>
         <span className="muted">Asks Google what is missing, and creates nothing.</span>
@@ -522,7 +530,12 @@ export function GoogleConnect(props: GoogleConnectProps) {
               <span className="ok">Connected</span>
               {status.email ? ` as ${status.email}` : ""}
             </span>
-            <button type="button" className="action-button" onClick={props.onDisconnect} aria-disabled={disconnecting}>
+            <button
+              type="button"
+              className="action-button"
+              onClick={props.onDisconnect}
+              aria-disabled={disconnecting}
+            >
               {disconnecting ? "Disconnecting…" : "Disconnect"}
             </button>
           </div>

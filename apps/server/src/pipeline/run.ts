@@ -62,7 +62,7 @@ export class Pipeline {
         sourceUrl: spec.sourceUrl ?? null,
         externalId: spec.externalId ?? null,
       },
-      { kind: "fresh", spec }
+      { kind: "fresh", spec },
     );
   }
 

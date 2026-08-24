@@ -23,7 +23,10 @@ let workspaceDir: string;
 let configStore: ConfigStore;
 let host: YoutubeHost;
 let connected: boolean;
-let resolves: Record<string, { id: string; handle: string; title: string; uploadsPlaylistId: string }>;
+let resolves: Record<
+  string,
+  { id: string; handle: string; title: string; uploadsPlaylistId: string }
+>;
 
 const client: YouTubeClient = {
   resolveChannel: async (ref) => resolves[ref.value] ?? null,
@@ -211,7 +214,7 @@ describe("POST /api/youtube/spreadsheet", () => {
     const response = await app.inject({ method: "POST", url: "/api/youtube/spreadsheet" });
     expect(response.statusCode).toBe(201);
     expect((response.json() as { spreadsheet: { url: string } }).spreadsheet.url).toContain(
-      "docs.google.com"
+      "docs.google.com",
     );
     expect(tabs).toEqual(["Found42"]);
 

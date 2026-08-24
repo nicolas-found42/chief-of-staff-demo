@@ -24,7 +24,7 @@ export function buildGoogleAuth(config: AppConfig, port: number): GoogleAuth {
   const client = new google.auth.OAuth2(
     config.google.clientId,
     config.google.clientSecret,
-    redirectUriForPort(port)
+    redirectUriForPort(port),
   );
   if (config.google.refreshToken) {
     client.setCredentials({ refresh_token: config.google.refreshToken });
@@ -36,7 +36,7 @@ export function googleAuthUrl(config: AppConfig, port: number): string {
   const client = new google.auth.OAuth2(
     config.google.clientId,
     config.google.clientSecret,
-    redirectUriForPort(port)
+    redirectUriForPort(port),
   );
   return client.generateAuthUrl({
     access_type: "offline",
@@ -48,19 +48,22 @@ export function googleAuthUrl(config: AppConfig, port: number): string {
 export async function exchangeGoogleCode(
   config: AppConfig,
   port: number,
-  code: string
+  code: string,
 ): Promise<{ refreshToken: string; grantedScopes: string[] }> {
   const client = new google.auth.OAuth2(
     config.google.clientId,
     config.google.clientSecret,
-    redirectUriForPort(port)
+    redirectUriForPort(port),
   );
   const { tokens } = await client.getToken(code);
   const refresh = tokens.refresh_token;
   if (!refresh) {
     throw new Error("Google did not return a refresh token");
   }
-  const scopeString = (tokens as { scope?: string }).scope ?? (tokens as { scopes?: string[] }).scopes?.join(" ") ?? "";
+  const scopeString =
+    (tokens as { scope?: string }).scope ??
+    (tokens as { scopes?: string[] }).scopes?.join(" ") ??
+    "";
   const grantedScopes = scopeString
     .split(" ")
     .map((s) => s.trim())
@@ -70,11 +73,12 @@ export async function exchangeGoogleCode(
 
 export async function mintAccessToken(
   config: AppConfig,
-  port: number
+  port: number,
 ): Promise<{ token: string; expiresAt: string | null }> {
   const auth = buildGoogleAuth(config, port);
   const result = await auth.getAccessToken();
-  const token = (result as { token?: string | null }).token ?? auth.credentials.access_token ?? null;
+  const token =
+    (result as { token?: string | null }).token ?? auth.credentials.access_token ?? null;
   if (!token) {
     throw new Error("Google did not return an access token");
   }

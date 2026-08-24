@@ -10,7 +10,7 @@ import type { GoogleAuth } from "./oauth.js";
  */
 export function composeTaskNotes(
   item: TaskItem,
-  source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">
+  source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">,
 ): string {
   const lines: string[] = [];
   if (item.owner) {
@@ -65,7 +65,7 @@ export async function createGoogleTask(
   auth: GoogleAuth,
   tasklistId: string,
   item: TaskItem,
-  source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">
+  source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">,
 ): Promise<CreatedTask> {
   const tasks = google.tasks({ version: "v1", auth });
   const requestBody: Record<string, string> = {

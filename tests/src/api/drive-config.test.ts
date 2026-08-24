@@ -51,27 +51,71 @@ describe("PUT /api/config — Drive config persistence", () => {
       method: "PUT",
       url: "/api/config",
       payload: {
-        drive: { enabled: true, folderId: "abc123", folderName: "My Folder", pollIntervalMinutes: 5 },
+        drive: {
+          enabled: true,
+          folderId: "abc123",
+          folderName: "My Folder",
+          pollIntervalMinutes: 5,
+        },
       },
     });
     expect(put.statusCode).toBe(200);
-    const body = put.json() as { config: { drive: { enabled: boolean; folderId: string; folderName: string; pollIntervalMinutes: number } } };
-    expect(body.config.drive).toEqual({ enabled: true, folderId: "abc123", folderName: "My Folder", pollIntervalMinutes: 5 });
+    const body = put.json() as {
+      config: {
+        drive: {
+          enabled: boolean;
+          folderId: string;
+          folderName: string;
+          pollIntervalMinutes: number;
+        };
+      };
+    };
+    expect(body.config.drive).toEqual({
+      enabled: true,
+      folderId: "abc123",
+      folderName: "My Folder",
+      pollIntervalMinutes: 5,
+    });
 
     const get = await app.inject({ method: "GET", url: "/api/config" });
     expect(get.statusCode).toBe(200);
     const fetched = get.json() as { config: { drive: typeof body.config.drive } };
-    expect(fetched.config.drive).toEqual({ enabled: true, folderId: "abc123", folderName: "My Folder", pollIntervalMinutes: 5 });
+    expect(fetched.config.drive).toEqual({
+      enabled: true,
+      folderId: "abc123",
+      folderName: "My Folder",
+      pollIntervalMinutes: 5,
+    });
 
     // Persisted on disk
-    const stored = JSON.parse(readFileSync(join(workspaceDir, "config.json"), "utf8")) as { drive: typeof body.config.drive };
-    expect(stored.drive).toEqual({ enabled: true, folderId: "abc123", folderName: "My Folder", pollIntervalMinutes: 5 });
+    const stored = JSON.parse(readFileSync(join(workspaceDir, "config.json"), "utf8")) as {
+      drive: typeof body.config.drive;
+    };
+    expect(stored.drive).toEqual({
+      enabled: true,
+      folderId: "abc123",
+      folderName: "My Folder",
+      pollIntervalMinutes: 5,
+    });
   });
 
   it("redacts drive without secret hint — values returned verbatim", async () => {
-    configStore.update({ drive: { enabled: true, folderId: "fid", folderName: "Name", pollIntervalMinutes: 2 } });
+    configStore.update({
+      drive: { enabled: true, folderId: "fid", folderName: "Name", pollIntervalMinutes: 2 },
+    });
     const get = await app.inject({ method: "GET", url: "/api/config" });
-    const body = get.json() as { config: { drive: { enabled: boolean; folderId: string; folderName: string; pollIntervalMinutes: number }; apiKey: unknown; google: unknown } };
+    const body = get.json() as {
+      config: {
+        drive: {
+          enabled: boolean;
+          folderId: string;
+          folderName: string;
+          pollIntervalMinutes: number;
+        };
+        apiKey: unknown;
+        google: unknown;
+      };
+    };
     expect(body.config.drive.folderId).toBe("fid");
     expect(body.config.drive.folderName).toBe("Name");
     // Drive is not a secret: no { set, hint } shape
@@ -81,15 +125,31 @@ describe("PUT /api/config — Drive config persistence", () => {
 
   it("defaults drive config on fresh workspace", async () => {
     const get = await app.inject({ method: "GET", url: "/api/config" });
-    const body = get.json() as { config: { drive: { enabled: boolean; folderId: string; folderName: string; pollIntervalMinutes: number } } };
-    expect(body.config.drive).toEqual({ enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 });
+    const body = get.json() as {
+      config: {
+        drive: {
+          enabled: boolean;
+          folderId: string;
+          folderName: string;
+          pollIntervalMinutes: number;
+        };
+      };
+    };
+    expect(body.config.drive).toEqual({
+      enabled: false,
+      folderId: "",
+      folderName: "",
+      pollIntervalMinutes: 2,
+    });
   });
 
   it("allows updating only folderId while keeping other drive fields", async () => {
     await app.inject({
       method: "PUT",
       url: "/api/config",
-      payload: { drive: { enabled: true, folderId: "first", folderName: "First", pollIntervalMinutes: 2 } },
+      payload: {
+        drive: { enabled: true, folderId: "first", folderName: "First", pollIntervalMinutes: 2 },
+      },
     });
     const put = await app.inject({
       method: "PUT",
@@ -97,7 +157,16 @@ describe("PUT /api/config — Drive config persistence", () => {
       payload: { drive: { folderId: "second" } },
     });
     expect(put.statusCode).toBe(200);
-    const body = put.json() as { config: { drive: { enabled: boolean; folderId: string; folderName: string; pollIntervalMinutes: number } } };
+    const body = put.json() as {
+      config: {
+        drive: {
+          enabled: boolean;
+          folderId: string;
+          folderName: string;
+          pollIntervalMinutes: number;
+        };
+      };
+    };
     expect(body.config.drive.folderId).toBe("second");
     expect(body.config.drive.enabled).toBe(true);
     expect(body.config.drive.folderName).toBe("First");
@@ -148,6 +217,9 @@ describe("PUT /api/config — invalid poll intervals", () => {
       payload: { drive: { pollIntervalMinutes: 1 } },
     });
     expect(res.statusCode).toBe(200);
-    expect((res.json() as { config: { drive: { pollIntervalMinutes: number } } }).config.drive.pollIntervalMinutes).toBe(1);
+    expect(
+      (res.json() as { config: { drive: { pollIntervalMinutes: number } } }).config.drive
+        .pollIntervalMinutes,
+    ).toBe(1);
   });
 });

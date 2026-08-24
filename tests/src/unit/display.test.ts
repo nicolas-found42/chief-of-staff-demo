@@ -59,7 +59,7 @@ describe("relativeTime", () => {
 });
 
 describe("buildTimeline", () => {
-  const at = (t: string) => ({ at: t } as RunEvent);
+  const at = (t: string) => ({ at: t }) as RunEvent;
   const started = (stage: string, t: string): RunEvent => ({
     at: t,
     type: "stage_started",
@@ -77,14 +77,12 @@ describe("buildTimeline", () => {
   });
 
   it("renders one entry per stage with human labels, order and durations", () => {
-    const timeline = buildTimeline(
-      [
-        started("convert", "2026-08-21T10:00:00Z"),
-        started("extract", "2026-08-21T10:00:05Z"),
-        started("outputs", "2026-08-21T10:00:35Z"),
-        done("2026-08-21T10:00:40Z"),
-      ]
-    );
+    const timeline = buildTimeline([
+      started("convert", "2026-08-21T10:00:00Z"),
+      started("extract", "2026-08-21T10:00:05Z"),
+      started("outputs", "2026-08-21T10:00:35Z"),
+      done("2026-08-21T10:00:40Z"),
+    ]);
     expect(timeline.map((entry) => [entry.label, entry.state])).toEqual([
       ["Read transcript", "done"],
       ["Find follow-ups", "done"],
@@ -94,17 +92,18 @@ describe("buildTimeline", () => {
   });
 
   it("names an unknown stage by its raw key instead of hiding it", () => {
-    const timeline = buildTimeline([started("mystery", "2026-08-21T10:00:00Z"), done("2026-08-21T10:00:01Z")]);
+    const timeline = buildTimeline([
+      started("mystery", "2026-08-21T10:00:00Z"),
+      done("2026-08-21T10:00:01Z"),
+    ]);
     expect(timeline[0].label).toBe("mystery");
   });
 
   it("marks the open stage of a running run and leaves its duration unset", () => {
-    const timeline = buildTimeline(
-      [
-        started("convert", "2026-08-21T10:00:00Z"),
-        started("extract", "2026-08-21T10:00:02Z"),
-      ]
-    );
+    const timeline = buildTimeline([
+      started("convert", "2026-08-21T10:00:00Z"),
+      started("extract", "2026-08-21T10:00:02Z"),
+    ]);
     expect(timeline[0]).toMatchObject({ state: "done", durationMs: 2000 });
     expect(timeline[1]).toMatchObject({ state: "running", durationMs: null });
   });
@@ -126,21 +125,23 @@ describe("buildTimeline", () => {
     const timeline = buildTimeline([
       started("convert", "2026-08-21T10:00:00Z"),
       started("extract", "2026-08-21T10:00:01Z"),
-      { at: "2026-08-21T10:00:07Z", type: "classify_skipped", detail: { skipReason: "agenda only" } },
+      {
+        at: "2026-08-21T10:00:07Z",
+        type: "classify_skipped",
+        detail: { skipReason: "agenda only" },
+      },
       { at: "2026-08-21T10:00:07Z", type: "run_done", detail: { status: "skipped" } },
     ]);
     expect(timeline[1]).toMatchObject({ state: "done", durationMs: 6000 });
   });
   it("sums durations across a retry's second attempt", () => {
-    const timeline = buildTimeline(
-      [
-        started("outputs", "2026-08-21T10:00:00Z"),
-        failed("outputs", "2026-08-21T10:00:10Z", "google_expired"),
-        { at: "2026-08-21T10:05:00Z", type: "run_reopened", detail: { fromStage: "outputs" } },
-        started("outputs", "2026-08-21T10:05:05Z"),
-        done("2026-08-21T10:05:20Z"),
-      ]
-    );
+    const timeline = buildTimeline([
+      started("outputs", "2026-08-21T10:00:00Z"),
+      failed("outputs", "2026-08-21T10:00:10Z", "google_expired"),
+      { at: "2026-08-21T10:05:00Z", type: "run_reopened", detail: { fromStage: "outputs" } },
+      started("outputs", "2026-08-21T10:05:05Z"),
+      done("2026-08-21T10:05:20Z"),
+    ]);
     expect(timeline[0]).toMatchObject({ state: "done", durationMs: 25000 });
   });
 });

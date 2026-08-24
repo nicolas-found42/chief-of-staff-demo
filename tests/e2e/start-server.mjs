@@ -17,18 +17,21 @@ writeFileSync(
       model: "",
       apiKey: "",
       tasklistName: "Meeting Followups",
-      google: { clientId: "", clientSecret: "", refreshToken: null, lastConnectedAt: null, hasExpiredBefore: false },
+      google: {
+        clientId: "",
+        clientSecret: "",
+        refreshToken: null,
+        lastConnectedAt: null,
+        hasExpiredBefore: false,
+      },
       drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
       ollama: { baseUrl: "http://127.0.0.1:11434" },
     },
     null,
-    2
-  )
+    2,
+  ),
 );
-copyFileSync(
-  join(root, "tests/fixtures/mock-result.json"),
-  join(workspace, "mock-result.json")
-);
+copyFileSync(join(root, "tests/fixtures/mock-result.json"), join(workspace, "mock-result.json"));
 
 const child = spawn(process.execPath, [join(root, "apps/server/dist/main.js")], {
   cwd: root,

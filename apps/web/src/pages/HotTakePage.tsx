@@ -8,7 +8,7 @@ export function HotTakePage() {
   /* Read from the shared Module list rather than asserted here, so this page and
      Home's card cannot end up describing the same Module differently. */
   const planned = useModules().some(
-    (module) => module.id === "hot-take" && module.status === "planned"
+    (module) => module.id === "hot-take" && module.status === "planned",
   );
 
   return (
@@ -24,14 +24,17 @@ export function HotTakePage() {
         <h2>Planned</h2>
         <ul>
           <li>
-            <strong>Intake:</strong> link / transcript upload <span className="muted">(planned)</span>
+            <strong>Intake:</strong> link / transcript upload{" "}
+            <span className="muted">(planned)</span>
           </li>
           <li>
             <strong>Output:</strong> draft doc <span className="muted">(planned)</span>
           </li>
         </ul>
       </div>
-      <p className="muted">This tab exercises the Module registry seam (ADR-0002) ahead of the build.</p>
+      <p className="muted">
+        This tab exercises the Module registry seam (ADR-0002) ahead of the build.
+      </p>
     </div>
   );
 }

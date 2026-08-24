@@ -19,7 +19,7 @@ export interface CreatedSpreadsheet {
 
 export async function createSpreadsheet(
   auth: GoogleAuth,
-  title: string
+  title: string,
 ): Promise<CreatedSpreadsheet> {
   const sheets = google.sheets({ version: "v4", auth });
   const created = await sheets.spreadsheets.create({
@@ -53,7 +53,7 @@ export async function ensureTab(
   auth: GoogleAuth,
   spreadsheetId: string,
   title: string,
-  header: string[]
+  header: string[],
 ): Promise<void> {
   if ((await tabTitles(auth, spreadsheetId)).includes(title)) {
     return;
@@ -75,7 +75,7 @@ export async function appendRows(
   auth: GoogleAuth,
   spreadsheetId: string,
   tab: string,
-  rows: (string | number)[][]
+  rows: (string | number)[][],
 ): Promise<void> {
   if (rows.length === 0) {
     return;

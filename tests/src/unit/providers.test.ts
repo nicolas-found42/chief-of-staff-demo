@@ -16,22 +16,19 @@ const responses: { status: number; body: unknown }[] = [];
 beforeEach(() => {
   calls.length = 0;
   responses.length = 0;
-  vi.stubGlobal(
-    "fetch",
-    (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const headers = (init?.headers ?? {}) as Record<string, string>;
-      calls.push({
-        url: String(input),
-        headers,
-        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
-      });
-      const queued = responses.shift() ?? { status: 200, body: {} };
-      return new Response(JSON.stringify(queued.body), {
-        status: queued.status,
-        headers: { "content-type": "application/json" },
-      });
-    }) as typeof fetch
-  );
+  vi.stubGlobal("fetch", (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    calls.push({
+      url: String(input),
+      headers,
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    });
+    const queued = responses.shift() ?? { status: 200, body: {} };
+    return new Response(JSON.stringify(queued.body), {
+      status: queued.status,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch);
 });
 
 afterEach(() => {
@@ -49,7 +46,7 @@ describe("providers", () => {
     responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openai", model: "gpt-5.2", apiKey: "sk-test" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
@@ -88,7 +85,7 @@ describe("providers", () => {
     });
     const complete = makeCompleteJson(
       { provider: "anthropic", model: "claude-sonnet-5", apiKey: "ak" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
@@ -101,7 +98,7 @@ describe("providers", () => {
     const tools = body.tools as { name: string; input_schema: unknown }[];
     expect(tools[0].name).toBe("save_extraction");
     const inputSchema = tools[0].input_schema as Record<string, unknown>;
-    expect(((inputSchema.properties ?? {}) as Record<string, unknown>)).toHaveProperty("tasks");
+    expect((inputSchema.properties ?? {}) as Record<string, unknown>).toHaveProperty("tasks");
     expect(body.tool_choice).toEqual({ type: "tool", name: "save_extraction" });
   });
 
@@ -112,12 +109,12 @@ describe("providers", () => {
     });
     const complete = makeCompleteJson(
       { provider: "gemini", model: "gemini-3.7-flash", apiKey: "gk" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
     expect(calls[0].url).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=gk"
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=gk",
     );
     const body = calls[0].body;
     expect(body.systemInstruction).toEqual({ parts: [{ text: "S" }] });
@@ -134,7 +131,7 @@ describe("providers", () => {
     responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "google/gemini-3.7-flash", apiKey: "ork" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
@@ -149,7 +146,7 @@ describe("providers", () => {
     responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "m", apiKey: "ork" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
@@ -163,7 +160,7 @@ describe("providers", () => {
     responses.push({ status: 401, body: { error: "bad key" } });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "m", apiKey: "ork" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     await expect(complete({ system: "S", user: "U" })).rejects.toThrow("HTTP 401");
     expect(calls).toHaveLength(1);
@@ -173,7 +170,7 @@ describe("providers", () => {
     responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "ollama", model: "nemotron", apiKey: "", baseUrl: "http://ollama.test:11434/" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
@@ -189,7 +186,7 @@ describe("providers", () => {
     responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "ollama", model: "nemotron", apiKey: "", baseUrl: "http://ollama.test:11434" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual(RESULT);
@@ -199,10 +196,13 @@ describe("providers", () => {
 
   it("mock: returns the workspace mock-result.json when present", async () => {
     const dir = mkdtempSync(join(tmpdir(), "providers-mock-"));
-    writeFileSync(join(dir, "mock-result.json"), JSON.stringify({ ...RESULT, sourceId: "fixture" }));
+    writeFileSync(
+      join(dir, "mock-result.json"),
+      JSON.stringify({ ...RESULT, sourceId: "fixture" }),
+    );
     const complete = makeCompleteJson(
       { provider: "mock", model: "", apiKey: "" },
-      join(dir, "mock-result.json")
+      join(dir, "mock-result.json"),
     );
     const parsed = await complete({ system: "S", user: "U" });
     expect(parsed).toEqual({ ...RESULT, sourceId: "fixture" });
@@ -211,7 +211,7 @@ describe("providers", () => {
   it("mock: falls back to a skip stub when no mock file exists", async () => {
     const complete = makeCompleteJson(
       { provider: "mock", model: "", apiKey: "" },
-      "/nonexistent/mock-result.json"
+      "/nonexistent/mock-result.json",
     );
     const parsed = (await complete({ system: "S", user: "U" })) as Record<string, unknown>;
     expect(parsed.isTranscript).toBe(false);

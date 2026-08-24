@@ -104,14 +104,40 @@ describe.sequential("DriveIntake", () => {
       state: async () => {
         const cfg = configStore.get();
         if (!cfg.google.clientId || !cfg.google.clientSecret) {
-          return { state: "unconfigured", email: null, redirectUri: "", scopes: [], lastConnectedAt: null, expiresAbout: null } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
+          return {
+            state: "unconfigured",
+            email: null,
+            redirectUri: "",
+            scopes: [],
+            lastConnectedAt: null,
+            expiresAbout: null,
+          } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T>
+            ? T
+            : never;
         }
         if (!cfg.google.refreshToken) {
-          return { state: "disconnected", email: null, redirectUri: "", scopes: [], lastConnectedAt: null, expiresAbout: null } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
+          return {
+            state: "disconnected",
+            email: null,
+            redirectUri: "",
+            scopes: [],
+            lastConnectedAt: null,
+            expiresAbout: null,
+          } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T>
+            ? T
+            : never;
         }
-        return { state: "connected", email: "test@example.com", redirectUri: "", scopes: [], lastConnectedAt: new Date().toISOString(), expiresAbout: null } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
+        return {
+          state: "connected",
+          email: "test@example.com",
+          redirectUri: "",
+          scopes: [],
+          lastConnectedAt: new Date().toISOString(),
+          expiresAbout: null,
+        } as unknown as ReturnType<GoogleConnection["state"]> extends Promise<infer T> ? T : never;
       },
-      outputs: () => ({ ok: true, outputs: google } as unknown as ReturnType<GoogleConnection["outputs"]>),
+      outputs: () =>
+        ({ ok: true, outputs: google }) as unknown as ReturnType<GoogleConnection["outputs"]>,
       observe: vi.fn(() => null),
       verifySetup: async () => ({ state: "connected", items: [] }),
       authUrl: () => ({ ok: false, state: "unconfigured" }),
@@ -122,8 +148,14 @@ describe.sequential("DriveIntake", () => {
     } as unknown as GoogleConnection;
   });
   function makeDrive(
-    files: Array<{ id: string; name: string; mimeType?: string; webViewLink?: string | null; size?: string }>,
-    fileData: Record<string, Buffer | string> = {}
+    files: Array<{
+      id: string;
+      name: string;
+      mimeType?: string;
+      webViewLink?: string | null;
+      size?: string;
+    }>,
+    fileData: Record<string, Buffer | string> = {},
   ): DriveFileClient {
     return {
       files: {
@@ -219,7 +251,9 @@ describe.sequential("DriveIntake", () => {
     const drive: DriveFileClient = {
       files: {
         list: async () => {
-          const err = Object.assign(new Error("The user does not have sufficient permissions"), { code: 403 });
+          const err = Object.assign(new Error("The user does not have sufficient permissions"), {
+            code: 403,
+          });
           throw err;
         },
         get: async () => ({ data: Buffer.from("") }),
@@ -243,7 +277,12 @@ describe.sequential("DriveIntake", () => {
 
   it("mixed folder: two supported, one image, one subfolder → 2 Runs, image/subfolder ignored", async () => {
     const files = [
-      { id: "1", name: "meeting.txt", mimeType: "text/plain", webViewLink: "https://drive.google.com/file/d/1/view" },
+      {
+        id: "1",
+        name: "meeting.txt",
+        mimeType: "text/plain",
+        webViewLink: "https://drive.google.com/file/d/1/view",
+      },
       { id: "2", name: "notes.md", mimeType: "text/markdown" },
       { id: "3", name: "photo.png", mimeType: "image/png" },
       { id: "4", name: "Subfolder", mimeType: "application/vnd.google-apps.folder" },
@@ -263,10 +302,12 @@ describe.sequential("DriveIntake", () => {
     const failed = runs.filter((r) => r.status === "failed");
     expect(failed).toHaveLength(0);
     // Order is by createdAt descending, so check by fileName
-    const byName = Object.fromEntries(runs.map(r => {
-      const d = openRuns(workspaceDir).detail(r.id)!;
-      return [d.fileName, d];
-    }));
+    const byName = Object.fromEntries(
+      runs.map((r) => {
+        const d = openRuns(workspaceDir).detail(r.id)!;
+        return [d.fileName, d];
+      }),
+    );
     expect(byName["meeting.txt"]?.intake).toBe("drive");
     expect(byName["meeting.txt"]?.sourceUrl).toBe("https://drive.google.com/file/d/1/view");
     expect(byName["notes.md"]?.intake).toBe("drive");
@@ -338,9 +379,7 @@ describe.sequential("DriveIntake", () => {
 
     const runs = openRuns(workspaceDir).list().runs;
     expect(runs).toHaveLength(3);
-    const fileNames = runs
-      .map((r) => openRuns(workspaceDir).detail(r.id)!.fileName)
-      .sort();
+    const fileNames = runs.map((r) => openRuns(workspaceDir).detail(r.id)!.fileName).sort();
     expect(fileNames).toEqual(["a.txt", "b.md", "c.txt"]);
 
     const state = loadState(join(workspaceDir, "state.json"));
@@ -386,7 +425,14 @@ describe.sequential("DriveIntake", () => {
   });
 
   it("Google Doc export via drive.files.export creates a Run with .txt effectiveName", async () => {
-    const files = [{ id: "doc1", name: "Meeting Notes", mimeType: "application/vnd.google-apps.document", webViewLink: "https://docs.google.com/document/d/doc1" }];
+    const files = [
+      {
+        id: "doc1",
+        name: "Meeting Notes",
+        mimeType: "application/vnd.google-apps.document",
+        webViewLink: "https://docs.google.com/document/d/doc1",
+      },
+    ];
     const drive: DriveFileClient = {
       files: {
         list: async () => ({ data: { files, nextPageToken: undefined } }),
@@ -411,11 +457,20 @@ describe.sequential("DriveIntake", () => {
     expect(detail.intake).toBe("drive");
     expect(detail.result?.sourceId).toBe("doc1");
     expect(detail.sourceUrl).toBe("https://docs.google.com/document/d/doc1");
-    const context = JSON.parse(readFileSync(join(workspaceDir, "runs", runs[0].id, "context.json"), "utf8")) as { meetingDate: string | null };
+    const context = JSON.parse(
+      readFileSync(join(workspaceDir, "runs", runs[0].id, "context.json"), "utf8"),
+    ) as { meetingDate: string | null };
     expect(context.meetingDate).toBeNull();
   });
   it("media fetch via drive.files.get for normal files", async () => {
-    const files = [{ id: "f1", name: "transcript.txt", mimeType: "text/plain", webViewLink: "https://drive.google.com/file/d/f1/view" }];
+    const files = [
+      {
+        id: "f1",
+        name: "transcript.txt",
+        mimeType: "text/plain",
+        webViewLink: "https://drive.google.com/file/d/f1/view",
+      },
+    ];
     let getCalled = false;
     const drive: DriveFileClient = {
       files: {
@@ -457,7 +512,10 @@ describe.sequential("DriveIntake", () => {
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.status).not.toBe("failed");
     expect(detail.failedStage).not.toBe("convert");
-    const transcript = readFileSync(join(workspaceDir, "runs", runs[0].id, "transcript.txt"), "utf8");
+    const transcript = readFileSync(
+      join(workspaceDir, "runs", runs[0].id, "transcript.txt"),
+      "utf8",
+    );
     expect(transcript).toBe("Alice: hello\nBob: hi");
   });
 
@@ -473,7 +531,10 @@ describe.sequential("DriveIntake", () => {
     const { created } = await intake.pollOnce();
     await pipeline.idle();
     expect(created).toBe(1);
-    const transcript = readFileSync(join(workspaceDir, "runs", openRuns(workspaceDir).list().runs[0].id, "transcript.txt"), "utf8");
+    const transcript = readFileSync(
+      join(workspaceDir, "runs", openRuns(workspaceDir).list().runs[0].id, "transcript.txt"),
+      "utf8",
+    );
     expect(transcript).toBe("A: one\nB: two");
   });
 
@@ -663,7 +724,9 @@ describe.sequential("DriveIntake", () => {
     expect(detail.result?.sourceId).toBe("meet1");
     expect(detail.sourceUrl).toBe("https://drive.google.com/file/d/meet1/view");
     expect(detail.fileName).toBe("Copy of Call-transcript-2026-06-18T13-00-00.000Z.txt");
-    const context = JSON.parse(readFileSync(join(workspaceDir, "runs", detail.id, "context.json"), "utf8")) as { meetingDate: string | null };
+    const context = JSON.parse(
+      readFileSync(join(workspaceDir, "runs", detail.id, "context.json"), "utf8"),
+    ) as { meetingDate: string | null };
     expect(context.meetingDate).toBe("2026-06-18");
   });
 

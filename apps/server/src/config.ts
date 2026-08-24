@@ -17,8 +17,12 @@ function deepMerge(base: unknown, patch: unknown): unknown {
     return base;
   }
   if (
-    typeof base === "object" && base !== null && !Array.isArray(base) &&
-    typeof patch === "object" && patch !== null && !Array.isArray(patch)
+    typeof base === "object" &&
+    base !== null &&
+    !Array.isArray(base) &&
+    typeof patch === "object" &&
+    patch !== null &&
+    !Array.isArray(patch)
   ) {
     const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
     for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
@@ -68,7 +72,7 @@ export class ConfigStore {
         stored = JSON.parse(readFileSync(this.configFile, "utf8"));
       } catch (err) {
         throw new Error(
-          `Cannot parse ${this.configFile}: ${err instanceof Error ? err.message : String(err)}`
+          `Cannot parse ${this.configFile}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

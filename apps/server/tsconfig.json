@@ -5,10 +5,8 @@
     "composite": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "src"
   },
-  "references": [
-    { "path": "../../packages/shared" }
-  ],
+  "references": [{ "path": "../../packages/shared" }],
   "include": ["src"]
 }

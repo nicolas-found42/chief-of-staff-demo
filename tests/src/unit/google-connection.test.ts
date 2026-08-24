@@ -210,7 +210,7 @@ describe("authUrl", () => {
     expect(access.ok).toBe(true);
     const url = new URL(access.ok ? access.url : "");
     expect(url.searchParams.get("redirect_uri")).toBe(
-      `http://localhost:${PORT}/api/google/callback`
+      `http://localhost:${PORT}/api/google/callback`,
     );
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
@@ -249,11 +249,13 @@ describe("isRejectedGrant", () => {
     // The shape gaxios actually throws.
     expect(
       isRejectedGrant({
-        response: { data: { error: "invalid_grant", error_description: "Token has been expired or revoked." } },
-      })
+        response: {
+          data: { error: "invalid_grant", error_description: "Token has been expired or revoked." },
+        },
+      }),
     ).toBe(true);
     expect(isRejectedGrant(new Error("invalid_grant: Token has been expired or revoked."))).toBe(
-      true
+      true,
     );
   });
 
@@ -279,9 +281,12 @@ const apiRefusal = (message: string, reason: string) => ({
 
 const API_DISABLED = apiRefusal(
   "Tasks API has not been used in project 123 before or it is disabled.",
-  "accessNotConfigured"
+  "accessNotConfigured",
 );
-const SCOPE_MISSING = apiRefusal("Request had insufficient authentication scopes.", "insufficientPermissions");
+const SCOPE_MISSING = apiRefusal(
+  "Request had insufficient authentication scopes.",
+  "insufficientPermissions",
+);
 
 /**
  * A connection whose two surface calls answer however the test needs. The
@@ -329,9 +334,9 @@ describe("lastConnectedAt — whether the console work has ever landed", () => {
 
     const status = await google.state();
     expect(status.state).toBe("connected");
-    expect(new Date(status.expiresAbout!).getTime() - new Date(status.lastConnectedAt!).getTime()).toBe(
-      7 * 86_400_000
-    );
+    expect(
+      new Date(status.expiresAbout!).getTime() - new Date(status.lastConnectedAt!).getTime(),
+    ).toBe(7 * 86_400_000);
   });
 
   it("survives a deliberate disconnect, because the console work is still done", async () => {
@@ -372,7 +377,6 @@ describe("verifySetup — asking Google what is missing", () => {
       ["YouTube view counts", true],
     ]);
   });
-
 
   it("names the API that was never enabled, and stays connected", async () => {
     withToken();

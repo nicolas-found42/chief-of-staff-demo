@@ -175,7 +175,9 @@ describe("durability", () => {
     run.finished({ status: "done" });
     // The write goes through a temp file and a rename, so the directory never
     // holds a half-written meta for `list()` to trip over.
-    const parsed = JSON.parse(readFileSync(join(workspaceDir, "runs", run.id, "meta.json"), "utf8"));
+    const parsed = JSON.parse(
+      readFileSync(join(workspaceDir, "runs", run.id, "meta.json"), "utf8"),
+    );
     expect(parsed.status).toBe("done");
     expect(runs.list().runs).toHaveLength(1);
   });

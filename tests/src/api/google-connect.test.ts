@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GoogleStatus } from "@chief-of-staff-demo/shared";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
 import { ConfigStore } from "../../../apps/server/src/config";
-import { googleFailureHint, openGoogleConnection } from "../../../apps/server/src/google/connection";
+import {
+  googleFailureHint,
+  openGoogleConnection,
+} from "../../../apps/server/src/google/connection";
 
 const PORT = 4317;
 
@@ -100,7 +103,7 @@ describe("GET /api/google/connect", () => {
     expect(authUrl.origin + authUrl.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(authUrl.searchParams.get("client_id")).toBe("id.apps");
     expect(authUrl.searchParams.get("redirect_uri")).toBe(
-      `http://localhost:${PORT}/api/google/callback`
+      `http://localhost:${PORT}/api/google/callback`,
     );
     // offline + consent is what returns a refresh token at all; without both the
     // exchange yields an access token that dies in an hour with no way to renew.

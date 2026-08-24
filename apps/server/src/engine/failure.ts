@@ -20,7 +20,7 @@ export function errorMessage(error: unknown): string {
 export function connectionFailure(
   ctx: RunContext,
   observe: (error: unknown) => GoogleConnectionState | null,
-  error: unknown
+  error: unknown,
 ): StageFailure | null {
   const state = observe(error);
   if (!state) {
@@ -33,10 +33,7 @@ export function connectionFailure(
 }
 
 /** The same verdict for a connection that was already known to be unusable. */
-export function connectionUnavailable(
-  ctx: RunContext,
-  state: GoogleConnectionState
-): StageFailure {
+export function connectionUnavailable(ctx: RunContext, state: GoogleConnectionState): StageFailure {
   ctx.event("google_unavailable", { state });
   return new StageFailure(`google_${state}`, googleFailureHint(state), {
     connectionCaused: true,
