@@ -66,6 +66,48 @@ export async function ensureTab(
   await appendRows(auth, spreadsheetId, title, [header]);
 }
 
+/** Ensure the tab exists and its header contains ContentType beside Format (idempotent migration). */
+export async function ensureTabWithMigration(
+  auth: GoogleAuth,
+  spreadsheetId: string,
+  title: string,
+  header: string[],
+): Promise<void> {
+  const exists = (await tabTitles(auth, spreadsheetId)).includes(title);
+  if (!exists) {
+    const sheets = google.sheets({ version: "v4", auth });
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title } } }] },
+    });
+    await appendRowsWithUserEntered(auth, spreadsheetId, title, [header]);
+    return;
+  }
+  // Tab exists: check header row for ContentType migration
+  try {
+    const sheets = google.sheets({ version: "v4", auth });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${title.replace(/'/g, "''")}'!1:1`,
+    });
+    const row = (res.data.values?.[0] as string[] | undefined) ?? [];
+    const hasContentType = row.includes("ContentType");
+    const hasFormat = row.includes("Format");
+    if (hasFormat && !hasContentType) {
+      // Migrate once: rewrite header to new shape; old rows keep blank for new column, new rows fill it.
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${title.replace(/'/g, "''")}'!1:1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [header] },
+      });
+    }
+  } catch {
+    // If header check fails, fall back to no-op; append will still work but ContentType may be blank.
+  }
+}
+
+
 /**
  * Append rows to the bottom of one tab. One call per tab rather than a batched
  * multi-range write: Google documents no maximum number of ranges for the
@@ -88,6 +130,26 @@ export async function appendRows(
     valueInputOption: "RAW",
     /* INSERT_ROWS, not OVERWRITE: appending must never land on a row somebody
        added by hand underneath. */
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: rows },
+  });
+}
+
+/** Variant for Idea Engine: USER_ENTERED so dates/URLs are parsed as the user would type them. */
+export async function appendRowsWithUserEntered(
+  auth: GoogleAuth,
+  spreadsheetId: string,
+  tab: string,
+  rows: (string | number)[][],
+): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
+  const sheets = google.sheets({ version: "v4", auth });
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${tab.replace(/'/g, "''")}'!A:K`,
+    valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: rows },
   });

@@ -47,7 +47,10 @@ function defaultConfig(): AppConfig {
     },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
-    modules: { "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" } },
+    modules: {
+      "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
+      "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
+    },
   };
 }
 

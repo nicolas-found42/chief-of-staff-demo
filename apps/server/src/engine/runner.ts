@@ -109,9 +109,9 @@ export class Runner<Input> {
    */
   private context(run: RunHandle): RunContext {
     const mod = this.deps.module;
-    let open: string | null = null;
+    const stack: string[] = [];
     const inStage = (what: string): void => {
-      if (open === null) {
+      if (stack.length === 0) {
         throw new OutsideStageError(what);
       }
     };
@@ -119,8 +119,7 @@ export class Runner<Input> {
       runId: run.id,
       meta: () => run.read(),
       async stage<T>(name: string, fn: () => Promise<T>): Promise<T> {
-        const outer = open;
-        open = name;
+        stack.push(name);
         run.started(name);
         try {
           return await fn();
@@ -130,7 +129,7 @@ export class Runner<Input> {
           run.failed(name, reason, failure?.hint ?? mod.failureHint(name, reason), failure?.flags);
           throw error;
         } finally {
-          open = outer;
+          stack.pop();
         }
       },
       event: (type, detail) => {

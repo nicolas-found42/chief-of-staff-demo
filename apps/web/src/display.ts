@@ -28,6 +28,20 @@ const STAGE_LABELS: Record<string, string> = {
   outputs: "Create tasks & drafts",
   enumerate: "List the videos",
   fetch: "Read view counts",
+  publish: "Write to Sheet",
+  draft: "Create draft",
+  Live_thread: "Live thread",
+  Vertical_short: "Vertical short",
+  "X/Twitter": "X/Twitter",
+  LinkedIn_Carousel: "LinkedIn carousel",
+  video: "Video",
+  blog_post: "Blog post",
+  article: "Article",
+  how_to_guide: "How-to guide",
+  case_study_article: "Case study",
+  LinkedIn_post_image: "LinkedIn image",
+  LinkedIn_post_video: "LinkedIn video",
+  email: "Email",
 };
 
 export function statusLabel(status: string): string {

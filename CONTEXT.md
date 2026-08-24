@@ -98,3 +98,31 @@ _Avoid_: Relay run, run (a Run is this app's)
 The 3U on-premise server (Intel CPU, Nvidia GPU) that will eventually host this app and run
 local models. Not yet accessible.
 _Avoid_: Edgecale, edge scale, the box, the cube (alone)
+
+**Idea Engine**:
+A live Module that reads a meeting transcript from the Transcripts Drive folder and extracts
+Content Ideas attributed to the workspace owner. One Intake file creates one Run; that Run
+makes 12 Stages (one per content type) in batches of 4, writes the ideas to the Google Sheet
+`All RA Content Ideas` via an Output Adapter, creates a Gmail draft digest, and posts a Home
+notification. Its tab shows a Cross-Run index over all Runs, primary by transcript file,
+filterable by content type.
+_Status_: live (spec #31 binding, 2026-08-24)
+_Avoid_: Idea Generator, Ideas Module
+
+**Content Idea**:
+One idea extracted from a transcript, attributed to the workspace owner with evidence (time
+stamp + verbatim quote, confidence ≥0.9). Carries Title, Description, Target Audience, CTA,
+Format (4 Sheet values: articles, blog_posts, videos, how_to_guides), ContentType (12 prompt
+types: e.g., Short/long video, article), and Expand Prompt (the prompt a downstream copywriter
+uses to turn the Title into a draft). Evidence and confidence live in the Run result, not in
+the Sheet.
+_Avoid_: idea (alone), generic idea
+
+**Expand Prompt**:
+The prompt text a downstream copywriter uses to expand a Content Idea into a draft. Formerly
+called Custom Prompt in Relay. Part of a Content Idea; not a Module-level prompt.
+_Avoid_: Custom Prompt, custom prompt
+
+**Evidence**:
+The time stamp and verbatim quote that prove a Content Idea was said by the workspace owner,
+plus a confidence score. Stored in the Run result for audit; not written to the Sheet.

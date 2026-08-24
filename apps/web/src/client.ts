@@ -120,6 +120,9 @@ export const api = {
     request<{ spreadsheet: { id: string; url: string } }>("/api/youtube/spreadsheet", {
       method: "POST",
     }),
+  ideaEngineIdeas: () => request<import("@chief-of-staff-demo/shared").IdeaEngineIndex>("/api/idea-engine/ideas"),
+  ideaEngineBackfill: () => request<{ created: number; skipped: number }>("/api/idea-engine/backfill", { method: "POST" }),
+  ideaEngineSync: () => request<{ created: number }>("/api/idea-engine/sync", { method: "POST" }),
 };
 
 export function errorMessage(error: unknown): string {

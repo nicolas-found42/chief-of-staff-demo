@@ -68,8 +68,22 @@ export const ConfigSchema = z.strictObject({
           spreadsheetUrl: z.string().default(""),
         })
         .default({ channels: [], spreadsheetId: "", spreadsheetUrl: "" }),
+      "idea-engine": z
+        .strictObject({
+          /** The existing All RA Content Ideas spreadsheet; "" until configured. */
+          spreadsheetId: z.string().default(""),
+          spreadsheetUrl: z.string().default(""),
+          /** Per-type prompt overrides; absent types use shipped defaults. */
+          prompts: z.record(z.string()).default({}),
+          /** Remembered dedup hashes per Run (audit) - not user-edited. */
+          // kept for config completeness, but hashes live in Run results primarily
+        })
+        .default({ spreadsheetId: "", spreadsheetUrl: "", prompts: {} }),
     })
-    .default({ "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" } }),
+    .default({
+      "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
+      "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
+    }),
 });
 export type AppConfig = z.infer<typeof ConfigSchema>;
 export type ModuleConfigs = AppConfig["modules"];

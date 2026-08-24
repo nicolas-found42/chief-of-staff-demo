@@ -3,6 +3,7 @@ import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
 import { HotTakePage } from "./pages/HotTakePage";
+import { IdeaEnginePage } from "./pages/IdeaEnginePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
@@ -68,6 +69,7 @@ export function App() {
           <Route path="/runs" element={<AllRunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/youtube" element={<YoutubePage />} />
+          <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/hot-take" element={<HotTakePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
