@@ -26,6 +26,15 @@ const REQUEST_TIMEOUT_MS = 120_000;
 type JsonObject = Record<string, unknown>;
 
 /**
+ * `Array.isArray` narrows `unknown` to `any[]`, and every element read off it is
+ * then untyped — which defeats the point of the shape checks below. This
+ * narrows to `unknown[]`, so each element still has to be checked before use.
+ */
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+/**
  * JSON Schema handed to OpenAI / OpenRouter / Anthropic. Derived from
  * `ExtractionWireSchema` (all fields required, nullable optionals) because
  * OpenAI strict json_schema rejects non-required properties.
@@ -34,8 +43,9 @@ function wireJsonSchema(): JsonObject {
   const converted = zodToJsonSchema(ExtractionWireSchema, {
     $refStrategy: "none",
   }) as JsonObject;
-  const { $schema, ...rest } = converted;
-  return rest;
+  /* OpenAI strict json_schema rejects the $schema key zod-to-json-schema adds. */
+  delete converted.$schema;
+  return converted;
 }
 
 function geminiWireSchema(): JsonObject {
@@ -80,7 +90,7 @@ async function postJson(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`);
+      throw new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`, { cause: error });
     }
     throw error;
   } finally {
@@ -101,7 +111,7 @@ function readChatCompletionContent(payload: unknown): string {
     typeof payload === "object" &&
     payload !== null &&
     "choices" in payload &&
-    Array.isArray(payload.choices) &&
+    isUnknownArray(payload.choices) &&
     payload.choices.length > 0
   ) {
     const first = payload.choices[0];
@@ -126,7 +136,7 @@ function readToolUseInput(payload: unknown): unknown {
     typeof payload === "object" &&
     payload !== null &&
     "content" in payload &&
-    Array.isArray(payload.content)
+    isUnknownArray(payload.content)
   ) {
     for (const block of payload.content) {
       if (
@@ -149,7 +159,7 @@ function readGeminiText(payload: unknown): string {
     typeof payload === "object" &&
     payload !== null &&
     "candidates" in payload &&
-    Array.isArray(payload.candidates) &&
+    isUnknownArray(payload.candidates) &&
     payload.candidates.length > 0
   ) {
     const first = payload.candidates[0];
@@ -159,7 +169,7 @@ function readGeminiText(payload: unknown): string {
         typeof content === "object" &&
         content !== null &&
         "parts" in content &&
-        Array.isArray(content.parts) &&
+        isUnknownArray(content.parts) &&
         content.parts.length > 0
       ) {
         const part = content.parts[0];

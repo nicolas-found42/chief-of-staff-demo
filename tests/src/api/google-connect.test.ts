@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { GoogleStatus } from "@chief-of-staff-demo/shared";
+import type { AppConfig, GoogleStatus } from "@chief-of-staff-demo/shared";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
 import { ConfigStore } from "../../../apps/server/src/config";
 import {
@@ -50,15 +50,16 @@ function status() {
   return app.inject({ method: "GET", url: "/api/google/status" });
 }
 
-function storedConfig() {
-  return JSON.parse(readFileSync(join(workspaceDir, "config.json"), "utf8"));
+function storedConfig(): AppConfig {
+  const parsed: AppConfig = JSON.parse(readFileSync(join(workspaceDir, "config.json"), "utf8"));
+  return parsed;
 }
 
 describe("GET /api/google/status", () => {
   it("reports unconfigured on a fresh workspace, with the setup values to register", async () => {
     const response = await status();
     expect(response.statusCode).toBe(200);
-    const body = response.json() as GoogleStatus;
+    const body = response.json<GoogleStatus>();
     expect(body.state).toBe("unconfigured");
     expect(body.email).toBeNull();
     expect(body.redirectUri).toBe(`http://localhost:${PORT}/api/google/callback`);
@@ -67,7 +68,7 @@ describe("GET /api/google/status", () => {
 
   it("reports disconnected once client credentials are saved", async () => {
     configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
-    expect(((await status()).json() as GoogleStatus).state).toBe("disconnected");
+    expect((await status()).json<GoogleStatus>().state).toBe("disconnected");
   });
 });
 
@@ -78,7 +79,7 @@ describe("POST /api/google/disconnect", () => {
 
     const response = await app.inject({ method: "POST", url: "/api/google/disconnect" });
     expect(response.statusCode).toBe(200);
-    expect((response.json() as GoogleStatus).state).toBe("disconnected");
+    expect(response.json<GoogleStatus>().state).toBe("disconnected");
     // Cleared on disk, not just in memory: the next process start must agree.
     expect(storedConfig().google.refreshToken).toBeNull();
     // The client credentials survive, so signing back in is one click.

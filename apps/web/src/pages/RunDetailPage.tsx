@@ -52,7 +52,7 @@ export function RunDetailPage() {
     if (!detail || !ACTIVE.has(detail.status)) {
       return;
     }
-    const timer = setInterval(load, 3000);
+    const timer = setInterval(() => void load(), 3000);
     return () => clearInterval(timer);
   }, [detail, load]);
 
@@ -229,7 +229,7 @@ export function RunDetailPage() {
                 type="button"
                 className="action-button"
                 ref={retryRef}
-                onClick={retry}
+                onClick={() => void retry()}
                 aria-disabled={retrying}
               >
                 {retrying ? "Retrying…" : "Retry"}

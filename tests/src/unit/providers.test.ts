@@ -16,19 +16,22 @@ const responses: { status: number; body: unknown }[] = [];
 beforeEach(() => {
   calls.length = 0;
   responses.length = 0;
-  vi.stubGlobal("fetch", (async (input: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     calls.push({
-      url: String(input),
+      url: input instanceof URL ? input.href : typeof input === "string" ? input : input.url,
       headers,
-      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
+        string,
+        unknown
+      >,
     });
     const queued = responses.shift() ?? { status: 200, body: {} };
     return new Response(JSON.stringify(queued.body), {
       status: queued.status,
       headers: { "content-type": "application/json" },
     });
-  }) as typeof fetch);
+  });
 });
 
 afterEach(() => {

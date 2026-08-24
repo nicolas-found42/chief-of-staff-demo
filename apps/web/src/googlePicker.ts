@@ -4,6 +4,36 @@
  * load, and remembered for the session so a second pick does not refetch.
  */
 
+/**
+ * The slice of `google.picker` this app touches. Google ships no types for the
+ * Picker, so these are declared here — and the builder methods are declared to
+ * return the builder, which is what lets the chain below stay typed instead of
+ * falling back to `any`.
+ */
+interface DocsView {
+  setMimeTypes: (mimeTypes: string) => DocsView;
+  setSelectFolderEnabled: (enabled: boolean) => DocsView;
+}
+
+interface PickedData {
+  action: string;
+  docs?: { id: string; name: string }[];
+}
+
+interface PickerBuilder {
+  setOAuthToken: (token: string) => PickerBuilder;
+  addView: (view: DocsView) => PickerBuilder;
+  setCallback: (callback: (data: PickedData) => void) => PickerBuilder;
+  build: () => { setVisible: (visible: boolean) => void };
+}
+
+interface PickerNamespace {
+  DocsView: new (viewId: unknown) => DocsView;
+  ViewId: { FOLDERS: unknown };
+  PickerBuilder: new () => PickerBuilder;
+  Action: { PICKED: string; CANCEL: string };
+}
+
 let gapiReady = false;
 let gapiPromise: Promise<void> | null = null;
 
@@ -66,25 +96,7 @@ export async function pickDriveFolder(
   const { promise, resolve, reject } = Promise.withResolvers<{ id: string; name: string } | null>();
 
   try {
-    const g = window as unknown as {
-      google?: {
-        picker?: {
-          DocsView: new (viewId: unknown) => {
-            setMimeTypes: (m: string) => { setSelectFolderEnabled: (b: boolean) => unknown };
-          };
-          ViewId: { FOLDERS: unknown };
-          PickerBuilder: new () => {
-            setOAuthToken: (token: string) => unknown;
-            addView: (view: unknown) => unknown;
-            setCallback: (
-              cb: (data: { action: string; docs?: Array<{ id: string; name: string }> }) => void,
-            ) => unknown;
-            build: () => { setVisible: (v: boolean) => void };
-          };
-          Action: { PICKED: string; CANCEL: string };
-        };
-      };
-    };
+    const g = window as unknown as { google?: { picker?: PickerNamespace } };
 
     const pickerNs = g.google?.picker;
     if (!pickerNs) {
@@ -94,16 +106,12 @@ export async function pickDriveFolder(
 
     const view = new pickerNs.DocsView(pickerNs.ViewId.FOLDERS)
       .setMimeTypes("application/vnd.google-apps.folder")
-      .setSelectFolderEnabled(true) as unknown as object;
+      .setSelectFolderEnabled(true);
 
-    // Use any for builder chaining to avoid verbose typing.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anyBuilder = new (pickerNs.PickerBuilder as unknown as new () => unknown)() as any;
-    const anyView = view as unknown as object;
-    const picker = anyBuilder
+    const picker = new pickerNs.PickerBuilder()
       .setOAuthToken(oauthToken)
-      .addView(anyView)
-      .setCallback((data: { action: string; docs?: Array<{ id: string; name: string }> }) => {
+      .addView(view)
+      .setCallback((data) => {
         const doc = data.docs?.[0];
         if (data.action === pickerNs.Action.PICKED && doc) {
           resolve({ id: doc.id, name: doc.name });
@@ -111,7 +119,7 @@ export async function pickDriveFolder(
           resolve(null);
         }
       })
-      .build() as { setVisible: (v: boolean) => void };
+      .build();
 
     picker.setVisible(true);
   } catch (error) {

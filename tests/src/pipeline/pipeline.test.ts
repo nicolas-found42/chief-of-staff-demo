@@ -306,7 +306,7 @@ describe("Pipeline", () => {
     const retried = detailOf(runId);
     expect(retried!.status).toBe("done");
     expect(retried!.attempts).toBe(1);
-    expect(google!.calls.tasks).toHaveLength(2);
+    expect(google.calls.tasks).toHaveLength(2);
   });
 
   it("expired connection → failed at outputs naming the expiry, not a generic retry", async () => {
@@ -333,7 +333,9 @@ describe("Pipeline", () => {
     google = {
       ...live,
       createTask: async () => {
-        throw { response: { data: { error: "invalid_grant" } } };
+        throw Object.assign(new Error("invalid_grant"), {
+          response: { data: { error: "invalid_grant" } },
+        });
       },
     };
     const runId = await pipeline.startRun({

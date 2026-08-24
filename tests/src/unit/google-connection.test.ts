@@ -17,7 +17,15 @@ import { ConfigStore } from "../../../apps/server/src/config";
 const PORT = 4317;
 
 /** The error gaxios throws when Google will not honour the refresh token again. */
-const REJECTED = { response: { data: { error: "invalid_grant" } } };
+/*
+ * googleapis throws an Error carrying the refusal on `response.data.error`, so
+ * the doubles here do the same. Both classifiers read that payload before they
+ * ever look at `message`, so the Error wrapper changes nothing under test — it
+ * just stops the doubles pretending a bare object is throwable.
+ */
+const REJECTED = Object.assign(new Error("invalid_grant"), {
+  response: { data: { error: "invalid_grant" } },
+});
 
 let configStore: ConfigStore;
 let probeCalls: number;
@@ -275,9 +283,10 @@ describe("isRejectedGrant", () => {
 // ---------------------------------------------------------------------------
 
 /** A 403 shaped the way the Google API clients throw one. */
-const apiRefusal = (message: string, reason: string) => ({
-  response: { data: { error: { code: 403, message, errors: [{ reason }] } } },
-});
+const apiRefusal = (message: string, reason: string) =>
+  Object.assign(new Error(message), {
+    response: { data: { error: { code: 403, message, errors: [{ reason }] } } },
+  });
 
 const API_DISABLED = apiRefusal(
   "Tasks API has not been used in project 123 before or it is disabled.",
@@ -438,7 +447,9 @@ describe("verifySetup — asking Google what is missing", () => {
   it("passes an unrecognised refusal through rather than flattening it", async () => {
     withToken();
     const check = await checking(() => {
-      throw { response: { data: { error: { code: 500, message: "Backend error", errors: [] } } } };
+      throw Object.assign(new Error("Backend error"), {
+        response: { data: { error: { code: 500, message: "Backend error", errors: [] } } },
+      });
     }).verifySetup();
 
     expect(check.state).toBe("connected");

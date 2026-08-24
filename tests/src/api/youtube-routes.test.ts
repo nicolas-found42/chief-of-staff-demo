@@ -103,7 +103,7 @@ describe("POST /api/youtube/channels", () => {
       payload: { url: "https://www.youtube.com/@found42" },
     });
     expect(response.statusCode).toBe(201);
-    expect((response.json() as { channel: YoutubeChannel }).channel).toMatchObject({
+    expect(response.json().channel).toMatchObject({
       id: "UC_found42",
       title: "Found42",
     });
@@ -120,7 +120,7 @@ describe("POST /api/youtube/channels", () => {
       payload: { url: "https://www.youtube.com/c/Found42" },
     });
     expect(response.statusCode).toBe(400);
-    expect((response.json() as { error: string }).error).toContain("youtube.com/@name");
+    expect(response.json().error).toContain("youtube.com/@name");
     expect(channels()).toHaveLength(0);
   });
 
@@ -158,7 +158,7 @@ describe("POST /api/youtube/channels", () => {
       payload: { url: "https://www.youtube.com/@found42" },
     });
     expect(response.statusCode).toBe(400);
-    expect((response.json() as { error: string }).error).toMatch(/not connected/i);
+    expect(response.json().error).toMatch(/not connected/i);
   });
 });
 
@@ -184,7 +184,7 @@ describe("POST /api/youtube/run", () => {
   it("refuses when there is nothing to measure", async () => {
     const response = await app.inject({ method: "POST", url: "/api/youtube/run" });
     expect(response.statusCode).toBe(400);
-    expect((response.json() as { error: string }).error).toContain("Add a channel first");
+    expect(response.json().error).toContain("Add a channel first");
   });
 
   it("records the day once, then refuses and says which day", async () => {
@@ -199,7 +199,7 @@ describe("POST /api/youtube/run", () => {
 
     const second = await app.inject({ method: "POST", url: "/api/youtube/run" });
     expect(second.statusCode).toBe(409);
-    expect((second.json() as { error: string }).error).toContain("2026-08-23 is already recorded");
+    expect(second.json().error).toContain("2026-08-23 is already recorded");
   });
 });
 
@@ -213,16 +213,12 @@ describe("POST /api/youtube/spreadsheet", () => {
 
     const response = await app.inject({ method: "POST", url: "/api/youtube/spreadsheet" });
     expect(response.statusCode).toBe(201);
-    expect((response.json() as { spreadsheet: { url: string } }).spreadsheet.url).toContain(
-      "docs.google.com",
-    );
+    expect(response.json().spreadsheet.url).toContain("docs.google.com");
     expect(tabs).toEqual(["Found42"]);
 
     /* Kept somewhere permanent, so it is findable weeks later without hunting
        through Run history. */
-    const trends = (await app.inject({ method: "GET", url: "/api/youtube/trends" })).json() as {
-      spreadsheet: { id: string } | null;
-    };
+    const trends = (await app.inject({ method: "GET", url: "/api/youtube/trends" })).json();
     expect(trends.spreadsheet?.id).toBe("sheet-1");
   });
 
@@ -258,7 +254,7 @@ describe("GET /api/youtube/trends", () => {
     connected = false;
     const response = await app.inject({ method: "GET", url: "/api/youtube/trends" });
     expect(response.statusCode).toBe(200);
-    const trends = response.json() as YoutubeTrends;
+    const trends = response.json<YoutubeTrends>();
     expect(trends.channels.map((channel) => channel.title)).toEqual(["Found42"]);
     expect(trends.lastDay).toBe("2026-08-23");
     expect(trends.todayRecorded).toBe(true);

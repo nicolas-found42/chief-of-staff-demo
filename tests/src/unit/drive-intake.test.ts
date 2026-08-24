@@ -163,15 +163,13 @@ describe.sequential("DriveIntake", () => {
         list: async () => ({ data: { files } }),
         get: async (params: Record<string, unknown>) => {
           const fileId = params.fileId as string;
-          const data = fileData[fileId];
-          if (data === undefined) return { data: Buffer.from("hello world") };
-          return { data };
+          if (!(fileId in fileData)) return { data: Buffer.from("hello world") };
+          return { data: fileData[fileId] };
         },
         export: async (params: Record<string, unknown>) => {
           const fileId = params.fileId as string;
-          const data = fileData[fileId];
-          if (data === undefined) return { data: Buffer.from("exported text") };
-          return { data };
+          if (!(fileId in fileData)) return { data: Buffer.from("exported text") };
+          return { data: fileData[fileId] };
         },
       },
     };
@@ -639,7 +637,7 @@ describe.sequential("DriveIntake", () => {
   });
 
   it("a disabled intake records no lastPollAt — the line stays silent instead of lying", async () => {
-    configStore.update({ drive: { enabled: false } } as unknown as Record<string, unknown>);
+    configStore.update({ drive: { enabled: false } });
     const drive = makeDrive([]);
     const intake = intakeWith(drive);
     await intake.pollOnce();
@@ -673,7 +671,7 @@ describe.sequential("DriveIntake", () => {
         stateCalls.push(1);
         throw new Error("status() must not ask Google");
       },
-    } as unknown as GoogleConnection;
+    };
     const readback = intakeWith(makeDrive([]), counting);
     expect(readback.status()).toMatchObject({
       lastPollAt: after.lastPollAt,
@@ -687,7 +685,7 @@ describe.sequential("DriveIntake", () => {
       state: async () => {
         throw new Error("drive exploded");
       },
-    } as unknown as GoogleConnection;
+    };
     const intake = intakeWith(makeDrive([]), failing);
     await expect(intake.pollOnce()).rejects.toThrow(/drive exploded/);
     const status = intake.status();

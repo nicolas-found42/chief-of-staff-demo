@@ -17,7 +17,15 @@ function toBuffer(data: unknown): Buffer {
   if (data && typeof (data as { byteLength?: unknown }).byteLength === "number") {
     return Buffer.from(data as unknown as ArrayBuffer);
   }
-  return Buffer.from(String(data ?? ""), "utf8");
+  if (typeof data === "number" || typeof data === "boolean" || typeof data === "bigint") {
+    return Buffer.from(String(data), "utf8");
+  }
+  if (data === null || data === undefined) {
+    return Buffer.alloc(0);
+  }
+  /* Whatever is left is a parsed JSON body rather than bytes: stringify it so
+     the caller sees the payload instead of "[object Object]". */
+  return Buffer.from(JSON.stringify(data), "utf8");
 }
 
 export class DriveError extends Error {
@@ -157,7 +165,9 @@ export class DriveIntake {
       this.rememberPoll("failed");
       try {
         this.deps.google.observe(error);
-      } catch {}
+      } catch {
+        /* Classifying the failure must never replace the failure. */
+      }
       throw error;
     }
   }
@@ -215,8 +225,8 @@ export class DriveIntake {
     const folderId = config.drive.folderId;
     let pageToken: string | undefined;
     let created = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
+
+    for (;;) {
       let response: {
         data?: {
           files?: Array<{
@@ -229,7 +239,7 @@ export class DriveIntake {
           }>;
           nextPageToken?: string | null;
         };
-      } | null = null;
+      };
       try {
         response = (await drive.files.list({
           q: `'${folderId}' in parents and trashed=false`,
@@ -254,15 +264,17 @@ export class DriveIntake {
       } catch (error: unknown) {
         try {
           this.deps.google.observe(error);
-        } catch {}
+        } catch {
+          /* Classifying the failure must never replace the failure. */
+        }
         const err = error as {
           code?: number;
           status?: number;
           response?: { status?: number };
           message?: string;
         };
-        const status = err?.code ?? err?.status ?? err?.response?.status;
-        const message = err?.message ?? String(error);
+        const status = err.code ?? err.status ?? err.response?.status;
+        const message = err.message ?? String(error);
         if (status === 401) {
           this.deps.log("Drive poll skipped: Google not connected");
           return created;
@@ -286,7 +298,7 @@ export class DriveIntake {
         webViewLink?: string;
         size?: string;
         modifiedTime?: string;
-      }> = response?.data?.files ?? [];
+      }> = response.data?.files ?? [];
 
       const fresh = files.filter(
         (f) => typeof f.id === "string" && typeof f.name === "string" && !ingested.has(f.id),
@@ -312,7 +324,7 @@ export class DriveIntake {
           continue;
         }
         let bytes: Buffer;
-        let sourceUrl: string | null = file.webViewLink ?? null;
+        const sourceUrl: string | null = file.webViewLink ?? null;
 
         try {
           if (isGoogleDoc) {
@@ -341,7 +353,9 @@ export class DriveIntake {
         } catch (error: unknown) {
           try {
             this.deps.google.observe(error);
-          } catch {}
+          } catch {
+            /* Classifying the failure must never replace the failure. */
+          }
           this.deps.log(
             `Failed to fetch Drive file ${fileName} (${fileId}): ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -365,7 +379,9 @@ export class DriveIntake {
         } catch (error: unknown) {
           try {
             this.deps.google.observe(error);
-          } catch {}
+          } catch {
+            /* Classifying the failure must never replace the failure. */
+          }
           this.deps.log(
             `Pipeline rejected Drive file ${fileName}: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -386,7 +402,7 @@ export class DriveIntake {
         });
       }
 
-      pageToken = response?.data?.nextPageToken ?? undefined;
+      pageToken = response.data?.nextPageToken ?? undefined;
       if (!pageToken) break;
     }
 

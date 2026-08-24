@@ -27,7 +27,7 @@ function fakeHost(id: string, path: string): HostedModule {
     version: 1,
     async retryRun(runId: string): Promise<RunMeta> {
       retried.push(`${id}:${runId}`);
-      return runs.open(runId)!.reopen("only") as RunMeta;
+      return runs.open(runId)!.reopen("only");
     },
     routes(instance) {
       instance.get(path, async () => ({ mine: id }));

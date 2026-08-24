@@ -147,7 +147,12 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
       <div className="field-row runs-toolbar">
         {/* aria-disabled rather than disabled, like every other busy control
             here: the pressed button has to survive its own request. */}
-        <button type="button" className="action-button" onClick={check} aria-disabled={checking}>
+        <button
+          type="button"
+          className="action-button"
+          onClick={() => void check()}
+          aria-disabled={checking}
+        >
           {checking ? "Refreshing…" : "Refresh"}
         </button>
       </div>

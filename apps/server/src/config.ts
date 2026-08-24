@@ -21,7 +21,6 @@ function deepMerge(base: unknown, patch: unknown): unknown {
     base !== null &&
     !Array.isArray(base) &&
     typeof patch === "object" &&
-    patch !== null &&
     !Array.isArray(patch)
   ) {
     const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
@@ -73,6 +72,7 @@ export class ConfigStore {
       } catch (err) {
         throw new Error(
           `Cannot parse ${this.configFile}: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
         );
       }
     }

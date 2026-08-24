@@ -361,7 +361,7 @@ export function openRuns(workspaceDir: string): Runs {
      * than every Run on disk.
      */
     list(query: RunQuery = {}): RunPage {
-      let entries: string[] = [];
+      let entries: string[];
       try {
         entries = readdirSync(layout.runsDir);
       } catch {

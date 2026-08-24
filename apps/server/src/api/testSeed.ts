@@ -29,7 +29,9 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
         try {
           bytes = await readFile(cand);
           break;
-        } catch {}
+        } catch {
+          /* This candidate is not there; try the next. */
+        }
       }
       if (!bytes) {
         bytes = Buffer.from("# Weekly Product Sync\n\nAlice: hello\nBob: hi\n");

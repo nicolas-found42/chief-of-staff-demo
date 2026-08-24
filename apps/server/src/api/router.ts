@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { DEFAULT_MODELS, type ConfigUpdate, ConfigUpdateSchema } from "@chief-of-staff-demo/shared";
+import { DEFAULT_MODELS, ConfigUpdateSchema } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
 import {
@@ -124,7 +124,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       reply.code(400).send({ error: "invalid config", issues: parsed.error.issues });
       return;
     }
-    const update = parsed.data as ConfigUpdate;
+    const update = parsed.data;
     const next = ctx.configStore.update(update);
     /* Credentials may have changed under the connection, so what it remembers
        about Google is no longer evidence of anything. */

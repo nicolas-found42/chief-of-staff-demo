@@ -50,7 +50,7 @@ function idFor(day: number): string {
 async function list(query = ""): Promise<RunPage> {
   const response = await app.inject({ method: "GET", url: `/api/runs${query}` });
   expect(response.statusCode).toBe(200);
-  return response.json() as RunPage;
+  return response.json();
 }
 
 beforeEach(async () => {
@@ -110,8 +110,8 @@ describe("GET /api/runs", () => {
     const page = await list();
     expect(page.runs.map((run) => run.summary)).toEqual(["2 tasks, 1 draft", null]);
     /* And nothing about a Module's result reaches the row. */
-    expect(Object.keys(page.runs[0]!)).not.toContain("taskCount");
-    expect(Object.keys(page.runs[0]!)).not.toContain("result");
+    expect(Object.keys(page.runs[0])).not.toContain("taskCount");
+    expect(Object.keys(page.runs[0])).not.toContain("result");
   });
 
   it("pages newest-first, and a cursor walks backwards without repeating or skipping", async () => {

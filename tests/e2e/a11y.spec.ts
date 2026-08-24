@@ -27,7 +27,7 @@ function activeDescription(page: Page): Promise<string> {
     if (!el || el === document.body) {
       return "<body — focus lost>";
     }
-    return `${el.tagName.toLowerCase()}:${(el.textContent ?? "").trim().slice(0, 24)}`;
+    return `${el.tagName.toLowerCase()}:${el.textContent.trim().slice(0, 24)}`;
   });
 }
 
@@ -66,7 +66,7 @@ function busyControls(page: Page) {
       const style = getComputedStyle(el);
       const behind = backdrop(el);
       return {
-        text: (el.textContent ?? "").trim(),
+        text: el.textContent.trim(),
         opacity: style.opacity,
         label: ratio(
           style.color,

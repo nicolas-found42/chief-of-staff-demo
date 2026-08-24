@@ -168,7 +168,7 @@ export function googleSurfaceHint(surface: GoogleSurface, error: unknown): strin
       status?: number;
       response?: { status?: number };
     };
-    const status = raw?.code ?? raw?.status ?? raw?.response?.status;
+    const status = raw.code ?? raw.status ?? raw.response?.status;
     if (
       status === 404 ||
       /notFound|File not found|not_found|notAccessible/i.test(message) ||

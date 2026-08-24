@@ -94,7 +94,7 @@ export function normalizeExtractionResult(payload: unknown): ExtractionResult {
       tasks: wire.data.tasks.map((task) => {
         const out: Record<string, unknown> = { title: task.title };
         for (const key of ["owner", "due", "notes", "sourceQuote"] as const) {
-          if (task[key] !== null && task[key] !== undefined) {
+          if (task[key] !== null) {
             out[key] = task[key];
           }
         }
@@ -102,11 +102,11 @@ export function normalizeExtractionResult(payload: unknown): ExtractionResult {
       }),
       drafts: wire.data.drafts.map((draft) => {
         const out: Record<string, unknown> = {
-          to: draft.to ?? "",
+          to: draft.to,
           subject: draft.subject,
           body: draft.body,
         };
-        if (draft.reason !== null && draft.reason !== undefined) {
+        if (draft.reason !== null) {
           out.reason = draft.reason;
         }
         return out;

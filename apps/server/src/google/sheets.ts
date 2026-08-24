@@ -101,7 +101,7 @@ export async function appendRows(
  */
 export function isSpreadsheetMissing(error: unknown): boolean {
   const raw = error as { code?: number; status?: number; response?: { status?: number } };
-  const status = raw?.code ?? raw?.status ?? raw?.response?.status;
+  const status = raw.code ?? raw.status ?? raw.response?.status;
   if (status === 404) {
     return true;
   }

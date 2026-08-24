@@ -39,7 +39,7 @@ interface FakeYouTube extends YouTubeClient {
   /** Ids YouTube will not answer for — deleted, private, gone. */
   unavailable: Set<string>;
   /** Thrown by every call, when set. */
-  throws: unknown;
+  throws: Error | null;
   calls: { uploads: number; statistics: number };
 }
 
@@ -78,7 +78,7 @@ function fakeYouTube(): FakeYouTube {
 }
 
 /** Google's own refusal when the consent screen never granted the scope. */
-const SCOPE_MISSING = {
+const SCOPE_MISSING = Object.assign(new Error("Request had insufficient authentication scopes."), {
   response: {
     data: {
       error: {
@@ -88,14 +88,14 @@ const SCOPE_MISSING = {
       },
     },
   },
-};
+});
 
 /** The spreadsheet as the Module sees it: what was appended, and where. */
 interface FakeSheets extends SheetsClient {
   tabs: string[];
   appended: { tab: string; rows: (string | number)[][] }[];
   /** Thrown by every write, when set. */
-  throws: unknown;
+  throws: Error | null;
 }
 
 function fakeSheets(): FakeSheets {
@@ -118,7 +118,7 @@ function fakeSheets(): FakeSheets {
       }
       client.appended.push({ tab, rows });
     },
-    isMissing: (error) => (error as { code?: number })?.code === 404,
+    isMissing: (error) => (error as { code?: number }).code === 404,
   };
   return client;
 }
@@ -206,7 +206,7 @@ describe("the daily Run", () => {
       title: "Found42",
       failedIds: [],
     });
-    expect(result.channels[0]!.videos).toEqual([
+    expect(result.channels[0].videos).toEqual([
       { id: "v1", title: "Video v1", viewCount: 100 },
       { id: "v2", title: "Video v2", viewCount: 40 },
     ]);
@@ -220,7 +220,7 @@ describe("the daily Run", () => {
     youtube.views = Object.fromEntries(youtube.uploads.map((id, index) => [id, index]));
 
     const id = await measure();
-    expect(resultOf(id).channels[0]!.videos).toHaveLength(120);
+    expect(resultOf(id).channels[0].videos).toHaveLength(120);
     /* Fifty per call: a "most recent fifty" window would silently stop tracking
        the part of a channel a trend is most interesting for. */
     expect(youtube.calls.statistics).toBe(3);
@@ -234,7 +234,7 @@ describe("the daily Run", () => {
     /* Three deleted videos must not look like a broken automation. */
     expect(detail.status).toBe("done");
     expect(detail.summary).toBe("1 channel, 1 video, 1 unavailable");
-    expect(resultOf(id).channels[0]!.failedIds).toEqual(["v2"]);
+    expect(resultOf(id).channels[0].failedIds).toEqual(["v2"]);
     expect(detail.events.find((event) => event.type === "videos_unavailable")?.detail).toEqual({
       channelId: "UC_found42",
       ids: ["v2"],
@@ -464,7 +464,7 @@ describe("the trend, derived from the Runs", () => {
 
     const trend = index().read();
     expect(trend.lastDay).toBe("2026-08-08");
-    const channel = trend.channels[0]!;
+    const channel = trend.channels[0];
     expect(channel.totals).toEqual([
       { day: "2026-08-01", views: 140 },
       { day: "2026-08-08", views: 210 },
@@ -485,7 +485,7 @@ describe("the trend, derived from the Runs", () => {
     // 2026-08-02: nothing ran. No API returns a past day's view count.
     recordDay("2026-08-03", { v1: 130 });
 
-    const points = index().read().channels[0]!.totals;
+    const points = index().read().channels[0].totals;
     expect(points.map((point) => point.day)).toEqual(["2026-08-01", "2026-08-03"]);
     expect(points.some((point) => point.day === "2026-08-02")).toBe(false);
   });
@@ -509,21 +509,21 @@ describe("the trend, derived from the Runs", () => {
     expect(
       index()
         .read()
-        .channels[0]!.totals.map((point) => point.day),
+        .channels[0].totals.map((point) => point.day),
     ).toEqual(["2026-08-01", "2026-08-20"]);
   });
 
   it("caches the scan of the Runs, and nothing else", () => {
     recordDay("2026-08-01", { v1: 100 });
     const trend = index();
-    expect(trend.read().channels[0]!.latest).toBe(100);
+    expect(trend.read().channels[0].latest).toBe(100);
 
     recordDay("2026-08-02", { v1: 120 });
     /* Nothing told it, so it answers what it already knew — which is the whole
        point of one invalidator. */
-    expect(trend.read().channels[0]!.latest).toBe(100);
+    expect(trend.read().channels[0].latest).toBe(100);
     trend.invalidate();
-    expect(trend.read().channels[0]!.latest).toBe(120);
+    expect(trend.read().channels[0].latest).toBe(120);
   });
 
   it("reads everything that is not a measured day fresh, so one invalidator is enough", () => {

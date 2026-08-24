@@ -582,7 +582,7 @@ export function SettingsPage() {
               <>
                 <p className="connection-summary" role="status">
                   <span className="ok">Connected</span>
-                  {googleStatus?.email ? ` as ${googleStatus.email}` : ""}
+                  {googleStatus.email ? ` as ${googleStatus.email}` : ""}
                 </p>
                 <details className="disclosure">
                   <summary>Manage Google connection</summary>
@@ -712,7 +712,7 @@ export function SettingsPage() {
               <button
                 type="button"
                 className="action-button"
-                onClick={syncDrive}
+                onClick={() => void syncDrive()}
                 aria-disabled={syncing}
               >
                 Sync now

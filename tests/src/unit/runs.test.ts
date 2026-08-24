@@ -195,7 +195,7 @@ describe("durability", () => {
 
     const listed = runs.list().runs;
     expect(listed).toHaveLength(1);
-    expect(listed[0]!.id).toBe(run.id);
+    expect(listed[0].id).toBe(run.id);
   });
 
   it("tolerates a torn final line in the event log", () => {
