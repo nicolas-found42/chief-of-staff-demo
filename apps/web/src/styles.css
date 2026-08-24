@@ -1138,3 +1138,58 @@ code {
   font-size: 1.15rem;
   margin: 0.25rem 0 1rem;
 }
+
+/* Sixth primitive (ADR-0015, amended): the single-series line chart. Ordinary
+   CSS over an inline SVG, like the other five — no charting dependency. */
+.line-chart {
+  display: block;
+  width: 100%;
+  max-width: 30rem;
+  height: 3.5rem;
+  overflow: visible;
+}
+
+.line-chart-line {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  /* Scaled non-uniformly by preserveAspectRatio, so the stroke must not be. */
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.line-chart-latest {
+  fill: var(--accent);
+}
+
+.chart-empty {
+  margin: 0.25rem 0;
+}
+
+/* The expanding row (the fifth primitive) as a table row: the toggle is the
+   cell, and the chart arrives in a row of its own beneath it. */
+.row-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.row-toggle::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  color: var(--muted);
+}
+
+.row-toggle[aria-expanded="true"]::before {
+  content: "▾";
+}
+
+.video-chart-cell {
+  padding-top: 0;
+}

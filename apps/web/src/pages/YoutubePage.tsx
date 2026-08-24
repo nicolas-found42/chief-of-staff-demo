@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import type { ChannelTrend, YoutubeTrends } from "@chief-of-staff-demo/shared";
+import { LineChart } from "../components/LineChart";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -18,14 +19,12 @@ function change(value: number | null): string {
 }
 
 /**
- * YouTube Trends: one sub-tab per channel, a line about the channel, and a table
- * of its videos. The numbers come from the Runs on disk through the derived
- * trend, never from a live read — so a weekly re-consent does not blank a page
- * of data already measured.
- *
- * Phase 1 ships the table without the chart. A chart drawn over three days of
- * data teaches nobody anything, and the latest counts with the change over seven
- * and thirty days answer "is this growing" with no new primitive at all.
+
+ * YouTube Trends: one sub-tab per channel, the channel's line over time, and a
+ * table of its videos whose rows expand to show that video's own line. The
+ * numbers come from the Runs on disk through the derived trend, never from a
+ * live read — so a weekly re-consent does not blank a page of data already
+ * measured.
  */
 export function YoutubePage() {
   useTitle("YouTube Trends");
@@ -38,6 +37,10 @@ export function YoutubePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  /* Which video rows are open. One line per video would be a smear on a
+     two-hundred-video channel, so a video's own line is revealed by expanding
+     its row — the fifth primitive, which costs nothing new. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -230,6 +233,8 @@ export function YoutubePage() {
                 </div>
               ) : (
                 <>
+                  {/* The channel as a whole: is this growing? */}
+                  <LineChart points={current.totals} label={`${current.title} total views`} />
                   <p className="channel-total">
                     {views(current.latest)} views
                     <span className="muted">
@@ -263,23 +268,53 @@ export function YoutubePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {current.videos.map((video) => (
-                          <tr key={video.id}>
-                            <td>
-                              <a
-                                href={`https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {video.title}
-                                <span className="visually-hidden"> (opens in a new tab)</span>
-                              </a>
-                            </td>
-                            <td>{views(video.latest)}</td>
-                            <td className="muted">{change(video.change7)}</td>
-                            <td className="muted">{change(video.change30)}</td>
-                          </tr>
-                        ))}
+                        {current.videos.map((video) => {
+                          const open = expanded.has(video.id);
+                          return (
+                            <React.Fragment key={video.id}>
+                              <tr>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="row-toggle"
+                                    aria-expanded={open}
+                                    onClick={() =>
+                                      setExpanded((current) => {
+                                        const next = new Set(current);
+                                        if (!next.delete(video.id)) {
+                                          next.add(video.id);
+                                        }
+                                        return next;
+                                      })
+                                    }
+                                  >
+                                    {video.title}
+                                  </button>
+                                </td>
+                                <td>{views(video.latest)}</td>
+                                <td className="muted">{change(video.change7)}</td>
+                                <td className="muted">{change(video.change30)}</td>
+                              </tr>
+                              {open && (
+                                <tr>
+                                  <td className="video-chart-cell" colSpan={4}>
+                                    <LineChart points={video.points} label={video.title} />
+                                    <p className="muted">
+                                      <a
+                                        href={`https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        Watch on YouTube
+                                        <span className="visually-hidden"> (opens in a new tab)</span>
+                                      </a>
+                                    </p>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
