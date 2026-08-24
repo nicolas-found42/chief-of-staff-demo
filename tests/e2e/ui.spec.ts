@@ -290,6 +290,17 @@ test("YouTube Trends holds a tab, and refuses a bad paste while you are looking 
   // empty day.
   await page.getByRole("button", { name: "Record today" }).click();
   await expect(page.locator(".banner-error")).toContainText("Add a channel first");
+
+  // The spreadsheet is created from the Module's own settings surface, not by
+  // the first Run: a link buried in a Run record scrolls out of Home's feed.
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "YouTube Trends" })).toBeVisible();
+  const create = page.getByRole("button", { name: "Create the spreadsheet" });
+  await expect(create).toBeVisible();
+  await create.click();
+  await expect(page.locator("section:has(#section-youtube) .field-error")).toContainText(
+    /not set up/i
+  );
 });
 
 test("Home enumerates what needs doing, and the rail itemises it", async ({ page }) => {

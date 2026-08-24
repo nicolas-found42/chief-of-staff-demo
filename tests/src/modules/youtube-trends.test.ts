@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { YoutubeChannel, YoutubeRunResult } from "@chief-of-staff-demo/shared";
 import { Runner } from "../../../apps/server/src/engine/runner";
 import type { YouTubeClient } from "../../../apps/server/src/modules/youtube/client";
+import type {
+  SheetsAccess,
+  SheetsClient,
+} from "../../../apps/server/src/modules/youtube/spreadsheet";
 import { YoutubeIntake, dueNow } from "../../../apps/server/src/modules/youtube/intake";
 import {
   YOUTUBE_INTAKE,
@@ -81,10 +85,45 @@ const SCOPE_MISSING = {
   },
 };
 
+/** The spreadsheet as the Module sees it: what was appended, and where. */
+interface FakeSheets extends SheetsClient {
+  tabs: string[];
+  appended: { tab: string; rows: (string | number)[][] }[];
+  /** Thrown by every write, when set. */
+  throws: unknown;
+}
+
+function fakeSheets(): FakeSheets {
+  const client: FakeSheets = {
+    tabs: [],
+    appended: [],
+    throws: null,
+    createSpreadsheet: async () => ({ id: "sheet-1", url: "https://docs.google.com/x" }),
+    ensureTab: async (_id, title) => {
+      if (client.throws) {
+        throw client.throws;
+      }
+      if (!client.tabs.includes(title)) {
+        client.tabs.push(title);
+      }
+    },
+    appendRows: async (_id, tab, rows) => {
+      if (client.throws) {
+        throw client.throws;
+      }
+      client.appended.push({ tab, rows });
+    },
+    isMissing: (error) => (error as { code?: number })?.code === 404,
+  };
+  return client;
+}
+
 let workspaceDir: string;
 let runs: Runs;
 let youtube: FakeYouTube;
 let access: ClientAccess;
+let sheets: FakeSheets;
+let sheetsAccess: () => SheetsAccess;
 let channels: YoutubeChannel[];
 let invalidated: number;
 
@@ -93,6 +132,7 @@ function runner(): Runner<{ kind: "measure" }> {
     runs,
     module: youtubeTrendsModule({
       getClient: () => access,
+      getSheets: sheetsAccess,
       /* The real classifier's verdict: a test cannot decide `expired` into
          existence, and a 403 about scopes says nothing about the token. */
       observe: () => null,
@@ -122,9 +162,22 @@ beforeEach(() => {
   runs = openRuns(workspaceDir);
   youtube = fakeYouTube();
   access = { ok: true, client: youtube };
+  sheets = fakeSheets();
+  /* No spreadsheet by default: the operator has not asked for one, and the
+     trend is complete without it. */
+  sheetsAccess = () => ({ ok: true, client: sheets, spreadsheet: null });
   channels = [CHANNEL];
   invalidated = 0;
 });
+
+/** With a spreadsheet configured, as it is once the operator creates one. */
+function withSpreadsheet(): void {
+  sheetsAccess = () => ({
+    ok: true,
+    client: sheets,
+    spreadsheet: { id: "sheet-1", url: "https://docs.google.com/x" },
+  });
+}
 
 describe("the daily Run", () => {
   it("records every video on the channel, and says so in one line", async () => {
@@ -224,6 +277,71 @@ describe("the daily Run", () => {
   });
 });
 
+describe("the spreadsheet", () => {
+  it("has no publish Stage at all until there is a spreadsheet to write to", async () => {
+    const id = await measure();
+    expect(runs.detail(id)!.events.map((event) => event.type)).not.toContain("rows_appended");
+    expect(sheets.appended).toEqual([]);
+    expect(runs.detail(id)!.status).toBe("done");
+  });
+
+  it("appends the day as rows, one tab per channel, long rather than wide", async () => {
+    withSpreadsheet();
+    const id = await measure("2026-08-23");
+
+    expect(sheets.tabs).toEqual(["Found42"]);
+    expect(sheets.appended).toEqual([
+      {
+        tab: "Found42",
+        rows: [
+          ["2026-08-23", "v1", "Video v1", 100],
+          ["2026-08-23", "v2", "Video v2", 40],
+        ],
+      },
+    ]);
+    expect(runs.detail(id)!.events.find((event) => event.type === "rows_appended")?.detail).toEqual(
+      { channelId: "UC_found42", tab: "Found42", rows: 2 }
+    );
+  });
+
+  it("retries a publish failure from the counts already fetched, reading YouTube no second time", async () => {
+    withSpreadsheet();
+    sheets.throws = new Error("Sheets is having a moment");
+    const id = await measure();
+
+    const failed = runs.detail(id)!;
+    expect(failed.status).toBe("failed");
+    expect(failed.failedStage).toBe("publish");
+    expect(failed.failureHint).toContain("will not be fetched again");
+    const statisticsCalls = youtube.calls.statistics;
+
+    sheets.throws = null;
+    const engine = runner();
+    await engine.retryRun(id);
+    await engine.idle();
+
+    expect(runs.detail(id)!.status).toBe("done");
+    /* The whole point: a retry must not mix two snapshots, taken hours apart,
+       into one day of the trend. */
+    expect(youtube.calls.statistics).toBe(statisticsCalls);
+    expect(sheets.appended).toHaveLength(1);
+  });
+
+  it("fails the Run when the spreadsheet has been deleted, rather than creating a second", async () => {
+    withSpreadsheet();
+    sheets.throws = Object.assign(new Error("Requested entity was not found."), { code: 404 });
+
+    const id = await measure();
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("failed");
+    expect(detail.failedStage).toBe("publish");
+    /* Two spreadsheets and no idea which is live is a worse failure than a red
+       Run, so this points at the action that makes one and stops. */
+    expect(detail.failureHint).toContain("Create a new one in Settings");
+    expect(sheets.appended).toEqual([]);
+  });
+});
+
 describe("one Run per calendar day", () => {
   const at = (iso: string) => new Date(iso);
 
@@ -301,6 +419,7 @@ describe("the trend, derived from the Runs", () => {
       runs,
       getChannels: () => channels,
       status: () => ({ lastRunDay: null, todayRecorded: false }),
+      spreadsheet: () => null,
     });
   }
 

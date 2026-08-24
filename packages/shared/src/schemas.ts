@@ -64,10 +64,13 @@ export const ConfigSchema = z.strictObject({
       "youtube-trends": z
         .strictObject({
           channels: z.array(YoutubeChannelSchema).default([]),
+          /** The spreadsheet the Module created for itself; "" until it has. */
+          spreadsheetId: z.string().default(""),
+          spreadsheetUrl: z.string().default(""),
         })
-        .default({ channels: [] }),
+        .default({ channels: [], spreadsheetId: "", spreadsheetUrl: "" }),
     })
-    .default({ "youtube-trends": { channels: [] } }),
+    .default({ "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" } }),
 });
 export type AppConfig = z.infer<typeof ConfigSchema>;
 export type ModuleConfigs = AppConfig["modules"];

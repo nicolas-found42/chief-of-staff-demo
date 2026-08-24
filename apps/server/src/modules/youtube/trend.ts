@@ -15,6 +15,8 @@ export interface TrendIndexDeps {
   getChannels: () => YoutubeChannel[];
   /** What the Intake remembers, so the tab can say whether today is in. */
   status: () => { lastRunDay: string | null; todayRecorded: boolean };
+  /** The spreadsheet the Module made for itself, or null before it made one. */
+  spreadsheet: () => { id: string; url: string } | null;
 }
 
 /**
@@ -54,6 +56,7 @@ export class TrendIndex {
       channels: this.deps.getChannels().map((channel) => trendFor(channel, days)),
       lastDay: days.length > 0 ? days[days.length - 1]!.day : status.lastRunDay,
       todayRecorded: status.todayRecorded,
+      spreadsheet: this.deps.spreadsheet(),
     };
   }
 

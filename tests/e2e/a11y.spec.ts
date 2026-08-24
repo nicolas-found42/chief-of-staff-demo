@@ -476,8 +476,11 @@ test("interactive controls meet a 44px target size", async ({ page }) => {
   await page.goto(path);
   const undersized = await page.evaluate(() => {
     const out: string[] = [];
+    /* `.text-link` opts a link out: WCAG 2.5.8 exempts a target inside a
+       sentence, whose height is set by the line-height of the text around it.
+       Boxed links (.step-link and friends) are not exempt and are not marked. */
     const selector =
-      'a[href], button:not(.linklike), select, input:not([type="checkbox"]), .checkbox-label';
+      'a[href]:not(.text-link), button:not(.linklike), select, input:not([type="checkbox"]), .checkbox-label';
     for (const el of document.querySelectorAll(selector)) {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) {

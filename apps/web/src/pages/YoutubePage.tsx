@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { ChannelTrend, YoutubeTrends } from "@chief-of-staff-demo/shared";
 import { LineChart } from "../components/LineChart";
 import { api, errorMessage } from "../client";
@@ -137,6 +138,25 @@ export function YoutubePage() {
         Every channel below is checked once a day, from six in the morning, and every video on it is
         counted — including the back catalogue.
         {trends?.lastDay ? ` Last recorded ${trends.lastDay}.` : " Nothing recorded yet."}
+      </p>
+
+      {/* The same numbers, outside the app: chartable, shareable, and proof
+          against this app disappearing. */}
+      <p className="muted">
+        {trends?.spreadsheet ? (
+          <a href={trends.spreadsheet.url} className="text-link" target="_blank" rel="noreferrer">
+            Open the spreadsheet
+            <span className="visually-hidden"> (opens in a new tab)</span>
+          </a>
+        ) : (
+          <>
+            No spreadsheet yet — create one in{" "}
+            <Link to="/settings" className="text-link">
+              Settings → YouTube Trends
+            </Link>{" "}
+            to keep these numbers outside the app as well.
+          </>
+        )}
       </p>
 
       {error && (

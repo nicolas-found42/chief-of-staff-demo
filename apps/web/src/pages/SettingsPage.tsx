@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
+import { SpreadsheetCard } from "../modules/youtube/SpreadsheetCard";
 import { pickDriveFolder } from "../googlePicker";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
@@ -711,6 +712,13 @@ export function SettingsPage() {
           </button>
         </div>
       </form>
+
+      {/* A Module's own settings surface, outside the form: it has its own
+          action and nothing to save alongside the Shell's fields. */}
+      <section className="settings-section" aria-labelledby="section-youtube">
+        <h2 id="section-youtube">YouTube Trends</h2>
+        <SpreadsheetCard />
+      </section>
     </div>
   );
 }

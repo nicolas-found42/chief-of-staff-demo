@@ -25,14 +25,24 @@ holds no tab.
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
 
 **Headless Module**:
-A live Module with nothing for a person to look at. It holds no tab, and its only presence is
-its Runs in Home's recent activity. Headless is not a stage of building: a headless Module is
-finished.
+A live Module with nothing for a person to look at. It holds no tab, and its Runs are read in
+the Runs list. Headless is not a stage of building: a headless Module is finished.
+_Status_: no instance. YouTube Trends was the worked example and turned out to hold a tab
+(ADR-0025); the term stays because the category is real and the next Module may land in it.
 _Avoid_: Background Module, planned Module (a planned Module is unbuilt; a headless one works)
 
 **Hot Take**:
 A planned Module that turns a link or transcript into a draft LinkedIn post. Its Runs, Intakes, and Output Adapters are not yet implemented.
 _Status_: planned
+
+**YouTube Trends**:
+A live Module that watches whole YouTube channels and records a daily trend. Once a day it
+enumerates every video on each channel it tracks, reads its view count, and records the day;
+its tab shows one sub-tab per channel, and its spreadsheet keeps the same numbers outside the
+app. Named for what it produces, as Hot Take is — the Relay original it replaces keeps its own
+name, Weekly YouTube View Count.
+_Status_: live
+_Avoid_: YouTube Module, view counts (the Module is the trend, not the reading)
 
 **Run**:
 One scope of work owned by one Module, with a status and an append-only event log. Its result is
@@ -46,7 +56,8 @@ _Avoid_: Step, phase, status
 
 **Cross-Run index**:
 A read-only view over every Run's result — for example, every extracted Task with the Run it came
-from. Derived on read; nothing writes to it.
+from, or a channel's view counts over time. Derived on read; nothing writes to it. It may be
+cached, provided one thing invalidates it and that thing is the only writer.
 _Avoid_: Table, store, database
 
 **Intake**:
@@ -63,8 +74,9 @@ _Avoid_: Sink, writer, integration
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
 expiry being a weekly event rather than a fault. It is the only route to a Google surface
-(Tasks, Gmail, Drive) and the only holder of client credentials and refresh tokens; a Module's
-Intake or Output Adapter reaches Google with credentials from the connection or not at all.
+(Tasks, Gmail, Drive, YouTube, Sheets) and the only holder of client credentials and refresh
+tokens; a Module's Intake or Output Adapter reaches Google with credentials from the connection
+or not at all.
 _Avoid_: Google auth, login, OAuth (the protocol is not the connection)
 
 **Workspace**:

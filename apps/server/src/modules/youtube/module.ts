@@ -15,6 +15,7 @@ import { googleFailureHint, googleSurfaceHint } from "../../google/connection.js
 import type { RunOutcome } from "../../runs.js";
 import { STATISTICS_CHUNK, chunk, type YouTubeClient } from "./client.js";
 import { localDay } from "./day.js";
+import { SPREADSHEET_HEADER, tabNameFor, type SheetsAccess } from "./spreadsheet.js";
 
 export const YOUTUBE_MODULE_ID = "youtube-trends";
 export const YOUTUBE_MODULE_VERSION = 1;
@@ -30,6 +31,8 @@ export type ClientAccess =
 export interface YoutubeDeps {
   /** Never touches the network: the same cheap check the outputs surface makes. */
   getClient: () => ClientAccess;
+  /** The Sheets Output Adapter, and the spreadsheet it writes into. */
+  getSheets: () => SheetsAccess;
   /** What an error a YouTube call threw proves about the connection. */
   observe: (error: unknown) => GoogleConnectionState | null;
   /** The channels as stored — resolved when they were added, never re-resolved. */
@@ -38,8 +41,12 @@ export interface YoutubeDeps {
   invalidateTrend: () => void;
 }
 
-/** A fresh Run measures today; a retry re-runs from the Stage that failed. */
-export type YoutubeInput = { kind: "measure" };
+/**
+ * A fresh Run measures the day and publishes it; a retry after a `publish`
+ * failure resumes from the counts already fetched, so a retry never mixes two
+ * snapshots into one day.
+ */
+export type YoutubeInput = { kind: "measure" } | { kind: "publish" };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -71,20 +78,29 @@ export function youtubeSummary(channels: number, videos: number, failed: number)
  * "nothing was measured" must never look like "nothing changed".
  */
 export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput> {
-  /** Whatever a YouTube call threw, worded for the person who has to fix it. */
-  const failed = (ctx: RunContext, error: unknown): StageFailure => {
+  /**
+   * What an error proves about the connection, if anything. A rejected grant is
+   * not one bad call: every remaining one would fail the same way, and
+   * reconnecting rather than retrying is the fix.
+   */
+  const connectionFailure = (ctx: RunContext, error: unknown): StageFailure | null => {
     const state = deps.observe(error);
-    if (state) {
-      ctx.event("google_unavailable", { state, error: errorMessage(error) });
-      return new StageFailure(`google_${state}`, googleFailureHint(state), {
-        connectionCaused: true,
-      });
+    if (!state) {
+      return null;
     }
+    ctx.event("google_unavailable", { state, error: errorMessage(error) });
+    return new StageFailure(`google_${state}`, googleFailureHint(state), {
+      connectionCaused: true,
+    });
+  };
+
+  /** Whatever a YouTube call threw, worded for the person who has to fix it. */
+  const failed = (ctx: RunContext, error: unknown): StageFailure =>
+    connectionFailure(ctx, error) ??
     /* A missing scope, a disabled API or an exhausted quota: Google's own 403
        names the cause precisely, and the setup check's classifier already turns
        it into the console step that fixes it. */
-    return new StageFailure(errorMessage(error), googleSurfaceHint("youtube", error));
-  };
+    new StageFailure(errorMessage(error), googleSurfaceHint("youtube", error));
 
   const client = (ctx: RunContext): YouTubeClient => {
     const access = deps.getClient();
@@ -97,24 +113,109 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
     return access.client;
   };
 
+  /** The day's counts as `fetch` wrote them, for a `publish` that is resuming. */
+  const readCounts = (ctx: RunContext): YoutubeRunResult | null => {
+    const raw = ctx.readFile("result.json");
+    if (raw === null) {
+      return null;
+    }
+    try {
+      return JSON.parse(raw) as YoutubeRunResult;
+    } catch {
+      return null;
+    }
+  };
+
+  const outcomeFor = (counted: YoutubeChannelCounts[]): RunOutcome => {
+    const videos = counted.reduce((total, entry) => total + entry.videos.length, 0);
+    const unavailable = counted.reduce((total, entry) => total + entry.failedIds.length, 0);
+    return {
+      status: "done",
+      summary: youtubeSummary(counted.length, videos, unavailable),
+      detail: { channels: counted.length, videos, unavailable },
+    };
+  };
+
+  /**
+   * The day's rows into the operator's own spreadsheet — chartable, shareable,
+   * and proof against this app disappearing. Appended, never overwritten, so the
+   * spreadsheet holds the same history the app does.
+   *
+   * A Run with no spreadsheet has no `publish` Stage at all: the operator has
+   * not asked for one, and the trend is complete without it. A spreadsheet that
+   * once existed and has gone is the opposite case, and fails the Run.
+   */
+  const publish = async (ctx: RunContext, measured: YoutubeRunResult): Promise<void> => {
+    const access = deps.getSheets();
+    if (access.ok && access.spreadsheet === null) {
+      return;
+    }
+    await ctx.stage("publish", async () => {
+      if (!access.ok) {
+        ctx.event("google_unavailable", { state: access.state });
+        throw new StageFailure(`google_${access.state}`, googleFailureHint(access.state), {
+          connectionCaused: true,
+        });
+      }
+      const sheet = access.spreadsheet!;
+      for (const channel of measured.channels) {
+        const tab = tabNameFor({ title: channel.title, id: channel.channelId });
+        const rows = channel.videos.map((video) => [
+          measured.day,
+          video.id,
+          video.title,
+          video.viewCount,
+        ]);
+        try {
+          await access.client.ensureTab(sheet.id, tab, SPREADSHEET_HEADER);
+          await access.client.appendRows(sheet.id, tab, rows);
+        } catch (error) {
+          if (access.client.isMissing(error)) {
+            /* Never a second spreadsheet: two of them and no way to tell which
+               is live is a worse failure than a red Run. */
+            throw new StageFailure(
+              "spreadsheet not found",
+              "The spreadsheet is gone. Create a new one in Settings → YouTube Trends, then retry."
+            );
+          }
+          /* Anything else keeps this Stage's own hint: whatever went wrong with
+             Sheets, the counts are already recorded — which is the fact the
+             person needs before deciding whether to retry. */
+          throw connectionFailure(ctx, error) ?? error;
+        }
+        ctx.event("rows_appended", { channelId: channel.channelId, tab, rows: rows.length });
+      }
+    });
+  };
+
   return {
     id: YOUTUBE_MODULE_ID,
     version: YOUTUBE_MODULE_VERSION,
 
     failureHint(stage: string): string {
-      return stage === "enumerate"
-        ? "The channel's videos could not be listed. Retry, or check the events below."
-        : "The view counts could not be read. Retry, or check the events below.";
+      if (stage === "enumerate") {
+        return "The channel's videos could not be listed. Retry, or check the events below.";
+      }
+      if (stage === "publish") {
+        return "The view counts were read but could not be written to the spreadsheet. Retry — the numbers are already recorded and will not be fetched again.";
+      }
+      return "The view counts could not be read. Retry, or check the events below.";
     },
 
     planRetry(meta): RetryPlan<YoutubeInput> | null {
       if (meta.status !== "failed" || !meta.failedStage) {
         return null;
       }
-      /* Retried in place and always from the top: the video ids `enumerate`
-         found live in memory, not on disk, and re-finding them costs one quota
-         unit per fifty videos. Nothing anywhere has to define "the latest Run
-         for a day", because there is only ever one. */
+      if (meta.failedStage === "publish") {
+        /* Resume against the counts already fetched. Re-reading them would be
+           cheap in quota and wrong in substance: it would mix two snapshots,
+           taken hours apart, into one day of the trend. */
+        return { fromStage: "publish", input: { kind: "publish" } };
+      }
+      /* Otherwise from the top: the video ids `enumerate` found live in memory,
+         not on disk, and re-finding them costs one quota unit per fifty videos.
+         Nothing anywhere has to define "the latest Run for a day", because
+         there is only ever one. */
       return {
         fromStage: "enumerate",
         input: { kind: "measure" },
@@ -123,7 +224,16 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
       };
     },
 
-    async run(ctx): Promise<RunOutcome> {
+    async run(ctx, input): Promise<RunOutcome> {
+      if (input.kind === "publish") {
+        const measured = readCounts(ctx);
+        /* Unreachable while `fetch` writes the counts before `publish` can
+           fail; a Run without them has nothing to resume and measures again. */
+        if (measured) {
+          await publish(ctx, measured);
+          return outcomeFor(measured.channels);
+        }
+      }
       const channels = deps.getChannels();
       /* The day this Run measures, stamped on the Run by the Intake that
          created it. One decision recorded once: deriving it here from the clock
@@ -151,7 +261,7 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
         return found;
       });
 
-      return await ctx.stage("fetch", async () => {
+      const measured = await ctx.stage("fetch", async () => {
         const counted: YoutubeChannelCounts[] = [];
         for (const channel of channels) {
           const ids = enumerated.get(channel.id) ?? [];
@@ -197,15 +307,11 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
         };
         ctx.writeFile("result.json", JSON.stringify(result, null, 2) + "\n");
         deps.invalidateTrend();
-
-        const videos = counted.reduce((total, entry) => total + entry.videos.length, 0);
-        const unavailable = counted.reduce((total, entry) => total + entry.failedIds.length, 0);
-        return {
-          status: "done",
-          summary: youtubeSummary(counted.length, videos, unavailable),
-          detail: { day, channels: counted.length, videos, unavailable },
-        };
+        return result;
       });
+
+      await publish(ctx, measured);
+      return outcomeFor(measured.channels);
     },
   };
 }

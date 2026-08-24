@@ -10,8 +10,22 @@ import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
 import { googleFailureHint, type GoogleConnection } from "../../google/connection.js";
 import type { Runs } from "../../runs.js";
+import {
+  appendRows,
+  createSpreadsheet,
+  ensureTab,
+  isSpreadsheetMissing,
+} from "../../google/sheets.js";
+import type { GoogleAuth } from "../../google/oauth.js";
 import { ChannelUrlError, parseChannelUrl } from "./channels.js";
 import { youtubeClient, type YouTubeClient } from "./client.js";
+import {
+  SPREADSHEET_HEADER,
+  SPREADSHEET_TITLE,
+  tabNameFor,
+  type SheetsAccess,
+  type SheetsClient,
+} from "./spreadsheet.js";
 import { DayAlreadyRecordedError, NothingToMeasureError, YoutubeIntake } from "./intake.js";
 import {
   YOUTUBE_INTAKE,
@@ -33,7 +47,9 @@ export interface YoutubeHostDeps {
   /** Test seam: the clock the daily due-check reads. */
   now?: () => Date;
   /** Test seam: the YouTube client, as the Drive Intake takes a Drive client. */
-  getClient?: (auth: Parameters<typeof youtubeClient>[0]) => YouTubeClient;
+  getClient?: (auth: GoogleAuth) => YouTubeClient;
+  /** Test seam: the Sheets Output Adapter. */
+  getSheetsClient?: (auth: GoogleAuth) => SheetsClient;
 }
 
 /**
@@ -53,6 +69,7 @@ export class YoutubeHost implements HostedModule {
       runs: deps.runs,
       module: youtubeTrendsModule({
         getClient: () => this.client(),
+        getSheets: () => this.sheets(),
         observe: (error) => deps.google.observe(error),
         getChannels: () => this.channels(),
         invalidateTrend: () => this.trend.invalidate(),
@@ -77,6 +94,7 @@ export class YoutubeHost implements HostedModule {
       runs: deps.runs,
       getChannels: () => this.channels(),
       status: () => this.intake.status(),
+      spreadsheet: () => this.spreadsheet(),
     });
   }
 
@@ -146,6 +164,7 @@ export class YoutubeHost implements HostedModule {
       /* Stored resolved, once: no Run ever re-resolves or guesses. */
       const channel: YoutubeChannel = { ...resolved, addedAt: new Date().toISOString() };
       this.setChannels([...channels, channel]);
+      await this.addTabFor(channel);
       reply.code(201);
       return { channel };
     });
@@ -163,6 +182,52 @@ export class YoutubeHost implements HostedModule {
       return { removed: id };
     });
 
+    /**
+     * The Module creates its own spreadsheet, names it, and hands back the
+     * link. Offered as an action rather than performed silently by the first
+     * Run: setup belongs in the settings flow, and a link buried in a Run
+     * record scrolls out of Home's feed. It refuses to make a second one — two
+     * spreadsheets and no way to tell which is live is the failure this avoids.
+     */
+    app.post("/api/youtube/spreadsheet", async (_request, reply) => {
+      const existing = this.spreadsheet();
+      if (existing) {
+        reply.code(409).send({
+          error: "A spreadsheet already exists for this Module.",
+          spreadsheet: existing,
+        });
+        return;
+      }
+      const access = this.sheets();
+      if (!access.ok) {
+        reply.code(400).send({ error: googleFailureHint(access.state) });
+        return;
+      }
+      let created;
+      try {
+        created = await access.client.createSpreadsheet(SPREADSHEET_TITLE);
+        /* One tab per channel, created with the spreadsheet for the channels
+           already being tracked. */
+        for (const channel of this.channels()) {
+          await access.client.ensureTab(created.id, tabNameFor(channel), SPREADSHEET_HEADER);
+        }
+      } catch (error) {
+        this.deps.google.observe(error);
+        reply.code(502).send({
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      this.deps.configStore.setModuleConfig(YOUTUBE_MODULE_ID, {
+        ...this.config(),
+        spreadsheetId: created.id,
+        spreadsheetUrl: created.url,
+      });
+      this.trend.invalidate();
+      reply.code(201);
+      return { spreadsheet: created };
+    });
+
     app.post("/api/youtube/run", async (_request, reply) => {
       try {
         return { runId: await this.intake.runNow() };
@@ -178,6 +243,30 @@ export class YoutubeHost implements HostedModule {
         throw error;
       }
     });
+  }
+
+  /**
+   * One tab per channel, created when the channel is added. `publish` ensures
+   * it too — a channel added before the spreadsheet existed has none — so a
+   * failure here costs the operator nothing but the tab appearing a day later,
+   * and must not stop the channel being tracked.
+   */
+  private async addTabFor(channel: YoutubeChannel): Promise<void> {
+    const access = this.sheets();
+    if (!access.ok || access.spreadsheet === null) {
+      return;
+    }
+    try {
+      await access.client.ensureTab(
+        access.spreadsheet.id,
+        tabNameFor(channel),
+        SPREADSHEET_HEADER
+      );
+    } catch (error) {
+      this.deps.log(
+        `Could not add a spreadsheet tab for ${channel.title}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private channels(): YoutubeChannel[] {
@@ -198,6 +287,35 @@ export class YoutubeHost implements HostedModule {
    * (ADR-0018). Never touches the network — the state is decided from what is
    * stored, exactly as the outputs surface decides it.
    */
+  /** The link the Module keeps somewhere permanent, or null before it made one. */
+  private spreadsheet(): { id: string; url: string } | null {
+    const { spreadsheetId, spreadsheetUrl } = this.config();
+    return spreadsheetId ? { id: spreadsheetId, url: spreadsheetUrl } : null;
+  }
+
+  private sheetsClient(auth: GoogleAuth): SheetsClient {
+    return (
+      this.deps.getSheetsClient?.(auth) ?? {
+        createSpreadsheet: (title) => createSpreadsheet(auth, title),
+        ensureTab: (id, title, header) => ensureTab(auth, id, title, header),
+        appendRows: (id, tab, rows) => appendRows(auth, id, tab, rows),
+        isMissing: isSpreadsheetMissing,
+      }
+    );
+  }
+
+  private sheets(): SheetsAccess {
+    const access = this.deps.google.auth();
+    if (!access.ok) {
+      return { ok: false, state: access.state };
+    }
+    return {
+      ok: true,
+      client: this.sheetsClient(access.auth),
+      spreadsheet: this.spreadsheet(),
+    };
+  }
+
   private client(): ClientAccess {
     const access = this.deps.google.auth();
     if (!access.ok) {

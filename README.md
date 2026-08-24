@@ -1,6 +1,6 @@
 # chief-of-staff-demo — Found42 — Chief of Staff
 
-A local web app that hosts Found42's meeting and content workflows as tabs in one app. The first Module, **Transcript → Tasks**, turns meeting transcripts into Google Tasks and Gmail drafts. It reproduces the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine) workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you run on your own machine.
+A local web app that hosts Found42's meeting and content workflows as tabs in one app. Two Modules are live: **Transcript → Tasks**, which turns meeting transcripts into Google Tasks and Gmail drafts, and **YouTube Trends**, which counts every video on a channel once a day and keeps the trend. It reproduces the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine) workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you run on your own machine.
 
 > **Note:** This repo was `transcript-found42`. The GitHub slug now 301s to `chief-of-staff-demo`. Package scope is now `@chief-of-staff-demo/*`.
 
@@ -28,7 +28,7 @@ extracted with the LLM provider of your choice, and created as Google Tasks in a
 
 This app is becoming one Module — a tab — in the Found42 Chief of Staff app, which replaces Relay.
 The vocabulary is in [CONTEXT.md](CONTEXT.md); the decisions behind the shape are in
-[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007) and the single route to any Google surface (ADR-0008). The Shell now has a front door of its own — Home at `/`, stating where the workspace stands, with the connection banner rendered once for every page (ADR-0010, ADR-0011); the Transcript Module moved to `/transcript`. The Module registry itself is still ahead.
+[docs/adr/](docs/adr/). The first slice has landed: generic Run statuses and workflow-named Stages recorded through one interface (ADR-0003, ADR-0004), and the Google connection is now a Shell concern with its own setup flow (ADR-0007) and the single route to any Google surface (ADR-0008). The Shell now has a front door of its own — Home at `/`, stating where the workspace stands, with the connection banner rendered once for every page (ADR-0010, ADR-0011); the Transcript Module moved to `/transcript`. A second Module, **YouTube Trends**, now proves the boundary: ADR-0003's `run(ctx, input)` contract is finally built (ADR-0023), the API holds a collection of Modules rather than one of each thing, and there is a cross-Module Runs list at `/runs` that each Module's page is a filtered view of. The Module registry as code (ADR-0002) is still deliberately unbuilt.
 
 ## Getting started
 
@@ -80,7 +80,7 @@ one ([ADR-0007](docs/adr/0007-per-user-google-oauth-client.md)). Budget about te
 
 Two things worth knowing before you start:
 
-- **All three APIs must be enabled** — Tasks, Gmail, and Drive — or the first run fails with a 403 rather than
+- **Every API must be enabled** — Tasks, Gmail, Drive and YouTube Data — or the first run fails with a 403 rather than
   at connect time. **Check my setup** names which one, rather than leaving it to a run.
 - **A Workspace account should choose Internal, and then none of this applies.** Internal needs
   no test users, shows no unverified-app screen, and does not expire. Google greys it out for
@@ -111,6 +111,14 @@ no local model has been run through it yet, and a 30B model needs more memory th
 has.
 
 ### Intake
+
+**YouTube channels** — paste a channel address into the **YouTube Trends** tab (a
+`youtube.com/@name` or `youtube.com/channel/UC…` address; a `/c/…` one is refused, because
+Google publishes no way to turn a custom URL into a channel id). It is checked against YouTube
+as you paste it. From then on, once a day from six in the morning, every video on the channel is
+counted and the day is recorded — one Run per calendar day, and a day the machine was off stays a
+gap, because no API returns a past day's view count. **Settings → YouTube Trends** creates a
+spreadsheet that receives the same numbers, one tab per channel, appended a row at a time.
 
 **Drive folder** — pick one Google Drive folder in Settings (**Drive transcripts** card). Every `.txt`, `.md`, `.json`, `.jsonc`, `.pdf`, `.docx`, or native Google Doc added there is polled (default 2 min) and becomes a Run. Ingested Drive `fileId`s are remembered in `workspace/state.json` (`drive.ingestedIds`, capped at 1000); files stay in Drive (`drive` scope, allows future Module writes). Unsupported types are ignored. `Sync now` runs one poll immediately.
 ## Working on the code
@@ -157,14 +165,14 @@ All state lives on disk, no database:
 ```
 workspace/
   config.json             settings (secrets redacted via the API, never echoed back)
-  state.json              { drive: { ingestedIds, lastPollAt } }
+  state.json              { drive: { ingestedIds, lastPollAt }, youtubeTrends: { lastRunDay } }
   mock-result.json        mock-provider fixture
   runs/<runId>/
-    meta.json             status machine: pending → extracting → creating-outputs → done | skipped | failed
-    transcript.txt        normalized text fed to the LLM
-    context.json          { meetingDate, attendees }
-    result.json           ExtractionResult — persisted even for skips and output failures
+    meta.json             the Run record: Module, status, Stage, and the one line the Module wrote
+    result.json           the Module's own result — the Shell stores it and never reads inside it
     events.jsonl          one JSON line per event (extract_attempt, google_task_created, …)
+    …                     the Module's other files (the transcript Module keeps transcript.txt
+                          and context.json here)
 ```
 3. Drop any non-transcript PDF → run `skipped` with a `skipReason`, nothing created.
 
@@ -201,4 +209,4 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 - The server binds to `127.0.0.1` only.
 - Mail can never be sent: `google/gmail.ts` contains no delivery call, and
   `tests/src/unit/draft-mime.test.ts` fails the build if one appears.
-- The Settings page is the only place the app loads remote code (Google's Picker script at `https://apis.google.com/js/api.js`, fetched on click only). The per-pick access token is short-lived, never persisted, never logged, and carries all three scopes.
+- The Settings page is the only place the app loads remote code (Google's Picker script at `https://apis.google.com/js/api.js`, fetched on click only). The per-pick access token is short-lived, never persisted, never logged, and carries every scope the connection holds.

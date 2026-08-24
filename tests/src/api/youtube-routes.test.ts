@@ -8,6 +8,7 @@ import { ConfigStore } from "../../../apps/server/src/config";
 import type { GoogleConnection } from "../../../apps/server/src/google/connection";
 import type { YouTubeClient } from "../../../apps/server/src/modules/youtube/client";
 import { YoutubeHost } from "../../../apps/server/src/modules/youtube/host";
+import type { SheetsClient } from "../../../apps/server/src/modules/youtube/spreadsheet";
 import { openRuns } from "../../../apps/server/src/runs";
 
 /**
@@ -30,6 +31,22 @@ const client: YouTubeClient = {
   videoStatistics: async () => ({ videos: [], failedIds: [] }),
 };
 
+let created: number;
+let tabs: string[];
+const sheets: SheetsClient = {
+  createSpreadsheet: async () => {
+    created += 1;
+    return { id: `sheet-${created}`, url: `https://docs.google.com/sheet-${created}` };
+  },
+  ensureTab: async (_id, title) => {
+    if (!tabs.includes(title)) {
+      tabs.push(title);
+    }
+  },
+  appendRows: async () => {},
+  isMissing: () => false,
+};
+
 function channels(): YoutubeChannel[] {
   return configStore.get().modules["youtube-trends"].channels;
 }
@@ -40,6 +57,8 @@ beforeEach(async () => {
   configStore = new ConfigStore(join(workspaceDir, "config.json"));
   configStore.load();
   connected = true;
+  created = 0;
+  tabs = [];
   resolves = {
     "@found42": {
       id: "UC_found42",
@@ -61,6 +80,7 @@ beforeEach(async () => {
     log: () => {},
     now: () => new Date("2026-08-23T09:00:00"),
     getClient: () => client,
+    getSheetsClient: () => sheets,
   });
 
   app = fastify({ logger: false });
@@ -177,6 +197,48 @@ describe("POST /api/youtube/run", () => {
     const second = await app.inject({ method: "POST", url: "/api/youtube/run" });
     expect(second.statusCode).toBe(409);
     expect((second.json() as { error: string }).error).toContain("2026-08-23 is already recorded");
+  });
+});
+
+describe("POST /api/youtube/spreadsheet", () => {
+  it("creates one, hands back the link, and gives every channel its tab", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+
+    const response = await app.inject({ method: "POST", url: "/api/youtube/spreadsheet" });
+    expect(response.statusCode).toBe(201);
+    expect((response.json() as { spreadsheet: { url: string } }).spreadsheet.url).toContain(
+      "docs.google.com"
+    );
+    expect(tabs).toEqual(["Found42"]);
+
+    /* Kept somewhere permanent, so it is findable weeks later without hunting
+       through Run history. */
+    const trends = (await app.inject({ method: "GET", url: "/api/youtube/trends" })).json() as {
+      spreadsheet: { id: string } | null;
+    };
+    expect(trends.spreadsheet?.id).toBe("sheet-1");
+  });
+
+  it("refuses to make a second one", async () => {
+    await app.inject({ method: "POST", url: "/api/youtube/spreadsheet" });
+    const again = await app.inject({ method: "POST", url: "/api/youtube/spreadsheet" });
+    /* Two spreadsheets and no idea which is live is the failure this avoids. */
+    expect(again.statusCode).toBe(409);
+    expect(created).toBe(1);
+  });
+
+  it("gives a channel added later its own tab", async () => {
+    await app.inject({ method: "POST", url: "/api/youtube/spreadsheet" });
+    await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    expect(tabs).toEqual(["Found42"]);
   });
 });
 

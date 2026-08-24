@@ -97,6 +97,12 @@ export interface YoutubeTrends {
   lastDay: string | null;
   /** Whether today is already recorded, so the tab can say why a manual run refuses. */
   todayRecorded: boolean;
+  /**
+   * The spreadsheet this Module made for itself, or null before it has made
+   * one. Kept here rather than in a Run record so the link survives the Run
+   * scrolling out of Home's feed.
+   */
+  spreadsheet: { id: string; url: string } | null;
 }
 
 /** POST /api/youtube/channels body. */

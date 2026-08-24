@@ -1,5 +1,11 @@
 # YouTube view counts ride the Google connection, not an API key
 
+**Note (2026-08-24):** this decision is unchanged by YouTube Trends as built. The Module also
+writes the day's counts into a spreadsheet it creates for itself, and those writes need no further
+scope: the full Drive scope this app already holds after ADR-0021 authorizes creating a spreadsheet
+and writing values. So `youtube.readonly` remains the only consent change this Module forces, and
+ADR-0021's scope reversal pays for itself here.
+
 The Weekly YouTube View Count Module reads `videos.list` through the Google connection with a
 fourth scope, `https://www.googleapis.com/auth/youtube.readonly`. It does not use an API key,
 even though an API key would be sufficient: `videos.list` has no Authorization section and no

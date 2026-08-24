@@ -116,6 +116,10 @@ export const api = {
       method: "DELETE",
     }),
   runYoutubeNow: () => request<{ runId: string }>("/api/youtube/run", { method: "POST" }),
+  createYoutubeSpreadsheet: () =>
+    request<{ spreadsheet: { id: string; url: string } }>("/api/youtube/spreadsheet", {
+      method: "POST",
+    }),
 };
 
 export function errorMessage(error: unknown): string {
