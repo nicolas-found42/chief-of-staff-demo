@@ -10,7 +10,9 @@ import tseslint from "typescript-eslint";
  * the Run engine, a condition that can never be false — need types to see.
  *
  * The boundary rules near the bottom are the point of having a linter at all:
- * they turn ADR prose into errors. See ADR-0026.
+ * they turn ADR prose into errors — ADR-0011 and ADR-0018 on who may hold
+ * Google credentials, and the web app's API-only reach into the server. Each
+ * rule cites its own ADR in the message it reports.
  */
 export default tseslint.config(
   {
