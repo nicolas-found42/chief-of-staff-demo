@@ -5,6 +5,8 @@ import type {
   RunDetail,
   RunPage,
   SetupCheck,
+  YoutubeChannel,
+  YoutubeTrends,
 } from "@chief-of-staff-demo/shared";
 
 export class ApiError extends Error {
@@ -101,6 +103,19 @@ export const api = {
   driveSync: () => request<{ created: number }>("/api/drive/sync", { method: "POST" }),
   /* Remembered intake facts only (D14): the endpoint makes zero Google calls. */
   driveIntakeStatus: () => request<DriveIntakeStatus>("/api/intake/drive"),
+  /* Derived from the Runs on disk, so it answers while Google is expired. */
+  youtubeTrends: () => request<YoutubeTrends>("/api/youtube/trends"),
+  addYoutubeChannel: (url: string) =>
+    request<{ channel: YoutubeChannel }>("/api/youtube/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
+  removeYoutubeChannel: (id: string) =>
+    request<{ removed: string }>(`/api/youtube/channels/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  runYoutubeNow: () => request<{ runId: string }>("/api/youtube/run", { method: "POST" }),
 };
 
 export function errorMessage(error: unknown): string {

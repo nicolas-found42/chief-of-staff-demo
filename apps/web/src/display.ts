@@ -26,6 +26,8 @@ const STAGE_LABELS: Record<string, string> = {
   convert: "Read transcript",
   extract: "Find follow-ups",
   outputs: "Create tasks & drafts",
+  enumerate: "List the videos",
+  fetch: "Read view counts",
 };
 
 export function statusLabel(status: string): string {

@@ -54,15 +54,17 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
   await expect(page.getByRole("link", { name: "Enable the Tasks API", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Create a project", exact: true })).toHaveCount(0);
 
-  // The scopes step carries its three exact values, each offered to copy so
-  // none has to be typed out.
+  // The scopes step carries its exact values, each offered to copy so none has
+  // to be typed out. YouTube joined them under ADR-0016, which is the one real
+  // cost of that decision: every existing connection consents once more.
   await toggle(4).click();
   await expect(page.locator(".setup-copy > code")).toHaveText([
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/youtube.readonly",
   ]);
-  await expect(page.locator(".copy-button")).toHaveCount(3);
+  await expect(page.locator(".copy-button")).toHaveCount(4);
   await expect(
     page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true })
   ).toBeVisible();
@@ -205,7 +207,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const cards = page.locator(".module-card");
-  await expect(cards).toHaveCount(2);
+  await expect(cards).toHaveCount(3);
   await expect(cards.filter({ hasText: "Hot Take" })).toContainText("Planned");
  
   // Into the Module, and back out by the wordmark.
@@ -255,6 +257,39 @@ test("the Shell lists every Module's runs, and a Module's page lists only its ow
   await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
   await expect(page.locator(".receipt")).toBeVisible();
   await expect(page.locator(".run-meta")).toContainText("Transcript → Tasks");
+});
+
+test("YouTube Trends holds a tab, and refuses a bad paste while you are looking at it", async ({
+  page,
+}) => {
+  await page.goto("/youtube");
+  await expect(page.getByRole("heading", { level: 1, name: "YouTube Trends" })).toBeVisible();
+  // Before there is any data the tab says what will happen, rather than showing
+  // an empty screen with no explanation.
+  const empty = page.locator(".card", { hasText: "No channels yet" });
+  await expect(empty).toContainText("checked against YouTube straight away");
+
+  // The legacy custom-URL form is refused with the forms that work — Google
+  // publishes no route from it to a channel id, and the search fallback would
+  // make the Module fragile in a way invisible until it tracked the wrong
+  // channel.
+  await page.getByLabel("Channel URL").fill("https://www.youtube.com/c/Found42");
+  await page.getByRole("button", { name: "Add channel" }).click();
+  const refusal = page.locator(".field-error");
+  await expect(refusal).toContainText("youtube.com/@name");
+  await expect(refusal).toContainText("youtube.com/channel/UC");
+
+  // A well-formed address gets as far as Google, which this workspace has not
+  // connected — and the refusal is the connection's own wording, the same
+  // sentence a Run shows for the same state.
+  await page.getByLabel("Channel URL").fill("https://www.youtube.com/@found42");
+  await page.getByRole("button", { name: "Add channel" }).click();
+  await expect(refusal).toContainText(/not set up/i);
+
+  // And a manual run with nothing to measure says so rather than recording an
+  // empty day.
+  await page.getByRole("button", { name: "Record today" }).click();
+  await expect(page.locator(".banner-error")).toContainText("Add a channel first");
 });
 
 test("Home enumerates what needs doing, and the rail itemises it", async ({ page }) => {

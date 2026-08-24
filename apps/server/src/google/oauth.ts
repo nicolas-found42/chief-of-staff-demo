@@ -6,6 +6,12 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/drive",
+  /* ADR-0016: YouTube rides this connection rather than an API key. Read-only
+     is the narrowest of the four scopes that answer `videos.list`, and reading
+     is all the Module does. Every existing connection must consent once more,
+     because a refresh token does not acquire scopes granted after it was
+     issued. */
+  "https://www.googleapis.com/auth/youtube.readonly",
 ];
 
 /** The exact redirect URI that must be registered in Google Cloud Console. */

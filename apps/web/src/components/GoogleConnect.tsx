@@ -54,6 +54,7 @@ const CONSOLE = {
   gmailApi: "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
   driveApi: "https://console.cloud.google.com/apis/library/drive.googleapis.com",
   pickerApi: "https://console.cloud.google.com/apis/library/picker.googleapis.com",
+  youtubeApi: "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
   authPlatform: "https://console.cloud.google.com/auth/branding",
   audience: "https://console.cloud.google.com/auth/audience",
   dataAccess: "https://console.cloud.google.com/auth/scopes",
@@ -292,6 +293,9 @@ export function GoogleConnect(props: GoogleConnectProps) {
             <a className="step-link" href={CONSOLE.pickerApi} target="_blank" rel="noreferrer">
               Enable the Picker API
             </a>
+            <a className="step-link" href={CONSOLE.youtubeApi} target="_blank" rel="noreferrer">
+              Enable the YouTube Data API
+            </a>
           </p>
           <p className="muted field-hint">
             Do this before the scopes step below — that list only offers scopes for APIs that are
@@ -299,7 +303,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
             ignore it, the client comes from a later step.
           </p>
           <p className="muted field-hint">
-            The Picker API runs in the browser and has no server-side check — <strong>Check my setup</strong> verifies the other three and cannot verify the Picker.
+            The Picker API runs in the browser and has no server-side check — <strong>Check my setup</strong> verifies the other four and cannot verify the Picker.
           </p>
         </>
       ),
@@ -351,7 +355,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
           },
         ]),
     {
-      title: "Add all three scopes under Data Access.",
+      title: "Add every scope under Data Access.",
       body: (
         <>
           <p className="setup-links">
@@ -360,7 +364,7 @@ export function GoogleConnect(props: GoogleConnectProps) {
             </a>
           </p>
           <p className="muted field-hint">
-            Choose <strong>Add or remove scopes</strong>, paste all three of these into{" "}
+            Choose <strong>Add or remove scopes</strong>, paste each of these into{" "}
             <strong>Manually add scopes</strong>, and press <strong>Add to table</strong> — the list
             runs to dozens of rows across several pages and none of these is on the first one.
           </p>

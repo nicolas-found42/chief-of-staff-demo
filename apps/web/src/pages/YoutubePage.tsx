@@ -1,0 +1,294 @@
+import { useCallback, useEffect, useState } from "react";
+import type { ChannelTrend, YoutubeTrends } from "@chief-of-staff-demo/shared";
+import { api, errorMessage } from "../client";
+import { usePageFocus } from "../usePageFocus";
+import { useTitle } from "../useTitle";
+
+/** View counts are the point of the page, so they are grouped, not raw. */
+function views(count: number): string {
+  return count.toLocaleString();
+}
+
+/** A change since a measured day, or an em dash when nothing that old exists. */
+function change(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
+  return value >= 0 ? `+${views(value)}` : `−${views(Math.abs(value))}`;
+}
+
+/**
+ * YouTube Trends: one sub-tab per channel, a line about the channel, and a table
+ * of its videos. The numbers come from the Runs on disk through the derived
+ * trend, never from a live read — so a weekly re-consent does not blank a page
+ * of data already measured.
+ *
+ * Phase 1 ships the table without the chart. A chart drawn over three days of
+ * data teaches nobody anything, and the latest counts with the change over seven
+ * and thirty days answer "is this growing" with no new primitive at all.
+ */
+export function YoutubePage() {
+  useTitle("YouTube Trends");
+  const headingRef = usePageFocus<HTMLHeadingElement>();
+  const [trends, setTrends] = useState<YoutubeTrends | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [url, setUrl] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setTrends(await api.youtubeTrends());
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const channels = trends?.channels ?? [];
+  /* The chosen sub-tab, or the first channel — kept honest when a channel is
+     removed while its sub-tab is open. */
+  const current: ChannelTrend | null =
+    channels.find((channel) => channel.channelId === selected) ?? channels[0] ?? null;
+
+  const add = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (adding) {
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    setNotice(null);
+    try {
+      /* Checked against YouTube while the operator is still looking at it: a
+         typo is their problem now rather than a silent gap in tomorrow's data. */
+      const { channel } = await api.addYoutubeChannel(url.trim());
+      setUrl("");
+      setNotice(`Now tracking ${channel.title}.`);
+      setSelected(channel.id);
+      await refresh();
+    } catch (err) {
+      setAddError(errorMessage(err));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const remove = async (channel: ChannelTrend) => {
+    setNotice(null);
+    setError(null);
+    try {
+      await api.removeYoutubeChannel(channel.channelId);
+      /* Stops future work and erases nothing: past Runs are immutable, and
+         re-adding resumes with a visible gap. */
+      setNotice(`Stopped tracking ${channel.title}. Its history is kept.`);
+      setSelected(null);
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const recordToday = async () => {
+    if (running) {
+      return;
+    }
+    setRunning(true);
+    setNotice(null);
+    setError(null);
+    try {
+      await api.runYoutubeNow();
+      setNotice("Recording today's view counts — the run will appear below.");
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h1 ref={headingRef} tabIndex={-1}>
+          YouTube Trends
+        </h1>
+        <button
+          type="button"
+          className="action-button"
+          onClick={() => void recordToday()}
+          aria-disabled={running}
+        >
+          {running ? "Recording…" : "Record today"}
+        </button>
+      </div>
+
+      <p className="muted">
+        Every channel below is checked once a day, from six in the morning, and every video on it is
+        counted — including the back catalogue.
+        {trends?.lastDay ? ` Last recorded ${trends.lastDay}.` : " Nothing recorded yet."}
+      </p>
+
+      {error && (
+        <div className="banner banner-error" role="alert">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="banner banner-ok" role="status">
+          {notice}
+        </div>
+      )}
+
+      <form className="card" onSubmit={(event) => void add(event)}>
+        <div className="field">
+          <label htmlFor="channel-url">Channel URL</label>
+          <div className="field-row">
+            <input
+              id="channel-url"
+              aria-describedby={addError ? "channel-url-error channel-url-hint" : "channel-url-hint"}
+              aria-invalid={addError ? true : undefined}
+              value={url}
+              placeholder="https://www.youtube.com/@name"
+              onChange={(event) => setUrl(event.target.value)}
+            />
+            <button type="submit" className="action-button" aria-disabled={adding}>
+              {adding ? "Checking…" : "Add channel"}
+            </button>
+          </div>
+          {addError && (
+            <p id="channel-url-error" className="field-error" role="alert">
+              {addError}
+            </p>
+          )}
+          <p id="channel-url-hint" className="muted field-hint">
+            A handle address (youtube.com/@name) or an id address
+            (youtube.com/channel/UC…). It is checked against YouTube now, not tomorrow.
+          </p>
+        </div>
+      </form>
+
+      {trends === null ? (
+        <p className="muted" role="status">
+          Loading…
+        </p>
+      ) : channels.length === 0 ? (
+        <div className="card">
+          <p className="muted">
+            No channels yet. Paste a channel address above and it will be checked against YouTube
+            straight away; from then on its view counts are recorded once a day.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Sub-navigation inside the Module's page: the Shell's tab bar gains
+              exactly one entry (ADR-0006), and it does not model a Module's
+              internal sections. */}
+          <nav className="sub-tabs" aria-label="Channels">
+            {channels.map((channel) => (
+              <button
+                key={channel.channelId}
+                type="button"
+                className="sub-tab"
+                aria-current={channel.channelId === current?.channelId ? "true" : undefined}
+                onClick={() => setSelected(channel.channelId)}
+              >
+                {channel.title}
+              </button>
+            ))}
+          </nav>
+
+          {current && (
+            <section aria-labelledby="channel-heading">
+              <div className="page-header">
+                <h2 id="channel-heading">
+                  {current.title}{" "}
+                  {current.handle && <span className="muted">{current.handle}</span>}
+                </h2>
+                <button
+                  type="button"
+                  className="action-button"
+                  onClick={() => void remove(current)}
+                >
+                  Stop tracking
+                </button>
+              </div>
+
+              {current.totals.length === 0 ? (
+                <div className="card">
+                  <p className="muted">
+                    Nothing measured yet. The first run happens after six in the morning — or press{" "}
+                    <strong>Record today</strong> to do it now.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="channel-total">
+                    {views(current.latest)} views
+                    <span className="muted">
+                      {" "}
+                      · {change(current.change7)} in 7 days · {change(current.change30)} in 30 days
+                      {" · "}
+                      {current.totals.length === 1
+                        ? "1 day measured"
+                        : `${current.totals.length} days measured`}
+                    </span>
+                  </p>
+                  {current.failedIds.length > 0 && (
+                    <p className="muted">
+                      {current.failedIds.length === 1
+                        ? "1 video could not be read on the last run"
+                        : `${current.failedIds.length} videos could not be read on the last run`}{" "}
+                      — deleted or private videos stay counted up to the day they went.
+                    </p>
+                  )}
+                  <div className="table-scroll" tabIndex={0}>
+                    <table className="runs-table" data-testid="youtube-videos">
+                      <caption className="visually-hidden">
+                        Videos on {current.title}, most viewed first
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Video</th>
+                          <th scope="col">Views</th>
+                          <th scope="col">7 days</th>
+                          <th scope="col">30 days</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {current.videos.map((video) => (
+                          <tr key={video.id}>
+                            <td>
+                              <a
+                                href={`https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {video.title}
+                                <span className="visually-hidden"> (opens in a new tab)</span>
+                              </a>
+                            </td>
+                            <td>{views(video.latest)}</td>
+                            <td className="muted">{change(video.change7)}</td>
+                            <td className="muted">{change(video.change30)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

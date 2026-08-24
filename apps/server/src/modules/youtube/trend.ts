@@ -1,0 +1,161 @@
+import type {
+  ChannelTrend,
+  TrendPoint,
+  VideoTrend,
+  YoutubeChannel,
+  YoutubeRunResult,
+  YoutubeTrends,
+} from "@chief-of-staff-demo/shared";
+import type { Runs } from "../../runs.js";
+import { dayBefore } from "./day.js";
+import { YOUTUBE_MODULE_ID } from "./module.js";
+
+export interface TrendIndexDeps {
+  runs: Runs;
+  getChannels: () => YoutubeChannel[];
+  /** What the Intake remembers, so the tab can say whether today is in. */
+  status: () => { lastRunDay: string | null; todayRecorded: boolean };
+}
+
+/**
+ * The trend, as a Cross-Run index (ADR-0005): the Runs are the record, and this
+ * is derived by scanning their results. Nothing writes to it and there is no
+ * second copy of the numbers — a Module-scoped rollup file is permitted by that
+ * ADR but is exactly the ambiguity it ruled out, and it becomes the right answer
+ * against a measurement rather than against a guess.
+ *
+ * Derived on read and cached in memory. The day's counts are the only thing that
+ * can change it, so the Stage that writes them is the only invalidator, and one
+ * invalidator cannot drift.
+ */
+export class TrendIndex {
+  private cached: YoutubeTrends | null = null;
+
+  constructor(private readonly deps: TrendIndexDeps) {}
+
+  read(): YoutubeTrends {
+    if (this.cached === null) {
+      this.cached = this.build();
+    }
+    return this.cached;
+  }
+
+  invalidate(): void {
+    this.cached = null;
+  }
+
+  private build(): YoutubeTrends {
+    /* Oldest first, so every series reads left to right. Days with no Run are
+       simply absent: no API returns a past day's view count, so a gap is the
+       truth about what was measured and is never filled in. */
+    const days = this.results().sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+    const status = this.deps.status();
+    return {
+      channels: this.deps.getChannels().map((channel) => trendFor(channel, days)),
+      lastDay: days.length > 0 ? days[days.length - 1]!.day : status.lastRunDay,
+      todayRecorded: status.todayRecorded,
+    };
+  }
+
+  /** Every Run's own counts file. The Shell stores them; this Module reads them. */
+  private results(): YoutubeRunResult[] {
+    const out: YoutubeRunResult[] = [];
+    for (const summary of this.deps.runs.list({ module: YOUTUBE_MODULE_ID }).runs) {
+      const handle = this.deps.runs.open(summary.id);
+      if (!handle) {
+        continue;
+      }
+      const raw = handle.readArtifact("result.json");
+      if (raw === null) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw) as YoutubeRunResult;
+        if (typeof parsed.day === "string" && Array.isArray(parsed.channels)) {
+          out.push(parsed);
+        }
+      } catch {
+        // A torn result is one missing day, not a broken page.
+      }
+    }
+    return out;
+  }
+}
+
+/** Views as of the newest measurement at least `days` old, or null if there is none. */
+function earlier(points: TrendPoint[], days: number): number | null {
+  const latest = points[points.length - 1];
+  if (!latest) {
+    return null;
+  }
+  const cutoff = dayBefore(latest.day, days);
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    if (points[index]!.day <= cutoff) {
+      return points[index]!.views;
+    }
+  }
+  return null;
+}
+
+function change(points: TrendPoint[], days: number): number | null {
+  const latest = points[points.length - 1];
+  const then = earlier(points, days);
+  return latest && then !== null ? latest.views - then : null;
+}
+
+function trendFor(channel: YoutubeChannel, days: YoutubeRunResult[]): ChannelTrend {
+  const totals: TrendPoint[] = [];
+  const seriesByVideo = new Map<string, TrendPoint[]>();
+  const titles = new Map<string, string>();
+  /* The videos the newest Run saw. One that has left the channel keeps its
+     history on disk and in the spreadsheet, and drops out of the table: the
+     Module grows no view for things that no longer exist. */
+  let latestVideoIds: string[] = [];
+  let failedIds: string[] = [];
+
+  for (const result of days) {
+    const counts = result.channels.find((entry) => entry.channelId === channel.id);
+    if (!counts) {
+      continue;
+    }
+    totals.push({
+      day: result.day,
+      views: counts.videos.reduce((sum, video) => sum + video.viewCount, 0),
+    });
+    for (const video of counts.videos) {
+      titles.set(video.id, video.title);
+      const series = seriesByVideo.get(video.id) ?? [];
+      series.push({ day: result.day, views: video.viewCount });
+      seriesByVideo.set(video.id, series);
+    }
+    latestVideoIds = counts.videos.map((video) => video.id);
+    failedIds = counts.failedIds;
+  }
+
+  const videos: VideoTrend[] = latestVideoIds.map((id) => {
+    const points = seriesByVideo.get(id) ?? [];
+    return {
+      id,
+      title: titles.get(id) ?? id,
+      latest: points[points.length - 1]?.views ?? 0,
+      change7: change(points, 7),
+      change30: change(points, 30),
+      points,
+    };
+  });
+  /* The videos carrying the channel first, which is the question the table
+     exists to answer. */
+  videos.sort((a, b) => b.latest - a.latest);
+
+  return {
+    channelId: channel.id,
+    handle: channel.handle,
+    title: channel.title,
+    totals,
+    latest: totals[totals.length - 1]?.views ?? 0,
+    change7: change(totals, 7),
+    change30: change(totals, 30),
+    videos,
+    failedIds,
+  };
+}

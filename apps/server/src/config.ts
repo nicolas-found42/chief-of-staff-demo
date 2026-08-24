@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import {
   type AppConfig,
   type ConfigUpdate,
+  type ModuleConfigs,
   type RedactedConfig,
   type SecretHint,
   ConfigSchema,
@@ -43,6 +44,7 @@ export function defaultConfig(): AppConfig {
     },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
+    modules: { "youtube-trends": { channels: [] } },
   };
 }
 
@@ -93,6 +95,18 @@ export class ConfigStore {
     this.config = normalize(ConfigSchema.parse(merged));
     this.persist();
     return this.config;
+  }
+
+  /**
+   * A Module's own configuration, replaced wholesale. Namespaced under the
+   * Module, and deliberately not reachable through `PUT /api/config`: a
+   * Module's configuration changes through that Module's own endpoints, where
+   * the Module can check it first.
+   */
+  setModuleConfig<K extends keyof ModuleConfigs>(key: K, next: ModuleConfigs[K]): void {
+    const current = this.get();
+    this.config = { ...current, modules: { ...current.modules, [key]: next } };
+    this.persist();
   }
 
   /**

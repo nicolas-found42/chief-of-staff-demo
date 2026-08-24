@@ -389,7 +389,12 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
   // A planned Module holds no tab (ADR-0014): the bar lists live Modules only.
-  for (const name of ["Found42 — Chief of Staff", "Transcript → Tasks", "Settings"]) {
+  for (const name of [
+    "Found42 — Chief of Staff",
+    "Transcript → Tasks",
+    "YouTube Trends",
+    "Settings",
+  ]) {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name, exact: true })).toBeFocused();
   }
@@ -467,7 +472,8 @@ test("the current page is marked by more than a background colour", async ({ pag
 });
 
 test("interactive controls meet a 44px target size", async ({ page }) => {
-  await page.goto("/settings");
+  for (const path of ["/settings", "/youtube"]) {
+  await page.goto(path);
   const undersized = await page.evaluate(() => {
     const out: string[] = [];
     const selector =
@@ -483,7 +489,8 @@ test("interactive controls meet a 44px target size", async ({ page }) => {
     }
     return out;
   });
-  expect(undersized).toEqual([]);
+  expect(undersized, `undersized controls on ${path}`).toEqual([]);
+  }
 });
 
 test("body text scales with the reader's font-size preference", async ({ page }) => {

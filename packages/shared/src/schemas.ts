@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { YoutubeChannelSchema } from "./youtube.js";
 
 
 // ---------------------------------------------------------------------------
@@ -50,8 +51,26 @@ export const ConfigSchema = z.strictObject({
   ollama: z.strictObject({
     baseUrl: z.string().default(DEFAULT_OLLAMA_BASE_URL),
   }),
+  /**
+   * Each Module's own configuration, namespaced under the Module rather than
+   * joining the Shell's settings as more top-level keys — so a Module's
+   * configuration is visibly its own, and Module three has a pattern to copy
+   * rather than to invent. The Shell stores these and reads inside them
+   * nowhere; a Module writes its own through `setModuleConfig`, never through
+   * `PUT /api/config`.
+   */
+  modules: z
+    .strictObject({
+      "youtube-trends": z
+        .strictObject({
+          channels: z.array(YoutubeChannelSchema).default([]),
+        })
+        .default({ channels: [] }),
+    })
+    .default({ "youtube-trends": { channels: [] } }),
 });
 export type AppConfig = z.infer<typeof ConfigSchema>;
+export type ModuleConfigs = AppConfig["modules"];
 
 /** PUT /api/config body. Absent secret fields keep their stored values. */
 export const ConfigUpdateSchema = z.strictObject({

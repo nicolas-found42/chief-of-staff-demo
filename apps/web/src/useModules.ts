@@ -46,6 +46,17 @@ const MODULES: ModuleDescriptor[] = [
     resultView: TranscriptResultView,
   },
   {
+    id: "youtube-trends",
+    path: "/youtube",
+    label: "YouTube Trends",
+    description: "Every video on a channel, counted once a day, into a trend.",
+    status: "live",
+    /* No result view in phase 1, which is a real answer rather than a gap: the
+       Shell's half of the Run detail page and the links to the Run's own files
+       are what a first phase needs, and a formatted dump of the result would be
+       a permanent "we will design this later". */
+  },
+  {
     id: "hot-take",
     path: "/hot-take",
     label: "Hot Take",

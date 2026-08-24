@@ -1,0 +1,201 @@
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import fastify, { type FastifyInstance } from "fastify";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { YoutubeChannel, YoutubeTrends } from "@chief-of-staff-demo/shared";
+import { ConfigStore } from "../../../apps/server/src/config";
+import type { GoogleConnection } from "../../../apps/server/src/google/connection";
+import type { YouTubeClient } from "../../../apps/server/src/modules/youtube/client";
+import { YoutubeHost } from "../../../apps/server/src/modules/youtube/host";
+import { openRuns } from "../../../apps/server/src/runs";
+
+/**
+ * The Module's own endpoints, over a real server instance and a temporary
+ * Workspace. What matters here is the promise the tab makes: a pasted URL is
+ * checked against YouTube while the operator is still looking at it.
+ */
+const PORT = 4317;
+
+let app: FastifyInstance;
+let workspaceDir: string;
+let configStore: ConfigStore;
+let host: YoutubeHost;
+let connected: boolean;
+let resolves: Record<string, { id: string; handle: string; title: string; uploadsPlaylistId: string }>;
+
+const client: YouTubeClient = {
+  resolveChannel: async (ref) => resolves[ref.value] ?? null,
+  listUploads: async () => [],
+  videoStatistics: async () => ({ videos: [], failedIds: [] }),
+};
+
+function channels(): YoutubeChannel[] {
+  return configStore.get().modules["youtube-trends"].channels;
+}
+
+beforeEach(async () => {
+  workspaceDir = mkdtempSync(join(tmpdir(), "cos-youtube-api-"));
+  mkdirSync(join(workspaceDir, "runs"), { recursive: true });
+  configStore = new ConfigStore(join(workspaceDir, "config.json"));
+  configStore.load();
+  connected = true;
+  resolves = {
+    "@found42": {
+      id: "UC_found42",
+      handle: "@found42",
+      title: "Found42",
+      uploadsPlaylistId: "UU_found42",
+    },
+  };
+
+  host = new YoutubeHost({
+    runs: openRuns(workspaceDir),
+    configStore,
+    workspaceDir,
+    port: PORT,
+    google: {
+      auth: () => (connected ? { ok: true, auth: {} } : { ok: false, state: "disconnected" }),
+      observe: () => null,
+    } as unknown as GoogleConnection,
+    log: () => {},
+    now: () => new Date("2026-08-23T09:00:00"),
+    getClient: () => client,
+  });
+
+  app = fastify({ logger: false });
+  host.routes(app);
+  await app.ready();
+});
+
+afterEach(async () => {
+  await app.close();
+});
+
+describe("POST /api/youtube/channels", () => {
+  it("resolves the channel now and stores it resolved, so no Run ever guesses", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    expect(response.statusCode).toBe(201);
+    expect((response.json() as { channel: YoutubeChannel }).channel).toMatchObject({
+      id: "UC_found42",
+      title: "Found42",
+    });
+    /* Its real name shown back, so the operator can confirm they added the
+       channel they meant. */
+    expect(channels()).toHaveLength(1);
+    expect(channels()[0]).toMatchObject({ uploadsPlaylistId: "UU_found42" });
+  });
+
+  it("refuses a /c/ URL with the forms that work, without calling Google", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/c/Found42" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect((response.json() as { error: string }).error).toContain("youtube.com/@name");
+    expect(channels()).toHaveLength(0);
+  });
+
+  it("says so when YouTube knows no such channel", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@nobody" },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(channels()).toHaveLength(0);
+  });
+
+  it("refuses the same channel twice, by identity rather than by URL", async () => {
+    resolves["UC_found42"] = resolves["@found42"]!;
+    await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    const again = await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/channel/UC_found42" },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(channels()).toHaveLength(1);
+  });
+
+  it("cannot check a paste while there is no connection, and says which state", async () => {
+    connected = false;
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect((response.json() as { error: string }).error).toMatch(/not connected/i);
+  });
+});
+
+describe("DELETE /api/youtube/channels/:id", () => {
+  it("stops future work and erases nothing", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    const removed = await app.inject({ method: "DELETE", url: "/api/youtube/channels/UC_found42" });
+    expect(removed.statusCode).toBe(200);
+    expect(channels()).toHaveLength(0);
+    /* Nothing on disk went with it: the Runs are the record and are immutable. */
+    expect((await app.inject({ method: "GET", url: "/api/youtube/trends" })).statusCode).toBe(200);
+
+    const missing = await app.inject({ method: "DELETE", url: "/api/youtube/channels/UC_nobody" });
+    expect(missing.statusCode).toBe(404);
+  });
+});
+
+describe("POST /api/youtube/run", () => {
+  it("refuses when there is nothing to measure", async () => {
+    const response = await app.inject({ method: "POST", url: "/api/youtube/run" });
+    expect(response.statusCode).toBe(400);
+    expect((response.json() as { error: string }).error).toContain("Add a channel first");
+  });
+
+  it("records the day once, then refuses and says which day", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    const first = await app.inject({ method: "POST", url: "/api/youtube/run" });
+    expect(first.statusCode).toBe(200);
+    await host.idle();
+
+    const second = await app.inject({ method: "POST", url: "/api/youtube/run" });
+    expect(second.statusCode).toBe(409);
+    expect((second.json() as { error: string }).error).toContain("2026-08-23 is already recorded");
+  });
+});
+
+describe("GET /api/youtube/trends", () => {
+  it("answers from the Runs on disk, so an expired connection does not blank it", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/youtube/channels",
+      payload: { url: "https://www.youtube.com/@found42" },
+    });
+    await app.inject({ method: "POST", url: "/api/youtube/run" });
+    await host.idle();
+
+    connected = false;
+    const response = await app.inject({ method: "GET", url: "/api/youtube/trends" });
+    expect(response.statusCode).toBe(200);
+    const trends = response.json() as YoutubeTrends;
+    expect(trends.channels.map((channel) => channel.title)).toEqual(["Found42"]);
+    expect(trends.lastDay).toBe("2026-08-23");
+    expect(trends.todayRecorded).toBe(true);
+  });
+});

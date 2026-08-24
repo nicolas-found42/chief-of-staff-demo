@@ -9,6 +9,7 @@ import { GOOGLE_TESTING_TOKEN_DAYS } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import {
   GOOGLE_SCOPES,
+  type GoogleAuth,
   buildGoogleAuth,
   exchangeGoogleCode,
   googleAuthUrl,
@@ -36,22 +37,28 @@ export function isRejectedGrant(error: unknown): boolean {
 
 /**
  * The Google surfaces this app needs, in the order the setup steps introduce
- * them. Checking both is the whole of "did the console work land?": every other
+ * them. Checking each is the whole of "did the console work land?": every other
  * part of the flow either succeeds visibly or is a credential the app holds.
+ *
+ * YouTube joins them under ADR-0016 — it rides this connection rather than an
+ * API key — and unlike the Picker it has a server-side surface, so **Check my
+ * setup** probes it exactly as it probes the others.
  */
-export const GOOGLE_SURFACES = ["tasks", "gmail", "drive"] as const;
+export const GOOGLE_SURFACES = ["tasks", "gmail", "drive", "youtube"] as const;
 export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
 const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
   tasks: { label: "Google Tasks", api: "Tasks API", scope: "tasks" },
   gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
   drive: { label: "Google Drive", api: "Drive API", scope: "drive" },
+  youtube: { label: "YouTube view counts", api: "YouTube Data API v3", scope: "youtube.readonly" },
 };
 
 const SCOPE_LABELS: Record<string, string> = {
   "https://www.googleapis.com/auth/tasks": "Google Tasks",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
   "https://www.googleapis.com/auth/drive": "Google Drive",
+  "https://www.googleapis.com/auth/youtube.readonly": "YouTube view counts",
 };
 
 /**
@@ -80,7 +87,7 @@ export class IncompleteGrantError extends Error {
     const labels = missingScopes.map((s) => SCOPE_LABELS[s] ?? s);
     const labelText = labels.join(", ");
     super(
-      `Google did not grant ${labelText}. Sign in again and leave all three permissions ticked — the missing ${labels.length === 1 ? "permission is" : "permissions are"} ${labelText}.`
+      `Google did not grant ${labelText}. Sign in again and leave every permission ticked — the missing ${labels.length === 1 ? "permission is" : "permissions are"} ${labelText}.`
     );
     this.name = "IncompleteGrantError";
     this.missingScopes = missingScopes;
@@ -128,8 +135,12 @@ function apiError(error: unknown): { reason: string; message: string } {
  * differently from a scope that was never granted — so this classifies rather
  * than guesses, and a cause it does not recognise passes through verbatim
  * instead of being flattened into "something went wrong".
+ *
+ * Exported because a Module makes its own Google calls with the connection's
+ * credentials (ADR-0018) and must not invent a second explanation of the same
+ * refusal: the wording a Run shows is the wording **Check my setup** shows.
  */
-function explainSurfaceFailure(surface: GoogleSurface, error: unknown): string {
+export function googleSurfaceHint(surface: GoogleSurface, error: unknown): string {
   if (isRejectedGrant(error)) {
     return "Google rejected the saved sign-in. Sign in again.";
   }
@@ -194,6 +205,17 @@ const callSurface: SurfaceProbe = async (config, port, surface) => {
     await google.gmail({ version: "v1", auth }).users.drafts.list({ userId: "me", maxResults: 1 });
     return;
   }
+  if (surface === "youtube") {
+    /* `videos.list`, which is the method the Module actually depends on, over
+       public data. Not `mine=true`: this app reads other people's channels as
+       readily as the operator's, and an account that has never created a
+       channel of its own would fail a check about ownership while every call
+       the Module makes would have worked. */
+    await google
+      .youtube({ version: "v3", auth })
+      .videos.list({ part: ["id"], chart: "mostPopular", maxResults: 1 });
+    return;
+  }
   if (config.drive.folderId) {
     await google.drive({ version: "v3", auth }).files.get({
       fileId: config.drive.folderId,
@@ -240,6 +262,14 @@ export type OutputsAccess =
   | { ok: true; outputs: GoogleOutputs }
   | { ok: false; state: GoogleConnectionState };
 
+/**
+ * Credentials for a Module that makes its own Google calls (ADR-0018): the
+ * Shell holds the authorization, the Module does the calling.
+ */
+export type AuthAccess =
+  | { ok: true; auth: GoogleAuth }
+  | { ok: false; state: GoogleConnectionState };
+
 export type AuthUrlAccess = { ok: true; url: string } | { ok: false; state: GoogleConnectionState };
 
 export type PickerTokenAccess =
@@ -274,6 +304,12 @@ export interface GoogleConnection {
   state(): Promise<GoogleStatus>;
   /** A Google surface, or the state that says why not. Never touches the network. */
   outputs(): OutputsAccess;
+  /**
+   * An authorized client for a Module to make its own calls with, or the state
+   * that says why not. Never touches the network — the same cheap check
+   * `outputs()` makes, for the same reason (ADR-0008).
+   */
+  auth(): AuthAccess;
   /**
    * Classify an error a Google call threw, and record what it proves about the
    * connection. Returns the state it establishes, or null when the error says
@@ -425,6 +461,18 @@ export function openGoogleConnection(
       return { ok: true, outputs: googleOutputs(config, port) };
     },
 
+    auth(): AuthAccess {
+      const config = configStore.get();
+      const stored = storedState(config);
+      if (stored) {
+        return { ok: false, state: stored };
+      }
+      if (remembered?.state === "expired") {
+        return { ok: false, state: "expired" };
+      }
+      return { ok: true, auth: buildGoogleAuth(config, port) };
+    },
+
     observe(error: unknown): GoogleConnectionState | null {
       return noteRejection(error);
     },
@@ -452,7 +500,7 @@ export function openGoogleConnection(
           items.push({
             label: SURFACE[surface].label,
             ok: false,
-            detail: explainSurfaceFailure(surface, error),
+            detail: googleSurfaceHint(surface, error),
           });
         }
       }

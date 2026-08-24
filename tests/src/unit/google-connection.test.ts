@@ -359,14 +359,17 @@ describe("verifySetup — asking Google what is missing", () => {
     await expect(google.verifySetup()).resolves.toEqual({ state: "disconnected", items: [] });
   });
 
-  it("reports both surfaces working when Google accepts both calls", async () => {
+  it("reports every surface working when Google accepts every call", async () => {
     withToken();
     const check = await checking(() => {}).verifySetup();
     expect(check.state).toBe("connected");
+    /* YouTube is probed like the rest (ADR-0016): unlike the Picker it has a
+       server-side surface, so no step is exempt. */
     expect(check.items.map((item) => [item.label, item.ok])).toEqual([
       ["Google Tasks", true],
       ["Gmail drafts", true],
       ["Google Drive", true],
+      ["YouTube view counts", true],
     ]);
   });
 

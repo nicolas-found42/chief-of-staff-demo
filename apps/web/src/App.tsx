@@ -7,6 +7,7 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { YoutubePage } from "./pages/YoutubePage";
 import { useIsLoadedEntry } from "./usePageFocus";
 import { useModules } from "./useModules";
 
@@ -66,6 +67,7 @@ export function App() {
               Home's capped feed links in here for everything older. */}
           <Route path="/runs" element={<AllRunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
+          <Route path="/youtube" element={<YoutubePage />} />
           <Route path="/hot-take" element={<HotTakePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />

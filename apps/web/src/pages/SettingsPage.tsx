@@ -506,14 +506,16 @@ export function SettingsPage() {
               "https://www.googleapis.com/auth/tasks": "Google Tasks",
               "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
               "https://www.googleapis.com/auth/drive": "Google Drive",
+              "https://www.googleapis.com/auth/youtube.readonly": "YouTube view counts",
               tasks: "Google Tasks",
               "gmail.compose": "Gmail drafts",
               drive: "Google Drive",
               "drive.readonly": "Google Drive",
+              "youtube.readonly": "YouTube view counts",
             };
             const labels = scopes.map((s) => labelMap[s] ?? s);
             const labelText = labels.length ? labels.join(", ") : "a required permission";
-            return `Google did not grant ${labelText}. Sign in again and leave all three permissions ticked.`;
+            return `Google did not grant ${labelText}. Sign in again and leave every permission ticked.`;
           })()}
         </div>
       )}

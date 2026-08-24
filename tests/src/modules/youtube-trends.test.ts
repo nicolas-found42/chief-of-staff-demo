@@ -1,0 +1,404 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { YoutubeChannel, YoutubeRunResult } from "@chief-of-staff-demo/shared";
+import { Runner } from "../../../apps/server/src/engine/runner";
+import type { YouTubeClient } from "../../../apps/server/src/modules/youtube/client";
+import { YoutubeIntake, dueNow } from "../../../apps/server/src/modules/youtube/intake";
+import {
+  YOUTUBE_INTAKE,
+  youtubeTrendsModule,
+  type ClientAccess,
+} from "../../../apps/server/src/modules/youtube/module";
+import { TrendIndex } from "../../../apps/server/src/modules/youtube/trend";
+import { openRuns, type Runs } from "../../../apps/server/src/runs";
+
+/**
+ * The Module driven by its own `run` over a temporary Workspace, with fakes only
+ * at the edges the app does not own: YouTube, and the clock. Everything asserted
+ * is something a person could observe — the Run's status, its events, its
+ * result, and the trend derived from them.
+ */
+const CHANNEL: YoutubeChannel = {
+  id: "UC_found42",
+  handle: "@found42",
+  title: "Found42",
+  uploadsPlaylistId: "UU_found42",
+  addedAt: "2026-08-01T00:00:00.000Z",
+};
+
+interface FakeYouTube extends YouTubeClient {
+  uploads: string[];
+  views: Record<string, number>;
+  /** Ids YouTube will not answer for — deleted, private, gone. */
+  unavailable: Set<string>;
+  /** Thrown by every call, when set. */
+  throws: unknown;
+  calls: { uploads: number; statistics: number };
+}
+
+function fakeYouTube(): FakeYouTube {
+  const client: FakeYouTube = {
+    uploads: ["v1", "v2"],
+    views: { v1: 100, v2: 40 },
+    unavailable: new Set(),
+    throws: null,
+    calls: { uploads: 0, statistics: 0 },
+    resolveChannel: async () => null,
+    listUploads: async () => {
+      client.calls.uploads += 1;
+      if (client.throws) {
+        throw client.throws;
+      }
+      return client.uploads;
+    },
+    videoStatistics: async (ids) => {
+      client.calls.statistics += 1;
+      if (client.throws) {
+        throw client.throws;
+      }
+      const answered = ids.filter((id) => !client.unavailable.has(id));
+      return {
+        videos: answered.map((id) => ({ id, title: `Video ${id}`, viewCount: client.views[id] ?? 0 })),
+        failedIds: ids.filter((id) => client.unavailable.has(id)),
+      };
+    },
+  };
+  return client;
+}
+
+/** Google's own refusal when the consent screen never granted the scope. */
+const SCOPE_MISSING = {
+  response: {
+    data: {
+      error: {
+        code: 403,
+        message: "Request had insufficient authentication scopes.",
+        errors: [{ reason: "insufficientPermissions" }],
+      },
+    },
+  },
+};
+
+let workspaceDir: string;
+let runs: Runs;
+let youtube: FakeYouTube;
+let access: ClientAccess;
+let channels: YoutubeChannel[];
+let invalidated: number;
+
+function runner(): Runner<{ kind: "measure" }> {
+  return new Runner({
+    runs,
+    module: youtubeTrendsModule({
+      getClient: () => access,
+      /* The real classifier's verdict: a test cannot decide `expired` into
+         existence, and a 403 about scopes says nothing about the token. */
+      observe: () => null,
+      getChannels: () => channels,
+      invalidateTrend: () => {
+        invalidated += 1;
+      },
+    }),
+  });
+}
+
+async function measure(day = "2026-08-23"): Promise<string> {
+  const engine = runner();
+  const id = await engine.startRun(
+    { intake: YOUTUBE_INTAKE, sourceUrl: null, externalId: day },
+    { kind: "measure" }
+  );
+  await engine.idle();
+  return id;
+}
+
+const resultOf = (id: string): YoutubeRunResult =>
+  runs.detail(id)!.result as YoutubeRunResult;
+
+beforeEach(() => {
+  workspaceDir = mkdtempSync(join(tmpdir(), "cos-youtube-"));
+  runs = openRuns(workspaceDir);
+  youtube = fakeYouTube();
+  access = { ok: true, client: youtube };
+  channels = [CHANNEL];
+  invalidated = 0;
+});
+
+describe("the daily Run", () => {
+  it("records every video on the channel, and says so in one line", async () => {
+    const id = await measure();
+
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("done");
+    expect(detail.summary).toBe("1 channel, 2 videos");
+    expect(resultOf(id).day).toBe("2026-08-23");
+    expect(detail.events.map((event) => event.type)).toEqual([
+      "created",
+      "stage_started",
+      "channel_enumerated",
+      "stage_started",
+      "channel_counted",
+      "run_done",
+    ]);
+    const result = resultOf(id);
+    expect(result.channels[0]).toMatchObject({
+      channelId: "UC_found42",
+      handle: "@found42",
+      title: "Found42",
+      failedIds: [],
+    });
+    expect(result.channels[0]!.videos).toEqual([
+      { id: "v1", title: "Video v1", viewCount: 100 },
+      { id: "v2", title: "Video v2", viewCount: 40 },
+    ]);
+    /* The day's counts are the Run's own file, so the derived view is stale the
+       moment they land and refreshes itself once. */
+    expect(invalidated).toBe(1);
+  });
+
+  it("reads the back catalogue too, in chunks, with no cutoff", async () => {
+    youtube.uploads = Array.from({ length: 120 }, (_, index) => `v${index}`);
+    youtube.views = Object.fromEntries(youtube.uploads.map((id, index) => [id, index]));
+
+    const id = await measure();
+    expect(resultOf(id).channels[0]!.videos).toHaveLength(120);
+    /* Fifty per call: a "most recent fifty" window would silently stop tracking
+       the part of a channel a trend is most interesting for. */
+    expect(youtube.calls.statistics).toBe(3);
+  });
+
+  it("names a video YouTube will not answer for, and finishes anyway", async () => {
+    youtube.unavailable = new Set(["v2"]);
+
+    const id = await measure();
+    const detail = runs.detail(id)!;
+    /* Three deleted videos must not look like a broken automation. */
+    expect(detail.status).toBe("done");
+    expect(detail.summary).toBe("1 channel, 1 video, 1 unavailable");
+    expect(resultOf(id).channels[0]!.failedIds).toEqual(["v2"]);
+    expect(detail.events.find((event) => event.type === "videos_unavailable")?.detail).toEqual({
+      channelId: "UC_found42",
+      ids: ["v2"],
+    });
+  });
+
+  it("fails the Run when the consent screen is missing the scope, naming what to add", async () => {
+    youtube.throws = SCOPE_MISSING;
+
+    const id = await measure();
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("failed");
+    expect(detail.failedStage).toBe("enumerate");
+    /* "Nothing was measured" must never look like "nothing changed", and the
+       fix must not need a developer. */
+    expect(detail.failureHint).toContain("youtube.readonly");
+    expect(detail.failureHint).toContain("Data Access");
+  });
+
+  it("fails the Run when there is no connection to call with", async () => {
+    access = { ok: false, state: "expired" };
+
+    const id = await measure();
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("failed");
+    expect(detail.connectionCaused).toBe(true);
+    expect(detail.failureHint).toContain("Reconnect in Settings");
+    expect(detail.events.map((event) => event.type)).toContain("google_unavailable");
+  });
+
+  it("retries in place, from the top, rather than as a second Run for the day", async () => {
+    youtube.throws = SCOPE_MISSING;
+    const id = await measure();
+    expect(runs.detail(id)!.status).toBe("failed");
+
+    youtube.throws = null;
+    const engine = runner();
+    await engine.retryRun(id);
+    await engine.idle();
+
+    expect(runs.detail(id)!.status).toBe("done");
+    /* One Run for the day, whatever happened to it. */
+    expect(runs.list().runs).toHaveLength(1);
+  });
+});
+
+describe("one Run per calendar day", () => {
+  const at = (iso: string) => new Date(iso);
+
+  function intake(now: () => Date, started: string[]): YoutubeIntake {
+    return new YoutubeIntake({
+      getChannels: () => channels,
+      workspaceDir,
+      startRun: async (day) => {
+        started.push(day);
+        return `run_2026010${started.length}-000000_0000000${started.length}`;
+      },
+      now,
+      log: () => {},
+    });
+  }
+
+  it("waits until six in the morning, then records the day once", () => {
+    /* An interval timer would be simply wrong here: a restart resets it, so a
+       machine restarted every few days would never fire. */
+    expect(dueNow(at("2026-08-23T05:59:00"), null)).toBe(false);
+    expect(dueNow(at("2026-08-23T06:00:00"), null)).toBe(true);
+    /* A machine woken at nine still records that day. */
+    expect(dueNow(at("2026-08-23T09:00:00"), null)).toBe(true);
+    expect(dueNow(at("2026-08-23T09:00:00"), "2026-08-23")).toBe(false);
+    expect(dueNow(at("2026-08-24T09:00:00"), "2026-08-23")).toBe(true);
+  });
+
+  it("starts exactly one Run on a due day, whatever else ticks", async () => {
+    const started: string[] = [];
+    let now = at("2026-08-23T07:00:00");
+    const daily = intake(() => now, started);
+
+    expect(await daily.tick()).not.toBeNull();
+    expect(await daily.tick()).toBeNull();
+    now = at("2026-08-23T23:30:00");
+    expect(await daily.tick()).toBeNull();
+    expect(started).toHaveLength(1);
+
+    now = at("2026-08-24T06:30:00");
+    expect(await daily.tick()).not.toBeNull();
+    /* The day the Intake decided travels with the Run, so nothing downstream
+       re-derives it from a clock that has since moved on. */
+    expect(started).toEqual(["2026-08-23", "2026-08-24"]);
+  });
+
+  it("refuses a manual run on a day already recorded, and says which day", async () => {
+    const started: string[] = [];
+    const now = at("2026-08-23T07:00:00");
+    const daily = intake(() => now, started);
+    await daily.runNow();
+
+    await expect(daily.runNow()).rejects.toThrow(/2026-08-23 is already recorded/);
+    expect(started).toHaveLength(1);
+    expect(daily.status()).toEqual({ lastRunDay: "2026-08-23", todayRecorded: true });
+  });
+
+  it("does not burn the day when there is nothing to measure yet", async () => {
+    channels = [];
+    const started: string[] = [];
+    let now = at("2026-08-23T07:00:00");
+    const daily = intake(() => now, started);
+
+    expect(await daily.tick()).toBeNull();
+    /* Adding a channel this afternoon must still record today. */
+    channels = [CHANNEL];
+    now = at("2026-08-23T14:00:00");
+    expect(await daily.tick()).not.toBeNull();
+    expect(started).toHaveLength(1);
+  });
+});
+
+describe("the trend, derived from the Runs", () => {
+  function index(): TrendIndex {
+    return new TrendIndex({
+      runs,
+      getChannels: () => channels,
+      status: () => ({ lastRunDay: null, todayRecorded: false }),
+    });
+  }
+
+  /** A Run whose result says it measured `day`, as the daily Run writes it. */
+  function recordDay(day: string, views: Record<string, number>): void {
+    const handle = runs.create({
+      module: "youtube-trends",
+      moduleVersion: 1,
+      intake: YOUTUBE_INTAKE,
+      sourceUrl: null,
+      externalId: null,
+    });
+    const result: YoutubeRunResult = {
+      version: 1,
+      day,
+      measuredAt: `${day}T07:00:00.000Z`,
+      channels: [
+        {
+          channelId: CHANNEL.id,
+          handle: CHANNEL.handle,
+          title: CHANNEL.title,
+          videos: Object.entries(views).map(([id, viewCount]) => ({
+            id,
+            title: `Video ${id}`,
+            viewCount,
+          })),
+          failedIds: [],
+        },
+      ],
+    };
+    handle.writeArtifact("result.json", JSON.stringify(result));
+    handle.finished({ status: "done", summary: "1 channel, 2 videos" });
+  }
+
+  it("reads a channel's total and each video's line out of the Runs", () => {
+    recordDay("2026-08-01", { v1: 100, v2: 40 });
+    recordDay("2026-08-08", { v1: 150, v2: 60 });
+
+    const trend = index().read();
+    expect(trend.lastDay).toBe("2026-08-08");
+    const channel = trend.channels[0]!;
+    expect(channel.totals).toEqual([
+      { day: "2026-08-01", views: 140 },
+      { day: "2026-08-08", views: 210 },
+    ]);
+    expect(channel.latest).toBe(210);
+    /* Seven days back is a measurement, not an interpolation. */
+    expect(channel.change7).toBe(70);
+    expect(channel.change30).toBeNull();
+    /* The videos carrying the channel first. */
+    expect(channel.videos.map((video) => [video.id, video.latest, video.change7])).toEqual([
+      ["v1", 150, 50],
+      ["v2", 60, 20],
+    ]);
+  });
+
+  it("reports a day the machine was off as a gap, never as a line through it", () => {
+    recordDay("2026-08-01", { v1: 100 });
+    // 2026-08-02: nothing ran. No API returns a past day's view count.
+    recordDay("2026-08-03", { v1: 130 });
+
+    const points = index().read().channels[0]!.totals;
+    expect(points.map((point) => point.day)).toEqual(["2026-08-01", "2026-08-03"]);
+    expect(points.some((point) => point.day === "2026-08-02")).toBe(false);
+  });
+
+  it("says something useful before there is any data", () => {
+    const trend = index().read();
+    expect(trend.channels).toHaveLength(1);
+    expect(trend.channels[0]).toMatchObject({ title: "Found42", totals: [], videos: [] });
+    expect(trend.lastDay).toBeNull();
+  });
+
+  it("drops a removed channel from the view and erases none of its history", () => {
+    recordDay("2026-08-01", { v1: 100 });
+    channels = [];
+    expect(index().read().channels).toEqual([]);
+
+    /* Re-added, it resumes against the history that was there all along —
+       with the gap visible rather than a fabricated line across it. */
+    channels = [CHANNEL];
+    recordDay("2026-08-20", { v1: 400 });
+    expect(index().read().channels[0]!.totals.map((point) => point.day)).toEqual([
+      "2026-08-01",
+      "2026-08-20",
+    ]);
+  });
+
+  it("is cached until the day's counts change it", () => {
+    recordDay("2026-08-01", { v1: 100 });
+    const trend = index();
+    expect(trend.read().channels[0]!.latest).toBe(100);
+
+    recordDay("2026-08-02", { v1: 120 });
+    /* Nothing told it, so it answers what it already knew — which is the whole
+       point of one invalidator. */
+    expect(trend.read().channels[0]!.latest).toBe(100);
+    trend.invalidate();
+    expect(trend.read().channels[0]!.latest).toBe(120);
+  });
+});

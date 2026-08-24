@@ -11,6 +11,7 @@ import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
 import { TranscriptHost } from "./modules/transcript/host.js";
+import { YoutubeHost } from "./modules/youtube/host.js";
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 
@@ -56,9 +57,18 @@ const transcript = new TranscriptHost({
   log: (message) => console.log(`[transcript] ${message}`),
 });
 
+const youtube = new YoutubeHost({
+  runs,
+  configStore,
+  workspaceDir,
+  port,
+  google: googleConnection,
+  log: (message) => console.log(`[youtube-trends] ${message}`),
+});
+
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
-const modules: HostedModule[] = [transcript];
+const modules: HostedModule[] = [transcript, youtube];
 
 const app = fastify({ logger: false });
 

@@ -1097,3 +1097,44 @@ code {
   margin: 0.5rem 0 1rem;
   padding-left: 1.2rem;
 }
+
+/* Sub-navigation inside a Module's page. The Shell's tab bar gains exactly one
+   entry per Module (ADR-0006); how a Module divides its own page is its own. */
+.sub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 1.25rem 0 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.sub-tab {
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  /* The app's target size, as every other control here (WCAG 2.5.8). */
+  min-height: 44px;
+  padding: 0.5rem 0.9rem;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sub-tab:hover {
+  color: var(--ink);
+}
+
+/* Marked by more than a colour, like the header nav's current page: the border
+   and the weight survive forced-colors mode (WCAG 1.4.1). */
+.sub-tab[aria-current="true"] {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.channel-total {
+  font-size: 1.15rem;
+  margin: 0.25rem 0 1rem;
+}
