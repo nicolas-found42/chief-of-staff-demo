@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import {
   IDEA_BATCH_SIZE,
   IDEA_CONTENT_TYPES,
+  IDEA_ENGINE_MODULE_ID,
+  IDEA_ENGINE_MODULE_VERSION,
   IDEA_DEFAULT_PROMPTS,
   IDEA_FORMAT_VALUES,
   IDEA_STAGE_TIMEOUT_MS,
@@ -27,8 +29,7 @@ import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
 import type { CompleteJson } from "../../llm/providers.js";
 
-export const IDEA_ENGINE_MODULE_ID = "idea-engine";
-export const IDEA_ENGINE_MODULE_VERSION = 1;
+/** The Intake every Run of this Module arrives through (ADR-0012). */
 export const IDEA_ENGINE_INTAKE = "drive";
 
 export type IdeaEngineInput =

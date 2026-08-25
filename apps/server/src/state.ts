@@ -88,22 +88,21 @@ export function saveState(stateFile: string, state: WorkspaceState): void {
  * Namespaced per Module over the same durable file, capped FIFO, load-modify-save guarded.
  * Spec sentence `Workspace.hasSeen(externalId)` is the transcript Module's alias.
  */
-export function hasSeen(stateFile: string, externalId: string): boolean {
+function hasSeen(stateFile: string, externalId: string): boolean {
   const state = loadState(stateFile);
   return state.drive.ingestedIds.includes(externalId);
 }
 
 export function hasSeenForModule(stateFile: string, moduleId: string, externalId: string): boolean {
-  const state = loadState(stateFile);
   if (moduleId === IDEA_ENGINE_MODULE_ID) {
-    return state.ideaEngine.ingestedIds.includes(externalId);
+    return loadState(stateFile).ideaEngine.ingestedIds.includes(externalId);
   }
-  return state.drive.ingestedIds.includes(externalId);
+  return hasSeen(stateFile, externalId);
 }
 /**
  * Load-modify-save guarded remember. Single writer at a time via file re-read.
  */
-export function rememberSeen(stateFile: string, externalId: string): void {
+function rememberSeen(stateFile: string, externalId: string): void {
   const state = loadState(stateFile);
   if (state.drive.ingestedIds.includes(externalId)) return;
   state.drive.ingestedIds.push(externalId);

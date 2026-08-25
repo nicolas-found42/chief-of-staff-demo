@@ -5,8 +5,8 @@ import type { ConfigStore } from "../../config.js";
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
-import { ideaEngineModule, type IdeaEngineInput } from "./module.js";
-import { IdeaEngineIntake } from "./intake.js";
+import { IDEA_ENGINE_INTAKE, ideaEngineModule, type IdeaEngineInput } from "./module.js";
+import { IdeaEngineIntake, type DriveFileClient } from "./intake.js";
 import { IdeaIndex } from "./index.js";
 import type { GoogleConnection } from "../../google/connection.js";
 import { googleFailureHint } from "../../google/connection.js";
@@ -28,7 +28,7 @@ export interface IdeaEngineHostDeps {
   google: GoogleConnection;
   log: (message: string) => void;
   getCompleteJson?: () => import("../../llm/providers.js").CompleteJson;
-  getDriveClient?: (config: AppConfig, port: number) => import("./intake.js").DriveFileClient;
+  getDriveClient?: (config: AppConfig, port: number) => DriveFileClient;
   getSheetsClient?: (auth: GoogleAuth) => import("./module.js").SheetsClient;
   getGmailClient?: (auth: GoogleAuth) => import("./module.js").GmailClient;
 }
@@ -86,7 +86,7 @@ export class IdeaEngineHost implements HostedModule {
       startRun: (spec) =>
         this.runner.startRun(
           {
-            intake: "drive",
+            intake: IDEA_ENGINE_INTAKE,
             fileName: spec.fileName,
             sourceUrl: spec.sourceUrl,
             externalId: spec.externalId,
@@ -104,7 +104,7 @@ export class IdeaEngineHost implements HostedModule {
       getDriveClient: deps.getDriveClient as unknown as (
         config: AppConfig,
         port: number,
-      ) => import("./intake.js").DriveFileClient,
+      ) => DriveFileClient,
     });
   }
 
