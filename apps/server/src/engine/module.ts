@@ -1,4 +1,4 @@
-import type { RunMeta } from "@chief-of-staff-demo/shared";
+import type { RunMeta, RunWaitTimeout } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../runs.js";
 
 /**
@@ -30,6 +30,16 @@ export interface ShellModule<Input> {
    * Module may not write durably there — the Runner carries it out.
    */
   planRetry(meta: Readonly<RunMeta>): RetryPlan<Input> | null;
+  /** What continuing one of this Module's blocked Runs means. */
+  planResume?(meta: Readonly<RunMeta>): ResumePlan<Input> | null;
+  /** What reconstructing process-orphaned pending/running work means. */
+  planRecovery?(meta: Readonly<RunMeta>): ResumePlan<Input> | null;
+}
+
+/** How a Module continues after the Shell clears its durable wait. */
+interface ResumePlan<Input> {
+  fromStage: string;
+  input: Input;
 }
 
 /** How a Module re-runs one of its failed Runs. */
@@ -67,6 +77,11 @@ export interface RunContext {
   event(type: string, detail?: Record<string, unknown>): void;
   /** Count one attempt at the open Stage; returns the new count. */
   attempt(): number;
+  /**
+   * Stop the Run inside the open Stage with a Shell-owned durable wait. This
+   * call does not return; later work begins from a Module-supplied resume plan.
+   */
+  wait(request: { reason: string; timeout: RunWaitTimeout }): never;
   /** The Run's own files. The Shell stores and serves them and never reads inside one. */
   readFile(name: string): string | null;
   writeFile(name: string, text: string): void;

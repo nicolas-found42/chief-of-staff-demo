@@ -6,13 +6,33 @@ import fastifyStatic from "@fastify/static";
 import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
-import { registerTestSeed } from "./api/testSeed.js";
+import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
 import { TranscriptHost } from "./modules/transcript/host.js";
 import { YoutubeHost } from "./modules/youtube/host.js";
 import { IdeaEngineHost } from "./modules/idea-engine/host.js";
+import { ContentScoutHost } from "./modules/content-scout/host.js";
+import { RssSourceAdapter } from "./modules/content-scout/adapters/rss.js";
+import { WebsiteSourceAdapter } from "./modules/content-scout/adapters/website.js";
+import {
+  YouTubeSourceAdapter,
+  youtubeSourceClient,
+} from "./modules/content-scout/adapters/youtube.js";
+import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/declarations.js";
+import { ExperimentalPublicPageAdapter } from "./modules/content-scout/adapters/experimental.js";
+import { PublicLinkSourceDiscoverer } from "./modules/content-scout/discoverer.js";
+import {
+  PublicBrandProfileCrawler,
+  modelBrandProfileProposer,
+} from "./modules/content-scout/brand-profile.js";
+import { modelDraftGenerator, modelOpportunityRanker } from "./modules/content-scout/model.js";
+import {
+  NotionCalendar,
+  NotionCalendarPublisher,
+  NotionConnection,
+} from "./modules/content-scout/notion.js";
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 
@@ -76,9 +96,57 @@ const ideaEngine = new IdeaEngineHost({
   log: (message) => console.log(`[idea-engine] ${message}`),
 });
 
+const contentScoutCompleteJson = () => {
+  const current = configStore.get();
+  return makeCompleteJson(
+    {
+      provider: current.provider,
+      model: current.model,
+      apiKey: current.apiKey,
+      baseUrl: current.ollama.baseUrl,
+    },
+    layout.mockResultFile,
+  );
+};
+const testContentScout =
+  process.env.ENABLE_TEST_SEED === "1" ? contentScoutTestPorts(() => new Date()) : null;
+const notionConnection = new NotionConnection(configStore);
+const notionCalendar = new NotionCalendar(notionConnection, configStore);
+const notionPublisher = new NotionCalendarPublisher(notionConnection, configStore);
+const contentScout = new ContentScoutHost({
+  runs,
+  workspaceDir,
+  configStore,
+  adapters: testContentScout?.adapters ?? [
+    new RssSourceAdapter(),
+    new RssSourceAdapter(undefined, undefined, { id: "substack", state: "available" }),
+    new WebsiteSourceAdapter(),
+    new YouTubeSourceAdapter(() => {
+      const access = googleConnection.auth();
+      return access.ok
+        ? { ok: true, client: youtubeSourceClient(access.auth) }
+        : { ok: false, state: access.state };
+    }),
+    new RssSourceAdapter(undefined, undefined, { id: "reddit", state: "experimental" }),
+    new ExperimentalPublicPageAdapter("instagram"),
+    new ExperimentalPublicPageAdapter("tiktok"),
+    new ComingLaterSourceAdapter("linkedin"),
+  ],
+  ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
+  draftGenerator: testContentScout?.draftGenerator ?? modelDraftGenerator(contentScoutCompleteJson),
+  notionPublisher: testContentScout?.notionPublisher ?? notionPublisher,
+  notionConnection,
+  notionCalendar,
+  discoverer: new PublicLinkSourceDiscoverer(),
+  brandProfileCrawler: testContentScout?.brandProfileCrawler ?? new PublicBrandProfileCrawler(),
+  brandProfileProposer:
+    testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
+  log: (message) => console.log(`[content-scout] ${message}`),
+});
+
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
-const modules: HostedModule[] = [transcript, youtube, ideaEngine];
+const modules: HostedModule[] = [transcript, youtube, ideaEngine, contentScout];
 
 const app = fastify({ logger: false });
 

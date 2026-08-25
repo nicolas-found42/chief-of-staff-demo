@@ -15,6 +15,7 @@ import {
   type RunMeta,
   type RunPage,
   type RunSummary,
+  type RunWait,
   type ShellEventType,
 } from "@chief-of-staff-demo/shared";
 import { isRunId, newRunId, workspaceLayout } from "./paths.js";
@@ -47,6 +48,12 @@ export interface RunHandle {
   started(stage: string): void;
   /** Leave a Stage as failed, with the wording the failing module supplied. */
   failed(stage: string, reason: string, hint: string, flags?: { connectionCaused?: boolean }): void;
+  /** Stop inside a Stage with a Shell-owned durable wait standing against the Run. */
+  blocked(wait: RunWait): void;
+  /** Clear a durable wait and return the Run to pending for enqueued work. */
+  resumed(fromStage: string, requestedBy: "module" | "clock"): Readonly<RunMeta>;
+  /** Re-enqueue process-orphaned work using the owning Module's recovery plan. */
+  recovered(fromStage: string): Readonly<RunMeta>;
   /** End the Run. */
   finished(outcome: RunOutcome): void;
   /** Count one attempt at the current Stage; returns the new count. */
@@ -157,6 +164,7 @@ function toSummary(meta: RunMeta): RunSummary {
     ...(meta.fileName !== undefined ? { fileName: meta.fileName } : {}),
     sourceUrl: meta.sourceUrl,
     status: meta.status,
+    wait: meta.wait ?? null,
     skipReason: meta.skipReason,
     summary: meta.summary ?? null,
     /* Additive (D6): present only on connection-caused failures, so legacy
@@ -218,6 +226,7 @@ class RunHandleImpl implements RunHandle {
     this.transition(
       (meta) => {
         meta.status = "failed";
+        meta.wait = null;
         meta.failedStage = stage;
         meta.failureHint = hint;
         /* Additive (D6): set only when the connection caused it, so legacy
@@ -233,11 +242,52 @@ class RunHandleImpl implements RunHandle {
     );
   }
 
+  blocked(wait: RunWait): void {
+    this.transition(
+      (meta) => {
+        meta.status = "blocked";
+        meta.wait = wait;
+      },
+      [
+        {
+          type: "run_blocked",
+          detail: { stage: wait.stage, reason: wait.reason, timeout: wait.timeout },
+        },
+      ],
+    );
+  }
+
+  resumed(fromStage: string, requestedBy: "module" | "clock"): Readonly<RunMeta> {
+    return this.transition(
+      (meta) => {
+        meta.status = "pending";
+        meta.wait = null;
+        meta.failedStage = null;
+        meta.failureHint = null;
+      },
+      [{ type: "run_resumed", detail: { fromStage, requestedBy } }],
+    );
+  }
+
+  recovered(fromStage: string): Readonly<RunMeta> {
+    const previousStatus = this.read().status;
+    return this.transition(
+      (meta) => {
+        meta.status = "pending";
+        meta.wait = null;
+        meta.failedStage = null;
+        meta.failureHint = null;
+      },
+      [{ type: "run_recovered", detail: { fromStage, previousStatus } }],
+    );
+  }
+
   finished(outcome: RunOutcome): void {
     if (outcome.status === "skipped") {
       this.transition(
         (meta) => {
           meta.status = "skipped";
+          meta.wait = null;
           meta.skipReason = outcome.reason;
         },
         [
@@ -250,6 +300,7 @@ class RunHandleImpl implements RunHandle {
     this.transition(
       (meta) => {
         meta.status = "done";
+        meta.wait = null;
         meta.failedStage = null;
         /* The Module's line, recorded when the Run ended rather than derived
            later — so it survives the Module being renamed or removed, and
@@ -276,6 +327,7 @@ class RunHandleImpl implements RunHandle {
     return this.transition(
       (meta) => {
         meta.status = "pending";
+        meta.wait = null;
         meta.failedStage = null;
         meta.failureHint = null;
         meta.skipReason = null;
@@ -329,6 +381,7 @@ export function openRuns(workspaceDir: string): Runs {
         sourceUrl: input.sourceUrl,
         externalId: input.externalId,
         status: "pending",
+        wait: null,
         attempts: 0,
         failedStage: null,
         skipReason: null,

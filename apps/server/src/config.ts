@@ -45,11 +45,31 @@ function defaultConfig(): AppConfig {
       lastConnectedAt: null,
       hasExpiredBefore: false,
     },
+    notion: { token: "", lastVerifiedAt: null },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
     modules: {
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
       "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
+      "content-scout": {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        dailyTime: "08:00",
+        weeklyDiscoveryDay: 1,
+        weeklyDiscoveryTime: "09:00",
+        shortlistSize: 5,
+        notion: {
+          databaseId: "",
+          dataSourceId: "",
+          databaseUrl: "",
+          mapping: {
+            name: "Name",
+            status: "Status",
+            platform: "Platform",
+            format: "Format",
+            scheduledDate: "Scheduled date",
+          },
+        },
+      },
     },
   };
 }
@@ -135,6 +155,12 @@ export class ConfigStore {
     this.persist();
   }
 
+  setNotionToken(token: string, verifiedAt: string | null): void {
+    const current = this.get();
+    this.config = { ...current, notion: { token, lastVerifiedAt: verifiedAt } };
+    this.persist();
+  }
+
   /**
    * Record that Google has refused this grant at least once. Latching rather
    * than toggling: the fact stored is "this consent screen does expire", which
@@ -168,6 +194,10 @@ export function redactConfig(config: AppConfig): RedactedConfig {
     google: {
       clientId: config.google.clientId,
       clientSecret: secretHint(config.google.clientSecret),
+    },
+    notion: {
+      token: secretHint(config.notion.token),
+      lastVerifiedAt: config.notion.lastVerifiedAt,
     },
     drive: {
       enabled: config.drive.enabled,

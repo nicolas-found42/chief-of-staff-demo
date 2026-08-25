@@ -1,0 +1,726 @@
+import type { FastifyInstance } from "fastify";
+import type {
+  BrandProfileRevision,
+  BrandProfileProposal,
+  BrandProfileSourceScan,
+  ContentShortlist,
+  ContentPack,
+  ContentDraft,
+  RunMeta,
+  SourceTarget,
+} from "@chief-of-staff-demo/shared";
+import { CONTENT_SCOUT_MODULE_ID, CONTENT_SCOUT_MODULE_VERSION } from "@chief-of-staff-demo/shared";
+import type { HostedModule } from "../../engine/host.js";
+import type { ConfigStore } from "../../config.js";
+import { Runner } from "../../engine/runner.js";
+import { DateTime } from "luxon";
+import type { Runs } from "../../runs.js";
+import { CONTENT_SCOUT_INTAKE, contentScoutModule, type ContentScoutInput } from "./module.js";
+import type {
+  DraftGenerator,
+  NotionPublisher,
+  OpportunityRanker,
+  SourceAdapter,
+  SourceDiscoverer,
+  BrandProfileCrawler,
+  BrandProfileProposer,
+} from "./ports.js";
+import { ContentScoutStore } from "./store.js";
+import type { NotionCalendar, NotionConnection } from "./notion.js";
+import {
+  CONTENT_SCOUT_DISCOVERY_INTAKE,
+  contentScoutDiscoveryModule,
+  type ContentScoutDiscoveryInput,
+} from "./discovery.js";
+import {
+  CONTENT_SCOUT_BRAND_SCAN_INTAKE,
+  acceptedProposalMarkdown,
+  brandProfileScanModule,
+  type BrandProfileScanInput,
+} from "./brand-profile.js";
+
+export interface ContentScoutHostDeps {
+  runs: Runs;
+  workspaceDir: string;
+  adapters: SourceAdapter[];
+  ranker: OpportunityRanker;
+  draftGenerator?: DraftGenerator;
+  notionPublisher?: NotionPublisher;
+  configStore?: ConfigStore;
+  notionConnection?: NotionConnection;
+  notionCalendar?: NotionCalendar;
+  discoverer?: SourceDiscoverer;
+  brandProfileCrawler?: BrandProfileCrawler;
+  brandProfileProposer?: BrandProfileProposer;
+  now?: () => Date;
+  log: (message: string) => void;
+}
+
+/** Deep Module interface for Content Scout's Runs and persistent source view. */
+export class ContentScoutHost implements HostedModule {
+  readonly id = CONTENT_SCOUT_MODULE_ID;
+  readonly version = CONTENT_SCOUT_MODULE_VERSION;
+  private readonly runner: Runner<ContentScoutInput>;
+  private readonly discoveryRunner: Runner<ContentScoutDiscoveryInput>;
+  private readonly brandProfileRunner: Runner<BrandProfileScanInput>;
+  private readonly store: ContentScoutStore;
+  private readonly deps: ContentScoutHostDeps;
+  private scheduleTimer: NodeJS.Timeout | null = null;
+  private checkingSchedule = false;
+
+  constructor(deps: ContentScoutHostDeps) {
+    this.deps = deps;
+    const now = deps.now ?? (() => new Date());
+    this.store = new ContentScoutStore(deps.workspaceDir, now);
+    this.runner = new Runner({
+      runs: deps.runs,
+      module: contentScoutModule({
+        store: this.store,
+        adapters: deps.adapters,
+        ranker: deps.ranker,
+        ...(deps.draftGenerator ? { draftGenerator: deps.draftGenerator } : {}),
+        ...(deps.notionPublisher ? { notionPublisher: deps.notionPublisher } : {}),
+        supersede: (oldRunId, newRunId) => this.supersede(oldRunId, newRunId),
+        intakeCompleted: (period) => {
+          if (period) this.store.recordSuccessfulPeriod("intake", period);
+        },
+        shortlistSize: () =>
+          deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].shortlistSize ?? 5,
+        now,
+      }),
+      now,
+      log: deps.log,
+    });
+    this.discoveryRunner = new Runner({
+      runs: deps.runs,
+      module: contentScoutDiscoveryModule({
+        store: this.store,
+        discoverer: deps.discoverer ?? { discover: async () => [] },
+        discoveryCompleted: (period) => {
+          if (period) this.store.recordSuccessfulPeriod("discovery", period);
+        },
+      }),
+      now,
+      log: deps.log,
+    });
+    this.brandProfileRunner = new Runner({
+      runs: deps.runs,
+      module: brandProfileScanModule({
+        store: this.store,
+        crawler: deps.brandProfileCrawler ?? {
+          crawl: async () => {
+            throw new Error("Brand Profile crawler is not configured.");
+          },
+        },
+        proposer: deps.brandProfileProposer ?? {
+          propose: async () => {
+            throw new Error("Brand Profile proposer is not configured.");
+          },
+        },
+        now,
+      }),
+      now,
+      log: deps.log,
+    });
+  }
+
+  acceptBrandProfile(input: {
+    markdown: string;
+    sourceScan: BrandProfileSourceScan;
+    note?: string | null;
+    siteBaselineMarkdown?: string;
+  }): BrandProfileRevision {
+    return this.store.acceptBrandProfile(input);
+  }
+
+  addSourceTarget(input: { adapterId: string; label: string; url: string }): SourceTarget {
+    return this.store.addSourceTarget(input);
+  }
+
+  listSourceTargets(): SourceTarget[] {
+    return this.store.listSourceTargets();
+  }
+
+  currentBrandProfile(): BrandProfileRevision | null {
+    return this.store.currentBrandProfile();
+  }
+
+  brandProfileProposal(): BrandProfileProposal | null {
+    return this.store.brandProfileProposal();
+  }
+
+  setSourceTargetState(id: string, state: "active" | "archived"): SourceTarget {
+    return this.store.setSourceTargetState(id, state);
+  }
+
+  activeShortlist(): ContentShortlist | null {
+    return this.store.activeShortlist();
+  }
+
+  listContentPacks(): ContentPack[] {
+    return this.store.listContentPacks();
+  }
+
+  listSourceSuggestions() {
+    return this.store.listSourceSuggestions();
+  }
+
+  scheduleState() {
+    return this.store.scheduleState();
+  }
+
+  decideSourceSuggestion(
+    id: string,
+    decision: "approved" | "dismissed" | "proposed",
+    reason: string | null,
+  ) {
+    return this.store.decideSourceSuggestion(id, decision, reason);
+  }
+
+  async select(runId: string, opportunityIds: string[]): Promise<RunMeta> {
+    this.store.recordSelection(runId, opportunityIds);
+    return await this.runner.resumeRun(runId);
+  }
+
+  async skip(runId: string): Promise<RunMeta> {
+    this.store.recordSkip(runId);
+    return await this.runner.resumeRun(runId);
+  }
+
+  decideOpportunity(
+    runId: string,
+    opportunityId: string,
+    decision: "dismiss_angle" | "not_relevant" | "already_covered",
+  ) {
+    this.store.decideOpportunity(runId, opportunityId, decision);
+    return this.activeShortlist();
+  }
+
+  draft(
+    contentPackId: string,
+    targetId: string,
+  ): {
+    draft: ContentDraft;
+    notionPage: { id: string; url: string } | null;
+  } | null {
+    const pack = this.store.listContentPacks().find((candidate) => candidate.id === contentPackId);
+    if (!pack) return null;
+    const run = this.deps.runs.open(pack.runId);
+    const raw = run?.readArtifact(`draft-${contentPackId}-${targetId}.json`) ?? null;
+    if (!raw) return null;
+    try {
+      const draft = JSON.parse(raw) as ContentDraft;
+      const page = pack.notionPages.find((candidate) => candidate.draftId === draft.id) ?? null;
+      return { draft, notionPage: page ? { id: page.id, url: page.url } : null };
+    } catch {
+      return null;
+    }
+  }
+
+  scoutNow(
+    invocation: "manual" | "scheduled" = "manual",
+    period: string | null = null,
+  ): Promise<string> {
+    return this.runner.startRun(
+      {
+        intake: CONTENT_SCOUT_INTAKE,
+        fileName: "Content Scout shortlist.md",
+        sourceUrl: null,
+        externalId: period,
+      },
+      { kind: "intake", invocation },
+    );
+  }
+
+  discoverNow(
+    invocation: "manual" | "scheduled" = "manual",
+    period: string | null = null,
+  ): Promise<string> {
+    return this.discoveryRunner.startRun(
+      {
+        intake: CONTENT_SCOUT_DISCOVERY_INTAKE,
+        fileName: "Content Scout source suggestions.json",
+        sourceUrl: null,
+        externalId: period,
+      },
+      { invocation },
+    );
+  }
+
+  scanBrandProfile(websiteUrl: string): Promise<string> {
+    return this.brandProfileRunner.startRun(
+      {
+        intake: CONTENT_SCOUT_BRAND_SCAN_INTAKE,
+        fileName: "Content Scout Brand Profile proposal.md",
+        sourceUrl: websiteUrl,
+        externalId: null,
+      },
+      { websiteUrl },
+    );
+  }
+
+  retryRun(id: string): Promise<RunMeta> {
+    const run = this.deps.runs.open(id);
+    const intake = run?.read().intake;
+    if (intake === CONTENT_SCOUT_DISCOVERY_INTAKE) return this.discoveryRunner.retryRun(id);
+    if (intake === CONTENT_SCOUT_BRAND_SCAN_INTAKE) return this.brandProfileRunner.retryRun(id);
+    return this.runner.retryRun(id);
+  }
+
+  idle(): Promise<void> {
+    return Promise.all([
+      this.runner.idle(),
+      this.discoveryRunner.idle(),
+      this.brandProfileRunner.idle(),
+    ]).then(() => undefined);
+  }
+
+  start(): void {
+    this.runner.startRecoveryLoop();
+    this.discoveryRunner.startRecoveryLoop();
+    this.brandProfileRunner.startRecoveryLoop();
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer);
+    void this.checkSchedules();
+    this.scheduleTimer = setInterval(() => void this.checkSchedules(), 30_000);
+    this.scheduleTimer.unref();
+  }
+
+  stop(): void {
+    this.runner.stopRecoveryLoop();
+    this.discoveryRunner.stopRecoveryLoop();
+    this.brandProfileRunner.stopRecoveryLoop();
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer);
+    this.scheduleTimer = null;
+  }
+
+  async checkSchedules(): Promise<void> {
+    if (this.checkingSchedule || !this.deps.configStore) return;
+    this.checkingSchedule = true;
+    try {
+      const config = this.deps.configStore.get().modules[CONTENT_SCOUT_MODULE_ID];
+      const local = DateTime.fromJSDate((this.deps.now ?? (() => new Date()))()).setZone(
+        config.timeZone,
+      );
+      if (!local.isValid) {
+        this.deps.log(`Content Scout schedule has invalid IANA time zone: ${config.timeZone}`);
+        return;
+      }
+      const state = this.store.scheduleState();
+      const hasBrandProfile = this.currentBrandProfile() !== null;
+      const hasActiveSource = this.listSourceTargets().some((target) => target.state === "active");
+      const dailyPeriod = local.toISODate();
+      const [dailyHour, dailyMinute] = parseLocalTime(config.dailyTime);
+      const dailyDue =
+        local.hour > dailyHour || (local.hour === dailyHour && local.minute >= dailyMinute);
+      if (
+        hasBrandProfile &&
+        hasActiveSource &&
+        dailyDue &&
+        state.lastSuccessfulIntakePeriod !== dailyPeriod &&
+        !this.periodRunExists(CONTENT_SCOUT_INTAKE, dailyPeriod)
+      ) {
+        await this.scoutNow("scheduled", dailyPeriod);
+      }
+
+      const weeklyPeriod = `${local.weekYear}-W${String(local.weekNumber).padStart(2, "0")}`;
+      const [weeklyHour, weeklyMinute] = parseLocalTime(config.weeklyDiscoveryTime);
+      const weeklyDue =
+        local.weekday > config.weeklyDiscoveryDay ||
+        (local.weekday === config.weeklyDiscoveryDay &&
+          (local.hour > weeklyHour || (local.hour === weeklyHour && local.minute >= weeklyMinute)));
+      if (
+        hasBrandProfile &&
+        weeklyDue &&
+        state.lastSuccessfulDiscoveryPeriod !== weeklyPeriod &&
+        !this.periodRunExists(CONTENT_SCOUT_DISCOVERY_INTAKE, weeklyPeriod)
+      ) {
+        await this.discoverNow("scheduled", weeklyPeriod);
+      }
+    } finally {
+      this.checkingSchedule = false;
+    }
+  }
+
+  routes(app: FastifyInstance): void {
+    const latestIntakeHealth = () => {
+      const latest = this.deps.runs
+        .list({ module: CONTENT_SCOUT_MODULE_ID })
+        .runs.find((run) => run.intake === CONTENT_SCOUT_INTAKE);
+      if (!latest) return { runId: null, warnings: [] };
+      const detail = this.deps.runs.detail(latest.id);
+      const result = detail?.result as {
+        adapters?: { adapterId: string; outcome: string; affectedCapabilities: string[] }[];
+      } | null;
+      const warnings = (result?.adapters ?? []).filter((adapter) =>
+        [
+          "unsupported_capability",
+          "blocked_access",
+          "response_shape_change",
+          "rate_limit",
+          "timeout",
+          "parser_failure",
+          "internal_failure",
+        ].includes(adapter.outcome),
+      );
+      return { runId: latest.id, warnings };
+    };
+    app.get("/api/content-scout", async () => ({
+      brandProfile: this.currentBrandProfile(),
+      brandProfileProposal: this.brandProfileProposal(),
+      sourceTargets: this.listSourceTargets(),
+      shortlist: this.activeShortlist(),
+      contentPacks: this.listContentPacks(),
+      sourceSuggestions: this.listSourceSuggestions(),
+      schedule: this.scheduleState(),
+      health: latestIntakeHealth(),
+      adapters: this.deps.adapters.map((adapter) => ({
+        id: adapter.id,
+        state: adapter.state,
+        version: adapter.version,
+      })),
+      notion: this.deps.notionConnection?.status() ?? {
+        state: "unconfigured",
+        tokenHint: "",
+        lastVerifiedAt: null,
+      },
+      settings: this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID] ?? null,
+    }));
+
+    app.post("/api/content-scout/brand-profile", async (request, reply) => {
+      const body = request.body as Partial<{
+        markdown: string;
+        websiteUrl: string;
+        includedUrls: string[];
+        excludedUrls: string[];
+        note: string;
+      }>;
+      if (!body.markdown?.trim() || !body.websiteUrl?.trim()) {
+        reply.code(400).send({ error: "Brand Profile Markdown and website URL are required." });
+        return;
+      }
+      const revision = this.acceptBrandProfile({
+        markdown: body.markdown,
+        sourceScan: {
+          websiteUrl: body.websiteUrl,
+          includedUrls: body.includedUrls ?? [],
+          excludedUrls: body.excludedUrls ?? [],
+        },
+        note: body.note ?? null,
+      });
+      reply.code(201);
+      return { revision };
+    });
+
+    app.post("/api/content-scout/brand-profile/scan", async (request, reply) => {
+      const websiteUrl = (request.body as { websiteUrl?: string }).websiteUrl?.trim();
+      if (!websiteUrl) {
+        reply.code(400).send({ error: "A public company website URL is required." });
+        return;
+      }
+      try {
+        const parsed = new URL(websiteUrl);
+        if (!/^https?:$/.test(parsed.protocol)) throw new Error();
+      } catch {
+        reply.code(400).send({ error: "A public HTTP or HTTPS website URL is required." });
+        return;
+      }
+      return { runId: await this.scanBrandProfile(websiteUrl) };
+    });
+
+    app.post("/api/content-scout/brand-profile/proposals/:id/accept", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as {
+        acceptedSections?: unknown;
+        includedUrls?: unknown;
+        excludedUrls?: unknown;
+        note?: string;
+      };
+      const proposal = this.brandProfileProposal();
+      if (!proposal || proposal.id !== id) {
+        reply.code(404).send({ error: "Brand Profile proposal not found." });
+        return;
+      }
+      if (
+        !Array.isArray(body.acceptedSections) ||
+        body.acceptedSections.some((value) => typeof value !== "string")
+      ) {
+        reply.code(400).send({ error: "acceptedSections must be an array of section names." });
+        return;
+      }
+      const includedUrls =
+        Array.isArray(body.includedUrls) &&
+        body.includedUrls.every((value) => typeof value === "string")
+          ? body.includedUrls
+          : proposal.pages.filter((page) => page.included).map((page) => page.url);
+      const excludedUrls =
+        Array.isArray(body.excludedUrls) &&
+        body.excludedUrls.every((value) => typeof value === "string")
+          ? body.excludedUrls
+          : proposal.pages.filter((page) => !page.included).map((page) => page.url);
+      const markdown = acceptedProposalMarkdown(proposal, body.acceptedSections as string[]);
+      const revision = this.acceptBrandProfile({
+        markdown,
+        sourceScan: { websiteUrl: proposal.websiteUrl, includedUrls, excludedUrls },
+        note: body.note ?? null,
+        siteBaselineMarkdown: proposal.proposedMarkdown,
+      });
+      this.store.clearBrandProfileProposal(id);
+      reply.code(201);
+      return { revision };
+    });
+
+    app.post("/api/content-scout/sources", async (request, reply) => {
+      const body = request.body as Partial<{ adapterId: string; label: string; url: string }>;
+      if (!body.adapterId || !body.label?.trim() || !body.url?.trim()) {
+        reply.code(400).send({ error: "Adapter, label and recurring public URL are required." });
+        return;
+      }
+      const adapter = this.deps.adapters.find((candidate) => candidate.id === body.adapterId);
+      if (!adapter) {
+        reply.code(400).send({ error: "That Source Adapter is not configured." });
+        return;
+      }
+      if (adapter.state === "coming_later") {
+        reply
+          .code(409)
+          .send({ error: "That Source Adapter is Coming later and cannot be monitored yet." });
+        return;
+      }
+      try {
+        const parsed = new URL(body.url);
+        if (!/^https?:$/.test(parsed.protocol)) throw new Error();
+      } catch {
+        reply.code(400).send({ error: "A public HTTP or HTTPS URL is required." });
+        return;
+      }
+      reply.code(201);
+      return {
+        target: this.addSourceTarget(body as { adapterId: string; label: string; url: string }),
+      };
+    });
+
+    app.patch("/api/content-scout/sources/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as { state?: string };
+      if (body.state !== "active" && body.state !== "archived") {
+        reply.code(400).send({ error: "Source Target state must be active or archived." });
+        return;
+      }
+      try {
+        return { target: this.setSourceTargetState(id, body.state) };
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.post("/api/content-scout/run", async () => ({ runId: await this.scoutNow() }));
+    app.post("/api/content-scout/discovery/run", async () => ({ runId: await this.discoverNow() }));
+
+    app.patch("/api/content-scout/suggestions/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as { decision?: string; reason?: string | null };
+      if (
+        body.decision !== "approved" &&
+        body.decision !== "dismissed" &&
+        body.decision !== "proposed"
+      ) {
+        reply
+          .code(400)
+          .send({ error: "Suggestion decision must be approved, dismissed, or proposed." });
+        return;
+      }
+      try {
+        return { suggestion: this.decideSourceSuggestion(id, body.decision, body.reason ?? null) };
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.patch("/api/content-scout/settings", async (request, reply) => {
+      if (!this.deps.configStore) {
+        reply.code(503).send({ error: "Content Scout settings are unavailable." });
+        return;
+      }
+      const body = request.body as Partial<{
+        timeZone: string;
+        dailyTime: string;
+        weeklyDiscoveryDay: number;
+        weeklyDiscoveryTime: string;
+        shortlistSize: number;
+      }>;
+      if (
+        !body.timeZone ||
+        !DateTime.now().setZone(body.timeZone).isValid ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.dailyTime ?? "") ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.weeklyDiscoveryTime ?? "") ||
+        !Number.isInteger(body.weeklyDiscoveryDay) ||
+        body.weeklyDiscoveryDay! < 1 ||
+        body.weeklyDiscoveryDay! > 7 ||
+        !Number.isInteger(body.shortlistSize) ||
+        body.shortlistSize! < 3 ||
+        body.shortlistSize! > 10
+      ) {
+        reply.code(400).send({
+          error: "Use an IANA time zone, valid local times, weekday 1–7, and shortlist size 3–10.",
+        });
+        return;
+      }
+      const current = this.deps.configStore.get().modules[CONTENT_SCOUT_MODULE_ID];
+      this.deps.configStore.setModuleConfig(CONTENT_SCOUT_MODULE_ID, {
+        ...current,
+        timeZone: body.timeZone,
+        dailyTime: body.dailyTime!,
+        weeklyDiscoveryDay: body.weeklyDiscoveryDay!,
+        weeklyDiscoveryTime: body.weeklyDiscoveryTime!,
+        shortlistSize: body.shortlistSize!,
+      });
+      return {
+        settings: this.deps.configStore.get().modules[CONTENT_SCOUT_MODULE_ID],
+        schedule: this.scheduleState(),
+      };
+    });
+
+    app.post("/api/content-scout/shortlists/:runId/select", async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const body = request.body as { opportunityIds?: unknown };
+      if (
+        !Array.isArray(body.opportunityIds) ||
+        body.opportunityIds.some((id) => typeof id !== "string")
+      ) {
+        reply.code(400).send({ error: "opportunityIds must be an array of one to three ids." });
+        return;
+      }
+      try {
+        const meta = await this.select(runId, body.opportunityIds as string[]);
+        return { status: meta.status };
+      } catch (error) {
+        reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.post("/api/content-scout/shortlists/:runId/skip", async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      try {
+        const meta = await this.skip(runId);
+        return { status: meta.status };
+      } catch (error) {
+        reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.patch(
+      "/api/content-scout/shortlists/:runId/opportunities/:opportunityId",
+      async (request, reply) => {
+        const { runId, opportunityId } = request.params as { runId: string; opportunityId: string };
+        const decision = (request.body as { decision?: string }).decision;
+        if (
+          decision !== "dismiss_angle" &&
+          decision !== "not_relevant" &&
+          decision !== "already_covered"
+        ) {
+          reply
+            .code(400)
+            .send({ error: "Choose Dismiss this angle, Not relevant, or Already covered." });
+          return;
+        }
+        try {
+          return { shortlist: this.decideOpportunity(runId, opportunityId, decision) };
+        } catch (error) {
+          reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+      },
+    );
+
+    app.get("/api/content-scout/packs/:packId/drafts/:targetId", async (request, reply) => {
+      const { packId, targetId } = request.params as { packId: string; targetId: string };
+      const found = this.draft(packId, targetId);
+      if (!found) {
+        reply.code(404).send({ error: "Content Draft not found." });
+        return;
+      }
+      return found;
+    });
+
+    if (this.deps.notionConnection && this.deps.notionCalendar) {
+      app.post("/api/content-scout/notion/connect", async (request, reply) => {
+        const token = (request.body as { token?: string }).token;
+        if (!token) {
+          reply.code(400).send({ error: "A Notion internal-integration token is required." });
+          return;
+        }
+        try {
+          return await this.deps.notionConnection!.connect(token);
+        } catch (error) {
+          reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+      });
+      app.post("/api/content-scout/notion/disconnect", async () =>
+        this.deps.notionConnection!.disconnect(),
+      );
+      app.post("/api/content-scout/notion/calendar", async (request, reply) => {
+        const body = request.body as
+          | { mode: "create"; parentPageId: string }
+          | {
+              mode: "existing";
+              databaseId: string;
+              dataSourceId: string;
+              databaseUrl: string;
+              mapping: {
+                name: string;
+                status: string;
+                platform: string;
+                format: string;
+                scheduledDate: string;
+              };
+            };
+        try {
+          const notion =
+            body.mode === "create"
+              ? await this.deps.notionCalendar!.createStandard(body.parentPageId)
+              : await this.deps.notionCalendar!.mapExisting(body);
+          return { notion };
+        } catch (error) {
+          reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+      });
+    }
+  }
+
+  private supersede(oldRunId: string, newRunId: string): void {
+    const run = this.deps.runs.open(oldRunId);
+    if (!run || run.read().status !== "blocked") return;
+    const raw = run.readArtifact("shortlist.json");
+    if (raw) {
+      try {
+        const shortlist = JSON.parse(raw) as ContentShortlist;
+        shortlist.supersededByRunId = newRunId;
+        run.writeArtifact("shortlist.json", `${JSON.stringify(shortlist, null, 2)}\n`);
+      } catch {
+        // The terminal reason remains visible even if the Module artifact is damaged.
+      }
+    }
+    run.finished({ status: "skipped", reason: `Superseded by ${newRunId}.` });
+  }
+
+  private periodRunExists(intake: string, period: string): boolean {
+    return this.deps.runs.list({ module: CONTENT_SCOUT_MODULE_ID }).runs.some((summary) => {
+      const run = this.deps.runs.open(summary.id)?.read();
+      return run?.intake === intake && run.externalId === period;
+    });
+  }
+}
+
+function parseLocalTime(value: string): [number, number] {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return [0, 0];
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  return hour <= 23 && minute <= 59 ? [hour, minute] : [0, 0];
+}
