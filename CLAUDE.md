@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+<!-- Keep this file synchronized by hand with AGENTS.md. The duplicate guidance is intentional:
+different coding agents discover different conventional entry-point filenames. -->
+
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
