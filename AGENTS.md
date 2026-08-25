@@ -79,3 +79,7 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 ### Domain docs
 
 Single-context: one root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### Verification
+
+Verification gates and their granularity live in `docs/agents/verification.md`.
