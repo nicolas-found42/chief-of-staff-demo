@@ -33,7 +33,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run test --workspace @chief-of-staff-demo/tests -- --coverage
+      - name: Add coverage to the job summary
+        if: always()
+        run: |
+          if [[ -f coverage/coverage-summary.txt ]]; then
+            {
+              echo "## Server unit coverage"
+              echo '```text'
+              cat coverage/coverage-summary.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   e2e:
     runs-on: ubuntu-latest

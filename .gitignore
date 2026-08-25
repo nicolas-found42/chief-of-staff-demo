@@ -5,6 +5,7 @@ workspace/
 *.tsbuildinfo
 playwright-report/
 test-results/
+coverage/
 ACCESSIBILITY-AUDIT.md
 .archive/
 

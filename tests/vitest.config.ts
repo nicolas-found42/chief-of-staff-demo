@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  root: fileURLToPath(new URL("..", import.meta.url)),
   resolve: {
     alias: {
       "@chief-of-staff-demo/shared": fileURLToPath(
@@ -10,10 +11,24 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["tests/src/**/*.test.ts"],
     environment: "node",
     testTimeout: 30_000,
     hookTimeout: 30_000,
     pool: "threads",
+    coverage: {
+      provider: "v8",
+      include: ["apps/server/src/**/*.ts"],
+      exclude: [
+        // The bootstrap runs only in Playwright's separate server process, so
+        // its execution cannot reach the unit suite's V8 report.
+        "apps/server/src/main.ts",
+        // This is the hermetic e2e seam, registered only with ENABLE_TEST_SEED=1;
+        // zero unit coverage here is by design.
+        "apps/server/src/api/testSeed.ts",
+      ],
+      reporter: ["text", ["text-summary", { file: "coverage-summary.txt" }], "json-summary"],
+      thresholds: { lines: 69.3 },
+    },
   },
 });
