@@ -666,30 +666,46 @@ tr:last-child td {
   font-size: 0.62rem;
 }
 
+/* Named areas rather than source order: the rail leads the markup so that one
+   column reads attention-first, and the two-column case places it on the right
+   without the markup having to change to say so. */
 .home-grid {
   display: grid;
   grid-template-columns: 1.72fr 0.98fr;
+  grid-template-areas: "main rail";
   gap: 1rem;
   align-items: start;
 }
 
+/* Also the same min-width: auto trap as .form-grid — the tile grid's 220px
+   minimum would otherwise push this column wider than its track. */
+.home-main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.home-rail-column {
+  grid-area: rail;
+  display: grid;
+  align-content: start;
+  gap: 0.95rem;
+}
+
 /* Reflow: one column below the width where two stop fitting, which a 200% zoom
    reaches as readily as a narrow window (WCAG 1.4.10). In rem so a reader's own
-   font size moves the breakpoint too. */
+   font size moves the breakpoint too. Stacked in the markup's own order, so the
+   collapsed page needs no reordering to put attention first. */
 @media (max-width: 55rem) {
   .home-grid {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "rail"
+      "main";
   }
 
   .home-sentence {
     font-size: 1.45rem;
   }
-}
-
-/* Same min-width: auto trap as .form-grid: the tile grid's 220px minimum would
-   otherwise push this column wider than its track. */
-.home-main {
-  min-width: 0;
 }
 
 /* A heading in the outline, an eyebrow with a rule on the page. */
@@ -716,12 +732,6 @@ h2.home-section::after {
 .status-attention {
   background: #fdf3e0;
   color: var(--warn);
-}
-
-.home-rail-column {
-  display: grid;
-  align-content: start;
-  gap: 0.95rem;
 }
 
 .home-rail-card,

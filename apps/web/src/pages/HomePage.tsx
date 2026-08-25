@@ -131,29 +131,11 @@ export function HomePage() {
         </div>
       )}
 
+      {/* The rail leads the markup and the Modules follow, so a reader who takes
+          the page in one column meets what needs them before what merely exists
+          — and so does anyone tabbing or navigating by heading. Two columns are
+          a placement of these two, not a different order of them. */}
       <div className="home-grid">
-        <div className="home-main">
-          <h2 className="home-section">Modules</h2>
-          <div className="module-grid">
-            {modules.map((module, index) => (
-              <div className="card module-card" key={module.id}>
-                {/* Decorative: the ordinal is the tile's position, which the
-                    reading order already carries. */}
-                <p className="module-number" aria-hidden="true">
-                  {String(index + 1).padStart(2, "0")}
-                </p>
-                <h3>
-                  <Link to={module.path}>{module.label}</Link>
-                  {module.status === "planned" && (
-                    <span className="status-badge status-active">Planned</span>
-                  )}
-                </h3>
-                <p className="muted">{module.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
         <div className="home-rail-column">
           {/* Omitted entirely when empty, rather than rendering an all-clear: the
               sentence has already said it. The heading is hidden because a sighted
@@ -207,6 +189,28 @@ export function HomePage() {
               </ul>
             </section>
           )}
+        </div>
+
+        <div className="home-main">
+          <h2 className="home-section">Modules</h2>
+          <div className="module-grid">
+            {modules.map((module, index) => (
+              <div className="card module-card" key={module.id}>
+                {/* Decorative: the ordinal is the tile's position, which the
+                    reading order already carries. */}
+                <p className="module-number" aria-hidden="true">
+                  {String(index + 1).padStart(2, "0")}
+                </p>
+                <h3>
+                  <Link to={module.path}>{module.label}</Link>
+                  {module.status === "planned" && (
+                    <span className="status-badge status-active">Planned</span>
+                  )}
+                </h3>
+                <p className="muted">{module.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

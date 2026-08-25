@@ -407,6 +407,18 @@ test("Home reflows to one column, and a connected workspace says whose it is", a
   expect(await tracks()).toBe(2);
   await page.setViewportSize({ width: 800, height: 900 });
   expect(await tracks()).toBe(1);
+
+  // And it collapses attention-first. In one column the page is read top to
+  // bottom, so the rail above the tiles is the difference between meeting what
+  // needs you and scrolling past four Modules to find it.
+  const seed = await page.request.post("/api/test/seed");
+  if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
+  await page.goto("/");
+  const rail = await page.locator(".home-rail-card").boundingBox();
+  const tiles = await page.locator(".module-grid").boundingBox();
+  expect(rail, "attention rail").not.toBeNull();
+  expect(tiles, "module tiles").not.toBeNull();
+  expect(rail!.y).toBeLessThan(tiles!.y);
 });
 
 /* Last in the file, and it puts the workspace back: it is the only test here
