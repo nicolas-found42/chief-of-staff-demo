@@ -1,14 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext } from "react";
 import type { GoogleStatus } from "@chief-of-staff-demo/shared";
-import { api } from "./client";
 
 /**
  * The Google connection, held once for the whole Shell.
@@ -28,30 +19,7 @@ interface GoogleConnectionValue {
   refresh: () => Promise<void>;
 }
 
-const GoogleConnectionContext = createContext<GoogleConnectionValue | null>(null);
-
-export function GoogleConnectionProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<GoogleStatus | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await api.googleStatus());
-    } catch {
-      // The last known answer stands: a request that failed is not evidence the
-      // connection changed, and blanking it would drop a standing warning.
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const value = useMemo(() => ({ status, refresh }), [status, refresh]);
-
-  return (
-    <GoogleConnectionContext.Provider value={value}>{children}</GoogleConnectionContext.Provider>
-  );
-}
+export const GoogleConnectionContext = createContext<GoogleConnectionValue | null>(null);
 
 export function useGoogleConnection(): GoogleConnectionValue {
   const value = useContext(GoogleConnectionContext);

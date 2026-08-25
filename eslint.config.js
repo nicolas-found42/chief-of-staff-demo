@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier/flat";
 import reactHooks from "eslint-plugin-react-hooks";
+import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
@@ -59,10 +60,13 @@ export default tseslint.config(
   // --- apps/web: React, browser, no server ---------------------------------
   {
     files: ["apps/web/**/*.{ts,tsx}"],
-    plugins: { "react-hooks": reactHooks },
+    plugins: { "react-hooks": reactHooks, "react-refresh": reactRefresh },
     rules: {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
+      // There is no HMR in this repo. Keep component exports separate from
+      // non-component exports so each module has one clear responsibility.
+      "react-refresh/only-export-components": "error",
     },
   },
 
