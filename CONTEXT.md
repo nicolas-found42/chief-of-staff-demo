@@ -31,16 +31,92 @@ _Status_: no instance. YouTube Trends was the worked example and turned out to h
 (ADR-0025); the term stays because the category is real and the next Module may land in it.
 _Avoid_: Background Module, planned Module (a planned Module is unbuilt; a headless one works)
 
-**Hot Take**:
-A planned Module that turns a link or transcript into a draft LinkedIn post. Its Runs, Intakes, and Output Adapters are not yet implemented.
-_Status_: planned
+**Content Scout**:
+A live Module that monitors recurring sources for timely, brand-aligned subjects, presents a
+shortlist for a person to select from, and creates a Content Pack for each selection.
+_Status_: live
+_Avoid_: Hot Take, Daily Hot Take, Daily Content Scout, Daily Post Scout
+
+**Brand Profile**:
+The workspace owner's editable local description of the company, including its positioning,
+audiences, offers, differentiators, proof, tone, vocabulary, and content constraints. Initially
+generated from a bounded crawl of the company's website; thereafter owned by the person, not the
+website. Its canonical representation is versioned local Markdown. A rescan proposes a three-way
+diff against the previous website baseline and the person's current revision, never an overwrite.
+_Avoid_: Brand document, Brand Guide, Brand Brief
+
+**Source Target**:
+A recurring account, channel, community, search, feed, website, or site section that Content Scout
+monitors for source material. A person may configure one directly or accept one that Content Scout
+suggests from the Brand Profile and existing Source Targets. Archiving one stops future monitoring
+but preserves its evidence and history and prevents automatic re-suggestion until a person restores
+it.
+_Avoid_: Individual post, source link, target (alone)
+
+**Source Suggestion**:
+A proposed Source Target found during a weekly or manually started Source Discovery Run. It records
+why it was suggested, the supporting URLs, and its relationship to the Brand Profile or approved
+Source Targets. It is never monitored on schedule until a person approves it; dismissed suggestions
+remain local and may later be restored.
+_Avoid_: Discovered source (it has not become a Source Target), recommendation (alone)
+
+**Source Adapter**:
+One platform- or protocol-specific collector behind Content Scout's shared source-item contract. Its
+state is Available, Experimental, or Coming later, and its diagnostics distinguish unavailable data
+from a failed retrieval. A platform is not a Source Adapter and one adapter's failure does not stop
+the others from running.
+_Avoid_: Scraper (too narrow), connector (reserved for authenticated service connections)
+
+**Source Item**:
+One normalized piece of public source material retrieved from a Source Target, with its canonical
+URL, platform identity, author, publication time, extracted content, evidence, and field-level
+completeness. It is untrusted third-party evidence, never an instruction to the Module. A Source
+Item may support a Content Opportunity but is not itself an opportunity.
+_Avoid_: Source (ambiguous with Source Target), content (too broad), post (not every item is a post)
+
+**Opportunity Brief**:
+The immutable input shared by all independent Content Draft generations for one selected Content
+Opportunity. It contains the opportunity, strongest supporting Source Items, bounded enrichment,
+claim evidence, Brand Profile revision and snapshot, and no sibling Content Drafts.
+_Avoid_: Prompt, context (alone), research bundle
+
+**Source Discovery Run**:
+A weekly or manually started Content Scout Run that uses the Brand Profile, approved Source Targets,
+public search, related or recommended accounts, citations, mentions, and outbound links to produce
+Source Suggestions. It finishes without waiting for approval; suggestion decisions live in the
+Module's persistent source view.
+_Avoid_: Discovery scan, source crawl
+
+**Content Opportunity**:
+One timely, brand-aligned subject that Content Scout may recommend, supported by one or more items
+found across Source Targets. It carries a proposed angle, urgency, evidence, and supporting source
+URLs; it is not drafted content.
+_Avoid_: Hot take, candidate (alone), topic (alone)
+
+**Content Pack**:
+The complete set of Content Drafts that Content Scout creates independently from one selected
+subject. Every supported publication channel and draft format is represented, and every draft has
+been published to its own Notion page. Successful local drafts survive a partial generation or
+publication failure and retries create only missing work.
+_Avoid_: Draft bundle, content bundle
+
+**Content Draft**:
+One copy-ready output in a Content Pack, intended for one publication channel and draft format. It
+uses the selected subject and Brand Profile as context, never another Content Draft. The local Run
+artifact is immutable; its Notion copy is the person's editable working version.
+_Avoid_: Artifact (a Run artifact is any file owned by a Run), post (not every Content Draft is a
+post)
+
+**Draft Target**:
+One versioned publication-channel and draft-format contract represented in every Content Pack.
+Content Scout currently plans 23 Draft Targets; changing that set changes the Content Pack contract.
+_Avoid_: Template, format (alone), channel (alone)
 
 **YouTube Trends**:
 A live Module that watches whole YouTube channels and records a daily trend. Once a day it
 enumerates every video on each channel it tracks, reads its view count, and records the day;
 its tab shows one sub-tab per channel, and its spreadsheet keeps the same numbers outside the
-app. Named for what it produces, as Hot Take is — the Relay original it replaces keeps its own
-name, Weekly YouTube View Count.
+app. The Relay original it replaces keeps its own name, Weekly YouTube View Count.
 _Status_: live
 _Avoid_: YouTube Module, Weekly YouTube View Count (that is the Relay original). "YouTube
 view counts" names the Google surface (ADR-0016), never this Module.
