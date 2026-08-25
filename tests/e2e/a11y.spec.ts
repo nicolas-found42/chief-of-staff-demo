@@ -405,6 +405,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
     "Found42 — Chief of Staff",
     "Transcript → Tasks",
     "YouTube Trends",
+    "Idea Engine",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");

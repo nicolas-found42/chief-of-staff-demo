@@ -100,23 +100,30 @@ export function HomePage() {
 
   return (
     <div className="page">
-      <h1 ref={headingRef} tabIndex={-1}>
-        Home
-      </h1>
+      {/* The head card: the sentence is the one thing Home exists to say, so it
+          is the display-scale line and the h1 shrinks to the eyebrow above it.
+          The h1 keeps the word "Home" — the tab, the heading outline and the
+          focus target all still name the route (WCAG 2.4.2, 2.4.6). */}
+      <div className="home-head">
+        <h1 ref={headingRef} tabIndex={-1}>
+          Home
+        </h1>
 
-      {/* Plain text, no links: `.step-link` is a boxed button style, so an
-          inline link renders as a button mid-paragraph. */}
-      <p className="home-sentence">{sentence}</p>
+        {/* Plain text, no links: `.step-link` is a boxed button style, so an
+            inline link renders as a button mid-paragraph. */}
+        <p className="home-sentence">{sentence}</p>
 
-      {/* The one fact where silence is genuinely ambiguous — an unwarned page
-          cannot be told apart from a check that never ran — and this connection
-          expires about weekly. Identity only: the expiry warning belongs to the
-          Shell banner above, which already reaches this page. */}
-      {status?.state === "connected" && (
-        <p className="muted home-identity">
-          Google connected{status.email ? ` as ${status.email}` : ""}
-        </p>
-      )}
+        {/* The one fact where silence is genuinely ambiguous — an unwarned page
+            cannot be told apart from a check that never ran — and this connection
+            expires about weekly. Identity only: the expiry warning belongs to the
+            Shell banner above, which already reaches this page. The green dot is
+            redundant with the words, so forced-colors mode loses nothing. */}
+        {status?.state === "connected" && (
+          <p className="home-identity">
+            Google connected{status.email ? ` as ${status.email}` : ""}
+          </p>
+        )}
+      </div>
 
       {error && (
         <div className="banner banner-error" role="alert">
@@ -124,68 +131,83 @@ export function HomePage() {
         </div>
       )}
 
-      {/* Omitted entirely when empty, rather than rendering an all-clear: the
-          sentence has already said it. The heading is hidden because a sighted
-          reader takes the label from that sentence, but nothing associates the
-          list with it programmatically — and it puts the rail in the heading
-          outline beside "Modules" for heading navigation. */}
-      {rows.length > 0 && (
-        <>
-          <h2 className="visually-hidden">Needs your attention</h2>
-          <ul className="home-rail">
-            {rows.map((row) => (
-              <li key={row.id} className="banner banner-warn">
-                <span>{row.text}</span>
-                <Link to={row.to} className="step-link">
-                  {row.cta}
-                </Link>
-              </li>
+      <div className="home-grid">
+        <div className="home-main">
+          <h2 className="home-section">Modules</h2>
+          <div className="module-grid">
+            {modules.map((module, index) => (
+              <div className="card module-card" key={module.id}>
+                {/* Decorative: the ordinal is the tile's position, which the
+                    reading order already carries. */}
+                <p className="module-number" aria-hidden="true">
+                  {String(index + 1).padStart(2, "0")}
+                </p>
+                <h3>
+                  <Link to={module.path}>{module.label}</Link>
+                  {module.status === "planned" && (
+                    <span className="status-badge status-active">Planned</span>
+                  )}
+                </h3>
+                <p className="muted">{module.description}</p>
+              </div>
             ))}
-          </ul>
-        </>
-      )}
-
-      {/* Attention ≠ activity (ADR-0014): even a quiet Home says what happened.
-          Omitted entirely when nothing has ever finished — no zeroes, ever. */}
-      {feed.length > 0 && (
-        <>
-          <h2>Recent activity</h2>
-          <ul className="home-feed">
-            {feed.map((entry) => (
-              <li key={entry.id}>
-                <Link to={entry.to}>{entry.title}</Link>{" "}
-                <span className="muted">
-                  — {entry.outcome} ·{" "}
-                  <time dateTime={entry.at} title={formatTime(entry.at)}>
-                    {relativeTime(entry.at)}
-                  </time>
-                </span>
-              </li>
-            ))}
-            <li>
-              {/* The feed is capped (ADR-0014), so what has scrolled past it
-                  needs somewhere to be — the Shell's cross-Module list. */}
-              <Link to="/runs" className="muted">
-                All runs
-              </Link>
-            </li>
-          </ul>
-        </>
-      )}
-
-      <h2>Modules</h2>
-      <div className="module-grid">
-        {modules.map((module) => (
-          <div className="card module-card" key={module.id}>
-            <h3>
-              <Link to={module.path}>{module.label}</Link>
-              {module.status === "planned" && (
-                <span className="status-badge status-active">Planned</span>
-              )}
-            </h3>
-            <p className="muted">{module.description}</p>
           </div>
-        ))}
+        </div>
+
+        <div className="home-rail-column">
+          {/* Omitted entirely when empty, rather than rendering an all-clear: the
+              sentence has already said it. The heading is hidden because a sighted
+              reader takes the label from that sentence, but nothing associates the
+              list with it programmatically — and it puts the rail in the heading
+              outline beside "Modules" for heading navigation. */}
+          {rows.length > 0 && (
+            <section className="card home-rail-card">
+              <h2 className="visually-hidden">Needs your attention</h2>
+              <ul className="home-rail">
+                {rows.map((row) => (
+                  <li key={row.id} className="home-rail-row">
+                    <span>{row.text}</span>
+                    {/* The action-button primitive with a pill radius, not a
+                        smaller control: a boxed link still owes 44px (WCAG 2.5.8). */}
+                    <Link to={row.to} className="action-button primary home-cta">
+                      {row.cta}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Attention ≠ activity (ADR-0014): even a quiet Home says what happened.
+              Omitted entirely when nothing has ever finished — no zeroes, ever. */}
+          {feed.length > 0 && (
+            <section className="card home-feed-card">
+              <h2>Recent activity</h2>
+              <ul className="home-feed">
+                {feed.map((entry) => (
+                  <li key={entry.id}>
+                    <Link to={entry.to} className="home-feed-title">
+                      {entry.title}
+                    </Link>
+                    <span className="muted home-feed-meta">
+                      {entry.outcome} ·{" "}
+                      <time dateTime={entry.at} title={formatTime(entry.at)}>
+                        {relativeTime(entry.at)}
+                      </time>
+                    </span>
+                  </li>
+                ))}
+                <li>
+                  {/* The feed is capped (ADR-0014), so what has scrolled past it
+                      needs somewhere to be — the Shell's cross-Module list. */}
+                  <Link to="/runs" className="muted">
+                    All runs
+                  </Link>
+                </li>
+              </ul>
+            </section>
+          )}
+        </div>
       </div>
     </div>
   );

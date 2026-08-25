@@ -20,6 +20,25 @@
   --warn: #8a5a00;
   --bad: #a32a2a;
   --focus: #2456a6;
+  /* Home's attention ramp: warm amber, so a row reads as "act on this" rather
+     than as ordinary content. Body copy on the tint is --ink at 15.34:1, and the
+     3px bar is what carries the row once forced-colors drops the fill. The bar
+     itself is 2.07:1 on the tint and carries no meaning of its own — the row's
+     words do (WCAG 1.4.1, 1.4.11). */
+  --attention-tint: #fffbeb;
+  --attention-line: #fde68a;
+  --attention-bar: #f59e0b;
+  /* Decoration for Home's Module tiles, assigned by position rather than by
+     Module id. Every tile names itself in words, so nothing is told apart by
+     these — they hold no state and may be dropped without loss. The tile's own
+     text clears its floors on every one: --ink from 14.22:1, --muted from
+     5.66:1, --accent from 6.35:1. */
+  --tile-1: #eef2ff;
+  --tile-2: #fef9ec;
+  --tile-3: #ecfdf5;
+  --tile-4: #fdf2f8;
+  /* The dot on the connection pill, redundant with the words beside it. */
+  --connected-dot: #16a34a;
 }
 
 * {
@@ -583,17 +602,113 @@ tr:last-child td {
   border: 1px solid #c3e3cd;
 }
 
-/* Home. The sentence is the whole page when nothing needs attention, so it is
-   set above body copy and measured to a readable line length. */
-.home-sentence {
-  font-size: 1.35rem;
-  line-height: 1.5;
-  max-width: 44ch;
-  margin: 0 0 0.4rem;
+/* Home, the Shell's front door, as a bento command layout: a head card carrying
+   the sentence at display scale, then two columns — the Modules as the hero,
+   attention stacked over activity beside them. Composed from the ADR-0015
+   primitives (.card, .status-badge, .action-button) plus named classes; a
+   vocabulary of chrome, not a second styling system. */
+.home-head {
+  background:
+    radial-gradient(circle at 1px 1px, rgba(36, 86, 166, 0.09) 1px, transparent 0) 0 0 / 18px 18px,
+    linear-gradient(135deg, var(--surface) 0%, var(--surface-alt) 100%);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 16px;
+  padding: 1.4rem 1.5rem 1.25rem;
+  margin-bottom: 1.15rem;
+  box-shadow: 0 2px 10px rgba(26, 34, 51, 0.06);
 }
 
+/* The route's name stays the h1 — the heading outline, the focus target and the
+   skip link all depend on it — but the sentence beneath is what the reader came
+   for, so the h1 is drawn as the card's eyebrow rather than as its loudest line. */
+.home-head h1 {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.45rem;
+}
+
+/* The one thing Home exists to say, so it takes display scale. Measured in rem
+   rather than px so it tracks the reader's own font size (WCAG 1.4.4). */
+.home-sentence {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  max-width: 46rem;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* Healthy infrastructure, visible but quiet. The dot repeats what the words
+   already say, so forced-colors mode — which drops both the fill and the dot's
+   colour — loses no meaning (WCAG 1.4.1). */
 .home-identity {
-  margin: 0 0 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  /* 5.50:1 on --surface-alt. */
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.home-identity::before {
+  content: "\25cf" / "";
+  color: var(--connected-dot);
+  font-size: 0.62rem;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: 1.72fr 0.98fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+/* Reflow: one column below the width where two stop fitting, which a 200% zoom
+   reaches as readily as a narrow window (WCAG 1.4.10). In rem so a reader's own
+   font size moves the breakpoint too. */
+@media (max-width: 55rem) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-sentence {
+    font-size: 1.45rem;
+  }
+}
+
+/* Same min-width: auto trap as .form-grid: the tile grid's 220px minimum would
+   otherwise push this column wider than its track. */
+.home-main {
+  min-width: 0;
+}
+
+/* A heading in the outline, an eyebrow with a rule on the page. */
+h2.home-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+h2.home-section::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }
 
 /* D6: a failure the connection caused. Same warn pairing the banner uses, so
@@ -603,16 +718,70 @@ tr:last-child td {
   color: var(--warn);
 }
 
-.home-rail {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 1.5rem;
+.home-rail-column {
+  display: grid;
+  align-content: start;
+  gap: 0.95rem;
 }
 
-/* .banner carries its own vertical margin, which would double the gap set on
-   the list itself. */
-.home-rail li {
-  margin: 0 0 0.5rem;
+.home-rail-card,
+.home-feed-card {
+  margin: 0;
+  border-radius: 14px;
+  padding: 1rem 1.05rem;
+}
+
+.home-feed-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+.home-feed-card h2::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgba(36, 86, 166, 0.1);
+}
+
+.home-rail {
+  display: grid;
+  gap: 0.6rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Warm amber under a strong left rule: the row reads as something to act on.
+   The rule is a border, so it survives forced-colors mode after the fill is
+   discarded, and the row's meaning is in its words either way (WCAG 1.4.1). */
+.home-rail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid var(--attention-line);
+  border-left: 3px solid var(--attention-bar);
+  border-radius: 10px;
+  background: var(--attention-tint);
+  line-height: 1.35;
+}
+
+/* The action-button primitive at a pill radius. Its 2.75rem minimum stands: a
+   boxed link is not exempt from the target-size floor (WCAG 2.5.8). */
+.home-cta {
+  flex: none;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 /* D11: the two Settings sections. */
@@ -624,29 +793,144 @@ tr:last-child td {
   margin: 0.25rem 0 0.75rem;
 }
 
-/* The activity feed (ADR-0014): a plain list — it is a headline, not the
-   Runs list, and it must not grow card chrome. */
+/* The activity feed (ADR-0014): still a headline rather than the Runs list, so
+   it stays a marked list inside the rail's card and grows no chrome of its own. */
 .home-feed {
-  margin: 0.5rem 0 1.25rem;
-  padding-left: 0;
   list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 .home-feed li {
-  margin-bottom: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  position: relative;
+  padding: 0.62rem 0 0.62rem 0.95rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.home-feed li::before {
+  content: "\b7" / "";
+  position: absolute;
+  left: 0;
+  top: 0.62rem;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+/* The "All runs" escape hatch closes the list rather than joining it: it is the
+   way past the cap, not another thing that happened. */
+.home-feed li:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.home-feed li:last-child::before {
+  content: none;
+}
+
+.home-feed-title {
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+/* Tabular numerals so a relative timestamp holds its width as the digits change
+   under it, instead of jittering the column while the feed is scanned. */
+.home-feed-meta {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* auto-fit rather than a column count: the grid collapses to one column at a
-   narrow viewport or high zoom without a media query of its own, and gains a
-   column when a Module is added. */
+   narrow viewport or high zoom without a media query of its own, and a fifth
+   Module wraps into place without a stylesheet decision. */
 .module-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
 }
 
 .module-card {
+  position: relative;
+  overflow: hidden;
   margin: 0;
+  padding: 1.05rem 1.15rem 1rem;
+  border-radius: 14px;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+/* Feedback that the tile is a way in, before it is clicked. */
+.module-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(26, 34, 51, 0.08);
+  border-color: var(--line-strong);
+}
+
+/* Tinted by position, not by Module id, so adding a Module stays a list edit —
+   and cycling every fourth, so a fifth Module takes the first tint again rather
+   than landing untinted beside four that are not. */
+.module-card:nth-child(4n + 1) {
+  background: linear-gradient(180deg, var(--tile-1) 0%, var(--surface) 62%);
+}
+
+.module-card:nth-child(4n + 2) {
+  background: linear-gradient(180deg, var(--tile-2) 0%, var(--surface) 62%);
+}
+
+.module-card:nth-child(4n + 3) {
+  background: linear-gradient(180deg, var(--tile-3) 0%, var(--surface) 62%);
+}
+
+.module-card:nth-child(4n + 4) {
+  background: linear-gradient(180deg, var(--tile-4) 0%, var(--surface) 62%);
+}
+
+/* The faded corner shape. Decoration with no reading of its own — and faded
+   rather than drawn, because at full strength its border traces an arc across
+   the tile that reads as a torn corner instead of a tint. */
+.module-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -14px -14px auto;
+  width: 78px;
+  height: 78px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface-alt);
+  opacity: 0.45;
+  transform: rotate(14deg);
+}
+
+/* Windows High Contrast discards the fade and redraws the shape as a hard
+   bordered square across the tile's own text. Same answer the Google mark
+   takes: drop it, since it carries nothing (WCAG 1.4.1). */
+@media (forced-colors: active) {
+  .module-card::after {
+    display: none;
+  }
+}
+
+/* Above the corner shape, which is painted in the tile's own stacking context. */
+.module-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Position in the grid, which the reading order already carries — so it is
+   hidden from the accessibility tree in the markup rather than spoken. */
+.module-number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin: 0 0 0.35rem;
 }
 
 .module-card h3 {
@@ -654,12 +938,30 @@ tr:last-child td {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 0 0 0.35rem;
-  font-size: 1.05rem;
+  margin: 0 0 0.28rem;
+  font-size: 1.02rem;
+  letter-spacing: -0.015em;
+}
+
+/* The tile is the affordance, so the label reads as the tile's title rather
+   than as a link inside a sentence — which is the one case WCAG 1.4.1 exempts
+   from needing a non-colour cue. The hover state restores the underline. */
+.module-card h3 a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.module-card h3 a:hover,
+.home-feed-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .module-card p {
   margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .dropzone {
@@ -1052,8 +1354,9 @@ code {
   }
 }
 
-/* Nothing animates or smooth-scrolls today; the reset covers all three
-   mechanisms so adding one later cannot quietly reintroduce motion. */
+/* Home's Module tiles are the only thing that moves — a 2px lift on hover — and
+   the reset still covers all three mechanisms, so anything added later cannot
+   quietly reintroduce motion either. */
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

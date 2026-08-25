@@ -204,16 +204,29 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
   await expect(page.getByTestId("intake-liveness")).toHaveCount(0);
 
-  // One card per Module, from the same list the tab bar renders, so the two
-  // cannot disagree about what exists.
+  // One tile per Module, from the same list the tab bar renders, so the two
+  // cannot disagree about what exists. Counted by role rather than by the
+  // layout's class names, which are the bento's business and not a contract.
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
-  const cards = page.locator(".module-card");
-  await expect(cards).toHaveCount(3);
-  await expect(cards.filter({ hasText: "Hot Take" })).toContainText("Planned");
+  const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
+  await expect(tiles).toHaveCount(4);
+  await expect(tiles.filter({ hasText: "Hot Take" })).toContainText("Planned");
+
+  // Each tile is the way into its Module, and the planned one is announced on
+  // Home while holding no tab of its own (ADR-0014).
+  const home = page.locator("main#main");
+  for (const [label, path] of [
+    ["Transcript → Tasks", "/transcript"],
+    ["YouTube Trends", "/youtube"],
+    ["Idea Engine", "/idea-engine"],
+    ["Hot Take", "/hot-take"],
+  ] as const) {
+    await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);
+  }
 
   // Into the Module, and back out by the wordmark.
-  await cards.first().getByRole("link").click();
+  await home.getByRole("link", { name: "Transcript → Tasks" }).click();
   await expect(page).toHaveURL(/\/transcript$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
   // Dropzone is gone — Drive folder is the Intake; Runs list stays
@@ -336,11 +349,14 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   // The provider row carries the consequence and the way out, which is what the
   // sentence deliberately leaves out — and it claims nothing about what
   // extraction would have produced, since that is a Module's stage.
-  const mockRow = page.locator(".home-rail li", { hasText: "mock provider" });
+  const mockRow = page.locator(".home-rail-row", { hasText: "mock provider" });
   await expect(mockRow).toContainText(
     "Runs are using the mock provider, so nothing real is extracted",
   );
-  await expect(mockRow.getByRole("link", { name: "Choose a provider" })).toBeVisible();
+  await expect(mockRow.getByRole("link", { name: "Choose a provider" })).toHaveAttribute(
+    "href",
+    "/settings",
+  );
 
   // The connection is not a row on its own: the Shell banner above says it on
   // every page. But a run the connection broke names Google in its fix.
@@ -348,11 +364,49 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   // The seeded Run fails because Google was never connected (D6): the row
   // names the reconnect fix and routes to where it lives, instead of pointing
   // at the run as a generic failure.
-  const failedRow = page.locator(".home-rail li").first();
+  const failedRow = page.locator(".home-rail-row").first();
   await expect(failedRow).toContainText("could not finish because Google needs reconnecting");
-  await expect(failedRow.getByRole("link", { name: "Reconnect" })).toBeVisible();
-  await failedRow.getByRole("link", { name: "Reconnect" }).click();
+  const reconnect = failedRow.getByRole("link", { name: "Reconnect" });
+  await expect(reconnect).toHaveAttribute("href", "/settings");
+  await reconnect.click();
   await expect(page).toHaveURL(/\/settings$/);
+});
+
+test("Home reflows to one column, and a connected workspace says whose it is", async ({ page }) => {
+  // The connection this workspace does not have, answered at the API rather
+  // than stored: the tests above and below expect a workspace with no Google
+  // credentials, and a stub leaves it that way.
+  await page.route("**/api/google/status", async (route) => {
+    await route.fulfill({
+      json: {
+        state: "connected",
+        email: "owner@example.com",
+        redirectUri: "http://127.0.0.1:4319/api/google/callback",
+        scopes: [],
+        lastConnectedAt: new Date().toISOString(),
+        expiresAbout: null,
+      },
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  // Identity only, and only when connected — the expiry warning is the Shell
+  // banner's job (ADR-0011). How it is drawn is design judgement; that it is
+  // said is the contract.
+  await expect(page.getByText("Google connected as owner@example.com")).toBeVisible();
+
+  // Two columns where they fit, one where they do not. Asserted as tracks
+  // rather than pixels: what reflow owes the reader is a single column, not a
+  // particular width (WCAG 1.4.10). The 320px test above already covers the
+  // other half — that nothing clips or scrolls sideways once it collapses.
+  const tracks = () =>
+    page
+      .locator(".home-grid")
+      .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
+  expect(await tracks()).toBe(2);
+  await page.setViewportSize({ width: 800, height: 900 });
+  expect(await tracks()).toBe(1);
 });
 
 /* Last in the file, and it puts the workspace back: it is the only test here
