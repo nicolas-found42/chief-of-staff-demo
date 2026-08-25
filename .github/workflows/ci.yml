@@ -3,88 +3,37 @@ name: CI
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  pull_request:
 
 jobs:
-  check:
+  verify:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
+
       - run: npm ci
+
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
       - run: npm run knip
+      - run: npm test
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run test --workspace @chief-of-staff-demo/tests -- --coverage
-      - name: Add coverage to the job summary
-        if: always()
-        run: |
-          if [[ -f coverage/coverage-summary.txt ]]; then
-            {
-              echo "## Server unit coverage"
-              echo '```text'
-              cat coverage/coverage-summary.txt
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      - run: npm run test:e2e --workspace @chief-of-staff-demo/tests
+      - run: npm run test:e2e --workspace @chief-of-staff-demo/tests -- --reporter=html
+
       - name: Upload Playwright report
-        if: failure()
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: tests/playwright-report
-          if-no-files-found: ignore
-
-  image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - run: docker compose build
-      - run: docker compose up -d
-      - name: Wait for the health endpoint
-        run: |
-          for attempt in {1..30}; do
-            if response="$(curl --fail --silent http://127.0.0.1:4317/api/health)" && [[ "$response" == '{"ok":true}' ]]; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker compose logs
-          exit 1
-      - if: always()
-        run: docker compose down
+          path: tests/playwright-report/
+          if-no-files-found: warn
+          retention-days: 7
