@@ -48,6 +48,34 @@ describe("transitions", () => {
     expect(detailOf("stage_started")).toEqual({ stage: "extract" });
   });
 
+  it("blocks a running Run with an explicit durable wait and matching timeline", () => {
+    run.started("selection");
+    run.blocked({
+      requestedAt: "2026-08-25T12:00:00.000Z",
+      stage: "selection",
+      reason: "Choose at least one opportunity or skip this shortlist.",
+      timeout: { kind: "none" },
+    });
+
+    const reopenedWorkspace = openRuns(workspaceDir);
+    const meta = reopenedWorkspace.open(run.id)!.read();
+    expect(meta.status).toBe("blocked");
+    expect(meta.wait).toEqual({
+      requestedAt: "2026-08-25T12:00:00.000Z",
+      stage: "selection",
+      reason: "Choose at least one opportunity or skip this shortlist.",
+      timeout: { kind: "none" },
+    });
+    expect(reopenedWorkspace.detail(run.id)!.events.at(-1)).toMatchObject({
+      type: "run_blocked",
+      detail: {
+        stage: "selection",
+        reason: "Choose at least one opportunity or skip this shortlist.",
+        timeout: { kind: "none" },
+      },
+    });
+  });
+
   it("failed records the Stage, the hint and both events together", () => {
     run.started("outputs");
     run.failed("outputs", "google_expired", "Google sign-in expired.");

@@ -12,6 +12,7 @@ import {
 import {
   Runner,
   RunNotFoundError,
+  RunNotResumableError,
   RunNotRetryableError,
 } from "../../../apps/server/src/engine/runner";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
@@ -106,6 +107,36 @@ describe("driving a Module with a context", () => {
 
     expect(runs.detail(id)!.status).toBe("skipped");
     expect(runs.detail(id)!.skipReason).toBe("nothing to do");
+  });
+
+  it("durably blocks inside a Stage without recording a failure or terminal outcome", async () => {
+    const runner = new Runner({
+      runs,
+      module: fakeModule(),
+      now: () => new Date("2026-08-25T12:00:00.000Z"),
+    });
+    const id = await runner.startRun(record, {
+      work: async (ctx) => {
+        ctx.wait({
+          reason: "Choose at least one opportunity or skip this shortlist.",
+          timeout: { kind: "none" },
+        });
+      },
+    });
+    await runner.idle();
+
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("blocked");
+    expect(detail.wait).toMatchObject({
+      requestedAt: "2026-08-25T12:00:00.000Z",
+      stage: "only",
+      timeout: { kind: "none" },
+    });
+    expect(detail.events.map((event) => event.type)).toEqual([
+      "created",
+      "stage_started",
+      "run_blocked",
+    ]);
   });
 });
 
@@ -240,5 +271,128 @@ describe("retry", () => {
 
     await expect(runner.retryRun(id)).rejects.toThrow(RunNotRetryableError);
     await expect(runner.retryRun("run_20260101-000000_deadbeef")).rejects.toThrow(RunNotFoundError);
+  });
+});
+
+describe("durable resume", () => {
+  it("resumes a blocked Run after reconstructing the Runner and refuses a duplicate resume", async () => {
+    const module = fakeModule({
+      planResume(meta) {
+        return meta.status === "blocked"
+          ? { fromStage: "only", input: { work: async () => undefined } }
+          : null;
+      },
+    });
+    const beforeRestart = new Runner({
+      runs,
+      module,
+      now: () => new Date("2026-08-25T12:00:00.000Z"),
+    });
+    const id = await beforeRestart.startRun(record, {
+      work: async (ctx) => {
+        ctx.wait({ reason: "Waiting for a person.", timeout: { kind: "none" } });
+      },
+    });
+    await beforeRestart.idle();
+
+    const afterRestart = new Runner({ runs: openRuns(workspaceDir), module });
+    const resumed = await afterRestart.resumeRun(id);
+    expect(resumed.status).toBe("pending");
+    expect(resumed.wait).toBeNull();
+    await afterRestart.idle();
+
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("done");
+    expect(detail.events.map((event) => event.type)).toEqual([
+      "created",
+      "stage_started",
+      "run_blocked",
+      "run_resumed",
+      "stage_started",
+      "run_done",
+    ]);
+    await expect(afterRestart.resumeRun(id)).rejects.toThrow(RunNotResumableError);
+  });
+
+  it("recovers only due clock waits and leaves future or indefinite waits blocked", async () => {
+    const module = fakeModule({
+      planResume(meta) {
+        return meta.status === "blocked" ? { fromStage: "only", input: {} } : null;
+      },
+    });
+    const beforeRestart = new Runner({
+      runs,
+      module,
+      now: () => new Date("2026-08-25T12:00:00.000Z"),
+    });
+    const due = await beforeRestart.startRun(record, {
+      work: async (ctx) => {
+        ctx.wait({
+          reason: "Wait until lunch.",
+          timeout: { kind: "at", at: "2026-08-25T12:30:00.000Z" },
+        });
+      },
+    });
+    const indefinite = await beforeRestart.startRun(record, {
+      work: async (ctx) => {
+        ctx.wait({ reason: "Wait for a person.", timeout: { kind: "none" } });
+      },
+    });
+    await beforeRestart.idle();
+
+    const tooEarly = new Runner({
+      runs: openRuns(workspaceDir),
+      module,
+      now: () => new Date("2026-08-25T12:29:59.000Z"),
+    });
+    expect(await tooEarly.recoverRuns()).toBe(0);
+
+    const afterRestart = new Runner({
+      runs: openRuns(workspaceDir),
+      module,
+      now: () => new Date("2026-08-25T12:30:00.000Z"),
+    });
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    expect(runs.detail(due)!.status).toBe("done");
+    expect(runs.detail(due)!.events.find((event) => event.type === "run_resumed")?.detail).toEqual({
+      fromStage: "only",
+      requestedBy: "clock",
+    });
+    expect(runs.detail(indefinite)!.status).toBe("blocked");
+  });
+
+  it("recovers orphaned pending and running Runs from Module plans", async () => {
+    const pending = runs.create({
+      module: "fake",
+      moduleVersion: 2,
+      ...record,
+    });
+    const running = runs.create({
+      module: "fake",
+      moduleVersion: 2,
+      ...record,
+    });
+    running.started("only");
+    const runner = new Runner({
+      runs: openRuns(workspaceDir),
+      module: fakeModule({
+        planRecovery(meta) {
+          return meta.status === "pending" || meta.status === "running"
+            ? { fromStage: "only", input: {} }
+            : null;
+        },
+      }),
+    });
+
+    expect(await runner.recoverRuns()).toBe(2);
+    await runner.idle();
+
+    expect(runs.detail(pending.id)!.status).toBe("done");
+    expect(runs.detail(running.id)!.status).toBe("done");
+    expect(
+      runs.detail(running.id)!.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "only", previousStatus: "running" });
   });
 });

@@ -10,7 +10,7 @@ const ROUTES = [
   "/runs",
   "/youtube",
   "/idea-engine",
-  "/hot-take",
+  "/content-scout",
   "/settings",
   "/settings?google=connected",
   "/settings?google=error",
@@ -442,12 +442,14 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
-  // A planned Module holds no tab (ADR-0014): the bar lists live Modules only.
+  // The bar lists live Modules only; Content Scout joined that sequence when
+  // its first complete selection-to-pack path became real.
   for (const name of [
     "Found42 — Chief of Staff",
     "Transcript → Tasks",
     "YouTube Trends",
     "Idea Engine",
+    "Content Scout",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");

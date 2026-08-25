@@ -133,6 +133,18 @@ describe("buildTimeline", () => {
     ]);
     expect(timeline[1]).toMatchObject({ state: "done", durationMs: 6000 });
   });
+
+  it("closes the open stage when the Run becomes blocked", () => {
+    const timeline = buildTimeline([
+      started("selection", "2026-08-21T10:00:00Z"),
+      {
+        at: "2026-08-21T10:00:05Z",
+        type: "run_blocked",
+        detail: { stage: "selection", reason: "Choose an opportunity." },
+      },
+    ]);
+    expect(timeline[0]).toMatchObject({ state: "done", durationMs: 5000 });
+  });
   it("sums durations across a retry's second attempt", () => {
     const timeline = buildTimeline([
       started("outputs", "2026-08-21T10:00:00Z"),

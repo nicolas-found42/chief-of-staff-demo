@@ -101,11 +101,31 @@ const config: AppConfig = {
     lastConnectedAt: null,
     hasExpiredBefore: false,
   },
+  notion: { token: "", lastVerifiedAt: null },
   drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
   ollama: { baseUrl: "http://127.0.0.1:11434" },
   modules: {
     "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
     "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
+    "content-scout": {
+      timeZone: "UTC",
+      dailyTime: "08:00",
+      weeklyDiscoveryDay: 1,
+      weeklyDiscoveryTime: "09:00",
+      shortlistSize: 5,
+      notion: {
+        databaseId: "",
+        dataSourceId: "",
+        databaseUrl: "",
+        mapping: {
+          name: "Name",
+          status: "Status",
+          platform: "Platform",
+          format: "Format",
+          scheduledDate: "Scheduled date",
+        },
+      },
+    },
   },
 };
 

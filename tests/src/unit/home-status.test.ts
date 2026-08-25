@@ -145,6 +145,29 @@ describe("Home's attention rail", () => {
     expect(rows).toEqual([{ id: "r1", text: "Pricing call failed", cta: "Open", to: "/runs/r1" }]);
   });
 
+  it("keeps an indefinite blocked Run visible with the reason it is waiting", () => {
+    const waiting = {
+      ...run("r1", "blocked", "Content Scout shortlist.md"),
+      wait: {
+        requestedAt: "2026-08-25T12:00:00.000Z",
+        stage: "selection",
+        reason: "Choose up to three opportunities or skip this shortlist.",
+        timeout: { kind: "none" as const },
+      },
+    };
+
+    const status = homeStatus([waiting], REAL, false);
+    expect(status.sentence).toBe("1 run is waiting for you.");
+    expect(status.rows).toEqual([
+      {
+        id: "r1",
+        text: "Content Scout shortlist is waiting: Choose up to three opportunities or skip this shortlist.",
+        cta: "Open",
+        to: "/runs/r1",
+      },
+    ]);
+  });
+
   it("names an untitled Run the way the runs table does", () => {
     const { rows } = homeStatus([run("r1", "failed", "")], REAL, true);
     expect(rows[0].text).toBe("Untitled run failed");

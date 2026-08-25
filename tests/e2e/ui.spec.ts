@@ -114,7 +114,7 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
   // region, because the Settings card renders warnings of its own.
   const shellBanner = page.locator('main > [role="status"] .banner-warn');
 
-  for (const path of ["/", "/transcript", "/hot-take"]) {
+  for (const path of ["/", "/transcript", "/content-scout"]) {
     await page.goto(path);
     // Shell vocabulary: Tasks and Gmail are Google surfaces, where the old
     // string named Transcript's own pipeline stages.
@@ -211,7 +211,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
   await expect(tiles).toHaveCount(4);
-  await expect(tiles.filter({ hasText: "Hot Take" })).toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Content Scout" })).not.toContainText("Planned");
 
   // Each tile is the way into its Module, and the planned one is announced on
   // Home while holding no tab of its own (ADR-0014).
@@ -220,7 +220,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
     ["Transcript → Tasks", "/transcript"],
     ["YouTube Trends", "/youtube"],
     ["Idea Engine", "/idea-engine"],
-    ["Hot Take", "/hot-take"],
+    ["Content Scout", "/content-scout"],
   ] as const) {
     await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }
@@ -274,6 +274,65 @@ test("the Shell lists every Module's runs, and a Module's page lists only its ow
   await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
   await expect(page.locator(".receipt")).toBeVisible();
   await expect(page.locator(".run-meta")).toContainText("Transcript → Tasks");
+});
+
+test("Content Scout goes from bounded Brand Profile scan to a complete copied draft", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/content-scout");
+  await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Brand Profile" }).click();
+  await page.getByLabel("Company website URL").fill("https://company.example/");
+  await page.getByRole("button", { name: "Scan website" }).click();
+  await expect(page.getByRole("heading", { name: "Review website evidence" })).toBeVisible();
+  await expect(
+    page.getByText("Depth 1 · https://company.example/blog", { exact: false }),
+  ).toContainText("Default transient");
+  await page.getByRole("button", { name: "Accept selected sections" }).click();
+  await expect(page.getByText(/^Current revision brand_/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Sources" }).click();
+  await page.getByLabel("Source Adapter").selectOption("rss");
+  await page.getByLabel("Name").fill("Example Research");
+  await page.getByLabel("Recurring public URL").fill("https://example.com/research.xml");
+  await page.getByRole("button", { name: "Approve source" }).click();
+  await expect(page.getByRole("cell", { name: "Example Research", exact: false })).toBeVisible();
+
+  await page.getByRole("button", { name: "Scout now" }).click();
+  await expect(page.getByText("The ranked shortlist is ready for your decision.")).toBeVisible();
+  await page.getByRole("button", { name: "Shortlist" }).click();
+  await expect(page.getByText("Explain what the verified change means in practice")).toBeVisible();
+  await page.getByRole("checkbox", { name: /Explain what the verified change/ }).check();
+  await page.getByRole("button", { name: "Generate 1 pack" }).click();
+  await expect(page.getByText("The complete Content Pack is ready.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Content Packs" }).click();
+  const pack = page.locator("article.card", { hasText: "Explain what the verified change" });
+  await expect(pack).toContainText("23/23 local drafts · 23/23 Notion pages");
+  await expect(pack.getByText("complete", { exact: true })).toBeVisible();
+  await pack.getByRole("button", { name: /LinkedIn Standard post/ }).click();
+  await expect(page.getByRole("heading", { name: "LinkedIn — Standard post" })).toBeVisible();
+  await page.getByRole("button", { name: "Copy draft" }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain("Evidence-led draft for linkedin-standard-post");
+  await expect(page.getByRole("link", { name: "Open editable Notion copy" })).toHaveAttribute(
+    "href",
+    /^https:\/\/www\.notion\.so\/e2e-content-draft-/,
+  );
+
+  const runs = await page.request.get("/api/runs?module=content-scout");
+  expect(runs.ok()).toBe(true);
+  const body = (await runs.json()) as { runs: { intake: string; status: string }[] };
+  expect(body.runs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ intake: "brand-profile-scan", status: "done" }),
+      expect.objectContaining({ intake: "daily-intake", status: "done" }),
+    ]),
+  );
 });
 
 test("YouTube Trends holds a tab, and refuses a bad paste while you are looking at it", async ({
