@@ -491,7 +491,10 @@ export function GoogleConnect(props: GoogleConnectProps) {
                 type="button"
                 className="wizard-step-toggle"
                 aria-expanded={open}
-                aria-controls={`wizard-panel-${index}`}
+                /* Only the open step's panel is in the DOM, and aria-controls
+                   naming an element that is not there points a screen reader at
+                   nothing. aria-expanded alone is a whole disclosure. */
+                aria-controls={open ? `wizard-panel-${index}` : undefined}
                 onClick={() => {
                   setOpenStep(index);
                   setFurthestStep((current) => Math.max(current, index));

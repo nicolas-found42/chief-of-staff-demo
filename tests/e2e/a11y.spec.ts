@@ -3,6 +3,20 @@ import { expect, test, type Page } from "@playwright/test";
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
+/** Every static route the page-wide scans walk. Each Module's tab is in here. */
+const ROUTES = [
+  "/",
+  "/transcript",
+  "/runs",
+  "/youtube",
+  "/idea-engine",
+  "/hot-take",
+  "/settings",
+  "/settings?google=connected",
+  "/settings?google=error",
+  "/no-such-page",
+];
+
 /** Create a Run via the test seam and land on its detail page. */
 async function openRun(page: Page): Promise<void> {
   const res = await page.request.post("/api/test/seed");
@@ -124,17 +138,7 @@ test("every route is free of axe violations", async ({ page }) => {
   await openRun(page);
   const runUrl = page.url();
 
-  for (const path of [
-    "/",
-    "/transcript",
-    "/runs",
-    runUrl,
-    "/hot-take",
-    "/settings",
-    "/settings?google=connected",
-    "/settings?google=error",
-    "/no-such-page",
-  ]) {
+  for (const path of [runUrl, ...ROUTES]) {
     await page.goto(path);
     await page.waitForTimeout(300);
     // Expand the transcript so its contents are scanned too.
@@ -147,6 +151,44 @@ test("every route is free of axe violations", async ({ page }) => {
       violations.map((v) => `${v.id} (${v.impact})`),
       `axe violations on ${path}`,
     ).toEqual([]);
+  }
+});
+
+/**
+ * An aria attribute naming an id that does not exist leaves the element it
+ * labels with no accessible name at all. axe files this as *incomplete* rather
+ * than a violation — the id could appear later — so the scan above cannot see
+ * it, and one shipped: a Settings card labelled by a heading that had been
+ * removed. This walks the references instead of trusting the scan.
+ */
+test("every aria reference points at an element that exists", async ({ page }) => {
+  await openRun(page);
+  const runUrl = page.url();
+
+  for (const path of [runUrl, ...ROUTES]) {
+    await page.goto(path);
+    await page.waitForTimeout(300);
+    const dangling = await page.evaluate(() => {
+      const attributes = [
+        "aria-labelledby",
+        "aria-describedby",
+        "aria-controls",
+        "aria-errormessage",
+        "aria-owns",
+      ];
+      return attributes.flatMap((attribute) =>
+        Array.from(document.querySelectorAll(`[${attribute}]`)).flatMap((el) =>
+          (el.getAttribute(attribute) ?? "")
+            .split(/\s+/)
+            .filter((id) => id.length > 0 && !document.getElementById(id))
+            .map(
+              (id) =>
+                `${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""} ${attribute}="${id}"`,
+            ),
+        ),
+      );
+    });
+    expect(dangling, `dangling aria references on ${path}`).toEqual([]);
   }
 });
 

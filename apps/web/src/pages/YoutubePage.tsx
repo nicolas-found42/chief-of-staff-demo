@@ -6,6 +6,14 @@ import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
+/* How many of a channel's videos the table paints before asking. "Every video,
+   every day, with no cutoff" is a rule about what a Run records, not about what
+   one page paints: a channel's back catalogue runs to thousands of rows, and a
+   table that long is slow to render and impossible to walk with a keyboard. The
+   rows are most-viewed-first, so the ones that carry the channel are always in
+   the first page. */
+const VIDEO_PAGE_SIZE = 50;
+
 /** View counts are the point of the page, so they are grouped, not raw. */
 function views(count: number): string {
   return count.toLocaleString();
@@ -42,6 +50,8 @@ export function YoutubePage() {
      two-hundred-video channel, so a video's own line is revealed by expanding
      its row — the fifth primitive, which costs nothing new. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /* How many rows of the current channel's table are painted. */
+  const [shown, setShown] = useState(VIDEO_PAGE_SIZE);
 
   const refresh = useCallback(async () => {
     try {
@@ -61,6 +71,16 @@ export function YoutubePage() {
      removed while its sub-tab is open. */
   const current: ChannelTrend | null =
     channels.find((channel) => channel.channelId === selected) ?? channels[0] ?? null;
+  const currentId = current?.channelId ?? null;
+
+  /* A different channel is a different table, so the cap starts over rather than
+     carrying one channel's revealed rows into the next. */
+  useEffect(() => {
+    setShown(VIDEO_PAGE_SIZE);
+  }, [currentId]);
+
+  const visibleVideos = current ? current.videos.slice(0, shown) : [];
+  const hiddenVideos = current ? current.videos.length - visibleVideos.length : 0;
 
   const add = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -280,6 +300,8 @@ export function YoutubePage() {
                     <table className="runs-table" data-testid="youtube-videos">
                       <caption className="visually-hidden">
                         Videos on {current.title}, most viewed first
+                        {hiddenVideos > 0 &&
+                          `, showing the first ${views(visibleVideos.length)} of ${views(current.videos.length)}`}
                       </caption>
                       <thead>
                         <tr>
@@ -290,7 +312,7 @@ export function YoutubePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {current.videos.map((video) => {
+                        {visibleVideos.map((video) => {
                           const open = expanded.has(video.id);
                           return (
                             <React.Fragment key={video.id}>
@@ -343,6 +365,17 @@ export function YoutubePage() {
                       </tbody>
                     </table>
                   </div>
+                  {hiddenVideos > 0 && (
+                    <div className="field-row">
+                      <button
+                        type="button"
+                        className="action-button"
+                        onClick={() => setShown((count) => count + VIDEO_PAGE_SIZE)}
+                      >
+                        Show more videos ({views(hiddenVideos)} left)
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </section>

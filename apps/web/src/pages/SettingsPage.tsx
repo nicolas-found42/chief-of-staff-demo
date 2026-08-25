@@ -571,8 +571,10 @@ export function SettingsPage() {
           void save();
         }}
       >
-        {/* Each card is a labelled group so same-named fields stay
-            distinguishable to anyone navigating by form control (1.3.1). */}
+        {/* Each card below is a labelled group so same-named fields stay
+            distinguishable to anyone navigating by form control (1.3.1). The
+            section further down holds one card, which its own heading already
+            names — a second group there would say the same thing twice. */}
         <section className="settings-section" aria-labelledby="section-connections">
           <h2 id="section-connections">Connections</h2>
 
@@ -619,7 +621,7 @@ export function SettingsPage() {
 
         <section className="settings-section" aria-labelledby="section-tuning">
           <h2 id="section-tuning">Transcript → Tasks</h2>
-          <div className="card" role="group" aria-labelledby="group-drive">
+          <div className="card">
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="tasklist-name">Task list name</label>
