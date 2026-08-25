@@ -41,6 +41,12 @@ export const ConfigSchema = z.strictObject({
        predicts an expiry only once it has seen one. */
     hasExpiredBefore: z.boolean().default(false),
   }),
+  notion: z
+    .strictObject({
+      token: z.string(),
+      lastVerifiedAt: z.string().nullable().default(null),
+    })
+    .default({ token: "", lastVerifiedAt: null }),
   drive: z.strictObject({
     enabled: z.boolean().default(false),
     folderId: z.string().default(""),
@@ -79,10 +85,89 @@ export const ConfigSchema = z.strictObject({
           // kept for config completeness, but hashes live in Run results primarily
         })
         .default({ spreadsheetId: "", spreadsheetUrl: "", prompts: {} }),
+      "content-scout": z
+        .strictObject({
+          timeZone: z.string().default("UTC"),
+          dailyTime: z.string().default("08:00"),
+          weeklyDiscoveryDay: z.number().int().min(1).max(7).default(1),
+          weeklyDiscoveryTime: z.string().default("09:00"),
+          shortlistSize: z.number().int().min(3).max(10).default(5),
+          notion: z
+            .strictObject({
+              databaseId: z.string().default(""),
+              dataSourceId: z.string().default(""),
+              databaseUrl: z.string().default(""),
+              mapping: z
+                .strictObject({
+                  name: z.string().default("Name"),
+                  status: z.string().default("Status"),
+                  platform: z.string().default("Platform"),
+                  format: z.string().default("Format"),
+                  scheduledDate: z.string().default("Scheduled date"),
+                })
+                .default({
+                  name: "Name",
+                  status: "Status",
+                  platform: "Platform",
+                  format: "Format",
+                  scheduledDate: "Scheduled date",
+                }),
+            })
+            .default({
+              databaseId: "",
+              dataSourceId: "",
+              databaseUrl: "",
+              mapping: {
+                name: "Name",
+                status: "Status",
+                platform: "Platform",
+                format: "Format",
+                scheduledDate: "Scheduled date",
+              },
+            }),
+        })
+        .default({
+          timeZone: "UTC",
+          dailyTime: "08:00",
+          weeklyDiscoveryDay: 1,
+          weeklyDiscoveryTime: "09:00",
+          shortlistSize: 5,
+          notion: {
+            databaseId: "",
+            dataSourceId: "",
+            databaseUrl: "",
+            mapping: {
+              name: "Name",
+              status: "Status",
+              platform: "Platform",
+              format: "Format",
+              scheduledDate: "Scheduled date",
+            },
+          },
+        }),
     })
     .default({
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
       "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
+      "content-scout": {
+        timeZone: "UTC",
+        dailyTime: "08:00",
+        weeklyDiscoveryDay: 1,
+        weeklyDiscoveryTime: "09:00",
+        shortlistSize: 5,
+        notion: {
+          databaseId: "",
+          dataSourceId: "",
+          databaseUrl: "",
+          mapping: {
+            name: "Name",
+            status: "Status",
+            platform: "Platform",
+            format: "Format",
+            scheduledDate: "Scheduled date",
+          },
+        },
+      },
     }),
 });
 export type AppConfig = z.infer<typeof ConfigSchema>;
@@ -132,6 +217,10 @@ export interface RedactedConfig {
   google: {
     clientId: string;
     clientSecret: SecretHint;
+  };
+  notion: {
+    token: SecretHint;
+    lastVerifiedAt: string | null;
   };
   drive: {
     enabled: boolean;
@@ -246,8 +335,21 @@ export interface DriveIntakeStatus {
 // Runs
 // ---------------------------------------------------------------------------
 
-export const RUN_STATUSES = ["pending", "running", "done", "skipped", "failed"] as const;
+export const RUN_STATUSES = ["pending", "running", "blocked", "done", "skipped", "failed"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export type RunWaitTimeout = { kind: "none" } | { kind: "at"; at: string };
+
+/** Shell-owned durable wait standing against a blocked Run (ADR-0020). */
+export interface RunWait {
+  requestedAt: string;
+  /** The Module-named Stage that requested the wait. */
+  stage: string;
+  /** Person-readable explanation shown on Runs surfaces. */
+  reason: string;
+  /** Indefinite is explicit; it is never inferred from an absent timestamp. */
+  timeout: RunWaitTimeout;
+}
 
 /** runs/<runId>/meta.json */
 export interface RunMeta {
@@ -270,6 +372,8 @@ export interface RunMeta {
    *  Trends. The Shell stores it and reads nothing into it. */
   externalId: string | null;
   status: RunStatus;
+  /** Present only while status is `blocked`. Legacy Runs read as null. */
+  wait?: RunWait | null;
   attempts: number;
   /** Workflow-named stage, e.g. "convert" | "extract" | "outputs" for the transcript workflow. */
   failedStage: string | null;
@@ -293,6 +397,9 @@ export const SHELL_EVENT_TYPES = [
   "run_done",
   "run_failed",
   "run_reopened",
+  "run_blocked",
+  "run_resumed",
+  "run_recovered",
   /* A transcript-Module word the Shell writes from `finished()`. It is in this
      list because the list states what the Shell writes today, not what it
      should write. See §5. */
@@ -318,6 +425,8 @@ export interface RunSummary {
   fileName?: string;
   sourceUrl: string | null;
   status: RunStatus;
+  /** The durable wait when blocked; null for every other status and legacy Run. */
+  wait?: RunWait | null;
   /** Why the Run was skipped; null unless status is "skipped". */
   skipReason: string | null;
   /** The line the Module wrote about what it did; null when it wrote none. */
