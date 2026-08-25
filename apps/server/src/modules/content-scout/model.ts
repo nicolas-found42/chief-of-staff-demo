@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { DraftReviewNote, RankedOpportunity, SourceItem } from "@chief-of-staff-demo/shared";
+import type { DraftReviewNote, RankedOpportunity } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import type { DraftGenerator, OpportunityRanker } from "./ports.js";
 
@@ -114,29 +114,10 @@ function parseRanked(raw: unknown): RankedOpportunity[] {
   });
 }
 
-function eligibleSourceItems(items: SourceItem[], brandProfileMarkdown: string): SourceItem[] {
-  const avoidedSection = /##\s+Avoided subjects\s*\n([\s\S]*?)(?=\n##\s|$)/i.exec(
-    brandProfileMarkdown,
-  )?.[1];
-  const avoided = (avoidedSection?.match(/^\s*[-*]\s+(.+)$/gm) ?? []).map((line) =>
-    line
-      .replace(/^\s*[-*]\s+/, "")
-      .trim()
-      .toLowerCase(),
-  );
-  return items.filter((item) => {
-    const evidence = `${item.title ?? ""}\n${item.body ?? ""}\n${item.description ?? ""}`.trim();
-    if (!item.canonicalUrl || evidence.length < 20) return false;
-    const normalized = evidence.toLowerCase();
-    return avoided.every((subject) => subject === "" || !normalized.includes(subject));
-  });
-}
-
 export function modelOpportunityRanker(getCompleteJson: () => CompleteJson): OpportunityRanker {
   return {
-    async rank({ brandProfile, items, limit }) {
-      const eligible = eligibleSourceItems(items, brandProfile.markdown);
-      if (eligible.length === 0) return [];
+    async rank({ brandProfile, items, storyGroups, limit }) {
+      if (items.length === 0) return [];
       const complete = getCompleteJson();
       const raw = await complete({
         system: `You rank public evidence into Content Opportunities.
@@ -151,11 +132,11 @@ experimentalEvidence, confidence, and scores. angle is one of practical_implicat
 contrarian_interpretation, myth_correction, trend_analysis, tactical_advice,
 founder_perspective, customer_implication, forecast, reaction, educational_explanation.
 scores contains ${SCORE_KEYS.join(", ")}, each 0..1; speculationRisk is risk, so lower is safer.`,
-        user: `<brand-profile>\n${brandProfile.markdown}\n</brand-profile>\n\n<source-items untrusted="true">\n${JSON.stringify(eligible)}\n</source-items>`,
+        user: `<brand-profile>\n${brandProfile.markdown}\n</brand-profile>\n\n<story-groups>\n${JSON.stringify(storyGroups)}\n</story-groups>\n\n<source-items untrusted="true">\n${JSON.stringify(items)}\n</source-items>`,
       });
       const ranked = parseRanked(raw).filter((opportunity) => {
-        const knownIds = new Set(eligible.map((item) => item.id));
-        const knownUrls = new Set(eligible.map((item) => item.canonicalUrl));
+        const knownIds = new Set(items.map((item) => item.id));
+        const knownUrls = new Set(items.map((item) => item.canonicalUrl));
         return (
           opportunity.sourceItemIds.length > 0 &&
           opportunity.sourceItemIds.every((id) => knownIds.has(id)) &&

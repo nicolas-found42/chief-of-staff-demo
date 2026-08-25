@@ -12,6 +12,8 @@ import type {
   DraftTargetContract,
   OpportunityBrief,
   SourceSuggestion,
+  SourceStoryGroup,
+  ContentScoutRuntimeCapability,
 } from "@chief-of-staff-demo/shared";
 
 interface SourceCollectionRequest {
@@ -19,14 +21,16 @@ interface SourceCollectionRequest {
   since: string;
   until: string;
   checkpoint: string | null;
+  conditional?: { etag: string | null; lastModified: string | null } | null;
 }
 
-export type SourceCollectionResult =
+export type SourceCollectionResult = (
   | {
       kind: "completed";
       outcome: "items_found" | "legitimate_empty" | "no_new_material";
       items: SourceItem[];
       checkpoint: string | null;
+      conditional?: { etag: string | null; lastModified: string | null } | null;
       diagnostic: AdapterDiagnostic;
     }
   | {
@@ -37,8 +41,13 @@ export type SourceCollectionResult =
       >;
       items: SourceItem[];
       checkpoint: null;
+      conditional?: { etag: string | null; lastModified: string | null } | null;
       diagnostic: AdapterDiagnostic;
-    };
+    }
+) & {
+  /** Raw diagnostic material; the shared path sanitizes and bounds it before persistence. */
+  diagnosticBody?: { contentType: string; body: string };
+};
 
 /** One platform/protocol-specific adapter at the shared Source Item seam. */
 export interface SourceAdapter {
@@ -54,6 +63,7 @@ export interface OpportunityRanker {
   rank(input: {
     brandProfile: BrandProfileRevision;
     items: SourceItem[];
+    storyGroups: SourceStoryGroup[];
     limit: number;
   }): Promise<RankedOpportunity[]>;
 }
@@ -97,4 +107,8 @@ export interface BrandProfileCrawler {
 
 export interface BrandProfileProposer {
   propose(input: { pages: BrandProfileScanPage[] }): Promise<string>;
+}
+
+export interface RuntimeInspector {
+  inspect(): Promise<ContentScoutRuntimeCapability[]>;
 }

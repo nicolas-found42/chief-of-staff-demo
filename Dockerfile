@@ -1,6 +1,6 @@
 # Build server + web, drop dev dependencies, then copy the result into a clean
 # runtime image. One image: Node serves the API and the built web UI.
-FROM node:22-slim AS build
+FROM node:22.18.0-bookworm-slim AS build
 WORKDIR /app
 
 # Manifests first, so `npm ci` is only re-run when dependencies change.
@@ -17,14 +17,58 @@ COPY apps/server apps/server
 COPY apps/web apps/web
 RUN npm run build && npm prune --omit=dev
 
-FROM node:22-slim AS runtime
+FROM debian:bookworm-slim AS whisper-build
+ARG WHISPER_CPP_VERSION=v1.7.6
+ARG WHISPER_CPP_SHA256=166140e9a6d8a36f787a2bd77f8f44dd64874f12dd8359ff7c1f4f9acb86202e
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates cmake curl g++ git make \
+    && curl -fsSL "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/${WHISPER_CPP_VERSION}.tar.gz" -o /tmp/whisper.cpp.tar.gz \
+    && echo "${WHISPER_CPP_SHA256}  /tmp/whisper.cpp.tar.gz" | sha256sum --check - \
+    && tar -xzf /tmp/whisper.cpp.tar.gz -C /tmp \
+    && cmake -S "/tmp/whisper.cpp-${WHISPER_CPP_VERSION#v}" -B /tmp/whisper-build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DGGML_NATIVE=OFF \
+      -DWHISPER_BUILD_EXAMPLES=ON \
+      -DWHISPER_BUILD_TESTS=OFF \
+      -DWHISPER_BUILD_SERVER=OFF \
+    && cmake --build /tmp/whisper-build --config Release --target whisper-cli --parallel 2
+
+# This release tag pins Playwright's Chromium revision and its system libraries.
+FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e AS runtime
+ARG YT_DLP_VERSION=2025.08.22
+ARG YOUTUBE_TRANSCRIPT_API_VERSION=1.2.2
+ARG INSTALOADER_VERSION=4.14.2
+ARG PYTHON_VERSION=3.12.3-0ubuntu2.1
+ARG FFMPEG_VERSION=7:6.1.1-3ubuntu5
+ARG WHISPER_CPP_VERSION=v1.7.6
 WORKDIR /app
 # HOST=0.0.0.0 because the loopback interface inside a container is not
 # reachable from the host; the host-side binding stays on 127.0.0.1 (compose).
 ENV NODE_ENV=production \
     PORT=4317 \
     HOST=0.0.0.0 \
-    WORKSPACE_DIR=/app/workspace
+    WORKSPACE_DIR=/app/workspace \
+    PATH=/opt/content-scout-python/bin:$PATH
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      "ffmpeg=${FFMPEG_VERSION}" \
+      "python3=${PYTHON_VERSION}" \
+      "python3-venv=${PYTHON_VERSION}" \
+    && python3 -m venv /opt/content-scout-python \
+    && /opt/content-scout-python/bin/pip install --no-cache-dir \
+      "instaloader==${INSTALOADER_VERSION}" \
+      "youtube-transcript-api==${YOUTUBE_TRANSCRIPT_API_VERSION}" \
+      "yt-dlp==${YT_DLP_VERSION}" \
+    && chromium_path="$(find /ms-playwright -type f -path '*/chrome-linux/chrome' | head -n 1)" \
+    && test -n "$chromium_path" \
+    && ln -s "$chromium_path" /usr/local/bin/chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=whisper-build /tmp/whisper-build/bin/whisper-cli /usr/local/bin/whisper-cli
+RUN mkdir -p /usr/local/share/content-scout \
+    && printf '%s\n' "${WHISPER_CPP_VERSION}" > /usr/local/share/content-scout/whisper-cpp-version
 
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules node_modules
@@ -34,9 +78,19 @@ COPY --from=build /app/apps/server/package.json apps/server/
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY --from=build /app/apps/web/dist apps/web/dist
 
+# Hermetic runtime smoke checks: command boundaries only, with no social-network calls.
+RUN chromium --version \
+    | grep -F "151.0.7922.34" \
+    && python3 --version | grep -F "3.12.3" \
+    && python3 -c "import importlib.metadata; print(importlib.metadata.version('youtube-transcript-api'))" | grep -Fx "${YOUTUBE_TRANSCRIPT_API_VERSION}" \
+    && instaloader --version | grep -F "${INSTALOADER_VERSION}" \
+    && ffmpeg -version 2>&1 | head -n 1 | grep -F "6.1.1-3ubuntu5" \
+    && yt-dlp --version | grep -Fx "${YT_DLP_VERSION}" \
+    && whisper-cli --help >/dev/null
+
 # Runs and secrets live in the mounted workspace, never in a layer.
-RUN mkdir -p /app/workspace && chown -R node:node /app/workspace
-USER node
+RUN mkdir -p /app/workspace && chown -R pwuser:pwuser /app/workspace
+USER pwuser
 VOLUME ["/app/workspace"]
 EXPOSE 4317
 CMD ["node", "apps/server/dist/main.js"]

@@ -4,6 +4,7 @@ import {
   CONTENT_SCOUT_DRAFT_TARGETS_V1,
   type ContentDraft,
   type ContentPack,
+  type ContentScoutCleanupPreview,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ContentScoutState } from "../client";
 import { usePageFocus } from "../usePageFocus";
@@ -897,6 +898,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
 
 function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
   const [token, setToken] = useState("");
+  const [cleanupPreview, setCleanupPreview] = useState<ContentScoutCleanupPreview | null>(null);
   const initial = state.settings ?? {
     timeZone: "UTC",
     dailyTime: "08:00",
@@ -1193,9 +1195,116 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
             </>
           )}
         </div>
+        <div className="card">
+          <h3>Storage & retention</h3>
+          <dl className="receipt-grid">
+            {(
+              [
+                ["Durable records", state.storage.categories.durableRecords],
+                ["Sanitized diagnostics", state.storage.categories.sanitizedDiagnostics],
+                ["Temporary media", state.storage.categories.temporaryMedia],
+                [
+                  "Retained evidence transcripts",
+                  state.storage.categories.retainedEvidenceTranscripts,
+                ],
+              ] as const
+            ).map(([label, category]) => (
+              <div className="receipt-row" key={label}>
+                <dt>{label}</dt>
+                <dd>
+                  {formatBytes(category.bytes)} in {category.files} file
+                  {category.files === 1 ? "" : "s"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="muted">
+            Cleanup covers only sanitized diagnostics older than 30 days and failed temporary media
+            older than 24 hours. Brand Profiles, source history, Run receipts, Content Packs, and
+            evidence transcripts remain.
+          </p>
+          <div className="toolbar">
+            <button
+              type="button"
+              aria-disabled={busy}
+              onClick={(event) => {
+                if (busy) return;
+                retainFocus(event.currentTarget);
+                void act(async () => {
+                  setCleanupPreview(await api.previewContentScoutCleanup());
+                }, "Temporary-data cleanup preview is ready.");
+              }}
+            >
+              Preview temporary cleanup
+            </button>
+            {cleanupPreview && cleanupPreview.files > 0 && (
+              <button
+                className="danger"
+                type="button"
+                aria-disabled={busy}
+                onClick={(event) => {
+                  if (busy) return;
+                  retainFocus(event.currentTarget);
+                  void act(async () => {
+                    await api.cleanupContentScoutTemporaryData();
+                    setCleanupPreview(null);
+                  }, "Expired temporary data deleted. Durable records and evidence were preserved.");
+                }}
+              >
+                Delete {cleanupPreview.files} expired temporary file
+                {cleanupPreview.files === 1 ? "" : "s"}
+              </button>
+            )}
+          </div>
+          {cleanupPreview && (
+            <div className="banner banner-warn" role="status">
+              {cleanupPreview.files === 0
+                ? "Nothing is eligible for temporary-data cleanup."
+                : `${cleanupPreview.files} scoped temporary file${cleanupPreview.files === 1 ? "" : "s"} (${formatBytes(cleanupPreview.bytes)}) will be deleted. Durable records and evidence transcripts are excluded.`}
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <h3>External runtimes</h3>
+          <p className="muted">
+            These command capabilities are checked inside the same production runtime that runs
+            Source Adapters.
+          </p>
+          {state.runtimeCapabilities.length === 0 ? (
+            <p>No external runtime inspection is configured.</p>
+          ) : (
+            <ul className="not-done-list">
+              {state.runtimeCapabilities.map((capability) => (
+                <li key={capability.id}>
+                  <strong>{capability.id}</strong>: {runtimeStateLabel(capability.state)}
+                  {capability.version ? ` — ${capability.version}` : ""}
+                  {capability.pinnedVersion ? ` (pinned ${capability.pinnedVersion})` : ""}
+                  {capability.requiredBy.length > 0
+                    ? `; used by ${capability.requiredBy.join(", ")}`
+                    : ""}
+                  {capability.diagnostic.causeChain.length > 0
+                    ? `. ${capability.diagnostic.causeChain.join(" → ")}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </section>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
+function runtimeStateLabel(state: "available" | "unavailable" | "unsupported"): string {
+  if (state === "available") return "Available";
+  if (state === "unavailable") return "Unavailable";
+  return "Unsupported";
 }
 
 interface ViewProps {

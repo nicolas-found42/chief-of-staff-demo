@@ -178,7 +178,9 @@ describe("ContentScoutHost", () => {
     expect(detail.events.map((event) => event.type)).toEqual([
       "created",
       "stage_started",
+      "source_adapter_attempted",
       "source_adapter_completed",
+      "source_adapter_attempted",
       "source_adapter_failed",
       "stage_started",
       "stage_started",
@@ -194,7 +196,7 @@ describe("ContentScoutHost", () => {
       omittedCount: 0,
       opportunities: [
         {
-          id: "opportunity-1",
+          id: expect.stringMatching(/^opportunity-/),
           state: "ready",
           title: "Explain what the verified change means in practice",
         },
@@ -439,7 +441,8 @@ describe("ContentScoutHost", () => {
     const runId = await host.scoutNow();
     await host.idle();
 
-    await host.select(runId, ["opportunity-1"]);
+    const opportunityId = host.activeShortlist()!.opportunities[0].id;
+    await host.select(runId, [opportunityId]);
     await host.idle();
 
     expect(runs.detail(runId)!.status).toBe("done");
@@ -460,7 +463,7 @@ describe("ContentScoutHost", () => {
     expect(packs).toHaveLength(1);
     expect(packs[0]).toMatchObject({
       runId,
-      opportunityId: "opportunity-1",
+      opportunityId,
       status: "complete",
     });
     expect(packs[0]?.draftIds).toHaveLength(23);
@@ -533,12 +536,13 @@ describe("ContentScoutHost", () => {
     const runId = await host.scoutNow();
     await host.idle();
 
-    await host.select(runId, ["opportunity-1"]);
+    const opportunityId = host.activeShortlist()!.opportunities[0].id;
+    await host.select(runId, [opportunityId]);
     await host.idle();
     expect(runs.detail(runId)!.status).toBe("failed");
     expect(runs.detail(runId)!.failedStage).toBe("draft");
     const successfulTarget = "linkedin-standard-post";
-    const packId = `${runId}--opportunity-1`;
+    const packId = `${runId}--${opportunityId}`;
     const successfulArtifact = `draft-${packId}-${successfulTarget}.json`;
     const successfulBefore = runs.open(runId)!.readArtifact(successfulArtifact);
 

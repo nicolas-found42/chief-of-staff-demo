@@ -57,6 +57,19 @@ export interface SourceItem {
     transcript: SourceFieldState;
     comments: SourceFieldState;
   };
+  /** Adapter-supplied stable story identity when the platform exposes one. */
+  storyKey?: string;
+  /** Deterministic claim support produced by extraction/enrichment, when known. */
+  claims?: {
+    text: string;
+    state: "supported" | "unsupported";
+    sourceUrls: string[];
+  }[];
+}
+
+export interface SourceStoryGroup {
+  canonicalKey: string;
+  sourceItemIds: string[];
 }
 
 export interface AdapterDiagnostic {
@@ -72,6 +85,22 @@ export interface AdapterDiagnostic {
   retries: number;
   affectedCapabilities: string[];
   causeChain: string[];
+  /** Parsed Retry-After delay supplied by the remote host, when present. */
+  retryAfterMs?: number;
+}
+
+export interface SourceCollectionAttemptReceipt {
+  targetId: string;
+  adapterId: string;
+  attempt: number;
+  startedAt: string;
+  finishedAt: string;
+  outcome: SourceDiagnosticClassification;
+  checkpointBefore: string | null;
+  checkpointAfter: string | null;
+  conditionalRequest: { etag: string | null; lastModified: string | null } | null;
+  conditionalResponse: { etag: string | null; lastModified: string | null } | null;
+  backoffMs: number;
 }
 
 export interface SourceTarget {
@@ -84,6 +113,7 @@ export interface SourceTarget {
   archivedAt: string | null;
   checkpoint: string | null;
   lastSuccessfulAt: string | null;
+  conditional: { etag: string | null; lastModified: string | null } | null;
 }
 
 export interface SourceSuggestion {
@@ -103,6 +133,54 @@ export interface SourceSuggestion {
 export interface ContentScoutScheduleState {
   lastSuccessfulIntakePeriod: string | null;
   lastSuccessfulDiscoveryPeriod: string | null;
+}
+
+export interface ContentScoutStorageUse {
+  measuredAt: string;
+  categories: {
+    durableRecords: { files: number; bytes: number };
+    sanitizedDiagnostics: { files: number; bytes: number };
+    temporaryMedia: { files: number; bytes: number };
+    retainedEvidenceTranscripts: { files: number; bytes: number };
+  };
+}
+
+export interface ContentScoutCleanupPreview {
+  scope: "expired_temporary_data";
+  measuredAt: string;
+  items: {
+    id: string;
+    category: "sanitized_diagnostics" | "temporary_media";
+    relativePath: string;
+    bytes: number;
+    reason: "older_than_30_days" | "failed_media_older_than_24_hours";
+  }[];
+  files: number;
+  bytes: number;
+}
+
+export interface ContentScoutCleanupReceipt extends ContentScoutCleanupPreview {
+  id: string;
+  executedAt: string;
+  dryRun: boolean;
+  deleted: number;
+}
+
+export type RuntimeCapabilityState = "available" | "unavailable" | "unsupported";
+
+export interface ContentScoutRuntimeCapability {
+  id: string;
+  category: "browser" | "python" | "media" | "transcription";
+  state: RuntimeCapabilityState;
+  version: string | null;
+  pinnedVersion?: string;
+  requiredBy: string[];
+  diagnostic: {
+    classification: "runtime_available" | "runtime_unavailable" | "runtime_unsupported";
+    command: string;
+    checkedAt: string;
+    causeChain: string[];
+  };
 }
 
 export interface BrandProfileSourceScan {
@@ -215,6 +293,7 @@ export interface ContentScoutRunResult {
     durationMs: number;
     retries: number;
     affectedCapabilities: string[];
+    attempts: SourceCollectionAttemptReceipt[];
   }[];
   shortlist: { opportunityCount: number; omittedCount: number };
   warnings: number;

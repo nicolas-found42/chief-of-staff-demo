@@ -9,6 +9,7 @@ import type {
   NotionPublisher,
   OpportunityRanker,
   SourceAdapter,
+  RuntimeInspector,
 } from "../modules/content-scout/ports.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 
@@ -66,6 +67,7 @@ export function contentScoutTestPorts(now: () => Date): {
   notionPublisher: NotionPublisher;
   brandProfileCrawler: BrandProfileCrawler;
   brandProfileProposer: BrandProfileProposer;
+  runtimeInspector: RuntimeInspector;
 } {
   const adapter: SourceAdapter = {
     id: "rss",
@@ -222,5 +224,38 @@ export function contentScoutTestPorts(now: () => Date): {
     notionPublisher,
     brandProfileCrawler,
     brandProfileProposer,
+    runtimeInspector: {
+      async inspect() {
+        const checkedAt = now().toISOString();
+        return [
+          {
+            id: "browser.chromium",
+            category: "browser",
+            state: "available",
+            version: "Chromium e2e fixture",
+            requiredBy: ["Website JavaScript fallback"],
+            diagnostic: {
+              classification: "runtime_available",
+              command: "chromium --version",
+              checkedAt,
+              causeChain: [],
+            },
+          },
+          {
+            id: "python.pyktok",
+            category: "python",
+            state: "unsupported",
+            version: null,
+            requiredBy: ["TikTok Experimental enrichment"],
+            diagnostic: {
+              classification: "runtime_unsupported",
+              command: "not installed by the approved production image",
+              checkedAt,
+              causeChain: ["This optional enrichment runtime is intentionally unsupported."],
+            },
+          },
+        ];
+      },
+    },
   };
 }

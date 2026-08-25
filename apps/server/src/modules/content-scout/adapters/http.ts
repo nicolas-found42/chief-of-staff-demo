@@ -7,6 +7,7 @@ export interface PublicHttpResponse {
   contentType: string | null;
   etag: string | null;
   lastModified: string | null;
+  retryAfter: string | null;
   body: string;
 }
 
@@ -84,12 +85,21 @@ export const publicHttpFetch: PublicHttpFetch = async (value, options = {}) => {
       contentType: response.headers.get("content-type"),
       etag: response.headers.get("etag"),
       lastModified: response.headers.get("last-modified"),
+      retryAfter: response.headers.get("retry-after"),
       body,
     };
   } finally {
     clearTimeout(timer);
   }
 };
+
+export function retryAfterMilliseconds(value: string | null, now: Date): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - now.getTime()) : undefined;
+}
 
 export function responseHash(body: string): string {
   return createHash("sha256").update(body).digest("hex");

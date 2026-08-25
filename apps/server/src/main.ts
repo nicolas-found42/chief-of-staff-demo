@@ -21,6 +21,7 @@ import {
   youtubeSourceClient,
 } from "./modules/content-scout/adapters/youtube.js";
 import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/declarations.js";
+import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { ExperimentalPublicPageAdapter } from "./modules/content-scout/adapters/experimental.js";
 import { PublicLinkSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
@@ -141,6 +142,7 @@ const contentScout = new ContentScoutHost({
   brandProfileCrawler: testContentScout?.brandProfileCrawler ?? new PublicBrandProfileCrawler(),
   brandProfileProposer:
     testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
+  runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
   log: (message) => console.log(`[content-scout] ${message}`),
 });
 

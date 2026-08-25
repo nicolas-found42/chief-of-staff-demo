@@ -8,6 +8,7 @@ import type {
   RankedOpportunity,
   RunMeta,
   SourceItem,
+  SourceCollectionAttemptReceipt,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -18,8 +19,16 @@ import {
 import { StageFailure, type RetryPlan, type ShellModule } from "../../engine/module.js";
 import type { RunContext } from "../../engine/module.js";
 import type { RunOutcome } from "../../runs.js";
-import type { DraftGenerator, NotionPublisher, OpportunityRanker, SourceAdapter } from "./ports.js";
+import type {
+  DraftGenerator,
+  NotionPublisher,
+  OpportunityRanker,
+  SourceAdapter,
+  SourceCollectionResult,
+} from "./ports.js";
 import type { ContentScoutStore } from "./store.js";
+import { collectSourceTargets, type CollectedSourceTargetProgress } from "./collection.js";
+import { determineEligibility, enforceOpportunityIdentity } from "./eligibility.js";
 
 export const CONTENT_SCOUT_INTAKE = "daily-intake";
 
@@ -36,6 +45,9 @@ export interface ContentScoutModuleDeps {
   notionPublisher?: NotionPublisher;
   supersede?: (oldRunId: string, newRunId: string) => void;
   now: () => Date;
+  sleep: (milliseconds: number) => Promise<void>;
+  retainEvidenceTranscript?: (id: string, text: string) => void;
+  recordSanitizedDiagnostic?: (id: string, contentType: string, body: string) => void;
   intakeCompleted?: (period: string | null) => void;
   shortlistSize?: () => number;
 }
@@ -171,6 +183,11 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       brandProfileRevisionId: profile.id,
       brandProfileMarkdown: profile.markdown,
     };
+    for (const item of evidence) {
+      if (item.transcript) {
+        deps.retainEvidenceTranscript?.(`${safePart(id)}-${safePart(item.id)}`, item.transcript);
+      }
+    }
     ctx.writeFile(artifact, `${JSON.stringify(brief, null, 2)}\n`);
     return brief;
   };
@@ -447,15 +464,87 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
             "Create and accept a Brand Profile before running Content Scout.",
           );
         }
-        for (const target of targets) {
-          const adapter = deps.adapters.find((candidate) => candidate.supports(target));
-          if (!adapter || adapter.state === "coming_later") continue;
-          const result = await adapter.collect({
-            target,
-            since: collectionStart(target, deps.now()),
-            until: deps.now().toISOString(),
-            checkpoint: target.checkpoint,
-          });
+        const progress =
+          parseArtifact<CollectedSourceTargetProgress[]>(ctx, "collection-progress.json") ?? [];
+        const attemptReceipts =
+          parseArtifact<SourceCollectionAttemptReceipt[]>(ctx, "collection-attempts.json") ?? [];
+        for (const prior of progress.flatMap((entry) => entry.attempts)) {
+          if (
+            !attemptReceipts.some(
+              (candidate) =>
+                candidate.targetId === prior.targetId && candidate.attempt === prior.attempt,
+            )
+          ) {
+            attemptReceipts.push(prior);
+          }
+        }
+        if (progress.length > 0) {
+          ctx.writeFile(
+            "collection-attempts.json",
+            `${JSON.stringify(attemptReceipts, null, 2)}\n`,
+          );
+        }
+        const attemptOffsets = Object.fromEntries(
+          targets.map((target) => [
+            target.id,
+            Math.max(
+              0,
+              ...attemptReceipts
+                .filter((receipt) => receipt.targetId === target.id)
+                .map((receipt) => receipt.attempt),
+            ),
+          ]),
+        );
+        const collected = await collectSourceTargets({
+          targets,
+          adapters: deps.adapters,
+          now: deps.now,
+          sleep: deps.sleep,
+          collectionStart,
+          previous: progress,
+          attemptOffsets,
+          attemptCompleted: ({ target, result, attempts }) => {
+            const receipt = attempts.at(-1)!;
+            if (result.diagnosticBody) {
+              deps.recordSanitizedDiagnostic?.(
+                `${ctx.runId}-${safePart(target.id)}-${receipt.attempt}`,
+                result.diagnosticBody.contentType,
+                result.diagnosticBody.body,
+              );
+            }
+            if (result.kind === "completed") {
+              deps.store.recordCollectionSuccess(
+                target.id,
+                result.checkpoint,
+                result.conditional ?? target.conditional,
+              );
+            }
+            const persistedResult: SourceCollectionResult = { ...result };
+            delete persistedResult.diagnosticBody;
+            const progressEntry = {
+              targetId: target.id,
+              result: persistedResult,
+              attempts,
+            } satisfies CollectedSourceTargetProgress;
+            const existingProgress = progress.findIndex((entry) => entry.targetId === target.id);
+            if (existingProgress === -1) progress.push(progressEntry);
+            else progress[existingProgress] = progressEntry;
+            ctx.writeFile("collection-progress.json", `${JSON.stringify(progress, null, 2)}\n`);
+            if (
+              !attemptReceipts.some(
+                (candidate) =>
+                  candidate.targetId === target.id && candidate.attempt === receipt.attempt,
+              )
+            ) {
+              attemptReceipts.push(receipt);
+            }
+            ctx.writeFile(
+              "collection-attempts.json",
+              `${JSON.stringify(attemptReceipts, null, 2)}\n`,
+            );
+          },
+        });
+        for (const { target, adapter, result, attempts } of collected) {
           diagnostics.push(result.diagnostic);
           items.push(...result.items);
           rows.push({
@@ -467,10 +556,19 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
             durationMs: duration(result.diagnostic),
             retries: result.diagnostic.retries,
             affectedCapabilities: result.diagnostic.affectedCapabilities,
+            attempts,
           });
+          for (const attempt of attempts) {
+            ctx.event("source_adapter_attempted", {
+              adapterId: adapter.id,
+              targetId: target.id,
+              attempt: attempt.attempt,
+              outcome: attempt.outcome,
+              backoffMs: attempt.backoffMs,
+            });
+          }
           if (result.kind === "completed") {
             if (adapter.state === "available") availableCompleted += 1;
-            deps.store.recordCheckpoint(target.id, result.checkpoint);
             ctx.event("source_adapter_completed", {
               adapterId: adapter.id,
               targetId: target.id,
@@ -485,14 +583,9 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
             });
           }
         }
-        const deduplicated = new Map<string, SourceItem>();
-        for (const item of items) {
-          const key = `${item.adapterId}:${item.externalId}|${item.canonicalUrl}`;
-          if (!deduplicated.has(key)) deduplicated.set(key, item);
-        }
-        items = [...deduplicated.values()];
         ctx.writeFile("source-items.json", `${JSON.stringify(items, null, 2)}\n`);
         ctx.writeFile("adapter-diagnostics.json", `${JSON.stringify(diagnostics, null, 2)}\n`);
+        ctx.writeFile("collection-attempts.json", `${JSON.stringify(attemptReceipts, null, 2)}\n`);
         if (availableCompleted === 0) {
           throw new StageFailure(
             "no_available_adapter_completed",
@@ -515,9 +608,24 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
 
       await ctx.stage("rank", async () => {
         brandProfile ??= deps.store.currentBrandProfile();
-        const ranked = (
-          await deps.ranker.rank({ brandProfile: brandProfile!, items, limit: 10 })
-        ).filter(
+        const eligibility = determineEligibility({
+          items,
+          targets: deps.store.listSourceTargets(),
+          brandProfile: brandProfile!,
+          now: deps.now(),
+        });
+        ctx.writeFile("eligibility.json", `${JSON.stringify(eligibility, null, 2)}\n`);
+        const ranked = enforceOpportunityIdentity({
+          ranked: await deps.ranker.rank({
+            brandProfile: brandProfile!,
+            items: eligibility.items,
+            storyGroups: eligibility.storyGroups,
+            limit: 10,
+          }),
+          items: eligibility.items,
+          storyGroups: eligibility.storyGroups,
+          adapterStates: new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state])),
+        }).filter(
           (opportunity) =>
             !deps.store.opportunityInCooldown(opportunity.canonicalKey, opportunity.angle),
         );

@@ -152,6 +152,7 @@ export class ContentScoutStore {
       archivedAt: null,
       checkpoint: null,
       lastSuccessfulAt: null,
+      conditional: null,
     };
     state.sourceTargets.push(target);
     this.writeState(state);
@@ -172,7 +173,11 @@ export class ContentScoutStore {
     return target;
   }
 
-  recordCheckpoint(targetId: string, checkpoint: string | null): void {
+  recordCollectionSuccess(
+    targetId: string,
+    checkpoint: string | null,
+    conditional: { etag: string | null; lastModified: string | null } | null,
+  ): void {
     const state = this.readState();
     const target = state.sourceTargets.find((candidate) => candidate.id === targetId);
     if (!target) {
@@ -180,6 +185,7 @@ export class ContentScoutStore {
     }
     target.checkpoint = checkpoint;
     target.lastSuccessfulAt = this.now().toISOString();
+    target.conditional = conditional;
     this.writeState(state);
   }
 
@@ -344,6 +350,7 @@ export class ContentScoutStore {
           archivedAt: null,
           checkpoint: null,
           lastSuccessfulAt: null,
+          conditional: null,
         };
         state.sourceTargets.push(target);
         suggestion.sourceTargetId = target.id;
@@ -372,7 +379,18 @@ export class ContentScoutStore {
       const parsed = JSON.parse(readFileSync(this.stateFile, "utf8")) as Partial<ContentScoutState>;
       return {
         brandProfiles: Array.isArray(parsed.brandProfiles) ? parsed.brandProfiles : [],
-        sourceTargets: Array.isArray(parsed.sourceTargets) ? parsed.sourceTargets : [],
+        sourceTargets: Array.isArray(parsed.sourceTargets)
+          ? parsed.sourceTargets.map((target) => ({
+              ...target,
+              conditional:
+                target.conditional && typeof target.conditional === "object"
+                  ? {
+                      etag: target.conditional.etag ?? null,
+                      lastModified: target.conditional.lastModified ?? null,
+                    }
+                  : null,
+            }))
+          : [],
         activeShortlist: parsed.activeShortlist ?? null,
         pendingActions:
           parsed.pendingActions && typeof parsed.pendingActions === "object"

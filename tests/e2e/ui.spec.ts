@@ -175,6 +175,35 @@ test("the page never scrolls sideways at a 320px viewport", async ({ page }) => 
     });
     expect(overflows, `${path} scrolls horizontally at 320px`).toBe(false);
   }
+  await page.goto("/content-scout");
+  await page.getByRole("button", { name: "Settings & Health" }).click();
+  const contentScoutOverflows = await page.evaluate(() => {
+    const root = document.documentElement;
+    return root.scrollWidth > root.clientWidth + 1;
+  });
+  expect(contentScoutOverflows, "Content Scout Settings scrolls horizontally at 320px").toBe(false);
+});
+
+test("Content Scout Settings exposes safe cleanup and non-color runtime health", async ({
+  page,
+}) => {
+  await page.goto("/content-scout");
+  await page.getByRole("button", { name: "Settings & Health" }).click();
+
+  await expect(page.getByRole("heading", { name: "Storage & retention" })).toBeVisible();
+  await expect(page.getByText("Durable records", { exact: true })).toBeVisible();
+  await expect(page.getByText("Retained evidence transcripts", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "External runtimes" })).toBeVisible();
+  await expect(page.getByText(/browser\.chromium: Available/)).toBeVisible();
+  await expect(page.getByText(/python\.pyktok: Unsupported/)).toBeVisible();
+
+  const preview = page.getByRole("button", { name: "Preview temporary cleanup" });
+  await preview.focus();
+  await preview.press("Enter");
+  await expect(page.getByText("Temporary-data cleanup preview is ready.")).toBeVisible();
+  await expect(page.getByText("Nothing is eligible for temporary-data cleanup.")).toBeVisible();
+  await expect(preview).toBeFocused();
+  await expect(page.getByRole("button", { name: /Delete .*expired temporary/ })).toHaveCount(0);
 });
 
 test("the front door is Home, and Transcript keeps the runs list", async ({ page }) => {

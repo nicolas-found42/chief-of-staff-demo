@@ -1,7 +1,13 @@
 import Parser from "rss-parser";
 import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
-import { canonicalUrl, publicHttpFetch, responseHash, type PublicHttpFetch } from "./http.js";
+import {
+  canonicalUrl,
+  publicHttpFetch,
+  responseHash,
+  retryAfterMilliseconds,
+  type PublicHttpFetch,
+} from "./http.js";
 
 type FeedItem = {
   guid?: string;
@@ -49,7 +55,10 @@ export class RssSourceAdapter implements SourceAdapter {
     const startedAt = this.now().toISOString();
     let response;
     try {
-      response = await this.fetchText(this.collectionUrl(request.target.url));
+      response = await this.fetchText(this.collectionUrl(request.target.url), {
+        etag: request.conditional?.etag ?? null,
+        lastModified: request.conditional?.lastModified ?? null,
+      });
     } catch (error) {
       const timeout = error instanceof Error && error.name === "AbortError";
       return this.failure(
@@ -64,14 +73,20 @@ export class RssSourceAdapter implements SourceAdapter {
       );
     }
     if (response.status === 304) {
-      return this.completed("no_new_material", [], request.checkpoint, {
-        route: response.url,
-        status: response.status,
-        contentType: response.contentType,
-        parserStage: "conditional_request",
-        responseHash: responseHash(response.body),
-        startedAt,
-      });
+      return this.completed(
+        "no_new_material",
+        [],
+        request.checkpoint,
+        request.conditional ?? null,
+        {
+          route: response.url,
+          status: response.status,
+          contentType: response.contentType,
+          parserStage: "conditional_request",
+          responseHash: responseHash(response.body),
+          startedAt,
+        },
+      );
     }
     if (response.status < 200 || response.status >= 300) {
       return this.failure(
@@ -83,6 +98,8 @@ export class RssSourceAdapter implements SourceAdapter {
         "fetch",
         responseHash(response.body),
         [`HTTP ${response.status}`],
+        retryAfterMilliseconds(response.retryAfter, this.now()),
+        response.body,
       );
     }
     let parsed;
@@ -98,6 +115,8 @@ export class RssSourceAdapter implements SourceAdapter {
         "rss_parse",
         responseHash(response.body),
         [error instanceof Error ? error.message : String(error)],
+        undefined,
+        response.body,
       );
     }
     const since = Date.parse(request.since);
@@ -140,14 +159,20 @@ export class RssSourceAdapter implements SourceAdapter {
         : request.checkpoint
           ? "no_new_material"
           : "legitimate_empty";
-    return this.completed(outcome, items, responseHash(response.body), {
-      route: response.url,
-      status: response.status,
-      contentType: response.contentType,
-      parserStage: "rss_parse",
-      responseHash: responseHash(response.body),
-      startedAt,
-    });
+    return this.completed(
+      outcome,
+      items,
+      responseHash(response.body),
+      { etag: response.etag, lastModified: response.lastModified },
+      {
+        route: response.url,
+        status: response.status,
+        contentType: response.contentType,
+        parserStage: "rss_parse",
+        responseHash: responseHash(response.body),
+        startedAt,
+      },
+    );
   }
 
   private collectionUrl(value: string): string {
@@ -161,6 +186,7 @@ export class RssSourceAdapter implements SourceAdapter {
     outcome: "items_found" | "legitimate_empty" | "no_new_material",
     items: SourceItem[],
     checkpoint: string | null,
+    conditional: { etag: string | null; lastModified: string | null } | null,
     receipt: Omit<
       AdapterDiagnostic,
       | "classification"
@@ -176,6 +202,7 @@ export class RssSourceAdapter implements SourceAdapter {
       outcome,
       items,
       checkpoint,
+      conditional,
       diagnostic: {
         classification: outcome,
         adapterVersion: this.version,
@@ -197,12 +224,17 @@ export class RssSourceAdapter implements SourceAdapter {
     parserStage: string,
     hash: string,
     causeChain: string[],
+    retryAfterMs?: number,
+    body?: string,
   ): SourceCollectionResult {
     return {
       kind: "failed",
       outcome,
       items: [],
       checkpoint: null,
+      ...(body
+        ? { diagnosticBody: { contentType: contentType ?? "application/octet-stream", body } }
+        : {}),
       diagnostic: {
         classification: outcome,
         route,
@@ -216,6 +248,7 @@ export class RssSourceAdapter implements SourceAdapter {
         retries: 0,
         affectedCapabilities: ["items"],
         causeChain,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
       },
     };
   }

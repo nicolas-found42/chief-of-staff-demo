@@ -4,7 +4,14 @@ import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import type { SourceItem } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
-import { canonicalUrl, publicHttpFetch, responseHash, type PublicHttpFetch } from "./http.js";
+import {
+  canonicalUrl,
+  publicHttpFetch,
+  responseHash,
+  retryAfterMilliseconds,
+  type PublicHttpResponse,
+  type PublicHttpFetch,
+} from "./http.js";
 
 export class WebsiteSourceAdapter implements SourceAdapter {
   readonly id = "website";
@@ -24,7 +31,10 @@ export class WebsiteSourceAdapter implements SourceAdapter {
     const startedAt = this.now().toISOString();
     let response;
     try {
-      response = await this.fetchText(request.target.url);
+      response = await this.fetchText(request.target.url, {
+        etag: request.conditional?.etag ?? null,
+        lastModified: request.conditional?.lastModified ?? null,
+      });
     } catch (error) {
       return this.failure(
         error instanceof Error && error.name === "AbortError" ? "timeout" : "internal_failure",
@@ -53,6 +63,8 @@ export class WebsiteSourceAdapter implements SourceAdapter {
         "fetch",
         responseHash(response.body),
         [`HTTP ${response.status}`],
+        undefined,
+        response.body,
       );
     }
     if (response.status === 429) {
@@ -65,6 +77,8 @@ export class WebsiteSourceAdapter implements SourceAdapter {
         "fetch",
         responseHash(response.body),
         ["HTTP 429"],
+        retryAfterMilliseconds(response.retryAfter, this.now()),
+        response.body,
       );
     }
     if (response.status < 200 || response.status >= 300) {
@@ -77,6 +91,8 @@ export class WebsiteSourceAdapter implements SourceAdapter {
         "fetch",
         responseHash(response.body),
         [`HTTP ${response.status}`],
+        undefined,
+        response.body,
       );
     }
 
@@ -103,6 +119,8 @@ export class WebsiteSourceAdapter implements SourceAdapter {
         "readability",
         responseHash(response.body),
         ["No meaningful public article body was extracted."],
+        undefined,
+        response.body,
       );
     }
     const url = canonicalUrl(canonical);
@@ -144,7 +162,7 @@ export class WebsiteSourceAdapter implements SourceAdapter {
     outcome: "items_found" | "no_new_material",
     items: SourceItem[],
     checkpoint: string | null,
-    response: { url: string; status: number; contentType: string | null; body: string },
+    response: PublicHttpResponse,
     startedAt: string,
   ): SourceCollectionResult {
     return {
@@ -152,6 +170,7 @@ export class WebsiteSourceAdapter implements SourceAdapter {
       outcome,
       items,
       checkpoint,
+      conditional: { etag: response.etag, lastModified: response.lastModified },
       diagnostic: {
         classification: outcome,
         route: response.url,
@@ -178,12 +197,17 @@ export class WebsiteSourceAdapter implements SourceAdapter {
     parserStage: string,
     hash: string,
     causeChain: string[],
+    retryAfterMs?: number,
+    body?: string,
   ): SourceCollectionResult {
     return {
       kind: "failed",
       outcome,
       items: [],
       checkpoint: null,
+      ...(body
+        ? { diagnosticBody: { contentType: contentType ?? "application/octet-stream", body } }
+        : {}),
       diagnostic: {
         classification: outcome,
         route,
@@ -197,6 +221,7 @@ export class WebsiteSourceAdapter implements SourceAdapter {
         retries: 0,
         affectedCapabilities: ["body"],
         causeChain,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
       },
     };
   }

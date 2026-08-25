@@ -24,6 +24,7 @@ import type {
   SourceDiscoverer,
   BrandProfileCrawler,
   BrandProfileProposer,
+  RuntimeInspector,
 } from "./ports.js";
 import { ContentScoutStore } from "./store.js";
 import type { NotionCalendar, NotionConnection } from "./notion.js";
@@ -38,6 +39,7 @@ import {
   brandProfileScanModule,
   type BrandProfileScanInput,
 } from "./brand-profile.js";
+import { ContentScoutRetention } from "./retention.js";
 
 export interface ContentScoutHostDeps {
   runs: Runs;
@@ -53,6 +55,8 @@ export interface ContentScoutHostDeps {
   brandProfileCrawler?: BrandProfileCrawler;
   brandProfileProposer?: BrandProfileProposer;
   now?: () => Date;
+  sleep?: (milliseconds: number) => Promise<void>;
+  runtimeInspector?: RuntimeInspector;
   log: (message: string) => void;
 }
 
@@ -65,6 +69,7 @@ export class ContentScoutHost implements HostedModule {
   private readonly brandProfileRunner: Runner<BrandProfileScanInput>;
   private readonly store: ContentScoutStore;
   private readonly deps: ContentScoutHostDeps;
+  private readonly retention: ContentScoutRetention;
   private scheduleTimer: NodeJS.Timeout | null = null;
   private checkingSchedule = false;
 
@@ -72,6 +77,8 @@ export class ContentScoutHost implements HostedModule {
     this.deps = deps;
     const now = deps.now ?? (() => new Date());
     this.store = new ContentScoutStore(deps.workspaceDir, now);
+    this.retention = new ContentScoutRetention(deps.workspaceDir, now);
+    this.retention.enforce();
     this.runner = new Runner({
       runs: deps.runs,
       module: contentScoutModule({
@@ -87,6 +94,13 @@ export class ContentScoutHost implements HostedModule {
         shortlistSize: () =>
           deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].shortlistSize ?? 5,
         now,
+        sleep:
+          deps.sleep ??
+          ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))),
+        retainEvidenceTranscript: (id, text) =>
+          this.retention.retainEvidenceTranscript({ id, text }),
+        recordSanitizedDiagnostic: (id, contentType, body) =>
+          this.retention.recordSanitizedDiagnostic({ id, contentType, body }),
       }),
       now,
       log: deps.log,
@@ -169,6 +183,32 @@ export class ContentScoutHost implements HostedModule {
     return this.store.scheduleState();
   }
 
+  recordSanitizedDiagnostic(input: { id: string; contentType: string; body: string }): void {
+    this.retention.recordSanitizedDiagnostic(input);
+  }
+
+  recordTemporaryMedia(input: { id: string; outcome: "processed" | "failed"; bytes: string }): {
+    retained: boolean;
+  } {
+    return this.retention.recordTemporaryMedia(input);
+  }
+
+  retainEvidenceTranscript(input: { id: string; text: string }): void {
+    this.retention.retainEvidenceTranscript(input);
+  }
+
+  storageUse() {
+    return this.retention.storageUse();
+  }
+
+  previewTemporaryCleanup() {
+    return this.retention.preview();
+  }
+
+  cleanupTemporaryData(dryRun = false) {
+    return this.retention.cleanup(dryRun);
+  }
+
   decideSourceSuggestion(
     id: string,
     decision: "approved" | "dismissed" | "proposed",
@@ -221,6 +261,7 @@ export class ContentScoutHost implements HostedModule {
     invocation: "manual" | "scheduled" = "manual",
     period: string | null = null,
   ): Promise<string> {
+    this.retention.enforce();
     return this.runner.startRun(
       {
         intake: CONTENT_SCOUT_INTAKE,
@@ -261,9 +302,22 @@ export class ContentScoutHost implements HostedModule {
 
   retryRun(id: string): Promise<RunMeta> {
     const run = this.deps.runs.open(id);
-    const intake = run?.read().intake;
+    const meta = run?.read();
+    const intake = meta?.intake;
     if (intake === CONTENT_SCOUT_DISCOVERY_INTAKE) return this.discoveryRunner.retryRun(id);
     if (intake === CONTENT_SCOUT_BRAND_SCAN_INTAKE) return this.brandProfileRunner.retryRun(id);
+    if (run && meta?.failedStage === "collect") {
+      const raw = run.readArtifact("collection-progress.json");
+      if (raw) {
+        try {
+          const progress = JSON.parse(raw) as { result?: { kind?: string } }[];
+          const completed = progress.filter((entry) => entry.result?.kind === "completed");
+          run.writeArtifact("collection-progress.json", `${JSON.stringify(completed, null, 2)}\n`);
+        } catch {
+          // Preserve a malformed artifact so the retry fails visibly instead of discarding evidence.
+        }
+      }
+    }
     return this.runner.retryRun(id);
   }
 
@@ -364,27 +418,52 @@ export class ContentScoutHost implements HostedModule {
       );
       return { runId: latest.id, warnings };
     };
-    app.get("/api/content-scout", async () => ({
-      brandProfile: this.currentBrandProfile(),
-      brandProfileProposal: this.brandProfileProposal(),
-      sourceTargets: this.listSourceTargets(),
-      shortlist: this.activeShortlist(),
-      contentPacks: this.listContentPacks(),
-      sourceSuggestions: this.listSourceSuggestions(),
-      schedule: this.scheduleState(),
-      health: latestIntakeHealth(),
-      adapters: this.deps.adapters.map((adapter) => ({
-        id: adapter.id,
-        state: adapter.state,
-        version: adapter.version,
-      })),
-      notion: this.deps.notionConnection?.status() ?? {
-        state: "unconfigured",
-        tokenHint: "",
-        lastVerifiedAt: null,
-      },
-      settings: this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID] ?? null,
-    }));
+    app.get("/api/content-scout", async () => {
+      const runtimeCapabilities = await (this.deps.runtimeInspector?.inspect() ??
+        Promise.resolve([]));
+      return {
+        brandProfile: this.currentBrandProfile(),
+        brandProfileProposal: this.brandProfileProposal(),
+        sourceTargets: this.listSourceTargets(),
+        shortlist: this.activeShortlist(),
+        contentPacks: this.listContentPacks(),
+        sourceSuggestions: this.listSourceSuggestions(),
+        schedule: this.scheduleState(),
+        health: {
+          ...latestIntakeHealth(),
+          runtimeWarnings: runtimeCapabilities
+            .filter((capability) => capability.state !== "available")
+            .map((capability) => capability.id),
+        },
+        adapters: this.deps.adapters.map((adapter) => ({
+          id: adapter.id,
+          state: adapter.state,
+          version: adapter.version,
+        })),
+        runtimeCapabilities,
+        notion: this.deps.notionConnection?.status() ?? {
+          state: "unconfigured",
+          tokenHint: "",
+          lastVerifiedAt: null,
+        },
+        settings: this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID] ?? null,
+        storage: this.storageUse(),
+      };
+    });
+
+    app.post("/api/content-scout/storage/cleanup/preview", async () =>
+      this.previewTemporaryCleanup(),
+    );
+    app.post("/api/content-scout/storage/cleanup", async (request, reply) => {
+      const body = request.body as { scope?: string; confirm?: boolean };
+      if (body.scope !== "expired_temporary_data" || body.confirm !== true) {
+        reply.code(400).send({
+          error: "Confirm the expired_temporary_data scope before deleting temporary files.",
+        });
+        return;
+      }
+      return this.cleanupTemporaryData(false);
+    });
 
     app.post("/api/content-scout/brand-profile", async (request, reply) => {
       const body = request.body as Partial<{

@@ -12,6 +12,10 @@ import type {
   SetupCheck,
   SourceAdapterState,
   ContentScoutScheduleState,
+  ContentScoutStorageUse,
+  ContentScoutCleanupPreview,
+  ContentScoutCleanupReceipt,
+  ContentScoutRuntimeCapability,
   SourceSuggestion,
   SourceTarget,
   YoutubeChannel,
@@ -74,6 +78,8 @@ export interface ContentScoutState {
   shortlist: ContentShortlist | null;
   contentPacks: ContentPack[];
   adapters: { id: string; state: SourceAdapterState; version: string }[];
+  runtimeCapabilities: ContentScoutRuntimeCapability[];
+  storage: ContentScoutStorageUse;
   notion: { state: string; tokenHint: string; lastVerifiedAt: string | null };
   settings: {
     timeZone: string;
@@ -99,6 +105,7 @@ export interface ContentScoutState {
   health: {
     runId: string | null;
     warnings: { adapterId: string; outcome: string; affectedCapabilities: string[] }[];
+    runtimeWarnings: string[];
   };
 }
 
@@ -312,6 +319,16 @@ export const api = {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
+    }),
+  previewContentScoutCleanup: () =>
+    request<ContentScoutCleanupPreview>("/api/content-scout/storage/cleanup/preview", {
+      method: "POST",
+    }),
+  cleanupContentScoutTemporaryData: () =>
+    request<ContentScoutCleanupReceipt>("/api/content-scout/storage/cleanup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "expired_temporary_data", confirm: true }),
     }),
 };
 

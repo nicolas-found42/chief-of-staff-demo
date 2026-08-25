@@ -25,6 +25,7 @@ const target = (adapterId: string, url: string): SourceTarget => ({
   archivedAt: null,
   checkpoint: null,
   lastSuccessfulAt: null,
+  conditional: null,
 });
 
 const response = (overrides: Partial<PublicHttpResponse> = {}): PublicHttpResponse => ({
@@ -33,11 +34,47 @@ const response = (overrides: Partial<PublicHttpResponse> = {}): PublicHttpRespon
   contentType: "application/rss+xml",
   etag: null,
   lastModified: null,
+  retryAfter: null,
   body: fixture("rss-success.xml"),
   ...overrides,
 });
 
 describe("RSS Source Adapter fixture contract", () => {
+  it("forwards persisted validators and returns refreshed conditional-request state", async () => {
+    let options: unknown;
+    const result = await new RssSourceAdapter(
+      async (_url, received) => {
+        options = received;
+        return response({
+          etag: '"feed-v2"',
+          lastModified: "Tue, 25 Aug 2026 12:00:00 GMT",
+        });
+      },
+      () => NOW,
+    ).collect({
+      target: target("rss", "https://example.com/feed.xml"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: "feed-v1",
+      conditional: {
+        etag: '"feed-v1"',
+        lastModified: "Mon, 24 Aug 2026 12:00:00 GMT",
+      },
+    });
+
+    expect(options).toEqual({
+      etag: '"feed-v1"',
+      lastModified: "Mon, 24 Aug 2026 12:00:00 GMT",
+    });
+    expect(result).toMatchObject({
+      kind: "completed",
+      conditional: {
+        etag: '"feed-v2"',
+        lastModified: "Tue, 25 Aug 2026 12:00:00 GMT",
+      },
+    });
+  });
+
   it("normalizes successful and partial items with field-level completeness", async () => {
     const adapter = new RssSourceAdapter(
       async () => response(),
