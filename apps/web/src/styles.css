@@ -103,6 +103,7 @@ body {
 
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2rem;
   padding: 0.75rem 1.5rem;
@@ -125,6 +126,7 @@ body {
 
 .app-header nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 
@@ -171,6 +173,154 @@ body {
 .page h2 {
   font-size: 1.15rem;
   margin: 1.25rem 0 0.5rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.page-header p {
+  margin: 0;
+}
+
+.subnav {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.25rem 0 0.75rem;
+  margin: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.subnav button {
+  flex: 0 0 auto;
+  border-color: transparent;
+}
+
+.subnav button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: #e3ecf9;
+  font-weight: 700;
+}
+
+.opportunity-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.85rem;
+  min-height: 4rem;
+  cursor: pointer;
+}
+
+.opportunity-card > span {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.opportunity-meta {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.source-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.adapter-strip,
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.pack-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pack-heading h3,
+.pack-heading p {
+  margin: 0 0 0.35rem;
+}
+
+.draft-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.draft-grid button {
+  min-height: 4.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.draft-grid button span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.draft-reader {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 2;
+  box-shadow: 0 8px 28px rgba(26, 34, 51, 0.18);
+}
+
+.draft-reader pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 1rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+}
+
+.health-grid .card {
+  margin: 0;
+}
+
+.profile-pages {
+  max-height: 20rem;
+  overflow: auto;
+  border-block: 1px solid var(--line);
+  margin: 1rem 0;
+}
+
+.profile-pages .checkbox-label {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-diff {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  padding: 0.75rem 1rem;
 }
 
 /* ---------------------------------------------------------------------------

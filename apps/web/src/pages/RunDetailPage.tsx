@@ -243,6 +243,16 @@ export function RunDetailPage() {
           </div>
         </div>
       )}
+      {detail.status === "blocked" && detail.wait && (
+        <div className="banner banner-warn" role="status">
+          <p className="failure-cause">{detail.wait.reason}</p>
+          <p>
+            {detail.wait.timeout.kind === "none"
+              ? "This Run will wait until you act."
+              : `This Run will resume after ${formatTime(detail.wait.timeout.at)}.`}
+          </p>
+        </div>
+      )}
       {detail.status === "skipped" && detail.skipReason && (
         <div className="banner banner-warn" role="status">
           {detail.skipReason}

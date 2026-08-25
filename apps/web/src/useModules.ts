@@ -13,6 +13,7 @@
 import type { ComponentType } from "react";
 import type { RunDetail } from "@chief-of-staff-demo/shared";
 import { TranscriptResultView } from "./modules/transcript/ResultView";
+import { ContentScoutResultView } from "./modules/content-scout/ResultView";
 
 export interface ModuleDescriptor {
   /** Stable identity. Survives a route rename; never derived from `path`. */
@@ -64,11 +65,12 @@ const MODULES: ModuleDescriptor[] = [
     status: "live",
   },
   {
-    id: "hot-take",
-    path: "/hot-take",
-    label: "Hot Take",
-    description: "A link or transcript becomes a draft LinkedIn post.",
-    status: "planned",
+    id: "content-scout",
+    path: "/content-scout",
+    label: "Content Scout",
+    description: "Public sources become a ranked shortlist and complete, editable Content Packs.",
+    status: "live",
+    resultView: ContentScoutResultView,
   },
 ];
 

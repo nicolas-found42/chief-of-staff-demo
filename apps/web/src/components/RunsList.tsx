@@ -7,7 +7,7 @@ import { api, errorMessage } from "../client";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { useModuleLabel } from "../useModules";
 
-const TERMINAL = new Set(["done", "skipped", "failed"]);
+const ACTIVE = new Set(["pending", "running"]);
 
 export interface RunsListProps {
   /**
@@ -69,7 +69,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
     void refresh();
   }, [refresh]);
 
-  const activeCount = runs === null ? 0 : runs.filter((run) => !TERMINAL.has(run.status)).length;
+  const activeCount = runs === null ? 0 : runs.filter((run) => ACTIVE.has(run.status)).length;
 
   // The list used to auto-update every 3s for as long as it was open, with no
   // way to pause or stop it and nothing to show for it once every run was
@@ -221,7 +221,9 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                     <td className="muted run-summary-cell">
                       {run.status === "skipped" && run.skipReason
                         ? run.skipReason
-                        : (run.summary ?? "")}
+                        : run.status === "blocked" && run.wait?.reason
+                          ? run.wait.reason
+                          : (run.summary ?? "")}
                     </td>
                     <td>
                       <time dateTime={run.createdAt} title={formatTime(run.createdAt)}>

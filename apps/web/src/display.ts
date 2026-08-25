@@ -12,6 +12,7 @@ import type { RunEvent } from "@chief-of-staff-demo/shared";
 const STATUS_LABELS: Record<string, string> = {
   pending: "Queued",
   running: "Running",
+  blocked: "Waiting",
   done: "Completed",
   skipped: "Skipped",
   failed: "Failed",
@@ -244,7 +245,7 @@ export function buildTimeline(events: RunEvent[]): TimelineEntry[] {
     } else if (event.type === "stage_failed" && stage !== null && accs.has(stage)) {
       accs.get(stage)!.failed = true;
       closeOpen(Number.isNaN(at) ? null : at);
-    } else if (event.type === "classify_skipped") {
+    } else if (event.type === "classify_skipped" || event.type === "run_blocked") {
       closeOpen(Number.isNaN(at) ? null : at);
     } else if (event.type === "run_done" || event.type === "run_failed") {
       closeOpen(Number.isNaN(at) ? null : at);

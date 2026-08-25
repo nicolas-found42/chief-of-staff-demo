@@ -17,13 +17,15 @@ export function StatusPill({
   const needsAttention = status === "failed" && connectionCaused === true;
   const cls = needsAttention
     ? "status-attention"
-    : status === "done"
-      ? "status-done"
-      : status === "failed"
-        ? "status-failed"
-        : status === "skipped"
-          ? "status-skipped"
-          : "status-active";
+    : status === "blocked"
+      ? "status-attention"
+      : status === "done"
+        ? "status-done"
+        : status === "failed"
+          ? "status-failed"
+          : status === "skipped"
+            ? "status-skipped"
+            : "status-active";
   return (
     <span className={`status-badge ${cls}`}>
       {needsAttention ? "Needs attention" : statusLabel(status)}

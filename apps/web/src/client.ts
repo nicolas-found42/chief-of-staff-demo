@@ -1,10 +1,19 @@
 import type {
+  BrandProfileRevision,
+  BrandProfileProposal,
+  ContentDraft,
+  ContentPack,
+  ContentShortlist,
   DriveIntakeStatus,
   GoogleStatus,
   RedactedConfig,
   RunDetail,
   RunPage,
   SetupCheck,
+  SourceAdapterState,
+  ContentScoutScheduleState,
+  SourceSuggestion,
+  SourceTarget,
   YoutubeChannel,
   YoutubeTrends,
 } from "@chief-of-staff-demo/shared";
@@ -56,6 +65,41 @@ async function requestText(path: string, init?: RequestInit): Promise<string> {
 export interface ConfigPayload {
   config: RedactedConfig;
   defaults: Record<string, string>;
+}
+
+export interface ContentScoutState {
+  brandProfile: BrandProfileRevision | null;
+  brandProfileProposal: BrandProfileProposal | null;
+  sourceTargets: SourceTarget[];
+  shortlist: ContentShortlist | null;
+  contentPacks: ContentPack[];
+  adapters: { id: string; state: SourceAdapterState; version: string }[];
+  notion: { state: string; tokenHint: string; lastVerifiedAt: string | null };
+  settings: {
+    timeZone: string;
+    dailyTime: string;
+    weeklyDiscoveryDay: number;
+    weeklyDiscoveryTime: string;
+    shortlistSize: number;
+    notion: {
+      databaseId: string;
+      dataSourceId: string;
+      databaseUrl: string;
+      mapping: {
+        name: string;
+        status: string;
+        platform: string;
+        format: string;
+        scheduledDate: string;
+      };
+    };
+  } | null;
+  sourceSuggestions: SourceSuggestion[];
+  schedule: ContentScoutScheduleState;
+  health: {
+    runId: string | null;
+    warnings: { adapterId: string; outcome: string; affectedCapabilities: string[] }[];
+  };
 }
 
 /** What the Runs list asks for: one Module's Runs or every Module's, a page at a time. */
@@ -124,6 +168,151 @@ export const api = {
     request<import("@chief-of-staff-demo/shared").IdeaEngineIndex>("/api/idea-engine/ideas"),
   ideaEngineBackfill: () =>
     request<{ created: number; skipped: number }>("/api/idea-engine/backfill", { method: "POST" }),
+  contentScout: () => request<ContentScoutState>("/api/content-scout"),
+  saveBrandProfile: (input: {
+    markdown: string;
+    websiteUrl: string;
+    includedUrls: string[];
+    excludedUrls: string[];
+    note?: string;
+  }) =>
+    request<{ revision: BrandProfileRevision }>("/api/content-scout/brand-profile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  scanBrandProfile: (websiteUrl: string) =>
+    request<{ runId: string }>("/api/content-scout/brand-profile/scan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ websiteUrl }),
+    }),
+  acceptBrandProfileProposal: (
+    id: string,
+    input: {
+      acceptedSections: string[];
+      includedUrls: string[];
+      excludedUrls: string[];
+      note?: string;
+    },
+  ) =>
+    request<{ revision: BrandProfileRevision }>(
+      `/api/content-scout/brand-profile/proposals/${encodeURIComponent(id)}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  addContentSource: (input: { adapterId: string; label: string; url: string }) =>
+    request<{ target: SourceTarget }>("/api/content-scout/sources", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  setContentSourceState: (id: string, state: "active" | "archived") =>
+    request<{ target: SourceTarget }>(`/api/content-scout/sources/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state }),
+    }),
+  runContentScout: () => request<{ runId: string }>("/api/content-scout/run", { method: "POST" }),
+  selectContentScout: (runId: string, opportunityIds: string[]) =>
+    request<{ status: string }>(
+      `/api/content-scout/shortlists/${encodeURIComponent(runId)}/select`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ opportunityIds }),
+      },
+    ),
+  skipContentScout: (runId: string) =>
+    request<{ status: string }>(`/api/content-scout/shortlists/${encodeURIComponent(runId)}/skip`, {
+      method: "POST",
+    }),
+  decideContentOpportunity: (
+    runId: string,
+    opportunityId: string,
+    decision: "dismiss_angle" | "not_relevant" | "already_covered",
+  ) =>
+    request<{ shortlist: ContentShortlist }>(
+      `/api/content-scout/shortlists/${encodeURIComponent(runId)}/opportunities/${encodeURIComponent(opportunityId)}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision }),
+      },
+    ),
+  contentDraft: (packId: string, targetId: string) =>
+    request<{ draft: ContentDraft; notionPage: { id: string; url: string } | null }>(
+      `/api/content-scout/packs/${encodeURIComponent(packId)}/drafts/${encodeURIComponent(targetId)}`,
+    ),
+  connectNotion: (token: string) =>
+    request<{ state: string; tokenHint: string; lastVerifiedAt: string | null }>(
+      "/api/content-scout/notion/connect",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      },
+    ),
+  disconnectNotion: () =>
+    request<{ state: string; tokenHint: string; lastVerifiedAt: string | null }>(
+      "/api/content-scout/notion/disconnect",
+      { method: "POST" },
+    ),
+  configureNotionCalendar: (
+    input:
+      | { mode: "create"; parentPageId: string }
+      | {
+          mode: "existing";
+          databaseId: string;
+          dataSourceId: string;
+          databaseUrl: string;
+          mapping: {
+            name: string;
+            status: string;
+            platform: string;
+            format: string;
+            scheduledDate: string;
+          };
+        },
+  ) =>
+    request<{ notion: NonNullable<ContentScoutState["settings"]>["notion"] }>(
+      "/api/content-scout/notion/calendar",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  runSourceDiscovery: () =>
+    request<{ runId: string }>("/api/content-scout/discovery/run", { method: "POST" }),
+  decideSourceSuggestion: (
+    id: string,
+    decision: "approved" | "dismissed" | "proposed",
+    reason: string | null = null,
+  ) =>
+    request<{ suggestion: SourceSuggestion }>(
+      `/api/content-scout/suggestions/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision, reason }),
+      },
+    ),
+  saveContentScoutSchedule: (input: {
+    timeZone: string;
+    dailyTime: string;
+    weeklyDiscoveryDay: number;
+    weeklyDiscoveryTime: string;
+    shortlistSize: number;
+  }) =>
+    request<ContentScoutState>("/api/content-scout/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
 };
 
 export function errorMessage(error: unknown): string {

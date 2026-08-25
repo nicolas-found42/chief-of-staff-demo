@@ -4,7 +4,7 @@ import { useEffect } from "react";
  * The Shell's name, so every route is titled after the application rather than
  * after one of the Modules it hosts. It was "Transcript → Tasks" — which is a
  * Module, and still the name of its tab in the header nav — so every page in
- * the app announced itself as that one workflow, Hot Take and Settings
+ * the app announced itself as that one workflow, Content Scout and Settings
  * included. Must stay identical to the <title> in index.html: that is what a
  * browser shows before React runs, and what the null branch below falls back to.
  */

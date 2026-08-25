@@ -2,7 +2,7 @@ import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
-import { HotTakePage } from "./pages/HotTakePage";
+import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { IdeaEnginePage } from "./pages/IdeaEnginePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
@@ -70,7 +70,7 @@ export function App() {
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/youtube" element={<YoutubePage />} />
           <Route path="/idea-engine" element={<IdeaEnginePage />} />
-          <Route path="/hot-take" element={<HotTakePage />} />
+          <Route path="/content-scout" element={<ContentScoutPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

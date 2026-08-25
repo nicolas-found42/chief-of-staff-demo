@@ -41,8 +41,6 @@ export interface HomeStatus {
  */
 const MAX_FAILED_ROWS = 3;
 
-const TERMINAL = new Set(["done", "skipped", "failed"]);
-
 /** The feed is a headline, not an inventory (ADR-0014). */
 const MAX_FEED = 5;
 
@@ -70,7 +68,8 @@ export function homeStatus(
   hasNotice: boolean,
 ): HomeStatus {
   const failed = runs.filter((run) => run.status === "failed");
-  const active = runs.filter((run) => !TERMINAL.has(run.status));
+  const blocked = runs.filter((run) => run.status === "blocked");
+  const active = runs.filter((run) => run.status === "pending" || run.status === "running");
   /* A fresh workspace defaults to `mock`, so this is the likeliest reason a
      beginner's first upload quietly does nothing useful. It speaks only at the
      level the Shell legitimately knows: the provider is Shell configuration,
@@ -107,6 +106,14 @@ export function homeStatus(
       to: "/runs",
     });
   }
+  for (const run of blocked) {
+    rows.push({
+      id: run.id,
+      text: `${runTitle(run.fileName ?? run.id)} is waiting${run.wait?.reason ? `: ${run.wait.reason}` : ""}`,
+      cta: "Open",
+      to: `/runs/${run.id}`,
+    });
+  }
   if (mock) {
     rows.push({
       id: "mock-provider",
@@ -140,6 +147,9 @@ export function homeStatus(
   const clauses: string[] = [];
   if (failed.length > 0) {
     clauses.push(`${failed.length} run${failed.length === 1 ? "" : "s"} failed`);
+  }
+  if (blocked.length > 0) {
+    clauses.push(`${blocked.length} run${blocked.length === 1 ? " is" : "s are"} waiting for you`);
   }
   if (mock) {
     clauses.push("the extraction provider is a stand-in");
