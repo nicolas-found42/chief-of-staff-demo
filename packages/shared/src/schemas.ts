@@ -388,6 +388,15 @@ export interface RunMeta {
   /** True when the Google connection caused the failure (D6). Legacy metas
    *  predate the marker; absent reads as an ordinary failure. */
   connectionCaused?: boolean;
+  /** The failure-site verdict when the Google connection caused the failure.
+   *  Legacy metas and failures unrelated to the connection omit it. */
+  connectionState?: GoogleConnectionState;
+}
+
+export interface RunFailureFlags {
+  connectionState?: GoogleConnectionState;
+  /** Module-supplied, shape-only facts to merge into generic failure events. */
+  eventDetail?: Record<string, unknown>;
 }
 
 export const SHELL_EVENT_TYPES = [
@@ -433,6 +442,8 @@ export interface RunSummary {
   summary: string | null;
   /** Present only when the Google connection caused a failure (D6). */
   connectionCaused?: boolean;
+  /** The exact connection state recorded at the failure site, when known. */
+  connectionState?: GoogleConnectionState;
 }
 
 export interface RunDetail extends RunSummary {

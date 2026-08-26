@@ -290,6 +290,44 @@ describe("Idea Engine Module", () => {
     expect(gmail.drafts).toHaveLength(0);
   });
 
+  it("fails a corrupt supported file with the shared shape-only conversion diagnostic", async () => {
+    const privateText = '{"PRIVATE TRANSCRIPT MARKER"';
+    const engine = runner();
+    const id = await engine.startRun(
+      {
+        intake: "drive",
+        fileName: "meeting.json",
+        sourceUrl: null,
+        externalId: "drive-json",
+      },
+      {
+        kind: "fresh",
+        fileName: "meeting.json",
+        bytes: Buffer.from(privateText),
+        sourceUrl: null,
+        externalId: "drive-json",
+      },
+    );
+    await engine.idle();
+
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("failed");
+    expect(detail.failedStage).toBe("convert");
+    expect(detail.failureHint).toBe(
+      "This file is corrupt or does not match its format. Replace or repair the file.",
+    );
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      error: "invalid_file",
+      diagnostic: {
+        classification: "invalid_file",
+        format: "json",
+        bytes: Buffer.byteLength(privateText),
+        step: "parse_json",
+      },
+    });
+    expect(JSON.stringify(detail)).not.toContain("PRIVATE TRANSCRIPT MARKER");
+  });
+
   it("zero ideas for all types → completed with reason, not skipped", async () => {
     for (const ct of IDEA_CONTENT_TYPES) providerScript[ct] = [[]];
     completeJson = scriptedProvider(providerScript);

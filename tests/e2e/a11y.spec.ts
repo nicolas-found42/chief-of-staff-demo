@@ -23,15 +23,12 @@ async function openRun(page: Page): Promise<void> {
   if (!res.ok()) throw new Error(`seed failed: ${res.status()} ${await res.text()}`);
   const { runId } = (await res.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  // Detail page renders both StatusPill (Needs attention / Failed / Done…) and
+  // Detail page renders both StatusPill (Failed / Needs attention / Done…) and
   // IntakeBadge (drive) inside .run-meta, both with `status-badge`. A bare
   // `.status-badge` is therefore a strict-mode violation.
-  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText(
-    "Needs attention",
-    {
-      timeout: 15_000,
-    },
-  );
+  await expect(page.locator(".run-meta .status-badge.status-failed")).toHaveText("Failed", {
+    timeout: 15_000,
+  });
 }
 
 /** Reports the element that currently holds focus, or a marker if it was dropped. */

@@ -106,11 +106,61 @@ describe("transitions", () => {
       externalId: null,
     });
     other.failed("outputs", "google_expired", "Google sign-in expired.", {
-      connectionCaused: true,
+      connectionState: "expired",
     });
     const meta = other.read();
     expect(meta.connectionCaused).toBe(true);
+    expect(meta.connectionState).toBe("expired");
+    expect(runs.list().runs.find((summary) => summary.id === other.id)?.connectionState).toBe(
+      "expired",
+    );
     expect(meta.status).toBe("failed");
+  });
+
+  it("persists opaque Module failure detail without interpreting it", () => {
+    run.started("convert");
+    run.failed("convert", "invalid_file", "Replace this file.", {
+      eventDetail: {
+        diagnostic: {
+          classification: "invalid_file",
+          format: "json",
+          bytes: 25,
+          step: "parse_json",
+        },
+      },
+    });
+
+    const detail = runs.detail(run.id)!;
+    const failures = detail.events.filter((event) =>
+      ["stage_failed", "run_failed"].includes(event.type),
+    );
+    expect(failures).toHaveLength(2);
+    expect(failures).toEqual([
+      expect.objectContaining({
+        detail: {
+          stage: "convert",
+          error: "invalid_file",
+          diagnostic: {
+            classification: "invalid_file",
+            format: "json",
+            bytes: 25,
+            step: "parse_json",
+          },
+        },
+      }),
+      expect.objectContaining({
+        detail: {
+          stage: "convert",
+          reason: "invalid_file",
+          diagnostic: {
+            classification: "invalid_file",
+            format: "json",
+            bytes: 25,
+            step: "parse_json",
+          },
+        },
+      }),
+    ]);
   });
 
   it("finished(done) clears the failed Stage and carries the Module's own counts", () => {

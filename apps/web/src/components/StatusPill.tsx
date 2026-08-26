@@ -1,4 +1,5 @@
-import { statusLabel } from "../display";
+import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
+import { isExpectedConnectionExpiry, statusLabel } from "../display";
 
 /* Run statuses, stages and sources are storage tokens; their display names live
    in ../display so every surface shares one vocabulary (spec D5–D7). This file
@@ -6,15 +7,14 @@ import { statusLabel } from "../display";
    shows an unknown token instead of hiding it. */
 export function StatusPill({
   status,
-  connectionCaused,
+  connectionState,
 }: {
   status: string;
-  /** D6: a failure the Google connection caused is Needs attention (fix:
-   *  reconnect), not Failed (fix: retry). The enum stays frozen. Absent and
-   *  `undefined` both mean "not known to be the connection's fault". */
-  connectionCaused?: boolean | undefined;
+  /** An expiry needs reconnecting, not fault diagnosis. The enum stays frozen;
+   *  absent and every other state retain the ordinary status label. */
+  connectionState?: GoogleConnectionState | undefined;
 }) {
-  const needsAttention = status === "failed" && connectionCaused === true;
+  const needsAttention = status === "failed" && isExpectedConnectionExpiry(connectionState);
   const cls = needsAttention
     ? "status-attention"
     : status === "blocked"

@@ -38,8 +38,8 @@ describe("the Shell's connection notice", () => {
       action: "Sign in with Google",
     });
     expect(connectionNotice(status("expired"))).toEqual({
-      text: "Google stopped accepting the saved sign-in, so nothing can be created in Tasks or Gmail.",
-      action: "Sign in with Google",
+      text: "The saved Google sign-in has expired as expected. Reconnect to keep creating in Tasks or Gmail.",
+      action: "Reconnect Google",
     });
   });
 

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ExtractionResultSchema } from "@chief-of-staff-demo/shared";
+import { ExtractionResultSchema, type RunDetail } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { DriveIntake, type DriveFileClient } from "../../../apps/server/src/intake/drive";
 import { loadState, saveState } from "../../../apps/server/src/state";
@@ -274,7 +274,7 @@ describe.sequential("DriveIntake", () => {
     expect(openRuns(workspaceDir).list().runs).toHaveLength(0);
   });
 
-  it("mixed folder: two supported, one image, one subfolder → 2 Runs, image/subfolder ignored", async () => {
+  it("mixed folder: unsupported files become failed Runs while subfolders are ignored", async () => {
     const files = [
       {
         id: "1",
@@ -289,29 +289,43 @@ describe.sequential("DriveIntake", () => {
     const data: Record<string, Buffer> = {
       "1": Buffer.from("Dana: hello\nSam: hi\n"),
       "2": Buffer.from("# Notes\nAlice: hi\n"),
+      "3": Buffer.from("PRIVATE IMAGE BYTES"),
     };
     const drive = makeDrive(files, data);
     const intake = intakeWith(drive);
     const { created } = await intake.pollOnce();
     await pipeline.idle();
-    expect(created).toBe(2);
+    expect(created).toBe(3);
     const runs = openRuns(workspaceDir).list().runs;
-    expect(runs).toHaveLength(2);
-    expect(logs.join(" ")).toMatch(/Ignoring unsupported file.*photo\.png/);
+    expect(runs).toHaveLength(3);
     const failed = runs.filter((r) => r.status === "failed");
-    expect(failed).toHaveLength(0);
+    expect(failed).toHaveLength(1);
     // Order is by createdAt descending, so check by fileName
     const byName = Object.fromEntries(
       runs.map((r) => {
         const d = openRuns(workspaceDir).detail(r.id)!;
         return [d.fileName, d];
       }),
-    );
+    ) as Partial<Record<string, RunDetail>>;
     expect(byName["meeting.txt"]?.intake).toBe("drive");
     expect(byName["meeting.txt"]?.sourceUrl).toBe("https://drive.google.com/file/d/1/view");
     expect(byName["notes.md"]?.intake).toBe("drive");
     // notes.md had no webViewLink, so null is fine
     expect(byName["notes.md"] !== undefined).toBe(true);
+    expect(byName["photo.png"]?.failureHint).toBe(
+      "This file format is not supported. Convert the file to TXT, Markdown, JSON, PDF, or DOCX, then add it again.",
+    );
+    expect(
+      byName["photo.png"]?.events.find((event) => event.type === "stage_failed")?.detail,
+    ).toMatchObject({
+      error: "unsupported_format",
+      diagnostic: {
+        classification: "unsupported_format",
+        format: "png",
+        bytes: 19,
+        step: "detect_format",
+      },
+    });
   });
 
   it("dedupe: duplicate fileId on second poll creates 0 new Runs", async () => {
@@ -538,7 +552,9 @@ describe.sequential("DriveIntake", () => {
   });
 
   it("malformed transcript (.json wrapped object) becomes failed Run at convert", async () => {
-    const malformed = JSON.stringify({ sentences: [{ speaker_name: "A", text: "hi", index: 0 }] });
+    const malformed = JSON.stringify({
+      sentences: [{ speaker_name: "A", text: "PRIVATE TRANSCRIPT MARKER", index: 0 }],
+    });
     const files = [{ id: "bad1", name: "bad.json", mimeType: "application/json" }];
     const drive = makeDrive(files, { bad1: Buffer.from(malformed) });
     const intake = intakeWith(drive);
@@ -550,7 +566,19 @@ describe.sequential("DriveIntake", () => {
     const detail = openRuns(workspaceDir).detail(runs[0].id)!;
     expect(detail.status).toBe("failed");
     expect(detail.failedStage).toBe("convert");
-    expect(detail.failureHint).toBe("This file could not be converted to text.");
+    expect(detail.failureHint).toBe(
+      "This file is corrupt or does not match its format. Replace or repair the file.",
+    );
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      error: "invalid_file",
+      diagnostic: {
+        classification: "invalid_file",
+        format: "json",
+        bytes: Buffer.byteLength(malformed),
+        step: "validate_transcript",
+      },
+    });
+    expect(JSON.stringify(detail)).not.toContain("PRIVATE TRANSCRIPT MARKER");
     await expect(pipeline.retryRun(detail.id)).rejects.toThrow(/not retryable/);
     const second = await intake.pollOnce();
     await pipeline.idle();

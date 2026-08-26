@@ -471,10 +471,14 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
-  await expect(page.locator(".run-meta .status-badge.status-attention")).toHaveText(
-    "Needs attention",
-    { timeout: 15_000 },
-  );
+  await expect(page.locator(".run-meta .status-badge.status-failed")).toHaveText("Failed", {
+    timeout: 15_000,
+  });
+  await expect(page.locator(".run-meta")).toContainText("Failed during");
+  await expect(page.locator(".run-meta")).not.toContainText("Stopped during");
+  await expect(page.locator(".banner-error").getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Reconnect" })).toHaveCount(0);
+  await expect(page.locator(".timeline-row .status-failed")).toHaveText("Failed");
   await page.goto("/");
   // One clause per rail condition, in the rail's order, with the true total of
   // failures rather than the number of rows shown. No "Nothing needs you." —
@@ -501,18 +505,35 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
     "/settings",
   );
 
-  // The connection is not a row on its own: the Shell banner above says it on
-  // every page. But a run the connection broke names Google in its fix.
-
-  // The seeded Run fails because Google was never connected (D6): the row
-  // names the reconnect fix and routes to where it lives, instead of pointing
-  // at the run as a generic failure.
+  // This workspace was never configured; that is not the expected weekly
+  // expiry, so its Run retains the genuine-failure treatment and opens the
+  // diagnostic instead of offering the expiry-specific reconnect action.
   const failedRow = page.locator(".home-rail-row").first();
-  await expect(failedRow).toContainText("could not finish because Google needs reconnecting");
-  const reconnect = failedRow.getByRole("link", { name: "Reconnect" });
-  await expect(reconnect).toHaveAttribute("href", "/settings");
-  await reconnect.click();
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(failedRow).toContainText("failed");
+  await expect(failedRow.getByRole("link", { name: "Open" })).toHaveAttribute(
+    "href",
+    `/runs/${runId}`,
+  );
+});
+
+test("conversion failures show separate person guidance and shape-only diagnostics", async ({
+  page,
+}) => {
+  const seed = await page.request.post("/api/test/seed?scenario=conversion-failure");
+  if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
+  const { runId } = (await seed.json()) as { runId: string };
+
+  await page.goto(`/runs/${runId}`);
+  await expect(page.locator(".banner-error")).toContainText(
+    "This file is corrupt or does not match its format. Replace or repair the file.",
+  );
+  await page.getByText("Technical details", { exact: true }).click();
+  const events = page.locator(".events-log");
+  await expect(events).toContainText('"classification":"invalid_file"');
+  await expect(events).toContainText('"format":"json"');
+  await expect(events).toContainText('"step":"parse_json"');
+  await expect(events).toContainText('"bytes":28');
+  await expect(page.locator("body")).not.toContainText("PRIVATE TRANSCRIPT MARKER");
 });
 
 test("Home reflows to one column, and a connected workspace says whose it is", async ({ page }) => {

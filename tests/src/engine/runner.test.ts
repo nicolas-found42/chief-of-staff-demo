@@ -217,7 +217,9 @@ describe("a failure inside a Stage", () => {
     const runner = new Runner({ runs, module: fakeModule() });
     const id = await runner.startRun(record, {
       work: async () => {
-        throw new StageFailure("google_expired", "Sign in again.", { connectionCaused: true });
+        throw new StageFailure("google_expired", "Sign in again.", {
+          connectionState: "expired",
+        });
       },
     });
     await runner.idle();
@@ -225,6 +227,7 @@ describe("a failure inside a Stage", () => {
     const detail = runs.detail(id)!;
     expect(detail.failureHint).toBe("Sign in again.");
     expect(detail.connectionCaused).toBe(true);
+    expect(detail.connectionState).toBe("expired");
   });
 });
 

@@ -24,8 +24,18 @@ export interface TestSeedContext {
  * cannot expose it (no NODE_ENV string compare).
  */
 export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContext): Promise<void> {
-  app.post("/api/test/seed", async (_request, reply) => {
+  app.post("/api/test/seed", async (request, reply) => {
     try {
+      const query = request.query as { scenario?: string };
+      if (query.scenario === "conversion-failure") {
+        const runId = await ctx.startRun({
+          intake: "drive",
+          fileName: "corrupt-transcript.json",
+          bytes: Buffer.from('{"PRIVATE TRANSCRIPT MARKER"'),
+        });
+        reply.code(201);
+        return { runId };
+      }
       let bytes: Buffer | null = null;
       const candidates = [
         join(

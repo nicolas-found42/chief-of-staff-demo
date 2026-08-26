@@ -12,6 +12,7 @@ import { join } from "node:path";
 import {
   type RunDetail,
   type RunEvent,
+  type RunFailureFlags,
   type RunMeta,
   type RunPage,
   type RunSummary,
@@ -47,7 +48,7 @@ export interface RunHandle {
   /** Enter a Stage: the Run is running, and the start is logged. */
   started(stage: string): void;
   /** Leave a Stage as failed, with the wording the failing module supplied. */
-  failed(stage: string, reason: string, hint: string, flags?: { connectionCaused?: boolean }): void;
+  failed(stage: string, reason: string, hint: string, flags?: RunFailureFlags): void;
   /** Stop inside a Stage with a Shell-owned durable wait standing against the Run. */
   blocked(wait: RunWait): void;
   /** Clear a durable wait and return the Run to pending for enqueued work. */
@@ -170,6 +171,7 @@ function toSummary(meta: RunMeta): RunSummary {
     /* Additive (D6): present only on connection-caused failures, so legacy
        clients and old metas see no change. */
     ...(meta.connectionCaused ? { connectionCaused: true } : {}),
+    ...(meta.connectionState ? { connectionState: meta.connectionState } : {}),
   };
 }
 
@@ -217,12 +219,8 @@ class RunHandleImpl implements RunHandle {
     );
   }
 
-  failed(
-    stage: string,
-    reason: string,
-    hint: string,
-    flags?: { connectionCaused?: boolean },
-  ): void {
+  failed(stage: string, reason: string, hint: string, flags?: RunFailureFlags): void {
+    const eventDetail = flags?.eventDetail ?? {};
     this.transition(
       (meta) => {
         meta.status = "failed";
@@ -231,13 +229,23 @@ class RunHandleImpl implements RunHandle {
         meta.failureHint = hint;
         /* Additive (D6): set only when the connection caused it, so legacy
            metas without the field read and display exactly as before. */
-        if (flags?.connectionCaused) {
+        if (flags?.connectionState) {
           meta.connectionCaused = true;
+          meta.connectionState = flags.connectionState;
+        } else {
+          delete meta.connectionCaused;
+          delete meta.connectionState;
         }
       },
       [
-        { type: "stage_failed", detail: { stage, error: reason } },
-        { type: "run_failed", detail: { stage, reason } },
+        {
+          type: "stage_failed",
+          detail: { ...eventDetail, stage, error: reason },
+        },
+        {
+          type: "run_failed",
+          detail: { ...eventDetail, stage, reason },
+        },
       ],
     );
   }
@@ -331,6 +339,8 @@ class RunHandleImpl implements RunHandle {
         meta.failedStage = null;
         meta.failureHint = null;
         meta.skipReason = null;
+        delete meta.connectionCaused;
+        delete meta.connectionState;
       },
       /* A retry used to leave no trace but a second `stage_started`, so a
          timeline read later could not tell a resumed Run from a slow one. */

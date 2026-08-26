@@ -297,6 +297,7 @@ describe("Pipeline", () => {
     expect(failed!.failedStage).toBe("outputs");
     expect(failed!.events.map((event) => event.type)).toContain("google_unavailable");
     expect(failed!.failureHint).toBe(googleFailureHint("disconnected"));
+    expect(failed!.connectionState).toBe("disconnected");
     // Result was persisted before the outputs stage.
     expect(resultOf(failed).isTranscript).toBe(true);
 
@@ -324,6 +325,7 @@ describe("Pipeline", () => {
     expect(failed!.status).toBe("failed");
     expect(failed!.failureHint).toBe(googleFailureHint("expired"));
     expect(failed!.connectionCaused).toBe(true);
+    expect(failed!.connectionState).toBe("expired");
     const event = failed!.events.find((entry) => entry.type === "google_unavailable");
     expect(event?.detail?.state).toBe("expired");
   });
@@ -351,6 +353,7 @@ describe("Pipeline", () => {
     /* Classified at the failure site where the connection already knows (D6):
        the marker is how every surface later renders Needs attention. */
     expect(failed!.connectionCaused).toBe(true);
+    expect(failed!.connectionState).toBe("expired");
     /* Not per-item error events: a dead grant is not one bad task, and every
        remaining call would fail the same way. */
     expect(failed!.events.filter((entry) => entry.type === "google_task_error")).toHaveLength(0);
@@ -386,20 +389,110 @@ describe("Pipeline", () => {
     await expect(pipeline.retryRun(runId)).rejects.toThrow(/not retryable/);
   });
 
-  it("conversion failure produces a visible failed run", async () => {
+  it("a corrupt conversion fails visibly with repair guidance and shape-only diagnostics", async () => {
+    const privateText = '{"PRIVATE TRANSCRIPT MARKER"';
     const runId = await pipeline.startRun({
       intake: "drive",
       fileName: "garbage.json",
-      bytes: Buffer.from('{"not":"sentences"}'),
+      bytes: Buffer.from(privateText),
     });
     await pipeline.idle();
     const detail = detailOf(runId);
     expect(detail!.status).toBe("failed");
     expect(detail!.failedStage).toBe("convert");
     expect(detail!.events[detail!.events.length - 1].type).toBe("run_failed");
-    expect(detail!.failureHint).toBe("This file could not be converted to text.");
-    expect(detail!.events.map((e) => e.type)).toContain("stage_failed");
+    expect(detail!.failureHint).toBe(
+      "This file is corrupt or does not match its format. Replace or repair the file.",
+    );
+    expect(detail!.events.find((event) => event.type === "stage_failed")?.detail).toEqual({
+      stage: "convert",
+      error: "invalid_file",
+      diagnostic: {
+        classification: "invalid_file",
+        format: "json",
+        bytes: Buffer.byteLength(privateText),
+        step: "parse_json",
+      },
+    });
+    expect(JSON.stringify(detail)).not.toContain("PRIVATE TRANSCRIPT MARKER");
     await expect(pipeline.retryRun(runId)).rejects.toThrow(/not retryable/);
+  });
+
+  it("distinguishes an unsupported format from a corrupt file", async () => {
+    const runId = await pipeline.startRun({
+      intake: "drive",
+      fileName: "meeting.xlsx",
+      bytes: Buffer.from("private spreadsheet bytes"),
+    });
+    await pipeline.idle();
+
+    const detail = detailOf(runId)!;
+    expect(detail.failureHint).toBe(
+      "This file format is not supported. Convert the file to TXT, Markdown, JSON, PDF, or DOCX, then add it again.",
+    );
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      error: "unsupported_format",
+      diagnostic: {
+        classification: "unsupported_format",
+        format: "xlsx",
+        bytes: 25,
+        step: "detect_format",
+      },
+    });
+  });
+
+  it("distinguishes an empty file from a corrupt file", async () => {
+    const runId = await pipeline.startRun({
+      intake: "drive",
+      fileName: "meeting.pdf",
+      bytes: Buffer.alloc(0),
+    });
+    await pipeline.idle();
+
+    const detail = detailOf(runId)!;
+    expect(detail.failureHint).toBe(
+      "This file contains no readable text. Replace it with a complete file.",
+    );
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      error: "empty_file",
+      diagnostic: {
+        classification: "empty_file",
+        format: "pdf",
+        bytes: 0,
+        step: "validate_text",
+      },
+    });
+  });
+
+  it("identifies an unexpected converter exception as an app fault without recording it", async () => {
+    const privateText = "PRIVATE TRANSCRIPT MARKER";
+    const bytes = Buffer.from("source bytes");
+    Object.defineProperty(bytes, "toString", {
+      value: () => {
+        throw new Error(`converter implementation exposed ${privateText}`);
+      },
+    });
+    const runId = await pipeline.startRun({
+      intake: "drive",
+      fileName: "meeting.md",
+      bytes,
+    });
+    await pipeline.idle();
+
+    const detail = detailOf(runId)!;
+    expect(detail.failureHint).toBe(
+      "The app could not convert this file. Report the conversion diagnostic.",
+    );
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      error: "converter_failure",
+      diagnostic: {
+        classification: "converter_failure",
+        format: "md",
+        bytes: bytes.byteLength,
+        step: "convert_file",
+      },
+    });
+    expect(JSON.stringify(detail)).not.toContain(privateText);
   });
 
   it("one bad task does not kill the batch (drainOutbox parity)", async () => {

@@ -99,8 +99,8 @@ export function connectionNotice(status: GoogleStatus | null): ConnectionNotice 
       };
     case "expired":
       return {
-        text: "Google stopped accepting the saved sign-in, so nothing can be created in Tasks or Gmail.",
-        action: "Sign in with Google",
+        text: "The saved Google sign-in has expired as expected. Reconnect to keep creating in Tasks or Gmail.",
+        action: "Reconnect Google",
       };
     case "connected": {
       /* A working connection about to lapse still has something to say, and it

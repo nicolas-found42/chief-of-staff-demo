@@ -122,8 +122,13 @@ describe("Home's activity feed", () => {
   });
 
   it("frames a connection-caused failure as reconnect-fixable, in Settings", () => {
-    const failed = { ...run("r1", "failed", "Pricing call.docx"), connectionCaused: true };
-    const { rows } = homeStatus([failed], REAL, true);
+    const failed = {
+      ...run("r1", "failed", "Pricing call.docx"),
+      connectionCaused: true,
+      connectionState: "expired" as const,
+    };
+    const { sentence, rows } = homeStatus([failed], REAL, true);
+    expect(sentence).toBe("1 run needs reconnecting.");
     expect(rows).toEqual([
       {
         id: "r1",
@@ -132,6 +137,19 @@ describe("Home's activity feed", () => {
         to: "/settings",
       },
     ]);
+  });
+
+  it("reports a genuine failure separately from a Run that needs reconnecting", () => {
+    const interrupted = {
+      ...run("r2", "failed"),
+      connectionCaused: true,
+      connectionState: "expired" as const,
+    };
+    const failed = run("r1", "failed");
+
+    expect(homeStatus([interrupted, failed], REAL, true).sentence).toBe(
+      "1 run needs reconnecting, and 1 run failed.",
+    );
   });
 });
 
@@ -184,6 +202,27 @@ describe("Home's attention rail", () => {
     ]);
     // The tail links to the Shell's cross-Module list, not to one Module's.
     expect(rows[3].to).toBe("/runs");
+  });
+
+  it("summarises an expiry-only hidden tail as needing reconnection", () => {
+    const runs = Array.from({ length: 4 }, (_, i) => ({
+      ...run(`r${i}`, "failed"),
+      connectionState: "expired" as const,
+    }));
+
+    expect(homeStatus(runs, REAL, true).rows.at(-1)?.text).toBe("1 more run needs reconnecting");
+  });
+
+  it("summarises a mixed hidden tail as needing attention", () => {
+    const runs = [
+      run("r1", "failed"),
+      run("r2", "failed"),
+      run("r3", "failed"),
+      { ...run("r4", "failed"), connectionState: "expired" as const },
+      run("r5", "failed"),
+    ];
+
+    expect(homeStatus(runs, REAL, true).rows.at(-1)?.text).toBe("2 more runs need attention");
   });
 
   it("speaks about the mock provider without claiming what extraction would have found", () => {

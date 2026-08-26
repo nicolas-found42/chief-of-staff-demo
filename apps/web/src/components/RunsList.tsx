@@ -216,7 +216,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                       </td>
                     )}
                     <td>
-                      <StatusPill status={run.status} connectionCaused={run.connectionCaused} />
+                      <StatusPill status={run.status} connectionState={run.connectionState} />
                     </td>
                     <td className="muted run-summary-cell">
                       {run.status === "skipped" && run.skipReason

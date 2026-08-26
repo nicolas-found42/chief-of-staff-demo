@@ -9,7 +9,8 @@ import {
   type TranscriptRunContext,
 } from "../../llm/prompt.js";
 import { type CompleteJson } from "../../llm/providers.js";
-import { SourceError, convertToText } from "../../text/convert.js";
+import { convertToText } from "../../text/convert.js";
+import { conversionStageFailure } from "../../text/failure.js";
 
 const MAX_EXTRACT_ATTEMPTS = 3;
 
@@ -250,10 +251,11 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
             ) + "\n",
           );
           let text: string;
+          const sourceBytes = spec.bytes ?? Buffer.alloc(0);
           try {
-            text = spec.text ?? (await convertToText(spec.fileName, spec.bytes ?? Buffer.alloc(0)));
+            text = spec.text ?? (await convertToText(spec.fileName, sourceBytes));
           } catch (err) {
-            throw err instanceof SourceError ? new Error(`${err.code}: ${err.message}`) : err;
+            throw conversionStageFailure(err, spec.fileName, sourceBytes);
           }
           ctx.writeFile("transcript.txt", text);
         });

@@ -1,5 +1,5 @@
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
-import { runTitle, statusLabel } from "./display";
+import { isExpectedConnectionExpiry, runTitle, statusLabel } from "./display";
 
 interface RailRow {
   /** React key, and the identity of the thing the row is about. */
@@ -67,7 +67,9 @@ export function homeStatus(
   provider: ProviderId,
   hasNotice: boolean,
 ): HomeStatus {
-  const failed = runs.filter((run) => run.status === "failed");
+  const needsAction = runs.filter((run) => run.status === "failed");
+  const interrupted = needsAction.filter((run) => isExpectedConnectionExpiry(run.connectionState));
+  const failed = needsAction.filter((run) => !isExpectedConnectionExpiry(run.connectionState));
   const blocked = runs.filter((run) => run.status === "blocked");
   const active = runs.filter((run) => run.status === "pending" || run.status === "running");
   /* A fresh workspace defaults to `mock`, so this is the likeliest reason a
@@ -77,11 +79,10 @@ export function homeStatus(
      extraction would have produced. */
   const mock = provider === "mock";
 
-  /* D6: a failure the connection caused is reconnect-fixable, so the rail
-     names that fix instead of pointing at the run. Rows still link, they do
-     not act — Reconnect goes to Settings, where the fix lives. */
-  const rows: RailRow[] = failed.slice(0, MAX_FAILED_ROWS).map((run) =>
-    run.connectionCaused
+  /* An expiry is reconnect-fixable, so the rail names that fix instead of
+     pointing at the Run. Every other failure still opens its diagnostic. */
+  const rows: RailRow[] = needsAction.slice(0, MAX_FAILED_ROWS).map((run) =>
+    isExpectedConnectionExpiry(run.connectionState)
       ? {
           id: run.id,
           text: `${runTitle(run.fileName ?? run.id)} could not finish because Google needs reconnecting`,
@@ -97,11 +98,23 @@ export function homeStatus(
   );
   /* The tail of the failed rows, not a condition of its own — so it sits with
      the rows it summarises rather than after the provider. */
-  if (failed.length > MAX_FAILED_ROWS) {
-    const hidden = failed.length - MAX_FAILED_ROWS;
+  if (needsAction.length > MAX_FAILED_ROWS) {
+    const hiddenRuns = needsAction.slice(MAX_FAILED_ROWS);
+    const hidden = hiddenRuns.length;
+    const hiddenExpiryCount = hiddenRuns.filter((run) =>
+      isExpectedConnectionExpiry(run.connectionState),
+    ).length;
+    const outcome =
+      hiddenExpiryCount === hidden
+        ? hidden === 1
+          ? "needs reconnecting"
+          : "need reconnecting"
+        : hiddenExpiryCount === 0
+          ? "failed"
+          : "need attention";
     rows.push({
       id: "more-failed",
-      text: `${hidden} more run${hidden === 1 ? "" : "s"} failed`,
+      text: `${hidden} more run${hidden === 1 ? "" : "s"} ${outcome}`,
       cta: "See all runs",
       to: "/runs",
     });
@@ -145,6 +158,11 @@ export function homeStatus(
   /* One clause per rail condition, in the rail's order. The count is the true
      total, not the capped row count. */
   const clauses: string[] = [];
+  if (interrupted.length > 0) {
+    clauses.push(
+      `${interrupted.length} run${interrupted.length === 1 ? " needs" : "s need"} reconnecting`,
+    );
+  }
   if (failed.length > 0) {
     clauses.push(`${failed.length} run${failed.length === 1 ? "" : "s"} failed`);
   }

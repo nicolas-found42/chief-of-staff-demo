@@ -17,7 +17,8 @@ import {
   type IdeaEngineRunResult,
   IdeaEngineIdeaWireSchema,
 } from "@chief-of-staff-demo/shared";
-import { SourceError, convertToText, isSupportedFileName } from "../../text/convert.js";
+import { convertToText, isSupportedFileName } from "../../text/convert.js";
+import { conversionStageFailure } from "../../text/failure.js";
 import {
   StageFailure,
   type RetryPlan,
@@ -350,38 +351,27 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
         if (input.text === undefined && !isSupportedFileName(fileName)) {
           return { status: "skipped", reason: `unsupported file type: ${fileName}` };
         }
-        let skipReason: string | null = null;
         let rawText: string | null = null;
+        const sourceBytes = input.bytes ?? Buffer.alloc(0);
         await ctx.stage("convert", async () => {
           ctx.event("convert_attempt", { fileName });
+          let converted: string;
           try {
-            if (input.text !== undefined) {
-              rawText = input.text;
-            } else {
-              rawText = await convertToText(fileName, input.bytes ?? Buffer.alloc(0));
-            }
-            ctx.writeFile("transcript.txt", rawText);
-            ctx.writeFile(
-              "context.json",
-              JSON.stringify(
-                { meetingDate: input.context?.meetingDate ?? null, attendees },
-                null,
-                2,
-              ) + "\n",
-            );
+            converted = input.text ?? (await convertToText(fileName, sourceBytes));
           } catch (err) {
-            if (err instanceof SourceError) {
-              skipReason = `${err.code}: ${err.message}`;
-              ctx.event("convert_skipped", { reason: skipReason });
-              return;
-            }
-            throw err;
+            throw conversionStageFailure(err, fileName, sourceBytes);
           }
+          rawText = converted;
+          ctx.writeFile("transcript.txt", converted);
+          ctx.writeFile(
+            "context.json",
+            JSON.stringify(
+              { meetingDate: input.context?.meetingDate ?? null, attendees },
+              null,
+              2,
+            ) + "\n",
+          );
         });
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (skipReason !== null) {
-          return { status: "skipped", reason: skipReason };
-        }
         initialTranscript = rawText;
       } else {
         fileName = meta.fileName ?? "transcript";

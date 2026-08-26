@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "@chief-of-staff-demo/shared";
-import { buildTimeline, relativeTime, runTitle } from "../../../apps/web/src/display";
+import {
+  buildTimeline,
+  failurePresentation,
+  relativeTime,
+  runTitle,
+} from "../../../apps/web/src/display";
 /**
  * The runs list and Home's feed both name Runs through these helpers, so the
  * legacy-filename shapes they must survive are pinned here rather than trusted
@@ -32,6 +37,40 @@ describe("runTitle", () => {
     expect(runTitle("")).toBe("Untitled run");
     expect(runTitle("   ")).toBe("Untitled run");
     expect(runTitle(".json")).toBe("Untitled run");
+  });
+});
+
+describe("failurePresentation", () => {
+  it("presents an expired connection as an expected interruption", () => {
+    expect(failurePresentation({ connectionState: "expired" })).toEqual({
+      stageOutcome: "Stopped",
+      bannerClass: "banner-warn",
+      bannerRole: "status",
+      timelineClass: "status-attention",
+      expectedInterruption: true,
+      showReconnect: true,
+      showRetry: false,
+    });
+  });
+
+  it("keeps genuine failures visibly distinct from an expiry", () => {
+    expect(failurePresentation({})).toEqual({
+      stageOutcome: "Failed",
+      bannerClass: "banner-error",
+      bannerRole: "alert",
+      timelineClass: "status-failed",
+      expectedInterruption: false,
+      showReconnect: false,
+      showRetry: true,
+    });
+  });
+
+  it("offers retry after an expired connection has been restored", () => {
+    expect(failurePresentation({ connectionState: "expired" }, "connected")).toMatchObject({
+      expectedInterruption: true,
+      showReconnect: false,
+      showRetry: true,
+    });
   });
 });
 

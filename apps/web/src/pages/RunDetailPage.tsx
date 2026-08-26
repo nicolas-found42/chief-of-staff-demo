@@ -2,9 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { RunDetail } from "@chief-of-staff-demo/shared";
 import { IntakeBadge, StatusPill } from "../components/StatusPill";
-import { buildTimeline, formatDuration, formatTime, stageLabel } from "../display";
+import {
+  buildTimeline,
+  failurePresentation,
+  formatDuration,
+  formatTime,
+  stageLabel,
+} from "../display";
 import { api, errorMessage } from "../client";
 import { useIsLoadedEntry } from "../usePageFocus";
+import { useGoogleConnection } from "../useGoogleConnection";
 import { useModule, useModuleLabel } from "../useModules";
 import { useTitle } from "../useTitle";
 
@@ -28,6 +35,7 @@ export function RunDetailPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const retryRef = useRef<HTMLButtonElement>(null);
   const moduleLabel = useModuleLabel();
+  const { status: googleStatus } = useGoogleConnection();
   const owner = useModule(detail?.module);
 
   useTitle(detail?.fileName ?? "Run");
@@ -144,9 +152,7 @@ export function RunDetailPage() {
      so the Shell says what the timeline saw and never which Stage is missing. */
   const retryable =
     detail.status === "failed" && detail.failedStage !== null && detail.failedStage !== "convert";
-  /* The failure records its cause additively (D6); a legacy meta without the
-     marker reads — truthfully — as an ordinary failure. */
-  const connectionCaused = detail.connectionCaused === true;
+  const failure = failurePresentation(detail, googleStatus?.state);
   const ResultView = owner?.resultView ?? null;
 
   return (
@@ -170,7 +176,7 @@ export function RunDetailPage() {
       <div className="run-meta">
         <span role="status">
           <span className="visually-hidden">Status: </span>
-          <StatusPill status={detail.status} connectionCaused={detail.connectionCaused} />
+          <StatusPill status={detail.status} connectionState={detail.connectionState} />
         </span>
         <span className="muted">
           <span className="visually-hidden">, Module: </span>
@@ -197,9 +203,9 @@ export function RunDetailPage() {
           </span>
         )}
         {detail.failedStage && (
-          <span className="bad">
-            <span className="visually-hidden">, </span>Failed during{" "}
-            {stageLabel(detail.failedStage)}
+          <span className={failure.expectedInterruption ? "muted" : "bad"}>
+            <span className="visually-hidden">, </span>
+            {failure.stageOutcome} during {stageLabel(detail.failedStage)}
           </span>
         )}
       </div>
@@ -209,7 +215,7 @@ export function RunDetailPage() {
       {detail.summary && <p className="run-summary">{detail.summary}</p>}
 
       {detail.status === "failed" && (
-        <div className="banner banner-error" role="alert">
+        <div className={`banner ${failure.bannerClass}`} role={failure.bannerRole}>
           {/* Impact first (D10): the plain-language cause, then what landed in
               the world versus what did not, then the way out. Retry resumes
               from the failed stage — that semantics already exist; this is
@@ -224,7 +230,7 @@ export function RunDetailPage() {
           <div className="field-row">
             {/* aria-disabled, not disabled: a disabled button is blurred and
                 dropped from the tab order the moment it is pressed. */}
-            {retryable && (
+            {retryable && failure.showRetry && (
               <button
                 type="button"
                 className="action-button"
@@ -235,7 +241,7 @@ export function RunDetailPage() {
                 {retrying ? "Retrying…" : "Retry"}
               </button>
             )}
-            {connectionCaused && (
+            {failure.showReconnect && (
               <Link to="/settings" className="action-button step-link">
                 Reconnect
               </Link>
@@ -273,14 +279,14 @@ export function RunDetailPage() {
                   <span
                     className={`status-badge ${
                       entry.state === "failed"
-                        ? "status-failed"
+                        ? failure.timelineClass
                         : entry.state === "running"
                           ? "status-active"
                           : "status-done"
                     }`}
                   >
                     {entry.state === "failed"
-                      ? "Failed"
+                      ? failure.stageOutcome
                       : entry.state === "running"
                         ? "Running"
                         : "Done"}

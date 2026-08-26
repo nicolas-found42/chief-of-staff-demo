@@ -7,7 +7,7 @@
  * itself rather than disappearing: a diagnostic is better than a blank pill.
  */
 
-import type { RunEvent } from "@chief-of-staff-demo/shared";
+import type { GoogleConnectionState, RunEvent, RunSummary } from "@chief-of-staff-demo/shared";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Queued",
@@ -51,6 +51,38 @@ export function statusLabel(status: string): string {
 
 export function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage;
+}
+
+export function isExpectedConnectionExpiry(state?: GoogleConnectionState): boolean {
+  return state === "expired";
+}
+
+/** The two visibly different ways a failed Run can reach the detail page. */
+export function failurePresentation(
+  run: Pick<RunSummary, "connectionState">,
+  currentConnectionState?: GoogleConnectionState,
+) {
+  if (isExpectedConnectionExpiry(run.connectionState)) {
+    const reconnected = currentConnectionState === "connected";
+    return {
+      stageOutcome: "Stopped" as const,
+      bannerClass: "banner-warn" as const,
+      bannerRole: "status" as const,
+      timelineClass: "status-attention" as const,
+      expectedInterruption: true,
+      showReconnect: !reconnected,
+      showRetry: reconnected,
+    };
+  }
+  return {
+    stageOutcome: "Failed" as const,
+    bannerClass: "banner-error" as const,
+    bannerRole: "alert" as const,
+    timelineClass: "status-failed" as const,
+    expectedInterruption: false,
+    showReconnect: false,
+    showRetry: true,
+  };
 }
 
 /* ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ export function connectionFailure(
   }
   ctx.event("google_unavailable", { state, error: errorMessage(error) });
   return new StageFailure(`google_${state}`, googleFailureHint(state), {
-    connectionCaused: true,
+    connectionState: state,
   });
 }
 
@@ -36,6 +36,6 @@ export function connectionFailure(
 export function connectionUnavailable(ctx: RunContext, state: GoogleConnectionState): StageFailure {
   ctx.event("google_unavailable", { state });
   return new StageFailure(`google_${state}`, googleFailureHint(state), {
-    connectionCaused: true,
+    connectionState: state,
   });
 }

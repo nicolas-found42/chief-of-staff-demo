@@ -1,4 +1,4 @@
-import type { RunMeta, RunWaitTimeout } from "@chief-of-staff-demo/shared";
+import type { RunFailureFlags, RunMeta, RunWaitTimeout } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../runs.js";
 
 /**
@@ -96,7 +96,7 @@ export class StageFailure extends Error {
   constructor(
     reason: string,
     readonly hint: string,
-    readonly flags?: { connectionCaused?: boolean },
+    readonly flags?: RunFailureFlags,
   ) {
     super(reason);
     this.name = "StageFailure";

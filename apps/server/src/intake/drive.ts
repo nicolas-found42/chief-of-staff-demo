@@ -314,11 +314,6 @@ export class DriveIntake {
         }
 
         const isGoogleDoc = mimeType === GOOGLE_DOC_MIME;
-        if (!isGoogleDoc && !isSupportedFileName(fileName)) {
-          this.deps.log(`Ignoring unsupported file ${fileName} (${mimeType || "unknown type"})`);
-          continue;
-        }
-
         if (file.size && Number(file.size) > MAX_UPLOAD_BYTES) {
           this.deps.log(`Skipping oversized Drive file ${fileName} (${file.size} bytes)`);
           continue;
