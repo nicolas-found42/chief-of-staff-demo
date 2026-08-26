@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import Fastify from "fastify";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
 import type {
   DraftGenerator,
@@ -292,7 +293,7 @@ describe("ContentScoutHost", () => {
     });
   });
 
-  it("runs a bounded Brand Profile scan without mutating the accepted revision", async () => {
+  it("scans and accepts a Brand Profile without mutating the prior revision", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-brand-scan-"));
     const runs = openRuns(workspaceDir);
     let crawlRequest: unknown;
@@ -327,7 +328,50 @@ describe("ContentScoutHost", () => {
       },
       brandProfileProposer: {
         async propose() {
-          return "# Brand Profile\n\n## Summary\nNew website proposal\n\n## Voice\nDirect\n";
+          return `# Brand Profile
+
+## Summary
+New website proposal
+
+## Products
+Workflow software
+
+## Customers
+Operations teams
+
+## Customer problems
+Fragmented work
+
+## Positioning
+Practical, educational guidance
+
+## Differentiators
+Local ownership
+
+## Proof
+Published customer evidence
+
+## Competitors
+Manual processes
+
+## Voice
+Direct
+
+## Vocabulary
+Use precise terms
+
+## Prohibited claims
+No unsupported guarantees
+
+## Content themes
+Operational clarity
+
+## Avoided subjects
+Unverified rumors
+
+## Geographic or regulatory constraints
+United States only
+`;
         },
       },
       log: () => undefined,
@@ -372,6 +416,27 @@ describe("ContentScoutHost", () => {
       proposedValue: "New website proposal",
       status: "conflicting",
     });
+    expect(proposal.sectionDiffs.every((diff) => diff.proposedValue.length > 0)).toBe(true);
+    expect(proposal.sectionDiffs.find((diff) => diff.section === "Products")?.proposedValue).toBe(
+      "Workflow software",
+    );
+
+    const app = Fastify();
+    host.routes(app);
+    const acceptedSections = proposal.sectionDiffs.map((diff) => diff.section);
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/content-scout/brand-profile/proposals/${proposal.id}/accept`,
+      payload: { acceptedSections },
+    });
+    expect(response.statusCode).toBe(201);
+    const accepted = host.currentBrandProfile()!;
+    expect(accepted.markdown.match(/^## /gm)).toHaveLength(14);
+    expect(accepted.markdown).toContain(
+      "## Geographic or regulatory constraints\nUnited States only",
+    );
+
+    await app.close();
   });
 
   it("freezes one brief, generates all 23 drafts independently at concurrency four, and publishes one page per draft", async () => {

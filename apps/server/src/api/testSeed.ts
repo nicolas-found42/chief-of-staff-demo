@@ -12,6 +12,7 @@ import type {
   RuntimeInspector,
 } from "../modules/content-scout/ports.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
+import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 
 export interface TestSeedContext {
   startRun: (spec: RunSourceSpec) => Promise<string>;
@@ -251,11 +252,22 @@ export function contentScoutTestPorts(now: () => Date): {
       ];
     },
   };
-  const brandProfileProposer: BrandProfileProposer = {
-    async propose() {
-      return `# Brand Profile\n\n## Summary\nExample Company turns complex changes into practical guidance.\n\n## Products\nEducational guidance.\n\n## Customers\nSmall teams.\n\n## Customer problems\nUnderstanding change.\n\n## Positioning\nEvidence-led and practical.\n\n## Differentiators\nSpecific explanations.\n\n## Proof\nPublic company website.\n\n## Competitors\nNot established.\n\n## Voice\nDirect and useful.\n\n## Vocabulary\nPractical, evidence-led.\n\n## Prohibited claims\nDo not invent outcomes.\n\n## Content themes\nPublic changes and implications.\n\n## Avoided subjects\nUnverified rumors.\n\n## Geographic or regulatory constraints\nNot established.\n`;
-    },
-  };
+  const brandProfileProposer = modelBrandProfileProposer(() => async () => ({
+    Summary: "Example Company turns complex changes into practical guidance.",
+    Products: "Educational guidance.",
+    Customers: "Small teams.",
+    "Customer problems": "Understanding change.",
+    Positioning: "Evidence-led and practical.",
+    Differentiators: "Specific explanations.",
+    Proof: "Public company website.",
+    Competitors: "Not established.",
+    Voice: "Direct and useful.",
+    Vocabulary: "Practical, evidence-led.",
+    "Prohibited claims": "Do not invent outcomes.",
+    "Content themes": "Public changes and implications.",
+    "Avoided subjects": "Unverified rumors.",
+    "Geographic or regulatory constraints": "Not established.",
+  }));
   return {
     adapters: [adapter, experimentalAdapter],
     ranker,
