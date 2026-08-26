@@ -21,6 +21,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/node_modules/**",
       "workspace/**",
+      ".claude/worktrees/**",
       ".scratch/**",
       ".archive/**",
       "**/test-results/**",
