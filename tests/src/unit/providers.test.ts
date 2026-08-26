@@ -2,6 +2,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { ExtractionWireSchema } from "@chief-of-staff-demo/shared";
 import { makeCompleteJson } from "../../../apps/server/src/llm/providers";
 
 interface Call {
@@ -51,7 +53,7 @@ describe("providers", () => {
       { provider: "openai", model: "gpt-5.2", apiKey: "sk-test" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://api.openai.com/v1/chat/completions");
@@ -90,7 +92,7 @@ describe("providers", () => {
       { provider: "anthropic", model: "claude-sonnet-5", apiKey: "ak" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls[0].url).toBe("https://api.anthropic.com/v1/messages");
     expect(calls[0].headers["x-api-key"]).toBe("ak");
@@ -114,7 +116,7 @@ describe("providers", () => {
       { provider: "gemini", model: "gemini-3.7-flash", apiKey: "gk" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls[0].url).toBe(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=gk",
@@ -136,7 +138,7 @@ describe("providers", () => {
       { provider: "openrouter", model: "google/gemini-3.7-flash", apiKey: "ork" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://openrouter.ai/api/v1/chat/completions");
@@ -151,7 +153,7 @@ describe("providers", () => {
       { provider: "openrouter", model: "m", apiKey: "ork" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls).toHaveLength(2);
     expect(calls[1].body.response_format).toBeUndefined();
@@ -165,7 +167,9 @@ describe("providers", () => {
       { provider: "openrouter", model: "m", apiKey: "ork" },
       "/nonexistent/mock-result.json",
     );
-    await expect(complete({ system: "S", user: "U" })).rejects.toThrow("HTTP 401");
+    await expect(
+      complete({ system: "S", user: "U", schema: ExtractionWireSchema }),
+    ).rejects.toThrow("HTTP 401");
     expect(calls).toHaveLength(1);
   });
 
@@ -175,7 +179,7 @@ describe("providers", () => {
       { provider: "ollama", model: "nemotron", apiKey: "", baseUrl: "http://ollama.test:11434/" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("http://ollama.test:11434/v1/chat/completions");
@@ -191,7 +195,7 @@ describe("providers", () => {
       { provider: "ollama", model: "nemotron", apiKey: "", baseUrl: "http://ollama.test:11434" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual(RESULT);
     expect(calls).toHaveLength(2);
     expect(calls[1].body.response_format).toBeUndefined();
@@ -207,7 +211,7 @@ describe("providers", () => {
       { provider: "mock", model: "", apiKey: "" },
       join(dir, "mock-result.json"),
     );
-    const parsed = await complete({ system: "S", user: "U" });
+    const parsed = await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
     expect(parsed).toEqual({ ...RESULT, sourceId: "fixture" });
   });
 
@@ -216,8 +220,38 @@ describe("providers", () => {
       { provider: "mock", model: "", apiKey: "" },
       "/nonexistent/mock-result.json",
     );
-    const parsed = (await complete({ system: "S", user: "U" })) as Record<string, unknown>;
+    const parsed = (await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    })) as Record<string, unknown>;
     expect(parsed.isTranscript).toBe(false);
     expect(parsed.skipReason).toBe("mock: no mock-result.json");
+  });
+  /* The Shell's one LLM seam serves every Module, and `strict: true` means the
+     schema sent is the schema the model obeys. A seam that substituted its own
+     shape silently returned another Module's result. */
+  it("sends the caller's own schema, not a shape of its own", async () => {
+    responses.push({
+      status: 200,
+      body: chatCompletion(JSON.stringify({ markdown: "# Brand Profile" })),
+    });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/model", apiKey: "sk-test" },
+      "/nonexistent/mock-result.json",
+    );
+    const parsed = await complete({
+      system: "S",
+      user: "U",
+      schema: z.strictObject({ markdown: z.string() }),
+    });
+    expect(parsed).toEqual({ markdown: "# Brand Profile" });
+    const body = calls[0].body;
+    const responseFormat = body.response_format as Record<string, unknown>;
+    const jsonSchema = responseFormat.json_schema as Record<string, unknown>;
+    const schema = jsonSchema.schema as Record<string, unknown>;
+    const properties = schema.properties as Record<string, unknown>;
+    expect(Object.keys(properties)).toEqual(["markdown"]);
+    expect(properties.tasks).toBeUndefined();
   });
 });

@@ -1,3 +1,5 @@
+import { ExtractionWireSchema } from "@chief-of-staff-demo/shared";
+
 interface RunAttendee {
   name: string;
   email: string | null;
@@ -19,6 +21,9 @@ export interface RunPromptContext {
 export interface ExtractionMessages {
   system: string;
   user: string;
+  /* The prompt and the shape it asks for travel together, so a caller cannot
+     send one without the other. */
+  schema: typeof ExtractionWireSchema;
 }
 
 /**
@@ -109,5 +114,5 @@ export function buildExtractionMessages(
   lines.push("<transcript>");
   lines.push(transcriptText);
   lines.push("</transcript>");
-  return { system: EXTRACTION_SYSTEM_PROMPT, user: lines.join("\n") };
+  return { system: EXTRACTION_SYSTEM_PROMPT, user: lines.join("\n"), schema: ExtractionWireSchema };
 }

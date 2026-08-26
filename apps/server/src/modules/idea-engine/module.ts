@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import {
   IDEA_BATCH_SIZE,
   IDEA_CONTENT_TYPES,
@@ -198,6 +199,14 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
     const override = prompts[contentType as string];
     return typeof override === "string" && override.trim().length > 0 ? override : undefined;
   };
+
+  /* One Stage's batch of Content Ideas. An object, not a bare array, because
+     OpenAI strict json_schema requires an object at the root; `parseIdeas`
+     already unwraps `ideas`. `reason` carries why a batch came back empty. */
+  const IdeaBatchWireSchema = z.strictObject({
+    ideas: z.array(IdeaEngineIdeaWireSchema),
+    reason: z.string().nullable(),
+  });
 
   const parseIdeas = (raw: unknown, contentType: IdeaContentType): IdeaEngineIdeaWire[] => {
     // Accept either array directly or { ideas: [...] } or { reason: "...", ideas: [] }
@@ -444,7 +453,11 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
             try {
               const complete = deps.getCompleteJson();
               const raw = await withTimeout(
-                complete({ system: messages.system, user: messages.user }),
+                complete({
+                  system: messages.system,
+                  user: messages.user,
+                  schema: IdeaBatchWireSchema,
+                }),
                 IDEA_STAGE_TIMEOUT_MS,
                 contentType,
               );

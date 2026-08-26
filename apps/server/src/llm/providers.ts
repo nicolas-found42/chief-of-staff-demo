@@ -1,10 +1,13 @@
 import { readFile } from "node:fs/promises";
+import type { ZodType, ZodTypeDef } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import {
-  type ProviderId,
-  DEFAULT_OLLAMA_BASE_URL,
-  ExtractionWireSchema,
-} from "@chief-of-staff-demo/shared";
+import { type ProviderId, DEFAULT_OLLAMA_BASE_URL } from "@chief-of-staff-demo/shared";
+
+/**
+ * Any Module's wire schema. Spelled without Zod's `any` generics so that
+ * handing one to `zodToJsonSchema` stays type-safe.
+ */
+type WireSchema = ZodType<unknown, ZodTypeDef, unknown>;
 
 export interface LlmConfig {
   provider: ProviderId;
@@ -17,6 +20,13 @@ export interface LlmConfig {
 interface CompletionRequest {
   system: string;
   user: string;
+  /**
+   * The result shape this one call must return. Required, and deliberately so:
+   * one Shell seam serves every Module, `strict: true` means the schema sent is
+   * the schema obeyed, and a default here would hand a Module another Module's
+   * shape without saying so. Every caller names its own.
+   */
+  schema: WireSchema;
 }
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
@@ -35,12 +45,12 @@ function isUnknownArray(value: unknown): value is unknown[] {
 }
 
 /**
- * JSON Schema handed to OpenAI / OpenRouter / Anthropic. Derived from
- * `ExtractionWireSchema` (all fields required, nullable optionals) because
- * OpenAI strict json_schema rejects non-required properties.
+ * JSON Schema handed to OpenAI / OpenRouter / Anthropic. The Zod source is the
+ * caller's (all fields required, nullable optionals) because OpenAI strict
+ * json_schema rejects non-required properties.
  */
-function wireJsonSchema(): JsonObject {
-  const converted = zodToJsonSchema(ExtractionWireSchema, {
+function wireJsonSchema(source: WireSchema): JsonObject {
+  const converted = zodToJsonSchema(source, {
     $refStrategy: "none",
   }) as JsonObject;
   /* OpenAI strict json_schema rejects the $schema key zod-to-json-schema adds. */
@@ -48,8 +58,8 @@ function wireJsonSchema(): JsonObject {
   return converted;
 }
 
-function geminiWireSchema(): JsonObject {
-  const converted = zodToJsonSchema(ExtractionWireSchema, {
+function geminiWireSchema(source: WireSchema): JsonObject {
+  const converted = zodToJsonSchema(source, {
     target: "openApi3",
     $refStrategy: "none",
   }) as JsonObject;
@@ -361,9 +371,10 @@ async function mockComplete(mockResultPath: string): Promise<unknown> {
 
 /** Build the provider call for the current config. Cheap to rebuild per attempt. */
 export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): CompleteJson {
-  const schema = wireJsonSchema();
-  const geminiSchema = geminiWireSchema();
   return async (request) => {
+    /* Per request, not per provider call: the shape belongs to the calling
+       Module, not to this seam. */
+    const schema = wireJsonSchema(request.schema);
     switch (cfg.provider) {
       case "openai":
         return openaiComplete(cfg, request, schema);
@@ -372,7 +383,7 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
       case "openrouter":
         return openrouterComplete(cfg, request, schema);
       case "gemini":
-        return geminiComplete(cfg, request, geminiSchema);
+        return geminiComplete(cfg, request, geminiWireSchema(request.schema));
       case "ollama":
         return ollamaComplete(cfg, request, schema);
       case "mock":
