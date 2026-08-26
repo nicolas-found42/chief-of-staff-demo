@@ -11,6 +11,7 @@ import type {
   RunPage,
   SetupCheck,
   SourceAdapterState,
+  SourceBackfillWindowDays,
   SourceCapability,
   SourceDiagnosticClassification,
   ContentScoutScheduleState,
@@ -79,7 +80,12 @@ export interface ContentScoutState {
   sourceTargets: SourceTarget[];
   shortlist: ContentShortlist | null;
   contentPacks: ContentPack[];
-  adapters: { id: string; state: SourceAdapterState; version: string }[];
+  adapters: {
+    id: string;
+    state: SourceAdapterState;
+    version: string;
+    backfillWindowsDays: SourceBackfillWindowDays[];
+  }[];
   runtimeCapabilities: ContentScoutRuntimeCapability[];
   storage: ContentScoutStorageUse;
   notion: { state: string; tokenHint: string; lastVerifiedAt: string | null };
@@ -229,6 +235,12 @@ export const api = {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ state }),
+    }),
+  backfillContentSource: (id: string, windowDays: SourceBackfillWindowDays) =>
+    request<{ runId: string }>(`/api/content-scout/sources/${encodeURIComponent(id)}/backfill`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ windowDays }),
     }),
   runContentScout: () => request<{ runId: string }>("/api/content-scout/run", { method: "POST" }),
   selectContentScout: (runId: string, opportunityIds: string[]) =>

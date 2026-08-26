@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CONTENT_SCOUT_DRAFT_TARGETS_V1,
+  SOURCE_BACKFILL_WINDOWS_DAYS,
   type ContentDraft,
   type ContentPack,
   type ContentScoutCleanupPreview,
@@ -587,24 +588,58 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
                       : "Not collected yet"}
                   </td>
                   <td>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        retainFocus(event.currentTarget);
-                        void act(
-                          () =>
-                            api.setContentSourceState(
-                              target.id,
-                              target.state === "active" ? "archived" : "active",
-                            ),
-                          target.state === "active"
-                            ? "Source archived; its history was preserved."
-                            : "Source restored.",
-                        );
-                      }}
-                    >
-                      {target.state === "active" ? "Archive" : "Restore"}
-                    </button>
+                    <div className="toolbar">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          retainFocus(event.currentTarget);
+                          void act(
+                            () =>
+                              api.setContentSourceState(
+                                target.id,
+                                target.state === "active" ? "archived" : "active",
+                              ),
+                            target.state === "active"
+                              ? "Source archived; its history was preserved."
+                              : "Source restored.",
+                          );
+                        }}
+                      >
+                        {target.state === "active" ? "Archive" : "Restore"}
+                      </button>
+                      {target.state === "active" &&
+                        SOURCE_BACKFILL_WINDOWS_DAYS.map((windowDays) => {
+                          const supported = (
+                            state.adapters.find((adapter) => adapter.id === target.adapterId)
+                              ?.backfillWindowsDays ?? []
+                          ).includes(windowDays);
+                          return (
+                            <button
+                              key={windowDays}
+                              type="button"
+                              aria-disabled={busy || !supported}
+                              title={
+                                supported
+                                  ? `Collect up to ${windowDays} days of history for this Source Target.`
+                                  : `The ${target.adapterId} Source Adapter does not support a ${windowDays}-day backfill.`
+                              }
+                              onClick={(event) => {
+                                if (busy || !supported) return;
+                                retainFocus(event.currentTarget);
+                                void act(async () => {
+                                  const { runId } = await api.backfillContentSource(
+                                    target.id,
+                                    windowDays,
+                                  );
+                                  await waitForRun(runId);
+                                }, `${windowDays}-day backfill finished.`);
+                              }}
+                            >
+                              {windowDays}-day backfill
+                            </button>
+                          );
+                        })}
+                    </div>
                   </td>
                 </tr>
               ))}

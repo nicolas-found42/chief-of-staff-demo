@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { google } from "googleapis";
-import type { AdapterDiagnostic, SourceComment, SourceItem } from "@chief-of-staff-demo/shared";
+import {
+  SOURCE_BACKFILL_WINDOWS_DAYS,
+  type AdapterDiagnostic,
+  type SourceComment,
+  type SourceItem,
+} from "@chief-of-staff-demo/shared";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 import type { GoogleAuth } from "../../../google/oauth.js";
 import { parseChannelUrl, type ChannelRef } from "../../youtube/channels.js";
@@ -106,6 +111,8 @@ export class YouTubeSourceAdapter implements SourceAdapter {
   readonly id = "youtube";
   readonly state = "available" as const;
   readonly version = "youtube-data-api-v3";
+  /** `listUploads` pages the channel's uploads playlist until it passes `publishedAfter`, so any requested window is a genuine historical fetch. */
+  readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
 
   constructor(
     private readonly getAccess: () => YouTubeSourceAccess,

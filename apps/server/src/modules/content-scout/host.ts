@@ -8,6 +8,7 @@ import type {
   ContentDraft,
   ContentScoutRunResult,
   RunMeta,
+  SourceBackfillWindowDays,
   SourceCapability,
   SourceDiagnosticClassification,
   SourceTarget,
@@ -16,6 +17,7 @@ import {
   CONTENT_SCOUT_MODULE_ID,
   CONTENT_SCOUT_MODULE_VERSION,
   isSuccessfulSourceDiagnostic,
+  SOURCE_BACKFILL_WINDOWS_DAYS,
 } from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
 import type { ConfigStore } from "../../config.js";
@@ -46,6 +48,12 @@ import {
   brandProfileScanModule,
   type BrandProfileScanInput,
 } from "./brand-profile.js";
+import {
+  CONTENT_SCOUT_BACKFILL_INTAKE,
+  backfillExternalId,
+  contentScoutBackfillModule,
+  type ContentScoutBackfillInput,
+} from "./backfill.js";
 import { ContentScoutRetention } from "./retention.js";
 
 interface SourceHealthObservation {
@@ -87,6 +95,7 @@ export class ContentScoutHost implements HostedModule {
   private readonly runner: Runner<ContentScoutInput>;
   private readonly discoveryRunner: Runner<ContentScoutDiscoveryInput>;
   private readonly brandProfileRunner: Runner<BrandProfileScanInput>;
+  private readonly backfillRunner: Runner<ContentScoutBackfillInput>;
   private readonly store: ContentScoutStore;
   private readonly deps: ContentScoutHostDeps;
   private readonly retention: ContentScoutRetention;
@@ -152,6 +161,21 @@ export class ContentScoutHost implements HostedModule {
           },
         },
         now,
+      }),
+      now,
+      log: deps.log,
+    });
+    this.backfillRunner = new Runner({
+      runs: deps.runs,
+      module: contentScoutBackfillModule({
+        store: this.store,
+        adapters: deps.adapters,
+        now,
+        sleep:
+          deps.sleep ??
+          ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))),
+        recordSanitizedDiagnostic: (id, contentType, body) =>
+          this.retention.recordSanitizedDiagnostic({ id, contentType, body }),
       }),
       now,
       log: deps.log,
@@ -308,6 +332,25 @@ export class ContentScoutHost implements HostedModule {
     );
   }
 
+  backfillSourceTarget(targetId: string, windowDays: SourceBackfillWindowDays): Promise<string> {
+    const target = this.listSourceTargets().find((candidate) => candidate.id === targetId);
+    if (!target) {
+      throw new Error(`Source Target not found: ${targetId}`);
+    }
+    if (target.state !== "active") {
+      throw new Error("Only an active Source Target can be backfilled.");
+    }
+    return this.backfillRunner.startRun(
+      {
+        intake: CONTENT_SCOUT_BACKFILL_INTAKE,
+        fileName: `${target.label} — ${windowDays}-day backfill`,
+        sourceUrl: target.url,
+        externalId: backfillExternalId({ targetId, windowDays }),
+      },
+      { targetId, windowDays },
+    );
+  }
+
   scanBrandProfile(websiteUrl: string): Promise<string> {
     return this.brandProfileRunner.startRun(
       {
@@ -326,7 +369,16 @@ export class ContentScoutHost implements HostedModule {
     const intake = meta?.intake;
     if (intake === CONTENT_SCOUT_DISCOVERY_INTAKE) return this.discoveryRunner.retryRun(id);
     if (intake === CONTENT_SCOUT_BRAND_SCAN_INTAKE) return this.brandProfileRunner.retryRun(id);
-    if (run && meta?.failedStage === "collect") {
+    // Daily Intake and a Source Target backfill both name their collection
+    // Stage "collect" and share the collection-progress.json shape, so a
+    // manual retry of either clears its non-completed entries first:
+    // collectSourceTargets otherwise treats an exhausted-but-retryable
+    // failure as final and refuses to attempt it again.
+    if (
+      (intake === CONTENT_SCOUT_INTAKE || intake === CONTENT_SCOUT_BACKFILL_INTAKE) &&
+      run &&
+      meta?.failedStage === "collect"
+    ) {
       const raw = run.readArtifact("collection-progress.json");
       if (raw) {
         try {
@@ -338,6 +390,7 @@ export class ContentScoutHost implements HostedModule {
         }
       }
     }
+    if (intake === CONTENT_SCOUT_BACKFILL_INTAKE) return this.backfillRunner.retryRun(id);
     return this.runner.retryRun(id);
   }
 
@@ -346,6 +399,7 @@ export class ContentScoutHost implements HostedModule {
       this.runner.idle(),
       this.discoveryRunner.idle(),
       this.brandProfileRunner.idle(),
+      this.backfillRunner.idle(),
     ]).then(() => undefined);
   }
 
@@ -353,6 +407,7 @@ export class ContentScoutHost implements HostedModule {
     this.runner.startRecoveryLoop();
     this.discoveryRunner.startRecoveryLoop();
     this.brandProfileRunner.startRecoveryLoop();
+    this.backfillRunner.startRecoveryLoop();
     if (this.scheduleTimer) clearInterval(this.scheduleTimer);
     void this.checkSchedules();
     this.scheduleTimer = setInterval(() => void this.checkSchedules(), 30_000);
@@ -363,6 +418,7 @@ export class ContentScoutHost implements HostedModule {
     this.runner.stopRecoveryLoop();
     this.discoveryRunner.stopRecoveryLoop();
     this.brandProfileRunner.stopRecoveryLoop();
+    this.backfillRunner.stopRecoveryLoop();
     if (this.scheduleTimer) clearInterval(this.scheduleTimer);
     this.scheduleTimer = null;
   }
@@ -527,6 +583,7 @@ export class ContentScoutHost implements HostedModule {
           id: adapter.id,
           state: adapter.state,
           version: adapter.version,
+          backfillWindowsDays: [...(adapter.backfillWindowsDays ?? [])],
         })),
         runtimeCapabilities,
         notion: this.deps.notionConnection?.status() ?? {
@@ -679,6 +736,28 @@ export class ContentScoutHost implements HostedModule {
         reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
         return;
       }
+    });
+
+    app.post("/api/content-scout/sources/:id/backfill", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const windowDays = (request.body as { windowDays?: number }).windowDays;
+      if (!SOURCE_BACKFILL_WINDOWS_DAYS.includes(windowDays as SourceBackfillWindowDays)) {
+        reply.code(400).send({ error: "Choose a 7-, 30-, or 90-day backfill window." });
+        return;
+      }
+      const target = this.listSourceTargets().find((candidate) => candidate.id === id);
+      if (!target) {
+        reply.code(404).send({ error: "Source Target not found." });
+        return;
+      }
+      if (target.state !== "active") {
+        reply.code(409).send({ error: "Only an active Source Target can be backfilled." });
+        return;
+      }
+      reply.code(201);
+      return {
+        runId: await this.backfillSourceTarget(target.id, windowDays as SourceBackfillWindowDays),
+      };
     });
 
     app.post("/api/content-scout/run", async () => ({ runId: await this.scoutNow() }));

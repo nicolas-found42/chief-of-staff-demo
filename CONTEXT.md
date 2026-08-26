@@ -53,6 +53,14 @@ but preserves its evidence and history and prevents automatic re-suggestion unti
 it.
 _Avoid_: Individual post, source link, target (alone)
 
+**Source Target Backfill**:
+A person-requested, bounded historical collection for one active Source Target — 7, 30, or 90 days —
+run independently of the daily schedule. A Source Adapter must declare which windows it can honor
+with a genuine historical `since`; a window it does not declare fails as unsupported rather than
+completing as an empty success. It never changes the Source Target's Daily Intake checkpoint or
+48-hour overlap.
+_Avoid_: Historical scan, deep scrape, backscan
+
 **Source Suggestion**:
 A proposed Source Target found during a weekly or manually started Source Discovery Run. It records
 why it was suggested, the supporting URLs, and its relationship to the Brand Profile or approved

@@ -146,6 +146,10 @@ export interface SourceCollectionAttemptReceipt {
   itemsFound?: number;
 }
 
+/** The only user-requested backfill windows a Source Adapter may declare support for. */
+export const SOURCE_BACKFILL_WINDOWS_DAYS = [7, 30, 90] as const;
+export type SourceBackfillWindowDays = (typeof SOURCE_BACKFILL_WINDOWS_DAYS)[number];
+
 export interface SourceTarget {
   id: string;
   adapterId: string;
@@ -327,6 +331,13 @@ export interface ContentShortlist {
 }
 
 export interface ContentScoutRunResult {
+  /** Present only on a source-backfill Run: what was requested and whether the adapter honored it. */
+  backfill?: {
+    targetId: string;
+    windowDays: SourceBackfillWindowDays;
+    adapterId: string;
+    supported: boolean;
+  };
   adapters: {
     adapterId: string;
     state: SourceAdapterState;

@@ -1,4 +1,8 @@
-import type { SourceCollectionAttemptReceipt, SourceTarget } from "@chief-of-staff-demo/shared";
+import type {
+  SourceBackfillWindowDays,
+  SourceCollectionAttemptReceipt,
+  SourceTarget,
+} from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "./ports.js";
 import { sanitizeAdapterDiagnostic } from "./diagnostics.js";
 
@@ -101,6 +105,8 @@ export async function collectSourceTargets(input: {
   attemptCompleted?: (entry: CollectedSourceTarget) => void;
   previous?: CollectedSourceTargetProgress[];
   attemptOffsets?: Record<string, number>;
+  /** Present only for a user-requested backfill: the window each target's Adapter must declare support for. */
+  backfillWindowDays?: SourceBackfillWindowDays;
 }): Promise<CollectedSourceTarget[]> {
   const work = input.targets.map((target, index) => ({
     target,
@@ -150,14 +156,19 @@ export async function collectSourceTargets(input: {
         ) {
           const attempt = attemptBase + cycleAttempt;
           const startedAt = input.now().toISOString();
-          if (item.adapter.state === "coming_later") {
+          const backfillUnsupported =
+            input.backfillWindowDays !== undefined &&
+            !(item.adapter.backfillWindowsDays ?? []).includes(input.backfillWindowDays);
+          if (item.adapter.state === "coming_later" || backfillUnsupported) {
             result = failedResult({
               target: item.target,
               adapter: item.adapter,
               startedAt,
               finishedAt: input.now().toISOString(),
               outcome: "unsupported_capability",
-              cause: "This Source Adapter has no approved collection route.",
+              cause: backfillUnsupported
+                ? `The ${item.adapter.id} Source Adapter does not support a ${input.backfillWindowDays}-day backfill.`
+                : "This Source Adapter has no approved collection route.",
             });
           } else {
             try {

@@ -1,5 +1,9 @@
 import Parser from "rss-parser";
-import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
+import {
+  SOURCE_BACKFILL_WINDOWS_DAYS,
+  type AdapterDiagnostic,
+  type SourceItem,
+} from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import {
   canonicalUrl,
@@ -33,6 +37,8 @@ export class RssSourceAdapter implements SourceAdapter {
   readonly id: "rss" | "substack" | "reddit";
   readonly state: "available" | "experimental";
   readonly version = "rss-parser@3";
+  /** The feed is fetched fresh and filtered by `since`, so any requested window is honored honestly — bounded by whatever history the feed itself still carries. */
+  readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
   private readonly parser = new Parser<Record<string, unknown>, FeedItem>();
 
   constructor(
