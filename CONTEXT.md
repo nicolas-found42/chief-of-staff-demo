@@ -155,6 +155,19 @@ The part of a Module that writes outward, into a system the app does not own. A 
 Adapter is obtained from the Google connection or not at all.
 _Avoid_: Sink, writer, integration
 
+**Result Shape**:
+The set of fields one call to a model must come back with. It belongs to the Module making the
+call, never to the Shell: one seam serves every Module, so a Module that does not name its own
+result shape is handed another Module's.
+_Avoid_: Schema (alone), extraction shape, output format
+
+**Result Shape Binding**:
+How a model is made to answer in a Result Shape. Three of them, ordered by how deterministic they
+are: the provider constrains decoding to the shape, or it constrains the arguments of a call the
+model is required to make, or the shape is merely asked for in the prompt. A model gets the most
+deterministic binding it declares support for, and a weaker one only where support is unknown.
+_Avoid_: Structured output (names one binding, not the choice), response format, JSON mode
+
 **Google connection**:
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
