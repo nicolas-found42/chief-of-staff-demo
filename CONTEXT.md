@@ -168,6 +168,16 @@ model is required to make, or the shape is merely asked for in the prompt. A mod
 deterministic binding it declares support for, and a weaker one only where support is unknown.
 _Avoid_: Structured output (names one binding, not the choice), response format, JSON mode
 
+**Model-boundary failure**:
+What a failed call to a model is, at the Shell's one LLM seam. It carries classified facts rather
+than a sentence — which provider and model were called, which upstream answered, why the model
+stopped, the body's byte length, which fields of the answer arrived populated or empty, and the
+top-level keys that came back — under one of eight stable classifications. Callers decide
+retryability and wording from those facts, never by matching the message. It records shape only:
+transcripts are private and Source Items are untrusted evidence, so no field of it holds payload
+text.
+_Avoid_: LLM error, provider error, extraction error (that is the Run event, not the failure)
+
 **Google connection**:
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —

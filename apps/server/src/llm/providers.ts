@@ -1,7 +1,18 @@
 import { readFile } from "node:fs/promises";
 import type { ZodType, ZodTypeDef } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { type ProviderId, DEFAULT_OLLAMA_BASE_URL } from "@chief-of-staff-demo/shared";
+import {
+  type ProviderId,
+  type ResultShapeBinding,
+  DEFAULT_OLLAMA_BASE_URL,
+  RESULT_SHAPE_BINDINGS,
+} from "@chief-of-staff-demo/shared";
+import {
+  modelBoundaryFailure,
+  type AnswerContainer,
+  type ModelBoundaryError,
+  type ModelCall,
+} from "./failure.js";
 
 /**
  * Any Module's wire schema. Spelled without Zod's `any` generics so that
@@ -31,18 +42,31 @@ interface CompletionRequest {
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
 
-/**
- * How a model is bound to the caller's result shape. Ordered most deterministic
- * first: `response_format` has the provider constrain decoding to the JSON
- * Schema, `forced_tool_call` constrains the arguments of a call the model is
- * required to make, and `prompt_only` merely asks. One Shell seam serves every
- * Module and every provider, so the binding follows what a model declares
- * support for, never which provider happens to front it.
- */
-const RESULT_SHAPE_BINDINGS = ["response_format", "forced_tool_call", "prompt_only"] as const;
-type ResultShapeBinding = (typeof RESULT_SHAPE_BINDINGS)[number];
+/** The ceiling on one model call. Exported so a test can drive it deterministically. */
+export const REQUEST_TIMEOUT_MS = 120_000;
 
-const REQUEST_TIMEOUT_MS = 120_000;
+/** One provider answer, kept only as long as it takes to classify or read it. */
+interface HttpResponse {
+  status: number;
+  text: string;
+}
+
+/**
+ * One answered call, ready to be read or classified. The call, the response and
+ * the parsed payload travel together because every failure below needs all
+ * three: the call says what was asked, the response sizes what came back, and
+ * the payload holds the shape.
+ */
+interface ModelReply {
+  call: ModelCall;
+  response: HttpResponse;
+  payload: unknown;
+}
+
+/** The reply for a call whose body has passed classification. */
+function modelReply(call: ModelCall, response: HttpResponse): ModelReply {
+  return { call, response, payload: parseProviderPayload(call, response) };
+}
 
 type JsonObject = Record<string, unknown>;
 
@@ -94,11 +118,17 @@ function stripUnsupportedKeys(node: unknown): unknown {
   return node;
 }
 
+/** The call context every failure at this seam is classified against. */
+function modelCall(cfg: LlmConfig, binding: ResultShapeBinding): ModelCall {
+  return { provider: cfg.provider, model: cfg.model, binding };
+}
+
 async function postJson(
+  call: ModelCall,
   url: string,
   headers: Record<string, string>,
   body: unknown,
-): Promise<{ status: number; text: string }> {
+): Promise<HttpResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response: Response;
@@ -111,138 +141,167 @@ async function postJson(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`, { cause: error });
+      throw modelBoundaryFailure({
+        call,
+        classification: "request_timeout",
+        timeoutMs: REQUEST_TIMEOUT_MS,
+      });
     }
-    throw error;
+    throw modelBoundaryFailure({ call, classification: "transport_failure" });
   } finally {
     clearTimeout(timer);
   }
   return { status: response.status, text: await response.text() };
 }
 
-/** The upstream failure a provider body can carry alongside a 2xx status. */
-function upstreamErrorMessage(payload: unknown): string | null {
-  if (typeof payload !== "object" || payload === null || !("error" in payload)) return null;
+/** Whether a provider body carries a failure envelope alongside its 2xx status. */
+function carriesUpstreamError(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null || !("error" in payload)) return false;
   const error = payload.error;
-  if (typeof error === "string") return error;
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    const code =
-      "code" in error && (typeof error.code === "number" || typeof error.code === "string")
-        ? ` (code ${String(error.code)})`
-        : "";
-    return `${error.message}${code}`;
-  }
-  return null;
+  if (typeof error === "string") return error !== "";
+  return typeof error === "object" && error !== null;
 }
 
 /**
- * The provider's parsed body, or the clearest available account of why there is
- * none. Providers answer HTTP 200 and carry the failure in the body, so a status
- * check alone reports a response-shape problem for a fault they named exactly.
+ * The provider's parsed body, or a classified failure saying why there is none.
+ * Providers answer HTTP 200 and carry the failure in the body, so a status check
+ * alone reports a response-shape problem for a fault they named exactly.
  */
-function parseProviderPayload(label: string, response: { status: number; text: string }): unknown {
+function parseProviderPayload(call: ModelCall, response: HttpResponse): unknown {
+  const parsed = tryParse(response.text);
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`${label}: HTTP ${response.status}: ${response.text.slice(0, 300)}`);
+    /* The body is parsed even here, for the structural facts a refusal carries —
+       its top-level keys, the upstream that refused, and the code it gave. */
+    throw modelBoundaryFailure({
+      call,
+      classification: "http_error",
+      status: response.status,
+      body: response.text,
+      payload: parsed,
+    });
   }
   if (response.text.trim() === "") {
-    throw new Error(
-      `${label}: HTTP ${response.status} with an empty body (${response.text.length} bytes)`,
-    );
+    throw modelBoundaryFailure({
+      call,
+      classification: "empty_body",
+      status: response.status,
+      body: response.text,
+    });
   }
-  let payload: unknown;
+  if (parsed === undefined) {
+    throw modelBoundaryFailure({
+      call,
+      classification: "unparseable_body",
+      status: response.status,
+      body: response.text,
+    });
+  }
+  if (carriesUpstreamError(parsed)) {
+    throw modelBoundaryFailure({
+      call,
+      classification: "upstream_error",
+      status: response.status,
+      body: response.text,
+      payload: parsed,
+    });
+  }
+  return parsed;
+}
+
+/** The parsed body, or `undefined` when the text is not JSON. */
+function tryParse(text: string): unknown {
   try {
-    payload = JSON.parse(response.text);
-  } catch (cause) {
-    throw new Error(
-      `${label}: HTTP ${response.status} body is not JSON (${response.text.length} bytes)`,
-      { cause },
-    );
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
   }
-  const upstream = upstreamErrorMessage(payload);
-  if (upstream) {
-    throw new Error(`${label}: HTTP ${response.status} carried an upstream error: ${upstream}`);
+}
+
+/**
+ * Where a reply puts the answer, named as far down as the reply actually goes.
+ * A failure has to report the fields of the deepest container that arrived,
+ * because "the shape was wrong" is exactly what withheld the cause. OpenAI-shaped
+ * replies nest it under `choices[0].message` and Gemini under
+ * `candidates[0].content`; the walk is the same one.
+ */
+function locateAnswer(payload: unknown, listKey: string, childKey: string): AnswerContainer {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    listKey in payload &&
+    isUnknownArray((payload as JsonObject)[listKey])
+  ) {
+    const list = (payload as JsonObject)[listKey] as unknown[];
+    const first = list.length > 0 ? list[0] : null;
+    if (typeof first === "object" && first !== null) {
+      return childKey in first
+        ? { path: `${listKey}[0].${childKey}`, value: (first as JsonObject)[childKey] }
+        : { path: `${listKey}[0]`, value: first };
+    }
   }
-  return payload;
+  return { path: "", value: payload };
 }
 
 /** Read `choices[0].message.content` from an OpenAI-shaped chat completion. */
-function readChatCompletionContent(payload: unknown): string {
+function readChatCompletionContent(reply: ModelReply, answer: AnswerContainer): string {
+  const message = answer.value;
   if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "choices" in payload &&
-    isUnknownArray(payload.choices) &&
-    payload.choices.length > 0
+    typeof message === "object" &&
+    message !== null &&
+    "content" in message &&
+    typeof message.content === "string" &&
+    message.content !== ""
   ) {
-    const first = payload.choices[0];
-    if (typeof first === "object" && first !== null && "message" in first) {
-      const message = first.message;
-      if (
-        typeof message === "object" &&
-        message !== null &&
-        "content" in message &&
-        typeof message.content === "string"
-      ) {
-        return message.content;
-      }
-    }
+    return message.content;
   }
-  throw new Error("unexpected chat-completion response shape");
+  throw unusableShape(reply, answer);
 }
 
 /** Read the forced tool call's arguments from an OpenAI-shaped chat completion. */
-function readToolCallArguments(payload: unknown): string {
+function readToolCallArguments(reply: ModelReply, answer: AnswerContainer): string {
+  const message = answer.value;
   if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "choices" in payload &&
-    isUnknownArray(payload.choices) &&
-    payload.choices.length > 0
+    typeof message === "object" &&
+    message !== null &&
+    "tool_calls" in message &&
+    isUnknownArray(message.tool_calls) &&
+    message.tool_calls.length > 0
   ) {
-    const first = payload.choices[0];
-    if (typeof first === "object" && first !== null && "message" in first) {
-      const message = first.message;
+    const first = message.tool_calls[0];
+    if (typeof first === "object" && first !== null && "function" in first) {
+      const fn = first.function;
       if (
-        typeof message === "object" &&
-        message !== null &&
-        "tool_calls" in message &&
-        isUnknownArray(message.tool_calls) &&
-        message.tool_calls.length > 0
+        typeof fn === "object" &&
+        fn !== null &&
+        "arguments" in fn &&
+        typeof fn.arguments === "string"
       ) {
-        const call = message.tool_calls[0];
-        if (typeof call === "object" && call !== null && "function" in call) {
-          const fn = call.function;
-          if (
-            typeof fn === "object" &&
-            fn !== null &&
-            "arguments" in fn &&
-            typeof fn.arguments === "string"
-          ) {
-            return fn.arguments;
-          }
-        }
+        return fn.arguments;
       }
     }
   }
-  throw new Error("forced tool call returned no tool_calls");
+  throw unusableShape(reply, answer);
 }
 
-/** Read the result shape out of whichever field the binding put it in. */
-function readResultShape(binding: ResultShapeBinding, payload: unknown): unknown {
-  return JSON.parse(
-    binding === "forced_tool_call"
-      ? readToolCallArguments(payload)
-      : readChatCompletionContent(payload),
-  );
+/** The Result Shape from an OpenAI-shaped reply, out of whichever field the binding used. */
+function readChatResultShape(reply: ModelReply): unknown {
+  const answer = locateAnswer(reply.payload, "choices", "message");
+  const text =
+    reply.call.binding === "forced_tool_call"
+      ? readToolCallArguments(reply, answer)
+      : readChatCompletionContent(reply, answer);
+  return parseAnswer(reply, answer, text);
+}
+
+/** The Result Shape from a Gemini reply, which always arrives as text. */
+function readGeminiResultShape(reply: ModelReply): unknown {
+  const answer = locateAnswer(reply.payload, "candidates", "content");
+  return parseAnswer(reply, answer, readGeminiText(reply, answer));
 }
 
 /** Read the first `tool_use` block's input from an Anthropic messages response. */
-function readToolUseInput(payload: unknown): unknown {
+function readToolUseInput(reply: ModelReply): unknown {
+  const payload = reply.payload;
   if (
     typeof payload === "object" &&
     payload !== null &&
@@ -261,41 +320,62 @@ function readToolUseInput(payload: unknown): unknown {
       }
     }
   }
-  throw new Error("no tool_use block in response");
+  /* The blocks are an array, so the body itself is the deepest named container. */
+  throw unusableShape(reply, { path: "", value: payload });
 }
 
 /** Read `candidates[0].content.parts[0].text` from a Gemini response. */
-function readGeminiText(payload: unknown): string {
+function readGeminiText(reply: ModelReply, answer: AnswerContainer): string {
+  const content = answer.value;
   if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "candidates" in payload &&
-    isUnknownArray(payload.candidates) &&
-    payload.candidates.length > 0
+    typeof content === "object" &&
+    content !== null &&
+    "parts" in content &&
+    isUnknownArray(content.parts) &&
+    content.parts.length > 0
   ) {
-    const first = payload.candidates[0];
-    if (typeof first === "object" && first !== null && "content" in first) {
-      const content = first.content;
-      if (
-        typeof content === "object" &&
-        content !== null &&
-        "parts" in content &&
-        isUnknownArray(content.parts) &&
-        content.parts.length > 0
-      ) {
-        const part = content.parts[0];
-        if (
-          typeof part === "object" &&
-          part !== null &&
-          "text" in part &&
-          typeof part.text === "string"
-        ) {
-          return part.text;
-        }
-      }
+    const part = content.parts[0];
+    if (
+      typeof part === "object" &&
+      part !== null &&
+      "text" in part &&
+      typeof part.text === "string" &&
+      part.text !== ""
+    ) {
+      return part.text;
     }
   }
-  throw new Error("no text part in response");
+  throw unusableShape(reply, answer);
+}
+
+function unusableShape(reply: ModelReply, answer: AnswerContainer): ModelBoundaryError {
+  return modelBoundaryFailure({
+    call: reply.call,
+    classification: "unusable_shape",
+    status: reply.response.status,
+    body: reply.response.text,
+    payload: reply.payload,
+    answer,
+  });
+}
+
+/**
+ * The answer as JSON. The parse error is deliberately not carried: it quotes the
+ * text it choked on, and that text is the model's reply to a private transcript.
+ */
+function parseAnswer(reply: ModelReply, answer: AnswerContainer, text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw modelBoundaryFailure({
+      call: reply.call,
+      classification: "answer_not_json",
+      status: reply.response.status,
+      body: reply.response.text,
+      payload: reply.payload,
+      answer,
+    });
+  }
 }
 
 async function openaiComplete(
@@ -303,7 +383,9 @@ async function openaiComplete(
   request: CompletionRequest,
   schema: JsonObject,
 ): Promise<unknown> {
+  const call = modelCall(cfg, "response_format");
   const response = await postJson(
+    call,
     "https://api.openai.com/v1/chat/completions",
     { authorization: `Bearer ${cfg.apiKey}` },
     {
@@ -318,7 +400,7 @@ async function openaiComplete(
       },
     },
   );
-  return JSON.parse(readChatCompletionContent(parseProviderPayload("openai", response)));
+  return readChatResultShape(modelReply(call, response));
 }
 
 async function anthropicComplete(
@@ -326,7 +408,9 @@ async function anthropicComplete(
   request: CompletionRequest,
   schema: JsonObject,
 ): Promise<unknown> {
+  const call = modelCall(cfg, "forced_tool_call");
   const response = await postJson(
+    call,
     "https://api.anthropic.com/v1/messages",
     { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
     {
@@ -344,7 +428,7 @@ async function anthropicComplete(
       tool_choice: { type: "tool", name: "save_extraction" },
     },
   );
-  return readToolUseInput(parseProviderPayload("anthropic", response));
+  return readToolUseInput(modelReply(call, response));
 }
 
 async function geminiComplete(
@@ -352,8 +436,10 @@ async function geminiComplete(
   request: CompletionRequest,
   responseSchema: JsonObject,
 ): Promise<unknown> {
+  const call = modelCall(cfg, "response_format");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`;
   const response = await postJson(
+    call,
     url,
     {},
     {
@@ -365,7 +451,7 @@ async function geminiComplete(
       },
     },
   );
-  return JSON.parse(readGeminiText(parseProviderPayload("gemini", response)));
+  return readGeminiResultShape(modelReply(call, response));
 }
 
 /** The OpenAI-shaped chat-completion body that asks for one Result Shape Binding. */
@@ -416,7 +502,6 @@ function chatCompletionBody(
  * support. The binding is chosen by the caller from what the model declares.
  */
 async function openAiCompatibleComplete(
-  label: string,
   url: string,
   headers: Record<string, string>,
   cfg: LlmConfig,
@@ -429,29 +514,27 @@ async function openAiCompatibleComplete(
      because a model that refuses a JSON Schema may still honour a tool call. */
   let index = declared === null ? 0 : RESULT_SHAPE_BINDINGS.indexOf(declared);
   for (;;) {
-    const binding = RESULT_SHAPE_BINDINGS[index] ?? "prompt_only";
+    const call = modelCall(cfg, RESULT_SHAPE_BINDINGS[index] ?? "prompt_only");
     const response = await postJson(
+      call,
       url,
       headers,
-      chatCompletionBody(binding, cfg, request, schema),
+      chatCompletionBody(call.binding, cfg, request, schema),
     );
     if (
       declared === null &&
       index < RESULT_SHAPE_BINDINGS.length - 1 &&
-      refusesBinding(binding, response)
+      refusesBinding(call.binding, response)
     ) {
       index += 1;
       continue;
     }
-    return readResultShape(binding, parseProviderPayload(label, response));
+    return readChatResultShape(modelReply(call, response));
   }
 }
 
 /** Whether a 4xx says the model will not honour the binding that was sent. */
-function refusesBinding(
-  binding: ResultShapeBinding,
-  response: { status: number; text: string },
-): boolean {
+function refusesBinding(binding: ResultShapeBinding, response: HttpResponse): boolean {
   if (response.status < 400 || response.status >= 500) return false;
   if (binding === "response_format") {
     return /response_format|json_schema|structured output/i.test(response.text);
@@ -535,7 +618,6 @@ async function openrouterComplete(
   schema: JsonObject,
 ): Promise<unknown> {
   return openAiCompatibleComplete(
-    "openrouter",
     "https://openrouter.ai/api/v1/chat/completions",
     { authorization: `Bearer ${cfg.apiKey}` },
     cfg,
@@ -557,7 +639,6 @@ function ollamaComplete(
 ): Promise<unknown> {
   const base = (cfg.baseUrl ?? DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "");
   return openAiCompatibleComplete(
-    "ollama",
     `${base}/v1/chat/completions`,
     cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {},
     cfg,

@@ -29,6 +29,7 @@ import { googleFailureHint } from "../../google/connection.js";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
 import type { CompleteJson } from "../../llm/providers.js";
+import { modelBoundaryDiagnostic } from "../../llm/failure.js";
 
 /** The Intake every Run of this Module arrives through (ADR-0012). */
 export const IDEA_ENGINE_INTAKE = "drive";
@@ -167,11 +168,16 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
+/**
+ * Whether the model boundary reported a rate limit worth backing off from. Read
+ * from the classified failure rather than from its message: one sentence cannot
+ * serve both a person reading a Run and the code deciding whether to retry, and
+ * matching prose made every error mentioning a quota look like a rate limit.
+ */
 function isRateLimitError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
-  const err = error as { status?: number; code?: number; response?: { status?: number } };
-  const status = err.status ?? err.code ?? err.response?.status;
-  return status === 429 || /429|quota|rate.?limit/i.test(msg);
+  const diagnostic = modelBoundaryDiagnostic(error);
+  if (diagnostic === null) return false;
+  return diagnostic.status === 429 || diagnostic.upstreamCode === 429;
 }
 
 function isAttendeeSingular(
@@ -512,8 +518,13 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
                 continue;
               }
 
-              // Validation / schema failure -> retry with validator message up to 3
-              const isValidation = /validation failed|enum|Format/i.test(msg);
+              /* Validation / schema failure -> retry with validator message up to
+                 3. A classified model-boundary failure is never one of these,
+                 whatever its message happens to contain: this Module's own parse
+                 rejecting the reply is what a validation failure means. */
+              const isValidation =
+                modelBoundaryDiagnostic(error) === null &&
+                /validation failed|enum|Format/i.test(msg);
               if (isValidation && attempt < IDEA_VALIDATOR_RETRIES) {
                 // Inject validator message for next iteration
                 messages.user += `\n\nValidator: previous output had invalid Format. Must be one of ${IDEA_FORMAT_VALUES.join(", ")}. Return corrected JSON. Error: ${msg}`;

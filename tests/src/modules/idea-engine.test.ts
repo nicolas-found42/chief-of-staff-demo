@@ -6,8 +6,11 @@ import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import {
   IDEA_CONTENT_TYPES,
   IDEA_FORMAT_VALUES,
+  IDEA_VALIDATOR_RETRIES,
   type IdeaEngineRunResult,
 } from "@chief-of-staff-demo/shared";
+import { ModelBoundaryError } from "../../../apps/server/src/llm/failure";
+import type { ModelBoundaryDiagnostic } from "@chief-of-staff-demo/shared";
 import { Runner } from "../../../apps/server/src/engine/runner";
 import {
   ideaEngineModule,
@@ -117,6 +120,31 @@ function scriptedProvider(script: Record<string, unknown[]>): CompleteJson {
     if (val instanceof Error) throw val;
     return val;
   };
+}
+
+/** A failure as the LLM seam reports it: a classification, not a sentence. */
+function seamFailure(
+  fields: Partial<ModelBoundaryDiagnostic> & Pick<ModelBoundaryDiagnostic, "classification">,
+): ModelBoundaryError {
+  return new ModelBoundaryError({
+    provider: "openrouter",
+    model: "test-model",
+    upstreamServer: null,
+    upstreamCode: null,
+    binding: "forced_tool_call",
+    status: null,
+    finishReason: null,
+    bodyBytes: 42,
+    topLevelKeys: ["error"],
+    populatedFields: [],
+    emptyFields: [],
+    timeoutMs: null,
+    ...fields,
+  });
+}
+
+function rateLimited(): ModelBoundaryError {
+  return seamFailure({ classification: "http_error", status: 429 });
 }
 
 let workspaceDir: string;
@@ -331,6 +359,67 @@ describe("Idea Engine Module", () => {
     expect(detail.events.filter((e) => e.type === "extract_error").length).toBeGreaterThanOrEqual(
       1,
     );
+  });
+
+  /**
+   * The retry decision is the Module's, and it is made from the classified
+   * model-boundary failure. A rate limit is retried past the validator cap
+   * because backing off is the whole point; nothing else is.
+   */
+  it("retries past the validator cap when the model boundary classified a rate limit", async () => {
+    providerScript["video"] = [
+      rateLimited(),
+      rateLimited(),
+      rateLimited(),
+      [makeIdea("video", "After the wait")],
+    ];
+    completeJson = scriptedProvider(providerScript);
+    const id = await runFresh();
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("done");
+    const videoIdeas = (detail.result as IdeaEngineRunResult).ideas.filter(
+      (i) => i.ContentType === "video",
+    );
+    expect(videoIdeas[0].Title).toBe("After the wait");
+  });
+
+  /* The same words in an unclassified error buy nothing: one sentence cannot
+     serve both a person reading a Run and the code deciding whether to retry. */
+  it("does not treat an unclassified error as a rate limit because its message says so", async () => {
+    providerScript["video"] = Array.from(
+      { length: 5 },
+      () => new Error("429 rate limit exceeded, quota reached"),
+    );
+    completeJson = scriptedProvider(providerScript);
+    const id = await runFresh();
+    const detail = runs.detail(id)!;
+    expect(detail.status).toBe("failed");
+    expect(detail.events.filter((e) => e.type === "extract_error")).toHaveLength(
+      IDEA_VALIDATOR_RETRIES,
+    );
+  });
+
+  /**
+   * The validator retry exists for this Module's own parse rejecting a reply. A
+   * model-boundary failure is not that, and must not be answered by nudging the
+   * model about its Format enum — the message naming the `response_format`
+   * binding is not evidence about the reply's fields.
+   */
+  it("does not answer a model-boundary failure with the Format validator nudge", async () => {
+    const prompts: string[] = [];
+    const scripted = scriptedProvider({
+      ...providerScript,
+      video: Array.from({ length: 5 }, () =>
+        seamFailure({ classification: "http_error", binding: "response_format", status: 500 }),
+      ),
+    });
+    completeJson = async (request) => {
+      prompts.push(request.user);
+      return scripted(request);
+    };
+    const id = await runFresh();
+    expect(runs.detail(id)!.status).toBe("failed");
+    expect(prompts.some((prompt) => prompt.includes("Validator:"))).toBe(false);
   });
 
   it("single-attendee short-circuit: still extracts without speaker filter", async () => {
