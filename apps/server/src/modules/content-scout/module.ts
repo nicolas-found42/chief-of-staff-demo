@@ -29,6 +29,11 @@ import type {
 import type { ContentScoutStore } from "./store.js";
 import { collectSourceTargets, type CollectedSourceTargetProgress } from "./collection.js";
 import { determineEligibility, enforceOpportunityIdentity } from "./eligibility.js";
+import {
+  CONTENT_SCOUT_MAX_COMMENTS,
+  filterPromisingItems,
+  selectDiverseComments,
+} from "./enrichment.js";
 
 export const CONTENT_SCOUT_INTAKE = "daily-intake";
 
@@ -454,8 +459,9 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       const targets = deps.store.listSourceTargets().filter((target) => target.state === "active");
       const rows: ContentScoutRunResult["adapters"] = [];
       const diagnostics: AdapterDiagnostic[] = [];
-      let items: SourceItem[] = [];
+      const items: SourceItem[] = [];
       let availableCompleted = 0;
+      let enrichmentWarnings = 0;
 
       await ctx.stage("collect", async () => {
         if (!brandProfile) {
@@ -594,18 +600,6 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
         }
       });
 
-      await ctx.stage("enrich", async () => {
-        for (const adapter of deps.adapters) {
-          if (!adapter.enrich) continue;
-          const owned = items.filter((item) => item.adapterId === adapter.id);
-          if (owned.length === 0) continue;
-          const enriched = await adapter.enrich(owned);
-          const replacements = new Map(enriched.map((item) => [item.id, item]));
-          items = items.map((item) => replacements.get(item.id) ?? item);
-        }
-        ctx.writeFile("enriched-source-items.json", `${JSON.stringify(items, null, 2)}\n`);
-      });
-
       await ctx.stage("rank", async () => {
         brandProfile ??= deps.store.currentBrandProfile();
         const eligibility = determineEligibility({
@@ -615,14 +609,58 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
           now: deps.now(),
         });
         ctx.writeFile("eligibility.json", `${JSON.stringify(eligibility, null, 2)}\n`);
+
+        const { promising, discarded } = filterPromisingItems({
+          items: eligibility.items,
+          targets: deps.store.listSourceTargets(),
+          brandProfile: brandProfile!,
+          now: deps.now(),
+        });
+        ctx.writeFile("promising-items.json", `${JSON.stringify(promising, null, 2)}\n`);
+        ctx.writeFile("discarded-items.json", `${JSON.stringify(discarded, null, 2)}\n`);
+
+        for (const adapter of deps.adapters) {
+          if (!adapter.enrich) continue;
+          const owned = promising.filter((item) => item.adapterId === adapter.id);
+          if (owned.length === 0) continue;
+          try {
+            const enriched = await adapter.enrich(owned);
+            const replacements = new Map(enriched.map((item) => [item.id, item]));
+            for (let index = 0; index < promising.length; index += 1) {
+              const replacement = replacements.get(promising[index]!.id);
+              if (replacement) promising[index] = replacement;
+            }
+            for (const item of enriched) {
+              if (item.comments.length > CONTENT_SCOUT_MAX_COMMENTS) {
+                item.comments = selectDiverseComments(item.comments, CONTENT_SCOUT_MAX_COMMENTS);
+              }
+            }
+          } catch (error) {
+            enrichmentWarnings += 1;
+            const message = error instanceof Error ? error.message : String(error);
+            ctx.event("enrichment_failed", { adapterId: adapter.id, error: message });
+            for (const item of owned) {
+              item.completeness = {
+                ...item.completeness,
+                transcript:
+                  item.completeness.transcript === "unsupported" ? "unsupported" : "failed",
+                comments: item.completeness.comments === "unsupported" ? "unsupported" : "failed",
+              };
+            }
+          }
+        }
+        ctx.writeFile("enriched-source-items.json", `${JSON.stringify(promising, null, 2)}\n`);
+
+        const enrichedItemsById = new Map(promising.map((item) => [item.id, item]));
+        const rankedItems = eligibility.items.map((item) => enrichedItemsById.get(item.id) ?? item);
         const ranked = enforceOpportunityIdentity({
           ranked: await deps.ranker.rank({
             brandProfile: brandProfile!,
-            items: eligibility.items,
+            items: rankedItems,
             storyGroups: eligibility.storyGroups,
             limit: 10,
           }),
-          items: eligibility.items,
+          items: rankedItems,
           storyGroups: eligibility.storyGroups,
           adapterStates: new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state])),
         }).filter(
@@ -647,20 +685,21 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
           deps.supersede?.(previous.runId, ctx.runId);
         }
         ctx.writeFile("shortlist.json", `${JSON.stringify(shortlist, null, 2)}\n`);
+        const adapterWarnings = rows.filter((row) =>
+          [
+            "unsupported_capability",
+            "blocked_access",
+            "response_shape_change",
+            "rate_limit",
+            "timeout",
+            "parser_failure",
+            "internal_failure",
+          ].includes(row.outcome),
+        ).length;
         const runResult: ContentScoutRunResult = {
           adapters: rows,
           shortlist: { opportunityCount: shown.length, omittedCount: shortlist.omittedCount },
-          warnings: rows.filter((row) =>
-            [
-              "unsupported_capability",
-              "blocked_access",
-              "response_shape_change",
-              "rate_limit",
-              "timeout",
-              "parser_failure",
-              "internal_failure",
-            ].includes(row.outcome),
-          ).length,
+          warnings: adapterWarnings + enrichmentWarnings,
         };
         ctx.writeFile("result.json", `${JSON.stringify(runResult, null, 2)}\n`);
         ctx.event("shortlist_ranked", {

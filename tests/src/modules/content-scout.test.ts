@@ -183,7 +183,6 @@ describe("ContentScoutHost", () => {
       "source_adapter_attempted",
       "source_adapter_failed",
       "stage_started",
-      "stage_started",
       "shortlist_ranked",
       "stage_started",
       "run_blocked",
@@ -613,5 +612,719 @@ describe("ContentScoutHost", () => {
       skipReason: `Superseded by ${successfulReplacement}.`,
       wait: null,
     });
+  });
+
+  it("enriches only promising Source Items and records discarded items", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-enrichment-promise-"));
+    const runs = openRuns(workspaceDir);
+    const enrichedIds: string[] = [];
+    const adapter: SourceAdapter = {
+      id: "youtube",
+      state: "available",
+      version: "fixture-1",
+      supports: (target) => target.adapterId === "youtube",
+      async collect({ target }) {
+        return {
+          kind: "completed",
+          outcome: "items_found",
+          checkpoint: "yt-checkpoint",
+          items: [
+            {
+              id: "yt:promising",
+              externalId: "promising",
+              targetId: target.id,
+              adapterId: "youtube",
+              canonicalUrl: "https://youtube.com/watch?v=promising",
+              author: "Channel A",
+              title: "A detailed interoperability walkthrough with practical steps",
+              body: "This video explains the rule, the deadline, and concrete implementation steps that teams can follow. It is long enough to support transcript work.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [{ type: "video", url: "https://youtube.com/watch?v=promising" }],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:youtube", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unavailable",
+                comments: "unavailable",
+              },
+            },
+            {
+              id: "yt:thin",
+              externalId: "thin",
+              targetId: target.id,
+              adapterId: "youtube",
+              canonicalUrl: "https://youtube.com/watch?v=thin",
+              author: "Channel B",
+              title: "News flash",
+              body: "Brief update.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [{ type: "video", url: "https://youtube.com/watch?v=thin" }],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:youtube", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unavailable",
+                comments: "unavailable",
+              },
+            },
+          ],
+          diagnostic: {
+            classification: "items_found",
+            route: "fixture:youtube",
+            status: 200,
+            contentType: "application/json",
+            parserStage: "youtube",
+            responseHash: "yt-response",
+            adapterVersion: "fixture-1",
+            startedAt: NOW.toISOString(),
+            finishedAt: NOW.toISOString(),
+            retries: 0,
+            affectedCapabilities: [],
+            causeChain: [],
+          },
+        };
+      },
+      async enrich(items) {
+        for (const item of items) enrichedIds.push(item.id);
+        return items.map((item) => ({
+          ...item,
+          transcript: item.id === "yt:promising" ? "Detailed transcript text." : null,
+          comments:
+            item.id === "yt:promising"
+              ? [
+                  {
+                    author: "Viewer One",
+                    publishedAt: "2026-08-25T11:00:00.000Z",
+                    url: "https://youtube.com/watch?v=promising&lc=1",
+                    text: "What does this mean for small teams?",
+                    engagement: 12,
+                  },
+                  {
+                    author: "Viewer Two",
+                    publishedAt: "2026-08-25T11:05:00.000Z",
+                    url: "https://youtube.com/watch?v=promising&lc=2",
+                    text: "I disagree with the deadline assumption.",
+                    engagement: 8,
+                  },
+                  {
+                    author: "Viewer Three",
+                    publishedAt: "2026-08-25T11:10:00.000Z",
+                    url: "https://youtube.com/watch?v=promising&lc=3",
+                    text: "Very useful summary.",
+                    engagement: 45,
+                  },
+                ]
+              : [],
+          completeness: {
+            ...item.completeness,
+            transcript: "available",
+            comments: "available",
+          },
+        }));
+      },
+    };
+    const selectingRanker: OpportunityRanker = {
+      async rank({ items }) {
+        return items.map((item) => ({
+          id: `opportunity-${item.id}`,
+          canonicalKey: item.id,
+          title: item.title ?? "Untitled",
+          angle: "practical_implication",
+          urgency: "Now.",
+          explanation: "Matches brand.",
+          sourceItemIds: [item.id],
+          sourceUrls: [item.canonicalUrl],
+          experimentalEvidence: false,
+          confidence: item.id === "yt:promising" ? 0.9 : 0.5,
+          scores: {
+            brandRelevance: 0.9,
+            audienceUsefulness: 0.8,
+            timeliness: 0.9,
+            novelty: 0.7,
+            evidenceStrength: item.id === "yt:promising" ? 0.9 : 0.4,
+            evidenceDiversity: 0.5,
+            specificity: 0.8,
+            originalPerspective: 0.7,
+            packApplicability: 0.8,
+            speculationRisk: 0.1,
+          },
+        }));
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [adapter],
+      ranker: selectingRanker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "youtube",
+      label: "Fixture channel",
+      url: "https://youtube.com/channel/fixture",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    expect(runs.detail(runId)!.status).toBe("blocked");
+    expect(enrichedIds).toEqual(["yt:promising"]);
+    const run = runs.open(runId)!;
+    const discarded = JSON.parse(run.readArtifact("discarded-items.json")!) as { id: string }[];
+    expect(discarded.map((item) => item.id)).toContain("yt:thin");
+    const promising = JSON.parse(run.readArtifact("promising-items.json")!) as { id: string }[];
+    expect(promising.map((item) => item.id)).toEqual(["yt:promising"]);
+    const enriched = JSON.parse(run.readArtifact("enriched-source-items.json")!) as {
+      id: string;
+      comments: { text: string; engagement: number }[];
+    }[];
+    expect(enriched.map((item) => item.id)).toEqual(["yt:promising"]);
+    expect(enriched[0].comments.map((comment) => comment.text)).toEqual([
+      "What does this mean for small teams?",
+      "I disagree with the deadline assumption.",
+      "Very useful summary.",
+    ]);
+    expect(enriched[0].comments).toHaveLength(3);
+    expect(runs.detail(runId)!.result).toMatchObject({ warnings: 0 });
+  });
+
+  it("keeps enrichment as a warning when evidence is otherwise sufficient", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-enrichment-warning-"));
+    const runs = openRuns(workspaceDir);
+    const adapter: SourceAdapter = {
+      id: "youtube",
+      state: "available",
+      version: "fixture-1",
+      supports: (target) => target.adapterId === "youtube",
+      async collect({ target }) {
+        return {
+          kind: "completed",
+          outcome: "items_found",
+          checkpoint: "yt-checkpoint",
+          items: [
+            {
+              id: "yt:good",
+              externalId: "good",
+              targetId: target.id,
+              adapterId: "youtube",
+              canonicalUrl: "https://youtube.com/watch?v=good",
+              author: "Channel A",
+              title: "A detailed interoperability walkthrough with practical steps",
+              body: "This video explains the rule, the deadline, and concrete implementation steps that teams can follow. It includes examples and practical guidance throughout with additional context for operators planning their next content calendar release.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [{ type: "video", url: "https://youtube.com/watch?v=good" }],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:youtube", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unavailable",
+                comments: "unavailable",
+              },
+            },
+          ],
+          diagnostic: {
+            classification: "items_found",
+            route: "fixture:youtube",
+            status: 200,
+            contentType: "application/json",
+            parserStage: "youtube",
+            responseHash: "yt-response",
+            adapterVersion: "fixture-1",
+            startedAt: NOW.toISOString(),
+            finishedAt: NOW.toISOString(),
+            retries: 0,
+            affectedCapabilities: [],
+            causeChain: [],
+          },
+        };
+      },
+      async enrich() {
+        throw new Error("transcript service unavailable");
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [adapter],
+      ranker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "youtube",
+      label: "Fixture channel",
+      url: "https://youtube.com/channel/fixture",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    expect(runs.detail(runId)!.status).toBe("blocked");
+    expect(runs.detail(runId)!.result).toMatchObject({ warnings: 1 });
+    const enriched = JSON.parse(runs.open(runId)!.readArtifact("enriched-source-items.json")!) as {
+      id: string;
+      completeness: {
+        transcript: string;
+        comments: string;
+        title: string;
+        body: string;
+        description: string;
+      };
+    }[];
+    expect(enriched[0].completeness).toMatchObject({
+      transcript: "failed",
+      comments: "failed",
+    });
+    expect(
+      runs
+        .detail(runId)!
+        .events.some(
+          (event) => event.type === "enrichment_failed" && event.detail?.adapterId === "youtube",
+        ),
+    ).toBe(true);
+  });
+
+  it("excludes ineligible items before expensive enrichment", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-eligibility-enrich-"));
+    const runs = openRuns(workspaceDir);
+    const enrichedIds: string[] = [];
+    const adapter: SourceAdapter = {
+      id: "rss",
+      state: "available",
+      version: "fixture-1",
+      supports: (target) => target.adapterId === "rss",
+      async collect({ target }) {
+        const base = {
+          targetId: target.id,
+          adapterId: "rss",
+          author: "Example",
+          title: "A detailed interoperability walkthrough with practical steps",
+          body: "This collected source explains the rule, the deadline, and concrete implementation steps that teams can follow with additional context for planning and execution across the next quarter.",
+          description: null,
+          discoveredAt: NOW.toISOString(),
+          media: [],
+          evidence: [{ route: "fixture:rss", retrievedAt: NOW.toISOString() }],
+          completeness: {
+            title: "available" as const,
+            body: "available" as const,
+            description: "unavailable" as const,
+            transcript: "unavailable" as const,
+            comments: "unavailable" as const,
+          },
+        };
+        return {
+          kind: "completed",
+          outcome: "items_found",
+          checkpoint: "rss-checkpoint",
+          items: [
+            {
+              id: "rss:good",
+              externalId: "good",
+              canonicalUrl: "https://example.com/a",
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              transcript: null,
+              comments: [],
+              ...base,
+            },
+            {
+              id: "rss:stale",
+              externalId: "stale",
+              canonicalUrl: "https://example.com/stale",
+              publishedAt: "2026-08-10T10:00:00.000Z",
+              transcript: null,
+              comments: [],
+              ...base,
+              title: "Stale but detailed interoperability walkthrough with practical steps",
+            },
+            {
+              id: "rss:prohibited",
+              externalId: "prohibited",
+              canonicalUrl: "https://example.com/prohibited",
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              transcript: null,
+              comments: [],
+              ...base,
+              body: "This collected source explains the rule and crypto scams with concrete implementation steps that teams can follow with additional context for planning and execution across the next quarter.",
+            },
+          ],
+          diagnostic: {
+            classification: "items_found",
+            route: "fixture:rss",
+            status: 200,
+            contentType: "application/rss+xml",
+            parserStage: "rss",
+            responseHash: "rss-response",
+            adapterVersion: "fixture-1",
+            startedAt: NOW.toISOString(),
+            finishedAt: NOW.toISOString(),
+            retries: 0,
+            affectedCapabilities: [],
+            causeChain: [],
+          },
+        };
+      },
+      async enrich(items) {
+        for (const item of items) enrichedIds.push(item.id);
+        return items.map((item) => ({
+          ...item,
+          transcript: "Enriched transcript.",
+          completeness: {
+            ...item.completeness,
+            transcript: "available" as const,
+            comments: "available" as const,
+          },
+        }));
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [adapter],
+      ranker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown:
+        "# Brand Profile\n\n## Positioning\nPractical guidance.\n\n## Avoided subjects\n- crypto scams\n",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Fixture",
+      url: "https://example.com/feed.xml",
+    });
+    const archivedTargetId = "archived-target";
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalCollect = adapter.collect;
+    adapter.collect = async (input) => {
+      const result = await originalCollect(input);
+      result.items.push({
+        id: "rss:archived",
+        externalId: "archived",
+        targetId: archivedTargetId,
+        adapterId: "rss",
+        canonicalUrl: "https://example.com/archived",
+        author: "Example",
+        title: "Archived target detailed walkthrough with practical steps",
+        body: "This collected source explains the rule, the deadline, and concrete implementation steps that teams can follow with additional context for planning and execution across the next quarter.",
+        description: null,
+        publishedAt: "2026-08-25T10:00:00.000Z",
+        discoveredAt: NOW.toISOString(),
+        media: [],
+        transcript: null,
+        comments: [],
+        evidence: [{ route: "fixture:rss", retrievedAt: NOW.toISOString() }],
+        completeness: {
+          title: "available",
+          body: "available",
+          description: "unavailable",
+          transcript: "unavailable",
+          comments: "unavailable",
+        },
+      });
+      return result;
+    };
+    const archived = host.addSourceTarget({
+      adapterId: "rss",
+      label: "Archived",
+      url: "https://example.com/archived.xml",
+    });
+    host.setSourceTargetState(archived.id, "archived");
+    const realArchivedId = archived.id;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const priorCollect = adapter.collect;
+    adapter.collect = async (input) => {
+      const res = await priorCollect(input);
+      const injected = res.items.find((i) => i.id === "rss:archived");
+      if (injected) injected.targetId = realArchivedId;
+      return res;
+    };
+
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    expect(enrichedIds).toEqual(["rss:good"]);
+    const run = runs.open(runId)!;
+    const eligibility = JSON.parse(run.readArtifact("eligibility.json")!) as {
+      exclusions: { sourceItemId: string; reason: string }[];
+    };
+    const reasons = Object.fromEntries(
+      eligibility.exclusions.map((e) => [e.sourceItemId, e.reason]),
+    );
+    expect(reasons["rss:stale"]).toBe("stale");
+    expect(reasons["rss:prohibited"]).toBe("prohibited_subject");
+    expect(reasons["rss:archived"]).toBe("archived_target");
+    const promising = JSON.parse(run.readArtifact("promising-items.json")!) as { id: string }[];
+    expect(promising.map((p) => p.id)).toEqual(["rss:good"]);
+    const discarded = JSON.parse(run.readArtifact("discarded-items.json")!) as { id: string }[];
+    expect(discarded.map((d) => d.id)).not.toContain("rss:good");
+  });
+
+  it("caps comment enrichment at 50 and preserves questions and disagreement", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-comments-cap-"));
+    const runs = openRuns(workspaceDir);
+    const adapter: SourceAdapter = {
+      id: "youtube",
+      state: "available",
+      version: "fixture-1",
+      supports: (target) => target.adapterId === "youtube",
+      async collect({ target }) {
+        return {
+          kind: "completed",
+          outcome: "items_found",
+          checkpoint: "yt-checkpoint",
+          items: [
+            {
+              id: "yt:popular",
+              externalId: "popular",
+              targetId: target.id,
+              adapterId: "youtube",
+              canonicalUrl: "https://youtube.com/watch?v=popular",
+              author: "Channel A",
+              title: "A detailed interoperability walkthrough with practical steps",
+              body: "This video explains the rule, the deadline, and concrete implementation steps that teams can follow with additional context for planning and execution across the next quarter and beyond.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [{ type: "video", url: "https://youtube.com/watch?v=popular" }],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:youtube", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unavailable",
+                comments: "unavailable",
+              },
+            },
+          ],
+          diagnostic: {
+            classification: "items_found",
+            route: "fixture:youtube",
+            status: 200,
+            contentType: "application/json",
+            parserStage: "youtube",
+            responseHash: "yt-response",
+            adapterVersion: "fixture-1",
+            startedAt: NOW.toISOString(),
+            finishedAt: NOW.toISOString(),
+            retries: 0,
+            affectedCapabilities: [],
+            causeChain: [],
+          },
+        };
+      },
+      async enrich(items) {
+        return items.map((item) => {
+          const comments = [];
+          for (let i = 0; i < 70; i += 1) {
+            comments.push({
+              author: `Viewer ${i}`,
+              publishedAt: "2026-08-25T11:00:00.000Z",
+              url: `https://youtube.com/watch?v=popular&lc=${i}`,
+              text: `Popular agreement ${i} very useful.`,
+              engagement: 100 - i,
+            });
+          }
+          comments.push({
+            author: "Questioner",
+            publishedAt: "2026-08-25T11:30:00.000Z",
+            url: "https://youtube.com/watch?v=popular&lc=q",
+            text: "What does this mean for small teams?",
+            engagement: 1,
+          });
+          comments.push({
+            author: "Critic",
+            publishedAt: "2026-08-25T11:31:00.000Z",
+            url: "https://youtube.com/watch?v=popular&lc=d",
+            text: "I disagree with the deadline assumption, it is misleading.",
+            engagement: 2,
+          });
+          return {
+            ...item,
+            comments,
+            completeness: {
+              ...item.completeness,
+              transcript: "available" as const,
+              comments: "available" as const,
+            },
+          };
+        });
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [adapter],
+      ranker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "youtube",
+      label: "Fixture",
+      url: "https://youtube.com/channel/fixture",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+    const enriched = JSON.parse(runs.open(runId)!.readArtifact("enriched-source-items.json")!) as {
+      comments: { text: string }[];
+    }[];
+    expect(enriched[0].comments).toHaveLength(50);
+    const texts = enriched[0].comments.map((c) => c.text);
+    expect(texts).toContain("What does this mean for small teams?");
+    expect(texts).toContain("I disagree with the deadline assumption, it is misleading.");
+    expect(texts).toContain("Popular agreement 0 very useful.");
+  });
+
+  it("keeps unavailable, unsupported and failed transcript and comment states distinct", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-field-states-"));
+    const runs = openRuns(workspaceDir);
+    const adapter: SourceAdapter = {
+      id: "youtube",
+      state: "available",
+      version: "fixture-1",
+      supports: (target) => target.adapterId === "youtube",
+      async collect({ target }) {
+        return {
+          kind: "completed",
+          outcome: "items_found",
+          checkpoint: "yt-checkpoint",
+          items: [
+            {
+              id: "yt:unsupported",
+              externalId: "unsupported",
+              targetId: target.id,
+              adapterId: "youtube",
+              canonicalUrl: "https://youtube.com/watch?v=unsupported",
+              author: "Channel A",
+              title: "A detailed walkthrough with practical steps for operators",
+              body: "This video explains the rule, the deadline, and concrete implementation steps that teams can follow with additional context for planning and execution across the next quarter and beyond for operators.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [{ type: "video", url: "https://youtube.com/watch?v=unsupported" }],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:youtube", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unsupported",
+                comments: "unsupported",
+              },
+            },
+            {
+              id: "yt:unavailable",
+              externalId: "unavailable",
+              targetId: target.id,
+              adapterId: "youtube",
+              canonicalUrl: "https://youtube.com/watch?v=unavailable",
+              author: "Channel B",
+              title: "Another detailed walkthrough with practical steps for operators",
+              body: "This video explains the process, the timeline, and concrete implementation steps that teams can follow with additional context for planning and execution across the next quarter and beyond for operators.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [{ type: "video", url: "https://youtube.com/watch?v=unavailable" }],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:youtube", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unavailable",
+                comments: "unavailable",
+              },
+            },
+          ],
+          diagnostic: {
+            classification: "items_found",
+            route: "fixture:youtube",
+            status: 200,
+            contentType: "application/json",
+            parserStage: "youtube",
+            responseHash: "yt-response",
+            adapterVersion: "fixture-1",
+            startedAt: NOW.toISOString(),
+            finishedAt: NOW.toISOString(),
+            retries: 0,
+            affectedCapabilities: [],
+            causeChain: [],
+          },
+        };
+      },
+      async enrich() {
+        throw new Error("enrichment unavailable");
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [adapter],
+      ranker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "youtube",
+      label: "Fixture",
+      url: "https://youtube.com/channel/fixture",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+    const enriched = JSON.parse(runs.open(runId)!.readArtifact("enriched-source-items.json")!) as {
+      id: string;
+      completeness: { transcript: string; comments: string };
+    }[];
+    const byId = Object.fromEntries(enriched.map((e) => [e.id, e.completeness]));
+    expect(byId["yt:unsupported"]).toMatchObject({
+      transcript: "unsupported",
+      comments: "unsupported",
+    });
+    const full = JSON.parse(runs.open(runId)!.readArtifact("enriched-source-items.json")!) as {
+      id: string;
+      completeness: Record<string, string>;
+    }[];
+    const fullById = Object.fromEntries(full.map((e) => [e.id, e.completeness]));
+    expect(fullById["yt:unavailable"].transcript).toBe("failed");
+    expect(fullById["yt:unavailable"].comments).toBe("failed");
+    expect(fullById["yt:unsupported"].transcript).toBe("unsupported");
+    expect(fullById["yt:unsupported"].comments).toBe("unsupported");
+    expect(runs.detail(runId)!.result).toMatchObject({ warnings: 1 });
   });
 });
