@@ -409,6 +409,7 @@ export const SHELL_EVENT_TYPES = [
   "run_blocked",
   "run_resumed",
   "run_recovered",
+  "retry_refused",
   /* A transcript-Module word the Shell writes from `finished()`. It is in this
      list because the list states what the Shell writes today, not what it
      should write. See §5. */

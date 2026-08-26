@@ -110,7 +110,11 @@ describe("TranscriptHost", () => {
     expect(runs.list({ module: TRANSCRIPT_MODULE_ID }).runs).toHaveLength(1);
     expect(
       runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "extract", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "extract",
+      previousStatus: "running",
+      reason: "transcript_survived_restart",
+    });
   });
 
   it("delegates retry decisions to its Run engine", async () => {

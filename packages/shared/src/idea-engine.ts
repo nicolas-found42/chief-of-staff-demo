@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MODEL_REQUEST_TIMEOUT_MS } from "./llm.js";
 
 /** The Module's stable identity. */
 export const IDEA_ENGINE_MODULE_ID = "idea-engine";
@@ -120,7 +121,8 @@ export const IDEA_SHEET_HEADER = [
 
 /** Batch size for the 12 Stages. */
 export const IDEA_BATCH_SIZE = 4;
-export const IDEA_STAGE_TIMEOUT_MS = 60_000;
+/** The Stage wrapper may never pre-empt the LLM seam's own classified timeout. */
+export const IDEA_STAGE_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS + 5_000;
 export const IDEA_VALIDATOR_RETRIES = 3;
 
 /** Default prompts versioned with the Module (12 distinct). */

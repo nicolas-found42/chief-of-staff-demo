@@ -2,8 +2,10 @@ import type {
   ModelBoundaryClassification,
   ModelBoundaryDiagnostic,
   ProviderId,
+  ResultShapeDiagnostic,
   ResultShapeBinding,
 } from "@chief-of-staff-demo/shared";
+import type { ZodIssue, ZodType, ZodTypeDef } from "zod";
 
 /** Which model the Shell was calling, and how it asked for the Result Shape. */
 export interface ModelCall {
@@ -53,9 +55,81 @@ export class ModelBoundaryError extends Error {
   }
 }
 
+/** A Module rejected a model reply without retaining the rejected values. */
+class ResultShapeError extends Error {
+  constructor(readonly diagnostic: ResultShapeDiagnostic) {
+    const fields = diagnostic.issues
+      .map((issue) => `${issue.field}:${issue.expectedType}/${issue.actualType}`)
+      .join(" ");
+    super(
+      `Result Shape ${diagnostic.expectedShape} did not match (keys ${diagnostic.topLevelKeys.join(" ") || "none"}; fields ${fields || "unknown"})`,
+    );
+    this.name = "ResultShapeError";
+  }
+}
+
 /** The classified facts behind an error, or `null` if it did not cross the seam. */
 export function modelBoundaryDiagnostic(error: unknown): ModelBoundaryDiagnostic | null {
   return error instanceof ModelBoundaryError ? error.diagnostic : null;
+}
+
+export function resultShapeDiagnostic(error: unknown): ResultShapeDiagnostic | null {
+  return error instanceof ResultShapeError ? error.diagnostic : null;
+}
+
+/** Classified model diagnostics ready to merge into a durable event. */
+export function modelDiagnosticEventDetail(error: unknown): Record<string, unknown> {
+  const boundary = modelBoundaryDiagnostic(error);
+  const shape = resultShapeDiagnostic(error);
+  return {
+    ...(boundary === null ? {} : { modelBoundary: boundary }),
+    ...(shape === null ? {} : { resultShape: shape }),
+  };
+}
+
+/** Validate a Module's named Result Shape without retaining rejected values. */
+export function parseResultShape<T>(
+  expectedShape: string,
+  schema: ZodType<T, ZodTypeDef, unknown>,
+  value: unknown,
+): T {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  throw resultShapeFailure(expectedShape, value, parsed.error.issues);
+}
+
+function resultShapeFailure(
+  expectedShape: string,
+  value: unknown,
+  issues: ZodIssue[],
+): ResultShapeError {
+  const leafIssues = flattenZodIssues(issues);
+  const topLevelKeys =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? Object.keys(value).map(safeName)
+      : [];
+  return new ResultShapeError({
+    expectedShape,
+    topLevelKeys,
+    issues: leafIssues.map((issue) => ({
+      field: issue.path.map(String).join(".") || "[root]",
+      expectedType:
+        issue.code === "invalid_type"
+          ? issue.expected
+          : issue.code === "invalid_enum_value"
+            ? "enum"
+            : "valid_value",
+      actualType: valueType(valueAtPath(value, issue.path)),
+    })),
+  });
+}
+
+function flattenZodIssues(issues: ZodIssue[]): ZodIssue[] {
+  return issues.flatMap((issue) =>
+    issue.code === "invalid_union"
+      ? issue.unionErrors.flatMap((error) => flattenZodIssues(error.issues))
+      : [issue],
+  );
 }
 
 export function modelBoundaryFailure(input: ModelBoundaryFailureInput): ModelBoundaryError {
@@ -94,6 +168,22 @@ function asObject(value: unknown): JsonObject | null {
  */
 function safeName(value: string): string {
   return /^[A-Za-z0-9_.:/-]{1,64}$/.test(value) ? value : "[unnamed]";
+}
+
+function valueAtPath(value: unknown, path: (string | number)[]): unknown {
+  let current = value;
+  for (const part of path) {
+    if (typeof current !== "object" || current === null || !(part in current)) return undefined;
+    current = (current as Record<string | number, unknown>)[part];
+  }
+  return current;
+}
+
+function valueType(value: unknown): string {
+  if (value === undefined) return "missing";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
 }
 
 /**

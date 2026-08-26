@@ -132,7 +132,11 @@ describe("YoutubeHost lifecycle", () => {
     expect(runs.detail(orphan.id)?.status).toBe("done");
     expect(
       runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "enumerate", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "enumerate",
+      previousStatus: "running",
+      reason: "no_measured_snapshot_survived_restart",
+    });
   });
 });
 

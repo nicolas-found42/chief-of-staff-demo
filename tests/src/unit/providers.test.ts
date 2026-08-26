@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { ExtractionWireSchema, type ModelBoundaryDiagnostic } from "@chief-of-staff-demo/shared";
+import {
+  ExtractionWireSchema,
+  IDEA_STAGE_TIMEOUT_MS,
+  type ModelBoundaryDiagnostic,
+} from "@chief-of-staff-demo/shared";
 import { makeCompleteJson, REQUEST_TIMEOUT_MS } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
 
@@ -31,6 +35,11 @@ const responses: Reply[] = [];
 /** Replies to the model-capability lookup, which is a different URL to a completion. */
 const declarations: Reply[] = [];
 const lookups: string[] = [];
+
+it("gives the configured model latency headroom under one derived timeout contract", () => {
+  expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(186_000);
+  expect(IDEA_STAGE_TIMEOUT_MS).toBe(REQUEST_TIMEOUT_MS + 5_000);
+});
 
 beforeEach(() => {
   calls.length = 0;

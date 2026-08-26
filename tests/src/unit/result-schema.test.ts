@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ExtractionResultSchema, normalizeExtractionResult } from "@chief-of-staff-demo/shared";
+import {
+  ExtractionResultSchema,
+  NormalizedExtractionResultSchema,
+} from "@chief-of-staff-demo/shared";
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "../../fixtures");
 
@@ -66,12 +69,12 @@ describe("ExtractionResultSchema", () => {
       tasks: [{ title: "T", owner: null, due: "2026-08-21", notes: null, sourceQuote: "q" }],
       drafts: [{ to: "", subject: "S", body: "B", reason: null }],
     };
-    const normalized = normalizeExtractionResult(wire);
+    const normalized = NormalizedExtractionResultSchema.parse(wire);
     expect(normalized.tasks[0]).toEqual({ title: "T", due: "2026-08-21", sourceQuote: "q" });
     expect(normalized.drafts[0]).toEqual({ to: "", subject: "S", body: "B" });
   });
 
   it("still rejects payloads valid in neither shape", () => {
-    expect(() => normalizeExtractionResult({ version: 1 })).toThrow();
+    expect(() => NormalizedExtractionResultSchema.parse({ version: 1 })).toThrow();
   });
 });

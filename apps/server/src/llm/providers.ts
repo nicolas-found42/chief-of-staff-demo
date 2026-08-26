@@ -5,6 +5,7 @@ import {
   type ProviderId,
   type ResultShapeBinding,
   DEFAULT_OLLAMA_BASE_URL,
+  MODEL_REQUEST_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -43,7 +44,7 @@ interface CompletionRequest {
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
 
 /** The ceiling on one model call. Exported so a test can drive it deterministically. */
-export const REQUEST_TIMEOUT_MS = 120_000;
+export const REQUEST_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS;
 
 /** One provider answer, kept only as long as it takes to classify or read it. */
 interface HttpResponse {

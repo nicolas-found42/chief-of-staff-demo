@@ -19,6 +19,7 @@ import {
   TRANSCRIPT_MODULE_ID,
   TRANSCRIPT_MODULE_VERSION,
 } from "../../../apps/server/src/modules/transcript/module";
+import { ModelBoundaryError } from "../../../apps/server/src/llm/failure";
 
 const GOLDEN = {
   version: 1 as const,
@@ -257,6 +258,7 @@ describe("Pipeline", () => {
     expect(detail.events.find((event) => event.type === "run_recovered")?.detail).toEqual({
       fromStage: "extract",
       previousStatus: "running",
+      reason: "transcript_survived_restart",
     });
   });
 
@@ -284,7 +286,11 @@ describe("Pipeline", () => {
     expect(google!.calls.tasks).toHaveLength(2);
     expect(
       detailOf(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "outputs", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "outputs",
+      previousStatus: "running",
+      reason: "extracted_result_survived_restart",
+    });
   });
 
   it("non-transcript → skipped with persisted result and no google calls", async () => {
@@ -329,7 +335,7 @@ describe("Pipeline", () => {
   });
 
   it("schema-invalid output ×3 counts as failed attempts", async () => {
-    provider = scriptedProvider([{ ...GOLDEN, version: 2 }]);
+    provider = scriptedProvider([{ ...GOLDEN, version: 2, summary: "PRIVATE_PAYLOAD_MARKER" }]);
     const runId = await pipeline.startRun({
       intake: "drive",
       fileName: "meeting.md",
@@ -341,6 +347,54 @@ describe("Pipeline", () => {
     expect(detail!.failedStage).toBe("extract");
     expect(detail!.attempts).toBe(3);
     expect(provider.attempts()).toBe(3);
+    expect(detail!.events.find((event) => event.type === "extract_error")?.detail).toMatchObject({
+      resultShape: {
+        expectedShape: "TranscriptExtraction",
+        topLevelKeys: expect.arrayContaining(["version", "summary", "tasks"]),
+        issues: expect.arrayContaining([
+          { field: "version", expectedType: "valid_value", actualType: "number" },
+        ]),
+      },
+    });
+    expect(detail!.events.find((event) => event.type === "stage_failed")?.detail).toHaveProperty(
+      "resultShape.expectedShape",
+      "TranscriptExtraction",
+    );
+    expect(JSON.stringify(detail!.events)).not.toContain("PRIVATE_PAYLOAD_MARKER");
+  });
+
+  it("preserves a classified model failure through extraction retries and Stage failure", async () => {
+    const failure = new ModelBoundaryError({
+      classification: "upstream_error",
+      provider: "openrouter",
+      model: "configured-free-model",
+      upstreamServer: "Nvidia",
+      upstreamCode: 502,
+      binding: "forced_tool_call",
+      status: 200,
+      finishReason: null,
+      bodyBytes: 42,
+      topLevelKeys: ["error"],
+      populatedFields: [],
+      emptyFields: [],
+      timeoutMs: null,
+    });
+    provider = { complete: async () => Promise.reject(failure), attempts: () => 0 };
+
+    const runId = await pipeline.startRun({
+      intake: "drive",
+      fileName: "meeting.md",
+      text: "hello",
+    });
+    await pipeline.idle();
+    const detail = detailOf(runId)!;
+
+    expect(detail.events.find((event) => event.type === "extract_error")?.detail).toMatchObject({
+      modelBoundary: failure.diagnostic,
+    });
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      modelBoundary: failure.diagnostic,
+    });
   });
 
   it("google disconnected → failed at outputs with google_unavailable; retry after connecting", async () => {

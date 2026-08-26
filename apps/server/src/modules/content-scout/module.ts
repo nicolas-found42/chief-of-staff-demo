@@ -501,11 +501,13 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       if (action?.kind === "selection") {
         return {
           fromStage: meta.failedStage ?? "draft",
+          reason: "selected_opportunities_are_durable",
           input: { kind: "selection", opportunityIds: action.opportunityIds },
         };
       }
       return {
         fromStage: meta.failedStage ?? "collect",
+        reason: "failed_collection_stage",
         input: { kind: "intake", invocation: "manual" },
       };
     },
@@ -516,10 +518,13 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       if (action?.kind === "selection") {
         return {
           fromStage: "draft",
+          reason: "person_selected_opportunities",
           input: { kind: "selection", opportunityIds: action.opportunityIds },
         };
       }
-      return action?.kind === "skip" ? { fromStage: "selection", input: { kind: "skip" } } : null;
+      return action?.kind === "skip"
+        ? { fromStage: "selection", reason: "person_skipped_shortlist", input: { kind: "skip" } }
+        : null;
     },
 
     planRecovery(meta) {
@@ -532,11 +537,13 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       if (action?.kind === "selection") {
         return {
           fromStage: meta.failedStage ?? "draft",
+          reason: "durable_selection_survived_restart",
           input: { kind: "selection", opportunityIds: action.opportunityIds },
         };
       }
       return {
         fromStage: meta.failedStage ?? "collect",
+        reason: "orphaned_content_scout_run",
         input: { kind: "intake", invocation: "scheduled" },
       };
     },

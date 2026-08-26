@@ -152,7 +152,11 @@ describe("IdeaEngineHost lifecycle", () => {
     expect(runs.detail(orphan.id)?.status).toBe("done");
     expect(
       runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: IDEA_CONTENT_TYPES[0], previousStatus: "running" });
+    ).toEqual({
+      fromStage: IDEA_CONTENT_TYPES[0],
+      previousStatus: "running",
+      reason: "durable_progress_selected_first_incomplete_stage",
+    });
   });
 });
 

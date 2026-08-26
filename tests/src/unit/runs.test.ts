@@ -199,7 +199,7 @@ describe("transitions", () => {
     run.failed("outputs", "boom", "Output creation failed.");
     run.finished({ status: "skipped", reason: "stale" });
 
-    const reopened = run.reopen("outputs");
+    const reopened = run.reopen("outputs", "result_is_durable");
 
     expect(reopened.status).toBe("pending");
     expect(reopened.failedStage).toBeNull();
@@ -207,7 +207,10 @@ describe("transitions", () => {
     expect(reopened.skipReason).toBeNull();
     // A retry used to leave no trace: a timeline read later could not tell a
     // resumed Run from a slow one.
-    expect(detailOf("run_reopened")).toEqual({ fromStage: "outputs" });
+    expect(detailOf("run_reopened")).toEqual({
+      fromStage: "outputs",
+      reason: "result_is_durable",
+    });
   });
 });
 
@@ -217,7 +220,7 @@ describe("the invariant the interface exists to hold", () => {
     run.started("extract");
     run.attemptStarted();
     run.failed("extract", "boom", "Extraction failed.");
-    run.reopen("extract");
+    run.reopen("extract", "extraction_restarts_cleanly");
     run.started("extract");
     run.finished({ status: "done" });
 

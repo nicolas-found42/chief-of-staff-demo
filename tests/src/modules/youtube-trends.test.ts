@@ -301,7 +301,11 @@ describe("the daily Run", () => {
     expect(runs.list({ module: YOUTUBE_MODULE_ID }).runs).toHaveLength(1);
     expect(
       runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "enumerate", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "enumerate",
+      previousStatus: "running",
+      reason: "no_measured_snapshot_survived_restart",
+    });
   });
 
   it("recovers orphaned publication from the measured counts without reading YouTube again", async () => {
@@ -341,7 +345,11 @@ describe("the daily Run", () => {
     expect(sheets.appended).toHaveLength(1);
     expect(
       runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "publish", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "publish",
+      previousStatus: "running",
+      reason: "measured_snapshot_survived_restart",
+    });
   });
 });
 

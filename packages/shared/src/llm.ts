@@ -1,5 +1,8 @@
 import type { ProviderId } from "./schemas.js";
 
+/** One model call's ceiling, with headroom over the configured model's measured latency. */
+export const MODEL_REQUEST_TIMEOUT_MS = 300_000;
+
 /**
  * How a model is bound to the caller's Result Shape. Ordered most deterministic
  * first: `response_format` has the provider constrain decoding to the JSON
@@ -74,4 +77,18 @@ export interface ModelBoundaryDiagnostic {
   emptyFields: string[];
   /** The ceiling that fired, for `request_timeout`; `null` otherwise. */
   timeoutMs: number | null;
+}
+
+/** One field that did not conform to a Module's declared Result Shape. */
+export interface ResultShapeIssue {
+  field: string;
+  expectedType: string;
+  actualType: string;
+}
+
+/** Shape-only facts from a Module validating a model reply. */
+export interface ResultShapeDiagnostic {
+  expectedShape: string;
+  topLevelKeys: string[];
+  issues: ResultShapeIssue[];
 }

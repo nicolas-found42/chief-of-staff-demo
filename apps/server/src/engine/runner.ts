@@ -1,5 +1,6 @@
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import type { NewRun, RunHandle, Runs } from "../runs.js";
+import { modelDiagnosticEventDetail } from "../llm/failure.js";
 import { errorMessage } from "./failure.js";
 import {
   OutsideStageError,
@@ -20,8 +21,12 @@ export class RunNotFoundError extends Error {
 }
 
 export class RunNotRetryableError extends Error {
-  constructor(runId: string) {
-    super(`Run is not retryable: ${runId}`);
+  constructor(
+    runId: string,
+    readonly condition: "status_not_failed" | "failed_stage_missing" | "module_declined",
+    detail: string,
+  ) {
+    super(`Run is not retryable because ${detail}: ${runId}`);
     this.name = "RunNotRetryableError";
   }
 }
@@ -95,9 +100,32 @@ export class Runner<Input> {
     if (!run) {
       throw new RunNotFoundError(id);
     }
-    const plan = this.deps.module.planRetry(run.read());
+    const meta = run.read();
+    if (meta.status !== "failed") {
+      run.appendEvent("retry_refused", {
+        condition: "status_not_failed",
+        status: meta.status,
+        module: meta.module,
+      });
+      throw new RunNotRetryableError(id, "status_not_failed", `its status is ${meta.status}`);
+    }
+    if (!meta.failedStage) {
+      run.appendEvent("retry_refused", {
+        condition: "failed_stage_missing",
+        status: meta.status,
+        module: meta.module,
+      });
+      throw new RunNotRetryableError(id, "failed_stage_missing", "no failed Stage was recorded");
+    }
+    const plan = this.deps.module.planRetry(meta);
     if (!plan) {
-      throw new RunNotRetryableError(id);
+      run.appendEvent("retry_refused", {
+        condition: "module_declined",
+        status: meta.status,
+        failedStage: meta.failedStage,
+        module: meta.module,
+      });
+      throw new RunNotRetryableError(id, "module_declined", "its Module declined the retry");
     }
     if (plan.resetAttempts) {
       run.resetAttempts();
@@ -105,7 +133,7 @@ export class Runner<Input> {
     for (const name of plan.discard ?? []) {
       run.deleteArtifact(name);
     }
-    const reopened = run.reopen(plan.fromStage);
+    const reopened = run.reopen(plan.fromStage, plan.reason);
     this.enqueue(run, plan.input);
     return reopened;
   }
@@ -124,7 +152,7 @@ export class Runner<Input> {
     if (!plan) {
       throw new RunNotResumableError(id);
     }
-    const resumed = run.resumed(plan.fromStage, "module");
+    const resumed = run.resumed(plan.fromStage, "module", plan.reason);
     this.enqueue(run, plan.input);
     return resumed;
   }
@@ -152,7 +180,7 @@ export class Runner<Input> {
         }
         const plan = this.deps.module.planResume?.(meta) ?? null;
         if (plan) {
-          run.resumed(plan.fromStage, "clock");
+          run.resumed(plan.fromStage, "clock", plan.reason);
           if (this.enqueue(run, plan.input)) {
             recovered += 1;
           }
@@ -172,7 +200,7 @@ export class Runner<Input> {
       if (!plan) {
         continue;
       }
-      run.recovered(plan.fromStage);
+      run.recovered(plan.fromStage, plan.reason);
       if (this.enqueue(run, plan.input)) {
         recovered += 1;
       }
@@ -244,7 +272,18 @@ export class Runner<Input> {
           }
           const failure = error instanceof StageFailure ? error : null;
           const reason = errorMessage(error);
-          run.failed(name, reason, failure?.hint ?? mod.failureHint(name, reason), failure?.flags);
+          const diagnosticDetail = modelDiagnosticEventDetail(error);
+          const flags =
+            failure?.flags || Object.keys(diagnosticDetail).length > 0
+              ? {
+                  ...failure?.flags,
+                  eventDetail: {
+                    ...failure?.flags?.eventDetail,
+                    ...diagnosticDetail,
+                  },
+                }
+              : undefined;
+          run.failed(name, reason, failure?.hint ?? mod.failureHint(name, reason), flags);
           throw error;
         } finally {
           stack.pop();

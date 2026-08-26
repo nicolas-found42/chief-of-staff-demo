@@ -23,7 +23,7 @@ describe("modelBrandProfileProposer", () => {
     const proposer = modelBrandProfileProposer(() => async () => ({ Summary: "Company summary" }));
 
     await expect(proposer.propose({ pages: [] })).rejects.toThrow(
-      "Missing Brand Profile sections: Products, Customers, Customer problems, Positioning, Differentiators, Proof, Competitors, Voice, Vocabulary, Prohibited claims, Content themes, Avoided subjects, Geographic or regulatory constraints",
+      "Result Shape BrandProfileProposal did not match",
     );
   });
 
@@ -86,11 +86,11 @@ United States only.
   it("rejects an empty section before the proposal can be diffed", async () => {
     const proposer = modelBrandProfileProposer(() => async () => ({
       ...VALID_SECTIONS,
-      Summary: "",
+      Summary: "PRIVATE_PAYLOAD_MARKER",
+      Products: 42,
     }));
 
-    await expect(proposer.propose({ pages: [] })).rejects.toThrow(
-      "Empty Brand Profile sections: Summary",
-    );
+    await expect(proposer.propose({ pages: [] })).rejects.toThrow("fields Products:string/number");
+    await expect(proposer.propose({ pages: [] })).rejects.not.toThrow("PRIVATE_PAYLOAD_MARKER");
   });
 });

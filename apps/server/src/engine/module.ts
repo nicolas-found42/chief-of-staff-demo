@@ -50,6 +50,8 @@ export type RecoveryState = Readonly<RunMeta> & {
 /** How a Module continues after the Shell clears its durable wait. */
 interface ResumePlan<Input> {
   fromStage: string;
+  /** Shape-only reason this Stage is the safe restart point. */
+  reason: string;
   input: Input;
 }
 
@@ -57,6 +59,8 @@ interface ResumePlan<Input> {
 export interface RetryPlan<Input> {
   /** The Stage the Run resumes from; recorded on the reopen. */
   fromStage: string;
+  /** Shape-only reason this Stage is the safe restart point. */
+  reason: string;
   /** What to hand `run` this time. */
   input: Input;
   /** Start counting attempts again, for a Stage re-run from scratch. */

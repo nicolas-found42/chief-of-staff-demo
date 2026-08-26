@@ -102,7 +102,7 @@ export function contentScoutBackfillModule(
       if (meta.intake !== CONTENT_SCOUT_BACKFILL_INTAKE || meta.status !== "failed") return null;
       const input = parseBackfillExternalId(meta.externalId);
       if (!input) return null;
-      return { fromStage: meta.failedStage ?? "collect", input };
+      return { fromStage: meta.failedStage ?? "collect", reason: "failed_backfill_stage", input };
     },
 
     planRecovery(meta) {
@@ -114,7 +114,7 @@ export function contentScoutBackfillModule(
       }
       const input = parseBackfillExternalId(meta.externalId);
       if (!input) return null;
-      return { fromStage: meta.failedStage ?? "collect", input };
+      return { fromStage: meta.failedStage ?? "collect", reason: "orphaned_backfill_run", input };
     },
 
     async run(ctx, input): Promise<RunOutcome> {

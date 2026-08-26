@@ -27,7 +27,7 @@ function fakeHost(id: string, path: string): HostedModule {
     version: 1,
     async retryRun(runId: string): Promise<RunMeta> {
       retried.push(`${id}:${runId}`);
-      return runs.open(runId)!.reopen("only");
+      return runs.open(runId)!.reopen("only", "fake_host_selected_only_stage");
     },
     routes(instance) {
       instance.get(path, async () => ({ mine: id }));
@@ -102,6 +102,13 @@ describe("two Modules under one Shell", () => {
     const orphan = failedRun("gamma");
     const response = await app.inject({ method: "POST", url: `/api/runs/${orphan}/retry` });
     expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: `Run is not retryable because its Module gamma is not hosted: ${orphan}`,
+    });
+    expect(runs.detail(orphan)!.events.at(-1)).toMatchObject({
+      type: "retry_refused",
+      detail: { condition: "module_not_hosted", module: "gamma" },
+    });
     expect(retried).toEqual([]);
   });
 

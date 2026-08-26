@@ -13,7 +13,6 @@ import {
   Runner,
   RunNotFoundError,
   RunNotResumableError,
-  RunNotRetryableError,
 } from "../../../apps/server/src/engine/runner";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 
@@ -236,7 +235,13 @@ describe("retry", () => {
     fakeModule({
       planRetry(meta: Readonly<RunMeta>): RetryPlan<FakeInput> | null {
         return meta.status === "failed"
-          ? { fromStage: "only", input: {}, resetAttempts: true, discard: ["scratch.json"] }
+          ? {
+              fromStage: "only",
+              reason: "failed_stage_is_safe_to_repeat",
+              input: {},
+              resetAttempts: true,
+              discard: ["scratch.json"],
+            }
           : null;
       },
     });
@@ -262,7 +267,10 @@ describe("retry", () => {
     expect(detail.status).toBe("done");
     expect(detail.attempts).toBe(0);
     expect(runs.open(id)!.readArtifact("scratch.json")).toBeNull();
-    expect(detail.events.map((e) => e.type)).toContain("run_reopened");
+    expect(detail.events.find((event) => event.type === "run_reopened")?.detail).toEqual({
+      fromStage: "only",
+      reason: "failed_stage_is_safe_to_repeat",
+    });
     /* Retried in place: one Run, not two. */
     expect(runs.list().runs).toHaveLength(1);
   });
@@ -272,7 +280,13 @@ describe("retry", () => {
     const id = await runner.startRun(record, {});
     await runner.idle();
 
-    await expect(runner.retryRun(id)).rejects.toThrow(RunNotRetryableError);
+    await expect(runner.retryRun(id)).rejects.toThrow(
+      "Run is not retryable because its status is done",
+    );
+    expect(runs.detail(id)!.events.at(-1)).toMatchObject({
+      type: "retry_refused",
+      detail: { condition: "status_not_failed", status: "done" },
+    });
     await expect(runner.retryRun("run_20260101-000000_deadbeef")).rejects.toThrow(RunNotFoundError);
   });
 });
@@ -282,7 +296,11 @@ describe("durable resume", () => {
     const module = fakeModule({
       planResume(meta) {
         return meta.status === "blocked"
-          ? { fromStage: "only", input: { work: async () => undefined } }
+          ? {
+              fromStage: "only",
+              reason: "person_wait_was_resolved",
+              input: { work: async () => undefined },
+            }
           : null;
       },
     });
@@ -314,13 +332,20 @@ describe("durable resume", () => {
       "stage_started",
       "run_done",
     ]);
+    expect(detail.events.find((event) => event.type === "run_resumed")?.detail).toEqual({
+      fromStage: "only",
+      requestedBy: "module",
+      reason: "person_wait_was_resolved",
+    });
     await expect(afterRestart.resumeRun(id)).rejects.toThrow(RunNotResumableError);
   });
 
   it("recovers only due clock waits and leaves future or indefinite waits blocked", async () => {
     const module = fakeModule({
       planResume(meta) {
-        return meta.status === "blocked" ? { fromStage: "only", input: {} } : null;
+        return meta.status === "blocked"
+          ? { fromStage: "only", reason: "clock_wait_elapsed", input: {} }
+          : null;
       },
     });
     const beforeRestart = new Runner({
@@ -362,6 +387,7 @@ describe("durable resume", () => {
     expect(runs.detail(due)!.events.find((event) => event.type === "run_resumed")?.detail).toEqual({
       fromStage: "only",
       requestedBy: "clock",
+      reason: "clock_wait_elapsed",
     });
     expect(runs.detail(indefinite)!.status).toBe("blocked");
   });
@@ -383,7 +409,7 @@ describe("durable resume", () => {
       module: fakeModule({
         planRecovery(meta) {
           return meta.status === "pending" || meta.status === "running"
-            ? { fromStage: "only", input: {} }
+            ? { fromStage: "only", reason: "orphaned_fake_run", input: {} }
             : null;
         },
       }),
@@ -396,7 +422,11 @@ describe("durable resume", () => {
     expect(runs.detail(running.id)!.status).toBe("done");
     expect(
       runs.detail(running.id)!.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "only", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "only",
+      previousStatus: "running",
+      reason: "orphaned_fake_run",
+    });
   });
 
   it("does not enqueue the same recovered Run twice while it is active", async () => {
@@ -411,6 +441,7 @@ describe("durable resume", () => {
       module: fakeModule({
         planRecovery: () => ({
           fromStage: "only",
+          reason: "orphaned_fake_run",
           input: { work: async () => await hold },
         }),
       }),
@@ -438,7 +469,7 @@ describe("durable resume", () => {
     const runner = new Runner({
       runs,
       module: fakeModule({
-        planRecovery: () => ({ fromStage: "only", input: {} }),
+        planRecovery: () => ({ fromStage: "only", reason: "orphaned_fake_run", input: {} }),
       }),
     });
 

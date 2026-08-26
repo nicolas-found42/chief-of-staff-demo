@@ -23,13 +23,21 @@ export function contentScoutDiscoveryModule(deps: {
       "Source Discovery could not produce suggestions. Approved Sources were not changed.",
     planRetry(meta: Readonly<RunMeta>): RetryPlan<ContentScoutDiscoveryInput> | null {
       return meta.intake === CONTENT_SCOUT_DISCOVERY_INTAKE && meta.status === "failed"
-        ? { fromStage: meta.failedStage ?? "discover", input: { invocation: "manual" } }
+        ? {
+            fromStage: meta.failedStage ?? "discover",
+            reason: "failed_discovery_stage",
+            input: { invocation: "manual" },
+          }
         : null;
     },
     planRecovery(meta) {
       return meta.intake === CONTENT_SCOUT_DISCOVERY_INTAKE &&
         (meta.status === "pending" || meta.status === "running")
-        ? { fromStage: meta.failedStage ?? "discover", input: { invocation: "scheduled" } }
+        ? {
+            fromStage: meta.failedStage ?? "discover",
+            reason: "orphaned_discovery_run",
+            input: { invocation: "scheduled" },
+          }
         : null;
     },
     async run(ctx): Promise<RunOutcome> {

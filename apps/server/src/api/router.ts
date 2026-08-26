@@ -73,7 +73,11 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
     const owner = ctx.modules.find((module) => module.id === handle.read().module);
     if (!owner) {
-      reply.code(409).send({ error: `Run is not retryable: ${id}` });
+      const module = handle.read().module;
+      handle.appendEvent("retry_refused", { condition: "module_not_hosted", module });
+      reply
+        .code(409)
+        .send({ error: `Run is not retryable because its Module ${module} is not hosted: ${id}` });
       return;
     }
     try {

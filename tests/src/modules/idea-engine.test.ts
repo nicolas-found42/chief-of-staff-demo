@@ -149,6 +149,15 @@ function rateLimited(): ModelBoundaryError {
   return seamFailure({ classification: "http_error", status: 429 });
 }
 
+function overloaded(): ModelBoundaryError {
+  return seamFailure({
+    classification: "upstream_error",
+    status: 200,
+    upstreamServer: "Nvidia",
+    upstreamCode: 502,
+  });
+}
+
 let workspaceDir: string;
 let runs: Runs;
 let sheets: FakeSheets;
@@ -317,6 +326,7 @@ describe("Idea Engine Module", () => {
     expect(detail.events.find((event) => event.type === "run_recovered")?.detail).toEqual({
       fromStage: IDEA_CONTENT_TYPES[4],
       previousStatus: "running",
+      reason: "durable_progress_selected_first_incomplete_stage",
     });
     const recoveredAt = detail.events.findIndex((event) => event.type === "run_recovered");
     expect(
@@ -356,6 +366,7 @@ describe("Idea Engine Module", () => {
     expect(detail.events.filter((event) => event.type === "run_recovered").at(-1)?.detail).toEqual({
       fromStage: "publish",
       previousStatus: "running",
+      reason: "durable_progress_selected_first_incomplete_stage",
     });
   });
 
@@ -377,7 +388,11 @@ describe("Idea Engine Module", () => {
         .detail(id)
         ?.events.filter((event) => event.type === "run_recovered")
         .at(-1)?.detail,
-    ).toEqual({ fromStage: "draft", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "draft",
+      previousStatus: "running",
+      reason: "durable_progress_selected_first_incomplete_stage",
+    });
   });
 
   it("recovers at draft when publication finished before the restart", async () => {
@@ -408,7 +423,11 @@ describe("Idea Engine Module", () => {
     expect(gmail.drafts).toHaveLength(1);
     expect(
       runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
-    ).toEqual({ fromStage: "draft", previousStatus: "running" });
+    ).toEqual({
+      fromStage: "draft",
+      previousStatus: "running",
+      reason: "durable_progress_selected_first_incomplete_stage",
+    });
   });
 
   it("skipped for unsupported file type (not a transcript)", async () => {
@@ -534,6 +553,37 @@ describe("Idea Engine Module", () => {
     );
   });
 
+  it("records a Result Shape mismatch as fields and types without validation payloads", async () => {
+    const malformed = {
+      ...makeIdea("video", "PRIVATE_PAYLOAD_MARKER"),
+      Description: 42,
+      Format: "PRIVATE_PAYLOAD_MARKER",
+    } as Record<string, unknown>;
+    delete malformed.CTA;
+    providerScript["video"] = Array.from({ length: IDEA_VALIDATOR_RETRIES }, () => [malformed]);
+    completeJson = scriptedProvider(providerScript);
+
+    const id = await runFresh();
+    const detail = runs.detail(id)!;
+    const expected = {
+      expectedShape: "IdeaEngineIdea",
+      topLevelKeys: expect.arrayContaining(["Title", "Description", "Format"]),
+      issues: expect.arrayContaining([
+        { field: "Description", expectedType: "string", actualType: "number" },
+        { field: "CTA", expectedType: "string", actualType: "missing" },
+        { field: "Format", expectedType: "enum", actualType: "string" },
+      ]),
+    };
+
+    expect(detail.events.find((event) => event.type === "extract_error")?.detail).toMatchObject({
+      resultShape: expected,
+    });
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      resultShape: expected,
+    });
+    expect(JSON.stringify(detail.events)).not.toContain("PRIVATE_PAYLOAD_MARKER");
+  });
+
   /**
    * The retry decision is the Module's, and it is made from the classified
    * model-boundary failure. A rate limit is retried past the validator cap
@@ -554,6 +604,53 @@ describe("Idea Engine Module", () => {
       (i) => i.ContentType === "video",
     );
     expect(videoIdeas[0].Title).toBe("After the wait");
+  });
+
+  it("retries an upstream capacity failure until the free-tier model answers", async () => {
+    providerScript["video"] = [
+      overloaded(),
+      overloaded(),
+      overloaded(),
+      [makeIdea("video", "After capacity cleared")],
+    ];
+    completeJson = scriptedProvider(providerScript);
+
+    const id = await runFresh();
+    const detail = runs.detail(id)!;
+
+    expect(detail.status).toBe("done");
+    expect(
+      (detail.result as IdeaEngineRunResult).ideas.find(
+        (idea) => idea.Title === "After capacity cleared",
+      ),
+    ).toBeDefined();
+    expect(detail.events.find((event) => event.type === "extract_error")?.detail).toMatchObject({
+      modelBoundary: {
+        classification: "upstream_error",
+        upstreamServer: "Nvidia",
+        upstreamCode: 502,
+      },
+    });
+  });
+
+  it("retries when the model request ceiling fires while the call is in flight", async () => {
+    providerScript["video"] = [
+      seamFailure({ classification: "request_timeout", timeoutMs: 300_000 }),
+      [makeIdea("video", "After the queued call timed out")],
+    ];
+    completeJson = scriptedProvider(providerScript);
+
+    const id = await runFresh();
+    const detail = runs.detail(id)!;
+
+    expect(detail.status).toBe("done");
+    expect(detail.events.find((event) => event.type === "extract_error")?.detail).toMatchObject({
+      error: expect.stringContaining("model test-model"),
+      modelBoundary: {
+        classification: "request_timeout",
+        timeoutMs: 300_000,
+      },
+    });
   });
 
   /* The same words in an unclassified error buy nothing: one sentence cannot
@@ -593,6 +690,39 @@ describe("Idea Engine Module", () => {
     const id = await runFresh();
     expect(runs.detail(id)!.status).toBe("failed");
     expect(prompts.some((prompt) => prompt.includes("Validator:"))).toBe(false);
+  });
+
+  it("records classified model-boundary facts on extraction and Stage failure events", async () => {
+    providerScript["video"] = Array.from({ length: IDEA_VALIDATOR_RETRIES }, () =>
+      seamFailure({
+        classification: "http_error",
+        status: 500,
+        upstreamServer: "Nvidia",
+        upstreamCode: 500,
+      }),
+    );
+    completeJson = scriptedProvider(providerScript);
+
+    const id = await runFresh();
+    const detail = runs.detail(id)!;
+    const expected = {
+      classification: "http_error",
+      provider: "openrouter",
+      model: "test-model",
+      upstreamServer: "Nvidia",
+      upstreamCode: 500,
+    };
+
+    expect(detail.failureHint).toBe(
+      "Idea extraction for video failed. Retry, or check the events below.",
+    );
+    expect(detail.events.find((event) => event.type === "extract_error")?.detail).toMatchObject({
+      modelBoundary: expected,
+    });
+    expect(detail.events.find((event) => event.type === "stage_failed")?.detail).toMatchObject({
+      modelBoundary: expected,
+    });
+    expect(JSON.stringify(detail.events)).not.toContain(TRANSCRIPT);
   });
 
   it("single-attendee short-circuit: still extracts without speaker filter", async () => {

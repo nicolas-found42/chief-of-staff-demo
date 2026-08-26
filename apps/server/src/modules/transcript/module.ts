@@ -1,4 +1,7 @@
-import { type ExtractionResult, normalizeExtractionResult } from "@chief-of-staff-demo/shared";
+import {
+  type ExtractionResult,
+  NormalizedExtractionResultSchema,
+} from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
 import type { RetryPlan, RunContext, ShellModule } from "../../engine/module.js";
 import { connectionFailure, connectionUnavailable, errorMessage } from "../../engine/failure.js";
@@ -9,6 +12,12 @@ import {
   type TranscriptRunContext,
 } from "../../llm/prompt.js";
 import { type CompleteJson } from "../../llm/providers.js";
+import {
+  modelDiagnosticEventDetail,
+  modelBoundaryDiagnostic,
+  parseResultShape,
+  resultShapeDiagnostic,
+} from "../../llm/failure.js";
 import { convertToText } from "../../text/convert.js";
 import { conversionStageFailure } from "../../text/failure.js";
 
@@ -103,6 +112,7 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
     const meta = ctx.meta();
     const context = readContext(ctx);
     let parsed: ExtractionResult | null = null;
+    let lastFailure: unknown = null;
     for (let round = 1; round <= MAX_EXTRACT_ATTEMPTS; round++) {
       const attempt = ctx.attempt();
       const llm = deps.getLlmInfo();
@@ -116,19 +126,29 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
           meetingDate: context.meetingDate,
           attendees: context.attendees,
         };
-        parsed = normalizeExtractionResult(
-          await complete(
-            buildExtractionMessages(promptContext, ctx.readFile("transcript.txt") ?? ""),
-          ),
+        const raw = await complete(
+          buildExtractionMessages(promptContext, ctx.readFile("transcript.txt") ?? ""),
         );
+        parsed = parseResultShape("TranscriptExtraction", NormalizedExtractionResultSchema, raw);
         ctx.event("extract_ok", { attempt });
         break;
       } catch (error) {
-        ctx.event("extract_error", { attempt, error: errorMessage(error) });
+        ctx.event("extract_error", {
+          attempt,
+          error: errorMessage(error),
+          ...modelDiagnosticEventDetail(error),
+        });
+        lastFailure = error;
         parsed = null;
       }
     }
     if (!parsed) {
+      if (
+        modelBoundaryDiagnostic(lastFailure) !== null ||
+        resultShapeDiagnostic(lastFailure) !== null
+      ) {
+        throw lastFailure;
+      }
       throw new Error(`extraction failed after ${MAX_EXTRACT_ATTEMPTS} attempts`);
     }
     const result: ExtractionResult = {
@@ -225,10 +245,15 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
         return null;
       }
       if (meta.failedStage === "outputs") {
-        return { fromStage: "outputs", input: { kind: "resume", fromStage: "outputs" } };
+        return {
+          fromStage: "outputs",
+          reason: "extracted_result_is_durable",
+          input: { kind: "resume", fromStage: "outputs" },
+        };
       }
       return {
         fromStage: meta.failedStage,
+        reason: "extraction_restarts_from_clean_result",
         input: { kind: "resume", fromStage: "extract" },
         resetAttempts: true,
         discard: ["result.json"],
@@ -243,7 +268,13 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
         return null;
       }
       const fromStage = state.files.includes("result.json") ? "outputs" : "extract";
-      return { fromStage, input: { kind: "resume", fromStage } };
+      return {
+        fromStage,
+        reason: state.files.includes("result.json")
+          ? "extracted_result_survived_restart"
+          : "transcript_survived_restart",
+        input: { kind: "resume", fromStage },
+      };
     },
 
     async run(ctx, input): Promise<RunOutcome> {

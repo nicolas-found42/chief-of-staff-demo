@@ -48,8 +48,8 @@ export type DraftItem = ExtractionResult["drafts"][number];
  * Wire schema handed to LLM providers as the structured-output contract.
  * Identical to `ExtractionResultSchema` except every optional field is
  * required-but-nullable: OpenAI strict json_schema demands that all properties
- * appear in `required`. The pipeline normalizes nulls away and re-validates
- * with `ExtractionResultSchema` before trusting the payload.
+ * appear in `required`. The normalization schema below removes those nulls in
+ * the same validation pass before the pipeline trusts the payload.
  */
 export const ExtractionWireSchema = z.strictObject({
   version: z.literal(1),
@@ -79,39 +79,36 @@ export const ExtractionWireSchema = z.strictObject({
   ),
 });
 
+const NormalizedWireExtractionSchema = ExtractionWireSchema.transform((wire): ExtractionResult => ({
+  ...wire,
+  tasks: wire.tasks.map((task) => {
+    const out: ExtractionResult["tasks"][number] = { title: task.title };
+    for (const key of ["owner", "due", "notes", "sourceQuote"] as const) {
+      if (task[key] !== null) {
+        out[key] = task[key];
+      }
+    }
+    return out;
+  }),
+  drafts: wire.drafts.map((draft) => {
+    const out: ExtractionResult["drafts"][number] = {
+      to: draft.to,
+      subject: draft.subject,
+      body: draft.body,
+    };
+    if (draft.reason !== null) {
+      out.reason = draft.reason;
+    }
+    return out;
+  }),
+}));
+
 /**
- * Convert a provider payload into the canonical shape. Accepts either the
- * wire shape (all fields required, null for absent optionals — what strict
- * structured-output providers emit) or the canonical shape (optional fields
- * omitted, e.g. a hand-edited mock-result.json). Throws when neither
- * validates.
+ * The accepted reply variants, normalized as part of the one validation pass:
+ * strict-provider wire values lose their null placeholders, while canonical
+ * values (including hand-edited fixtures) pass through unchanged.
  */
-export function normalizeExtractionResult(payload: unknown): ExtractionResult {
-  const wire = ExtractionWireSchema.safeParse(payload);
-  if (wire.success) {
-    return ExtractionResultSchema.parse({
-      ...wire.data,
-      tasks: wire.data.tasks.map((task) => {
-        const out: Record<string, unknown> = { title: task.title };
-        for (const key of ["owner", "due", "notes", "sourceQuote"] as const) {
-          if (task[key] !== null) {
-            out[key] = task[key];
-          }
-        }
-        return out;
-      }),
-      drafts: wire.data.drafts.map((draft) => {
-        const out: Record<string, unknown> = {
-          to: draft.to,
-          subject: draft.subject,
-          body: draft.body,
-        };
-        if (draft.reason !== null) {
-          out.reason = draft.reason;
-        }
-        return out;
-      }),
-    });
-  }
-  return ExtractionResultSchema.parse(payload);
-}
+export const NormalizedExtractionResultSchema = z.union([
+  NormalizedWireExtractionSchema,
+  ExtractionResultSchema,
+]);

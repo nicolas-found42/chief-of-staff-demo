@@ -184,7 +184,11 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
         /* Resume against the counts already fetched. Re-reading them would be
            cheap in quota and wrong in substance: it would mix two snapshots,
            taken hours apart, into one day of the trend. */
-        return { fromStage: "publish", input: { kind: "publish" } };
+        return {
+          fromStage: "publish",
+          reason: "measured_snapshot_is_durable",
+          input: { kind: "publish" },
+        };
       }
       /* Otherwise from the top: the video ids `enumerate` found live in memory,
          not on disk, and re-finding them costs one quota unit per fifty videos.
@@ -192,6 +196,7 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
          there is only ever one. */
       return {
         fromStage: "enumerate",
+        reason: "measurement_snapshot_must_restart_from_enumeration",
         input: { kind: "measure" },
         resetAttempts: true,
         discard: ["result.json"],
@@ -206,8 +211,16 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
         return null;
       }
       return state.files.includes("result.json")
-        ? { fromStage: "publish", input: { kind: "publish" } }
-        : { fromStage: "enumerate", input: { kind: "measure" } };
+        ? {
+            fromStage: "publish",
+            reason: "measured_snapshot_survived_restart",
+            input: { kind: "publish" },
+          }
+        : {
+            fromStage: "enumerate",
+            reason: "no_measured_snapshot_survived_restart",
+            input: { kind: "measure" },
+          };
     },
 
     async run(ctx, input): Promise<RunOutcome> {

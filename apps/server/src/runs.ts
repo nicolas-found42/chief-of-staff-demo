@@ -52,9 +52,9 @@ export interface RunHandle {
   /** Stop inside a Stage with a Shell-owned durable wait standing against the Run. */
   blocked(wait: RunWait): void;
   /** Clear a durable wait and return the Run to pending for enqueued work. */
-  resumed(fromStage: string, requestedBy: "module" | "clock"): Readonly<RunMeta>;
+  resumed(fromStage: string, requestedBy: "module" | "clock", reason: string): Readonly<RunMeta>;
   /** Re-enqueue process-orphaned work using the owning Module's recovery plan. */
-  recovered(fromStage: string): Readonly<RunMeta>;
+  recovered(fromStage: string, reason: string): Readonly<RunMeta>;
   /** End the Run. */
   finished(outcome: RunOutcome): void;
   /** Count one attempt at the current Stage; returns the new count. */
@@ -62,7 +62,7 @@ export interface RunHandle {
   /** Start counting attempts again, for a Stage the Module is re-running from scratch. */
   resetAttempts(): void;
   /** Back to pending with the failure cleared, ready to run again from `fromStage`. */
-  reopen(fromStage: string): Readonly<RunMeta>;
+  reopen(fromStage: string, reason: string): Readonly<RunMeta>;
   /** Module-named events. The Shell writes the Stage and status ones itself. */
   appendEvent(type: string, detail?: Record<string, unknown>): void;
   /** Module-owned per-Run files. The Shell stores, serves and deletes them and
@@ -265,7 +265,7 @@ class RunHandleImpl implements RunHandle {
     );
   }
 
-  resumed(fromStage: string, requestedBy: "module" | "clock"): Readonly<RunMeta> {
+  resumed(fromStage: string, requestedBy: "module" | "clock", reason: string): Readonly<RunMeta> {
     return this.transition(
       (meta) => {
         meta.status = "pending";
@@ -273,11 +273,11 @@ class RunHandleImpl implements RunHandle {
         meta.failedStage = null;
         meta.failureHint = null;
       },
-      [{ type: "run_resumed", detail: { fromStage, requestedBy } }],
+      [{ type: "run_resumed", detail: { fromStage, requestedBy, reason } }],
     );
   }
 
-  recovered(fromStage: string): Readonly<RunMeta> {
+  recovered(fromStage: string, reason: string): Readonly<RunMeta> {
     const previousStatus = this.read().status;
     return this.transition(
       (meta) => {
@@ -286,7 +286,7 @@ class RunHandleImpl implements RunHandle {
         meta.failedStage = null;
         meta.failureHint = null;
       },
-      [{ type: "run_recovered", detail: { fromStage, previousStatus } }],
+      [{ type: "run_recovered", detail: { fromStage, previousStatus, reason } }],
     );
   }
 
@@ -331,7 +331,7 @@ class RunHandleImpl implements RunHandle {
     }, []);
   }
 
-  reopen(fromStage: string): Readonly<RunMeta> {
+  reopen(fromStage: string, reason: string): Readonly<RunMeta> {
     return this.transition(
       (meta) => {
         meta.status = "pending";
@@ -344,7 +344,7 @@ class RunHandleImpl implements RunHandle {
       },
       /* A retry used to leave no trace but a second `stage_started`, so a
          timeline read later could not tell a resumed Run from a slow one. */
-      [{ type: "run_reopened", detail: { fromStage } }],
+      [{ type: "run_reopened", detail: { fromStage, reason } }],
     );
   }
 
