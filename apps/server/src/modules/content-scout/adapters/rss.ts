@@ -221,7 +221,7 @@ export class RssSourceAdapter implements SourceAdapter {
     startedAt: string,
     status: number | null,
     contentType: string | null,
-    parserStage: string,
+    parserStage: AdapterDiagnostic["parserStage"],
     hash: string,
     causeChain: string[],
     retryAfterMs?: number,

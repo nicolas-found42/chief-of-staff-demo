@@ -1,9 +1,16 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import fastify from "fastify";
-import type { AdapterDiagnostic, OpportunityScores, SourceItem } from "@chief-of-staff-demo/shared";
+import type {
+  AdapterDiagnostic,
+  ContentScoutRunResult,
+  OpportunityScores,
+  SourceCapability,
+  SourceDiagnosticClassification,
+  SourceItem,
+} from "@chief-of-staff-demo/shared";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
 import type {
   OpportunityRanker,
@@ -91,7 +98,7 @@ function sourceItem(
 }
 
 describe("Content Scout frontier contracts", () => {
-  it("bounds collection, honors host backoff, persists conditional state, and records every isolated attempt", async () => {
+  it("bounds Source Target collection, honors host backoff, persists conditional state, and records every isolated attempt", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-collection-"));
     const runs = openRuns(workspaceDir);
     let nowMs = START;
@@ -218,19 +225,21 @@ describe("Content Scout frontier contracts", () => {
     expect(runs.detail(runId)?.result).toMatchObject({
       adapters: expect.arrayContaining([
         expect.objectContaining({
-          outcome: "items_found",
-          retries: 1,
-          attempts: [
+          adapterId: "rss",
+          targetsAttempted: 7,
+          retries: 3,
+          errorClassifications: ["parser_failure", "internal_failure"],
+          attempts: expect.arrayContaining([
             expect.objectContaining({ attempt: 1, outcome: "rate_limit" }),
             expect.objectContaining({
               attempt: 2,
               outcome: "items_found",
               checkpointAfter: "checkpoint-https://one.example/retry",
             }),
-          ],
+            expect.objectContaining({ outcome: "parser_failure" }),
+            expect.objectContaining({ outcome: "internal_failure", attempt: 3 }),
+          ]),
         }),
-        expect.objectContaining({ outcome: "parser_failure" }),
-        expect.objectContaining({ outcome: "internal_failure", retries: 2 }),
         expect.objectContaining({
           adapterId: "future-route",
           state: "coming_later",
@@ -242,6 +251,18 @@ describe("Content Scout frontier contracts", () => {
       '"outcome": "rate_limit"',
     );
     expect(host.storageUse().categories.sanitizedDiagnostics.files).toBe(1);
+    const diagnosticDirectory = join(
+      workspaceDir,
+      "content-scout",
+      "temporary",
+      "sanitized-diagnostics",
+    );
+    const retainedDiagnostic = readFileSync(
+      join(diagnosticDirectory, readdirSync(diagnosticDirectory)[0]),
+      "utf8",
+    );
+    expect(retainedDiagnostic).toContain("[response body omitted; bytes:");
+    expect(retainedDiagnostic).not.toMatch(/secret-value|authorization|Bearer/);
 
     const reconstructed = makeHost();
     const retryTarget = reconstructed
@@ -260,6 +281,421 @@ describe("Content Scout frontier contracts", () => {
     expect(conditionalRequests.get("https://one.example/retry")).toEqual({
       etag: "etag-https://one.example/retry",
       lastModified: "Tue, 25 Aug 2026 12:00:00 GMT",
+    });
+  });
+
+  it("persists one sanitized Source Adapter summary without losing per-Source-Target attempt receipts", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-diagnostics-"));
+    const runs = openRuns(workspaceDir);
+    const adapter: SourceAdapter = {
+      id: "rss",
+      state: "available",
+      version: "frontier-fixture-1",
+      supports: (target) => target.adapterId === "rss",
+      async collect({ target }) {
+        if (target.url.endsWith("/healthy")) {
+          return {
+            kind: "completed",
+            outcome: "no_new_material",
+            items: [],
+            checkpoint: "healthy-checkpoint",
+            diagnostic: {
+              ...diagnostic(
+                "no_new_material",
+                "https://collector.example/private-route-secret/feed?session=session-route-secret&topic=ai#private",
+                new Date(START),
+              ),
+              affectedCapabilities: ["items"],
+              causeChain: [],
+            },
+          };
+        }
+        return {
+          kind: "failed",
+          outcome: "parser_failure",
+          items: [],
+          checkpoint: null,
+          diagnostic: {
+            ...diagnostic("parser_failure", target.url, new Date(START + 1_000)),
+            causeChain: [
+              "authorization: Bearer cause-secret",
+              "Private response included alice@example.com and an account-specific excerpt.",
+            ],
+            headers: { cookie: "session=undeclared-cookie-secret" },
+            responseExcerpt: "undeclared private response secret",
+          } as AdapterDiagnostic,
+          diagnosticBody: {
+            contentType: "text/html; boundary=content-type-secret",
+            body: "private response body",
+          },
+        };
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(START),
+      adapters: [adapter],
+      ranker: noOpRanker,
+      log: () => undefined,
+    });
+    acceptProfile(host);
+    const healthy = host.addSourceTarget({
+      adapterId: "rss",
+      label: "Healthy feed",
+      url: "https://healthy.example/healthy",
+    });
+    const degraded = host.addSourceTarget({
+      adapterId: "rss",
+      label: "Changed feed",
+      url: "https://changed.example/malformed",
+    });
+
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    const result = runs.detail(runId)?.result as ContentScoutRunResult;
+    expect(result.adapters).toHaveLength(1);
+    expect(result.adapters[0]).toMatchObject({
+      adapterId: "rss",
+      targetsAttempted: 2,
+      retries: 0,
+      lastSuccessfulRequest: {
+        at: new Date(START).toISOString(),
+      },
+      errorClassifications: ["parser_failure"],
+      attempts: expect.arrayContaining([
+        expect.objectContaining({
+          targetId: healthy.id,
+          diagnostic: expect.objectContaining({
+            classification: "no_new_material",
+            status: 200,
+            contentType: "application/rss+xml",
+            parserStage: "fetch",
+            responseHash: expect.any(String),
+            adapterVersion: "frontier-fixture-1",
+            startedAt: new Date(START).toISOString(),
+            finishedAt: new Date(START).toISOString(),
+            causeChain: [],
+          }),
+        }),
+        expect.objectContaining({
+          targetId: degraded.id,
+          diagnostic: expect.objectContaining({
+            classification: "parser_failure",
+            causeChain: [
+              expect.stringMatching(/^credential_material_redacted \(cause 1, sha256:/),
+              expect.stringMatching(/^private_response_redacted \(cause 2, sha256:/),
+            ],
+          }),
+        }),
+      ]),
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /private-route-secret|session-route-secret|cause-secret|alice@example\.com|account-specific|#private|undeclared-cookie-secret|undeclared private response secret/,
+    );
+    expect(result.adapters[0]?.lastSuccessfulRequest?.route).toMatch(
+      /^https:\/\/collector\.example\/.+\/feed\?redacted=&topic=$/,
+    );
+    expect(result.adapters[0]?.attempts[1]?.diagnostic).not.toHaveProperty("headers");
+    expect(result.adapters[0]?.attempts[1]?.diagnostic).not.toHaveProperty("responseExcerpt");
+    const retainedRecord = JSON.parse(
+      readFileSync(
+        join(
+          workspaceDir,
+          "content-scout",
+          "temporary",
+          "sanitized-diagnostics",
+          readdirSync(join(workspaceDir, "content-scout", "temporary", "sanitized-diagnostics"))[0],
+        ),
+        "utf8",
+      ),
+    ) as { contentType: string; body: string };
+    expect(retainedRecord.contentType).toBe("text/html");
+    expect(JSON.stringify(retainedRecord)).not.toContain("content-type-secret");
+  });
+
+  it("keeps degraded Source Adapter health across restart and other Source Targets until verified recovery", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-health-"));
+    let experimentalHealthy = false;
+    let recoveredAffectedCapabilities: SourceCapability[] = ["comments"];
+    const available: SourceAdapter = {
+      id: "rss",
+      state: "available",
+      version: "frontier-fixture-1",
+      supports: (target) => target.adapterId === "rss",
+      async collect({ target }) {
+        return {
+          kind: "completed",
+          outcome: "no_new_material",
+          items: [],
+          checkpoint: "rss-checkpoint",
+          diagnostic: {
+            ...diagnostic("no_new_material", target.url, new Date(START)),
+            affectedCapabilities: ["items"],
+            causeChain: [],
+          },
+        };
+      },
+    };
+    const experimental: SourceAdapter = {
+      id: "instagram",
+      state: "experimental",
+      version: "frontier-fixture-1",
+      supports: (target) => target.adapterId === "instagram",
+      async collect({ target }) {
+        if (experimentalHealthy || target.url.endsWith("/healthy")) {
+          return {
+            kind: "completed",
+            outcome: "no_new_material",
+            items: [],
+            checkpoint: "instagram-checkpoint",
+            diagnostic: {
+              ...diagnostic("no_new_material", target.url, new Date(START + 2_000)),
+              affectedCapabilities: target.url.endsWith("/healthy")
+                ? []
+                : recoveredAffectedCapabilities,
+              causeChain: [],
+            },
+          };
+        }
+        return {
+          kind: "failed",
+          outcome: "response_shape_change",
+          items: [],
+          checkpoint: null,
+          diagnostic: {
+            ...diagnostic("response_shape_change", target.url, new Date(START)),
+            affectedCapabilities: ["items", "comments"],
+          },
+        };
+      },
+    };
+    const makeHost = () =>
+      new ContentScoutHost({
+        runs: openRuns(workspaceDir),
+        workspaceDir,
+        now: () => new Date(START),
+        adapters: [available, experimental],
+        ranker: noOpRanker,
+        log: () => undefined,
+      });
+    const readHealth = async (host: ContentScoutHost) => {
+      const app = fastify();
+      host.routes(app);
+      const response = await app.inject({ method: "GET", url: "/api/content-scout" });
+      await app.close();
+      expect(response.statusCode).toBe(200);
+      return response.json().health as {
+        runId: string | null;
+        warnings: {
+          adapterId: string;
+          outcome: SourceDiagnosticClassification;
+          affectedCapabilities: SourceCapability[];
+        }[];
+      };
+    };
+
+    const firstHost = makeHost();
+    acceptProfile(firstHost);
+    firstHost.addSourceTarget({
+      adapterId: "rss",
+      label: "Available feed",
+      url: "https://available.example/feed",
+    });
+    const experimentalTarget = firstHost.addSourceTarget({
+      adapterId: "instagram",
+      label: "Experimental public account",
+      url: "https://instagram.example/public-account",
+    });
+    firstHost.addSourceTarget({
+      adapterId: "instagram",
+      label: "Healthy Experimental public account",
+      url: "https://instagram.example/healthy",
+    });
+    const degradedRunId = await firstHost.scoutNow();
+    await firstHost.idle();
+
+    const reconstructed = makeHost();
+    expect(await readHealth(reconstructed)).toMatchObject({
+      runId: degradedRunId,
+      warnings: [
+        {
+          adapterId: "instagram",
+          outcome: "response_shape_change",
+          affectedCapabilities: ["items", "comments"],
+        },
+      ],
+    });
+
+    reconstructed.setSourceTargetState(experimentalTarget.id, "archived");
+    await reconstructed.scoutNow();
+    await reconstructed.idle();
+    expect(await readHealth(reconstructed)).toMatchObject({
+      runId: degradedRunId,
+      warnings: [expect.objectContaining({ adapterId: "instagram" })],
+    });
+
+    reconstructed.setSourceTargetState(experimentalTarget.id, "active");
+    experimentalHealthy = true;
+    await reconstructed.scoutNow();
+    await reconstructed.idle();
+    expect(await readHealth(reconstructed)).toMatchObject({
+      runId: degradedRunId,
+      warnings: [
+        expect.objectContaining({ adapterId: "instagram", affectedCapabilities: ["comments"] }),
+      ],
+    });
+
+    recoveredAffectedCapabilities = [];
+    await reconstructed.scoutNow();
+    await reconstructed.idle();
+    expect(await readHealth(reconstructed)).toMatchObject({ runId: null, warnings: [] });
+  });
+
+  it("uses the latest Source Target observation when an older Run is retried", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-late-retry-"));
+    const runs = openRuns(workspaceDir);
+    let nowMs = START;
+    let adapterHealthy = false;
+    const adapter: SourceAdapter = {
+      id: "rss",
+      state: "available",
+      version: "frontier-fixture-1",
+      supports: (target) => target.adapterId === "rss",
+      async collect({ target }) {
+        return adapterHealthy
+          ? {
+              kind: "completed",
+              outcome: "no_new_material",
+              items: [],
+              checkpoint: "recovered",
+              diagnostic: {
+                ...diagnostic("no_new_material", target.url, new Date(nowMs)),
+                affectedCapabilities: [],
+                causeChain: [],
+              },
+            }
+          : {
+              kind: "failed",
+              outcome: "parser_failure",
+              items: [],
+              checkpoint: null,
+              diagnostic: diagnostic("parser_failure", target.url, new Date(START + 86_400_000)),
+            };
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(nowMs),
+      adapters: [adapter],
+      ranker: noOpRanker,
+      log: () => undefined,
+    });
+    acceptProfile(host);
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Late retry feed",
+      url: "https://late-retry.example/feed",
+    });
+
+    const olderRunId = await host.scoutNow();
+    await host.idle();
+    nowMs += 1_000;
+    await host.scoutNow();
+    await host.idle();
+    nowMs += 1_000;
+    adapterHealthy = true;
+    await host.retryRun(olderRunId);
+    await host.idle();
+
+    const app = fastify();
+    host.routes(app);
+    const response = await app.inject({ method: "GET", url: "/api/content-scout" });
+    await app.close();
+    expect(response.json().health).toEqual({ runId: null, warnings: [], runtimeWarnings: [] });
+  });
+
+  it("retains diagnostics, last success, and degraded health when no Available Source Adapter completes", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-failed-health-"));
+    const runs = openRuns(workspaceDir);
+    let adapterHealthy = true;
+    const adapter: SourceAdapter = {
+      id: "rss",
+      state: "available",
+      version: "frontier-fixture-1",
+      supports: (target) => target.adapterId === "rss",
+      async collect({ target }) {
+        if (adapterHealthy) {
+          return {
+            kind: "completed",
+            outcome: "no_new_material",
+            items: [],
+            checkpoint: "working-checkpoint",
+            diagnostic: {
+              ...diagnostic("no_new_material", target.url, new Date(START)),
+              affectedCapabilities: ["items"],
+              causeChain: [],
+            },
+          };
+        }
+        return {
+          kind: "failed",
+          outcome: "parser_failure",
+          items: [],
+          checkpoint: null,
+          diagnostic: diagnostic("parser_failure", target.url, new Date(START)),
+        };
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(START),
+      adapters: [adapter],
+      ranker: noOpRanker,
+      log: () => undefined,
+    });
+    acceptProfile(host);
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Broken feed",
+      url: "https://broken.example/feed",
+    });
+
+    const successfulRunId = await host.scoutNow();
+    await host.idle();
+    expect(runs.detail(successfulRunId)?.result).toMatchObject({
+      adapters: [expect.objectContaining({ affectedCapabilities: ["items"] })],
+    });
+    adapterHealthy = false;
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    expect(runs.detail(runId)).toMatchObject({
+      status: "failed",
+      result: {
+        adapters: [
+          expect.objectContaining({
+            adapterId: "rss",
+            targetsAttempted: 1,
+            errorClassifications: ["parser_failure"],
+            lastSuccessfulRequest: expect.objectContaining({
+              at: new Date(START).toISOString(),
+            }),
+          }),
+        ],
+        warnings: 1,
+      },
+    });
+    const app = fastify();
+    host.routes(app);
+    const response = await app.inject({ method: "GET", url: "/api/content-scout" });
+    await app.close();
+    expect(response.json().health).toMatchObject({
+      runId,
+      warnings: [expect.objectContaining({ adapterId: "rss", outcome: "parser_failure" })],
     });
   });
 
@@ -490,7 +926,7 @@ describe("Content Scout frontier contracts", () => {
     ).toEqual(identityByAngle);
   });
 
-  it("continues a recovered Run inside the original retry budget", async () => {
+  it("continues recovered collection inside the original retry budget", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-recovery-"));
     const runs = openRuns(workspaceDir);
     let calls = 0;
@@ -577,6 +1013,21 @@ describe("Content Scout frontier contracts", () => {
       attempt: number;
     }[];
     expect(manuallyRetriedAttempts.map((attempt) => attempt.attempt)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(runs.detail(run.id)?.result).toMatchObject({
+      adapters: [
+        expect.objectContaining({
+          retries: 5,
+          attempts: [
+            expect.objectContaining({ attempt: 1 }),
+            expect.objectContaining({ attempt: 2 }),
+            expect.objectContaining({ attempt: 3 }),
+            expect.objectContaining({ attempt: 4 }),
+            expect.objectContaining({ attempt: 5 }),
+            expect.objectContaining({ attempt: 6 }),
+          ],
+        }),
+      ],
+    });
   });
 
   it("accounts for storage and cleans only expired temporary data across restart", async () => {

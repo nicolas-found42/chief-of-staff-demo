@@ -15,6 +15,7 @@ import type {
   ContentScoutCleanupReceipt,
   ContentScoutStorageUse,
 } from "@chief-of-staff-demo/shared";
+import { sanitizeDiagnosticBody, sanitizeDiagnosticContentType } from "./diagnostics.js";
 
 interface TemporaryRecord {
   id: string;
@@ -28,14 +29,6 @@ interface TemporaryRecord {
 const THIRTY_DAYS_MS = 30 * 86_400_000;
 const TWENTY_FOUR_HOURS_MS = 86_400_000;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
-
-function safeBody(body: string): string {
-  return body
-    .slice(0, 65_536)
-    .replace(/(authorization["'\s:=]+bearer\s+)[^\s"'<]+/gi, "$1[redacted]")
-    .replace(/((?:api[_-]?key|token|password|cookie)["'\s:=]+)[^\s"'<,}]+/gi, "$1[redacted]")
-    .replace(/(https?:\/\/)[^/@\s]+@/gi, "$1[redacted]@");
-}
 
 function walkFiles(root: string, skip: Set<string> = new Set()): string[] {
   if (!existsSync(root)) return [];
@@ -82,8 +75,8 @@ export class ContentScoutRetention {
       id: input.id,
       createdAt: this.now().toISOString(),
       category: "sanitized_diagnostics",
-      contentType: input.contentType,
-      body: safeBody(input.body),
+      contentType: sanitizeDiagnosticContentType(input.contentType) ?? "application/octet-stream",
+      body: sanitizeDiagnosticBody(input.body),
     });
   }
 

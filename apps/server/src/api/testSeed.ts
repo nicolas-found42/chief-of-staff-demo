@@ -123,6 +123,35 @@ export function contentScoutTestPorts(now: () => Date): {
       };
     },
   };
+  const experimentalAdapter: SourceAdapter = {
+    id: "instagram",
+    state: "experimental",
+    version: "e2e-fixture-1",
+    supports: (target) => target.adapterId === "instagram",
+    async collect({ target }) {
+      const at = now().toISOString();
+      return {
+        kind: "failed",
+        outcome: "response_shape_change",
+        items: [],
+        checkpoint: null,
+        diagnostic: {
+          classification: "response_shape_change",
+          route: target.url,
+          status: 200,
+          contentType: "text/html",
+          parserStage: "embedded_public_data",
+          responseHash: "e2e-experimental-shape-change-v1",
+          adapterVersion: "e2e-fixture-1",
+          startedAt: at,
+          finishedAt: at,
+          retries: 0,
+          affectedCapabilities: ["items", "transcript", "comments"],
+          causeChain: ["Expected public embedded data was not present."],
+        },
+      };
+    },
+  };
   const ranker: OpportunityRanker = {
     async rank({ items }) {
       return [
@@ -218,7 +247,7 @@ export function contentScoutTestPorts(now: () => Date): {
     },
   };
   return {
-    adapters: [adapter],
+    adapters: [adapter, experimentalAdapter],
     ranker,
     draftGenerator,
     notionPublisher,

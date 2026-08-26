@@ -1,5 +1,6 @@
 import type { SourceCollectionAttemptReceipt, SourceTarget } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "./ports.js";
+import { sanitizeAdapterDiagnostic } from "./diagnostics.js";
 
 /** Shared Daily Intake limits. Targets on one host are always serialized. */
 const CONTENT_SCOUT_COLLECTION_GLOBAL_CONCURRENCY = 4;
@@ -178,6 +179,10 @@ export async function collectSourceTargets(input: {
               });
             }
           }
+          result = {
+            ...result,
+            diagnostic: sanitizeAdapterDiagnostic(result.diagnostic, item.adapter.version),
+          };
           const retry =
             result.kind === "failed" &&
             RETRYABLE.has(result.outcome) &&
@@ -200,6 +205,8 @@ export async function collectSourceTargets(input: {
             conditionalRequest: item.target.conditional,
             conditionalResponse: result.conditional ?? null,
             backoffMs,
+            diagnostic: result.diagnostic,
+            itemsFound: result.items.length,
           });
           input.attemptCompleted?.({
             target: item.target,

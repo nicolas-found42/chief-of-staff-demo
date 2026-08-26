@@ -6,10 +6,17 @@ import type {
   ContentShortlist,
   ContentPack,
   ContentDraft,
+  ContentScoutRunResult,
   RunMeta,
+  SourceCapability,
+  SourceDiagnosticClassification,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
-import { CONTENT_SCOUT_MODULE_ID, CONTENT_SCOUT_MODULE_VERSION } from "@chief-of-staff-demo/shared";
+import {
+  CONTENT_SCOUT_MODULE_ID,
+  CONTENT_SCOUT_MODULE_VERSION,
+  isSuccessfulSourceDiagnostic,
+} from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
 import type { ConfigStore } from "../../config.js";
 import { Runner } from "../../engine/runner.js";
@@ -40,6 +47,19 @@ import {
   type BrandProfileScanInput,
 } from "./brand-profile.js";
 import { ContentScoutRetention } from "./retention.js";
+
+interface SourceHealthObservation {
+  key: string;
+  adapterId: string;
+  targetId: string | null;
+  outcome: SourceDiagnosticClassification;
+  affectedCapabilities: SourceCapability[];
+  runId: string;
+  runCreatedAt: string;
+  observedAt: string;
+}
+
+type ActiveSourceHealthWarning = Omit<SourceHealthObservation, "key" | "runCreatedAt">;
 
 export interface ContentScoutHostDeps {
   runs: Runs;
@@ -396,27 +416,95 @@ export class ContentScoutHost implements HostedModule {
   }
 
   routes(app: FastifyInstance): void {
-    const latestIntakeHealth = () => {
-      const latest = this.deps.runs
+    const persistentIntakeHealth = () => {
+      const intakeRuns = this.deps.runs
         .list({ module: CONTENT_SCOUT_MODULE_ID })
-        .runs.find((run) => run.intake === CONTENT_SCOUT_INTAKE);
-      if (!latest) return { runId: null, warnings: [] };
-      const detail = this.deps.runs.detail(latest.id);
-      const result = detail?.result as {
-        adapters?: { adapterId: string; outcome: string; affectedCapabilities: string[] }[];
-      } | null;
-      const warnings = (result?.adapters ?? []).filter((adapter) =>
-        [
-          "unsupported_capability",
-          "blocked_access",
-          "response_shape_change",
-          "rate_limit",
-          "timeout",
-          "parser_failure",
-          "internal_failure",
-        ].includes(adapter.outcome),
+        .runs.filter((run) => run.intake === CONTENT_SCOUT_INTAKE);
+      const observations: SourceHealthObservation[] = [];
+      const degraded = new Map<string, ActiveSourceHealthWarning>();
+      for (const run of intakeRuns) {
+        const result = this.deps.runs.detail(run.id)
+          ?.result as Partial<ContentScoutRunResult> | null;
+        for (const adapter of result?.adapters ?? []) {
+          const finalAttempts = new Map<string, NonNullable<typeof adapter.attempts>[number]>();
+          for (const attempt of adapter.attempts) {
+            const current = finalAttempts.get(attempt.targetId);
+            if (!current || attempt.attempt > current.attempt) {
+              finalAttempts.set(attempt.targetId, attempt);
+            }
+          }
+          if (finalAttempts.size > 0) {
+            for (const [targetId, attempt] of finalAttempts) {
+              const key = `${adapter.adapterId}:${targetId}`;
+              const finishedAt = attempt.finishedAt;
+              observations.push({
+                key,
+                adapterId: adapter.adapterId,
+                targetId,
+                outcome: attempt.outcome,
+                affectedCapabilities:
+                  attempt.diagnostic?.affectedCapabilities ?? adapter.affectedCapabilities,
+                runId: run.id,
+                runCreatedAt: run.createdAt,
+                observedAt: Number.isFinite(Date.parse(finishedAt)) ? finishedAt : run.createdAt,
+              });
+            }
+            continue;
+          }
+          const legacyKey = `${adapter.adapterId}:legacy`;
+          const legacyFailure =
+            adapter.errorClassifications?.at(-1) ??
+            (!isSuccessfulSourceDiagnostic(adapter.outcome) ? adapter.outcome : null);
+          observations.push({
+            key: legacyKey,
+            adapterId: adapter.adapterId,
+            targetId: null,
+            outcome: legacyFailure ?? adapter.outcome,
+            affectedCapabilities: adapter.affectedCapabilities,
+            runId: run.id,
+            runCreatedAt: run.createdAt,
+            observedAt: run.createdAt,
+          });
+        }
+      }
+      observations.sort(
+        (left, right) =>
+          left.observedAt.localeCompare(right.observedAt) ||
+          left.runCreatedAt.localeCompare(right.runCreatedAt) ||
+          left.runId.localeCompare(right.runId) ||
+          left.key.localeCompare(right.key),
       );
-      return { runId: latest.id, warnings };
+      for (const observation of observations) {
+        if (isSuccessfulSourceDiagnostic(observation.outcome)) {
+          const existing = degraded.get(observation.key);
+          const stillAffected = new Set(observation.affectedCapabilities);
+          const remaining =
+            existing?.affectedCapabilities.filter((capability) => stillAffected.has(capability)) ??
+            [];
+          if (existing && remaining.length > 0) {
+            degraded.set(observation.key, { ...existing, affectedCapabilities: remaining });
+          } else {
+            degraded.delete(observation.key);
+          }
+        } else {
+          degraded.set(observation.key, observation);
+        }
+      }
+      const activeWarnings = [...degraded.values()].sort(
+        (left, right) =>
+          left.observedAt.localeCompare(right.observedAt) ||
+          left.adapterId.localeCompare(right.adapterId) ||
+          (left.targetId ?? "").localeCompare(right.targetId ?? ""),
+      );
+      return {
+        runId: activeWarnings.at(-1)?.runId ?? null,
+        warnings: activeWarnings.map(({ adapterId, targetId, outcome, affectedCapabilities }) => ({
+          adapterId,
+          targetId,
+          outcome,
+          affectedCapabilities,
+        })),
+      };
     };
     app.get("/api/content-scout", async () => {
       const runtimeCapabilities = await (this.deps.runtimeInspector?.inspect() ??
@@ -430,7 +518,7 @@ export class ContentScoutHost implements HostedModule {
         sourceSuggestions: this.listSourceSuggestions(),
         schedule: this.scheduleState(),
         health: {
-          ...latestIntakeHealth(),
+          ...persistentIntakeHealth(),
           runtimeWarnings: runtimeCapabilities
             .filter((capability) => capability.state !== "available")
             .map((capability) => capability.id),

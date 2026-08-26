@@ -11,6 +11,8 @@ import type {
   RunPage,
   SetupCheck,
   SourceAdapterState,
+  SourceCapability,
+  SourceDiagnosticClassification,
   ContentScoutScheduleState,
   ContentScoutStorageUse,
   ContentScoutCleanupPreview,
@@ -104,7 +106,12 @@ export interface ContentScoutState {
   schedule: ContentScoutScheduleState;
   health: {
     runId: string | null;
-    warnings: { adapterId: string; outcome: string; affectedCapabilities: string[] }[];
+    warnings: {
+      adapterId: string;
+      targetId: string | null;
+      outcome: SourceDiagnosticClassification;
+      affectedCapabilities: SourceCapability[];
+    }[];
     runtimeWarnings: string[];
   };
 }

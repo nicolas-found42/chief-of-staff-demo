@@ -136,7 +136,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
         "unsupported_capability",
         request.target.url,
         startedAt,
-        ["target"],
+        ["source_target"],
         [error instanceof Error ? error.message : String(error)],
       );
     }
@@ -243,7 +243,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
     outcome: Extract<SourceCollectionResult, { kind: "failed" }>["outcome"],
     route: string,
     startedAt: string,
-    affectedCapabilities: string[],
+    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
     causeChain: string[],
   ): SourceCollectionResult {
     return {
@@ -259,7 +259,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
     classification: AdapterDiagnostic["classification"],
     route: string,
     startedAt: string,
-    affectedCapabilities: string[],
+    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
     causeChain: string[],
   ): AdapterDiagnostic {
     return {

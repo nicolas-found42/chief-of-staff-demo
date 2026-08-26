@@ -28,6 +28,7 @@ import type {
 } from "./ports.js";
 import type { ContentScoutStore } from "./store.js";
 import { collectSourceTargets, type CollectedSourceTargetProgress } from "./collection.js";
+import { sanitizeDiagnosticRoute } from "./diagnostics.js";
 import { determineEligibility, enforceOpportunityIdentity } from "./eligibility.js";
 import {
   CONTENT_SCOUT_MAX_COMMENTS,
@@ -71,6 +72,100 @@ function duration(diagnostic: AdapterDiagnostic): number {
   return Number.isFinite(started) && Number.isFinite(finished) && finished >= started
     ? finished - started
     : 0;
+}
+
+function laterSuccessfulRequest(
+  current: ContentScoutRunResult["adapters"][number]["lastSuccessfulRequest"],
+  candidate: ContentScoutRunResult["adapters"][number]["lastSuccessfulRequest"],
+) {
+  if (!current) return candidate;
+  if (!candidate) return current;
+  return Date.parse(candidate.at) >= Date.parse(current.at) ? candidate : current;
+}
+
+function addAdapterResult(
+  rows: ContentScoutRunResult["adapters"],
+  input: {
+    target: SourceTarget;
+    adapter: SourceAdapter;
+    result: SourceCollectionResult;
+    attempts: SourceCollectionAttemptReceipt[];
+  },
+): void {
+  const attemptDurationMs = input.attempts.reduce(
+    (total, attempt) => total + (attempt.diagnostic ? duration(attempt.diagnostic) : 0),
+    0,
+  );
+  const durationMs = attemptDurationMs || duration(input.result.diagnostic);
+  const errorClassifications = input.result.kind === "failed" ? [input.result.outcome] : [];
+  const successfulRequest =
+    input.result.kind === "completed"
+      ? {
+          at: input.result.diagnostic.finishedAt,
+          route: input.result.diagnostic.route,
+        }
+      : input.target.lastSuccessfulAt
+        ? {
+            at: input.target.lastSuccessfulAt,
+            route: sanitizeDiagnosticRoute(input.target.url),
+          }
+        : null;
+  const existing = rows.find((row) => row.adapterId === input.adapter.id);
+  if (!existing) {
+    rows.push({
+      adapterId: input.adapter.id,
+      state: input.adapter.state,
+      targetsAttempted: 1,
+      outcome: input.result.outcome,
+      itemsFound: input.result.items.length,
+      durationMs,
+      retries: input.result.diagnostic.retries,
+      lastSuccessfulRequest: successfulRequest,
+      errorClassifications,
+      affectedCapabilities: [...input.result.diagnostic.affectedCapabilities],
+      attempts: [...input.attempts],
+    });
+    return;
+  }
+  existing.targetsAttempted += 1;
+  existing.itemsFound += input.result.items.length;
+  existing.durationMs += durationMs;
+  existing.retries += input.result.diagnostic.retries;
+  existing.lastSuccessfulRequest =
+    laterSuccessfulRequest(existing.lastSuccessfulRequest, successfulRequest) ?? null;
+  existing.errorClassifications = [
+    ...new Set([...(existing.errorClassifications ?? []), ...errorClassifications]),
+  ];
+  existing.affectedCapabilities = [
+    ...new Set([...existing.affectedCapabilities, ...input.result.diagnostic.affectedCapabilities]),
+  ];
+  existing.attempts.push(...input.attempts);
+  if (input.result.kind === "failed") existing.outcome = input.result.outcome;
+  else if (existing.errorClassifications.length === 0 && input.result.items.length > 0) {
+    existing.outcome = "items_found";
+  }
+}
+
+function adapterWarningCount(rows: ContentScoutRunResult["adapters"]): number {
+  return rows.filter((row) => (row.errorClassifications?.length ?? 0) > 0).length;
+}
+
+function reconcileAttemptHistory(
+  rows: ContentScoutRunResult["adapters"],
+  attempts: SourceCollectionAttemptReceipt[],
+): void {
+  for (const row of rows) {
+    const adapterAttempts = attempts.filter((attempt) => attempt.adapterId === row.adapterId);
+    if (adapterAttempts.length === 0) continue;
+    row.attempts = adapterAttempts;
+    row.targetsAttempted = new Set(adapterAttempts.map((attempt) => attempt.targetId)).size;
+    row.retries = adapterAttempts.length - row.targetsAttempted;
+    const measuredDuration = adapterAttempts.reduce(
+      (total, attempt) => total + (attempt.diagnostic ? duration(attempt.diagnostic) : 0),
+      0,
+    );
+    if (measuredDuration > 0) row.durationMs = measuredDuration;
+  }
 }
 
 function parseArtifact<T>(ctx: RunContext, name: string): T | null {
@@ -553,17 +648,7 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
         for (const { target, adapter, result, attempts } of collected) {
           diagnostics.push(result.diagnostic);
           items.push(...result.items);
-          rows.push({
-            adapterId: adapter.id,
-            state: adapter.state,
-            targetsAttempted: 1,
-            outcome: result.outcome,
-            itemsFound: result.items.length,
-            durationMs: duration(result.diagnostic),
-            retries: result.diagnostic.retries,
-            affectedCapabilities: result.diagnostic.affectedCapabilities,
-            attempts,
-          });
+          addAdapterResult(rows, { target, adapter, result, attempts });
           for (const attempt of attempts) {
             ctx.event("source_adapter_attempted", {
               adapterId: adapter.id,
@@ -592,6 +677,19 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
         ctx.writeFile("source-items.json", `${JSON.stringify(items, null, 2)}\n`);
         ctx.writeFile("adapter-diagnostics.json", `${JSON.stringify(diagnostics, null, 2)}\n`);
         ctx.writeFile("collection-attempts.json", `${JSON.stringify(attemptReceipts, null, 2)}\n`);
+        reconcileAttemptHistory(rows, attemptReceipts);
+        ctx.writeFile(
+          "result.json",
+          `${JSON.stringify(
+            {
+              adapters: rows,
+              shortlist: { opportunityCount: 0, omittedCount: 0 },
+              warnings: adapterWarningCount(rows),
+            } satisfies ContentScoutRunResult,
+            null,
+            2,
+          )}\n`,
+        );
         if (availableCompleted === 0) {
           throw new StageFailure(
             "no_available_adapter_completed",
@@ -685,22 +783,13 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
           deps.supersede?.(previous.runId, ctx.runId);
         }
         ctx.writeFile("shortlist.json", `${JSON.stringify(shortlist, null, 2)}\n`);
-        const adapterWarnings = rows.filter((row) =>
-          [
-            "unsupported_capability",
-            "blocked_access",
-            "response_shape_change",
-            "rate_limit",
-            "timeout",
-            "parser_failure",
-            "internal_failure",
-          ].includes(row.outcome),
-        ).length;
-        const runResult: ContentScoutRunResult = {
-          adapters: rows,
-          shortlist: { opportunityCount: shown.length, omittedCount: shortlist.omittedCount },
-          warnings: adapterWarnings + enrichmentWarnings,
+        const runResult = readRunResult(ctx);
+        runResult.adapters = rows;
+        runResult.shortlist = {
+          opportunityCount: shown.length,
+          omittedCount: shortlist.omittedCount,
         };
+        runResult.warnings = adapterWarningCount(rows) + enrichmentWarnings;
         ctx.writeFile("result.json", `${JSON.stringify(runResult, null, 2)}\n`);
         ctx.event("shortlist_ranked", {
           opportunities: shown.length,

@@ -21,6 +21,46 @@ export const SOURCE_DIAGNOSTIC_CLASSIFICATIONS = [
 ] as const;
 export type SourceDiagnosticClassification = (typeof SOURCE_DIAGNOSTIC_CLASSIFICATIONS)[number];
 
+/** One classification boundary shared by server health and receipt rendering. */
+export function isSuccessfulSourceDiagnostic(
+  classification: SourceDiagnosticClassification,
+): boolean {
+  return (
+    classification === "items_found" ||
+    classification === "legitimate_empty" ||
+    classification === "no_new_material"
+  );
+}
+
+export const SOURCE_PARSER_STAGES = [
+  "adapter_boundary",
+  "conditional_request",
+  "embedded_public_data",
+  "fetch",
+  "public_embedded_data",
+  "readability",
+  "rss",
+  "rss_parse",
+  "youtube",
+  "youtube_data_api",
+  "unknown_stage",
+] as const;
+export type SourceParserStage = (typeof SOURCE_PARSER_STAGES)[number];
+
+export const SOURCE_CAPABILITIES = [
+  "body",
+  "channel",
+  "comments",
+  "description",
+  "items",
+  "source_target",
+  "title",
+  "transcript",
+  "youtube",
+  "unknown_capability",
+] as const;
+export type SourceCapability = (typeof SOURCE_CAPABILITIES)[number];
+
 export interface SourceEvidenceReceipt {
   route: string;
   retrievedAt: string;
@@ -77,13 +117,13 @@ export interface AdapterDiagnostic {
   route: string;
   status: number | null;
   contentType: string | null;
-  parserStage: string;
+  parserStage: SourceParserStage;
   responseHash: string;
   adapterVersion: string;
   startedAt: string;
   finishedAt: string;
   retries: number;
-  affectedCapabilities: string[];
+  affectedCapabilities: SourceCapability[];
   causeChain: string[];
   /** Parsed Retry-After delay supplied by the remote host, when present. */
   retryAfterMs?: number;
@@ -101,6 +141,9 @@ export interface SourceCollectionAttemptReceipt {
   conditionalRequest: { etag: string | null; lastModified: string | null } | null;
   conditionalResponse: { etag: string | null; lastModified: string | null } | null;
   backoffMs: number;
+  /** Present on receipts written since Module version 1 diagnostics were completed. */
+  diagnostic?: AdapterDiagnostic;
+  itemsFound?: number;
 }
 
 export interface SourceTarget {
@@ -292,7 +335,11 @@ export interface ContentScoutRunResult {
     itemsFound: number;
     durationMs: number;
     retries: number;
-    affectedCapabilities: string[];
+    /** Absent only on durable Runs written before Source Adapter diagnostics were completed. */
+    lastSuccessfulRequest?: { at: string; route: string } | null;
+    /** Absent only on durable Runs written before Source Adapter diagnostics were completed. */
+    errorClassifications?: SourceDiagnosticClassification[];
+    affectedCapabilities: SourceCapability[];
     attempts: SourceCollectionAttemptReceipt[];
   }[];
   shortlist: { opportunityCount: number; omittedCount: number };

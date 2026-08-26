@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+
+const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
 test("Drive folder is the only Intake; Runs list and Drive settings are visible", async ({
   page,
@@ -303,6 +306,58 @@ test("the Shell lists every Module's runs, and a Module's page lists only its ow
   await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
   await expect(page.locator(".receipt")).toBeVisible();
   await expect(page.locator(".run-meta")).toContainText("Transcript → Tasks");
+});
+
+test("partial Content Scout diagnostics stay visible and accessible", async ({ page }) => {
+  const profile = await page.request.post("/api/content-scout/brand-profile", {
+    data: {
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, evidence-led guidance.\n",
+      websiteUrl: "https://company.example",
+    },
+  });
+  expect(profile.ok()).toBe(true);
+  for (const source of [
+    {
+      adapterId: "rss",
+      label: "Available feed",
+      url: "https://available.example/feed.xml",
+    },
+    {
+      adapterId: "instagram",
+      label: "Experimental public account",
+      url: "https://instagram.example/public-account",
+    },
+  ]) {
+    const response = await page.request.post("/api/content-scout/sources", { data: source });
+    expect(response.ok()).toBe(true);
+  }
+  const started = await page.request.post("/api/content-scout/run");
+  expect(started.ok()).toBe(true);
+  const { runId } = (await started.json()) as { runId: string };
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/runs/${runId}`);
+      return ((await response.json()) as { status: string }).status;
+    })
+    .toBe("blocked");
+
+  await page.goto("/content-scout");
+  const warning = page.locator(".banner-warn", { hasText: "Collection is degraded" });
+  await expect(warning).toContainText("instagram response shape change");
+  expect((await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations).toEqual([]);
+
+  await warning.getByRole("link", { name: "Open diagnostics" }).click();
+  await expect(page.getByRole("heading", { name: "Content Scout receipt" })).toBeVisible();
+  const table = page.getByRole("table", { name: "Source Adapter summary" });
+  await expect(table.getByRole("columnheader", { name: "Error classifications" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Last successful request" })).toBeVisible();
+  const attempts = page.getByText("instagram Source Adapter attempt receipts", { exact: true });
+  await attempts.click();
+  await expect(page.getByText("embedded_public_data", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/^expected_public_evidence_missing \(cause 1, sha256:/),
+  ).toBeVisible();
+  expect((await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations).toEqual([]);
 });
 
 test("Content Scout goes from bounded Brand Profile scan to a complete copied draft", async ({

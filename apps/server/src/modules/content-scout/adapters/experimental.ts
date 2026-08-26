@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { JSDOM } from "jsdom";
-import type { SourceItem } from "@chief-of-staff-demo/shared";
+import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import {
   canonicalUrl,
@@ -221,7 +221,7 @@ export class ExperimentalPublicPageAdapter implements SourceAdapter {
     startedAt: string,
     status: number | null,
     contentType: string | null,
-    parserStage: string,
+    parserStage: AdapterDiagnostic["parserStage"],
     hash: string,
     causeChain: string[],
     retryAfterMs?: number,
