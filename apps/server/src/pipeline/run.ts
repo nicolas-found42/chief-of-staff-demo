@@ -52,6 +52,14 @@ export class Pipeline {
     return this.runner.idle();
   }
 
+  startRecoveryLoop(): void {
+    this.runner.startRecoveryLoop();
+  }
+
+  stopRecoveryLoop(): void {
+    this.runner.stopRecoveryLoop();
+  }
+
   /** Create the Run for one transcript and enqueue its work. */
   startRun(spec: RunSourceSpec): Promise<string> {
     return this.runner.startRun(

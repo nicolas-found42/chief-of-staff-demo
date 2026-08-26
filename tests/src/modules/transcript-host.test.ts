@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { openGoogleConnection } from "../../../apps/server/src/google/connection";
 import { TranscriptHost } from "../../../apps/server/src/modules/transcript/host";
+import {
+  TRANSCRIPT_MODULE_ID,
+  TRANSCRIPT_MODULE_VERSION,
+} from "../../../apps/server/src/modules/transcript/module";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 
 const PORT = 4317;
@@ -85,6 +89,28 @@ describe("TranscriptHost", () => {
     });
 
     await vi.waitFor(() => expect(runs.detail(id)?.status).toBe("skipped"));
+  });
+
+  it("recovers an orphaned transcript Run on boot in place from extraction", async () => {
+    const orphan = runs.create({
+      module: TRANSCRIPT_MODULE_ID,
+      moduleVersion: TRANSCRIPT_MODULE_VERSION,
+      intake: "drive",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", "Richard: This is the chosen transcript.\n");
+    orphan.writeArtifact("context.json", '{"meetingDate":null,"attendees":[]}\n');
+    orphan.started("extract");
+
+    host.start();
+
+    await vi.waitFor(() => expect(runs.detail(orphan.id)?.status).toBe("skipped"));
+    expect(runs.list({ module: TRANSCRIPT_MODULE_ID }).runs).toHaveLength(1);
+    expect(
+      runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "extract", previousStatus: "running" });
   });
 
   it("delegates retry decisions to its Run engine", async () => {

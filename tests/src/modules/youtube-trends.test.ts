@@ -12,6 +12,8 @@ import type {
 import { YoutubeIntake, dueNow } from "../../../apps/server/src/modules/youtube/intake";
 import {
   YOUTUBE_INTAKE,
+  YOUTUBE_MODULE_ID,
+  YOUTUBE_MODULE_VERSION,
   youtubeTrendsModule,
   type ClientAccess,
   type YoutubeInput,
@@ -279,6 +281,67 @@ describe("the daily Run", () => {
     expect(runs.detail(id)!.status).toBe("done");
     /* One Run for the day, whatever happened to it. */
     expect(runs.list().runs).toHaveLength(1);
+  });
+
+  it("recovers an orphaned measurement in place from enumeration", async () => {
+    const orphan = runs.create({
+      module: YOUTUBE_MODULE_ID,
+      moduleVersion: YOUTUBE_MODULE_VERSION,
+      intake: YOUTUBE_INTAKE,
+      sourceUrl: null,
+      externalId: "2026-08-23",
+    });
+    orphan.started("fetch");
+    const afterRestart = runner();
+
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    expect(runs.detail(orphan.id)?.status).toBe("done");
+    expect(runs.list({ module: YOUTUBE_MODULE_ID }).runs).toHaveLength(1);
+    expect(
+      runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "enumerate", previousStatus: "running" });
+  });
+
+  it("recovers orphaned publication from the measured counts without reading YouTube again", async () => {
+    withSpreadsheet();
+    const orphan = runs.create({
+      module: YOUTUBE_MODULE_ID,
+      moduleVersion: YOUTUBE_MODULE_VERSION,
+      intake: YOUTUBE_INTAKE,
+      sourceUrl: null,
+      externalId: "2026-08-23",
+    });
+    orphan.writeArtifact(
+      "result.json",
+      JSON.stringify({
+        version: 1,
+        day: "2026-08-23",
+        measuredAt: "2026-08-23T12:00:00.000Z",
+        channels: [
+          {
+            channelId: CHANNEL.id,
+            handle: CHANNEL.handle,
+            title: CHANNEL.title,
+            videos: [{ id: "v1", title: "Video v1", viewCount: 100 }],
+            failedIds: [],
+          },
+        ],
+      }),
+    );
+    orphan.started("publish");
+    const afterRestart = runner();
+
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    expect(runs.detail(orphan.id)?.status).toBe("done");
+    expect(youtube.calls).toEqual({ uploads: 0, statistics: 0 });
+    expect(sheets.appended).toHaveLength(1);
+    expect(
+      runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "publish", previousStatus: "running" });
   });
 });
 

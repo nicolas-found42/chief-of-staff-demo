@@ -198,6 +198,18 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
       };
     },
 
+    planRecovery(state) {
+      if (
+        state.intake !== YOUTUBE_INTAKE ||
+        (state.status !== "pending" && state.status !== "running")
+      ) {
+        return null;
+      }
+      return state.files.includes("result.json")
+        ? { fromStage: "publish", input: { kind: "publish" } }
+        : { fromStage: "enumerate", input: { kind: "measure" } };
+    },
+
     async run(ctx, input): Promise<RunOutcome> {
       if (input.kind === "publish") {
         const measured = readCounts(ctx);

@@ -14,6 +14,12 @@ import {
   rememberSeenForModule,
 } from "../../../apps/server/src/state";
 import { workspaceLayout } from "../../../apps/server/src/paths";
+import {
+  IDEA_CONTENT_TYPES,
+  IDEA_ENGINE_MODULE_ID,
+  IDEA_ENGINE_MODULE_VERSION,
+} from "@chief-of-staff-demo/shared";
+import type { Runs } from "../../../apps/server/src/runs";
 
 const PORT = 4317;
 
@@ -21,6 +27,7 @@ let app: FastifyInstance;
 let workspaceDir: string;
 let configStore: ConfigStore;
 let host: IdeaEngineHost;
+let runs: Runs;
 let driveFiles: Array<{
   id: string;
   name: string;
@@ -84,7 +91,7 @@ beforeEach(async () => {
   driveGetCalls = [];
   googleState = "connected";
 
-  const runs = openRuns(workspaceDir);
+  runs = openRuns(workspaceDir);
   const fakeGoogle = {
     state: async () => ({ state: googleState, expiresAt: null }),
     auth: () =>
@@ -120,8 +127,33 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  host.stop();
   await host.idle();
   await app.close();
+});
+
+describe("IdeaEngineHost lifecycle", () => {
+  it("recovers an orphaned Run when the Host starts", async () => {
+    const orphan = runs.create({
+      module: IDEA_ENGINE_MODULE_ID,
+      moduleVersion: IDEA_ENGINE_MODULE_VERSION,
+      intake: "drive",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", "Richard: A durable content idea.\n");
+    orphan.writeArtifact("context.json", '{"attendees":[]}\n');
+    orphan.started(IDEA_CONTENT_TYPES[0]);
+
+    host.start();
+    await host.idle();
+
+    expect(runs.detail(orphan.id)?.status).toBe("done");
+    expect(
+      runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: IDEA_CONTENT_TYPES[0], previousStatus: "running" });
+  });
 });
 
 /**

@@ -15,6 +15,10 @@ import type { GoogleAccess } from "../../../apps/server/src/pipeline/run";
 import { Pipeline, meetingDateFromFileName } from "../../../apps/server/src/pipeline/run";
 import { openRuns } from "../../../apps/server/src/runs";
 import { composeTaskNotes } from "../../../apps/server/src/google/tasks";
+import {
+  TRANSCRIPT_MODULE_ID,
+  TRANSCRIPT_MODULE_VERSION,
+} from "../../../apps/server/src/modules/transcript/module";
 
 const GOLDEN = {
   version: 1 as const,
@@ -226,6 +230,61 @@ describe("Pipeline", () => {
       "Dana: hello\n",
     );
     expect(detail!.intake).toBe("drive");
+  });
+
+  it("recovers the chosen transcript in place from its durable text", async () => {
+    const orphan = openRuns(workspaceDir).create({
+      module: TRANSCRIPT_MODULE_ID,
+      moduleVersion: TRANSCRIPT_MODULE_VERSION,
+      intake: "manual",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", "Richard: Process this chosen transcript.\n");
+    orphan.writeArtifact("context.json", '{"meetingDate":null,"attendees":[]}\n');
+    orphan.started("extract");
+
+    pipeline.startRecoveryLoop();
+    await pipeline.idle();
+    pipeline.stopRecoveryLoop();
+
+    const detail = detailOf(orphan.id)!;
+    expect(detail.status).toBe("done");
+    expect(resultOf(detail).sourceId).toBe("chosen-transcript");
+    expect(google!.calls.tasks).toHaveLength(2);
+    expect(summariesOf()).toHaveLength(1);
+    expect(detail.events.find((event) => event.type === "run_recovered")?.detail).toEqual({
+      fromStage: "extract",
+      previousStatus: "running",
+    });
+  });
+
+  it("recovers transcript outputs from the durable result without extracting again", async () => {
+    provider = scriptedProvider(["THROW"]);
+    const orphan = openRuns(workspaceDir).create({
+      module: TRANSCRIPT_MODULE_ID,
+      moduleVersion: TRANSCRIPT_MODULE_VERSION,
+      intake: "drive",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", "Richard: Process this chosen transcript.\n");
+    orphan.writeArtifact("context.json", '{"meetingDate":null,"attendees":[]}\n');
+    orphan.writeArtifact("result.json", JSON.stringify(GOLDEN));
+    orphan.started("extract");
+
+    pipeline.startRecoveryLoop();
+    await pipeline.idle();
+    pipeline.stopRecoveryLoop();
+
+    expect(detailOf(orphan.id)?.status).toBe("done");
+    expect(provider.attempts()).toBe(0);
+    expect(google!.calls.tasks).toHaveLength(2);
+    expect(
+      detailOf(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "outputs", previousStatus: "running" });
   });
 
   it("non-transcript → skipped with persisted result and no google calls", async () => {

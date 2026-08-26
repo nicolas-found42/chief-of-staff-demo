@@ -58,6 +58,11 @@ export interface IdeaEngineDeps {
   log?: (message: string) => void;
 }
 
+function ideaProgressFile(contentType: IdeaContentType): string {
+  const index = IDEA_CONTENT_TYPES.indexOf(contentType);
+  return `idea-progress-${String(index).padStart(2, "0")}.json`;
+}
+
 export type SheetsAccess =
   | { ok: true; client: SheetsClient; spreadsheet: { id: string; url: string } | null }
   | { ok: false; state: GoogleConnectionState };
@@ -335,6 +340,33 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       };
     },
 
+    planRecovery(state) {
+      if (
+        state.intake !== IDEA_ENGINE_INTAKE ||
+        (state.status !== "pending" && state.status !== "running") ||
+        !state.files.includes("transcript.txt")
+      ) {
+        return null;
+      }
+      let started: string | null = null;
+      for (let index = state.events.length - 1; index >= 0; index -= 1) {
+        const event = state.events[index];
+        if (event?.type === "stage_started" && typeof event.detail?.stage === "string") {
+          started = event.detail.stage;
+          break;
+        }
+      }
+      const publicationCompleted = state.events.some((event) => event.type === "rows_appended");
+      const fromStage = state.files.includes("result.json")
+        ? started === "draft" || publicationCompleted
+          ? "draft"
+          : "publish"
+        : (IDEA_CONTENT_TYPES.find(
+            (contentType) => !state.files.includes(ideaProgressFile(contentType)),
+          ) ?? "persist");
+      return { fromStage, input: { kind: "resume", fromStage } };
+    },
+
     async run(ctx: RunContext, input: IdeaEngineInput): Promise<RunOutcome> {
       const meta = ctx.meta();
       let fileName: string;
@@ -403,8 +435,6 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       // Determine starting point for resume
       let startIndex = 0;
       if (input.kind === "resume") {
-        const idx = IDEA_CONTENT_TYPES.indexOf(input.fromStage as IdeaContentType);
-        if (idx >= 0) startIndex = idx;
         // For publish/draft resume, we have startIndex beyond 12, but extraction stages are done, we will skip them.
         if (input.fromStage === "publish" || input.fromStage === "draft")
           startIndex = IDEA_CONTENT_TYPES.length;
@@ -414,6 +444,33 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       const perTypeReasons: Partial<Record<IdeaContentType, string>> = {};
       const hashesByType: Partial<Record<IdeaContentType, string[]>> = {};
       const seenHashes = new Map<IdeaContentType, Set<string>>();
+      const completedTypes = new Set<IdeaContentType>();
+
+      if (input.kind === "resume" && startIndex < IDEA_CONTENT_TYPES.length) {
+        for (const contentType of IDEA_CONTENT_TYPES) {
+          const progressRaw = ctx.readFile(ideaProgressFile(contentType));
+          if (!progressRaw) continue;
+          try {
+            const progress = JSON.parse(progressRaw) as {
+              ideas?: IdeaEngineIdea[];
+              reason?: string | null;
+              hashes?: string[];
+            };
+            for (const idea of progress.ideas ?? []) {
+              allIdeas.push(idea);
+            }
+            if (progress.reason) {
+              perTypeReasons[contentType] = progress.reason;
+            }
+            const hashes = progress.hashes ?? [];
+            hashesByType[contentType] = hashes;
+            seenHashes.set(contentType, new Set(hashes));
+            completedTypes.add(contentType);
+          } catch {
+            // A torn progress artifact is ignored; the current Stage is safe to repeat.
+          }
+        }
+      }
 
       // Helper to process one content type
       const processType = async (contentType: IdeaContentType): Promise<void> => {
@@ -576,8 +633,10 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
         }
 
         // After chunks, dedupe already handled, now persist per-type
+        let savedReason: string | null = null;
         if (ideasForType.length === 0) {
-          const reason = collectedReason ?? `no hook / no arc for ${contentType}`;
+          savedReason = collectedReason ?? `no hook / no arc for ${contentType}`;
+          const reason = savedReason;
           perTypeReasons[contentType] = reason;
           ctx.event("per_type_reason", { contentType, reason });
           // also store hashes empty
@@ -592,9 +651,14 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
           ctx.event("per_type_done", { contentType, ideas: ideasForType.length });
         }
 
-        // Write staging file per type for resume? We'll write a file per type.
-        // For simplicity, write pending ideas incrementally?
-        // We will write a staging file for publish after all types done, not per type.
+        ctx.writeFile(
+          ideaProgressFile(contentType),
+          JSON.stringify(
+            { ideas: ideasForType, reason: savedReason, hashes: hashesByType[contentType] ?? [] },
+            null,
+            2,
+          ) + "\n",
+        );
       };
 
       // Run batches of 4 in parallel
@@ -602,7 +666,9 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
       // However Runner's `stage` method is not necessarily concurrency-safe. But we can test.
       // For safety, we run sequential batches but within batch parallel.
       for (let i = startIndex; i < IDEA_CONTENT_TYPES.length; i += IDEA_BATCH_SIZE) {
-        const batch = IDEA_CONTENT_TYPES.slice(i, i + IDEA_BATCH_SIZE);
+        const batch = IDEA_CONTENT_TYPES.slice(i, i + IDEA_BATCH_SIZE).filter(
+          (contentType) => !completedTypes.has(contentType),
+        );
         await Promise.all(
           batch.map((contentType) => ctx.stage(contentType, () => processType(contentType))),
         );
@@ -703,7 +769,8 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
 
       // Sheets publish — single batched appendRows INSERT_ROWS per Run
       const sheetsAccess = deps.getSheets();
-      if (sheetsAccess.ok && sheetsAccess.spreadsheet) {
+      const resumingDraft = input.kind === "resume" && input.fromStage === "draft";
+      if (!resumingDraft && sheetsAccess.ok && sheetsAccess.spreadsheet) {
         await ctx.stage("publish", async () => {
           const spreadsheet = sheetsAccess.spreadsheet!;
           // Ensure tab idempotent with migration
@@ -749,7 +816,7 @@ export function ideaEngineModule(deps: IdeaEngineDeps): ShellModule<IdeaEngineIn
           // Clear pending file after success? Keep for audit or delete.
           // Don't delete; but mark done.
         });
-      } else if (!sheetsAccess.ok) {
+      } else if (!resumingDraft && !sheetsAccess.ok) {
         // If sheets not configured (spreadsheet null) we skip publish? But spec says Sheet is required? For test, we can skip if not configured.
         {
           // If disconnected/unconfigured, fail the Run with hint?

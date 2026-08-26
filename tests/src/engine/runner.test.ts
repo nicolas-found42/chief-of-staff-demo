@@ -398,4 +398,51 @@ describe("durable resume", () => {
       runs.detail(running.id)!.events.find((event) => event.type === "run_recovered")?.detail,
     ).toEqual({ fromStage: "only", previousStatus: "running" });
   });
+
+  it("does not enqueue the same recovered Run twice while it is active", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const orphan = runs.create({ module: "fake", moduleVersion: 2, ...record });
+    orphan.started("only");
+    const runner = new Runner({
+      runs,
+      module: fakeModule({
+        planRecovery: () => ({
+          fromStage: "only",
+          input: { work: async () => await hold },
+        }),
+      }),
+    });
+
+    expect(await runner.recoverRuns()).toBe(1);
+    expect(await runner.recoverRuns()).toBe(0);
+    release();
+    await runner.idle();
+
+    expect(
+      runs.detail(orphan.id)?.events.filter((event) => event.type === "run_recovered"),
+    ).toHaveLength(1);
+  });
+
+  it("leaves terminal Runs unchanged during recovery", async () => {
+    const done = runs.create({ module: "fake", moduleVersion: 2, ...record });
+    done.finished({ status: "done" });
+    const skipped = runs.create({ module: "fake", moduleVersion: 2, ...record });
+    skipped.finished({ status: "skipped", reason: "nothing to do" });
+    const failed = runs.create({ module: "fake", moduleVersion: 2, ...record });
+    failed.started("only");
+    failed.failed("only", "boom", "Only did not work.");
+    const before = [done.id, skipped.id, failed.id].map((id) => runs.detail(id)?.events);
+    const runner = new Runner({
+      runs,
+      module: fakeModule({
+        planRecovery: () => ({ fromStage: "only", input: {} }),
+      }),
+    });
+
+    expect(await runner.recoverRuns()).toBe(0);
+    expect([done.id, skipped.id, failed.id].map((id) => runs.detail(id)?.events)).toEqual(before);
+  });
 });

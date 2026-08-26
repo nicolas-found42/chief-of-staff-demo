@@ -60,10 +60,12 @@ export class TranscriptHost implements HostedModule {
   }
 
   start(): void {
+    this.pipeline.startRecoveryLoop();
     this.intake.start();
   }
 
   stop(): void {
+    this.pipeline.stopRecoveryLoop();
     this.intake.stop();
   }
 

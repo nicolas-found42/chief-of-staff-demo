@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import {
+  IDEA_ENGINE_MODULE_ID,
+  IDEA_ENGINE_MODULE_VERSION,
   IDEA_CONTENT_TYPES,
   IDEA_FORMAT_VALUES,
   IDEA_VALIDATOR_RETRIES,
@@ -274,6 +276,139 @@ describe("Idea Engine Module", () => {
     expect(gmail.drafts[0].body).toContain("https://docs.google.com/spreadsheets/d/sheet-123");
     expect(detail.events.some((e) => e.type === "rows_appended")).toBe(true);
     expect(detail.events.some((e) => e.type === "gmail_draft_created")).toBe(true);
+  });
+
+  it("recovers an orphaned Run at its first unfinished content type", async () => {
+    const completedTypes = IDEA_CONTENT_TYPES.slice(0, 4);
+    const orphan = runs.create({
+      module: IDEA_ENGINE_MODULE_ID,
+      moduleVersion: IDEA_ENGINE_MODULE_VERSION,
+      intake: "drive",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", TRANSCRIPT);
+    orphan.writeArtifact("context.json", '{"attendees":[]}\n');
+    completedTypes.forEach((contentType, index) => {
+      orphan.writeArtifact(
+        `idea-progress-${String(index).padStart(2, "0")}.json`,
+        JSON.stringify({
+          ideas: [
+            {
+              ...makeIdea(contentType, `Saved ${contentType}`),
+              ContentType: contentType,
+            },
+          ],
+          reason: null,
+          hashes: [],
+        }),
+      );
+    });
+    orphan.started(IDEA_CONTENT_TYPES[4]);
+    const afterRestart = runner();
+
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    const detail = runs.detail(orphan.id)!;
+    expect(detail.status).toBe("done");
+    expect((detail.result as IdeaEngineRunResult).ideas).toHaveLength(12);
+    expect(detail.events.find((event) => event.type === "run_recovered")?.detail).toEqual({
+      fromStage: IDEA_CONTENT_TYPES[4],
+      previousStatus: "running",
+    });
+    const recoveredAt = detail.events.findIndex((event) => event.type === "run_recovered");
+    expect(
+      detail.events
+        .slice(recoveredAt + 1)
+        .filter((event) => event.type === "stage_started")
+        .map((event) => event.detail?.stage),
+    ).not.toEqual(expect.arrayContaining(completedTypes));
+  });
+
+  it("recovers publication from the durable result without duplicating Content Ideas", async () => {
+    const completedId = await runFresh();
+    const result = runs.open(completedId)!.readArtifact("result.json")!;
+    const orphan = runs.create({
+      module: IDEA_ENGINE_MODULE_ID,
+      moduleVersion: IDEA_ENGINE_MODULE_VERSION,
+      intake: "drive",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", TRANSCRIPT);
+    orphan.writeArtifact("context.json", '{"attendees":[]}\n');
+    orphan.writeArtifact("result.json", result);
+    orphan.started("publish");
+    sheets.appended = [];
+    gmail.drafts = [];
+    const afterRestart = runner();
+
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    const detail = runs.detail(orphan.id)!;
+    expect(detail.status).toBe("done");
+    expect((detail.result as IdeaEngineRunResult).ideas).toHaveLength(12);
+    expect(sheets.appended[0]?.rows).toHaveLength(12);
+    expect(detail.events.filter((event) => event.type === "run_recovered").at(-1)?.detail).toEqual({
+      fromStage: "publish",
+      previousStatus: "running",
+    });
+  });
+
+  it("recovers the draft Stage without publishing the durable result again", async () => {
+    const id = await runFresh();
+    sheets.appended = [];
+    gmail.drafts = [];
+    runs.open(id)!.started("draft");
+    const afterRestart = runner();
+
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    expect(runs.detail(id)?.status).toBe("done");
+    expect(sheets.appended).toHaveLength(0);
+    expect(gmail.drafts).toHaveLength(1);
+    expect(
+      runs
+        .detail(id)
+        ?.events.filter((event) => event.type === "run_recovered")
+        .at(-1)?.detail,
+    ).toEqual({ fromStage: "draft", previousStatus: "running" });
+  });
+
+  it("recovers at draft when publication finished before the restart", async () => {
+    const completedId = await runFresh();
+    const result = runs.open(completedId)!.readArtifact("result.json")!;
+    const orphan = runs.create({
+      module: IDEA_ENGINE_MODULE_ID,
+      moduleVersion: IDEA_ENGINE_MODULE_VERSION,
+      intake: "drive",
+      fileName: "chosen-transcript.md",
+      sourceUrl: "https://drive.google.com/file/d/chosen/view",
+      externalId: "chosen-transcript",
+    });
+    orphan.writeArtifact("transcript.txt", TRANSCRIPT);
+    orphan.writeArtifact("context.json", '{"attendees":[]}\n');
+    orphan.writeArtifact("result.json", result);
+    orphan.started("publish");
+    orphan.appendEvent("rows_appended", { tab: "All RA Content Ideas", rows: 12 });
+    sheets.appended = [];
+    gmail.drafts = [];
+    const afterRestart = runner();
+
+    expect(await afterRestart.recoverRuns()).toBe(1);
+    await afterRestart.idle();
+
+    expect(runs.detail(orphan.id)?.status).toBe("done");
+    expect(sheets.appended).toHaveLength(0);
+    expect(gmail.drafts).toHaveLength(1);
+    expect(
+      runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "draft", previousStatus: "running" });
   });
 
   it("skipped for unsupported file type (not a transcript)", async () => {

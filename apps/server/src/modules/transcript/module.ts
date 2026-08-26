@@ -235,6 +235,17 @@ export function transcriptModule(deps: TranscriptDeps): ShellModule<TranscriptIn
       };
     },
 
+    planRecovery(state) {
+      if (
+        (state.status !== "pending" && state.status !== "running") ||
+        !state.files.includes("transcript.txt")
+      ) {
+        return null;
+      }
+      const fromStage = state.files.includes("result.json") ? "outputs" : "extract";
+      return { fromStage, input: { kind: "resume", fromStage } };
+    },
+
     async run(ctx, input): Promise<RunOutcome> {
       if (input.kind === "fresh") {
         const spec = input.spec;

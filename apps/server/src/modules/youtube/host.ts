@@ -108,10 +108,12 @@ export class YoutubeHost implements HostedModule {
   }
 
   start(): void {
+    this.runner.startRecoveryLoop();
     this.intake.start();
   }
 
   stop(): void {
+    this.runner.stopRecoveryLoop();
     this.intake.stop();
   }
 

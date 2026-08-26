@@ -8,8 +8,13 @@ import { ConfigStore } from "../../../apps/server/src/config";
 import type { GoogleConnection } from "../../../apps/server/src/google/connection";
 import type { YouTubeClient } from "../../../apps/server/src/modules/youtube/client";
 import { YoutubeHost } from "../../../apps/server/src/modules/youtube/host";
+import {
+  YOUTUBE_INTAKE,
+  YOUTUBE_MODULE_ID,
+  YOUTUBE_MODULE_VERSION,
+} from "../../../apps/server/src/modules/youtube/module";
 import type { SheetsClient } from "../../../apps/server/src/modules/youtube/spreadsheet";
-import { openRuns } from "../../../apps/server/src/runs";
+import { openRuns, type Runs } from "../../../apps/server/src/runs";
 
 /**
  * The Module's own endpoints, over a real server instance and a temporary
@@ -22,6 +27,7 @@ let app: FastifyInstance;
 let workspaceDir: string;
 let configStore: ConfigStore;
 let host: YoutubeHost;
+let runs: Runs;
 let connected: boolean;
 let resolves: Record<
   string,
@@ -71,8 +77,9 @@ beforeEach(async () => {
     },
   };
 
+  runs = openRuns(workspaceDir);
   host = new YoutubeHost({
-    runs: openRuns(workspaceDir),
+    runs,
     configStore,
     workspaceDir,
     port: PORT,
@@ -92,7 +99,41 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  host.stop();
   await app.close();
+});
+
+describe("YoutubeHost lifecycle", () => {
+  it("recovers an orphaned Run when the Host starts", async () => {
+    configStore.setModuleConfig(YOUTUBE_MODULE_ID, {
+      ...configStore.get().modules[YOUTUBE_MODULE_ID],
+      channels: [
+        {
+          id: "UC_found42",
+          handle: "@found42",
+          title: "Found42",
+          uploadsPlaylistId: "UU_found42",
+          addedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const orphan = runs.create({
+      module: YOUTUBE_MODULE_ID,
+      moduleVersion: YOUTUBE_MODULE_VERSION,
+      intake: YOUTUBE_INTAKE,
+      sourceUrl: null,
+      externalId: "2026-08-22",
+    });
+    orphan.started("enumerate");
+
+    host.start();
+    await host.idle();
+
+    expect(runs.detail(orphan.id)?.status).toBe("done");
+    expect(
+      runs.detail(orphan.id)?.events.find((event) => event.type === "run_recovered")?.detail,
+    ).toEqual({ fromStage: "enumerate", previousStatus: "running" });
+  });
 });
 
 describe("POST /api/youtube/channels", () => {

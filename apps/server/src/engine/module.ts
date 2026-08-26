@@ -1,4 +1,9 @@
-import type { RunFailureFlags, RunMeta, RunWaitTimeout } from "@chief-of-staff-demo/shared";
+import type {
+  RunEvent,
+  RunFailureFlags,
+  RunMeta,
+  RunWaitTimeout,
+} from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../runs.js";
 
 /**
@@ -33,8 +38,14 @@ export interface ShellModule<Input> {
   /** What continuing one of this Module's blocked Runs means. */
   planResume?(meta: Readonly<RunMeta>): ResumePlan<Input> | null;
   /** What reconstructing process-orphaned pending/running work means. */
-  planRecovery?(meta: Readonly<RunMeta>): ResumePlan<Input> | null;
+  planRecovery?(state: RecoveryState): ResumePlan<Input> | null;
 }
+
+/** The durable facts a Module may use to choose a safe recovery Stage. */
+export type RecoveryState = Readonly<RunMeta> & {
+  readonly events: readonly RunEvent[];
+  readonly files: readonly string[];
+};
 
 /** How a Module continues after the Shell clears its durable wait. */
 interface ResumePlan<Input> {

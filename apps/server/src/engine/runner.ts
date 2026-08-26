@@ -1,7 +1,13 @@
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import type { NewRun, RunHandle, Runs } from "../runs.js";
 import { errorMessage } from "./failure.js";
-import { OutsideStageError, StageFailure, type RunContext, type ShellModule } from "./module.js";
+import {
+  OutsideStageError,
+  StageFailure,
+  type RecoveryState,
+  type RunContext,
+  type ShellModule,
+} from "./module.js";
 
 /** What a Module's host knows about a new Run that the Shell does not. */
 export type RunRecord = Omit<NewRun, "module" | "moduleVersion">;
@@ -156,7 +162,13 @@ export class Runner<Input> {
       if (meta.status !== "pending" && meta.status !== "running") {
         continue;
       }
-      const plan = this.deps.module.planRecovery?.(meta) ?? null;
+      const detail = this.deps.runs.detail(meta.id);
+      const state: RecoveryState = {
+        ...meta,
+        events: detail?.events ?? [],
+        files: detail?.files ?? [],
+      };
+      const plan = this.deps.module.planRecovery?.(state) ?? null;
       if (!plan) {
         continue;
       }
