@@ -709,10 +709,14 @@ export interface OpportunityBrief {
   runId: string;
   contentPackId: string;
   createdAt: string;
+  /** Frozen opportunity identity: angle, urgency, explanation and ranking dimensions are immutable. */
   opportunity: RankedOpportunity;
+  /** Strongest three to eight qualifying Source Items, bounded and with explicit completeness. */
   sourceItems: SourceItem[];
+  /** Factual claims stored separately from titles, each grounded to one or more canonical URLs. */
   claims: { claim: string; sourceUrls: string[] }[];
   brandProfileRevisionId: string;
+  /** Markdown snapshot frozen at selection time; later Brand Profile edits do not affect this brief. */
   brandProfileMarkdown: string;
 }
 

@@ -7,6 +7,7 @@ import type {
   OpportunityBrief,
   RankedOpportunity,
   RunMeta,
+  SourceAdapterState,
   SourceItem,
   SourceCollectionAttemptReceipt,
   SourceTarget,
@@ -232,6 +233,145 @@ function packProgress(pack: ContentPack, missingDraftTargets: string[], missingP
   };
 }
 
+const MAX_TRANSCRIPT_CHARS = 12_000;
+
+function evidenceStrength(
+  item: SourceItem,
+  adapterState: SourceAdapterState | undefined,
+  now: Date,
+): number {
+  let score = 0;
+  if (item.completeness.title === "available") score += 3;
+  else if (item.completeness.title === "failed") score -= 1;
+  if (item.completeness.body === "available") score += 3;
+  else if (item.completeness.body === "failed") score -= 1;
+  if (item.completeness.description === "available") score += 1;
+  if (item.completeness.transcript === "available") score += 2;
+  else if (item.completeness.transcript === "failed") score -= 1;
+  if (item.completeness.comments === "available") score += 1;
+  else if (item.completeness.comments === "failed") score -= 1;
+  if (item.evidence.length > 0) score += 1;
+  if (item.body && item.body.length > 1000) score += 2;
+  else if (item.body && item.body.length > 500) score += 1;
+  if (adapterState === "available") score += 2;
+  const published = Date.parse(item.publishedAt ?? item.discoveredAt);
+  if (Number.isFinite(published)) {
+    const ageHours = (now.getTime() - published) / 3_600_000;
+    if (ageHours <= 24) score += 3;
+    else if (ageHours <= 48) score += 2;
+    else if (ageHours <= 7 * 24) score += 1;
+  }
+  if (item.claims?.some((claim) => claim.state === "supported")) score += 1;
+  return score;
+}
+
+function isQualifyingSourceItem(item: SourceItem): boolean {
+  try {
+    const url = new URL(item.canonicalUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  } catch {
+    return false;
+  }
+  const hasAvailableText = (["title", "body", "description", "transcript"] as const).some(
+    (field) => item.completeness[field] === "available",
+  );
+  const text = [item.title, item.body, item.description, item.transcript]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  return hasAvailableText && text.length >= 20 && item.evidence.length > 0;
+}
+
+function boundSourceItem(item: SourceItem): SourceItem {
+  let transcript = item.transcript;
+  if (typeof transcript === "string" && transcript.length > MAX_TRANSCRIPT_CHARS) {
+    transcript = transcript.slice(0, MAX_TRANSCRIPT_CHARS);
+  }
+  let comments = item.comments;
+  if (comments.length > CONTENT_SCOUT_MAX_COMMENTS) {
+    comments = selectDiverseComments(comments, CONTENT_SCOUT_MAX_COMMENTS);
+  }
+  if (transcript === item.transcript && comments === item.comments) return item;
+  return { ...item, transcript, comments };
+}
+
+function selectStrongestEvidence(input: {
+  qualifying: SourceItem[];
+  adapterStates: Map<string, SourceAdapterState>;
+  now: Date;
+}): SourceItem[] {
+  const scored = input.qualifying
+    .map((item) => ({
+      item,
+      score: evidenceStrength(item, input.adapterStates.get(item.adapterId), input.now),
+    }))
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      const leftTime = Date.parse(left.item.publishedAt ?? left.item.discoveredAt);
+      const rightTime = Date.parse(right.item.publishedAt ?? right.item.discoveredAt);
+      if (Number.isFinite(rightTime) && Number.isFinite(leftTime) && rightTime !== leftTime) {
+        return rightTime - leftTime;
+      }
+      return left.item.id.localeCompare(right.item.id);
+    })
+    .map((entry) => boundSourceItem(entry.item));
+  return scored.slice(0, 8);
+}
+
+function extractGroundedClaims(evidence: SourceItem[]): { claim: string; sourceUrls: string[] }[] {
+  const claimMap = new Map<string, Set<string>>();
+  for (const item of evidence) {
+    if (item.claims?.length) {
+      let usedSupported = false;
+      for (const entry of item.claims) {
+        if (entry.state !== "supported") continue;
+        const text = entry.text.trim();
+        if (!text) continue;
+        if (text === item.title?.trim()) continue;
+        const urls = entry.sourceUrls.length ? entry.sourceUrls : [item.canonicalUrl];
+        if (!claimMap.has(text)) claimMap.set(text, new Set());
+        for (const url of urls) claimMap.get(text)!.add(url);
+        claimMap.get(text)!.add(item.canonicalUrl);
+        usedSupported = true;
+      }
+      if (usedSupported) continue;
+    }
+    const sourceText = item.body ?? item.description ?? "";
+    const sentences = sourceText
+      .split(/[.!?]\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length >= 20);
+    let claimed = 0;
+    for (const sentence of sentences) {
+      if (sentence === item.title?.trim()) continue;
+      if (!claimMap.has(sentence)) claimMap.set(sentence, new Set());
+      claimMap.get(sentence)!.add(item.canonicalUrl);
+      claimed += 1;
+      if (claimed >= 2) break;
+    }
+    if (claimed === 0) {
+      const fallback = (item.body ?? item.description ?? item.title ?? "").trim();
+      if (fallback.length >= 20 && fallback !== item.title?.trim()) {
+        if (!claimMap.has(fallback)) claimMap.set(fallback, new Set());
+        claimMap.get(fallback)!.add(item.canonicalUrl);
+      } else if (fallback.length >= 20) {
+        if (!claimMap.has(fallback)) claimMap.set(fallback, new Set());
+        claimMap.get(fallback)!.add(item.canonicalUrl);
+      }
+    }
+  }
+  if (claimMap.size === 0) {
+    for (const item of evidence) {
+      const fallback = (item.title ?? item.description ?? "Source evidence").trim();
+      if (!fallback) continue;
+      if (!claimMap.has(fallback)) claimMap.set(fallback, new Set());
+      claimMap.get(fallback)!.add(item.canonicalUrl);
+      break;
+    }
+  }
+  return [...claimMap.entries()].map(([claim, urls]) => ({ claim, sourceUrls: [...urls] }));
+}
+
 /** Content Scout orchestration behind the ContentScoutHost interface. */
 export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<ContentScoutInput> {
   const writeProgress = (
@@ -265,21 +405,41 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
         "The Brand Profile revision used for this shortlist is missing; the draft cannot be reproduced safely.",
       );
     }
-    const evidence = opportunity.sourceItemIds
+    const mapped = opportunity.sourceItemIds
       .map((sourceId) => items.find((item) => item.id === sourceId))
-      .filter((item): item is SourceItem => item !== undefined)
-      .slice(0, 8);
+      .filter((item): item is SourceItem => item !== undefined);
+    const qualifying = mapped.filter(isQualifyingSourceItem);
+    const adapterStates = new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state]));
+    const evidence = selectStrongestEvidence({ qualifying, adapterStates, now: deps.now() });
+    if (evidence.length < 3) {
+      throw new StageFailure(
+        "insufficient_evidence",
+        `Insufficient evidence: the selected opportunity has only ${evidence.length} qualifying Source Items; at least 3 are required for an evidence-complete brief.`,
+      );
+    }
+    const claims = extractGroundedClaims(evidence);
+    const allowedUrls = new Set(evidence.map((item) => item.canonicalUrl));
+    const groundedClaims = claims.filter((entry) =>
+      entry.sourceUrls.every((url) => allowedUrls.has(url)),
+    );
+    if (groundedClaims.length === 0) {
+      throw new StageFailure(
+        "insufficient_evidence",
+        "No factual claim could be grounded to the qualifying evidence; the brief cannot be created.",
+      );
+    }
+    const frozenOpportunity: RankedOpportunity = structuredClone(opportunity);
+    frozenOpportunity.experimentalEvidence = evidence.some(
+      (item) => adapterStates.get(item.adapterId) === "experimental",
+    );
     const brief: OpportunityBrief = {
       id,
       runId: ctx.runId,
       contentPackId,
       createdAt: deps.now().toISOString(),
-      opportunity,
+      opportunity: frozenOpportunity,
       sourceItems: evidence,
-      claims: evidence.map((item) => ({
-        claim: item.title ?? item.description ?? "Source evidence",
-        sourceUrls: [item.canonicalUrl],
-      })),
+      claims: groundedClaims,
       brandProfileRevisionId: profile.id,
       brandProfileMarkdown: profile.markdown,
     };
@@ -294,10 +454,13 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
 
   const selectedRun = async (ctx: RunContext, opportunityIds: string[]): Promise<RunOutcome> => {
     const shortlist = parseArtifact<ContentShortlist>(ctx, "shortlist.json");
+    const sourceItems = parseArtifact<SourceItem[]>(ctx, "source-items.json") ?? [];
+    const enrichedItems = parseArtifact<SourceItem[]>(ctx, "enriched-source-items.json") ?? [];
+    const enrichedById = new Map(enrichedItems.map((item) => [item.id, item]));
     const items =
-      parseArtifact<SourceItem[]>(ctx, "enriched-source-items.json") ??
-      parseArtifact<SourceItem[]>(ctx, "source-items.json") ??
-      [];
+      sourceItems.length > 0
+        ? sourceItems.map((item) => enrichedById.get(item.id) ?? item)
+        : enrichedItems;
     if (!shortlist) {
       throw new StageFailure(
         "shortlist_missing",

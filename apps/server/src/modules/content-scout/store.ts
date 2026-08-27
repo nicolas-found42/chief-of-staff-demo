@@ -85,18 +85,19 @@ export class ContentScoutStore {
     const state = this.readState();
     const previous = this.currentBrandProfile();
     const id = identifier("brand", this.now());
+    const markdown = `${input.markdown.trimEnd()}\n`;
     const revision: BrandProfileRevision = {
       id,
       createdAt: this.now().toISOString(),
-      markdown: input.markdown,
+      markdown,
       sourceScan: input.sourceScan,
       note: input.note ?? null,
-      changedSections: changedSections(previous?.markdown ?? "", input.markdown),
+      changedSections: changedSections(previous?.markdown ?? "", markdown),
       siteBaselineMarkdown:
-        input.siteBaselineMarkdown ?? previous?.siteBaselineMarkdown ?? input.markdown,
+        input.siteBaselineMarkdown ?? previous?.siteBaselineMarkdown ?? markdown,
     };
     mkdirSync(this.profilesDir, { recursive: true });
-    this.writeAtomic(join(this.profilesDir, `${id}.md`), `${input.markdown.trimEnd()}\n`);
+    this.writeAtomic(join(this.profilesDir, `${id}.md`), markdown);
     state.brandProfiles.push({
       id: revision.id,
       createdAt: revision.createdAt,
