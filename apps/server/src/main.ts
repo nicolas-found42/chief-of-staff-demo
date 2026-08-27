@@ -24,7 +24,7 @@ import {
 } from "./modules/content-scout/adapters/youtube.js";
 import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/declarations.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
-import { ExperimentalPublicPageAdapter } from "./modules/content-scout/adapters/experimental.js";
+import { InstagramInstaloaderAdapter } from "./modules/content-scout/adapters/instagram.js";
 import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
 import { TikTokYtDlpAdapter } from "./modules/content-scout/adapters/tiktok.js";
 import { PublicRouteSourceDiscoverer } from "./modules/content-scout/discoverer.js";
@@ -134,7 +134,7 @@ const contentScout = new ContentScoutHost({
         : { ok: false, state: access.state };
     }),
     new RedditSourceAdapter(),
-    new ExperimentalPublicPageAdapter("instagram"),
+    new InstagramInstaloaderAdapter(),
     new TikTokYtDlpAdapter(),
     new ComingLaterSourceAdapter("linkedin"),
   ],
