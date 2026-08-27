@@ -8,6 +8,10 @@ import type {
   ContentPack,
   ContentScoutScheduleState,
   ContentShortlist,
+  OpportunityEarlyFollowUp,
+  RankedOpportunity,
+  ShortlistOpportunity,
+  SourceItemReference,
   SourceSuggestion,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
@@ -24,12 +28,18 @@ interface ContentScoutState {
   sourceSuggestions: SourceSuggestion[];
   schedule: ContentScoutScheduleState;
   brandProfileProposal: BrandProfileProposal | null;
-  opportunityDecisions: {
-    canonicalKey: string;
-    angle: string;
-    decision: "dismiss_angle" | "not_relevant" | "already_covered";
-    decidedAt: string;
-  }[];
+  opportunityDecisions: OpportunityDecisionRecord[];
+}
+
+type OpportunityDecision = "draft" | "dismiss_angle" | "not_relevant" | "already_covered";
+
+interface OpportunityDecisionRecord {
+  canonicalKey: string;
+  angle: string;
+  angleDescription?: string;
+  evidence?: SourceItemReference[];
+  decision: OpportunityDecision;
+  decidedAt: string;
 }
 
 const EMPTY: ContentScoutState = {
@@ -218,6 +228,7 @@ export class ContentScoutStore {
       }
       opportunity.state = "drafted";
       opportunity.decision = "draft";
+      this.recordOpportunityDecision(state, opportunity, "draft");
     }
     state.pendingActions[runId] = { kind: "selection", opportunityIds: unique };
     this.writeState(state);
@@ -246,23 +257,77 @@ export class ContentScoutStore {
       throw new Error("That opportunity is no longer Ready.");
     opportunity.state = "dismissed";
     opportunity.decision = decision;
-    state.opportunityDecisions.push({
-      canonicalKey: opportunity.canonicalKey,
-      angle: opportunity.angle,
-      decision,
-      decidedAt: this.now().toISOString(),
-    });
+    this.recordOpportunityDecision(state, opportunity, decision);
     this.writeState(state);
   }
 
-  opportunityInCooldown(canonicalKey: string, angle: string): boolean {
+  opportunityCooldownDisposition(
+    opportunity: RankedOpportunity,
+    sourceItemReferences: SourceItemReference[],
+  ): { eligible: false } | { eligible: true; earlyFollowUp: OpportunityEarlyFollowUp | null } {
     const cutoff = this.now().getTime() - 7 * 86_400_000;
-    return this.readState().opportunityDecisions.some(
+    const recent = this.readState().opportunityDecisions.filter(
       (decision) =>
-        decision.canonicalKey === canonicalKey &&
-        decision.angle === angle &&
-        Date.parse(decision.decidedAt) >= cutoff,
+        decision.canonicalKey === opportunity.canonicalKey &&
+        Date.parse(decision.decidedAt) > cutoff,
     );
+    if (recent.length === 0) return { eligible: true, earlyFollowUp: null };
+
+    const sameAngle = recent.filter((decision) => decision.angle === opportunity.angle);
+    if (sameAngle.length === 0) {
+      const description = opportunity.angleDescription.trim();
+      return description
+        ? {
+            eligible: true,
+            earlyFollowUp: {
+              kind: "different_angle",
+              explanation: `Different angle: ${description}`,
+            },
+          }
+        : { eligible: false };
+    }
+
+    const development = opportunity.materialDevelopment;
+    if (!development?.explanation.trim()) return { eligible: false };
+    if (sameAngle.some((decision) => decision.evidence === undefined)) {
+      return { eligible: false };
+    }
+    const priorEvidence = sameAngle.flatMap((decision) => decision.evidence ?? []);
+    const priorIds = new Set(priorEvidence.map((reference) => reference.id));
+    const priorUrls = new Set(priorEvidence.map((reference) => reference.canonicalUrl));
+    const currentEvidence = new Map(
+      sourceItemReferences.map((reference) => [reference.id, reference.canonicalUrl]),
+    );
+    const hasNewEvidence = development.sourceItemIds.some((id) => {
+      const canonicalUrl = currentEvidence.get(id);
+      return canonicalUrl !== undefined && !priorIds.has(id) && !priorUrls.has(canonicalUrl);
+    });
+    return hasNewEvidence
+      ? {
+          eligible: true,
+          earlyFollowUp: {
+            kind: "material_development",
+            explanation: development.explanation.trim(),
+          },
+        }
+      : { eligible: false };
+  }
+
+  private recordOpportunityDecision(
+    state: ContentScoutState,
+    opportunity: ShortlistOpportunity,
+    decision: OpportunityDecision,
+  ): void {
+    state.opportunityDecisions.push({
+      canonicalKey: opportunity.canonicalKey,
+      angle: opportunity.angle,
+      angleDescription: opportunity.angleDescription,
+      ...(Array.isArray(opportunity.sourceItemReferences)
+        ? { evidence: opportunity.sourceItemReferences }
+        : {}),
+      decision,
+      decidedAt: this.now().toISOString(),
+    });
   }
 
   pendingAction(runId: string): ContentScoutState["pendingActions"][string] | null {

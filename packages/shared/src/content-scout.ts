@@ -302,11 +302,28 @@ export interface OpportunityScores {
   speculationRisk: number;
 }
 
+export interface OpportunityMaterialDevelopment {
+  explanation: string;
+  sourceItemIds: string[];
+}
+
+export interface OpportunityEarlyFollowUp {
+  kind: "different_angle" | "material_development";
+  explanation: string;
+}
+
+export interface SourceItemReference {
+  id: string;
+  canonicalUrl: string;
+}
+
 export interface RankedOpportunity {
   id: string;
   canonicalKey: string;
   title: string;
   angle: ContentAngle;
+  angleDescription: string;
+  materialDevelopment: OpportunityMaterialDevelopment | null;
   urgency: string;
   explanation: string;
   sourceItemIds: string[];
@@ -319,6 +336,8 @@ export interface RankedOpportunity {
 export interface ShortlistOpportunity extends RankedOpportunity {
   state: "ready" | "drafted" | "dismissed";
   decision: "draft" | "dismiss_angle" | "not_relevant" | "already_covered" | null;
+  earlyFollowUp: OpportunityEarlyFollowUp | null;
+  sourceItemReferences: SourceItemReference[];
 }
 
 export interface ContentShortlist {

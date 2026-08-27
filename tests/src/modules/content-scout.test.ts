@@ -13,6 +13,7 @@ import type {
 import { openRuns } from "../../../apps/server/src/runs";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { CONTENT_SCOUT_DRAFT_TARGETS_V1 } from "@chief-of-staff-demo/shared";
+import type { RankedOpportunity } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");
 
@@ -111,6 +112,8 @@ const ranker: OpportunityRanker = {
         canonicalKey: "verified-change-practical-impact",
         title: "Explain what the verified change means in practice",
         angle: "practical_implication",
+        angleDescription: "Explain the practical impact of the verified change.",
+        materialDevelopment: null,
         urgency: "Useful while the change is new.",
         explanation: "It matches the Brand Profile's educational positioning.",
         sourceItemIds: items.map((item) => item.id),
@@ -223,6 +226,277 @@ describe("ContentScoutHost", () => {
       log: () => undefined,
     });
     expect(reconstructed.activeShortlist()).toEqual(shortlist);
+  });
+
+  it("suppresses an equivalent drafted opportunity for seven days across restart", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-cooldown-draft-"));
+    const clock = { now: NOW };
+    const runs = openRuns(workspaceDir);
+    const createHost = () =>
+      new ContentScoutHost({
+        runs: openRuns(workspaceDir),
+        workspaceDir,
+        now: () => clock.now,
+        adapters: [rssAdapter()],
+        ranker,
+        log: () => undefined,
+      });
+    const host = createHost();
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({ adapterId: "rss", label: "Feed", url: "https://example.com/feed" });
+
+    const firstRunId = await host.scoutNow();
+    await host.idle();
+    const opportunityId = host.activeShortlist()!.opportunities[0].id;
+    await host.select(firstRunId, [opportunityId]);
+    await host.idle();
+
+    clock.now = new Date("2026-08-26T12:00:00.000Z");
+    const restarted = createHost();
+    await restarted.scoutNow();
+    await restarted.idle();
+
+    expect(restarted.activeShortlist()!.opportunities).toEqual([]);
+    expect(runs.detail(firstRunId)!.status).toBe("failed");
+  });
+
+  it.each([
+    ["Dismiss this angle", "dismiss_angle"],
+    ["Not relevant", "not_relevant"],
+    ["Already covered", "already_covered"],
+  ] as const)("suppresses an equivalent opportunity after %s", async (_label, decision) => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-cooldown-dismiss-"));
+    const clock = { now: NOW };
+    const createHost = () =>
+      new ContentScoutHost({
+        runs: openRuns(workspaceDir),
+        workspaceDir,
+        now: () => clock.now,
+        adapters: [rssAdapter()],
+        ranker,
+        log: () => undefined,
+      });
+    const host = createHost();
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({ adapterId: "rss", label: "Feed", url: "https://example.com/feed" });
+    const firstRunId = await host.scoutNow();
+    await host.idle();
+    host.decideOpportunity(firstRunId, host.activeShortlist()!.opportunities[0].id, decision);
+
+    clock.now = new Date("2026-08-26T12:00:00.000Z");
+    const restarted = createHost();
+    await restarted.scoutNow();
+    await restarted.idle();
+
+    expect(restarted.activeShortlist()!.opportunities).toEqual([]);
+  });
+
+  it("allows an equivalent opportunity when the seven-day cooldown expires", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-cooldown-expiry-"));
+    const clock = { now: NOW };
+    const adapter = rssAdapter();
+    const collect = adapter.collect.bind(adapter);
+    adapter.collect = async (request) => {
+      const result = await collect(request);
+      return {
+        ...result,
+        items: result.items.map((item) => ({ ...item, publishedAt: clock.now.toISOString() })),
+      };
+    };
+    const host = new ContentScoutHost({
+      runs: openRuns(workspaceDir),
+      workspaceDir,
+      now: () => clock.now,
+      adapters: [adapter],
+      ranker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({ adapterId: "rss", label: "Feed", url: "https://example.com/feed" });
+    const firstRunId = await host.scoutNow();
+    await host.idle();
+    host.decideOpportunity(
+      firstRunId,
+      host.activeShortlist()!.opportunities[0].id,
+      "already_covered",
+    );
+
+    clock.now = new Date("2026-09-01T12:00:00.000Z");
+    await host.scoutNow();
+    await host.idle();
+
+    expect(host.activeShortlist()!.opportunities).toHaveLength(1);
+  });
+
+  it("allows and labels a genuinely different stored angle during cooldown", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-cooldown-angle-"));
+    const clock = { now: NOW };
+    let angle = {
+      type: "practical_implication" as RankedOpportunity["angle"],
+      description: "Explain the practical impact of the verified change.",
+    };
+    const angleRanker: OpportunityRanker = {
+      async rank(input) {
+        return (await ranker.rank(input)).map(
+          (opportunity) =>
+            Object.assign(opportunity, {
+              angle: angle.type,
+              angleDescription: angle.description,
+              materialDevelopment: null,
+            }) as RankedOpportunity,
+        );
+      },
+    };
+    const createHost = () =>
+      new ContentScoutHost({
+        runs: openRuns(workspaceDir),
+        workspaceDir,
+        now: () => clock.now,
+        adapters: [rssAdapter()],
+        ranker: angleRanker,
+        log: () => undefined,
+      });
+    const host = createHost();
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({ adapterId: "rss", label: "Feed", url: "https://example.com/feed" });
+    const firstRunId = await host.scoutNow();
+    await host.idle();
+    host.decideOpportunity(
+      firstRunId,
+      host.activeShortlist()!.opportunities[0].id,
+      "dismiss_angle",
+    );
+
+    clock.now = new Date("2026-08-26T12:00:00.000Z");
+    angle = {
+      type: "practical_implication",
+      description: "Explain the practical implications of the verified change.",
+    };
+    const restarted = createHost();
+    await restarted.scoutNow();
+    await restarted.idle();
+    expect(restarted.activeShortlist()!.opportunities).toEqual([]);
+
+    angle = {
+      type: "tactical_advice",
+      description: "Turn the verified change into an operator checklist.",
+    };
+    await restarted.scoutNow();
+    await restarted.idle();
+
+    expect(restarted.activeShortlist()!.opportunities).toMatchObject([
+      {
+        angle: "tactical_advice",
+        earlyFollowUp: {
+          kind: "different_angle",
+          explanation: "Different angle: Turn the verified change into an operator checklist.",
+        },
+      },
+    ]);
+    expect(createHost().activeShortlist()).toEqual(restarted.activeShortlist());
+  });
+
+  it("requires new supporting evidence and an explanation for a material follow-up", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-cooldown-development-"));
+    const clock = { now: NOW };
+    let includeNewEvidence = false;
+    let developmentExplanation = "";
+    const adapter = rssAdapter();
+    const collect = adapter.collect.bind(adapter);
+    adapter.collect = async (request) => {
+      const result = await collect(request);
+      const original = result.items.map((item) => ({
+        ...item,
+        storyKey: "verified-change",
+        publishedAt: clock.now.toISOString(),
+      }));
+      return {
+        ...result,
+        items: includeNewEvidence
+          ? [
+              ...original,
+              {
+                ...original[0],
+                id: "rss:story-2",
+                externalId: "story-2",
+                canonicalUrl: "https://example.com/story-2",
+                title: "A material update to the verified change",
+              },
+            ]
+          : original,
+      };
+    };
+    const developmentRanker: OpportunityRanker = {
+      async rank(input) {
+        return (await ranker.rank(input)).map((opportunity) =>
+          Object.assign(opportunity, {
+            angleDescription: "Explain the practical impact of the verified change.",
+            materialDevelopment: developmentExplanation
+              ? {
+                  explanation: developmentExplanation,
+                  sourceItemIds: ["rss:story-2"],
+                }
+              : null,
+          }),
+        );
+      },
+    };
+    const host = new ContentScoutHost({
+      runs: openRuns(workspaceDir),
+      workspaceDir,
+      now: () => clock.now,
+      adapters: [adapter],
+      ranker: developmentRanker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({ adapterId: "rss", label: "Feed", url: "https://example.com/feed" });
+    const firstRunId = await host.scoutNow();
+    await host.idle();
+    host.decideOpportunity(
+      firstRunId,
+      host.activeShortlist()!.opportunities[0].id,
+      "already_covered",
+    );
+
+    clock.now = new Date("2026-08-26T12:00:00.000Z");
+    developmentExplanation = "The new source confirms the announced change now has a firm date.";
+    await host.scoutNow();
+    await host.idle();
+    expect(host.activeShortlist()!.opportunities).toEqual([]);
+
+    includeNewEvidence = true;
+    developmentExplanation = "";
+    await host.scoutNow();
+    await host.idle();
+    expect(host.activeShortlist()!.opportunities).toEqual([]);
+
+    developmentExplanation = "The new source confirms the announced change now has a firm date.";
+    await host.scoutNow();
+    await host.idle();
+    expect(host.activeShortlist()!.opportunities).toMatchObject([
+      {
+        earlyFollowUp: {
+          kind: "material_development",
+          explanation: "The new source confirms the announced change now has a firm date.",
+        },
+      },
+    ]);
   });
 
   it("collapses missed daily and weekly periods and keeps their schedule receipts independent across DST", async () => {
@@ -805,6 +1079,8 @@ United States only
           canonicalKey: item.id,
           title: item.title ?? "Untitled",
           angle: "practical_implication",
+          angleDescription: "Explain the practical impact.",
+          materialDevelopment: null,
           urgency: "Now.",
           explanation: "Matches brand.",
           sourceItemIds: [item.id],

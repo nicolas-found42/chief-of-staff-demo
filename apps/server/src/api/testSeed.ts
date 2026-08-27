@@ -177,6 +177,8 @@ export function contentScoutTestPorts(now: () => Date): {
           canonicalKey: "e2e-public-change-practical-impact",
           title: "Explain what the verified change means in practice",
           angle: "practical_implication",
+          angleDescription: "Explain the practical impact of the verified change.",
+          materialDevelopment: null,
           urgency: "Useful while the public change is new.",
           explanation: "The evidence is specific and matches the accepted educational positioning.",
           sourceItemIds: items.map((item) => item.id),

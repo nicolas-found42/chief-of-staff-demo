@@ -758,6 +758,7 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
 
         const enrichedItemsById = new Map(promising.map((item) => [item.id, item]));
         const rankedItems = eligibility.items.map((item) => enrichedItemsById.get(item.id) ?? item);
+        const sourceUrlByItemId = new Map(rankedItems.map((item) => [item.id, item.canonicalUrl]));
         const ranked = enforceOpportunityIdentity({
           ranked: await deps.ranker.rank({
             brandProfile: brandProfile!,
@@ -768,10 +769,25 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
           items: rankedItems,
           storyGroups: eligibility.storyGroups,
           adapterStates: new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state])),
-        }).filter(
-          (opportunity) =>
-            !deps.store.opportunityInCooldown(opportunity.canonicalKey, opportunity.angle),
-        );
+        }).flatMap((opportunity) => {
+          const sourceItemReferences = opportunity.sourceItemIds.flatMap((id) => {
+            const canonicalUrl = sourceUrlByItemId.get(id);
+            return canonicalUrl ? [{ id, canonicalUrl }] : [];
+          });
+          const disposition = deps.store.opportunityCooldownDisposition(
+            opportunity,
+            sourceItemReferences,
+          );
+          return disposition.eligible
+            ? [
+                {
+                  ...opportunity,
+                  earlyFollowUp: disposition.earlyFollowUp,
+                  sourceItemReferences,
+                },
+              ]
+            : [];
+        });
         const shown = ranked.slice(0, deps.shortlistSize?.() ?? 5);
         const shortlist: ContentShortlist = {
           runId: ctx.runId,

@@ -68,6 +68,8 @@ const opportunity: Omit<RankedOpportunity, "id"> = {
   canonicalKey: "verified-change",
   title: "Explain the verified change",
   angle: "practical_implication",
+  angleDescription: "Explain the practical impact of the verified change.",
+  materialDevelopment: null,
   urgency: "Now",
   explanation: "It matters",
   sourceItemIds: [sourceItem.id],

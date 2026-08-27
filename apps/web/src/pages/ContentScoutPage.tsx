@@ -266,6 +266,17 @@ function ShortlistView({
                   {opportunity.angle.replaceAll("_", " ")} ·{" "}
                   {Math.round(opportunity.confidence * 100)}% confidence
                 </span>
+                {opportunity.earlyFollowUp && (
+                  <>
+                    <span className="status-badge status-attention">
+                      Early follow-up ·{" "}
+                      {opportunity.earlyFollowUp.kind === "different_angle"
+                        ? "different angle"
+                        : "material development"}
+                    </span>
+                    <span className="muted">{opportunity.earlyFollowUp.explanation}</span>
+                  </>
+                )}
                 <span>{opportunity.explanation}</span>
                 <span className="muted">{opportunity.urgency}</span>
               </span>

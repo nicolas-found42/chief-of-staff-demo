@@ -190,6 +190,8 @@ describe("one-way Notion calendar publication", () => {
         canonicalKey: "key",
         title: "Opportunity title",
         angle: "practical_implication",
+        angleDescription: "Explain the practical impact.",
+        materialDevelopment: null,
         urgency: "Now",
         explanation: "Why it matters",
         sourceItemIds: [],
