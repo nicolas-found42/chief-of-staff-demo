@@ -81,6 +81,9 @@ COPY --from=build /app/apps/web/dist apps/web/dist
 # Hermetic runtime smoke checks: command boundaries only, with no social-network calls.
 RUN chromium --version \
     | grep -F "151.0.7922.34" \
+    && printf '%s\n' '<!doctype html><html><body><h1>browser-render-probe</h1></body></html>' > /tmp/browser-render-probe.html \
+    && chromium --headless --no-sandbox --disable-gpu --dump-dom "file:///tmp/browser-render-probe.html" 2>/dev/null | grep -F "browser-render-probe" \
+    && rm -f /tmp/browser-render-probe.html \
     && python3 --version | grep -F "3.12.3" \
     && python3 -c "import importlib.metadata; print(importlib.metadata.version('youtube-transcript-api'))" | grep -Fx "${YOUTUBE_TRANSCRIPT_API_VERSION}" \
     && instaloader --version | grep -F "${INSTALOADER_VERSION}" \

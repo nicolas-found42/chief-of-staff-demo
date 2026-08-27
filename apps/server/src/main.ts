@@ -16,6 +16,7 @@ import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
 import { RssSourceAdapter } from "./modules/content-scout/adapters/rss.js";
 import { WebsiteSourceAdapter } from "./modules/content-scout/adapters/website.js";
+import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
 import {
   YouTubeSourceAdapter,
   youtubeSourceClient,
@@ -121,7 +122,7 @@ const contentScout = new ContentScoutHost({
   adapters: testContentScout?.adapters ?? [
     new RssSourceAdapter(),
     new RssSourceAdapter(undefined, undefined, { id: "substack", state: "available" }),
-    new WebsiteSourceAdapter(),
+    new WebsiteSourceAdapter(undefined, undefined, playwrightBrowserRenderer()),
     new YouTubeSourceAdapter(() => {
       const access = googleConnection.auth();
       return access.ok

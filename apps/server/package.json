@@ -23,6 +23,7 @@
     "mammoth": "^1.12.1",
     "pdfjs-dist": "^6.2.108",
     "rss-parser": "^3.13.0",
+    "playwright-core": "^1.62.1",
     "zod-to-json-schema": "3.23.1"
   },
   "devDependencies": {

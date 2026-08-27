@@ -41,6 +41,7 @@ export const SOURCE_PARSER_STAGES = [
   "readability",
   "rss",
   "rss_parse",
+  "browser_render",
   "youtube",
   "youtube_data_api",
   "unknown_stage",

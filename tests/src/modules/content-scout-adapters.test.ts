@@ -127,7 +127,8 @@ describe("RSS Source Adapter fixture contract", () => {
 });
 
 describe("Website Source Adapter fixture contract", () => {
-  it("extracts a public article and reports a parser break loudly", async () => {
+  it("extracts a public article through plain HTTP and Readability without a browser", async () => {
+    let rendered = 0;
     const adapter = new WebsiteSourceAdapter(
       async () =>
         response({
@@ -136,17 +137,27 @@ describe("Website Source Adapter fixture contract", () => {
           body: fixture("website-article.html"),
         }),
       () => NOW,
+      async () => {
+        rendered += 1;
+        return {
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          status: 200,
+          body: "",
+        };
+      },
     );
-    const request = {
+    const result = await adapter.collect({
       target: target("website", "https://news.example/updates"),
       since: "2026-08-18T12:00:00.000Z",
       until: NOW.toISOString(),
       checkpoint: null,
-    };
-    const success = await adapter.collect(request);
-    expect(success).toMatchObject({
+    });
+    expect(rendered).toBe(0);
+    expect(result).toMatchObject({
       kind: "completed",
       outcome: "items_found",
+      diagnostic: { parserStage: "readability" },
       items: [
         {
           canonicalUrl: "https://news.example/product-update",
@@ -155,20 +166,311 @@ describe("Website Source Adapter fixture contract", () => {
         },
       ],
     });
+  });
 
-    const broken = await new WebsiteSourceAdapter(
+  it("keeps a static parser break classified without invoking the browser", async () => {
+    let rendered = 0;
+    const result = await new WebsiteSourceAdapter(
       async () =>
         response({
           url: "https://news.example/updates",
           contentType: "text/html",
-          body: fixture("website-shape-change.html"),
+          body: fixture("website-parse-failure.html"),
         }),
       () => NOW,
-    ).collect(request);
-    expect(broken).toMatchObject({
+      async () => {
+        rendered += 1;
+        return {
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          status: 200,
+          body: "",
+        };
+      },
+    ).collect({
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(rendered).toBe(0);
+    expect(result).toMatchObject({
       kind: "failed",
       outcome: "parser_failure",
-      diagnostic: { affectedCapabilities: ["body"] },
+      diagnostic: { parserStage: "readability" },
+    });
+  });
+
+  it("renders a JavaScript-only shell through the bounded public browser fallback", async () => {
+    const renderedBody = fixture("website-rendered-article.html");
+    let renderedUrl = "";
+    const adapter = new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async (url) => {
+        renderedUrl = url;
+        return {
+          url: "https://news.example/product-update",
+          contentType: "text/html",
+          status: 200,
+          body: renderedBody,
+        };
+      },
+    );
+    const request = {
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    };
+    const result = await adapter.collect(request);
+    expect(renderedUrl).toBe("https://news.example/updates");
+    expect(result).toMatchObject({
+      kind: "completed",
+      outcome: "items_found",
+      conditional: { etag: null, lastModified: null },
+      diagnostic: { parserStage: "browser_render" },
+      items: [
+        {
+          canonicalUrl: "https://news.example/product-update",
+          title: "Public product update",
+          evidence: [{ route: "https://news.example/product-update" }],
+          completeness: { body: "available", comments: "unsupported" },
+        },
+      ],
+    });
+    expect(result.items[0]?.body).toContain("Example Research released");
+
+    const unchanged = await adapter.collect({ ...request, checkpoint: result.checkpoint });
+    expect(unchanged).toMatchObject({
+      kind: "completed",
+      outcome: "no_new_material",
+      items: [],
+      diagnostic: { parserStage: "browser_render" },
+    });
+  });
+
+  it("reports a rendered but genuinely empty section as a legitimate empty", async () => {
+    let rendered = 0;
+    const result = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/section",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async (url) => {
+        rendered += 1;
+        return {
+          url,
+          contentType: "text/html",
+          status: 200,
+          body: fixture("website-rendered-empty.html"),
+        };
+      },
+    ).collect({
+      target: target("website", "https://news.example/section"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(rendered).toBe(1);
+    expect(result).toMatchObject({
+      kind: "completed",
+      outcome: "legitimate_empty",
+      items: [],
+      diagnostic: { parserStage: "browser_render" },
+    });
+  });
+
+  it("keeps plain-HTTP failures in front of the browser route", async () => {
+    let rendered = 0;
+    const render = async (url: string) => {
+      rendered += 1;
+      return {
+        url,
+        contentType: "text/html",
+        status: 200,
+        body: fixture("website-rendered-article.html"),
+      };
+    };
+    const request = {
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    };
+    const blocked = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          status: 403,
+          body: fixture("website-blocked.html"),
+        }),
+      () => NOW,
+      render,
+    ).collect(request);
+    expect(blocked).toMatchObject({
+      kind: "failed",
+      outcome: "blocked_access",
+      diagnostic: { parserStage: "fetch", status: 403 },
+    });
+
+    const limited = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          status: 429,
+          retryAfter: "30",
+          body: fixture("website-rate-limited.html"),
+        }),
+      () => NOW,
+      render,
+    ).collect(request);
+    expect(limited).toMatchObject({
+      kind: "failed",
+      outcome: "rate_limit",
+      diagnostic: { parserStage: "fetch", retryAfterMs: 30_000 },
+    });
+    expect(rendered).toBe(0);
+  });
+
+  it("classifies a browser render timeout separately from the fetch route", async () => {
+    const timeout = new Error("Navigation timed out.");
+    timeout.name = "AbortError";
+    const result = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async () => {
+        throw timeout;
+      },
+    ).collect({
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(result).toMatchObject({
+      kind: "failed",
+      outcome: "timeout",
+      diagnostic: { parserStage: "browser_render" },
+    });
+  });
+
+  it("keeps a rendered access or rate-limit response classified at the browser stage", async () => {
+    const request = {
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    };
+    const blocked = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async (url) => ({
+        url,
+        contentType: "text/html",
+        status: 403,
+        body: fixture("website-blocked.html"),
+      }),
+    ).collect(request);
+    expect(blocked).toMatchObject({
+      kind: "failed",
+      outcome: "blocked_access",
+      diagnostic: { parserStage: "browser_render", status: 403 },
+    });
+
+    const limited = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async (url) => ({
+        url,
+        contentType: "text/html",
+        status: 429,
+        body: fixture("website-rate-limited.html"),
+      }),
+    ).collect(request);
+    expect(limited).toMatchObject({
+      kind: "failed",
+      outcome: "rate_limit",
+      diagnostic: { parserStage: "browser_render", status: 429 },
+    });
+  });
+
+  it("classifies a browser launch failure without hiding it behind a parser break", async () => {
+    const result = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async () => {
+        throw new Error("Chromium executable or library is missing from this runtime.");
+      },
+    ).collect({
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(result).toMatchObject({
+      kind: "failed",
+      outcome: "internal_failure",
+      diagnostic: {
+        parserStage: "browser_render",
+        causeChain: ["Chromium executable or library is missing from this runtime."],
+      },
+    });
+  });
+
+  it("reports a rendered page that no longer parses as a browser-stage parser failure", async () => {
+    const result = await new WebsiteSourceAdapter(
+      async () =>
+        response({
+          url: "https://news.example/updates",
+          contentType: "text/html",
+          body: fixture("website-shell.html"),
+        }),
+      () => NOW,
+      async (url) => ({
+        url,
+        contentType: "text/html",
+        status: 200,
+        body: fixture("website-parse-failure.html"),
+      }),
+    ).collect({
+      target: target("website", "https://news.example/updates"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(result).toMatchObject({
+      kind: "failed",
+      outcome: "parser_failure",
+      diagnostic: { parserStage: "browser_render", affectedCapabilities: ["body"] },
     });
   });
 });
