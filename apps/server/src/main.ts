@@ -23,6 +23,7 @@ import {
   youtubeSourceClient,
 } from "./modules/content-scout/adapters/youtube.js";
 import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/declarations.js";
+import { ContentScoutRetention } from "./modules/content-scout/retention.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { InstagramInstaloaderAdapter } from "./modules/content-scout/adapters/instagram.js";
 import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
@@ -127,12 +128,19 @@ const contentScout = new ContentScoutHost({
     new RssSourceAdapter(undefined, undefined, { id: "substack" }),
     new WebsiteSourceAdapter(undefined, undefined, playwrightBrowserRenderer()),
     new SubstackEnrichmentAdapter(),
-    new YouTubeSourceAdapter(() => {
-      const access = googleConnection.auth();
-      return access.ok
-        ? { ok: true, client: youtubeSourceClient(access.auth) }
-        : { ok: false, state: access.state };
-    }),
+    new YouTubeSourceAdapter(
+      () => {
+        const access = googleConnection.auth();
+        return access.ok
+          ? { ok: true, client: youtubeSourceClient(access.auth) }
+          : { ok: false, state: access.state };
+      },
+      () => new Date(),
+      {
+        runtimeInspector: new ExternalRuntimeInspector(() => new Date()),
+        retention: new ContentScoutRetention(workspaceDir, () => new Date()),
+      },
+    ),
     new RedditSourceAdapter(),
     new InstagramInstaloaderAdapter(),
     new TikTokYtDlpAdapter(),
