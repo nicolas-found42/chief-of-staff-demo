@@ -678,6 +678,19 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
               </div>
               <p>{suggestion.discoveredBecause}</p>
               <p className="muted">{suggestion.similarityFactors.join(" · ")}</p>
+              {suggestion.evidenceUrls.length > 0 && (
+                <p className="muted">
+                  Evidence:{" "}
+                  {suggestion.evidenceUrls.map((evidenceUrl, index) => (
+                    <span key={evidenceUrl}>
+                      {index > 0 ? " · " : ""}
+                      <a href={evidenceUrl} target="_blank" rel="noreferrer">
+                        {evidenceUrl}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              )}
               <div className="toolbar">
                 {suggestion.state === "proposed" ? (
                   <>

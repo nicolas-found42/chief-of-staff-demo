@@ -27,7 +27,7 @@ import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { ExperimentalPublicPageAdapter } from "./modules/content-scout/adapters/experimental.js";
 import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
 import { TikTokYtDlpAdapter } from "./modules/content-scout/adapters/tiktok.js";
-import { PublicLinkSourceDiscoverer } from "./modules/content-scout/discoverer.js";
+import { PublicRouteSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
   PublicBrandProfileCrawler,
   modelBrandProfileProposer,
@@ -143,7 +143,7 @@ const contentScout = new ContentScoutHost({
   notionPublisher: testContentScout?.notionPublisher ?? notionPublisher,
   notionConnection,
   notionCalendar,
-  discoverer: new PublicLinkSourceDiscoverer(),
+  discoverer: new PublicRouteSourceDiscoverer(),
   brandProfileCrawler: testContentScout?.brandProfileCrawler ?? new PublicBrandProfileCrawler(),
   brandProfileProposer:
     testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
