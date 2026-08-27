@@ -46,6 +46,7 @@ export const SOURCE_PARSER_STAGES = [
   "browser_render",
   "youtube",
   "youtube_data_api",
+  "yt_dlp",
   "unknown_stage",
 ] as const;
 export type SourceParserStage = (typeof SOURCE_PARSER_STAGES)[number];

@@ -6,6 +6,7 @@ import { SubstackEnrichmentAdapter } from "../../../apps/server/src/modules/cont
 import type { PublicHttpResponse } from "../../../apps/server/src/modules/content-scout/adapters/http";
 import { WebsiteSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/website";
 import { ExperimentalPublicPageAdapter } from "../../../apps/server/src/modules/content-scout/adapters/experimental";
+import { TikTokYtDlpAdapter } from "../../../apps/server/src/modules/content-scout/adapters/tiktok";
 import {
   YouTubeSourceAdapter,
   type YouTubeSourceClient,
@@ -539,56 +540,54 @@ describe("YouTube Source Adapter fixture contract", () => {
 });
 
 describe("Experimental anonymous social adapters", () => {
-  it.each(["instagram", "tiktok"] as const)(
-    "keeps %s Experimental while normalizing explicit public embedded evidence",
-    async (platform) => {
-      const adapter = new ExperimentalPublicPageAdapter(
-        platform,
-        async () =>
-          response({
-            url: `https://www.${platform}.com/public-creator`,
-            contentType: "text/html",
-            body: fixture("social-public-page.html").replaceAll("instagram", platform),
-          }),
-        () => NOW,
-      );
-      const request = {
-        target: target(platform, `https://www.${platform}.com/public-creator`),
-        since: "2026-08-18T12:00:00.000Z",
-        until: NOW.toISOString(),
-        checkpoint: null,
-      };
-      const result = await adapter.collect(request);
-      expect(adapter.state).toBe("experimental");
-      expect(result).toMatchObject({
-        kind: "completed",
-        outcome: "items_found",
-        items: [
-          {
-            externalId: "public-post-42",
-            adapterId: platform,
-            completeness: { transcript: "unavailable", comments: "unavailable" },
-          },
-        ],
-      });
+  it("keeps instagram Experimental while normalizing explicit public embedded evidence", async () => {
+    const platform = "instagram" as const;
+    const adapter = new ExperimentalPublicPageAdapter(
+      platform,
+      async () =>
+        response({
+          url: `https://www.${platform}.com/public-creator`,
+          contentType: "text/html",
+          body: fixture("social-public-page.html").replaceAll("instagram", platform),
+        }),
+      () => NOW,
+    );
+    const request = {
+      target: target(platform, `https://www.${platform}.com/public-creator`),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    };
+    const result = await adapter.collect(request);
+    expect(adapter.state).toBe("experimental");
+    expect(result).toMatchObject({
+      kind: "completed",
+      outcome: "items_found",
+      items: [
+        {
+          externalId: "public-post-42",
+          adapterId: platform,
+          completeness: { transcript: "unavailable", comments: "unavailable" },
+        },
+      ],
+    });
 
-      const changed = await new ExperimentalPublicPageAdapter(
-        platform,
-        async () =>
-          response({
-            url: `https://www.${platform}.com/public-creator`,
-            contentType: "text/html",
-            body: fixture("social-shape-change.html"),
-          }),
-        () => NOW,
-      ).collect(request);
-      expect(changed).toMatchObject({
-        kind: "failed",
-        outcome: "response_shape_change",
-        diagnostic: { affectedCapabilities: ["items", "transcript", "comments"] },
-      });
-    },
-  );
+    const changed = await new ExperimentalPublicPageAdapter(
+      platform,
+      async () =>
+        response({
+          url: `https://www.${platform}.com/public-creator`,
+          contentType: "text/html",
+          body: fixture("social-shape-change.html"),
+        }),
+      () => NOW,
+    ).collect(request);
+    expect(changed).toMatchObject({
+      kind: "failed",
+      outcome: "response_shape_change",
+      diagnostic: { affectedCapabilities: ["items", "transcript", "comments"] },
+    });
+  });
 });
 
 describe("Substack media enrichment adapter", () => {
@@ -816,5 +815,278 @@ describe("Substack media enrichment adapter", () => {
       const enriched = await adapter.enrich(result.items);
       expect(enriched).toEqual(result.items);
     }
+  });
+});
+
+describe("TikTok yt-dlp Source Adapter fixture contract", () => {
+  const userRequest = {
+    target: target("tiktok", "https://www.tiktok.com/@publicmaker"),
+    since: "2026-08-18T12:00:00.000Z",
+    until: NOW.toISOString(),
+    checkpoint: null,
+  };
+
+  it("normalizes a public user page through the isolated yt-dlp route", async () => {
+    let invoked: string[] | null = null;
+    const adapter = new TikTokYtDlpAdapter(
+      async (args) => {
+        invoked = args;
+        return { stdout: fixture("tiktok-user-page.json"), stderr: "", code: 0 };
+      },
+      async () => ({ stdout: "", stderr: "", code: 0 }),
+      () => NOW,
+    );
+    const result = await adapter.collect(userRequest);
+    expect(adapter.state).toBe("experimental");
+    // The production command boundary is exact: metadata-only flags, no media
+    // download (`-o`, `--write-*`, `--download-sections`), no config/cookie
+    // import, so nothing temporary is ever retained by collection.
+    expect(invoked).toEqual([
+      "--ignore-config",
+      "--no-warnings",
+      "--socket-timeout",
+      "30",
+      "--dump-single-json",
+      "--flat-playlist",
+      "--playlist-end",
+      "50",
+      "https://www.tiktok.com/@publicmaker",
+    ]);
+    expect(result).toMatchObject({
+      kind: "completed",
+      outcome: "items_found",
+      diagnostic: {
+        classification: "items_found",
+        parserStage: "yt_dlp",
+        adapterVersion: "tiktok-yt-dlp-v1",
+      },
+    });
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({
+      externalId: "7321000000000000001",
+      canonicalUrl: "https://www.tiktok.com/@publicmaker/video/7321000000000000001",
+      adapterId: "tiktok",
+      author: "publicmaker",
+      media: [
+        { type: "video", url: "https://www.tiktok.com/@publicmaker/video/7321000000000000001" },
+      ],
+      completeness: {
+        title: "available",
+        body: "unavailable",
+        transcript: "unsupported",
+        comments: "unavailable",
+      },
+    });
+    expect(result.items[0]?.publishedAt).toBe("2026-08-20T10:00:00.000Z");
+    // The third fixture entry is outside the collection window and must not
+    // appear as an empty success or a stale item.
+    expect(result.items.map((item) => item.externalId)).toEqual([
+      "7321000000000000001",
+      "7321000000000000002",
+    ]);
+    expect(result.checkpoint).toEqual(expect.any(String));
+  });
+
+  it("normalizes a single public video and keeps its canonical route", async () => {
+    let invoked: string[] | null = null;
+    const adapter = new TikTokYtDlpAdapter(
+      async (args) => {
+        invoked = args;
+        return { stdout: fixture("tiktok-video.json"), stderr: "", code: 0 };
+      },
+      async () => ({ stdout: "", stderr: "", code: 0 }),
+      () => NOW,
+    );
+    const result = await adapter.collect({
+      target: target("tiktok", "https://www.tiktok.com/@publicmaker/video/7321000000000000004"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(invoked).toEqual(expect.arrayContaining(["--no-playlist", "--dump-single-json"]));
+    expect(result).toMatchObject({
+      kind: "completed",
+      outcome: "items_found",
+      items: [
+        {
+          externalId: "7321000000000000004",
+          canonicalUrl: "https://www.tiktok.com/@publicmaker/video/7321000000000000004",
+          author: "publicmaker",
+          description: expect.stringContaining("interoperability rule"),
+          completeness: { body: "available", description: "available" },
+        },
+      ],
+    });
+  });
+
+  it("keeps a legitimate empty public account distinct from a failed fetch", async () => {
+    const adapter = new TikTokYtDlpAdapter(
+      async () => ({ stdout: fixture("tiktok-user-empty.json"), stderr: "", code: 0 }),
+      async () => ({ stdout: "", stderr: "", code: 0 }),
+      () => NOW,
+    );
+    const result = await adapter.collect({
+      ...userRequest,
+      target: target("tiktok", "https://www.tiktok.com/@quietaccount"),
+    });
+    expect(result).toMatchObject({
+      kind: "completed",
+      outcome: "legitimate_empty",
+      items: [],
+    });
+    const unchanged = await adapter.collect({
+      ...userRequest,
+      target: target("tiktok", "https://www.tiktok.com/@quietaccount"),
+      checkpoint: "existing-checkpoint",
+    });
+    expect(unchanged).toMatchObject({ kind: "completed", outcome: "no_new_material", items: [] });
+  });
+
+  it("classifies a response-shape change as a loud failure, not an empty success", async () => {
+    const adapter = new TikTokYtDlpAdapter(
+      async () => ({ stdout: fixture("tiktok-shape-change.json"), stderr: "", code: 0 }),
+      async () => ({ stdout: "", stderr: "", code: 0 }),
+      () => NOW,
+    );
+    const result = await adapter.collect(userRequest);
+    expect(result).toMatchObject({
+      kind: "failed",
+      outcome: "response_shape_change",
+      diagnostic: {
+        affectedCapabilities: ["items"],
+        parserStage: "yt_dlp",
+      },
+    });
+  });
+
+  it("keeps unsupported target kinds explicit instead of guessing", async () => {
+    const adapter = new TikTokYtDlpAdapter(
+      async () => ({ stdout: "{}", stderr: "", code: 0 }),
+      async () => ({ stdout: "", stderr: "", code: 0 }),
+      () => NOW,
+    );
+    const result = await adapter.collect({
+      ...userRequest,
+      target: target("tiktok", "https://www.tiktok.com/@maker/tag/practical"),
+    });
+    expect(result).toMatchObject({
+      kind: "failed",
+      outcome: "unsupported_capability",
+      diagnostic: { affectedCapabilities: ["source_target"] },
+    });
+  });
+
+  it.each([
+    [
+      "login wall",
+      "ERROR: [TikTok] @maker: login required",
+      "blocked_access",
+      ["items", "comments"],
+    ],
+    ["rate limit", "ERROR: Too many requests (429)", "rate_limit", ["items"]],
+    [
+      "parser change",
+      "ERROR: no supported extractor for tiktok.com",
+      "unsupported_capability",
+      ["source_target"],
+    ],
+    ["internal failure", "ERROR: Unexpected network error", "internal_failure", ["items"]],
+  ] as const)(
+    "classifies %s on the yt-dlp stderr boundary",
+    async (_name, stderr, outcome, affectedCapabilities) => {
+      const adapter = new TikTokYtDlpAdapter(
+        async () => ({ stdout: "", stderr, code: 1 }),
+        async () => ({ stdout: "", stderr: "", code: 0 }),
+        () => NOW,
+      );
+      const result = await adapter.collect(userRequest);
+      expect(result).toMatchObject({
+        kind: "failed",
+        outcome,
+        diagnostic: { affectedCapabilities },
+      });
+    },
+  );
+
+  it("keeps Pyktok enrichment optional and never a hidden collection requirement", async () => {
+    const collected = await new TikTokYtDlpAdapter(
+      async () => ({ stdout: fixture("tiktok-user-page.json"), stderr: "", code: 0 }),
+      async () => ({ stdout: "", stderr: "", code: 0 }),
+      () => NOW,
+    ).collect(userRequest);
+    expect(collected.kind).toBe("completed");
+
+    // Pyktok absent: the version probe fails, comments stay explicitly
+    // unsupported, and collected evidence is untouched.
+    const withoutPyktok = new TikTokYtDlpAdapter(
+      async () => ({ stdout: fixture("tiktok-user-page.json"), stderr: "", code: 0 }),
+      async () => ({ stdout: "", stderr: "pyktok not installed", code: 1 }),
+      () => NOW,
+    );
+    const collectedAgain = await withoutPyktok.collect(userRequest);
+    const enriched = await withoutPyktok.enrich(collectedAgain.items);
+    expect(enriched[0]).toMatchObject({ completeness: { comments: "unsupported" } });
+    expect(enriched[0]?.body).toBe(collectedAgain.items[0]?.body);
+  });
+
+  it("normalizes optional Pyktok comments and marks worker failures as failed fields", async () => {
+    let pythonCalls = 0;
+    const adapter = new TikTokYtDlpAdapter(
+      async () => ({ stdout: fixture("tiktok-video.json"), stderr: "", code: 0 }),
+      async (args) => {
+        pythonCalls += 1;
+        if (args.some((arg) => arg.includes("importlib.metadata.version('pyktok')"))) {
+          return { stdout: "0.0.11", stderr: "", code: 0 };
+        }
+        return { stdout: fixture("tiktok-comments.json"), stderr: "", code: 0 };
+      },
+      () => NOW,
+    );
+    const result = await adapter.collect({
+      target: target("tiktok", "https://www.tiktok.com/@publicmaker/video/7321000000000000004"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    const enriched = await adapter.enrich(result.items);
+    expect(pythonCalls).toBe(2); // one version probe, one comment worker
+    expect(enriched[0]?.comments).toEqual([
+      {
+        author: "builder_alice",
+        publishedAt: "2026-08-20T10:05:00.000Z",
+        url: null,
+        text: "How would a small team apply this?",
+        engagement: 88,
+      },
+      {
+        author: "skeptic_bob",
+        publishedAt: "2026-08-20T10:06:00.000Z",
+        url: null,
+        text: "This contradicts the guidance we saw last week.",
+        engagement: 41,
+      },
+      {
+        author: "maker_carol",
+        publishedAt: "2026-08-20T10:07:00.000Z",
+        url: null,
+        text: "Useful breakdown, thanks.",
+        engagement: 12,
+      },
+    ]);
+    expect(enriched[0]).toMatchObject({ completeness: { comments: "available" } });
+
+    const failing = new TikTokYtDlpAdapter(
+      async () => ({ stdout: fixture("tiktok-video.json"), stderr: "", code: 0 }),
+      async (args) => {
+        if (args.some((arg) => arg.includes("importlib.metadata.version('pyktok')"))) {
+          return { stdout: "0.0.11", stderr: "", code: 0 };
+        }
+        return { stdout: "", stderr: "Traceback: TikTok blocked this worker", code: 1 };
+      },
+      () => NOW,
+    );
+    // Every video worker failed: the enrichment call stays loud so the shared
+    // path counts a warning, rather than silently returning "failed" fields.
+    await expect(failing.enrich(result.items)).rejects.toThrow(/Pyktok comment enrichment failed/);
   });
 });

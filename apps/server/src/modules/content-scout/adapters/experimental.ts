@@ -11,7 +11,7 @@ import {
   type PublicHttpFetch,
 } from "./http.js";
 
-type Platform = "instagram" | "tiktok";
+type Platform = "instagram";
 
 /**
  * A deliberately Experimental anonymous public-page route. It extracts only

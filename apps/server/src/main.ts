@@ -26,6 +26,7 @@ import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/decla
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { ExperimentalPublicPageAdapter } from "./modules/content-scout/adapters/experimental.js";
 import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
+import { TikTokYtDlpAdapter } from "./modules/content-scout/adapters/tiktok.js";
 import { PublicLinkSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
   PublicBrandProfileCrawler,
@@ -134,7 +135,7 @@ const contentScout = new ContentScoutHost({
     }),
     new RedditSourceAdapter(),
     new ExperimentalPublicPageAdapter("instagram"),
-    new ExperimentalPublicPageAdapter("tiktok"),
+    new TikTokYtDlpAdapter(),
     new ComingLaterSourceAdapter("linkedin"),
   ],
   ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
