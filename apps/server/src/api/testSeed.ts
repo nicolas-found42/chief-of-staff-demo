@@ -97,16 +97,16 @@ export function contentScoutTestPorts(now: () => Date): {
         kind: "completed",
         outcome: "items_found",
         checkpoint: "e2e-checkpoint-1",
-        items: [
-          {
-            id: "rss:e2e-public-change",
-            externalId: "e2e-public-change",
+        items: ["public-change", "independent-analysis", "operator-impact"].map(
+          (externalId, index) => ({
+            id: `rss:e2e-${externalId}`,
+            externalId: `e2e-${externalId}`,
             targetId: target.id,
             adapterId: "rss",
-            canonicalUrl: "https://example.com/research/public-change",
+            canonicalUrl: `https://example.com/research/${externalId}`,
             author: "Example Research",
-            title: "A verified public change with practical consequences",
-            body: "The checked-in public-source fixture describes a verified change and concrete consequences.",
+            title: `Verified public evidence ${index + 1}`,
+            body: `Independent public-source evidence ${index + 1} describes the verified change and its practical consequences.`,
             description: null,
             publishedAt: at,
             discoveredAt: at,
@@ -122,8 +122,8 @@ export function contentScoutTestPorts(now: () => Date): {
               comments: "unsupported",
               media: "unavailable",
             },
-          },
-        ],
+          }),
+        ),
         diagnostic: {
           classification: "items_found",
           route: "fixture:content-scout-rss",

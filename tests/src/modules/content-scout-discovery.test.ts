@@ -75,6 +75,7 @@ const ALL_ROUTES_PAGE = `<!doctype html>
     <a href="https://other.example/story" aria-label="Practical guide to operators">An outbound story</a>
     <div class="related"><a href="https://related.example/topic">Related topic</a></div>
     <blockquote><a href="https://cited.example/report">Cited report</a></blockquote>
+    <a rel="mention" href="https://mentioned.example/profile">Mentioned profile</a>
     <a rel="tag" href="https://tags.example/operator-tools">Operator tools</a>
     <div class="guests"><a href="https://guest.example/profile">Jane Guest</a></div>
     <a rel="repost" href="https://boosted.example/channel">Boosted channel</a>
@@ -163,6 +164,11 @@ describe("Source Discovery evidence routes", () => {
       evidenceUrls: [TARGET_URL],
       similarityFactors: ["Cited source within approved material"],
     });
+    expect(byUrl.get("https://mentioned.example/profile")).toMatchObject({
+      discoveredBecause: "Mentioned by an approved public Source Target.",
+      evidenceUrls: [TARGET_URL],
+      similarityFactors: ["Mentioned within approved material"],
+    });
     expect(byUrl.get("https://tags.example/operator-tools")).toMatchObject({
       discoveredBecause: "Tagged topic on an approved public Source Target.",
       evidenceUrls: [TARGET_URL],
@@ -200,16 +206,18 @@ describe("Source Discovery evidence routes", () => {
     expect(suggestions.every((suggestion) => suggestion.similarityFactors.length > 0)).toBe(true);
   });
 
-  it("uses public search results related to approved sources and Brand Profile terms", async () => {
+  it("uses public search results for similar domains and Brand Profile categories", async () => {
     const fetched: string[] = [];
     const fetchText: PublicHttpFetch = async (url) => {
       fetched.push(url);
       if (url.startsWith("https://search.example/")) {
+        const query = new URL(url).searchParams.get("q") ?? "";
         return htmlResponse(
-          searchHtml([
-            "https://search-result.example/journal",
-            "https://another-search.example/feed",
-          ]),
+          searchHtml(
+            query.startsWith("similar sites to")
+              ? ["https://similar-domain.example/journal"]
+              : ["https://category-source.example/feed"],
+          ),
           url,
         );
       }
@@ -225,17 +233,28 @@ describe("Source Discovery evidence routes", () => {
     });
 
     const searchFetches = fetched.filter((url) => url.startsWith("https://search.example/"));
-    expect(searchFetches.length).toBeGreaterThan(0);
-    expect(searchFetches.some((url) => url.includes("news.example"))).toBe(true);
-    expect(searchFetches.some((url) => url.includes("practical"))).toBe(true);
-    expect(searchFetches.some((url) => url.includes("educational"))).toBe(true);
-    const searchResult = suggestions.find(
-      (suggestion) => suggestion.url === "https://search-result.example/journal",
+    const searchQueries = searchFetches.map((url) =>
+      (new URL(url).searchParams.get("q") ?? "").toLowerCase(),
     );
-    expect(searchResult).toMatchObject({
-      discoveredBecause: expect.stringContaining("Public search result related to approved source"),
+    expect(searchFetches.length).toBeGreaterThan(0);
+    expect(searchQueries.some((query) => query.includes("news.example"))).toBe(true);
+    expect(searchQueries.some((query) => query.includes("practical"))).toBe(true);
+    expect(searchQueries.some((query) => query.includes("educational"))).toBe(true);
+    const similarDomain = suggestions.find(
+      (suggestion) => suggestion.url === "https://similar-domain.example/journal",
+    );
+    expect(similarDomain).toMatchObject({
+      discoveredBecause: expect.stringContaining("Public search result for a domain"),
       evidenceUrls: [expect.stringContaining("https://search.example/?q=")],
-      similarityFactors: [expect.stringContaining("Related to approved source")],
+      similarityFactors: [expect.stringContaining("Similar domain query")],
+    });
+    const categorySource = suggestions.find(
+      (suggestion) => suggestion.url === "https://category-source.example/feed",
+    );
+    expect(categorySource).toMatchObject({
+      discoveredBecause: expect.stringContaining("Brand Profile category"),
+      evidenceUrls: [expect.stringContaining("https://search.example/?q=")],
+      similarityFactors: [expect.stringContaining("Brand Profile category query")],
     });
   });
 

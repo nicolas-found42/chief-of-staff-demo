@@ -15,6 +15,70 @@ type DiscoveryProposal = Omit<
   "id" | "state" | "discoveredAt" | "decisionReason" | "sourceTargetId"
 >;
 
+interface AnchorRoute {
+  selector: string;
+  externalOnly: boolean;
+  discoveredBecause: string;
+  similarity: (label: string) => string[];
+}
+
+const ANCHOR_ROUTES: readonly AnchorRoute[] = [
+  {
+    selector: 'a[rel~="author"], a[rel~="me"], link[rel~="author"], link[rel~="me"]',
+    externalOnly: false,
+    discoveredBecause: "Author of an approved public Source Target.",
+    similarity: () => ["Same author as an approved source"],
+  },
+  {
+    selector:
+      '[class*="guest"] a[href], [id*="guest"] a[href], [data-guest] a[href], a[href*="/guest/"]',
+    externalOnly: false,
+    discoveredBecause: "Guest on an approved public Source Target.",
+    similarity: () => ["Guest contributor on an approved source"],
+  },
+  {
+    selector: 'blockquote a[href], cite a[href], sup a[href], a[rel~="nofollow"]',
+    externalOnly: true,
+    discoveredBecause: "Cited by an approved public Source Target.",
+    similarity: () => ["Cited source within approved material"],
+  },
+  {
+    selector:
+      'a[rel~="mention"], a[class*="mention"], [class*="mention"] a[href], a[href*="/mentions/"]',
+    externalOnly: true,
+    discoveredBecause: "Mentioned by an approved public Source Target.",
+    similarity: () => ["Mentioned within approved material"],
+  },
+  {
+    selector:
+      'a[rel~="tag"], a[href*="/tag/"], a[href*="/tags/"], a[href*="/topic/"], a[href*="/topics/"], a[href*="/category/"], a[href*="/categories/"]',
+    externalOnly: false,
+    discoveredBecause: "Tagged topic on an approved public Source Target.",
+    similarity: (label) => (label ? [`Tag: ${label}`] : ["Tag on an approved source"]),
+  },
+  {
+    selector:
+      'nav a[href], aside a[href], [class*="blogroll"] a[href], [id*="blogroll"] a[href], [class*="blog-roll"] a[href], [class*="links"] a[href], [id*="links"] a[href]',
+    externalOnly: true,
+    discoveredBecause: "Listed in an approved public Source Target's blogroll.",
+    similarity: () => ["Curated link from an approved source"],
+  },
+  {
+    selector:
+      'a[rel~="related"], a[class*="related"], a[id*="related"], a[class*="recommended"], [class*="related"] a[href], [id*="related"] a[href], [class*="recommended"] a[href], [class*="see-also"] a[href], [class*="see_also"] a[href]',
+    externalOnly: true,
+    discoveredBecause: "Recommended or related on an approved public Source Target.",
+    similarity: () => ["Related recommendation from an approved source"],
+  },
+  {
+    selector:
+      'a[rel~="repost"], a[rel~="boost"], a[class*="repost"], a[class*="boost"], a[href*="/repost"], a[href*="/boost"]',
+    externalOnly: true,
+    discoveredBecause: "Reposted or boosted from an approved public Source Target.",
+    similarity: () => ["Reposted or boosted by an approved source"],
+  },
+];
+
 function adapterFor(url: URL): string {
   const host = url.hostname.replace(/^www\./, "");
   if (host === "youtube.com" || host === "youtu.be") return "youtube";
@@ -35,6 +99,38 @@ function brandKeywords(markdown: string): string[] {
       .match(/[a-z][a-z-]{4,}/g)
       ?.filter((word, index, words) => words.indexOf(word) === index) ?? []
   );
+}
+
+/** Semantic Brand Profile values used as category-level discovery queries. */
+function brandCategories(markdown: string): string[] {
+  const categorySections = new Set([
+    "positioning",
+    "audiences",
+    "offers",
+    "differentiators",
+    "content constraints",
+  ]);
+  let section = "";
+  const categories: string[] = [];
+  for (const rawLine of markdown.split("\n")) {
+    const heading = rawLine.match(/^#{2,6}\s+(.+?)\s*$/);
+    if (heading) {
+      section = heading[1]!.trim().toLowerCase();
+      continue;
+    }
+    if (!categorySections.has(section)) continue;
+    const phrase = rawLine
+      .replace(/^\s*[-*+]\s+/, "")
+      .replace(/[*_`#[\]]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/[.!?]+$/, "")
+      .split(" ")
+      .slice(0, 10)
+      .join(" ");
+    if (phrase.length >= 8 && !categories.includes(phrase)) categories.push(phrase);
+  }
+  return categories;
 }
 
 function resolveUrl(href: string | null, base: string): URL | null {
@@ -89,6 +185,7 @@ export class PublicRouteSourceDiscoverer implements SourceDiscoverer {
       .filter((target) => target.state === "active")
       .slice(0, MAX_TARGETS);
     const keywords = brandKeywords(brandProfile.markdown);
+    const categories = brandCategories(brandProfile.markdown);
 
     const pages: { document: Document; url: string }[] = [];
     for (const target of activeTargets) {
@@ -111,24 +208,16 @@ export class PublicRouteSourceDiscoverer implements SourceDiscoverer {
 
     // Most specific routes run first so a URL's provenance names the route that
     // explains it best; the outbound-link route keeps the general case.
-    const pageRoutes: Array<(document: Document, url: string) => void> = [
-      (document, url) => this.authorPages(document, url, add),
-      (document, url) => this.guests(document, url, add),
-      (document, url) => this.citations(document, url, add),
-      (document, url) => this.tags(document, url, add),
-      (document, url) => this.blogrolls(document, url, add),
-      (document, url) => this.relatedResults(document, url, add),
-      (document, url) => this.reposts(document, url, add),
-      (document, url) => this.outboundLinks(document, url, keywords, add),
-    ];
     for (const page of pages) {
-      for (const run of pageRoutes) {
+      for (const route of ANCHOR_ROUTES) {
         try {
-          run(page.document, page.url);
+          this.collectAnchorRoute(page.document, page.url, route, add);
         } catch {
           // One route's failure never discards the others' findings.
         }
       }
+      this.collectMetadataRoutes(page.document, page.url, add);
+      this.outboundLinks(page.document, page.url, keywords, add);
       if (candidates.size >= MAX_TOTAL_CANDIDATES) break;
     }
 
@@ -144,46 +233,52 @@ export class PublicRouteSourceDiscoverer implements SourceDiscoverer {
           })
           .filter((hostname): hostname is string => hostname !== null),
       ),
-    ].slice(0, MAX_SEARCH_QUERIES);
+    ];
     await this.searchRoute({
-      queries: searchQueries,
-      discoveredBecause: (query) => `Public search result related to approved source ${query}.`,
-      similarity: (query) => [`Related to approved source: ${query}`],
+      queries: searchQueries.slice(0, MAX_SEARCH_QUERIES).map((host) => `similar sites to ${host}`),
+      discoveredBecause: (query) => `Public search result for a domain ${query}.`,
+      similarity: (query) => [`Similar domain query: ${query}`],
       add,
     });
     await this.searchRoute({
-      queries: keywords.slice(0, MAX_SEARCH_QUERIES),
-      discoveredBecause: (query) => `Mentions ${query} in public search results.`,
-      similarity: (query) => [`Brand Profile term: ${query}`],
+      queries: categories.slice(0, MAX_SEARCH_QUERIES).map((category) => `${category} sources`),
+      discoveredBecause: (query) => `Public search result in Brand Profile category ${query}.`,
+      similarity: (query) => [`Brand Profile category query: ${query}`],
       add,
     });
 
     return [...candidates.values()];
   }
 
-  private authorPages(
+  private collectAnchorRoute(
     document: Document,
     pageUrl: string,
+    route: AnchorRoute,
     add: (proposal: DiscoveryProposal) => void,
   ): void {
-    const links = [
-      ...document.querySelectorAll<Element>(
-        'a[rel~="author"], a[rel~="me"], link[rel~="author"], link[rel~="me"]',
-      ),
-    ];
-    for (const element of links.slice(0, MAX_ROUTE_CANDIDATES)) {
+    for (const element of [...document.querySelectorAll<Element>(route.selector)].slice(
+      0,
+      MAX_ROUTE_CANDIDATES,
+    )) {
       const url = resolveUrl(element.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url)) continue;
+      if (!url || !httpUrl(url) || (route.externalOnly && !externalTo(url, pageUrl))) continue;
       const label = anchorLabel(element);
       add({
         adapterId: adapterFor(url),
         label: label || url.hostname,
         url: url.toString(),
-        discoveredBecause: "Author of an approved public Source Target.",
+        discoveredBecause: route.discoveredBecause,
         evidenceUrls: [pageUrl],
-        similarityFactors: ["Same author as an approved source"],
+        similarityFactors: route.similarity(label),
       });
     }
+  }
+
+  private collectMetadataRoutes(
+    document: Document,
+    pageUrl: string,
+    add: (proposal: DiscoveryProposal) => void,
+  ): void {
     const meta = document.querySelector<HTMLMetaElement>('meta[name="author"][content]');
     if (meta) {
       const url = resolveUrl(meta.content.trim(), pageUrl);
@@ -198,127 +293,6 @@ export class PublicRouteSourceDiscoverer implements SourceDiscoverer {
         });
       }
     }
-  }
-
-  private guests(
-    document: Document,
-    pageUrl: string,
-    add: (proposal: DiscoveryProposal) => void,
-  ): void {
-    const anchors = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        '[class*="guest"] a[href], [id*="guest"] a[href], [data-guest] a[href], a[href*="/guest/"]',
-      ),
-    ];
-    for (const anchor of anchors.slice(0, MAX_ROUTE_CANDIDATES)) {
-      const url = resolveUrl(anchor.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url)) continue;
-      add({
-        adapterId: adapterFor(url),
-        label: anchorLabel(anchor) || url.hostname,
-        url: url.toString(),
-        discoveredBecause: "Guest on an approved public Source Target.",
-        evidenceUrls: [pageUrl],
-        similarityFactors: ["Guest contributor on an approved source"],
-      });
-    }
-  }
-
-  private citations(
-    document: Document,
-    pageUrl: string,
-    add: (proposal: DiscoveryProposal) => void,
-  ): void {
-    const anchors = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        'blockquote a[href], cite a[href], sup a[href], a[rel~="nofollow"]',
-      ),
-    ];
-    for (const anchor of anchors.slice(0, MAX_ROUTE_CANDIDATES)) {
-      const url = resolveUrl(anchor.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url) || !externalTo(url, pageUrl)) continue;
-      add({
-        adapterId: adapterFor(url),
-        label: anchorLabel(anchor) || url.hostname,
-        url: url.toString(),
-        discoveredBecause: "Cited by an approved public Source Target.",
-        evidenceUrls: [pageUrl],
-        similarityFactors: ["Cited source within approved material"],
-      });
-    }
-  }
-
-  private tags(
-    document: Document,
-    pageUrl: string,
-    add: (proposal: DiscoveryProposal) => void,
-  ): void {
-    const anchors = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        'a[rel~="tag"], a[href*="/tag/"], a[href*="/tags/"], a[href*="/topic/"], a[href*="/topics/"], a[href*="/category/"], a[href*="/categories/"]',
-      ),
-    ];
-    for (const anchor of anchors.slice(0, MAX_ROUTE_CANDIDATES)) {
-      const url = resolveUrl(anchor.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url)) continue;
-      const label = anchorLabel(anchor);
-      add({
-        adapterId: adapterFor(url),
-        label: label || url.hostname,
-        url: url.toString(),
-        discoveredBecause: "Tagged topic on an approved public Source Target.",
-        evidenceUrls: [pageUrl],
-        similarityFactors: label ? [`Tag: ${label}`] : ["Tag on an approved source"],
-      });
-    }
-  }
-
-  private blogrolls(
-    document: Document,
-    pageUrl: string,
-    add: (proposal: DiscoveryProposal) => void,
-  ): void {
-    const anchors = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        'nav a[href], aside a[href], [class*="blogroll"] a[href], [id*="blogroll"] a[href], [class*="blog-roll"] a[href], [class*="links"] a[href], [id*="links"] a[href]',
-      ),
-    ];
-    for (const anchor of anchors.slice(0, MAX_ROUTE_CANDIDATES)) {
-      const url = resolveUrl(anchor.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url) || !externalTo(url, pageUrl)) continue;
-      add({
-        adapterId: adapterFor(url),
-        label: anchorLabel(anchor) || url.hostname,
-        url: url.toString(),
-        discoveredBecause: "Listed in an approved public Source Target's blogroll.",
-        evidenceUrls: [pageUrl],
-        similarityFactors: ["Curated link from an approved source"],
-      });
-    }
-  }
-
-  private relatedResults(
-    document: Document,
-    pageUrl: string,
-    add: (proposal: DiscoveryProposal) => void,
-  ): void {
-    const anchors = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        'a[rel~="related"], a[class*="related"], a[id*="related"], a[class*="recommended"], [class*="related"] a[href], [id*="related"] a[href], [class*="recommended"] a[href], [class*="see-also"] a[href], [class*="see_also"] a[href]',
-      ),
-    ];
-    for (const anchor of anchors.slice(0, MAX_ROUTE_CANDIDATES)) {
-      const url = resolveUrl(anchor.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url) || !externalTo(url, pageUrl)) continue;
-      add({
-        adapterId: adapterFor(url),
-        label: anchorLabel(anchor) || url.hostname,
-        url: url.toString(),
-        discoveredBecause: "Recommended or related on an approved public Source Target.",
-        evidenceUrls: [pageUrl],
-        similarityFactors: ["Related recommendation from an approved source"],
-      });
-    }
     for (const meta of document.querySelectorAll<HTMLMetaElement>(
       'meta[property="og:see_also"][content]',
     )) {
@@ -331,30 +305,6 @@ export class PublicRouteSourceDiscoverer implements SourceDiscoverer {
         discoveredBecause: "Recommended or related on an approved public Source Target.",
         evidenceUrls: [pageUrl],
         similarityFactors: ["Related recommendation from an approved source"],
-      });
-    }
-  }
-
-  private reposts(
-    document: Document,
-    pageUrl: string,
-    add: (proposal: DiscoveryProposal) => void,
-  ): void {
-    const anchors = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        'a[rel~="repost"], a[rel~="boost"], a[class*="repost"], a[class*="boost"], a[href*="/repost"], a[href*="/boost"]',
-      ),
-    ];
-    for (const anchor of anchors.slice(0, MAX_ROUTE_CANDIDATES)) {
-      const url = resolveUrl(anchor.getAttribute("href"), pageUrl);
-      if (!url || !httpUrl(url) || !externalTo(url, pageUrl)) continue;
-      add({
-        adapterId: adapterFor(url),
-        label: anchorLabel(anchor) || url.hostname,
-        url: url.toString(),
-        discoveredBecause: "Reposted or boosted from an approved public Source Target.",
-        evidenceUrls: [pageUrl],
-        similarityFactors: ["Reposted or boosted by an approved source"],
       });
     }
   }

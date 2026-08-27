@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import fastify from "fastify";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
 import {
   ContentScoutCanaryStore,
@@ -14,6 +15,11 @@ import type {
 } from "../../../apps/server/src/modules/content-scout/ports";
 import type { AdapterDiagnostic } from "@chief-of-staff-demo/shared";
 import { CANARY_INTERVAL_MS, CANARY_MIN_TARGETS } from "@chief-of-staff-demo/shared";
+import {
+  evaluateLinkedInEvidenceGate,
+  LinkedInComingLaterAdapter,
+  type LinkedInCanaryEvidence,
+} from "../../../apps/server/src/modules/content-scout/adapters/linkedin";
 const START = new Date("2026-08-27T12:00:00.000Z");
 
 function diagnostic(
@@ -387,6 +393,34 @@ describe("Content Scout external canaries and release receipts", () => {
     expect(health.lastSuccessAt).toBe(now.toISOString());
   });
 
+  it("marks mixed latest target results as degraded even when their timestamps match", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-canary-mixed-health-"));
+    const runs = openRuns(workspaceDir);
+    const failedTarget = "https://canary.example/rss/two";
+    const adapter = canaryAdapter("rss", "v1", async ({ url }) =>
+      url === failedTarget ? failedCollect("response_shape_change", START) : successCollect(START),
+    );
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      adapters: [adapter],
+      ranker: {
+        async rank() {
+          return [];
+        },
+      },
+      now: () => START,
+      log: () => undefined,
+    });
+
+    await host.runCanaries();
+
+    const health = host.canaryHealth().find((entry) => entry.adapterId === "rss")!;
+    expect(health.lastSuccessAt).toBe(START.toISOString());
+    expect(health.lastFailureAt).toBe(START.toISOString());
+    expect(health.degraded).toBe(true);
+  });
+
   it("requires repeated successful canaries for promotion and does not hide behind legitimate-empty", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-canary-promo-"));
     const runs = openRuns(workspaceDir);
@@ -482,6 +516,105 @@ describe("Content Scout external canaries and release receipts", () => {
     expect(host.scheduleState()).toEqual({
       lastSuccessfulIntakePeriod: null,
       lastSuccessfulDiscoveryPeriod: null,
+    });
+  });
+
+  it("records clean-browser LinkedIn evidence in the shared canary store and exposes the gate", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-linkedin-canary-"));
+    const now = new Date(START.getTime());
+    const adapter = new LinkedInComingLaterAdapter(
+      async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html><html><head><meta property="og:title" content="Public LinkedIn source"><meta property="og:description" content="A useful anonymous public company update with enough evidence to prove the normalized Source Item contract."></head><body></body></html>`,
+      }),
+      () => new Date(now.getTime()),
+    );
+    const host = new ContentScoutHost({
+      runs: openRuns(workspaceDir),
+      workspaceDir,
+      adapters: [adapter],
+      ranker: {
+        async rank() {
+          return [];
+        },
+      },
+      now: () => new Date(now.getTime()),
+      log: () => undefined,
+    });
+
+    await expect(adapter.collect()).rejects.toThrow("Coming later");
+    await expect(host.runCanaries()).resolves.toHaveLength(3);
+    now.setTime(now.getTime() + CANARY_INTERVAL_MS);
+    await expect(host.runCanaries()).resolves.toHaveLength(3);
+
+    expect(host.canaryReceipts()).toHaveLength(6);
+    expect(existsSync(join(workspaceDir, "content-scout", "canary-state.json"))).toBe(true);
+    expect(existsSync(join(workspaceDir, "content-scout", "linkedin-canaries.json"))).toBe(false);
+
+    const app = fastify();
+    host.routes(app);
+    const response = await app.inject({ method: "GET", url: "/api/content-scout" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().linkedinEvidenceGate).toMatchObject({
+      passed: true,
+      adapterVersion: adapter.version,
+      evidence: expect.arrayContaining([
+        expect.objectContaining({ outcome: "items_found", hasUsefulItem: true }),
+      ]),
+    });
+    expect(adapter.state).toBe("coming_later");
+    await app.close();
+  });
+
+  it("records LinkedIn login walls and empty shells as failed proof, never empty success", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-linkedin-failed-proof-"));
+    let body = '<html><body class="authwall">Sign in to LinkedIn</body></html>';
+    const adapter = new LinkedInComingLaterAdapter(async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/html",
+      body,
+    }));
+    const store = new ContentScoutCanaryStore(workspaceDir, () => START);
+    const runner = new ContentScoutCanaryRunner({ adapters: [adapter], store, now: () => START });
+
+    const blocked = await runner.runOnce();
+    expect(blocked).toHaveLength(3);
+    expect(blocked.every((receipt) => receipt.outcome === "blocked_access")).toBe(true);
+    expect(blocked.every((receipt) => receipt.outcome !== "legitimate_empty")).toBe(true);
+
+    body =
+      '<html><head><meta property="og:title" content="LinkedIn Login"><meta property="og:description" content="Log In or Sign Up to view this useful-looking public company update on LinkedIn."></head></html>';
+    const commonLoginWall = await runner.runOnce();
+    expect(commonLoginWall.every((receipt) => receipt.outcome === "blocked_access")).toBe(true);
+
+    body = "<html><head><title>LinkedIn</title></head><body><main></main></body></html>";
+    const emptyShell = await runner.runOnce();
+    expect(emptyShell).toHaveLength(3);
+    expect(emptyShell.every((receipt) => receipt.outcome === "response_shape_change")).toBe(true);
+    expect(emptyShell.every((receipt) => receipt.itemsFound === 0)).toBe(true);
+  });
+
+  it("rejects repeated useful evidence from a stale LinkedIn adapter version", () => {
+    const adapter = new LinkedInComingLaterAdapter();
+    const evidence = adapter.canaryTargets.flatMap((target) =>
+      [0, 1].map((): LinkedInCanaryEvidence => ({
+        targetUrl: target.url,
+        adapterVersion: "linkedin-public-browser-v0",
+        outcome: "items_found",
+        itemsFound: 1,
+        hasUsefulItem: true,
+        observedAt: START.toISOString(),
+        diagnostic: diagnostic("items_found", target.url, START),
+      })),
+    );
+
+    expect(evaluateLinkedInEvidenceGate(evidence, () => START)).toMatchObject({
+      passed: false,
+      adapterVersion: "linkedin-public-browser-v0",
+      reason: expect.stringContaining("stale adapter version"),
     });
   });
 });

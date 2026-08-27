@@ -181,13 +181,16 @@ export class ContentScoutCanaryRunner {
     const wallStart = Date.now();
     let result;
     try {
-      result = await adapter.collect({
+      const request = {
         target: canaryTarget,
         since,
         until,
         checkpoint: null,
         conditional: null,
-      });
+      };
+      result = adapter.collectCanary
+        ? await adapter.collectCanary(request)
+        : await adapter.collect(request);
     } catch (error) {
       const diagnostic = sanitizeAdapterDiagnostic(
         {
@@ -226,8 +229,7 @@ export class ContentScoutCanaryRunner {
       if (Number.isFinite(start) && Number.isFinite(end) && end >= start) return end - start;
       return Math.max(0, Date.now() - wallStart);
     })();
-    const capability: SourceCapability =
-      diagnostic.affectedCapabilities[0] ?? (result.outcome === "items_found" ? "items" : "items");
+    const capability: SourceCapability = diagnostic.affectedCapabilities[0] ?? "items";
     const route = diagnostic.route;
     return {
       adapterId: adapter.id,

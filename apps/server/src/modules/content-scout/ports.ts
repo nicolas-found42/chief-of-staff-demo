@@ -67,6 +67,8 @@ export interface SourceAdapter {
   readonly canaryTargets?: readonly SourceAdapterCanaryTarget[];
   supports(target: SourceTarget): boolean;
   collect(request: SourceCollectionRequest): Promise<SourceCollectionResult>;
+  /** A bounded anonymous proof route when normal collection is intentionally unavailable. */
+  collectCanary?(request: SourceCollectionRequest): Promise<SourceCollectionResult>;
   enrich?(items: SourceItem[]): Promise<SourceItem[]>;
 }
 

@@ -1,64 +1,37 @@
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { promisify } from "node:util";
 import type {
-  AdapterDiagnostic,
   SourceAdapterCanaryTarget,
   SourceComment,
   SourceItem,
 } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import { responseHash } from "./http.js";
-
-const execFileAsync = promisify(execFile);
+import {
+  checkpointOf,
+  classifyPublicCommandFailure,
+  commandAdapterResults,
+  numberValue,
+  publicCommandRunner,
+  stringValue,
+  type PublicCommandRunner,
+} from "./public-command.js";
 
 const YT_DLP_TIMEOUT_MS = 90_000;
 const PYTHON_TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 
-interface TikTokCommandResult {
-  stdout: string;
-  stderr: string;
-  code: number;
-}
+export type TikTokCommandRunner = PublicCommandRunner;
 
-export type TikTokCommandRunner = (args: string[]) => Promise<TikTokCommandResult>;
+const runYtDlp = publicCommandRunner({
+  executable: "yt-dlp",
+  timeoutMs: YT_DLP_TIMEOUT_MS,
+  maxOutputBytes: MAX_OUTPUT_BYTES,
+});
 
-const runYtDlp: TikTokCommandRunner = async (args) => {
-  try {
-    const result = await execFileAsync("yt-dlp", args, {
-      timeout: YT_DLP_TIMEOUT_MS,
-      maxBuffer: MAX_OUTPUT_BYTES,
-      windowsHide: true,
-    });
-    return { stdout: result.stdout, stderr: result.stderr, code: 0 };
-  } catch (error) {
-    const failure = error as { code?: number | string; stderr?: string; message?: string };
-    return {
-      stdout: "",
-      stderr: failure.stderr ?? failure.message ?? String(error),
-      code: typeof failure.code === "number" ? failure.code : 1,
-    };
-  }
-};
-
-const runPython3: TikTokCommandRunner = async (args) => {
-  try {
-    const result = await execFileAsync("python3", args, {
-      timeout: PYTHON_TIMEOUT_MS,
-      maxBuffer: MAX_OUTPUT_BYTES,
-      windowsHide: true,
-    });
-    return { stdout: result.stdout, stderr: result.stderr, code: 0 };
-  } catch (error) {
-    const failure = error as { code?: number | string; stderr?: string; message?: string };
-    return {
-      stdout: "",
-      stderr: failure.stderr ?? failure.message ?? String(error),
-      code: typeof failure.code === "number" ? failure.code : 1,
-    };
-  }
-};
+const runPython3 = publicCommandRunner({
+  executable: "python3",
+  timeoutMs: PYTHON_TIMEOUT_MS,
+  maxOutputBytes: MAX_OUTPUT_BYTES,
+});
 
 /**
  * A deliberately Experimental anonymous TikTok route that collects public user
@@ -85,12 +58,19 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
     { adapterId: "tiktok", label: "Khaby Lame", url: "https://www.tiktok.com/@khaby.lame" },
     { adapterId: "tiktok", label: "Addison Rae", url: "https://www.tiktok.com/@addisonre" },
   ];
+  private readonly results: ReturnType<typeof commandAdapterResults>;
 
   constructor(
     private readonly run: TikTokCommandRunner = runYtDlp,
     private readonly runPython: TikTokCommandRunner = runPython3,
     private readonly now: () => Date = () => new Date(),
-  ) {}
+  ) {
+    this.results = commandAdapterResults({
+      adapterVersion: this.version,
+      parserStage: "yt_dlp",
+      now: this.now,
+    });
+  }
 
   supports(target: { adapterId: string }): boolean {
     return target.adapterId === this.id;
@@ -100,7 +80,7 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
     const startedAt = this.now().toISOString();
     const route = tiktokRoute(request.target.url);
     if (route.kind === "unsupported") {
-      return this.failure(
+      return this.results.failure(
         "unsupported_capability",
         request.target.url,
         startedAt,
@@ -110,8 +90,8 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
     }
     const result = await this.run(ytDlpArgs(route));
     if (result.code !== 0) {
-      const classified = classifyCommandFailure(result.stderr);
-      return this.failure(
+      const classified = classifyPublicCommandFailure(result.stderr, "TikTok", result.timedOut);
+      return this.results.failure(
         classified.outcome,
         request.target.url,
         startedAt,
@@ -125,7 +105,7 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
     try {
       data = JSON.parse(result.stdout) as unknown;
     } catch (error) {
-      return this.failure(
+      return this.results.failure(
         "response_shape_change",
         request.target.url,
         startedAt,
@@ -142,7 +122,7 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
       this.now,
     );
     if (items === null) {
-      return this.failure(
+      return this.results.failure(
         "response_shape_change",
         request.target.url,
         startedAt,
@@ -162,7 +142,7 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
       items,
       checkpoint: checkpointOf(items),
       diagnostic: {
-        ...this.diagnostic(outcome, request.target.url, startedAt, [], []),
+        ...this.results.diagnostic(outcome, request.target.url, startedAt, [], []),
         responseHash: responseHash(result.stdout),
       },
     };
@@ -244,45 +224,6 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
       throw new Error("Pyktok comment worker returned no recognizable comment rows.");
     }
     return comments;
-  }
-
-  private diagnostic(
-    classification: AdapterDiagnostic["classification"],
-    route: string,
-    startedAt: string,
-    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
-    causeChain: string[],
-  ): AdapterDiagnostic {
-    return {
-      classification,
-      route,
-      status: null,
-      contentType: "application/json",
-      parserStage: "yt_dlp",
-      responseHash: "",
-      adapterVersion: this.version,
-      startedAt,
-      finishedAt: this.now().toISOString(),
-      retries: 0,
-      affectedCapabilities,
-      causeChain,
-    };
-  }
-
-  private failure(
-    outcome: Extract<SourceCollectionResult, { kind: "failed" }>["outcome"],
-    route: string,
-    startedAt: string,
-    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
-    causeChain: string[],
-  ): SourceCollectionResult {
-    return {
-      kind: "failed",
-      outcome,
-      items: [],
-      checkpoint: null,
-      diagnostic: this.diagnostic(outcome, route, startedAt, affectedCapabilities, causeChain),
-    };
   }
 }
 
@@ -456,75 +397,4 @@ function normalizeTikTokItems(
     });
   }
   return items;
-}
-
-function checkpointOf(items: SourceItem[]): string {
-  return createHash("sha256")
-    .update(items.map((item) => item.externalId).join("\n"))
-    .digest("hex");
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-interface ClassifiedFailure {
-  outcome: Extract<SourceCollectionResult, { kind: "failed" }>["outcome"];
-  affectedCapabilities: AdapterDiagnostic["affectedCapabilities"];
-  message: string;
-}
-
-/** yt-dlp reports platform-level blocks on stderr while exiting nonzero. */
-function classifyCommandFailure(stderr: string): ClassifiedFailure {
-  const text = stderr.toLowerCase();
-  const firstLine =
-    stderr
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean) ?? "";
-  if (/log in|login|sign in|authenticate|authentication|cookie/i.test(text)) {
-    return {
-      outcome: "blocked_access",
-      affectedCapabilities: ["items", "comments"],
-      message: firstLine || "TikTok is requiring authentication for this public target.",
-    };
-  }
-  if (/rate|too many requests|\b429\b|temporarily unavailable/i.test(text)) {
-    return {
-      outcome: "rate_limit",
-      affectedCapabilities: ["items"],
-      message: firstLine || "TikTok is rate limiting anonymous collection.",
-    };
-  }
-  if (/unsupported url|unsupported site|no supported extractor/i.test(text)) {
-    return {
-      outcome: "unsupported_capability",
-      affectedCapabilities: ["source_target"],
-      message: firstLine || "yt-dlp has no supported TikTok extractor for this target.",
-    };
-  }
-  if (/unavailable|private|removed|not found|\b404\b/i.test(text)) {
-    return {
-      outcome: "blocked_access",
-      affectedCapabilities: ["items"],
-      message: firstLine || "TikTok reports this public target as unavailable.",
-    };
-  }
-  if (/timed out|timeout|econnreset|eai_again/i.test(text)) {
-    return {
-      outcome: "timeout",
-      affectedCapabilities: ["items"],
-      message: firstLine || "yt-dlp could not reach TikTok within the command boundary.",
-    };
-  }
-  return {
-    outcome: "internal_failure",
-    affectedCapabilities: ["items"],
-    message:
-      firstLine || stderr.trim() || "yt-dlp exited without a diagnostic for this public target.",
-  };
 }

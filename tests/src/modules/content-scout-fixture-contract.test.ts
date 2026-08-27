@@ -23,6 +23,49 @@ const UNTIL = NOW.toISOString();
 const fixture = (name: string) =>
   readFileSync(join(process.cwd(), "fixtures", "content-scout", name), "utf8");
 
+interface FailureCapture {
+  status?: number;
+  body?: string;
+  bodyFixture?: string;
+  retryAfter?: string;
+  name?: string;
+  message?: string;
+  code?: number;
+  connectionState?: "disconnected";
+  stdout?: string;
+  stdoutFixture?: string;
+  stderr?: string;
+}
+
+function failureCapture(
+  adapterId: "rss" | "substack" | "website" | "youtube" | "reddit" | "instagram" | "tiktok",
+  scenario: "blocked" | "rateLimit" | "timeout",
+): FailureCapture {
+  const captures = JSON.parse(fixture(`${adapterId}-failures.json`)) as Record<
+    string,
+    FailureCapture
+  >;
+  return captures[scenario];
+}
+
+function capturedError(capture: FailureCapture): Error {
+  const error = new Error(capture.message ?? "Captured public route failure");
+  error.name = capture.name ?? "Error";
+  return error;
+}
+
+function capturedCommand(capture: FailureCapture): {
+  stdout: string;
+  stderr: string;
+  code: number;
+} {
+  return {
+    stdout: capture.stdoutFixture ? fixture(capture.stdoutFixture) : (capture.stdout ?? ""),
+    stderr: capture.stderr ?? "",
+    code: capture.code ?? 1,
+  };
+}
+
 const target = (adapterId: string, url: string): SourceTarget => ({
   id: `target-${adapterId}`,
   adapterId,
@@ -127,6 +170,70 @@ function assertSourceItemInvariants(
   // No raw HTML in body leak of diagnostic secrets
   if (item.body) expect(item.body.length).toBeGreaterThan(0);
 }
+
+describe("checked-in fixture matrix", () => {
+  const matrix = {
+    rss: [
+      "rss-success.xml",
+      "rss-empty.xml",
+      "rss-partial.xml",
+      "rss-failures.json",
+      "rss-malformed.xml",
+    ],
+    substack: [
+      "substack-feed-media.xml",
+      "substack-feed-empty.xml",
+      "substack-post-partial.html",
+      "substack-failures.json",
+      "substack-post-shape-change.html",
+    ],
+    website: [
+      "website-article.html",
+      "website-rendered-empty.html",
+      "website-article-partial.html",
+      "website-failures.json",
+      "website-parse-failure.html",
+    ],
+    youtube: [
+      "youtube-channel.json",
+      "youtube-channel-empty.json",
+      "youtube-channel-partial.json",
+      "youtube-failures.json",
+      "youtube-channel-shape-change.json",
+    ],
+    reddit: [
+      "reddit-rss.xml",
+      "reddit-rss-empty.xml",
+      "reddit-rss-incomplete.xml",
+      "reddit-failures.json",
+      "reddit-listing-shape-change.json",
+    ],
+    instagram: [
+      "instagram-profile-page.json",
+      "instagram-profile-empty.json",
+      "instagram-profile-partial.json",
+      "instagram-failures.json",
+      "instagram-parser-change.json",
+    ],
+    tiktok: [
+      "tiktok-user-page.json",
+      "tiktok-user-empty.json",
+      "tiktok-user-partial.json",
+      "tiktok-failures.json",
+      "tiktok-shape-change.json",
+    ],
+  } as const;
+
+  it("keeps success, empty, partial, blocked/rate/timeout, and shape captures for every adapter", () => {
+    for (const [adapterId, files] of Object.entries(matrix)) {
+      expect(files, adapterId).toHaveLength(5);
+      for (const file of files)
+        expect(fixture(file).trim().length, `${adapterId}: ${file}`).toBeGreaterThan(0);
+      const failures = JSON.parse(fixture(files[3])) as Record<string, unknown>;
+      expect(Object.keys(failures), adapterId).toEqual(["blocked", "rateLimit", "timeout"]);
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // RSS
@@ -234,8 +341,9 @@ describe("RSS fixture contract — hermetic", () => {
   });
 
   it("blocked access does not share legitimate empty shape", async () => {
+    const captured = failureCapture("rss", "blocked");
     const result = await new RssSourceAdapter(
-      async () => response({ status: 403, body: "Forbidden" }),
+      async () => response({ status: captured.status!, body: captured.body! }),
       () => NOW,
     ).collect({
       target: target(adapterId, "https://example.com/feed.xml"),
@@ -254,12 +362,18 @@ describe("RSS fixture contract — hermetic", () => {
     );
     expect(result.diagnostic.parserStage).toBe("fetch");
     expect(result.diagnostic.status).toBe(403);
-    expect(result.diagnosticBody?.body).toBe("Forbidden");
+    expect(result.diagnosticBody?.body).toBe(captured.body);
   });
 
   it("rate limit carries retryAfterMs and sanitized diagnostic", async () => {
+    const captured = failureCapture("rss", "rateLimit");
     const result = await new RssSourceAdapter(
-      async () => response({ status: 429, body: "Slow down", retryAfter: "30" }),
+      async () =>
+        response({
+          status: captured.status!,
+          body: captured.body!,
+          retryAfter: captured.retryAfter!,
+        }),
       () => NOW,
     ).collect({
       target: target(adapterId, "https://example.com/feed.xml"),
@@ -278,13 +392,14 @@ describe("RSS fixture contract — hermetic", () => {
     );
     expect(result.diagnostic.parserStage).toBe("fetch");
     expect(result.diagnostic.retryAfterMs).toBe(30_000);
-    expect(result.diagnosticBody?.body).toBe("Slow down");
+    expect(result.diagnosticBody?.body).toBe(captured.body);
   });
 
   it("timeout is loud and distinct", async () => {
+    const captured = failureCapture("rss", "timeout");
     const result = await new RssSourceAdapter(
       async () => {
-        throw abortError();
+        throw capturedError(captured);
       },
       () => NOW,
     ).collect({
@@ -434,15 +549,16 @@ describe("Substack fixture contract — hermetic", () => {
   });
 
   it("blocked post preserves feed text and marks media failed", async () => {
+    const captured = failureCapture("substack", "blocked");
     const enrich = new SubstackEnrichmentAdapter(
       async () => ({
         url: "https://research-public.substack.com/p/a-media-walkthrough",
-        status: 403,
+        status: captured.status!,
         contentType: "text/html",
         etag: null,
         lastModified: null,
         retryAfter: null,
-        body: "Forbidden",
+        body: captured.body!,
       }),
       () => NOW,
     );
@@ -466,15 +582,16 @@ describe("Substack fixture contract — hermetic", () => {
   });
 
   it("rate limited post preserves feed text", async () => {
+    const captured = failureCapture("substack", "rateLimit");
     const enrich = new SubstackEnrichmentAdapter(
       async () => ({
         url: "https://research-public.substack.com/p/a-media-walkthrough",
-        status: 429,
+        status: captured.status!,
         contentType: "text/html",
         etag: null,
         lastModified: null,
-        retryAfter: "30",
-        body: "Slow down",
+        retryAfter: captured.retryAfter!,
+        body: captured.body!,
       }),
       () => NOW,
     );
@@ -494,6 +611,34 @@ describe("Substack fixture contract — hermetic", () => {
     });
     const enriched = (await enrich.enrich(feedResult.items))[0];
     expect(enriched.completeness.media).toBe("failed");
+  });
+
+  it("timed-out post preserves feed text and marks media failed", async () => {
+    const captured = failureCapture("substack", "timeout");
+    const enrich = new SubstackEnrichmentAdapter(
+      async () => {
+        throw capturedError(captured);
+      },
+      () => NOW,
+    );
+    const feedResult = await new RssSourceAdapter(
+      async () =>
+        response({
+          body: fixture("substack-feed-media.xml"),
+          url: "https://research-public.substack.com/feed",
+        }),
+      () => NOW,
+      { id: feedAdapterId },
+    ).collect({
+      target: target(feedAdapterId, "https://research-public.substack.com/feed"),
+      since: SINCE,
+      until: UNTIL,
+      checkpoint: null,
+    });
+    const enriched = (await enrich.enrich(feedResult.items))[0];
+    expect(enriched.body).toBe(feedResult.items[0].body);
+    expect(enriched.completeness.media).toBe("failed");
+    expect(enriched.claims?.[0]?.text).toContain(captured.message);
   });
 
   it("shape change post keeps feed text stable", async () => {
@@ -638,13 +783,14 @@ describe("Website fixture contract — hermetic", () => {
   });
 
   it("blocked access on fetch never reaches browser", async () => {
+    const captured = failureCapture("website", "blocked");
     let rendered = 0;
     const result = await new WebsiteSourceAdapter(
       async () =>
         response({
           url: "https://news.example/updates",
-          status: 403,
-          body: fixture("website-blocked.html"),
+          status: captured.status!,
+          body: fixture(captured.bodyFixture!),
         }),
       () => NOW,
       async (url) => {
@@ -672,13 +818,14 @@ describe("Website fixture contract — hermetic", () => {
   });
 
   it("rate limit on fetch carries retryAfterMs", async () => {
+    const captured = failureCapture("website", "rateLimit");
     const result = await new WebsiteSourceAdapter(
       async () =>
         response({
           url: "https://news.example/updates",
-          status: 429,
-          retryAfter: "30",
-          body: fixture("website-rate-limited.html"),
+          status: captured.status!,
+          retryAfter: captured.retryAfter!,
+          body: fixture(captured.bodyFixture!),
         }),
       () => NOW,
       async () => ({ url: "", contentType: "text/html", status: 200, body: "" }),
@@ -701,8 +848,8 @@ describe("Website fixture contract — hermetic", () => {
   });
 
   it("timeout via browser render is distinct", async () => {
-    const err = new Error("Navigation timed out.");
-    err.name = "AbortError";
+    const captured = failureCapture("website", "timeout");
+    const err = capturedError(captured);
     const result = await new WebsiteSourceAdapter(
       async () =>
         response({
@@ -919,11 +1066,14 @@ describe("Reddit fixture contract — hermetic", () => {
   });
 
   it("blocked access across all routes is loud", async () => {
+    const captured = failureCapture("reddit", "blocked");
     const adapter = new RedditSourceAdapter(
       async (url) => {
-        if (url.endsWith(".rss")) return rssResponse("Forbidden", { url, status: 403 });
-        if (url.endsWith(".json")) return jsonResponse("Forbidden", { url, status: 403 });
-        return pageResponse("Forbidden", { url, status: 403 });
+        if (url.endsWith(".rss"))
+          return rssResponse(captured.body!, { url, status: captured.status! });
+        if (url.endsWith(".json"))
+          return jsonResponse(captured.body!, { url, status: captured.status! });
+        return pageResponse(captured.body!, { url, status: captured.status! });
       },
       () => NOW,
     );
@@ -945,11 +1095,16 @@ describe("Reddit fixture contract — hermetic", () => {
   });
 
   it("rate limit stops fallback chain", async () => {
+    const captured = failureCapture("reddit", "rateLimit");
     let calls = 0;
     const adapter = new RedditSourceAdapter(
       async (url) => {
         calls += 1;
-        return rssResponse("Slow down", { url, status: 429, retryAfter: "30" });
+        return rssResponse(captured.body!, {
+          url,
+          status: captured.status!,
+          retryAfter: captured.retryAfter!,
+        });
       },
       () => NOW,
     );
@@ -973,9 +1128,10 @@ describe("Reddit fixture contract — hermetic", () => {
   });
 
   it("timeout across routes is loud", async () => {
+    const captured = failureCapture("reddit", "timeout");
     const adapter = new RedditSourceAdapter(
       async () => {
-        throw abortError();
+        throw capturedError(captured);
       },
       () => NOW,
     );
@@ -1171,8 +1327,9 @@ describe("YouTube fixture contract — hermetic", () => {
   });
 
   it("blocked access when Google connection disconnected is distinct from empty", async () => {
+    const captured = failureCapture("youtube", "blocked");
     const adapter = new YouTubeSourceAdapter(
-      () => ({ ok: false, state: "disconnected" }),
+      () => ({ ok: false, state: captured.connectionState! }),
       () => NOW,
     );
     const result = await adapter.collect({
@@ -1194,13 +1351,14 @@ describe("YouTube fixture contract — hermetic", () => {
   });
 
   it("rate limit from API maps to rate_limit", async () => {
+    const captured = failureCapture("youtube", "rateLimit");
     const client: YouTubeSourceClient = {
       async resolveChannel() {
         return { id: "UC1", uploadsPlaylistId: "UU1" };
       },
       async listUploads() {
-        const err = new Error("quotaExceeded") as Error & { code?: number };
-        err.code = 429;
+        const err = new Error(captured.message) as Error & { code?: number };
+        err.code = captured.code!;
         throw err;
       },
       async listComments() {
@@ -1228,10 +1386,11 @@ describe("YouTube fixture contract — hermetic", () => {
     );
   });
 
-  it("timeout/internal failure is loud", async () => {
+  it("timeout is loud and classified separately from internal failure", async () => {
+    const captured = failureCapture("youtube", "timeout");
     const client: YouTubeSourceClient = {
       async resolveChannel() {
-        throw new Error("network error");
+        throw capturedError(captured);
       },
       async listUploads() {
         return [];
@@ -1257,7 +1416,7 @@ describe("YouTube fixture contract — hermetic", () => {
         diagnostic: Record<string, unknown>;
       },
       version,
-      "internal_failure",
+      "timeout",
     );
   });
 
@@ -1458,8 +1617,9 @@ describe("Instagram fixture contract — hermetic", () => {
   });
 
   it("blocked access via login required is loud", async () => {
+    const captured = failureCapture("instagram", "blocked");
     const adapter = new InstagramInstaloaderAdapter(
-      async () => ({ stdout: fixture("instagram-login-required.json"), stderr: "", code: 0 }),
+      async () => capturedCommand(captured),
       async () => ({ stdout: "", stderr: "", code: 0 }),
       () => NOW,
     );
@@ -1504,8 +1664,9 @@ describe("Instagram fixture contract — hermetic", () => {
   });
 
   it("rate limit is loud", async () => {
+    const captured = failureCapture("instagram", "rateLimit");
     const adapter = new InstagramInstaloaderAdapter(
-      async () => ({ stdout: fixture("instagram-rate-limit.json"), stderr: "", code: 0 }),
+      async () => capturedCommand(captured),
       async () => ({ stdout: "", stderr: "", code: 0 }),
       () => NOW,
     );
@@ -1527,8 +1688,9 @@ describe("Instagram fixture contract — hermetic", () => {
   });
 
   it("timeout via stderr is loud", async () => {
+    const captured = failureCapture("instagram", "timeout");
     const adapter = new InstagramInstaloaderAdapter(
-      async () => ({ stdout: "", stderr: "ERROR: Connection timed out", code: 1 }),
+      async () => capturedCommand(captured),
       async () => ({ stdout: "", stderr: "", code: 0 }),
       () => NOW,
     );
@@ -1705,8 +1867,9 @@ describe("TikTok fixture contract — hermetic", () => {
   });
 
   it("blocked access via login wall is loud", async () => {
+    const captured = failureCapture("tiktok", "blocked");
     const adapter = new TikTokYtDlpAdapter(
-      async () => ({ stdout: "", stderr: "ERROR: [TikTok] @maker: login required", code: 1 }),
+      async () => capturedCommand(captured),
       async () => ({ stdout: "", stderr: "", code: 0 }),
       () => NOW,
     );
@@ -1728,8 +1891,9 @@ describe("TikTok fixture contract — hermetic", () => {
   });
 
   it("rate limit is loud", async () => {
+    const captured = failureCapture("tiktok", "rateLimit");
     const adapter = new TikTokYtDlpAdapter(
-      async () => ({ stdout: "", stderr: "ERROR: Too many requests (429)", code: 1 }),
+      async () => capturedCommand(captured),
       async () => ({ stdout: "", stderr: "", code: 0 }),
       () => NOW,
     );
@@ -1751,8 +1915,9 @@ describe("TikTok fixture contract — hermetic", () => {
   });
 
   it("timeout is loud", async () => {
+    const captured = failureCapture("tiktok", "timeout");
     const adapter = new TikTokYtDlpAdapter(
-      async () => ({ stdout: "", stderr: "ERROR: Connection timed out", code: 1 }),
+      async () => capturedCommand(captured),
       async () => ({ stdout: "", stderr: "", code: 0 }),
       () => NOW,
     );

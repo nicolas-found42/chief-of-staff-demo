@@ -14,78 +14,23 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-// Dynamic import keeps the script runnable even when the server build has not been run.
-let ContentScoutCanaryRunner, ContentScoutCanaryStore;
-
-try {
-  const mod = await import("../apps/server/src/modules/content-scout/canary.ts");
-  // When running as raw .ts without a loader, the above fails. Fall back to a no-op.
-  ContentScoutCanaryRunner = mod.ContentScoutCanaryRunner;
-  ContentScoutCanaryStore = mod.ContentScoutCanaryStore;
-} catch {
-  console.log(
-    "[canary] Skipping live canary run: module import requires tsx or a built artifact. Health is still verified via the hermetic tests.",
-  );
-  process.exit(0);
-}
+const { ContentScoutCanaryRunner, ContentScoutCanaryStore } =
+  await import("../apps/server/dist/modules/content-scout/canary.js");
+const { contentScoutProductionAdapters } =
+  await import("../apps/server/dist/modules/content-scout/adapters/production.js");
+const { playwrightBrowserRenderer } =
+  await import("../apps/server/dist/modules/content-scout/adapters/browser.js");
 
 // Prefer the real workspace when available, otherwise use a temporary directory
 // so the script remains hermetic in CI containers that start without a workspace.
 const workspaceDir = process.env.WORKSPACE_DIR ?? "./workspace";
 mkdirSync(join(workspaceDir, "content-scout"), { recursive: true });
 
-let adapters;
-try {
-  // Import the production adapter set without hard-coding ids: reuse the same
-  // instantiation as `apps/server/src/main.ts` so canary targets remain the
-  // single source of truth per adapter.
-  const rssMod = await import("../apps/server/src/modules/content-scout/adapters/rss.ts");
-  const websiteMod = await import("../apps/server/src/modules/content-scout/adapters/website.ts");
-  const youtubeMod = await import("../apps/server/src/modules/content-scout/adapters/youtube.ts");
-  const redditMod = await import("../apps/server/src/modules/content-scout/adapters/reddit.ts");
-  const instagramMod =
-    await import("../apps/server/src/modules/content-scout/adapters/instagram.ts");
-  const tiktokMod = await import("../apps/server/src/modules/content-scout/adapters/tiktok.ts");
-  const declMod = await import("../apps/server/src/modules/content-scout/adapters/declarations.ts");
-
-  // Build a best-effort live adapter list. If a required runtime (e.g. Python)
-  // is unavailable, that adapter's canary will record a classified failure
-  // rather than crashing this script, so we keep going.
-  const RssSourceAdapter = rssMod.RssSourceAdapter;
-  const WebsiteSourceAdapter = websiteMod.WebsiteSourceAdapter;
-  const RedditSourceAdapter = redditMod.RedditSourceAdapter;
-  const InstagramInstaloaderAdapter = instagramMod.InstagramInstaloaderAdapter;
-  const TikTokYtDlpAdapter = tiktokMod.TikTokYtDlpAdapter;
-  const ComingLaterSourceAdapter = declMod.ComingLaterSourceAdapter;
-
-  adapters = [
-    new RssSourceAdapter(),
-    new RssSourceAdapter(undefined, undefined, { id: "substack" }),
-    new WebsiteSourceAdapter(),
-    new RedditSourceAdapter(),
-    new InstagramInstaloaderAdapter(),
-    new TikTokYtDlpAdapter(),
-    new ComingLaterSourceAdapter("linkedin"),
-  ];
-
-  // YouTube is only meaningful when a Google connection exists; otherwise its
-  // canary would always be an internal failure. Keep it out of the live
-  // scheduled run unless credentials are supplied via the environment.
-  if (process.env.GOOGLE_CREDENTIALS || process.env.ENABLE_YOUTUBE_CANARY === "1") {
-    const YouTubeSourceAdapter = youtubeMod.YouTubeSourceAdapter;
-    // Minimal stub: if auth fails, the adapter itself will produce a
-    // diagnostic rather than throwing.
-    adapters.push(new YouTubeSourceAdapter(() => ({ ok: false, state: "disconnected" })));
-  }
-} catch (error) {
-  console.warn("[canary] Live adapter import failed, running with no adapters:", error);
-  adapters = [];
-}
-
-if (adapters.length === 0) {
-  console.log("[canary] No canary adapters available; exiting 0.");
-  process.exit(0);
-}
+const adapters = contentScoutProductionAdapters({
+  workspaceDir,
+  renderBrowser: playwrightBrowserRenderer(),
+  getYouTubeAccess: () => ({ ok: false, state: "disconnected" }),
+});
 
 const store = new ContentScoutCanaryStore(workspaceDir, () => new Date());
 const runner = new ContentScoutCanaryRunner({ adapters, store, now: () => new Date() });

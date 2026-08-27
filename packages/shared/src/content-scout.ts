@@ -846,10 +846,11 @@ export function canaryHealthForAdapter(input: {
   const recentReceipts = forAdapter.slice(0, 9);
   const lastSuccess = forAdapter.find(isCanarySuccess) ?? null;
   const lastFailure = forAdapter.find((receipt) => !isCanarySuccess(receipt)) ?? null;
-  const degraded =
-    forAdapter.length > 0 &&
-    lastFailure !== null &&
-    (lastSuccess === null || Date.parse(lastFailure.checkedAt) > Date.parse(lastSuccess.checkedAt));
+  const latestByTarget = new Map<string, SourceCanaryReceipt>();
+  for (const receipt of forAdapter) {
+    if (!latestByTarget.has(receipt.target.url)) latestByTarget.set(receipt.target.url, receipt);
+  }
+  const degraded = [...latestByTarget.values()].some((receipt) => !isCanarySuccess(receipt));
   const promotionEligible = isCanaryPromotionEligible({
     adapter: input.adapter,
     receipts: input.receipts,

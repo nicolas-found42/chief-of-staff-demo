@@ -14,20 +14,10 @@ import { TranscriptHost } from "./modules/transcript/host.js";
 import { YoutubeHost } from "./modules/youtube/host.js";
 import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
-import { RssSourceAdapter } from "./modules/content-scout/adapters/rss.js";
-import { SubstackEnrichmentAdapter } from "./modules/content-scout/adapters/substack.js";
-import { WebsiteSourceAdapter } from "./modules/content-scout/adapters/website.js";
 import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
-import {
-  YouTubeSourceAdapter,
-  youtubeSourceClient,
-} from "./modules/content-scout/adapters/youtube.js";
-import { LinkedInComingLaterAdapter } from "./modules/content-scout/adapters/linkedin.js";
-import { ContentScoutRetention } from "./modules/content-scout/retention.js";
+import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
-import { InstagramInstaloaderAdapter } from "./modules/content-scout/adapters/instagram.js";
-import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
-import { TikTokYtDlpAdapter } from "./modules/content-scout/adapters/tiktok.js";
+import { contentScoutProductionAdapters } from "./modules/content-scout/adapters/production.js";
 import { PublicRouteSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
   PublicBrandProfileCrawler,
@@ -123,29 +113,18 @@ const contentScout = new ContentScoutHost({
   runs,
   workspaceDir,
   configStore,
-  adapters: testContentScout?.adapters ?? [
-    new RssSourceAdapter(),
-    new RssSourceAdapter(undefined, undefined, { id: "substack" }),
-    new WebsiteSourceAdapter(undefined, undefined, playwrightBrowserRenderer()),
-    new SubstackEnrichmentAdapter(),
-    new YouTubeSourceAdapter(
-      () => {
+  adapters:
+    testContentScout?.adapters ??
+    contentScoutProductionAdapters({
+      workspaceDir,
+      renderBrowser: playwrightBrowserRenderer(),
+      getYouTubeAccess: () => {
         const access = googleConnection.auth();
         return access.ok
           ? { ok: true, client: youtubeSourceClient(access.auth) }
           : { ok: false, state: access.state };
       },
-      () => new Date(),
-      {
-        runtimeInspector: new ExternalRuntimeInspector(() => new Date()),
-        retention: new ContentScoutRetention(workspaceDir, () => new Date()),
-      },
-    ),
-    new RedditSourceAdapter(),
-    new InstagramInstaloaderAdapter(),
-    new TikTokYtDlpAdapter(),
-    new LinkedInComingLaterAdapter(),
-  ],
+    }),
   ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
   draftGenerator: testContentScout?.draftGenerator ?? modelDraftGenerator(contentScoutCompleteJson),
   notionPublisher: testContentScout?.notionPublisher ?? notionPublisher,

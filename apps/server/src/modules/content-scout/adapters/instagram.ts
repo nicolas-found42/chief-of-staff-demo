@@ -1,6 +1,3 @@
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { promisify } from "node:util";
 import type {
   AdapterDiagnostic,
   SourceAdapterCanaryTarget,
@@ -9,8 +6,15 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import { responseHash } from "./http.js";
-
-const execFileAsync = promisify(execFile);
+import {
+  checkpointOf,
+  classifyPublicCommandFailure,
+  commandAdapterResults,
+  numberValue,
+  publicCommandRunner,
+  stringValue,
+  type PublicCommandRunner,
+} from "./public-command.js";
 
 const INSTALOADER_TIMEOUT_MS = 180_000;
 const YT_DLP_TIMEOUT_MS = 90_000;
@@ -18,49 +22,17 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const MAX_PROFILE_POSTS = 50;
 const MAX_REEL_COMMENTS = 30;
 
-interface InstagramCommandResult {
-  stdout: string;
-  stderr: string;
-  code: number;
-}
+const runInstaloaderWorker = publicCommandRunner({
+  executable: "python3",
+  timeoutMs: INSTALOADER_TIMEOUT_MS,
+  maxOutputBytes: MAX_OUTPUT_BYTES,
+});
 
-type InstagramCommandRunner = (args: string[]) => Promise<InstagramCommandResult>;
-
-const runInstaloaderWorker: InstagramCommandRunner = async (args) => {
-  try {
-    const result = await execFileAsync("python3", args, {
-      timeout: INSTALOADER_TIMEOUT_MS,
-      maxBuffer: MAX_OUTPUT_BYTES,
-      windowsHide: true,
-    });
-    return { stdout: result.stdout, stderr: result.stderr, code: 0 };
-  } catch (error) {
-    const failure = error as { code?: number | string; stderr?: string; message?: string };
-    return {
-      stdout: "",
-      stderr: failure.stderr ?? failure.message ?? String(error),
-      code: typeof failure.code === "number" ? failure.code : 1,
-    };
-  }
-};
-
-const runYtDlpCommand: InstagramCommandRunner = async (args) => {
-  try {
-    const result = await execFileAsync("yt-dlp", args, {
-      timeout: YT_DLP_TIMEOUT_MS,
-      maxBuffer: MAX_OUTPUT_BYTES,
-      windowsHide: true,
-    });
-    return { stdout: result.stdout, stderr: result.stderr, code: 0 };
-  } catch (error) {
-    const failure = error as { code?: number | string; stderr?: string; message?: string };
-    return {
-      stdout: "",
-      stderr: failure.stderr ?? failure.message ?? String(error),
-      code: typeof failure.code === "number" ? failure.code : 1,
-    };
-  }
-};
+const runYtDlpCommand = publicCommandRunner({
+  executable: "yt-dlp",
+  timeoutMs: YT_DLP_TIMEOUT_MS,
+  maxOutputBytes: MAX_OUTPUT_BYTES,
+});
 
 /**
  * A deliberately Experimental anonymous Instagram route. Public profiles are
@@ -90,12 +62,19 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
     { adapterId: "instagram", label: "NatGeo", url: "https://www.instagram.com/natgeo/" },
     { adapterId: "instagram", label: "BBC News", url: "https://www.instagram.com/bbcnews/" },
   ];
+  private readonly results: ReturnType<typeof commandAdapterResults>;
 
   constructor(
-    private readonly runProfile: InstagramCommandRunner = runInstaloaderWorker,
-    private readonly runYtDlp: InstagramCommandRunner = runYtDlpCommand,
+    private readonly runProfile: PublicCommandRunner = runInstaloaderWorker,
+    private readonly runYtDlp: PublicCommandRunner = runYtDlpCommand,
     private readonly now: () => Date = () => new Date(),
-  ) {}
+  ) {
+    this.results = commandAdapterResults({
+      adapterVersion: this.version,
+      parserStage: "instaloader",
+      now: this.now,
+    });
+  }
 
   supports(target: { adapterId: string }): boolean {
     return target.adapterId === this.id;
@@ -105,7 +84,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
     const startedAt = this.now().toISOString();
     const route = instagramRoute(request.target.url);
     if (route.kind === "unsupported") {
-      return this.failure(
+      return this.results.failure(
         "unsupported_capability",
         request.target.url,
         startedAt,
@@ -118,8 +97,8 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
     }
     const result = await this.runProfile(["-c", INSTALOADER_PROFILE_SCRIPT, route.handle]);
     if (result.code !== 0) {
-      const classified = classifyCommandFailure(result.stderr);
-      return this.failure(
+      const classified = classifyPublicCommandFailure(result.stderr, "Instagram", result.timedOut);
+      return this.results.failure(
         classified.outcome,
         request.target.url,
         startedAt,
@@ -133,7 +112,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
     try {
       data = JSON.parse(result.stdout) as unknown;
     } catch (error) {
-      return this.failure(
+      return this.results.failure(
         "response_shape_change",
         request.target.url,
         startedAt,
@@ -143,7 +122,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
     }
     const workerError = instaloaderWorkerError(data);
     if (workerError) {
-      return this.failure(
+      return this.results.failure(
         workerError.outcome,
         request.target.url,
         startedAt,
@@ -160,7 +139,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
       this.now,
     );
     if (items === null) {
-      return this.failure(
+      return this.results.failure(
         "response_shape_change",
         request.target.url,
         startedAt,
@@ -180,7 +159,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
       items,
       checkpoint: checkpointOf(items),
       diagnostic: {
-        ...this.diagnostic(outcome, request.target.url, startedAt, [], []),
+        ...this.results.diagnostic(outcome, request.target.url, startedAt, [], []),
         responseHash: responseHash(result.stdout),
       },
     };
@@ -195,8 +174,8 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
       reelYtDlpArgs(`https://www.instagram.com/reel/${route.shortcode}`),
     );
     if (result.code !== 0) {
-      const classified = classifyCommandFailure(result.stderr);
-      return this.failure(
+      const classified = classifyPublicCommandFailure(result.stderr, "Instagram", result.timedOut);
+      return this.results.failure(
         classified.outcome,
         request.target.url,
         startedAt,
@@ -210,7 +189,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
     try {
       data = JSON.parse(result.stdout) as unknown;
     } catch (error) {
-      return this.failure(
+      return this.results.failure(
         "response_shape_change",
         request.target.url,
         startedAt,
@@ -227,7 +206,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
       this.now,
     );
     if (items === null) {
-      return this.failure(
+      return this.results.failure(
         "response_shape_change",
         request.target.url,
         startedAt,
@@ -247,7 +226,7 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
       items,
       checkpoint: checkpointOf(items),
       diagnostic: {
-        ...this.diagnostic(outcome, request.target.url, startedAt, [], []),
+        ...this.results.diagnostic(outcome, request.target.url, startedAt, [], []),
         responseHash: responseHash(result.stdout),
       },
     };
@@ -347,45 +326,6 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
   private async ytDlpInstalled(): Promise<boolean> {
     const result = await this.runYtDlp(["--version"]);
     return result.code === 0;
-  }
-
-  private diagnostic(
-    classification: AdapterDiagnostic["classification"],
-    route: string,
-    startedAt: string,
-    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
-    causeChain: string[],
-  ): AdapterDiagnostic {
-    return {
-      classification,
-      route,
-      status: null,
-      contentType: "application/json",
-      parserStage: "instaloader",
-      responseHash: "",
-      adapterVersion: this.version,
-      startedAt,
-      finishedAt: this.now().toISOString(),
-      retries: 0,
-      affectedCapabilities,
-      causeChain,
-    };
-  }
-
-  private failure(
-    outcome: Extract<SourceCollectionResult, { kind: "failed" }>["outcome"],
-    route: string,
-    startedAt: string,
-    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
-    causeChain: string[],
-  ): SourceCollectionResult {
-    return {
-      kind: "failed",
-      outcome,
-      items: [],
-      checkpoint: null,
-      diagnostic: this.diagnostic(outcome, route, startedAt, affectedCapabilities, causeChain),
-    };
   }
 }
 
@@ -686,74 +626,4 @@ function parseInstagramReelComments(
       },
     ];
   });
-}
-
-function checkpointOf(items: SourceItem[]): string {
-  return createHash("sha256")
-    .update(items.map((item) => item.externalId).join("\n"))
-    .digest("hex");
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-interface ClassifiedFailure {
-  outcome: Extract<SourceCollectionResult, { kind: "failed" }>["outcome"];
-  affectedCapabilities: AdapterDiagnostic["affectedCapabilities"];
-  message: string;
-}
-
-/** Command-level blocks (python or yt-dlp) reported on stderr while exiting nonzero. */
-function classifyCommandFailure(stderr: string): ClassifiedFailure {
-  const text = stderr.toLowerCase();
-  const firstLine =
-    stderr
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean) ?? "";
-  if (/log in|login|sign in|authenticate|authentication|cookie/i.test(text)) {
-    return {
-      outcome: "blocked_access",
-      affectedCapabilities: ["items", "comments"],
-      message: firstLine || "Instagram is requiring authentication for this public target.",
-    };
-  }
-  if (/rate|too many requests|\b429\b|temporarily unavailable/i.test(text)) {
-    return {
-      outcome: "rate_limit",
-      affectedCapabilities: ["items"],
-      message: firstLine || "Instagram is rate limiting anonymous collection.",
-    };
-  }
-  if (/unsupported url|unsupported site|no supported extractor/i.test(text)) {
-    return {
-      outcome: "unsupported_capability",
-      affectedCapabilities: ["source_target"],
-      message: firstLine || "yt-dlp has no supported Instagram extractor for this target.",
-    };
-  }
-  if (/unavailable|private|removed|not found|\b404\b/i.test(text)) {
-    return {
-      outcome: "blocked_access",
-      affectedCapabilities: ["items"],
-      message: firstLine || "Instagram reports this public target as unavailable.",
-    };
-  }
-  if (/timed out|timeout|econnreset|eai_again/i.test(text)) {
-    return {
-      outcome: "timeout",
-      affectedCapabilities: ["items"],
-      message: firstLine || "The command boundary could not reach Instagram in time.",
-    };
-  }
-  return {
-    outcome: "internal_failure",
-    affectedCapabilities: ["items"],
-    message: firstLine || stderr.trim() || "The command boundary exited without a diagnostic.",
-  };
 }

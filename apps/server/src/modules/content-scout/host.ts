@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type {
   BrandProfileRevision,
@@ -633,19 +631,21 @@ export class ContentScoutHost implements HostedModule {
             : [];
         });
       const mergedWarnings = [...intakeHealth.warnings, ...canaryWarnings];
-      const linkedinEvidenceGate = (() => {
-        const file = join(this.deps.workspaceDir, "content-scout", "linkedin-canaries.json");
-        let evidences: LinkedInCanaryEvidence[] = [];
-        if (existsSync(file)) {
-          try {
-            const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
-            if (Array.isArray(parsed)) evidences = parsed as LinkedInCanaryEvidence[];
-          } catch {
-            evidences = [];
-          }
-        }
-        return evaluateLinkedInEvidenceGate(evidences, this.deps.now ?? (() => new Date()));
-      })();
+      const linkedinEvidence: LinkedInCanaryEvidence[] = canaryReceipts
+        .filter((receipt) => receipt.adapterId === "linkedin")
+        .map((receipt) => ({
+          targetUrl: receipt.target.url,
+          adapterVersion: receipt.adapterVersion,
+          outcome: receipt.outcome,
+          itemsFound: receipt.itemsFound,
+          hasUsefulItem: receipt.outcome === "items_found" && receipt.itemsFound > 0,
+          observedAt: receipt.checkedAt,
+          diagnostic: receipt.diagnostic,
+        }));
+      const linkedinEvidenceGate = evaluateLinkedInEvidenceGate(
+        linkedinEvidence,
+        this.deps.now ?? (() => new Date()),
+      );
       return {
         brandProfile: this.currentBrandProfile(),
         brandProfileProposal: this.brandProfileProposal(),

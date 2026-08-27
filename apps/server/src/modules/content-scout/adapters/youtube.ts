@@ -4,7 +4,6 @@ import { promisify } from "node:util";
 import { google } from "googleapis";
 import {
   SOURCE_BACKFILL_WINDOWS_DAYS,
-  type AdapterDiagnostic,
   type SourceAdapterCanaryTarget,
   type SourceComment,
   type SourceItem,
@@ -14,6 +13,7 @@ import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 import type { GoogleAuth } from "../../../google/oauth.js";
 import { parseChannelUrl, type ChannelRef } from "../../youtube/channels.js";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
+import { commandAdapterResults } from "./public-command.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -482,6 +482,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
   ];
 
   private readonly transcriptDeps: YouTubeTranscriptDeps;
+  private readonly results: ReturnType<typeof commandAdapterResults>;
   constructor(
     private readonly getAccess: () => YouTubeSourceAccess,
     private readonly now: () => Date = () => new Date(),
@@ -491,6 +492,11 @@ export class YouTubeSourceAdapter implements SourceAdapter {
       maxWhisperSeconds: 60 * 60,
       ...transcriptDeps,
     };
+    this.results = commandAdapterResults({
+      adapterVersion: this.version,
+      parserStage: "youtube_data_api",
+      now: this.now,
+    });
   }
 
   supports(target: { adapterId: string }): boolean {
@@ -501,7 +507,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
     const startedAt = this.now().toISOString();
     const access = this.getAccess();
     if (!access.ok) {
-      return this.failure(
+      return this.results.failure(
         "blocked_access",
         request.target.url,
         startedAt,
@@ -513,7 +519,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
     try {
       ref = parseChannelUrl(request.target.url);
     } catch (error) {
-      return this.failure(
+      return this.results.failure(
         "unsupported_capability",
         request.target.url,
         startedAt,
@@ -524,7 +530,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
     try {
       const channel = await access.client.resolveChannel(ref);
       if (!channel) {
-        return this.failure(
+        return this.results.failure(
           "response_shape_change",
           request.target.url,
           startedAt,
@@ -574,7 +580,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
         outcome,
         items,
         checkpoint: hash,
-        diagnostic: this.diagnostic(outcome, request.target.url, startedAt, [], []),
+        diagnostic: this.results.diagnostic(outcome, request.target.url, startedAt, [], []),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -582,12 +588,15 @@ export class YouTubeSourceAdapter implements SourceAdapter {
         (error as { code?: number; response?: { status?: number } }).code ??
         (error as { response?: { status?: number } }).response?.status;
       const outcome =
-        status === 429
-          ? "rate_limit"
-          : status === 401 || status === 403
-            ? "blocked_access"
-            : "internal_failure";
-      return this.failure(outcome, request.target.url, startedAt, ["items"], [message]);
+        (error instanceof Error && error.name === "AbortError") ||
+        /timed out|timeout|econnreset|eai_again/i.test(message)
+          ? "timeout"
+          : status === 429
+            ? "rate_limit"
+            : status === 401 || status === 403
+              ? "blocked_access"
+              : "internal_failure";
+      return this.results.failure(outcome, request.target.url, startedAt, ["items"], [message]);
     }
   }
 
@@ -872,45 +881,6 @@ export class YouTubeSourceAdapter implements SourceAdapter {
     return {
       ...whisperAttempt,
       causeChain: aggregatedCause.length > 0 ? aggregatedCause : whisperAttempt.causeChain,
-    };
-  }
-
-  private failure(
-    outcome: Extract<SourceCollectionResult, { kind: "failed" }>["outcome"],
-    route: string,
-    startedAt: string,
-    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
-    causeChain: string[],
-  ): SourceCollectionResult {
-    return {
-      kind: "failed",
-      outcome,
-      items: [],
-      checkpoint: null,
-      diagnostic: this.diagnostic(outcome, route, startedAt, affectedCapabilities, causeChain),
-    };
-  }
-
-  private diagnostic(
-    classification: AdapterDiagnostic["classification"],
-    route: string,
-    startedAt: string,
-    affectedCapabilities: AdapterDiagnostic["affectedCapabilities"],
-    causeChain: string[],
-  ): AdapterDiagnostic {
-    return {
-      classification,
-      route,
-      status: null,
-      contentType: "application/json",
-      parserStage: "youtube_data_api",
-      responseHash: "",
-      adapterVersion: this.version,
-      startedAt,
-      finishedAt: this.now().toISOString(),
-      retries: 0,
-      affectedCapabilities,
-      causeChain,
     };
   }
 }

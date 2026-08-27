@@ -511,31 +511,17 @@ export class RedditSourceAdapter implements SourceAdapter {
       const url = canonicalUrl(new URL(entry.link, response.url).toString());
       const externalId = entry.id ?? url;
       const body = entry.contentSnippet ?? entry.content ?? entry.summary ?? null;
-      items.push({
-        id: `${request.target.id}:${externalId}`,
-        externalId,
-        targetId: request.target.id,
-        adapterId: this.id,
-        canonicalUrl: url,
-        author: canonicalRedditAuthor(entry.author),
-        title: entry.title ?? null,
-        body,
-        description: entry.contentSnippet ?? entry.summary ?? null,
-        publishedAt: publishedAt ? new Date(publishedAt).toISOString() : null,
-        discoveredAt: this.now().toISOString(),
-        media: [],
-        transcript: null,
-        comments: [],
-        evidence: [{ route: response.url, retrievedAt: this.now().toISOString() }],
-        completeness: {
-          title: entry.title ? "available" : "unavailable",
-          body: body ? "available" : "unavailable",
-          description: (entry.contentSnippet ?? entry.summary) ? "available" : "unavailable",
-          transcript: "unsupported",
-          comments: "unsupported",
-          media: "unavailable",
-        },
-      });
+      items.push(
+        this.sourceItem(request.target.id, response.url, {
+          externalId,
+          canonicalUrl: url,
+          author: canonicalRedditAuthor(entry.author),
+          title: entry.title ?? null,
+          body,
+          description: entry.contentSnippet ?? entry.summary ?? null,
+          publishedAt: publishedAt ? new Date(publishedAt).toISOString() : null,
+        }),
+      );
     }
     return items;
   }
@@ -564,31 +550,17 @@ export class RedditSourceAdapter implements SourceAdapter {
       if (publishedAt && Date.parse(publishedAt) < since) continue;
       const title = stringValue(data.title) ?? null;
       const body = stringValue(data.selftext) ?? null;
-      items.push({
-        id: `${request.target.id}:${externalId}`,
-        externalId,
-        targetId: request.target.id,
-        adapterId: this.id,
-        canonicalUrl: url,
-        author: canonicalRedditAuthor(data.author),
-        title,
-        body,
-        description: null,
-        publishedAt,
-        discoveredAt: this.now().toISOString(),
-        media: [],
-        transcript: null,
-        comments: [],
-        evidence: [{ route: response.url, retrievedAt: this.now().toISOString() }],
-        completeness: {
-          title: title ? "available" : "unavailable",
-          body: body ? "available" : "unavailable",
-          description: "unavailable",
-          transcript: "unsupported",
-          comments: "unsupported",
-          media: "unavailable",
-        },
-      });
+      items.push(
+        this.sourceItem(request.target.id, response.url, {
+          externalId,
+          canonicalUrl: url,
+          author: canonicalRedditAuthor(data.author),
+          title,
+          body,
+          description: null,
+          publishedAt,
+        }),
+      );
     }
     return items;
   }
@@ -617,33 +589,49 @@ export class RedditSourceAdapter implements SourceAdapter {
       if (publishedAt && Date.parse(publishedAt) < since) continue;
       const title = stringValue(post.getAttribute("post-title")) ?? null;
       const body = stringValue(post.textContent) ?? null;
-      items.push({
-        id: `${request.target.id}:${externalId}`,
-        externalId,
-        targetId: request.target.id,
-        adapterId: this.id,
-        canonicalUrl: url,
-        author: canonicalRedditAuthor(stringValue(post.getAttribute("author"))),
-        title,
-        body,
-        description: null,
-        publishedAt,
-        discoveredAt: this.now().toISOString(),
-        media: [],
-        transcript: null,
-        comments: [],
-        evidence: [{ route: response.url, retrievedAt: this.now().toISOString() }],
-        completeness: {
-          title: title ? "available" : "unavailable",
-          body: body ? "available" : "unavailable",
-          description: "unavailable",
-          transcript: "unsupported",
-          comments: "unsupported",
-          media: "unavailable",
-        },
-      });
+      items.push(
+        this.sourceItem(request.target.id, response.url, {
+          externalId,
+          canonicalUrl: url,
+          author: canonicalRedditAuthor(stringValue(post.getAttribute("author"))),
+          title,
+          body,
+          description: null,
+          publishedAt,
+        }),
+      );
     }
     return items;
+  }
+
+  private sourceItem(
+    targetId: string,
+    evidenceRoute: string,
+    fields: Pick<
+      SourceItem,
+      "externalId" | "canonicalUrl" | "author" | "title" | "body" | "description" | "publishedAt"
+    >,
+  ): SourceItem {
+    const retrievedAt = this.now().toISOString();
+    return {
+      id: `${targetId}:${fields.externalId}`,
+      targetId,
+      adapterId: this.id,
+      ...fields,
+      discoveredAt: retrievedAt,
+      media: [],
+      transcript: null,
+      comments: [],
+      evidence: [{ route: evidenceRoute, retrievedAt }],
+      completeness: {
+        title: fields.title ? "available" : "unavailable",
+        body: fields.body ? "available" : "unavailable",
+        description: fields.description ? "available" : "unavailable",
+        transcript: "unsupported",
+        comments: "unsupported",
+        media: "unavailable",
+      },
+    };
   }
 
   private rateLimited(

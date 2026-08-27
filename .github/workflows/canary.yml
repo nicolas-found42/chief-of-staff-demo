@@ -25,10 +25,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
+      - run: npm run build
+      - name: Restore cumulative canary receipts
+        id: restore-canary-receipts
+        uses: actions/cache/restore@v4
+        with:
+          path: workspace/content-scout/canary-state.json
+          key: canary-receipts-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: |
+            canary-receipts-${{ github.ref }}-
       - name: Run external canaries (normal diagnostic contract, never fails CI)
         run: node ./scripts/run-canaries.mjs
         continue-on-error: true
+      - name: Save cumulative canary receipts
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: workspace/content-scout/canary-state.json
+          key: canary-receipts-${{ github.ref }}-${{ github.run_id }}
       - name: Upload canary receipts
         if: always()
         uses: actions/upload-artifact@v4
