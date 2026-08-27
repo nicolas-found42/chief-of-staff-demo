@@ -68,8 +68,8 @@ function feedMedia(entry: FeedItem): SourceItem["media"] {
 }
 
 export class RssSourceAdapter implements SourceAdapter {
-  readonly id: "rss" | "substack" | "reddit";
-  readonly state: "available" | "experimental";
+  readonly id: "rss" | "substack";
+  readonly state = "available" as const;
   readonly version = "rss-parser@3";
   /** The feed is fetched fresh and filtered by `since`, so any requested window is honored honestly — bounded by whatever history the feed itself still carries. */
   readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
@@ -82,13 +82,9 @@ export class RssSourceAdapter implements SourceAdapter {
   constructor(
     private readonly fetchText: PublicHttpFetch = publicHttpFetch,
     private readonly now: () => Date = () => new Date(),
-    declaration: { id: "rss" | "substack" | "reddit"; state: "available" | "experimental" } = {
-      id: "rss",
-      state: "available",
-    },
+    declaration: { id: "rss" | "substack" } = { id: "rss" },
   ) {
     this.id = declaration.id;
-    this.state = declaration.state;
   }
 
   supports(target: { adapterId: string }): boolean {
@@ -99,7 +95,7 @@ export class RssSourceAdapter implements SourceAdapter {
     const startedAt = this.now().toISOString();
     let response;
     try {
-      response = await this.fetchText(this.collectionUrl(request.target.url), {
+      response = await this.fetchText(request.target.url, {
         etag: request.conditional?.etag ?? null,
         lastModified: request.conditional?.lastModified ?? null,
       });
@@ -218,13 +214,6 @@ export class RssSourceAdapter implements SourceAdapter {
         startedAt,
       },
     );
-  }
-
-  private collectionUrl(value: string): string {
-    if (this.id !== "reddit") return value;
-    const url = new URL(value);
-    if (!url.pathname.endsWith(".rss")) url.pathname = `${url.pathname.replace(/\/$/, "")}.rss`;
-    return url.toString();
   }
 
   private completed(

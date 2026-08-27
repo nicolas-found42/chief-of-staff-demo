@@ -589,27 +589,6 @@ describe("Experimental anonymous social adapters", () => {
       });
     },
   );
-
-  it("uses Reddit's public RSS route without presenting it as Available", async () => {
-    let fetched = "";
-    const adapter = new RssSourceAdapter(
-      async (url) => {
-        fetched = url;
-        return response({ url, body: fixture("rss-success.xml") });
-      },
-      () => NOW,
-      { id: "reddit", state: "experimental" },
-    );
-    const result = await adapter.collect({
-      target: target("reddit", "https://www.reddit.com/r/publiccommunity/"),
-      since: "2026-08-18T12:00:00.000Z",
-      until: NOW.toISOString(),
-      checkpoint: null,
-    });
-    expect(fetched).toBe("https://www.reddit.com/r/publiccommunity.rss");
-    expect(adapter.state).toBe("experimental");
-    expect(result.items[0]?.adapterId).toBe("reddit");
-  });
 });
 
 describe("Substack media enrichment adapter", () => {
@@ -626,7 +605,7 @@ describe("Substack media enrichment adapter", () => {
     const result = await new RssSourceAdapter(
       async () => response({ body: fixture(feedName) }),
       () => NOW,
-      { id: "substack", state: "available" },
+      { id: "substack" },
     ).collect({
       target: substackTarget,
       since: "2026-08-18T12:00:00.000Z",
@@ -704,7 +683,7 @@ describe("Substack media enrichment adapter", () => {
     const result = await new RssSourceAdapter(
       async () => response({ body: fixture("substack-feed-empty.xml") }),
       () => NOW,
-      { id: "substack", state: "available" },
+      { id: "substack" },
     ).collect({
       target: substackTarget,
       since: "2026-08-18T12:00:00.000Z",

@@ -39,6 +39,8 @@ export const SOURCE_PARSER_STAGES = [
   "fetch",
   "public_embedded_data",
   "readability",
+  "reddit_html_parse",
+  "reddit_json_parse",
   "rss",
   "rss_parse",
   "browser_render",

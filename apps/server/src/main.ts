@@ -25,6 +25,7 @@ import {
 import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/declarations.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { ExperimentalPublicPageAdapter } from "./modules/content-scout/adapters/experimental.js";
+import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
 import { PublicLinkSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
   PublicBrandProfileCrawler,
@@ -122,7 +123,7 @@ const contentScout = new ContentScoutHost({
   configStore,
   adapters: testContentScout?.adapters ?? [
     new RssSourceAdapter(),
-    new RssSourceAdapter(undefined, undefined, { id: "substack", state: "available" }),
+    new RssSourceAdapter(undefined, undefined, { id: "substack" }),
     new WebsiteSourceAdapter(undefined, undefined, playwrightBrowserRenderer()),
     new SubstackEnrichmentAdapter(),
     new YouTubeSourceAdapter(() => {
@@ -131,7 +132,7 @@ const contentScout = new ContentScoutHost({
         ? { ok: true, client: youtubeSourceClient(access.auth) }
         : { ok: false, state: access.state };
     }),
-    new RssSourceAdapter(undefined, undefined, { id: "reddit", state: "experimental" }),
+    new RedditSourceAdapter(),
     new ExperimentalPublicPageAdapter("instagram"),
     new ExperimentalPublicPageAdapter("tiktok"),
     new ComingLaterSourceAdapter("linkedin"),
