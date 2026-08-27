@@ -61,7 +61,7 @@ RUN apt-get update \
       "instaloader==${INSTALOADER_VERSION}" \
       "youtube-transcript-api==${YOUTUBE_TRANSCRIPT_API_VERSION}" \
       "yt-dlp==${YT_DLP_VERSION}" \
-    && chromium_path="$(find /ms-playwright -type f -path '*/chrome-linux/chrome' | head -n 1)" \
+    && chromium_path="$(find /ms-playwright -type f \( -path '*/chrome-linux/chrome' -o -path '*/chrome-linux64/chrome' \) | head -n 1)" \
     && test -n "$chromium_path" \
     && ln -s "$chromium_path" /usr/local/bin/chromium \
     && rm -rf /var/lib/apt/lists/*
