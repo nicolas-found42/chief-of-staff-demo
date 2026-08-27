@@ -1425,6 +1425,80 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
             </ul>
           )}
         </div>
+        <div className="card">
+          <h3>LinkedIn evidence gate</h3>
+          <p>
+            Adapter <strong>linkedin</strong>:{" "}
+            <span className="status-badge status-source">coming_later</span>
+          </p>
+          <p className="muted">
+            LinkedIn stays Coming later unless a clean anonymous public browser route proves a
+            useful Source Item contract through repeated canaries across{" "}
+            {state.linkedinEvidenceGate.requiredTargets} representative targets ×{" "}
+            {state.linkedinEvidenceGate.repeatsPerTarget} repeats on{" "}
+            {state.adapters.find((adapter) => adapter.id === "linkedin")?.version ??
+              "linkedin-public-browser-v1"}
+            .
+          </p>
+          <p>
+            Gate:{" "}
+            <strong>
+              {state.linkedinEvidenceGate.passed
+                ? "Passed — explicit human promotion still required"
+                : "Unmet — remains Coming later"}
+            </strong>
+            {" · checked "}
+            {new Date(state.linkedinEvidenceGate.checkedAt).toLocaleString()}
+          </p>
+          {!state.linkedinEvidenceGate.passed && state.linkedinEvidenceGate.reason && (
+            <p className="field-error" role="status">
+              {state.linkedinEvidenceGate.reason}
+            </p>
+          )}
+          {state.linkedinEvidenceGate.passed && (
+            <p className="banner banner-ok" role="status">
+              Evidence gate passed. Promotion does not happen silently; a reviewable change is still
+              required to make LinkedIn Available or Experimental.
+            </p>
+          )}
+          <p className="muted">
+            Canary uses a clean public browser with no login, imported cookies, shared identity,
+            CAPTCHA bypass, or proxy evasion. Blocked access, login walls, empty shells, and
+            response-shape changes count as failed evidence, not successful empty.
+          </p>
+          <details>
+            <summary>
+              Representative targets ({state.linkedinEvidenceGate.representativeTargets.length})
+            </summary>
+            <ul>
+              {state.linkedinEvidenceGate.representativeTargets.map((url) => (
+                <li key={url}>
+                  <a href={url} target="_blank" rel="noreferrer">
+                    {url}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </details>
+          {state.linkedinEvidenceGate.evidence.length > 0 && (
+            <details>
+              <summary>
+                Recent canary evidence ({state.linkedinEvidenceGate.evidence.length})
+              </summary>
+              <ul>
+                {state.linkedinEvidenceGate.evidence.slice(0, 12).map((entry, index) => (
+                  <li key={`${entry.targetUrl}-${index}`}>
+                    {entry.targetUrl} → {entry.outcome.replaceAll("_", " ")} · {entry.itemsFound}{" "}
+                    item
+                    {entry.itemsFound === 1 ? "" : "s"}
+                    {entry.hasUsefulItem ? " (useful)" : ""} ·{" "}
+                    {new Date(entry.observedAt).toLocaleString()}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       </div>
     </section>
   );

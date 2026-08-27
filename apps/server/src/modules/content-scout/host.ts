@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type {
   BrandProfileRevision,
@@ -19,6 +21,7 @@ import {
   isSuccessfulSourceDiagnostic,
   SOURCE_BACKFILL_WINDOWS_DAYS,
 } from "@chief-of-staff-demo/shared";
+import { evaluateLinkedInEvidenceGate, type LinkedInCanaryEvidence } from "./adapters/linkedin.js";
 import type { HostedModule } from "../../engine/host.js";
 import type { ConfigStore } from "../../config.js";
 import { Runner } from "../../engine/runner.js";
@@ -630,6 +633,19 @@ export class ContentScoutHost implements HostedModule {
             : [];
         });
       const mergedWarnings = [...intakeHealth.warnings, ...canaryWarnings];
+      const linkedinEvidenceGate = (() => {
+        const file = join(this.deps.workspaceDir, "content-scout", "linkedin-canaries.json");
+        let evidences: LinkedInCanaryEvidence[] = [];
+        if (existsSync(file)) {
+          try {
+            const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
+            if (Array.isArray(parsed)) evidences = parsed as LinkedInCanaryEvidence[];
+          } catch {
+            evidences = [];
+          }
+        }
+        return evaluateLinkedInEvidenceGate(evidences, this.deps.now ?? (() => new Date()));
+      })();
       return {
         brandProfile: this.currentBrandProfile(),
         brandProfileProposal: this.brandProfileProposal(),
@@ -669,6 +685,7 @@ export class ContentScoutHost implements HostedModule {
         },
         settings: this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID] ?? null,
         storage: this.storageUse(),
+        linkedinEvidenceGate,
       };
     });
 

@@ -130,6 +130,23 @@ export interface ContentScoutState {
     receipts: SourceCanaryReceipt[];
     health: SourceCanaryHealth[];
   };
+  linkedinEvidenceGate: {
+    passed: boolean;
+    reason?: string;
+    adapterVersion: string | null;
+    checkedAt: string;
+    requiredTargets: number;
+    repeatsPerTarget: number;
+    representativeTargets: readonly string[];
+    evidence: readonly {
+      targetUrl: string;
+      adapterVersion: string;
+      outcome: SourceDiagnosticClassification;
+      itemsFound: number;
+      hasUsefulItem: boolean;
+      observedAt: string;
+    }[];
+  };
 }
 
 /** What the Runs list asks for: one Module's Runs or every Module's, a page at a time. */

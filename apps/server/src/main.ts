@@ -22,7 +22,7 @@ import {
   YouTubeSourceAdapter,
   youtubeSourceClient,
 } from "./modules/content-scout/adapters/youtube.js";
-import { ComingLaterSourceAdapter } from "./modules/content-scout/adapters/declarations.js";
+import { LinkedInComingLaterAdapter } from "./modules/content-scout/adapters/linkedin.js";
 import { ContentScoutRetention } from "./modules/content-scout/retention.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { InstagramInstaloaderAdapter } from "./modules/content-scout/adapters/instagram.js";
@@ -144,7 +144,7 @@ const contentScout = new ContentScoutHost({
     new RedditSourceAdapter(),
     new InstagramInstaloaderAdapter(),
     new TikTokYtDlpAdapter(),
-    new ComingLaterSourceAdapter("linkedin"),
+    new LinkedInComingLaterAdapter(),
   ],
   ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
   draftGenerator: testContentScout?.draftGenerator ?? modelDraftGenerator(contentScoutCompleteJson),
