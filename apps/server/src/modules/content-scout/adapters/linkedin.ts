@@ -1,7 +1,6 @@
 import type {
   AdapterDiagnostic,
   SourceDiagnosticClassification,
-  SourceItem,
 } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 
@@ -20,13 +19,13 @@ import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
  *   `response_shape_change` are failed evidence, not successful empty.
  */
 
-export const LINKEDIN_ADAPTER_ID = "linkedin" as const;
-export const LINKEDIN_ADAPTER_VERSION = "linkedin-public-browser-v1" as const;
+const LINKEDIN_ADAPTER_ID = "linkedin" as const;
+const LINKEDIN_ADAPTER_VERSION = "linkedin-public-browser-v1" as const;
 
 /** Gate requires at least three representative public targets. */
-export const LINKEDIN_MIN_REPRESENTATIVE_TARGETS = 3 as const;
+const LINKEDIN_MIN_REPRESENTATIVE_TARGETS = 3 as const;
 /** Each representative target must have repeated useful results on the same version. */
-export const LINKEDIN_MIN_REPEATS_PER_TARGET = 2 as const;
+const LINKEDIN_MIN_REPEATS_PER_TARGET = 2 as const;
 
 /**
  * Representative public targets for the gate. These are the minimum diversity
@@ -34,7 +33,7 @@ export const LINKEDIN_MIN_REPEATS_PER_TARGET = 2 as const;
  * profile activity feed. A real canary run must exercise at least these three
  * distinct URLs (same adapter version) before promotion is reviewable.
  */
-export const LINKEDIN_REPRESENTATIVE_TARGETS: readonly string[] = [
+const LINKEDIN_REPRESENTATIVE_TARGETS: readonly string[] = [
   "https://www.linkedin.com/company/linkedin/posts/?feedView=all",
   "https://www.linkedin.com/company/microsoft/posts/?feedView=all",
   "https://www.linkedin.com/in/reidhoffman/recent-activity/all/",
@@ -54,14 +53,14 @@ export interface LinkedInCanaryEvidence {
   diagnostic: AdapterDiagnostic;
 }
 
-export interface LinkedInEvidenceGatePassed {
+interface LinkedInEvidenceGatePassed {
   passed: true;
   adapterVersion: string;
   evidence: readonly LinkedInCanaryEvidence[];
   checkedAt: string;
 }
 
-export interface LinkedInEvidenceGateFailed {
+interface LinkedInEvidenceGateFailed {
   passed: false;
   reason: string;
   adapterVersion: string | null;
@@ -74,18 +73,8 @@ export interface LinkedInEvidenceGateFailed {
 
 export type LinkedInEvidenceGateResult = LinkedInEvidenceGatePassed | LinkedInEvidenceGateFailed;
 
-/** A SourceItem has a useful contract when it can support a Content Opportunity. */
-export function isUsefulLinkedInSourceItem(item: SourceItem): boolean {
-  if (item.adapterId !== LINKEDIN_ADAPTER_ID) return false;
-  const hasTitle = typeof item.title === "string" && item.title.trim().length > 0;
-  const hasBody = typeof item.body === "string" && item.body.trim().length > 0;
-  const hasDescription = typeof item.description === "string" && item.description.trim().length > 0;
-  const hasCanonical = typeof item.canonicalUrl === "string" && item.canonicalUrl.trim().length > 0;
-  return hasCanonical && (hasTitle || hasBody || hasDescription);
-}
-
 /** Gate treats only `items_found` with a useful item as success. */
-export function isUsefulLinkedInEvidence(evidence: LinkedInCanaryEvidence): boolean {
+function isUsefulLinkedInEvidence(evidence: LinkedInCanaryEvidence): boolean {
   return evidence.outcome === "items_found" && evidence.hasUsefulItem && evidence.itemsFound > 0;
 }
 
@@ -197,17 +186,8 @@ export function evaluateLinkedInEvidenceGate(
     checkedAt,
   };
 }
-
 /**
- * Human review helper: one line per evidence showing whether it was useful.
- * Keeps the gate reviewable without retaining response bodies.
- */
-export function formatLinkedInGateForReview(result: LinkedInEvidenceGateResult): string {
-  if (result.passed) {
-    return `LinkedIn evidence gate PASSED on ${result.adapterVersion} at ${result.checkedAt} — explicit human promotion still required. No silent promotion.`;
-  }
-  return `LinkedIn evidence gate FAILED at ${result.checkedAt}: ${result.reason}`;
-}
+ * Honest Coming later adapter. Its version is the gate's version so that
 
 /**
  * Honest Coming later adapter. Its version is the gate's version so that

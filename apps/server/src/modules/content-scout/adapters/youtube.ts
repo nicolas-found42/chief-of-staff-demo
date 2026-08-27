@@ -121,7 +121,7 @@ export const YOUTUBE_TRANSCRIPT_VERSIONS = {
   whisperCpp: "v1.7.6",
 } as const;
 
-export type TranscriptRoute =
+type TranscriptRoute =
   "youtube.captions.list" | "youtube-transcript-api" | "yt-dlp" | "whisper-cpp";
 
 export interface TranscriptAttempt {
@@ -133,7 +133,7 @@ export interface TranscriptAttempt {
   durationSeconds?: number | null;
 }
 
-export type TranscriptFetcher = (videoId: string) => Promise<TranscriptAttempt>;
+type TranscriptFetcher = (videoId: string) => Promise<TranscriptAttempt>;
 
 export interface YouTubeTranscriptDeps {
   fetchGoogleCaptions?: TranscriptFetcher;

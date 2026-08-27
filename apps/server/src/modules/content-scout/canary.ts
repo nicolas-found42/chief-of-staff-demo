@@ -23,12 +23,12 @@ const EMPTY: CanaryState = { receipts: [], lastRunAt: null };
 function isReceipt(value: unknown): value is SourceCanaryReceipt {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<SourceCanaryReceipt>;
-   
+
   return (
     typeof candidate.adapterId === "string" &&
     typeof candidate.adapterVersion === "string" &&
     candidate.target != null &&
-    typeof (candidate.target).url === "string" &&
+    typeof candidate.target.url === "string" &&
     typeof candidate.capability === "string" &&
     typeof candidate.route === "string" &&
     typeof candidate.outcome === "string" &&
@@ -242,16 +242,4 @@ export class ContentScoutCanaryRunner {
       itemsFound: result.items.length,
     };
   }
-}
-
-export function degradedCanaryAdapterIds(
-  adapters: readonly SourceAdapter[],
-  receipts: readonly SourceCanaryReceipt[],
-): string[] {
-  return adapters
-    .filter((adapter) => {
-      const health = canaryHealthForAdapter({ adapter, receipts });
-      return health.degraded;
-    })
-    .map((adapter) => adapter.id);
 }

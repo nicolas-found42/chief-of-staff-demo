@@ -11,8 +11,7 @@
  * for the live canaries; any failure is logged but the process exits 0 so
  * that a public-route change is visible without blocking other work.
  */
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 // Dynamic import keeps the script runnable even when the server build has not been run.
@@ -35,7 +34,7 @@ try {
 const workspaceDir = process.env.WORKSPACE_DIR ?? "./workspace";
 mkdirSync(join(workspaceDir, "content-scout"), { recursive: true });
 
-let adapters = [];
+let adapters;
 try {
   // Import the production adapter set without hard-coding ids: reuse the same
   // instantiation as `apps/server/src/main.ts` so canary targets remain the
@@ -48,9 +47,6 @@ try {
     await import("../apps/server/src/modules/content-scout/adapters/instagram.ts");
   const tiktokMod = await import("../apps/server/src/modules/content-scout/adapters/tiktok.ts");
   const declMod = await import("../apps/server/src/modules/content-scout/adapters/declarations.ts");
-  const googleMod = await import("../apps/server/src/google/oauth.ts");
-  const youtubeClientMod =
-    await import("../apps/server/src/modules/content-scout/adapters/youtube.ts");
 
   // Build a best-effort live adapter list. If a required runtime (e.g. Python)
   // is unavailable, that adapter's canary will record a classified failure
@@ -77,7 +73,6 @@ try {
   // scheduled run unless credentials are supplied via the environment.
   if (process.env.GOOGLE_CREDENTIALS || process.env.ENABLE_YOUTUBE_CANARY === "1") {
     const YouTubeSourceAdapter = youtubeMod.YouTubeSourceAdapter;
-    const youtubeSourceClient = youtubeClientMod.youtubeSourceClient;
     // Minimal stub: if auth fails, the adapter itself will produce a
     // diagnostic rather than throwing.
     adapters.push(new YouTubeSourceAdapter(() => ({ ok: false, state: "disconnected" })));
@@ -96,7 +91,7 @@ const store = new ContentScoutCanaryStore(workspaceDir, () => new Date());
 const runner = new ContentScoutCanaryRunner({ adapters, store, now: () => new Date() });
 
 console.log(`[canary] Running ${adapters.length} adapters × canary targets (outside merge CI)...`);
-let receipts = [];
+let receipts;
 try {
   receipts = await runner.runOnce();
 } catch (error) {
@@ -121,6 +116,7 @@ try {
   console.log(
     `[canary] Wrote ${receipts.length} receipts to ${flatPath} and ${join(workspaceDir, "content-scout", "canary-state.json")}`,
   );
-} catch {}
-
+} catch (error) {
+  console.warn("[canary] Could not write flat receipts artifact:", error);
+}
 process.exit(0);

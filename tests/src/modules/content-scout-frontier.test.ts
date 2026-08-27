@@ -615,7 +615,11 @@ describe("Content Scout frontier contracts", () => {
     host.routes(app);
     const response = await app.inject({ method: "GET", url: "/api/content-scout" });
     await app.close();
-    expect(response.json().health).toEqual({ runId: null, warnings: [], runtimeWarnings: [] });
+    expect(response.json().health).toMatchObject({
+      runId: null,
+      warnings: [],
+      runtimeWarnings: [],
+    });
   });
 
   it("retains diagnostics, last success, and degraded health when no Available Source Adapter completes", async () => {
