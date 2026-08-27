@@ -75,6 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker compose build
+      - run: install -d -m 0777 workspace
       - run: docker compose up -d
       - name: Wait for the health endpoint
         run: |
