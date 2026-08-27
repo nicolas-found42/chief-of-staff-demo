@@ -2,16 +2,17 @@ import type {
   AdapterDiagnostic,
   BrandProfileRevision,
   BrandProfileScanPage,
+  ContentDraft,
+  DraftReviewNote,
+  DraftTargetContract,
+  OpportunityBrief,
   RankedOpportunity,
+  SourceAdapterCanaryTarget,
   SourceAdapterState,
   SourceBackfillWindowDays,
   SourceDiagnosticClassification,
   SourceItem,
   SourceTarget,
-  ContentDraft,
-  DraftReviewNote,
-  DraftTargetContract,
-  OpportunityBrief,
   SourceSuggestion,
   SourceStoryGroup,
   ContentScoutRuntimeCapability,
@@ -63,6 +64,7 @@ export interface SourceAdapter {
    * instead of silently returning today's evidence as if it were history.
    */
   readonly backfillWindowsDays?: readonly SourceBackfillWindowDays[];
+  readonly canaryTargets?: readonly SourceAdapterCanaryTarget[];
   supports(target: SourceTarget): boolean;
   collect(request: SourceCollectionRequest): Promise<SourceCollectionResult>;
   enrich?(items: SourceItem[]): Promise<SourceItem[]>;

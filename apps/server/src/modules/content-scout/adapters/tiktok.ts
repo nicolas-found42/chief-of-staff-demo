@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import type { AdapterDiagnostic, SourceComment, SourceItem } from "@chief-of-staff-demo/shared";
+import type {
+  AdapterDiagnostic,
+  SourceAdapterCanaryTarget,
+  SourceComment,
+  SourceItem,
+} from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import { responseHash } from "./http.js";
 
@@ -75,6 +80,11 @@ export class TikTokYtDlpAdapter implements SourceAdapter {
   readonly id = "tiktok";
   readonly state = "experimental" as const;
   readonly version = "tiktok-yt-dlp-v1";
+  readonly canaryTargets: readonly SourceAdapterCanaryTarget[] = [
+    { adapterId: "tiktok", label: "Charli D'Amelio", url: "https://www.tiktok.com/@charlidamelio" },
+    { adapterId: "tiktok", label: "Khaby Lame", url: "https://www.tiktok.com/@khaby.lame" },
+    { adapterId: "tiktok", label: "Addison Rae", url: "https://www.tiktok.com/@addisonre" },
+  ];
 
   constructor(
     private readonly run: TikTokCommandRunner = runYtDlp,

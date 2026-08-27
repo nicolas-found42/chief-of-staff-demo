@@ -754,3 +754,121 @@ export interface ContentPack {
   notionPages: { key: string; draftId: string; id: string; url: string }[];
   status: "partial" | "complete";
 }
+export interface SourceAdapterCanaryTarget {
+  adapterId: string;
+  label: string;
+  url: string;
+}
+
+export interface SourceCanaryReceipt {
+  adapterId: string;
+  adapterVersion: string;
+  target: SourceAdapterCanaryTarget;
+  capability: SourceCapability;
+  route: string;
+  outcome: SourceDiagnosticClassification;
+  diagnostic: AdapterDiagnostic;
+  checkedAt: string;
+  durationMs: number;
+  itemsFound: number;
+}
+
+export interface SourceCanaryHealth {
+  adapterId: string;
+  state: SourceAdapterState;
+  version: string;
+  canaryTargets: SourceAdapterCanaryTarget[];
+  recentReceipts: SourceCanaryReceipt[];
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  degraded: boolean;
+  promotionEligible: boolean;
+  evidence: {
+    requiredSuccesses: number;
+    successCount: number;
+    version: string;
+    recentOutcomes: SourceDiagnosticClassification[];
+  };
+}
+
+export const CANARY_PROMOTION_REQUIRED_SUCCESSES = 3;
+export const CANARY_PROMOTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const CANARY_INTERVAL_MS = 12 * 60 * 60 * 1000;
+export const CANARY_MIN_TARGETS = 3;
+
+export function isCanarySuccess(receipt: SourceCanaryReceipt): boolean {
+  return receipt.outcome === "items_found" && receipt.itemsFound > 0;
+}
+
+export function isCanaryPromotionEligible(input: {
+  adapter: { id: string; version: string; canaryTargets?: readonly SourceAdapterCanaryTarget[] };
+  receipts: readonly SourceCanaryReceipt[];
+  now?: Date;
+}): boolean {
+  const targets = input.adapter.canaryTargets ?? [];
+  if (targets.length < CANARY_MIN_TARGETS) return false;
+  const now = input.now ?? new Date();
+  const windowStart = now.getTime() - CANARY_PROMOTION_WINDOW_MS;
+  for (const target of targets) {
+    const forTarget = input.receipts.filter(
+      (receipt) =>
+        receipt.adapterId === input.adapter.id &&
+        receipt.adapterVersion === input.adapter.version &&
+        receipt.target.url === target.url &&
+        Date.parse(receipt.checkedAt) >= windowStart,
+    );
+    const successes = forTarget.filter(isCanarySuccess);
+    if (successes.length < CANARY_PROMOTION_REQUIRED_SUCCESSES) return false;
+    const latest = [...forTarget].sort(
+      (a, b) => Date.parse(b.checkedAt) - Date.parse(a.checkedAt),
+    )[0];
+    if (!latest || !isCanarySuccess(latest)) return false;
+  }
+  return true;
+}
+
+export function canaryHealthForAdapter(input: {
+  adapter: {
+    id: string;
+    state: SourceAdapterState;
+    version: string;
+    canaryTargets?: readonly SourceAdapterCanaryTarget[];
+  };
+  receipts: readonly SourceCanaryReceipt[];
+}): SourceCanaryHealth {
+  const targets = [...(input.adapter.canaryTargets ?? [])];
+  const forAdapter = [...input.receipts]
+    .filter(
+      (receipt) =>
+        receipt.adapterId === input.adapter.id && receipt.adapterVersion === input.adapter.version,
+    )
+    .sort((a, b) => Date.parse(b.checkedAt) - Date.parse(a.checkedAt));
+  const recentReceipts = forAdapter.slice(0, 9);
+  const lastSuccess = forAdapter.find(isCanarySuccess) ?? null;
+  const lastFailure = forAdapter.find((receipt) => !isCanarySuccess(receipt)) ?? null;
+  const degraded =
+    forAdapter.length > 0 &&
+    lastFailure !== null &&
+    (lastSuccess === null || Date.parse(lastFailure.checkedAt) > Date.parse(lastSuccess.checkedAt));
+  const promotionEligible = isCanaryPromotionEligible({
+    adapter: input.adapter,
+    receipts: input.receipts,
+  });
+  return {
+    adapterId: input.adapter.id,
+    state: input.adapter.state,
+    version: input.adapter.version,
+    canaryTargets: targets,
+    recentReceipts,
+    lastSuccessAt: lastSuccess?.checkedAt ?? null,
+    lastFailureAt: lastFailure?.checkedAt ?? null,
+    degraded,
+    promotionEligible,
+    evidence: {
+      requiredSuccesses: CANARY_PROMOTION_REQUIRED_SUCCESSES,
+      successCount: forAdapter.filter(isCanarySuccess).length,
+      version: input.adapter.version,
+      recentOutcomes: recentReceipts.map((receipt) => receipt.outcome),
+    },
+  };
+}

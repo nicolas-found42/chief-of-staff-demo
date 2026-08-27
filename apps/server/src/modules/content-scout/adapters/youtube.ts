@@ -5,6 +5,7 @@ import { google } from "googleapis";
 import {
   SOURCE_BACKFILL_WINDOWS_DAYS,
   type AdapterDiagnostic,
+  type SourceAdapterCanaryTarget,
   type SourceComment,
   type SourceItem,
   type SourceFieldState,
@@ -474,9 +475,13 @@ export class YouTubeSourceAdapter implements SourceAdapter {
   readonly version = "youtube-data-api-v3";
   /** `listUploads` pages the channel's uploads playlist until it passes `publishedAfter`, so any requested window is a genuine historical fetch. */
   readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
+  readonly canaryTargets: readonly SourceAdapterCanaryTarget[] = [
+    { adapterId: "youtube", label: "NASA", url: "https://www.youtube.com/@NASA" },
+    { adapterId: "youtube", label: "BBC News", url: "https://www.youtube.com/@BBCNews" },
+    { adapterId: "youtube", label: "TED", url: "https://www.youtube.com/@TED" },
+  ];
 
   private readonly transcriptDeps: YouTubeTranscriptDeps;
-
   constructor(
     private readonly getAccess: () => YouTubeSourceAccess,
     private readonly now: () => Date = () => new Date(),

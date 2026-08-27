@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import {
   SOURCE_BACKFILL_WINDOWS_DAYS,
   type AdapterDiagnostic,
+  type SourceAdapterCanaryTarget,
   type SourceDiagnosticClassification,
   type SourceItem,
 } from "@chief-of-staff-demo/shared";
@@ -141,6 +142,15 @@ export class RedditSourceAdapter implements SourceAdapter {
   readonly version = "reddit-public-rss-json-html-v1";
   /** The first route is a fresh feed filtered by `since`, so any requested window is honored honestly — bounded by whatever history the feed itself still carries. */
   readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
+  readonly canaryTargets: readonly SourceAdapterCanaryTarget[] = [
+    {
+      adapterId: "reddit",
+      label: "r/programming",
+      url: "https://www.reddit.com/r/programming/.rss",
+    },
+    { adapterId: "reddit", label: "r/technology", url: "https://www.reddit.com/r/technology/.rss" },
+    { adapterId: "reddit", label: "r/science", url: "https://www.reddit.com/r/science/.rss" },
+  ];
   private readonly parser = new Parser<Record<string, unknown>, FeedEntry>();
 
   constructor(

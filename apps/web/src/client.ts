@@ -10,8 +10,11 @@ import type {
   RunDetail,
   RunPage,
   SetupCheck,
+  SourceAdapterCanaryTarget,
   SourceAdapterState,
   SourceBackfillWindowDays,
+  SourceCanaryHealth,
+  SourceCanaryReceipt,
   SourceCapability,
   SourceDiagnosticClassification,
   ContentScoutScheduleState,
@@ -85,6 +88,8 @@ export interface ContentScoutState {
     state: SourceAdapterState;
     version: string;
     backfillWindowsDays: SourceBackfillWindowDays[];
+    canaryTargets: SourceAdapterCanaryTarget[];
+    promotionEligible: boolean;
   }[];
   runtimeCapabilities: ContentScoutRuntimeCapability[];
   storage: ContentScoutStorageUse;
@@ -119,6 +124,11 @@ export interface ContentScoutState {
       affectedCapabilities: SourceCapability[];
     }[];
     runtimeWarnings: string[];
+    canary: SourceCanaryHealth[];
+  };
+  canary: {
+    receipts: SourceCanaryReceipt[];
+    health: SourceCanaryHealth[];
   };
 }
 
@@ -349,6 +359,14 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ scope: "expired_temporary_data", confirm: true }),
     }),
+  runCanaries: () =>
+    request<{ receipts: SourceCanaryReceipt[] }>("/api/content-scout/canary/run", {
+      method: "POST",
+    }),
+  getCanaries: () =>
+    request<{ receipts: SourceCanaryReceipt[]; health: SourceCanaryHealth[] }>(
+      "/api/content-scout/canary",
+    ),
 };
 
 export function errorMessage(error: unknown): string {

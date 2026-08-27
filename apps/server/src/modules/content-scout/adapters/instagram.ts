@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import type { AdapterDiagnostic, SourceComment, SourceItem } from "@chief-of-staff-demo/shared";
+import type {
+  AdapterDiagnostic,
+  SourceAdapterCanaryTarget,
+  SourceComment,
+  SourceItem,
+} from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import { responseHash } from "./http.js";
 
@@ -80,6 +85,11 @@ export class InstagramInstaloaderAdapter implements SourceAdapter {
   readonly id = "instagram";
   readonly state = "experimental" as const;
   readonly version = "instagram-instaloader-v1";
+  readonly canaryTargets: readonly SourceAdapterCanaryTarget[] = [
+    { adapterId: "instagram", label: "NASA", url: "https://www.instagram.com/nasa/" },
+    { adapterId: "instagram", label: "NatGeo", url: "https://www.instagram.com/natgeo/" },
+    { adapterId: "instagram", label: "BBC News", url: "https://www.instagram.com/bbcnews/" },
+  ];
 
   constructor(
     private readonly runProfile: InstagramCommandRunner = runInstaloaderWorker,

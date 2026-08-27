@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
+import type {
+  AdapterDiagnostic,
+  SourceAdapterCanaryTarget,
+  SourceItem,
+} from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
 import type { BrowserRenderer, BrowserRenderResult } from "./browser.js";
 import {
@@ -18,6 +22,11 @@ export class WebsiteSourceAdapter implements SourceAdapter {
   readonly id = "website";
   readonly state = "available" as const;
   readonly version = "readability@0.6-browser-render@1";
+  readonly canaryTargets: readonly SourceAdapterCanaryTarget[] = [
+    { adapterId: "website", label: "Example", url: "https://example.com" },
+    { adapterId: "website", label: "Mozilla", url: "https://www.mozilla.org/en-US/" },
+    { adapterId: "website", label: "Wikipedia", url: "https://en.wikipedia.org/wiki/Main_Page" },
+  ];
 
   constructor(
     private readonly fetchText: PublicHttpFetch = publicHttpFetch,

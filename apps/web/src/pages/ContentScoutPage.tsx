@@ -1324,6 +1324,82 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
           )}
         </div>
         <div className="card">
+          <h3>Adapter release receipts</h3>
+          <p className="muted">
+            Representative public canary Source Targets run on schedule outside merge CI using the
+            normal diagnostic contract. Results persist by adapter version, target, capability,
+            route, and time. Promotion requires repeated successful canaries, not one sample; a
+            canary failure never fails CI and never hides behind a legitimate empty result.
+          </p>
+          {state.adapters.length === 0 ? (
+            <p>No adapters configured.</p>
+          ) : (
+            <ul className="not-done-list">
+              {state.adapters.map((adapter) => {
+                const health = state.canary.health.find((entry) => entry.adapterId === adapter.id);
+                return (
+                  <li key={adapter.id}>
+                    <strong>{adapter.id}</strong>: {adapter.state} · {adapter.version}
+                    {adapter.promotionEligible
+                      ? " · promotion eligible"
+                      : " · not promotion eligible"}
+                    {health?.degraded ? " · degraded" : " · healthy"}
+                    <br />
+                    <span className="muted">
+                      Canary targets ({adapter.canaryTargets.length}):{" "}
+                      {adapter.canaryTargets.map((target) => target.label).join(", ") || "none"}
+                    </span>
+                    {health && (
+                      <>
+                        <br />
+                        <span className="muted">
+                          Recent canary outcomes:{" "}
+                          {health.evidence.recentOutcomes.join(", ") || "none"} · required{" "}
+                          {health.evidence.requiredSuccesses} successes for promotion (version{" "}
+                          {health.evidence.version}) · success count {health.evidence.successCount}
+                        </span>
+                        <br />
+                        <span className="muted">
+                          Last success: {health.lastSuccessAt ?? "never"} · last failure:{" "}
+                          {health.lastFailureAt ?? "never"}
+                        </span>
+                        {health.recentReceipts.length > 0 && (
+                          <ul>
+                            {health.recentReceipts.slice(0, 3).map((receipt) => (
+                              <li key={`${receipt.target.url}:${receipt.checkedAt}`}>
+                                {receipt.target.label} — {receipt.outcome} · {receipt.route} ·{" "}
+                                {receipt.capability} · {receipt.itemsFound} items ·{" "}
+                                {new Date(receipt.checkedAt).toLocaleString()}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="muted">Canary receipts shown: {state.canary.receipts.length} recent</p>
+          <div className="toolbar">
+            <button
+              type="button"
+              aria-disabled={busy}
+              onClick={(event) => {
+                if (busy) return;
+                retainFocus(event.currentTarget);
+                void act(
+                  () => api.runCanaries(),
+                  "Canary batch finished. Health reflects the latest receipts.",
+                );
+              }}
+            >
+              Run canaries now
+            </button>
+          </div>
+        </div>
+        <div className="card">
           <h3>External runtimes</h3>
           <p className="muted">
             These command capabilities are checked inside the same production runtime that runs

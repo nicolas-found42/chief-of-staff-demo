@@ -1,0 +1,40 @@
+name: Canary
+
+on:
+  schedule:
+    # Every 6 hours, outside the merge CI push gate.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+# Canary failures are diagnostic evidence, not a merge gate: a public-route
+# change must not block unrelated work via a required check.
+concurrency:
+  group: canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    # This job is intentionally non-blocking: canary breakage is visible in
+    # the workflow run and in persisted receipts, but must not fail CI.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Run external canaries (normal diagnostic contract, never fails CI)
+        run: node ./scripts/run-canaries.mjs
+        continue-on-error: true
+      - name: Upload canary receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-receipts
+          path: |
+            workspace/content-scout/canary-state.json
+            canary-receipts.json
+          if-no-files-found: warn

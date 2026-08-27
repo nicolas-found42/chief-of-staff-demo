@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import {
   SOURCE_BACKFILL_WINDOWS_DAYS,
+  type SourceAdapterCanaryTarget,
   type AdapterDiagnostic,
   type SourceItem,
 } from "@chief-of-staff-demo/shared";
@@ -73,6 +74,40 @@ export class RssSourceAdapter implements SourceAdapter {
   readonly version = "rss-parser@3";
   /** The feed is fetched fresh and filtered by `since`, so any requested window is honored honestly — bounded by whatever history the feed itself still carries. */
   readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
+  get canaryTargets(): readonly SourceAdapterCanaryTarget[] {
+    if (this.id === "substack") {
+      return [
+        {
+          adapterId: "substack",
+          label: "Heather Cox Richardson",
+          url: "https://heathercoxrichardson.substack.com/feed",
+        },
+        {
+          adapterId: "substack",
+          label: "The Bulwark",
+          url: "https://thebulwark.substack.com/feed",
+        },
+        {
+          adapterId: "substack",
+          label: "Stratechery",
+          url: "https://stratechery.substack.com/feed",
+        },
+      ];
+    }
+    return [
+      { adapterId: "rss", label: "BBC News", url: "https://feeds.bbci.co.uk/news/rss.xml" },
+      {
+        adapterId: "rss",
+        label: "NASA Breaking News",
+        url: "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+      },
+      {
+        adapterId: "rss",
+        label: "NYT HomePage",
+        url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+      },
+    ];
+  }
   private readonly parser = new Parser<Record<string, unknown>, FeedItem>({
     customFields: {
       item: [["media:content", "mediaContent"], ["media:thumbnail", "mediaThumbnail"], "enclosure"],

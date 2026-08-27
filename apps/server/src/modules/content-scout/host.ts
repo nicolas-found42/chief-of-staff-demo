@@ -35,6 +35,7 @@ import type {
   BrandProfileProposer,
   RuntimeInspector,
 } from "./ports.js";
+import { ContentScoutCanaryRunner, ContentScoutCanaryStore } from "./canary.js";
 import { ContentScoutStore } from "./store.js";
 import type { NotionCalendar, NotionConnection } from "./notion.js";
 import {
@@ -99,8 +100,11 @@ export class ContentScoutHost implements HostedModule {
   private readonly store: ContentScoutStore;
   private readonly deps: ContentScoutHostDeps;
   private readonly retention: ContentScoutRetention;
+  private readonly canaryStore: ContentScoutCanaryStore;
+  private readonly canaryRunner: ContentScoutCanaryRunner;
   private scheduleTimer: NodeJS.Timeout | null = null;
   private checkingSchedule = false;
+  private checkingCanary = false;
 
   constructor(deps: ContentScoutHostDeps) {
     this.deps = deps;
@@ -179,6 +183,13 @@ export class ContentScoutHost implements HostedModule {
       }),
       now,
       log: deps.log,
+    });
+    this.canaryStore = new ContentScoutCanaryStore(deps.workspaceDir, now);
+    this.canaryRunner = new ContentScoutCanaryRunner({
+      adapters: deps.adapters,
+      store: this.canaryStore,
+      now,
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
     });
   }
 
@@ -363,6 +374,35 @@ export class ContentScoutHost implements HostedModule {
     );
   }
 
+  canaryReceipts() {
+    return this.canaryStore.list();
+  }
+
+  canaryHealth() {
+    return this.canaryStore.allHealth(this.deps.adapters);
+  }
+
+  async runCanaries() {
+    return await this.canaryRunner.runOnce();
+  }
+
+  async checkCanarySchedule(): Promise<void> {
+    if (this.checkingCanary) return;
+    this.checkingCanary = true;
+    try {
+      const result = await this.canaryRunner.checkSchedule();
+      if (result && result.length > 0) {
+        this.deps.log(`Content Scout canary batch: ${result.length} receipts`);
+      }
+    } catch (error) {
+      this.deps.log(
+        `Content Scout canary schedule failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.checkingCanary = false;
+    }
+  }
+
   retryRun(id: string): Promise<RunMeta> {
     const run = this.deps.runs.open(id);
     const meta = run?.read();
@@ -410,7 +450,11 @@ export class ContentScoutHost implements HostedModule {
     this.backfillRunner.startRecoveryLoop();
     if (this.scheduleTimer) clearInterval(this.scheduleTimer);
     void this.checkSchedules();
-    this.scheduleTimer = setInterval(() => void this.checkSchedules(), 30_000);
+    void this.checkCanarySchedule();
+    this.scheduleTimer = setInterval(() => {
+      void this.checkSchedules();
+      void this.checkCanarySchedule();
+    }, 30_000);
     this.scheduleTimer.unref();
   }
 
@@ -565,6 +609,27 @@ export class ContentScoutHost implements HostedModule {
     app.get("/api/content-scout", async () => {
       const runtimeCapabilities = await (this.deps.runtimeInspector?.inspect() ??
         Promise.resolve([]));
+      const intakeHealth = persistentIntakeHealth();
+      const canaryHealth = this.canaryHealth();
+      const canaryReceipts = this.canaryReceipts();
+      const canaryWarnings = canaryHealth
+        .filter((entry) => entry.degraded)
+        .flatMap((entry) => {
+          const failure = entry.recentReceipts.find(
+            (receipt) => receipt.outcome !== "items_found" || receipt.itemsFound === 0,
+          );
+          return failure
+            ? [
+                {
+                  adapterId: entry.adapterId,
+                  targetId: null as string | null,
+                  outcome: failure.outcome,
+                  affectedCapabilities: failure.diagnostic.affectedCapabilities,
+                },
+              ]
+            : [];
+        });
+      const mergedWarnings = [...intakeHealth.warnings, ...canaryWarnings];
       return {
         brandProfile: this.currentBrandProfile(),
         brandProfileProposal: this.brandProfileProposal(),
@@ -574,16 +639,27 @@ export class ContentScoutHost implements HostedModule {
         sourceSuggestions: this.listSourceSuggestions(),
         schedule: this.scheduleState(),
         health: {
-          ...persistentIntakeHealth(),
+          runId: intakeHealth.runId,
+          warnings: mergedWarnings,
           runtimeWarnings: runtimeCapabilities
             .filter((capability) => capability.state !== "available")
             .map((capability) => capability.id),
+          canary: canaryHealth,
+        },
+        canary: {
+          receipts: canaryReceipts.slice(-30),
+          health: canaryHealth,
         },
         adapters: this.deps.adapters.map((adapter) => ({
           id: adapter.id,
           state: adapter.state,
           version: adapter.version,
           backfillWindowsDays: [...(adapter.backfillWindowsDays ?? [])],
+          canaryTargets: [...(adapter.canaryTargets ?? [])],
+          promotionEligible: this.canaryStore.promotionEligible(
+            adapter,
+            (this.deps.now ?? (() => new Date()))(),
+          ),
         })),
         runtimeCapabilities,
         notion: this.deps.notionConnection?.status() ?? {
@@ -762,6 +838,14 @@ export class ContentScoutHost implements HostedModule {
 
     app.post("/api/content-scout/run", async () => ({ runId: await this.scoutNow() }));
     app.post("/api/content-scout/discovery/run", async () => ({ runId: await this.discoverNow() }));
+    app.post("/api/content-scout/canary/run", async () => {
+      const receipts = await this.runCanaries();
+      return { receipts };
+    });
+    app.get("/api/content-scout/canary", async () => ({
+      receipts: this.canaryReceipts(),
+      health: this.canaryHealth(),
+    }));
 
     app.patch("/api/content-scout/suggestions/:id", async (request, reply) => {
       const { id } = request.params as { id: string };
