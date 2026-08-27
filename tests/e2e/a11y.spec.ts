@@ -18,8 +18,9 @@ const ROUTES = [
 ];
 
 /** Create a Run via the test seam and land on its detail page. */
-async function openRun(page: Page): Promise<void> {
-  const res = await page.request.post("/api/test/seed");
+async function openRun(page: Page, scenario?: "ordinary-failure"): Promise<void> {
+  const suffix = scenario ? `?scenario=${scenario}` : "";
+  const res = await page.request.post(`/api/test/seed${suffix}`);
   if (!res.ok()) throw new Error(`seed failed: ${res.status()} ${await res.text()}`);
   const { runId } = (await res.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
@@ -262,7 +263,7 @@ test("a busy control is styled, not dimmed, and only the pressed one is busy", a
 
 test("busy controls on tinted surfaces clear their floors too", async ({ page }) => {
   // The Retry button sits on the error banner, so it is measured against a backdrop that is not the page.
-  await openRun(page);
+  await openRun(page, "ordinary-failure");
   await page.route("**/retry", stall);
   const retry = page.getByRole("button", { name: /retry/i });
   await retry.focus();
@@ -324,14 +325,14 @@ test("switching provider announces the model it rewrote", async ({ page }) => {
 });
 
 test("retrying a run hands focus to the heading when the button unmounts", async ({ page }) => {
-  await openRun(page);
+  await openRun(page, "ordinary-failure");
 
   const retry = page.getByRole("button", { name: /retry/i });
   await retry.focus();
   await retry.click();
 
-  // The run fails again (Google is not connected in the e2e workspace), so the
-  // banner survives and focus should still be on the button it started on.
+  // The fixture has no retry plan, so the banner survives and focus should
+  // still be on the button it started on.
   await expect(retry).toBeFocused();
   expect(await activeDescription(page)).not.toBe("<body — focus lost>");
 });

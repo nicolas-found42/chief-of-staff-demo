@@ -437,7 +437,6 @@ describe("Pipeline", () => {
     const failed = detailOf(runId);
     expect(failed!.status).toBe("failed");
     expect(failed!.failureHint).toBe(googleFailureHint("expired"));
-    expect(failed!.connectionCaused).toBe(true);
     expect(failed!.connectionState).toBe("expired");
     const event = failed!.events.find((entry) => entry.type === "google_unavailable");
     expect(event?.detail?.state).toBe("expired");
@@ -463,9 +462,7 @@ describe("Pipeline", () => {
     expect(failed!.status).toBe("failed");
     expect(failed!.failedStage).toBe("outputs");
     expect(failed!.failureHint).toBe(googleFailureHint("expired"));
-    /* Classified at the failure site where the connection already knows (D6):
-       the marker is how every surface later renders Needs attention. */
-    expect(failed!.connectionCaused).toBe(true);
+    /* Classified at the failure site where the connection already knows (D6). */
     expect(failed!.connectionState).toBe("expired");
     /* Not per-item error events: a dead grant is not one bad task, and every
        remaining call would fail the same way. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { modelBrandProfileProposer } from "../../../apps/server/src/modules/content-scout/brand-profile";
+import { ModelBoundaryError } from "../../../apps/server/src/llm/failure";
 
 const VALID_SECTIONS = {
   Summary: "A concise company summary.",
@@ -19,6 +20,34 @@ const VALID_SECTIONS = {
 };
 
 describe("modelBrandProfileProposer", () => {
+  it("retries a capacity-related model-boundary failure", async () => {
+    let attempts = 0;
+    const proposer = modelBrandProfileProposer(() => async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new ModelBoundaryError({
+          classification: "upstream_error",
+          provider: "openrouter",
+          model: "test-model",
+          upstreamServer: "Nvidia",
+          upstreamCode: 502,
+          binding: "forced_tool_call",
+          status: 200,
+          finishReason: null,
+          bodyBytes: 42,
+          topLevelKeys: ["error"],
+          populatedFields: [],
+          emptyFields: [],
+          timeoutMs: null,
+        });
+      }
+      return VALID_SECTIONS;
+    });
+
+    await expect(proposer.propose({ pages: [] })).resolves.toContain("# Brand Profile");
+    expect(attempts).toBe(3);
+  });
+
   it("names every missing Brand Profile section", async () => {
     const proposer = modelBrandProfileProposer(() => async () => ({ Summary: "Company summary" }));
 

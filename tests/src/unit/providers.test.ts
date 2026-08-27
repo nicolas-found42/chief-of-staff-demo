@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import {
-  ExtractionWireSchema,
-  IDEA_STAGE_TIMEOUT_MS,
-  type ModelBoundaryDiagnostic,
-} from "@chief-of-staff-demo/shared";
+import { ExtractionWireSchema, type ModelBoundaryDiagnostic } from "@chief-of-staff-demo/shared";
 import { makeCompleteJson, REQUEST_TIMEOUT_MS } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
 
@@ -27,6 +23,8 @@ interface Reply {
   body?: unknown;
   text?: string;
   hang?: true;
+  bodyHang?: true;
+  delayMs?: number;
   fail?: Error;
 }
 
@@ -36,9 +34,47 @@ const responses: Reply[] = [];
 const declarations: Reply[] = [];
 const lookups: string[] = [];
 
-it("gives the configured model latency headroom under one derived timeout contract", () => {
+function abortError(): Error {
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+async function queuedResponse(queued: Reply, signal?: AbortSignal | null): Promise<Response> {
+  if (queued.fail) throw queued.fail;
+  if (signal?.aborted) throw abortError();
+  if (queued.hang) {
+    return new Promise<Response>((_, reject) => {
+      signal?.addEventListener("abort", () => reject(abortError()));
+    });
+  }
+  if (queued.delayMs !== undefined) {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, queued.delayMs);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(abortError());
+      });
+    });
+  }
+  if (queued.bodyHang) {
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          signal?.addEventListener("abort", () => controller.error(abortError()));
+        },
+      }),
+      { status: queued.status ?? 200 },
+    );
+  }
+  return new Response(queued.text ?? JSON.stringify(queued.body), {
+    status: queued.status ?? 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+it("gives the configured model latency headroom", () => {
   expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(186_000);
-  expect(IDEA_STAGE_TIMEOUT_MS).toBe(REQUEST_TIMEOUT_MS + 5_000);
 });
 
 beforeEach(() => {
@@ -54,10 +90,7 @@ beforeEach(() => {
       /* No queued declaration means the model's support is unknown, which is
          its own branch: start at the most deterministic binding and step down. */
       const queued: Reply = declarations.shift() ?? { status: 404, body: {} };
-      return new Response(JSON.stringify(queued.body), {
-        status: queued.status ?? 200,
-        headers: { "content-type": "application/json" },
-      });
+      return queuedResponse(queued, init?.signal);
     }
     calls.push({
       url,
@@ -68,20 +101,7 @@ beforeEach(() => {
       >,
     });
     const queued: Reply = responses.shift() ?? { status: 200, body: {} };
-    if (queued.fail) throw queued.fail;
-    if (queued.hang) {
-      return new Promise<Response>((_, reject) => {
-        init?.signal?.addEventListener("abort", () => {
-          const aborted = new Error("The operation was aborted.");
-          aborted.name = "AbortError";
-          reject(aborted);
-        });
-      });
-    }
-    return new Response(queued.text ?? JSON.stringify(queued.body), {
-      status: queued.status ?? 200,
-      headers: { "content-type": "application/json" },
-    });
+    return queuedResponse(queued, init?.signal);
   });
 });
 
@@ -569,6 +589,81 @@ describe("model-boundary failures", () => {
     }
   });
 
+  it("includes the model capability lookup in the request ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push({ hang: true });
+      const pending = failureOf(openrouter("some/lookup-stalled-model"));
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+
+      expect(settled).toBe(true);
+      const failure = await pending;
+      expect(failure.classification).toBe("request_timeout");
+      expect(failure.model).toBe("some/lookup-stalled-model");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the response body read inside the request ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("tools", "tool_choice"));
+      responses.push({ bodyHang: true });
+      const pending = failureOf(openrouter("some/body-stalled-model"));
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+
+      expect(settled).toBe(true);
+      const failure = await pending;
+      expect(failure.classification).toBe("request_timeout");
+      expect(failure.model).toBe("some/body-stalled-model");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares one request ceiling across binding step-down attempts", async () => {
+    vi.useFakeTimers();
+    try {
+      responses.push({
+        status: 400,
+        body: { error: "json_schema not supported" },
+        delayMs: 140_000,
+      });
+      responses.push({
+        status: 400,
+        body: { error: "tool_choice not supported" },
+        delayMs: 140_000,
+      });
+      responses.push({ hang: true });
+      const pending = failureOf(openrouter("some/slow-step-down-model"));
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+
+      expect(settled).toBe(true);
+      const failure = await pending;
+      expect(failure.classification).toBe("request_timeout");
+      expect(failure.model).toBe("some/slow-step-down-model");
+      expect(calls).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("classifies a status outside 2xx", async () => {
     responses.push({ status: 401, body: { error: "bad key" } });
     const failure = await failureOf(openrouter("some/model"));
@@ -602,6 +697,18 @@ describe("model-boundary failures", () => {
     expect(failure.classification).toBe("transport_failure");
     expect(failure.status).toBeNull();
     expect(failure.bodyBytes).toBe(0);
+  });
+
+  it("classifies the runtime's native headers timeout as a request timeout", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({
+      fail: Object.assign(new TypeError("fetch failed"), {
+        cause: { code: "UND_ERR_HEADERS_TIMEOUT" },
+      }),
+    });
+    const failure = await failureOf(openrouter("some/native-timeout-model"));
+    expect(failure.classification).toBe("request_timeout");
+    expect(failure.timeoutMs).toBe(REQUEST_TIMEOUT_MS);
   });
 
   /* Transcripts are private and Source Items are untrusted third-party evidence.

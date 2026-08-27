@@ -73,6 +73,19 @@ export function modelBoundaryDiagnostic(error: unknown): ModelBoundaryDiagnostic
   return error instanceof ModelBoundaryError ? error.diagnostic : null;
 }
 
+/** Whether the seam reported a transient capacity condition, without choosing a retry policy. */
+export function isModelCapacityFailure(error: unknown): boolean {
+  const diagnostic = modelBoundaryDiagnostic(error);
+  if (diagnostic === null) return false;
+  if (diagnostic.classification === "request_timeout") return true;
+  if (diagnostic.status === 429 || diagnostic.upstreamCode === 429) return true;
+  return (
+    diagnostic.classification === "upstream_error" &&
+    diagnostic.upstreamCode !== null &&
+    [502, 503, 504].includes(diagnostic.upstreamCode)
+  );
+}
+
 export function resultShapeDiagnostic(error: unknown): ResultShapeDiagnostic | null {
   return error instanceof ResultShapeError ? error.diagnostic : null;
 }

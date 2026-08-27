@@ -46,6 +46,11 @@ export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
 /** The ceiling on one model call. Exported so a test can drive it deterministically. */
 export const REQUEST_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS;
 
+interface RequestDeadline {
+  signal: AbortSignal;
+  calling(call: ModelCall): void;
+}
+
 /** One provider answer, kept only as long as it takes to classify or read it. */
 interface HttpResponse {
   status: number;
@@ -129,19 +134,19 @@ async function postJson(
   url: string,
   headers: Record<string, string>,
   body: unknown,
+  deadline: RequestDeadline,
 ): Promise<HttpResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  let response: Response;
+  deadline.calling(call);
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: deadline.signal,
     });
+    return { status: response.status, text: await response.text() };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (isRequestTimeout(error)) {
       throw modelBoundaryFailure({
         call,
         classification: "request_timeout",
@@ -149,10 +154,15 @@ async function postJson(
       });
     }
     throw modelBoundaryFailure({ call, classification: "transport_failure" });
-  } finally {
-    clearTimeout(timer);
   }
-  return { status: response.status, text: await response.text() };
+}
+
+function isRequestTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return true;
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return false;
+  return cause.code === "UND_ERR_HEADERS_TIMEOUT" || cause.code === "UND_ERR_BODY_TIMEOUT";
 }
 
 /** Whether a provider body carries a failure envelope alongside its 2xx status. */
@@ -383,6 +393,7 @@ async function openaiComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject,
+  deadline: RequestDeadline,
 ): Promise<unknown> {
   const call = modelCall(cfg, "response_format");
   const response = await postJson(
@@ -400,6 +411,7 @@ async function openaiComplete(
         json_schema: { name: "extraction_result", strict: true, schema },
       },
     },
+    deadline,
   );
   return readChatResultShape(modelReply(call, response));
 }
@@ -408,6 +420,7 @@ async function anthropicComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject,
+  deadline: RequestDeadline,
 ): Promise<unknown> {
   const call = modelCall(cfg, "forced_tool_call");
   const response = await postJson(
@@ -428,6 +441,7 @@ async function anthropicComplete(
       ],
       tool_choice: { type: "tool", name: "save_extraction" },
     },
+    deadline,
   );
   return readToolUseInput(modelReply(call, response));
 }
@@ -436,6 +450,7 @@ async function geminiComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
   responseSchema: JsonObject,
+  deadline: RequestDeadline,
 ): Promise<unknown> {
   const call = modelCall(cfg, "response_format");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`;
@@ -451,6 +466,7 @@ async function geminiComplete(
         responseSchema,
       },
     },
+    deadline,
   );
   return readGeminiResultShape(modelReply(call, response));
 }
@@ -509,6 +525,7 @@ async function openAiCompatibleComplete(
   request: CompletionRequest,
   schema: JsonObject,
   declared: ResultShapeBinding | null,
+  deadline: RequestDeadline,
 ): Promise<unknown> {
   /* A declared binding is sent and its answer taken as final. An unknown one
      starts at the most deterministic binding and gives up one step at a time,
@@ -521,6 +538,7 @@ async function openAiCompatibleComplete(
       url,
       headers,
       chatCompletionBody(call.binding, cfg, request, schema),
+      deadline,
     );
     if (
       declared === null &&
@@ -557,18 +575,25 @@ const openrouterDeclarations = new Map<string, Promise<Set<string> | null>>();
  * The `supported_parameters` an OpenRouter model declares, or `null` when the
  * declaration cannot be read — which is not the same as declaring no support.
  */
-function openrouterDeclaredParameters(cfg: LlmConfig): Promise<Set<string> | null> {
+function openrouterDeclaredParameters(
+  cfg: LlmConfig,
+  deadline: RequestDeadline,
+): Promise<Set<string> | null> {
   const cached = openrouterDeclarations.get(cfg.model);
   if (cached) return cached;
-  const pending = fetchDeclaredParameters(cfg);
+  const pending = fetchDeclaredParameters(cfg, deadline.signal);
   openrouterDeclarations.set(cfg.model, pending);
   return pending;
 }
 
-async function fetchDeclaredParameters(cfg: LlmConfig): Promise<Set<string> | null> {
+async function fetchDeclaredParameters(
+  cfg: LlmConfig,
+  signal: AbortSignal,
+): Promise<Set<string> | null> {
   try {
     const response = await fetch(`https://openrouter.ai/api/v1/models/${cfg.model}/endpoints`, {
       headers: { authorization: `Bearer ${cfg.apiKey}` },
+      signal,
     });
     if (!response.ok) return null;
     return readDeclaredParameters(await response.json());
@@ -617,6 +642,7 @@ async function openrouterComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject,
+  deadline: RequestDeadline,
 ): Promise<unknown> {
   return openAiCompatibleComplete(
     "https://openrouter.ai/api/v1/chat/completions",
@@ -624,7 +650,8 @@ async function openrouterComplete(
     cfg,
     request,
     schema,
-    declaredBinding(await openrouterDeclaredParameters(cfg)),
+    declaredBinding(await openrouterDeclaredParameters(cfg, deadline)),
+    deadline,
   );
 }
 
@@ -637,6 +664,7 @@ function ollamaComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject,
+  deadline: RequestDeadline,
 ): Promise<unknown> {
   const base = (cfg.baseUrl ?? DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "");
   return openAiCompatibleComplete(
@@ -646,6 +674,7 @@ function ollamaComplete(
     request,
     schema,
     null,
+    deadline,
   );
 }
 
@@ -668,25 +697,66 @@ async function mockComplete(mockResultPath: string): Promise<unknown> {
   }
 }
 
+function initialCall(cfg: LlmConfig): ModelCall {
+  return modelCall(cfg, cfg.provider === "anthropic" ? "forced_tool_call" : "response_format");
+}
+
+async function withinRequestCeiling<T>(
+  cfg: LlmConfig,
+  work: (deadline: RequestDeadline) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  let call = initialCall(cfg);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(
+        modelBoundaryFailure({
+          call,
+          classification: "request_timeout",
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        }),
+      );
+    }, REQUEST_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      work({
+        signal: controller.signal,
+        calling(next) {
+          call = next;
+        },
+      }),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Build the provider call for the current config. Cheap to rebuild per attempt. */
 export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): CompleteJson {
   return async (request) => {
     /* Per request, not per provider call: the shape belongs to the calling
        Module, not to this seam. */
     const schema = wireJsonSchema(request.schema);
-    switch (cfg.provider) {
-      case "openai":
-        return openaiComplete(cfg, request, schema);
-      case "anthropic":
-        return anthropicComplete(cfg, request, schema);
-      case "openrouter":
-        return openrouterComplete(cfg, request, schema);
-      case "gemini":
-        return geminiComplete(cfg, request, geminiWireSchema(request.schema));
-      case "ollama":
-        return ollamaComplete(cfg, request, schema);
-      case "mock":
-        return mockComplete(mockResultPath);
-    }
+    if (cfg.provider === "mock") return mockComplete(mockResultPath);
+    return withinRequestCeiling(cfg, async (deadline) => {
+      switch (cfg.provider) {
+        case "openai":
+          return openaiComplete(cfg, request, schema, deadline);
+        case "anthropic":
+          return anthropicComplete(cfg, request, schema, deadline);
+        case "openrouter":
+          return openrouterComplete(cfg, request, schema, deadline);
+        case "gemini":
+          return geminiComplete(cfg, request, geminiWireSchema(request.schema), deadline);
+        case "ollama":
+          return ollamaComplete(cfg, request, schema, deadline);
+        case "mock":
+          return mockComplete(mockResultPath);
+      }
+    });
   };
 }

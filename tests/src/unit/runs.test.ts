@@ -89,14 +89,11 @@ describe("transitions", () => {
     expect(detailOf("run_failed")).toEqual({ stage: "outputs", reason: "google_expired" });
   });
 
-  it("records the connection as the cause only when told to, and additively", () => {
-    /* A plain failure must look exactly like a legacy one: no marker field. */
+  it("records the connection state only when told to", () => {
     run.started("outputs");
     run.failed("outputs", "boom", "Output creation failed.");
-    expect(run.read().connectionCaused).toBeUndefined();
+    expect(run.read().connectionState).toBeUndefined();
 
-    /* The connection-caused failure sets the flag and nothing else about the
-       shape of meta changes (D6). */
     const other = runs.create({
       module: "transcript",
       moduleVersion: 1,
@@ -109,7 +106,6 @@ describe("transitions", () => {
       connectionState: "expired",
     });
     const meta = other.read();
-    expect(meta.connectionCaused).toBe(true);
     expect(meta.connectionState).toBe("expired");
     expect(runs.list().runs.find((summary) => summary.id === other.id)?.connectionState).toBe(
       "expired",

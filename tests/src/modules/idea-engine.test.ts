@@ -205,7 +205,6 @@ function runner(): Runner<IdeaEngineInput> {
           },
         }) as unknown as import("@chief-of-staff-demo/shared").AppConfig,
       getCompleteJson,
-      getLlmInfo: () => ({ provider: "mock", model: "test-model" }),
       getSheets: sheetsAccess,
       getGmail: gmailAccess,
       observe: (error: unknown) => {
@@ -746,7 +745,7 @@ describe("Idea Engine Module", () => {
     expect((runs.detail(id)!.result as IdeaEngineRunResult).ideas).toHaveLength(12);
   });
 
-  it("expired vs disconnected: expired throws connectionCaused, disconnected fails with hint", async () => {
+  it("records the connection state for expired and disconnected failures", async () => {
     // expired via Sheets throws invalid_grant
     sheets.throws = Object.assign(new Error("invalid_grant"), {
       response: { data: { error: "invalid_grant" } },
@@ -756,7 +755,7 @@ describe("Idea Engine Module", () => {
     const detail = runs.detail(id)!;
     expect(detail.status).toBe("failed");
     expect(detail.failedStage).toBe("publish");
-    expect(detail.connectionCaused).toBe(true);
+    expect(detail.connectionState).toBe("expired");
     expect(detail.failureHint).toContain("Reconnect");
   });
 
@@ -790,6 +789,6 @@ describe("Idea Engine Module", () => {
     // draft stage should fail with disconnected
     expect(detail2.status).toBe("failed");
     expect(detail2.failedStage).toBe("draft");
-    expect(detail2.connectionCaused).toBe(true);
+    expect(detail2.connectionState).toBe("disconnected");
   });
 });

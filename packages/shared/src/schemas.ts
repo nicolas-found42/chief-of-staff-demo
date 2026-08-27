@@ -385,9 +385,6 @@ export interface RunMeta {
    * Module wrote none, and on every Run that has not finished.
    */
   summary: string | null;
-  /** True when the Google connection caused the failure (D6). Legacy metas
-   *  predate the marker; absent reads as an ordinary failure. */
-  connectionCaused?: boolean;
   /** The failure-site verdict when the Google connection caused the failure.
    *  Legacy metas and failures unrelated to the connection omit it. */
   connectionState?: GoogleConnectionState;
@@ -441,8 +438,6 @@ export interface RunSummary {
   skipReason: string | null;
   /** The line the Module wrote about what it did; null when it wrote none. */
   summary: string | null;
-  /** Present only when the Google connection caused a failure (D6). */
-  connectionCaused?: boolean;
   /** The exact connection state recorded at the failure site, when known. */
   connectionState?: GoogleConnectionState;
 }

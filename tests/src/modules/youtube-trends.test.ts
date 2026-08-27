@@ -262,7 +262,6 @@ describe("the daily Run", () => {
     const id = await measure();
     const detail = runs.detail(id)!;
     expect(detail.status).toBe("failed");
-    expect(detail.connectionCaused).toBe(true);
     expect(detail.connectionState).toBe("expired");
     expect(detail.failureHint).toContain("Reconnect in Settings");
     expect(detail.events.map((event) => event.type)).toContain("google_unavailable");

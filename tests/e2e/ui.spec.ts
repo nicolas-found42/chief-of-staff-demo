@@ -476,8 +476,10 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   });
   await expect(page.locator(".run-meta")).toContainText("Failed during");
   await expect(page.locator(".run-meta")).not.toContainText("Stopped during");
-  await expect(page.locator(".banner-error").getByRole("button", { name: "Retry" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Reconnect" })).toHaveCount(0);
+  await expect(
+    page.locator(".banner-error").getByRole("link", { name: "Reconnect" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
   await expect(page.locator(".timeline-row .status-failed")).toHaveText("Failed");
   await page.goto("/");
   // One clause per rail condition, in the rail's order, with the true total of
@@ -508,7 +510,9 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   // This workspace was never configured; that is not the expected weekly
   // expiry, so its Run retains the genuine-failure treatment and opens the
   // diagnostic instead of offering the expiry-specific reconnect action.
-  const failedRow = page.locator(".home-rail-row").first();
+  const failedRow = page.locator(".home-rail-row", {
+    has: page.locator(`a[href="/runs/${runId}"]`),
+  });
   await expect(failedRow).toContainText("failed");
   await expect(failedRow.getByRole("link", { name: "Open" })).toHaveAttribute(
     "href",

@@ -65,9 +65,32 @@ describe("failurePresentation", () => {
     });
   });
 
+  it.each(["disconnected", "unconfigured"] as const)(
+    "offers reconnect for a genuine %s connection failure",
+    (connectionState) => {
+      expect(failurePresentation({ connectionState })).toEqual({
+        stageOutcome: "Failed",
+        bannerClass: "banner-error",
+        bannerRole: "alert",
+        timelineClass: "status-failed",
+        expectedInterruption: false,
+        showReconnect: true,
+        showRetry: false,
+      });
+    },
+  );
+
   it("offers retry after an expired connection has been restored", () => {
     expect(failurePresentation({ connectionState: "expired" }, "connected")).toMatchObject({
       expectedInterruption: true,
+      showReconnect: false,
+      showRetry: true,
+    });
+  });
+
+  it("offers retry after a genuine connection failure has been restored", () => {
+    expect(failurePresentation({ connectionState: "disconnected" }, "connected")).toMatchObject({
+      expectedInterruption: false,
       showReconnect: false,
       showRetry: true,
     });
@@ -150,10 +173,31 @@ describe("buildTimeline", () => {
     const timeline = buildTimeline([
       started("convert", "2026-08-21T10:00:00Z"),
       started("extract", "2026-08-21T10:00:03Z"),
-      failed("extract", "2026-08-21T10:00:09Z", "boom"),
+      {
+        ...failed("extract", "2026-08-21T10:00:09Z", "boom"),
+        detail: {
+          stage: "extract",
+          error: "boom",
+          modelBoundary: {
+            classification: "request_timeout",
+            provider: "openrouter",
+            model: "test-model",
+          },
+        },
+      },
       { at: "2026-08-21T10:00:09Z", type: "run_failed", detail: {} },
     ]);
-    expect(timeline[1]).toMatchObject({ state: "failed" });
+    expect(timeline[1]).toMatchObject({
+      state: "failed",
+      failureDetail: {
+        error: "boom",
+        modelBoundary: {
+          classification: "request_timeout",
+          provider: "openrouter",
+          model: "test-model",
+        },
+      },
+    });
   });
 
   /* What a Stage meant is the Module's own vocabulary and lives in the Module's

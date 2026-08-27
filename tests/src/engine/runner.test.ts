@@ -225,7 +225,6 @@ describe("a failure inside a Stage", () => {
 
     const detail = runs.detail(id)!;
     expect(detail.failureHint).toBe("Sign in again.");
-    expect(detail.connectionCaused).toBe(true);
     expect(detail.connectionState).toBe("expired");
   });
 });

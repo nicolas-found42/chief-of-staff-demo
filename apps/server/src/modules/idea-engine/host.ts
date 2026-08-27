@@ -67,10 +67,6 @@ export class IdeaEngineHost implements HostedModule {
             layout.mockResultFile,
           );
         },
-        getLlmInfo: () => {
-          const cfg = deps.configStore.get();
-          return { provider: cfg.provider, model: cfg.model };
-        },
         getSheets: () => this.sheets(),
         getGmail: () => this.gmail(),
         observe: (error) => deps.google.observe(error),

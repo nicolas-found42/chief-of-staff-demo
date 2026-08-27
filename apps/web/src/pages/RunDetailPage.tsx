@@ -295,6 +295,12 @@ export function RunDetailPage() {
                     <span className="muted">{formatDuration(entry.durationMs)}</span>
                   )}
                 </div>
+                {entry.failureDetail && (
+                  <div className="timeline-diagnostic">
+                    <strong>Diagnostic</strong>
+                    <pre>{JSON.stringify(entry.failureDetail, null, 2)}</pre>
+                  </div>
+                )}
               </li>
             ))}
           </ol>

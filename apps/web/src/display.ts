@@ -74,14 +74,17 @@ export function failurePresentation(
       showRetry: reconnected,
     };
   }
+  const reconnectable =
+    run.connectionState === "disconnected" || run.connectionState === "unconfigured";
+  const reconnected = currentConnectionState === "connected";
   return {
     stageOutcome: "Failed" as const,
     bannerClass: "banner-error" as const,
     bannerRole: "alert" as const,
     timelineClass: "status-failed" as const,
     expectedInterruption: false,
-    showReconnect: false,
-    showRetry: true,
+    showReconnect: reconnectable && !reconnected,
+    showRetry: !reconnectable || reconnected,
   };
 }
 
@@ -222,6 +225,8 @@ export interface TimelineEntry {
   state: "running" | "done" | "failed";
   /** Milliseconds across every attempt; null while the stage is still open. */
   durationMs: number | null;
+  /** Engineer-facing facts from the failed Stage event, kept separate from the failure hint. */
+  failureDetail: RunEvent["detail"] | null;
 }
 
 function stageKeyOf(event: RunEvent): string | null {
@@ -242,6 +247,7 @@ export function buildTimeline(events: RunEvent[]): TimelineEntry[] {
     startedAt: number | null;
     durationMs: number;
     failed: boolean;
+    failureDetail: RunEvent["detail"] | null;
   }
   const accs = new Map<string, Acc>();
   let open: string | null = null;
@@ -266,16 +272,24 @@ export function buildTimeline(events: RunEvent[]): TimelineEntry[] {
     if (event.type === "stage_started" && stage !== null) {
       closeOpen(Number.isNaN(at) ? null : at);
       if (!accs.has(stage)) {
-        accs.set(stage, { startedAt: null, durationMs: 0, failed: false });
+        accs.set(stage, {
+          startedAt: null,
+          durationMs: 0,
+          failed: false,
+          failureDetail: null,
+        });
       }
       const acc = accs.get(stage)!;
       /* A fresh attempt supersedes the one before it: the stage that failed
          and then finished on retry reads as done, its duration summed. */
       acc.failed = false;
+      acc.failureDetail = null;
       acc.startedAt = Number.isNaN(at) ? null : at;
       open = stage;
     } else if (event.type === "stage_failed" && stage !== null && accs.has(stage)) {
-      accs.get(stage)!.failed = true;
+      const acc = accs.get(stage)!;
+      acc.failed = true;
+      acc.failureDetail = event.detail ?? null;
       closeOpen(Number.isNaN(at) ? null : at);
     } else if (event.type === "classify_skipped" || event.type === "run_blocked") {
       closeOpen(Number.isNaN(at) ? null : at);
@@ -296,6 +310,7 @@ export function buildTimeline(events: RunEvent[]): TimelineEntry[] {
           ? ("running" as const)
           : ("done" as const),
       durationMs: stillOpen || acc.durationMs === 0 ? null : acc.durationMs,
+      failureDetail: acc.failureDetail,
     };
   });
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { RankedOpportunity } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { parseResultShape } from "../../llm/failure.js";
+import { completeJsonWithCapacityRetries } from "./model-retry.js";
 import type { DraftGenerator, OpportunityRanker } from "./ports.js";
 
 const ANGLES = new Set([
@@ -72,8 +73,7 @@ export function modelOpportunityRanker(getCompleteJson: () => CompleteJson): Opp
   return {
     async rank({ brandProfile, items, storyGroups, limit }) {
       if (items.length === 0) return [];
-      const complete = getCompleteJson();
-      const raw = await complete({
+      const raw = await completeJsonWithCapacityRetries(getCompleteJson, {
         schema: RankedOpportunitiesWireSchema,
         system: `You rank public evidence into Content Opportunities.
 
@@ -112,8 +112,7 @@ scores contains ${SCORE_KEYS.join(", ")}, each 0..1; speculationRisk is risk, so
 export function modelDraftGenerator(getCompleteJson: () => CompleteJson): DraftGenerator {
   return {
     async generate({ brief, target }) {
-      const complete = getCompleteJson();
-      const raw = await complete({
+      const raw = await completeJsonWithCapacityRetries(getCompleteJson, {
         schema: ContentDraftWireSchema,
         system: `Create exactly one Content Draft for the supplied Draft Target.
 

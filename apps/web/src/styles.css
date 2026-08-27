@@ -665,6 +665,17 @@ tr:last-child td {
 .timeline-outcome {
   margin: 0.25rem 0 0;
 }
+
+.timeline-diagnostic {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.timeline-diagnostic pre {
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 /* The filename cell holds the link, and the link carries 0.7rem of padding to
    reach a 44px target. Against the shared `vertical-align: top` that left it
    sitting a line lower than every other cell in its own row. */

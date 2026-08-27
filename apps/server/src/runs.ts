@@ -168,9 +168,6 @@ function toSummary(meta: RunMeta): RunSummary {
     wait: meta.wait ?? null,
     skipReason: meta.skipReason,
     summary: meta.summary ?? null,
-    /* Additive (D6): present only on connection-caused failures, so legacy
-       clients and old metas see no change. */
-    ...(meta.connectionCaused ? { connectionCaused: true } : {}),
     ...(meta.connectionState ? { connectionState: meta.connectionState } : {}),
   };
 }
@@ -227,13 +224,9 @@ class RunHandleImpl implements RunHandle {
         meta.wait = null;
         meta.failedStage = stage;
         meta.failureHint = hint;
-        /* Additive (D6): set only when the connection caused it, so legacy
-           metas without the field read and display exactly as before. */
         if (flags?.connectionState) {
-          meta.connectionCaused = true;
           meta.connectionState = flags.connectionState;
         } else {
-          delete meta.connectionCaused;
           delete meta.connectionState;
         }
       },
@@ -339,7 +332,6 @@ class RunHandleImpl implements RunHandle {
         meta.failedStage = null;
         meta.failureHint = null;
         meta.skipReason = null;
-        delete meta.connectionCaused;
         delete meta.connectionState;
       },
       /* A retry used to leave no trace but a second `stage_started`, so a

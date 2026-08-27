@@ -187,7 +187,22 @@ await registerApi(app, {
 });
 
 if (process.env.ENABLE_TEST_SEED === "1") {
-  await registerTestSeed(app, { startRun: (spec) => transcript.startRun(spec) });
+  await registerTestSeed(app, {
+    startRun: (spec) => transcript.startRun(spec),
+    createFailedRun: () => {
+      const run = runs.create({
+        module: transcript.id,
+        moduleVersion: transcript.version,
+        intake: "drive",
+        fileName: "retryable-failure.md",
+        sourceUrl: null,
+        externalId: null,
+      });
+      run.started("extract");
+      run.failed("extract", "fixture_failure", "The extraction failed. Retry the Run.");
+      return run.id;
+    },
+  });
 }
 
 await app.listen({ port, host });

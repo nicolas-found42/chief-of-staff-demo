@@ -124,7 +124,6 @@ describe("Home's activity feed", () => {
   it("frames a connection-caused failure as reconnect-fixable, in Settings", () => {
     const failed = {
       ...run("r1", "failed", "Pricing call.docx"),
-      connectionCaused: true,
       connectionState: "expired" as const,
     };
     const { sentence, rows } = homeStatus([failed], REAL, true);
@@ -142,7 +141,6 @@ describe("Home's activity feed", () => {
   it("reports a genuine failure separately from a Run that needs reconnecting", () => {
     const interrupted = {
       ...run("r2", "failed"),
-      connectionCaused: true,
       connectionState: "expired" as const,
     };
     const failed = run("r1", "failed");

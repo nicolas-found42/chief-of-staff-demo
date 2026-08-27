@@ -16,6 +16,7 @@ import { modelBrandProfileProposer } from "../modules/content-scout/brand-profil
 
 export interface TestSeedContext {
   startRun: (spec: RunSourceSpec) => Promise<string>;
+  createFailedRun: () => string;
 }
 
 /**
@@ -34,6 +35,11 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
           fileName: "corrupt-transcript.json",
           bytes: Buffer.from('{"PRIVATE TRANSCRIPT MARKER"'),
         });
+        reply.code(201);
+        return { runId };
+      }
+      if (query.scenario === "ordinary-failure") {
+        const runId = ctx.createFailedRun();
         reply.code(201);
         return { runId };
       }
