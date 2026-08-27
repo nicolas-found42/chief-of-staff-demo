@@ -15,6 +15,7 @@ import { YoutubeHost } from "./modules/youtube/host.js";
 import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
 import { RssSourceAdapter } from "./modules/content-scout/adapters/rss.js";
+import { SubstackEnrichmentAdapter } from "./modules/content-scout/adapters/substack.js";
 import { WebsiteSourceAdapter } from "./modules/content-scout/adapters/website.js";
 import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
 import {
@@ -123,6 +124,7 @@ const contentScout = new ContentScoutHost({
     new RssSourceAdapter(),
     new RssSourceAdapter(undefined, undefined, { id: "substack", state: "available" }),
     new WebsiteSourceAdapter(undefined, undefined, playwrightBrowserRenderer()),
+    new SubstackEnrichmentAdapter(),
     new YouTubeSourceAdapter(() => {
       const access = googleConnection.auth();
       return access.ok

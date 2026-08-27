@@ -302,6 +302,7 @@ export class WebsiteSourceAdapter implements SourceAdapter {
           description: article.excerpt ? "available" : "unavailable",
           transcript: "unsupported",
           comments: "unsupported",
+          media: "unavailable",
         },
       },
     };

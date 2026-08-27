@@ -4,13 +4,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
+import { openRuns } from "../../../apps/server/src/runs";
 import type {
   DraftGenerator,
   NotionPublisher,
   OpportunityRanker,
   SourceAdapter,
 } from "../../../apps/server/src/modules/content-scout/ports";
-import { openRuns } from "../../../apps/server/src/runs";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { CONTENT_SCOUT_DRAFT_TARGETS_V1 } from "@chief-of-staff-demo/shared";
 import type { RankedOpportunity } from "@chief-of-staff-demo/shared";
@@ -67,6 +67,7 @@ function rssAdapter(): SourceAdapter {
               description: "unavailable",
               transcript: "available",
               comments: "available",
+              media: "unavailable",
             },
             storyKey: "verified-change-practical-impact",
             claims: [
@@ -99,6 +100,7 @@ function rssAdapter(): SourceAdapter {
               description: "unavailable",
               transcript: "unsupported",
               comments: "unsupported",
+              media: "unavailable",
             },
             storyKey: "verified-change-practical-impact",
             claims: [
@@ -131,6 +133,7 @@ function rssAdapter(): SourceAdapter {
               description: "unavailable",
               transcript: "unsupported",
               comments: "unsupported",
+              media: "unavailable",
             },
             storyKey: "verified-change-practical-impact",
             claims: [
@@ -1078,6 +1081,7 @@ United States only
                 description: "unavailable",
                 transcript: "unavailable",
                 comments: "unavailable",
+                media: "available",
               },
             },
             {
@@ -1102,6 +1106,7 @@ United States only
                 description: "unavailable",
                 transcript: "unavailable",
                 comments: "unavailable",
+                media: "available",
               },
             },
           ],
@@ -1267,6 +1272,7 @@ United States only
                 description: "unavailable",
                 transcript: "unavailable",
                 comments: "unavailable",
+                media: "available",
               },
             },
           ],
@@ -1361,6 +1367,7 @@ United States only
             description: "unavailable" as const,
             transcript: "unavailable" as const,
             comments: "unavailable" as const,
+            media: "unavailable" as const,
           },
         };
         return {
@@ -1472,6 +1479,7 @@ United States only
           description: "unavailable",
           transcript: "unavailable",
           comments: "unavailable",
+          media: "unavailable",
         },
       });
       return result;
@@ -1511,6 +1519,117 @@ United States only
     const discarded = JSON.parse(run.readArtifact("discarded-items.json")!) as { id: string }[];
     expect(discarded.map((d) => d.id)).not.toContain("rss:good");
   });
+  it("keeps broken Substack enrichment a loud warning and preserves usable feed text", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-substack-enrichment-"));
+    const runs = openRuns(workspaceDir);
+    const adapter: SourceAdapter = {
+      id: "substack",
+      state: "available",
+      version: "fixture-1",
+      supports: (target) => target.adapterId === "substack",
+      async collect({ target }) {
+        return {
+          kind: "completed",
+          outcome: "items_found",
+          checkpoint: "substack-checkpoint",
+          items: [
+            {
+              id: "rss:substack-post",
+              externalId: "substack-post",
+              targetId: target.id,
+              adapterId: "substack",
+              canonicalUrl: "https://research-public.substack.com/p/a-text-only-post",
+              author: "Research Author",
+              title: "A text-only analysis of the verified change",
+              body: "A text-only analysis explains the verified change and its practical impact for teams that plan adoption. The analysis walks through the deadline, the concrete implementation steps, and the measured rollout milestones that operators should expect during the next quarter and beyond.",
+              description: null,
+              publishedAt: "2026-08-25T10:00:00.000Z",
+              discoveredAt: NOW.toISOString(),
+              media: [],
+              transcript: null,
+              comments: [],
+              evidence: [{ route: "fixture:substack", retrievedAt: NOW.toISOString() }],
+              completeness: {
+                title: "available",
+                body: "available",
+                description: "unavailable",
+                transcript: "unsupported",
+                comments: "unsupported",
+                media: "unavailable",
+              },
+            },
+          ],
+          diagnostic: {
+            classification: "items_found",
+            route: "fixture:substack",
+            status: 200,
+            contentType: "application/rss+xml",
+            parserStage: "rss",
+            responseHash: "substack-response",
+            adapterVersion: "fixture-1",
+            startedAt: NOW.toISOString(),
+            finishedAt: NOW.toISOString(),
+            retries: 0,
+            affectedCapabilities: [],
+            causeChain: [],
+          },
+        };
+      },
+    };
+    const enrichAdapter: SourceAdapter = {
+      id: "substack",
+      state: "available",
+      version: "substack-public-page-v1",
+      supports: () => false,
+      async collect(): Promise<never> {
+        throw new Error("collects nothing; Substack posts arrive through the RSS route");
+      },
+      async enrich() {
+        throw new Error("post page unavailable");
+      },
+    };
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [adapter, enrichAdapter],
+      ranker,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "substack",
+      label: "Research Substack",
+      url: "https://research-public.substack.com/feed",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    expect(runs.detail(runId)!.status).toBe("blocked");
+    expect(runs.detail(runId)!.result).toMatchObject({ warnings: 1 });
+    expect(
+      runs
+        .detail(runId)!
+        .events.some(
+          (event) => event.type === "enrichment_failed" && event.detail?.adapterId === "substack",
+        ),
+    ).toBe(true);
+    const enriched = JSON.parse(runs.open(runId)!.readArtifact("enriched-source-items.json")!) as {
+      id: string;
+      body: string;
+      title: string;
+      completeness: Record<string, string>;
+    }[];
+    expect(enriched[0]).toMatchObject({
+      id: "rss:substack-post",
+      title: "A text-only analysis of the verified change",
+      completeness: { body: "available", media: "failed" },
+    });
+    expect(enriched[0].body).toContain("A text-only analysis explains the verified change");
+  });
 
   it("caps comment enrichment at 50 and preserves questions and disagreement", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-comments-cap-"));
@@ -1548,6 +1667,7 @@ United States only
                 description: "unavailable",
                 transcript: "unavailable",
                 comments: "unavailable",
+                media: "available",
               },
             },
           ],
@@ -1670,6 +1790,7 @@ United States only
                 description: "unavailable",
                 transcript: "unsupported",
                 comments: "unsupported",
+                media: "available",
               },
             },
             {
@@ -1694,6 +1815,7 @@ United States only
                 description: "unavailable",
                 transcript: "unavailable",
                 comments: "unavailable",
+                media: "available",
               },
             },
           ],

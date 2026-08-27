@@ -43,6 +43,7 @@ function backfillItem(targetId: string, now: Date): SourceItem {
       description: "unavailable",
       transcript: "unsupported",
       comments: "unsupported",
+      media: "unavailable",
     },
   };
 }

@@ -92,6 +92,7 @@ function sourceItem(
       description: "unavailable",
       transcript: "unsupported",
       comments: "unsupported",
+      media: "unavailable",
     },
     ...input,
   };
@@ -750,6 +751,7 @@ describe("Content Scout frontier contracts", () => {
               description: "failed",
               transcript: "unsupported",
               comments: "unsupported",
+              media: "unavailable",
             },
           }),
           sourceItem("unsupported-claim", {

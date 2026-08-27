@@ -913,6 +913,7 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
                 transcript:
                   item.completeness.transcript === "unsupported" ? "unsupported" : "failed",
                 comments: item.completeness.comments === "unsupported" ? "unsupported" : "failed",
+                media: item.completeness.media === "unsupported" ? "unsupported" : "failed",
               };
             }
           }

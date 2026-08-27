@@ -120,6 +120,7 @@ export function contentScoutTestPorts(now: () => Date): {
               description: "unavailable",
               transcript: "unsupported",
               comments: "unsupported",
+              media: "unavailable",
             },
           },
         ],

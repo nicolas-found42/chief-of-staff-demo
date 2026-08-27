@@ -36,6 +36,7 @@ function makeItem(
       description: "unavailable",
       transcript: "unsupported",
       comments: "unsupported",
+      media: "unavailable",
     },
     storyKey: "brief-story",
     claims: [
@@ -137,6 +138,7 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
           description: "unavailable",
           transcript: "available",
           comments: "available",
+          media: "unavailable",
         },
         transcript: "Transcript content that is bounded and available. ".repeat(50),
         comments: Array.from({ length: 5 }, (_, c) => ({
@@ -171,6 +173,7 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
           description: "unavailable",
           transcript: "unsupported",
           comments: "unsupported",
+          media: "unavailable",
         },
         transcript: null,
         comments: [],
@@ -430,6 +433,7 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
           description: "unavailable",
           transcript: "available",
           comments: "available",
+          media: "unavailable",
         },
         claims: [
           {
@@ -448,8 +452,10 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
           title: "available",
           body: "available",
           description: "unavailable",
+
           transcript: "unsupported",
           comments: "unsupported",
+          media: "unavailable",
         },
         claims: [
           {
@@ -470,6 +476,7 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
           description: "unavailable",
           transcript: "unsupported",
           comments: "unsupported",
+          media: "unavailable",
         },
         claims: [
           {
@@ -491,6 +498,7 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
         description: "unavailable",
         transcript: "unsupported",
         comments: "unsupported",
+        media: "unavailable",
       },
       claims: [
         {

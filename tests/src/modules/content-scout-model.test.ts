@@ -61,6 +61,7 @@ const sourceItem = {
     description: "unavailable",
     transcript: "unsupported",
     comments: "unsupported",
+    media: "unavailable",
   },
 } satisfies SourceItem;
 

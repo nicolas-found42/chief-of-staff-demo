@@ -172,6 +172,7 @@ export class ExperimentalPublicPageAdapter implements SourceAdapter {
             description: stringValue(record.description) ? "available" : "unavailable",
             transcript: "unavailable",
             comments: "unavailable",
+            media: "unavailable",
           },
         },
       ];

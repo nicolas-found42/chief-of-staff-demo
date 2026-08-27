@@ -97,6 +97,7 @@ export interface SourceItem {
     description: SourceFieldState;
     transcript: SourceFieldState;
     comments: SourceFieldState;
+    media: SourceFieldState;
   };
   /** Adapter-supplied stable story identity when the platform exposes one. */
   storyKey?: string;

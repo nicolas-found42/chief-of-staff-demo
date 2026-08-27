@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";
+import { SubstackEnrichmentAdapter } from "../../../apps/server/src/modules/content-scout/adapters/substack";
 import type { PublicHttpResponse } from "../../../apps/server/src/modules/content-scout/adapters/http";
 import { WebsiteSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/website";
 import { ExperimentalPublicPageAdapter } from "../../../apps/server/src/modules/content-scout/adapters/experimental";
@@ -9,7 +10,7 @@ import {
   YouTubeSourceAdapter,
   type YouTubeSourceClient,
 } from "../../../apps/server/src/modules/content-scout/adapters/youtube";
-import type { SourceTarget } from "@chief-of-staff-demo/shared";
+import type { SourceItem, SourceTarget } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");
 const fixture = (name: string) =>
@@ -608,5 +609,233 @@ describe("Experimental anonymous social adapters", () => {
     expect(fetched).toBe("https://www.reddit.com/r/publiccommunity.rss");
     expect(adapter.state).toBe("experimental");
     expect(result.items[0]?.adapterId).toBe("reddit");
+  });
+});
+
+describe("Substack media enrichment adapter", () => {
+  const substackTarget = target("substack", "https://research-public.substack.com/feed");
+  const page = (name: string, overrides: Partial<PublicHttpResponse> = {}) =>
+    response({
+      url: "https://research-public.substack.com/p/a-media-walkthrough",
+      contentType: "text/html",
+      body: fixture(name),
+      ...overrides,
+    });
+
+  async function feedItems(feedName: string, checkpoint: string | null): Promise<SourceItem[]> {
+    const result = await new RssSourceAdapter(
+      async () => response({ body: fixture(feedName) }),
+      () => NOW,
+      { id: "substack", state: "available" },
+    ).collect({
+      target: substackTarget,
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint,
+    });
+    expect(result.kind).toBe("completed");
+    if (result.kind === "completed") {
+      return result.items;
+    }
+    return [];
+  }
+
+  it("enriches a known Substack post with bounded public media and publication evidence", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => page("substack-post-media.html"),
+      () => NOW,
+    );
+    const feed = (await feedItems("substack-feed-media.xml", null))[0];
+    expect(feed.adapterId).toBe("substack");
+    expect(feed.canonicalUrl).toBe("https://research-public.substack.com/p/a-media-walkthrough");
+    expect(feed.completeness.media).toBe("available");
+
+    const enriched = (await adapter.enrich([feed]))[0];
+    expect(enriched.id).toBe(feed.id);
+    expect(enriched.externalId).toBe(feed.externalId);
+    expect(enriched.canonicalUrl).toBe(
+      "https://research-public.substack.com/p/a-media-walkthrough",
+    );
+    expect(enriched.body).toBe(feed.body);
+    expect(enriched.completeness).toMatchObject({
+      title: "available",
+      body: "available",
+      media: "available",
+    });
+    expect(enriched.media).toEqual(
+      expect.arrayContaining([
+        { type: "audio", url: "https://api.substack.com/feed/podcast/789.mp3" },
+        {
+          type: "image",
+          url: "https://substackcdn.com/image/fetch/w_1456,c_limit,f_auto,q_auto:good/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fcover.jpeg",
+        },
+        {
+          type: "audio",
+          url: "https://substackcdn.com/audio/789c0ffe-6a1e-4b2b-8c9d-1f2a3b4c5d6e.mp3",
+        },
+      ]),
+    );
+    expect(enriched.evidence.at(-1)).toMatchObject({
+      route: "https://research-public.substack.com/p/a-media-walkthrough",
+      retrievedAt: NOW.toISOString(),
+    });
+  });
+
+  it("keeps feed identity, checkpoint, and text stable across the feed and enrichment routes", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => page("substack-post-text-only.html"),
+      () => NOW,
+    );
+    const feed = (await feedItems("substack-feed-text-only.xml", "feed-v1"))[0];
+    const enriched = (await adapter.enrich([feed]))[0];
+    expect(enriched).toMatchObject({
+      id: "target-substack:https://research-public.substack.com/p/a-text-only-post",
+      externalId: "https://research-public.substack.com/p/a-text-only-post",
+      canonicalUrl: "https://research-public.substack.com/p/a-text-only-post",
+      author: "Research Author",
+      publishedAt: "2026-08-25T10:00:00.000Z",
+      title: "A text-only analysis of the verified change",
+      media: [],
+      completeness: { media: "unavailable" },
+    });
+  });
+
+  it("classifies an empty Substack feed as a legitimate empty source", async () => {
+    const result = await new RssSourceAdapter(
+      async () => response({ body: fixture("substack-feed-empty.xml") }),
+      () => NOW,
+      { id: "substack", state: "available" },
+    ).collect({
+      target: substackTarget,
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(result).toMatchObject({ kind: "completed", outcome: "legitimate_empty", items: [] });
+  });
+
+  it("marks missing public media as unavailable, not failed", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => page("substack-post-no-media.html"),
+      () => NOW,
+    );
+    const feed = (await feedItems("substack-feed-text-only.xml", null))[0];
+    const enriched = (await adapter.enrich([feed]))[0];
+    expect(enriched.completeness.media).toBe("unavailable");
+    expect(enriched.media).toEqual([]);
+    expect(enriched.claims).toBeUndefined();
+  });
+
+  it("preserves usable feed text when the post page blocks or rate-limits", async () => {
+    for (const status of [403, 429]) {
+      const adapter = new SubstackEnrichmentAdapter(
+        async () =>
+          page("substack-post-media.html", {
+            status,
+            body: status === 403 ? "Forbidden" : "Slow down",
+          }),
+        () => NOW,
+      );
+      const feed = (await feedItems("substack-feed-media.xml", null))[0];
+      const enriched = (await adapter.enrich([feed]))[0];
+      expect(enriched.completeness).toMatchObject({
+        title: "available",
+        body: "available",
+        media: "failed",
+      });
+      expect(enriched.body).toBe(feed.body);
+      expect(enriched.claims).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            state: "unsupported",
+            sourceUrls: ["https://research-public.substack.com/p/a-media-walkthrough"],
+          }),
+        ]),
+      );
+      expect(enriched.evidence.at(-1)?.route).toBe(
+        "https://research-public.substack.com/p/a-media-walkthrough",
+      );
+    }
+  });
+
+  it("preserves usable feed text when the post page changed shape", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => page("substack-post-shape-change.html"),
+      () => NOW,
+    );
+    const feed = (await feedItems("substack-feed-text-only.xml", null))[0];
+    const enriched = (await adapter.enrich([feed]))[0];
+    expect(enriched.title).toBe("A text-only analysis of the verified change");
+    expect(enriched.completeness.media).toBe("unavailable");
+  });
+  it("keeps partial publication evidence without inventing media or times", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => page("substack-post-partial.html"),
+      () => NOW,
+    );
+    const feed = (await feedItems("substack-feed-text-only.xml", null))[0];
+    const enriched = (await adapter.enrich([feed]))[0];
+    expect(enriched.canonicalUrl).toBe("https://research-public.substack.com/p/partial-post");
+    expect(enriched.author).toBe("Research Author");
+    expect(enriched.publishedAt).toBe(feed.publishedAt);
+    expect(enriched.completeness.media).toBe("unavailable");
+  });
+
+  it("does not touch items from other platforms and never claims collection", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => page("substack-post-media.html"),
+      () => NOW,
+    );
+    expect(adapter.supports()).toBe(false);
+    const youtube = await new YouTubeSourceAdapter(
+      () => ({
+        ok: true,
+        client: {
+          async resolveChannel() {
+            return { id: "channel-1", uploadsPlaylistId: "playlist-1" };
+          },
+          async listUploads() {
+            return [];
+          },
+          async listComments() {
+            return [];
+          },
+        } satisfies YouTubeSourceClient,
+      }),
+      () => NOW,
+    ).collect({
+      target: target("youtube", "https://www.youtube.com/@found42"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(youtube.kind).toBe("completed");
+    if (youtube.kind === "completed") {
+      const untouched = await adapter.enrich(youtube.items);
+      expect(untouched).toHaveLength(0);
+    }
+  });
+
+  it("leaves unrelated feeds on the shared RSS route untouched", async () => {
+    const adapter = new SubstackEnrichmentAdapter(
+      async () => {
+        throw new Error("should never be called for non-Substack items");
+      },
+      () => NOW,
+    );
+    const result = await new RssSourceAdapter(
+      async () => response(),
+      () => NOW,
+    ).collect({
+      target: target("rss", "https://example.com/feed.xml"),
+      since: "2026-08-18T12:00:00.000Z",
+      until: NOW.toISOString(),
+      checkpoint: null,
+    });
+    expect(result.kind).toBe("completed");
+    if (result.kind === "completed") {
+      const enriched = await adapter.enrich(result.items);
+      expect(enriched).toEqual(result.items);
+    }
   });
 });

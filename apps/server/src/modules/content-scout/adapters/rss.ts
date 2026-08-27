@@ -25,6 +25,9 @@ type FeedItem = {
   content?: string;
   contentSnippet?: string;
   summary?: string;
+  enclosure?: { url: string; type?: string; length?: string };
+  mediaContent?: { $?: Record<string, string> } | { $?: Record<string, string> }[];
+  mediaThumbnail?: { $?: Record<string, string> } | { $?: Record<string, string> }[];
 };
 
 function failedOutcome(status: number): "blocked_access" | "rate_limit" | "internal_failure" {
@@ -33,13 +36,48 @@ function failedOutcome(status: number): "blocked_access" | "rate_limit" | "inter
   return "internal_failure";
 }
 
+const IMAGE_EXTENSIONS = /\.(?:avif|gif|jpe?g|png|webp)(?:$|[?#])/i;
+const AUDIO_EXTENSIONS = /\.(?:aac|flac|m4a|mp3|oga|ogg|opus|wav)(?:$|[?#])/i;
+const VIDEO_EXTENSIONS = /\.(?:m4v|mov|mp4|webm)(?:$|[?#])/i;
+
+function feedMediaKind(url: string, type: string | null): SourceItem["media"][number]["type"] {
+  if (type?.startsWith("image/")) return "image";
+  if (type?.startsWith("audio/")) return "audio";
+  if (type?.startsWith("video/")) return "video";
+  if (IMAGE_EXTENSIONS.test(url)) return "image";
+  if (AUDIO_EXTENSIONS.test(url)) return "audio";
+  if (VIDEO_EXTENSIONS.test(url)) return "video";
+  return "image";
+}
+
+function feedMedia(entry: FeedItem): SourceItem["media"] {
+  const media: SourceItem["media"] = [];
+  if (entry.enclosure?.url) {
+    media.push({
+      type: feedMediaKind(entry.enclosure.url, entry.enclosure.type ?? null),
+      url: entry.enclosure.url,
+    });
+  }
+  for (const value of [entry.mediaContent, entry.mediaThumbnail].flatMap((candidate) =>
+    Array.isArray(candidate) ? candidate : candidate ? [candidate] : [],
+  )) {
+    if (!value.$?.url) continue;
+    media.push({ type: feedMediaKind(value.$.url, value.$.type ?? null), url: value.$.url });
+  }
+  return media;
+}
+
 export class RssSourceAdapter implements SourceAdapter {
   readonly id: "rss" | "substack" | "reddit";
   readonly state: "available" | "experimental";
   readonly version = "rss-parser@3";
   /** The feed is fetched fresh and filtered by `since`, so any requested window is honored honestly — bounded by whatever history the feed itself still carries. */
   readonly backfillWindowsDays = SOURCE_BACKFILL_WINDOWS_DAYS;
-  private readonly parser = new Parser<Record<string, unknown>, FeedItem>();
+  private readonly parser = new Parser<Record<string, unknown>, FeedItem>({
+    customFields: {
+      item: [["media:content", "mediaContent"], ["media:thumbnail", "mediaThumbnail"], "enclosure"],
+    },
+  });
 
   constructor(
     private readonly fetchText: PublicHttpFetch = publicHttpFetch,
@@ -146,7 +184,7 @@ export class RssSourceAdapter implements SourceAdapter {
         description: entry.contentSnippet ?? entry.summary ?? null,
         publishedAt: publishedAt ? new Date(publishedAt).toISOString() : null,
         discoveredAt: this.now().toISOString(),
-        media: [],
+        media: feedMedia(entry),
         transcript: null,
         comments: [],
         evidence: [{ route: response.url, retrievedAt: this.now().toISOString() }],
@@ -156,6 +194,7 @@ export class RssSourceAdapter implements SourceAdapter {
           description: (entry.contentSnippet ?? entry.summary) ? "available" : "unavailable",
           transcript: "unsupported",
           comments: "unsupported",
+          media: feedMedia(entry).length > 0 ? "available" : "unavailable",
         },
       });
     }

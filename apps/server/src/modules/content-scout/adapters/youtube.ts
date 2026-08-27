@@ -183,6 +183,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
           description: video.description ? "available" : "unavailable",
           transcript: "unavailable",
           comments: "unavailable",
+          media: "available",
         },
       }));
       const hash = createHash("sha256")
