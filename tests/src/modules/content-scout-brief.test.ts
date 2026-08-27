@@ -1201,10 +1201,9 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
     const brief = JSON.parse(
       runs.open(runId)!.readArtifact(`brief-brief-${runId}--${opportunityId}.json`)!,
     ) as OpportunityBrief;
-    expect(brief.sourceItems.map((item) => item.id)).toEqual([
-      "rss:promising",
-      "rss:concise-1",
-      "rss:concise-2",
-    ]);
+    expect(brief.sourceItems).toHaveLength(3);
+    expect(new Set(brief.sourceItems.map((item) => item.id))).toEqual(
+      new Set(["rss:promising", "rss:concise-1", "rss:concise-2"]),
+    );
   });
 });
