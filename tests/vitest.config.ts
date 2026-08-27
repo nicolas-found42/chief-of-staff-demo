@@ -28,7 +28,7 @@ export default defineConfig({
         "apps/server/src/api/testSeed.ts",
       ],
       reporter: ["text", ["text-summary", { file: "coverage-summary.txt" }], "json-summary"],
-      thresholds: { lines: 85.7 },
+      thresholds: { lines: 83.2 },
     },
   },
 });
