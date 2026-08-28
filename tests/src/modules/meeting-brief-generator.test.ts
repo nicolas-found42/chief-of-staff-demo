@@ -289,6 +289,12 @@ describe("fixture event → one Run at due time via real Runner/Runs/Workspace (
       workspaceDir,
       now: () => new Date(now2),
       log: () => {},
+      profileProvider: null,
+      hubSpotApi: null,
+      publicIntelligenceProvider: null,
+      gmailProvider: null,
+      calendarHistoryProvider: null,
+      driveProvider: null,
     });
     expect(host2.listUpcoming()).toHaveLength(1);
 

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unnecessary-condition */
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unnecessary-condition -- provider handles optional guest-profile fields and test fakes */
 import {
   GUEST_PROFILE_PROVIDER_ID,
   GUEST_PROFILE_PROVIDER_NAME,

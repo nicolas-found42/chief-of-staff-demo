@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition -- module orchestrates optional stage deps and snapshot fields that may be absent on retry */
 import type { CompleteJson } from "../../llm/providers.js";
 import type {
   GuestProfileArtifact,

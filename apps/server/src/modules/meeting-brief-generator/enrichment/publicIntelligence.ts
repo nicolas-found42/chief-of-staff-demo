@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion -- public intelligence diagnostics use explicit casts */
 import {
   PUBLIC_INTELLIGENCE_MAX_RESULTS,
   type PublicIntelligenceArtifact,
@@ -8,7 +8,12 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { RunContext } from "../../../engine/module.js";
 import type { MeetingBriefEnrichmentSection } from "@chief-of-staff-demo/shared";
-
+import {
+  isProviderWideError,
+  readErrorCode,
+  readErrorStatus,
+  sanitizeEvidence,
+} from "./helpers.js";
 // ---------------------------------------------------------------------------
 // Public search result — normalized evidence, source ownership preserved
 // ---------------------------------------------------------------------------
@@ -29,64 +34,8 @@ export interface PublicIntelligenceProvider {
   ): Promise<PublicSearchResult[]>;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers: sanitization, org extraction, snippet dedup, window
-// ---------------------------------------------------------------------------
-function sanitizeEvidence(text: string): string {
-  return text
-    .slice(0, 500)
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
-    .trim();
-}
-
-function readErrorStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as Record<string, unknown>).status;
-    if (typeof value === "number") return value;
-  }
-  if (error && typeof error === "object" && "httpStatus" in error) {
-    const value = (error as Record<string, unknown>).httpStatus;
-    if (typeof value === "number") return value;
-  }
-  if (error && typeof error === "object" && "response" in error) {
-    const resp = (error as { response?: { status?: number } }).response;
-    if (resp && typeof resp.status === "number") return resp.status;
-  }
-  return null;
-}
-
-function readErrorCode(error: unknown): string | null {
-  if (error && typeof error === "object" && "category" in error) {
-    const value = (error as Record<string, unknown>).category;
-    if (typeof value === "string") return value;
-  }
-  if (error && typeof error === "object" && "code" in error) {
-    const value = (error as Record<string, unknown>).code;
-    if (typeof value === "string") return value;
-  }
-  if (error && typeof error === "object" && "errorCode" in error) {
-    const value = (error as Record<string, unknown>).errorCode;
-    if (typeof value === "string") return value;
-  }
-  return null;
-}
-
-function isProviderWideError(error: unknown): boolean {
-  const maybe = error as { status?: number; code?: number; response?: { status?: number } };
-  const status = maybe?.status ?? maybe?.code ?? maybe?.response?.status ?? readErrorStatus(error);
-  const msg = error instanceof Error ? error.message : String(error);
-  if (status === 401 || status === 403 || status === 503) return true;
-  if (
-    /invalid_grant|insufficient authentication|ACCESS_TOKEN|accessNotConfigured|has not been used|is disabled|not configured|missing_configuration|rejected|unavailable/i.test(
-      msg,
-    )
-  )
-    return true;
-  const code = readErrorCode(error);
-  if (code && /rejected|missing_authority|unavailable|missing_configuration/i.test(code))
-    return true;
-  return false;
-}
+// Helpers re-exported via helpers.ts: sanitizeEvidence, readErrorStatus, readErrorCode, isProviderWideError
+// (org/sippet helpers remain local)
 
 function extractOrg(url: string): string {
   try {

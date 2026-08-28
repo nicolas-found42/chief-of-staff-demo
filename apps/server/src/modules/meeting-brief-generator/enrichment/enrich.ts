@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unnecessary-type-assertion -- enrichment helpers deliberately handle nullable provider errors and diagnostic casts */
 import type {
   GuestProfileArtifact,
   HubSpotCompany,
@@ -25,7 +25,13 @@ import {
   enrichEmployerVerification,
 } from "./publicIntelligence.js";
 import type { RunContext } from "../../../engine/module.js";
-
+import { StageFailure } from "../../../engine/module.js";
+import {
+  deduplicateEvidence,
+  isProviderWideError,
+  readErrorStatus,
+  sanitizeEvidence,
+} from "./helpers.js";
 // ---------------------------------------------------------------------------
 // Unified enrich deps — all providers injectable fakes
 // ---------------------------------------------------------------------------
@@ -48,55 +54,6 @@ export interface UnifiedEnrichDeps {
   guestProfileEndpoint?: string;
   guestProfileApiKey?: string;
   occurrenceKey?: string;
-}
-
-function readErrorStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const v = (error as Record<string, unknown>).status;
-    if (typeof v === "number") return v;
-  }
-  if (error && typeof error === "object" && "httpStatus" in error) {
-    const v = (error as Record<string, unknown>).httpStatus;
-    if (typeof v === "number") return v;
-  }
-  if (error && typeof error === "object" && "diagnostics" in error) {
-    const diag = (error as Record<string, unknown>).diagnostics;
-    if (diag && typeof diag === "object" && "statusCode" in (diag as Record<string, unknown>)) {
-      const v = (diag as Record<string, unknown>).statusCode;
-      if (typeof v === "number") return v;
-    }
-  }
-  return null;
-}
-
-function isProviderWideError(error: unknown): boolean {
-  const maybe = error as { status?: number; code?: number; response?: { status?: number } };
-  const status = maybe?.status ?? maybe?.code ?? maybe?.response?.status ?? readErrorStatus(error);
-  const msg = error instanceof Error ? error.message : String(error);
-  if (status === 401 || status === 403 || status === 503) return true;
-  if (
-    /invalid_grant|insufficient authentication|ACCESS_TOKEN|accessNotConfigured|has not been used|is disabled|not configured|missing_configuration|rejected|unavailable|missing_authority/i.test(
-      msg,
-    )
-  )
-    return true;
-  return false;
-}
-
-function sanitizeEvidence(text: string): string {
-  return text
-    .slice(0, 500)
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
-    .trim();
-}
-
-function deduplicateEvidence(evidence: string[]): string[] {
-  const seen = new Map<string, string>();
-  for (const e of evidence) {
-    const key = e.toLowerCase().trim().replace(/\s+/g, " ");
-    if (!seen.has(key)) seen.set(key, e);
-  }
-  return [...seen.values()];
 }
 
 // Preservation helpers for hubspot/profile
@@ -377,10 +334,22 @@ export async function enrichUnified(
   const eventVersion = event.version;
   const eventStartAt = event.startAt;
 
-  // Check required integrations availability for provider-wide failure
-  // If publicIntelligenceProvider is required but missing while we have employer matches, we handle per-company later.
-  // For now, we treat missing gmail/calendar/drive as not required for this unified flow fallback? But unified expects them.
-  // We will validate that if deps indicates a provider is expected but not provided, we throw missing_config.
+  // Spec A: fail when required enrichment class wholly unavailable (rejected/missing_configuration/provider-wide outage)
+  if (externalAttendees.length > 0) {
+    const missing: string[] = [];
+    if (!deps.gmailProvider) missing.push("gmail");
+    if (!deps.calendarHistoryProvider) missing.push("calendarHistory");
+    if (!deps.driveProvider) missing.push("drive");
+    if (!deps.profileProvider) missing.push("guestProfile");
+    if (!deps.hubSpotApi) missing.push("hubSpot");
+    if (!deps.publicIntelligenceProvider) missing.push("publicIntelligence");
+    if (missing.length > 0) {
+      throw new StageFailure(
+        "enrich",
+        `missing_configuration: required providers unavailable: ${missing.join(", ")}`,
+      );
+    }
+  }
 
   // For each external guest, process all sources
   for (const attendee of externalAttendees) {

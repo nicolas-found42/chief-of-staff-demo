@@ -10,6 +10,7 @@ import { isEligibleMeeting } from "./eligibility.js";
 import type { CalendarProvider } from "./calendar.js";
 import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { renderMeetingBriefEmail } from "./output.js";
+import { materialFingerprint } from "./revision.js";
 
 /**
  * Stable idempotency key for a Run. Persisted before the outward Gmail write.
@@ -92,8 +93,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   const startMs = Date.parse(logisticsStart);
   const nowMs = now().getTime();
   const timeUntilStart = Number.isNaN(startMs) ? 0 : startMs - nowMs;
-  const shouldWaitForQuiet =
-    isRevision && timeUntilStart > 5 * 60 * 1000 && Boolean(gmailDeliveryProvider);
+  const shouldWaitForQuiet = isRevision && timeUntilStart > 5 * 60 * 1000;
   if (shouldWaitForQuiet) {
     const existingRaw = ctx.readFile("delivery.json");
     let alreadyWaited = false;
@@ -155,59 +155,6 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
       const isNotFound = !current;
       const stillEligible = current ? isEligibleMeeting(current, domains, owner) : false;
 
-      // Obsolete revision: current version differs from snapshot version → superseded
-      if (current && current.version !== brief.eventVersion) {
-        const supersededDelivery: MeetingBriefDeliveryState = {
-          status: "superseded",
-          sentAt: null,
-          messageId: null,
-          recipient: null,
-          attempts: 0,
-          deliveryId: deliveryIdFor(occurrenceKey, brief.eventVersion),
-        };
-        ctx.writeFile(
-          "delivery.json",
-          JSON.stringify(
-            {
-              ...supersededDelivery,
-              supersededReason: "obsolete_revision",
-              currentVersion: current.version,
-            },
-            null,
-            2,
-          ) + "\n",
-        );
-        const prevRaw = ctx.readFile("result.json");
-        if (prevRaw) {
-          try {
-            const prev = JSON.parse(prevRaw) as MeetingBriefRunResult;
-            prev.delivery = supersededDelivery;
-            ctx.writeFile("result.json", JSON.stringify(prev, null, 2) + "\n");
-          } catch {
-            // ignore
-          }
-        }
-        ctx.event("brief_superseded", {
-          occurrenceKey,
-          eventVersion: brief.eventVersion,
-          currentVersion: current.version,
-          reason: "obsolete_revision",
-        });
-        ctx.event("delivery_superseded", {
-          occurrenceKey,
-          eventVersion: brief.eventVersion,
-          currentVersion: current.version,
-          reason: "obsolete_revision",
-          deliveryId: deliveryIdFor(occurrenceKey, brief.eventVersion),
-        });
-        return {
-          skipped: false,
-          superseded: true,
-          skipReason: "obsolete_revision",
-          delivery: supersededDelivery,
-        };
-      }
-
       const isCancelled =
         current?.status === "cancelled" ||
         (current !== undefined && !stillEligible) ||
@@ -246,6 +193,94 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
         }
         ctx.event("brief_delivery_skipped", { occurrenceKey, reason });
         return { skipped: true, superseded: false, skipReason: reason, delivery: skippedDelivery };
+      }
+
+      // Obsolete revision: material fingerprint differs from frozen snapshot → superseded
+      // Ignored metadata (colorId/visibility) does not cause supersession.
+      if (current) {
+        let isSuperseded = false;
+        let frozenFingerprint: string | null = null;
+        try {
+          const snapRaw = ctx.readFile("snapshot.json");
+          if (snapRaw) {
+            const snap = JSON.parse(snapRaw) as { materialFingerprint?: string; version?: string };
+            if (typeof snap.materialFingerprint === "string")
+              frozenFingerprint = snap.materialFingerprint;
+          }
+        } catch {
+          // ignore
+        }
+        if (frozenFingerprint !== null) {
+          const currentFingerprint = materialFingerprint(current);
+          isSuperseded = currentFingerprint !== frozenFingerprint;
+        } else {
+          // Fallback for old snapshots without fingerprint: version comparison
+          isSuperseded = current.version !== brief.eventVersion;
+        }
+        if (isSuperseded) {
+          const currentFingerprintForLog = (() => {
+            try {
+              return materialFingerprint(current);
+            } catch {
+              return current.version;
+            }
+          })();
+          const supersededDelivery: MeetingBriefDeliveryState = {
+            status: "superseded",
+            sentAt: null,
+            messageId: null,
+            recipient: null,
+            attempts: 0,
+            deliveryId: deliveryIdFor(occurrenceKey, brief.eventVersion),
+          };
+          ctx.writeFile(
+            "delivery.json",
+            JSON.stringify(
+              {
+                ...supersededDelivery,
+                supersededReason: "obsolete_revision",
+                currentVersion: current.version,
+                currentFingerprint: currentFingerprintForLog,
+                frozenFingerprint,
+              },
+              null,
+              2,
+            ) + "\n",
+          );
+          const prevRaw = ctx.readFile("result.json");
+          if (prevRaw) {
+            try {
+              const prev = JSON.parse(prevRaw) as MeetingBriefRunResult;
+              prev.delivery = supersededDelivery;
+              ctx.writeFile("result.json", JSON.stringify(prev, null, 2) + "\n");
+            } catch {
+              // ignore
+            }
+          }
+          ctx.event("brief_superseded", {
+            occurrenceKey,
+            eventVersion: brief.eventVersion,
+            currentVersion: current.version,
+            currentFingerprint: currentFingerprintForLog,
+            frozenFingerprint,
+            reason: "obsolete_revision",
+          });
+          ctx.event("delivery_superseded", {
+            occurrenceKey,
+            eventVersion: brief.eventVersion,
+            currentVersion: current.version,
+            currentFingerprint: currentFingerprintForLog,
+            frozenFingerprint,
+            reason: "obsolete_revision",
+            deliveryId: deliveryIdFor(occurrenceKey, brief.eventVersion),
+          });
+          return {
+            skipped: false,
+            superseded: true,
+            skipReason: "obsolete_revision",
+            delivery: supersededDelivery,
+          };
+        }
       }
     } catch {
       // Provider failure — fail open: proceed to deliver rather than false cancellation

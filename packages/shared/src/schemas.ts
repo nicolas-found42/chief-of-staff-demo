@@ -4,7 +4,6 @@ import { YoutubeChannelSchema } from "./youtube.js";
 // Meeting Brief Generator — Internal Domain normalization helper (issue://83)
 export function normalizeInternalDomains(domains: string[]): string[] {
   const normalized = domains.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
-  // dedup preserve first occurrence order
   return [...new Set(normalized)];
 }
 

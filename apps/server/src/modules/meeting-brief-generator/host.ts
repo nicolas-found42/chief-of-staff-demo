@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition -- host bridges optional Module deps and ConfigStore that may be absent in tests */
 import type { FastifyInstance } from "fastify";
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import {

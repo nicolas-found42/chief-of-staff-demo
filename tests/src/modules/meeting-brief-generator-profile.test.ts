@@ -12,6 +12,37 @@ import {
   createFakeGuestProfileProvider,
   isEmployerMatch,
 } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
+import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
+import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
+import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
+import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
+import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
+
+function stubHubSpotApi(): HubSpotApi {
+  return {
+    async listContacts() {
+      return { results: [] };
+    },
+    async searchContactByEmail() {
+      return null;
+    },
+    async getAssociatedCompanyIds() {
+      return [];
+    },
+    async getCompany() {
+      return null;
+    },
+    async getAssociatedDealIds() {
+      return [];
+    },
+    async getDeal() {
+      return null;
+    },
+    async getAssociatedDealIdsForCompany() {
+      return [];
+    },
+  };
+}
 
 function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
   return {
@@ -170,6 +201,11 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       configStore,
       guestProfileConnection: connection,
       profileProvider: fake,
+      hubSpotApi: stubHubSpotApi(),
+      gmailProvider: new FakeGmailProvider(),
+      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+      driveProvider: new FakeDriveProvider(),
+      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
     });
     const event = fixtureEvent({ version: "v_profile_1" });
     const dueAt = new Date("2026-08-28T11:00:00.000Z");
@@ -215,6 +251,11 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       now: () => new Date(now),
       log: () => {},
       profileProvider: fakeExact,
+      hubSpotApi: stubHubSpotApi(),
+      gmailProvider: new FakeGmailProvider(),
+      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+      driveProvider: new FakeDriveProvider(),
+      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
     });
     const event = fixtureEvent({
       version: "v_employer_1",
@@ -277,6 +318,11 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       now: () => new Date(now),
       log: () => {},
       profileProvider: fake,
+      hubSpotApi: stubHubSpotApi(),
+      gmailProvider: new FakeGmailProvider(),
+      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+      driveProvider: new FakeDriveProvider(),
+      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
     });
     const event = fixtureEvent({
       version: "v_fixtures",
