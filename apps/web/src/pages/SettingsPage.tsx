@@ -72,6 +72,12 @@ export function SettingsPage() {
   const [relayBaseUrlInput, setRelayBaseUrlInput] = useState("");
   const [relayBusy, setRelayBusy] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
+  // Meeting Brief Generator — Internal Domains + Calendar authority (issue://83)
+  const [meetingBriefInput, setMeetingBriefInput] = useState("");
+  const [meetingBriefSaving, setMeetingBriefSaving] = useState(false);
+  const [meetingBriefError, setMeetingBriefError] = useState<string | null>(null);
+  const [meetingBriefSaved, setMeetingBriefSaved] = useState(false);
+  const [meetingBriefLoaded, setMeetingBriefLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   /* One flag per action, not one for the page: a shared flag marks controls
@@ -144,6 +150,19 @@ export function SettingsPage() {
     void loadRelay();
   }, []);
 
+  useEffect(() => {
+    const loadMeetingBrief = async () => {
+      try {
+        const cfg = await api.meetingBriefConfig();
+        setMeetingBriefInput(cfg.internalDomains.join(", "));
+        setMeetingBriefLoaded(true);
+      } catch {
+        // not configured yet
+        setMeetingBriefLoaded(true);
+      }
+    };
+    void loadMeetingBrief();
+  }, []);
   const refreshRelay = async () => {
     try {
       const status = await api.relayStatus();
@@ -182,6 +201,25 @@ export function SettingsPage() {
     }
   };
 
+  const saveMeetingBrief = async () => {
+    if (meetingBriefSaving) return;
+    setMeetingBriefSaving(true);
+    setMeetingBriefError(null);
+    setMeetingBriefSaved(false);
+    try {
+      const raw = meetingBriefInput
+        .split(/[,\n]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const saved = await api.saveMeetingBriefConfig(raw);
+      setMeetingBriefInput(saved.internalDomains.join(", "));
+      setMeetingBriefSaved(true);
+    } catch (err) {
+      setMeetingBriefError(errorMessage(err));
+    } finally {
+      setMeetingBriefSaving(false);
+    }
+  };
   if (!form || !payload) {
     return (
       <div className="page">
@@ -874,6 +912,70 @@ export function SettingsPage() {
             >
               Refresh status
             </button>
+          </div>
+        </div>
+      </section>
+      {/* Meeting Brief Generator — Internal Domains + Calendar authority (issue://83) */}
+      <section className="settings-section" aria-labelledby="section-meeting-brief">
+        <h2 id="section-meeting-brief">Meeting Brief Generator</h2>
+        <div className="card" role="group" aria-labelledby="group-meeting-brief">
+          <h3 id="group-meeting-brief">Internal Domains</h3>
+          <p className="muted">
+            Email domains belonging to your organization. Attendees from these domains are not
+            treated as External Guests. Domains are compared case-insensitively after normalized
+            email parsing and stored lowercased.
+          </p>
+          <p className="muted">
+            Calendar authority required by the Google connection: Calendar read and watch (calendar,
+            calendar.events) to watch your primary Calendar, plus Gmail read/send and Drive for
+            enrichment. Use <strong>Check my setup</strong> above to verify the required scopes and
+            that the Calendar and Gmail APIs are enabled. No Calendar credentials or event data are
+            stored by the relay ( ADR-0031).
+          </p>
+          <div className="field">
+            <label htmlFor="meeting-brief-internal-domains">
+              Internal Domains (comma or newline separated)
+            </label>
+            <input
+              id="meeting-brief-internal-domains"
+              value={meetingBriefInput}
+              onChange={(event) => {
+                setMeetingBriefInput(event.target.value);
+                setMeetingBriefSaved(false);
+              }}
+              placeholder="example.com, internal.example.org"
+              aria-describedby="meeting-brief-domains-hint"
+            />
+            <p id="meeting-brief-domains-hint" className="muted field-hint">
+              Enter one or more domains, separated by commas or new lines. Saved domains are
+              normalized to lower case; duplicates are removed. Consumer domains (gmail.com,
+              outlook.com, icloud.com, etc.) remain external and are never treated as employer
+              evidence.
+            </p>
+          </div>
+          {meetingBriefError ? (
+            <p className="field-error" role="alert">
+              {meetingBriefError}
+            </p>
+          ) : null}
+          {meetingBriefSaved ? (
+            <p className="ok" role="status">
+              Saved — domains normalized to lower case.
+            </p>
+          ) : null}
+          <div className="field-row">
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void saveMeetingBrief()}
+              aria-disabled={meetingBriefSaving}
+              disabled={!meetingBriefLoaded || meetingBriefSaving}
+            >
+              {meetingBriefSaving ? "Saving…" : "Save internal domains"}
+            </button>
+            <span className="muted" role="status">
+              {meetingBriefLoaded ? "" : "Loading…"}
+            </span>
           </div>
         </div>
       </section>

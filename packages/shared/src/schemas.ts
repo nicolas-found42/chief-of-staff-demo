@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { YoutubeChannelSchema } from "./youtube.js";
 
+// Meeting Brief Generator — Internal Domain normalization helper (issue://83)
+export function normalizeInternalDomains(domains: string[]): string[] {
+  const normalized = domains.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
+  // dedup preserve first occurrence order
+  return [...new Set(normalized)];
+}
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -21,6 +28,11 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
 
 /** Ollama's default listen address. `host.docker.internal` inside a container. */
 export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+
+export function normalizeInternalDomains(domains: string[]): string[] {
+  const normalized = domains.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
+  return [...new Set(normalized)];
+}
 
 export const ConfigSchema = z.strictObject({
   provider: ProviderIdSchema,
@@ -147,9 +159,46 @@ export const ConfigSchema = z.strictObject({
         }),
       "meeting-brief-generator": z
         .strictObject({
-          internalDomains: z.array(z.string()).default([]),
+          internalDomains: z
+            .array(z.string())
+            .default([])
+            .transform((arr) => normalizeInternalDomains(arr)),
+          guestProfile: z
+            .strictObject({
+              endpoint: z.string().default(""),
+              apiKey: z.string().default(""),
+              lastVerifiedAt: z.string().nullable().default(null),
+              lastCheckAt: z.string().nullable().default(null),
+              lastCheckState: z.string().nullable().default(null),
+              lastCheckDetail: z.string().nullable().default(null),
+            })
+            .default({
+              endpoint: "",
+              apiKey: "",
+              lastVerifiedAt: null,
+              lastCheckAt: null,
+              lastCheckState: null,
+              lastCheckDetail: null,
+            }),
+          hubspot: z
+            .strictObject({
+              token: z.string().default(""),
+              lastVerifiedAt: z.string().nullable().default(null),
+            })
+            .default({ token: "", lastVerifiedAt: null }),
         })
-        .default({ internalDomains: [] }),
+        .default({
+          internalDomains: [],
+          guestProfile: {
+            endpoint: "",
+            apiKey: "",
+            lastVerifiedAt: null,
+            lastCheckAt: null,
+            lastCheckState: null,
+            lastCheckDetail: null,
+          },
+          hubspot: { token: "", lastVerifiedAt: null },
+        }),
     })
     .default({
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
@@ -173,7 +222,18 @@ export const ConfigSchema = z.strictObject({
           },
         },
       },
-      "meeting-brief-generator": { internalDomains: [] },
+      "meeting-brief-generator": {
+        internalDomains: [],
+        guestProfile: {
+          endpoint: "",
+          apiKey: "",
+          lastVerifiedAt: null,
+          lastCheckAt: null,
+          lastCheckState: null,
+          lastCheckDetail: null,
+        },
+        hubspot: { token: "", lastVerifiedAt: null },
+      },
     }),
 });
 export type AppConfig = z.infer<typeof ConfigSchema>;

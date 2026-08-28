@@ -1,17 +1,22 @@
 import type {
+  GuestProfileArtifact,
   MeetingBrief,
   MeetingBriefDeliveryState,
   MeetingBriefFixtureEvent,
   MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
-import { MEETING_BRIEF_MODULE_ID, MEETING_BRIEF_MODULE_VERSION } from "@chief-of-staff-demo/shared";
+import {
+  GUEST_PROFILE_PROVIDER_ID,
+  MEETING_BRIEF_MODULE_ID,
+  MEETING_BRIEF_MODULE_VERSION,
+} from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
 import type { RunContext, ShellModule } from "../../engine/module.js";
-
+import type { GuestProfileProvider } from "./profile/provider.js";
+import { isEmployerMatch } from "./profile/provider.js";
 export type MeetingBriefInput = MeetingBriefFixtureEvent & {
   occurrenceKey: string;
 };
-
 export interface MeetingBriefModuleDeps {
   now?: () => Date;
   enrich?: (
@@ -30,6 +35,9 @@ export interface MeetingBriefModuleDeps {
     recipient: string;
   }>;
   invalidateIndex?: () => void;
+  profileProvider?: GuestProfileProvider | null;
+  guestProfileEndpoint?: string;
+  guestProfileApiKey?: string;
 }
 
 /**
@@ -142,28 +150,86 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         );
       });
 
-      // enrich — bounded evidence via injected fakes
+      // enrich — bounded evidence via injected fakes + Guest Profile provider per guest
       let enrichResult: { sections: unknown[]; evidence: string[] } = {
         sections: [],
         evidence: [],
       };
+      const profileArtifacts: GuestProfileArtifact[] = [];
       await ctx.stage("enrich", async () => {
         if (deps.enrich) {
           enrichResult = await deps.enrich(input, ctx);
         } else {
           // Default fixture enrichment — deterministic evidence per guest/company.
           const guests = input.attendees.filter((a) => !a.resource).map((a) => a.email);
-          const sections = guests.map((email) => ({
+          const sections: unknown[] = guests.map((email) => ({
             source: "fixture",
             guest: email,
             status: "completed",
             evidence: [`fixture evidence for ${email}`],
             references: [`https://example.com/${email}`],
           }));
-          enrichResult = { sections, evidence: sections.flatMap((s) => s.evidence) };
+          // Bounded Guest Profile lookup per External Guest (fixed contract, no LinkedIn scraping)
+          if (deps.profileProvider) {
+            for (const email of guests) {
+              const artifact = await deps.profileProvider.lookup({
+                guestEmail: email,
+                endpoint: deps.guestProfileEndpoint ?? "",
+                apiKey: deps.guestProfileApiKey ?? "",
+                occurrenceKey,
+                eventVersion: input.version,
+              });
+              const sanitized = email.replace(/[^a-zA-Z0-9]/g, "_");
+              ctx.writeFile(
+                `profile-${sanitized}-${input.version}.json`,
+                JSON.stringify(artifact, null, 2) + "\n",
+              );
+              const status =
+                artifact.outcome === "completed"
+                  ? "completed"
+                  : artifact.outcome === "empty"
+                    ? "empty"
+                    : "failed";
+              sections.push({
+                source: GUEST_PROFILE_PROVIDER_ID,
+                guest: email,
+                status,
+                evidence:
+                  artifact.outcome === "completed"
+                    ? [
+                        ...(artifact.role ? [artifact.role] : []),
+                        ...(artifact.background ? [artifact.background] : []),
+                        ...(artifact.currentEmployer ? [artifact.currentEmployer.name] : []),
+                      ]
+                    : [],
+                references: artifact.references,
+                diagnostics: artifact.diagnostics,
+                identityConfidence: artifact.identityConfidence,
+                role: artifact.role,
+                background: artifact.background,
+                currentEmployer: artifact.currentEmployer,
+                employerMatch: isEmployerMatch(artifact),
+              });
+              ctx.event("guest_profile_enriched", {
+                guest: email,
+                outcome: artifact.outcome,
+                employerMatch: isEmployerMatch(artifact),
+              });
+            }
+          }
+          enrichResult = {
+            sections,
+            evidence: (sections as { evidence: string[] }[]).flatMap((s) => s.evidence),
+          };
         }
-        ctx.writeFile("enrich.json", JSON.stringify(enrichResult, null, 2) + "\n");
-        ctx.event("enrich_completed", { sections: enrichResult.sections.length });
+        ctx.writeFile(
+          "enrich.json",
+          JSON.stringify({ ...enrichResult, profileArtifacts }, null, 2) + "\n",
+        );
+        ctx.event("enrich_completed", {
+          sections: enrichResult.sections.length,
+          profileArtifacts: profileArtifacts.length,
+        });
       });
 
       // compose — structured Meeting Brief via injected model
