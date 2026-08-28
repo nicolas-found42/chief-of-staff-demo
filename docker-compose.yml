@@ -19,8 +19,8 @@ services:
       relay:
         condition: service_healthy
     volumes:
-    # trying the app out expects of it. Starting it is `docker compose up -d`.
-    restart: "no"
+      - ./workspace:/app/workspace
+    # Deliberately not `unless-stopped`: that restarts the app every time Docker
     # `docker compose up --build --watch` is the code-editing loop: the whole
     # loop stays inside Docker, so there is no native way to run the app and no
     # second port to register with Google. `rebuild` and not `sync`, because the

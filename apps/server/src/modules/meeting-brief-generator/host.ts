@@ -715,9 +715,13 @@ export class MeetingBriefHost implements HostedModule {
       return this.index();
     });
 
-    // GET /api/meeting-brief/config — normalized Internal Domains
+    // GET /api/meeting-brief/config — normalized Internal Domains + HubSpot status (unified, replaces hubspot/routes config)
     app.get("/api/meeting-brief/config", async () => {
-      return { internalDomains: this.getInternalDomains() };
+      const internalDomains = this.getInternalDomains();
+      const hubspot = this.deps.configStore
+        ? new HubSpotConnection(this.deps.configStore).status()
+        : null;
+      return { internalDomains, hubspot };
     });
 
     // PUT /api/meeting-brief/config — configure normalized Internal Domains
@@ -736,7 +740,10 @@ export class MeetingBriefHost implements HostedModule {
       } catch {
         // ignore reconciliation failure — config still persisted
       }
-      return { internalDomains: normalized };
+      const hubspot = this.deps.configStore
+        ? new HubSpotConnection(this.deps.configStore).status()
+        : null;
+      return { internalDomains: normalized, hubspot };
     });
 
     // POST /api/meeting-brief/reconcile — manual trigger (for Settings "Check calendar" or tests)
