@@ -31,6 +31,13 @@ export interface CalendarEvent {
   status: "confirmed" | "cancelled" | "tentative";
   isAllDay?: boolean;
   attachments?: string[];
+  // Unused Calendar metadata — ignored for material changes (ADR-0033)
+  colorId?: string | null;
+  etag?: string | null;
+  visibility?: string | null;
+  transparency?: string | null;
+  created?: string | null;
+  updated?: string | null;
 }
 
 export interface CalendarListResult {

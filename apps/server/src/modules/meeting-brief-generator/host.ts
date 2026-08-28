@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
 import type { FastifyInstance } from "fastify";
 import type { RunMeta } from "@chief-of-staff-demo/shared";
 import {
@@ -29,6 +30,7 @@ import type { CalendarHistoryProvider } from "./google/calendarHistory.js";
 import type { DriveProvider } from "./google/drive.js";
 import {
   MeetingBriefCalendarStore,
+  type CalendarEvent,
   type CalendarProvider,
   type MeetingBriefCalendarState,
   FakeCalendarProvider,
@@ -39,6 +41,7 @@ import {
   MEETING_BRIEF_CALENDAR_ID,
   reconcileCalendar,
 } from "./intake.js";
+import { materialFingerprint } from "./revision.js";
 import type { ConfigStore } from "../../config.js";
 
 export interface MeetingBriefHostDeps {
@@ -176,6 +179,8 @@ export class MeetingBriefHost implements HostedModule {
       ...(deps.driveProvider ? { driveProvider: deps.driveProvider } : {}),
       ...(deps.internalDomains ? { internalDomains: deps.internalDomains } : {}),
       getInternalDomains: () => this.getInternalDomains(),
+      getOwnerEmail: () => this.getOwnerEmail(),
+      calendarProvider: this.calendarProvider,
       invalidateIndex: () => {},
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
@@ -367,6 +372,8 @@ export class MeetingBriefHost implements HostedModule {
    * Check durable Intake schedules whose dueAt <= now, create exactly one Run per
    * due occurrence using the real Runner/Runs, and remove the schedule.
    * Idempotent: duplicate wake-ups for the same version are no-ops (ADR-0033).
+   * Material change detection (ADR-0033): ignored metadata never creates a revision.
+   * Revision linking: material change after completed Run creates linked Run (supersedes).
    */
   async processDueSchedules(now = this.now()): Promise<string[]> {
     const due = this.clock.due(now);
@@ -379,23 +386,109 @@ export class MeetingBriefHost implements HostedModule {
         this.clock.remove(record.module, key);
         continue;
       }
-      const existing = this.deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs.some((r) => {
-        const handle = this.deps.runs.open(r.id);
-        const meta = handle?.read();
-        if (!meta || meta.externalId !== key) return false;
-        const detail = this.deps.runs.detail(r.id);
-        const result = detail?.result as MeetingBriefRunResult | null;
-        if (result && result.eventVersion === input.version) return true;
-        if (!result) return true;
-        return false;
-      });
-      if (existing) {
+      const related = this.deps.runs
+        .list({ module: MEETING_BRIEF_MODULE_ID })
+        .runs.map((r) => {
+          const handle = this.deps.runs.open(r.id);
+          const meta = handle?.read();
+          const detail = this.deps.runs.detail(r.id);
+          const result = detail?.result as MeetingBriefRunResult | null;
+          return { id: r.id, meta, detail, result };
+        })
+        .filter((r) => r.meta?.externalId === key);
+
+      const inFlight = related.some(
+        (r) => r.meta && ["pending", "running", "blocked"].includes(r.meta.status),
+      );
+      if (inFlight) {
+        const sameVersionInFlight = related.some((r) => {
+          if (!r.meta || !["pending", "running", "blocked"].includes(r.meta.status)) return false;
+          const snapRaw = this.deps.runs.open(r.id)?.readArtifact("snapshot.json");
+          if (snapRaw) {
+            try {
+              const snap = JSON.parse(snapRaw) as { version?: string };
+              return snap.version === input.version;
+            } catch {
+              return false;
+            }
+          }
+          const res = r.result;
+          return res?.eventVersion === input.version;
+        });
+        if (sameVersionInFlight) {
+          this.clock.remove(record.module, key);
+        }
+        continue;
+      }
+
+      const duplicateVersion = related.some((r) => r.result?.eventVersion === input.version);
+      if (duplicateVersion) {
         this.clock.remove(record.module, key);
         continue;
       }
+
+      const doneRuns = related.filter((r) => r.meta?.status === "done" && r.result);
+      let latestDone: (typeof doneRuns)[number] | null = null;
+      for (const r of doneRuns) {
+        if (
+          !latestDone ||
+          (r.meta && latestDone.meta && Date.parse(r.meta.createdAt) < Date.parse(r.meta.createdAt))
+        ) {
+          latestDone = r;
+        }
+      }
+      if (latestDone && latestDone.result) {
+        const prevSnapRaw = this.deps.runs.open(latestDone.id)?.readArtifact("snapshot.json");
+        let prevFingerprint: string | null = null;
+        if (prevSnapRaw) {
+          try {
+            const prevSnap = JSON.parse(prevSnapRaw) as Record<string, unknown> & {
+              summary: string;
+              description: string;
+              startAt: string;
+              endAt: string;
+              location: string | null;
+              conferenceLink: string | null;
+              attachments: string[];
+              organizer: { email: string } | undefined;
+              attendees: unknown[];
+            };
+            const synthetic = {
+              summary: String(prevSnap.summary ?? ""),
+              description: prevSnap.description as string | undefined,
+              startAt: String(prevSnap.startAt),
+              endAt: String(prevSnap.endAt),
+              location: prevSnap.location,
+              conferenceLink: prevSnap.conferenceLink,
+              organizer: prevSnap.organizer as { email: string } | undefined,
+              attendees:
+                (prevSnap.attendees as {
+                  email: string;
+                  responseStatus: string;
+                  organizer?: boolean;
+                  resource?: boolean;
+                }[]) ?? [],
+              attachments: (prevSnap.attachments) ?? [],
+            } as unknown as CalendarEvent;
+            prevFingerprint = materialFingerprint(synthetic);
+          } catch {
+            prevFingerprint = null;
+          }
+        }
+        if (prevFingerprint) {
+          const curFingerprint = materialFingerprint(input);
+          if (prevFingerprint === curFingerprint) {
+            this.clock.remove(record.module, key);
+            continue;
+          }
+        }
+      }
+
+      const supersedesRunId = latestDone?.id ?? null;
       const runInput: MeetingBriefInput = {
         ...input,
         occurrenceKey: key,
+        ...(supersedesRunId ? { supersedesRunId } : {}),
       };
       const runId = await this.runner.startRun(
         {

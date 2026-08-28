@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
 import type {
   GuestProfileArtifact,
   MeetingBrief,
@@ -21,8 +22,12 @@ import { enrichCalendarHistory } from "./google/calendarHistory.js";
 import type { DriveProvider } from "./google/drive.js";
 import { enrichDriveDocs } from "./google/drive.js";
 import { extractDomain, isConsumerDomain, isExternalGuest } from "./eligibility.js";
+import { snapshotEligibility, buildFrozenSnapshot } from "./snapshot.js";
+import type { CalendarProvider } from "./calendar.js";
+import { isEligibleMeeting } from "./eligibility.js";
 export type MeetingBriefInput = MeetingBriefFixtureEvent & {
   occurrenceKey: string;
+  supersedesRunId?: string | null;
 };
 export interface MeetingBriefModuleDeps {
   now?: () => Date;
@@ -50,6 +55,9 @@ export interface MeetingBriefModuleDeps {
   driveProvider?: DriveProvider | null;
   internalDomains?: string[];
   getInternalDomains?: () => string[];
+  getOwnerEmail?: () => string | null;
+  ownerEmail?: string | null;
+  calendarProvider?: CalendarProvider;
 }
 /**
  * Meeting Brief Generator v1 — 4 fixed Stages (issue://80, ADR-0032/33/34).
@@ -131,35 +139,126 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
     async run(ctx: RunContext, input: MeetingBriefInput): Promise<RunOutcome> {
       const occurrenceKey = input.occurrenceKey;
       const snapshotAt = now().toISOString();
+      const resolveDomains = (): string[] => {
+        if (deps.getInternalDomains) return deps.getInternalDomains();
+        return deps.internalDomains ?? [];
+      };
+      const resolveOwner = (): string | null => {
+        if (deps.getOwnerEmail) return deps.getOwnerEmail();
+        return deps.ownerEmail ?? null;
+      };
 
-      // snapshot — freeze event identity + version
+      // snapshot — freezes current event, occurrence, version; ends skipped when not Eligible.
+      // Retained frozen version via snapshot.json (ADR-0033).
+      let snapshotSkipped = false;
+      let snapshotSkipReason: string | null = null;
       await ctx.stage("snapshot", async () => {
+        // Try to freeze current event from provider when available (header-only wake-ups never mistaken for data).
+        // Fallback to input which already holds latest reconciled version.
+        let current: MeetingBriefFixtureEvent = input;
+        if (deps.calendarProvider) {
+          try {
+            const result = await deps.calendarProvider.listEvents({
+              calendarId: input.calendarId,
+              syncToken: null,
+            });
+            const found = result.events.find(
+              (e) => `${e.eventId}::${e.occurrenceId}` === occurrenceKey,
+            );
+            if (found) {
+              current = {
+                calendarId: found.calendarId,
+                eventId: found.eventId,
+                occurrenceId: found.occurrenceId,
+                version: found.version,
+                summary: found.summary,
+                description: found.description,
+                startAt: found.startAt,
+                endAt: found.endAt,
+                location: found.location ?? null,
+                conferenceLink: found.conferenceLink ?? null,
+                organizer: found.organizer,
+                attendees: found.attendees,
+                attachments: found.attachments,
+                colorId: found.colorId,
+                etag: found.etag,
+                visibility: found.visibility,
+                transparency: found.transparency,
+                created: found.created,
+                updated: found.updated,
+              } as MeetingBriefFixtureEvent;
+            }
+            // else: not found — fallback to input (fixture direct-schedule); eligibility below handles real deletion
+          } catch {
+            // Provider unavailable — fallback to input
+          }
+        }
+        const domains = resolveDomains();
+        const owner = resolveOwner();
+        const { eligible, reason } = snapshotEligibility(current, domains, owner);
+        if (!eligible) {
+          ctx.event("snapshot_skipped", {
+            eventId: current.eventId,
+            occurrenceId: current.occurrenceId,
+            occurrenceKey,
+            version: current.version,
+            reason,
+          });
+          const frozen = buildFrozenSnapshot(current, occurrenceKey, snapshotAt);
+          ctx.writeFile(
+            "snapshot.json",
+            JSON.stringify({ ...frozen, eligible: false, skipReason: reason }, null, 2) + "\n",
+          );
+          snapshotSkipped = true;
+          snapshotSkipReason = reason;
+          return;
+        }
+        // Eligible: freeze snapshot
         ctx.event("snapshot_captured", {
-          eventId: input.eventId,
-          occurrenceId: input.occurrenceId,
+          eventId: current.eventId,
+          occurrenceId: current.occurrenceId,
           occurrenceKey,
-          version: input.version,
-          startAt: input.startAt,
+          version: current.version,
+          startAt: current.startAt,
         });
+        const frozen = buildFrozenSnapshot(current, occurrenceKey, snapshotAt);
         ctx.writeFile(
           "snapshot.json",
-          JSON.stringify(
-            {
-              eventId: input.eventId,
-              occurrenceId: input.occurrenceId,
-              occurrenceKey,
-              version: input.version,
-              summary: input.summary,
-              startAt: input.startAt,
-              endAt: input.endAt,
-              attendees: input.attendees,
-              capturedAt: snapshotAt,
-            },
-            null,
-            2,
-          ) + "\n",
+          JSON.stringify({ ...frozen, eligible: true, capturedAt: snapshotAt }, null, 2) + "\n",
         );
+        // Preserve frozen version retained — ensure later stages use current's version if provider fetch diverged
+        // Update input version fields to frozen version for enrich/compose/deliver consistency
+        if (current.version !== input.version) {
+          input.version = current.version;
+          input.summary = current.summary;
+          if (current.description !== undefined) {
+            (input as unknown as Record<string, unknown>).description = current.description;
+          } else {
+            delete (input as unknown as Record<string, unknown>).description;
+          }
+          input.startAt = current.startAt;
+          input.endAt = current.endAt;
+          input.location = current.location ?? null;
+          input.conferenceLink = current.conferenceLink ?? null;
+          if (current.organizer !== undefined) {
+            (input as unknown as Record<string, unknown>).organizer = current.organizer;
+          } else {
+            delete (input as unknown as Record<string, unknown>).organizer;
+          }
+          input.attendees = current.attendees;
+          if (current.attachments !== undefined) {
+            (input as unknown as Record<string, unknown>).attachments = current.attachments;
+          } else {
+            delete (input as unknown as Record<string, unknown>).attachments;
+          }
+        }
       });
+
+      if (snapshotSkipped) {
+        // No enrichment/email after skipped (issue://84).
+        // Snapshot stage succeeded but Run ends skipped; remaining stages never run.
+        return { status: "skipped", reason: snapshotSkipReason };
+      }
 
       // enrich — bounded evidence via injected fakes + Guest Profile provider per guest
       let enrichResult: { sections: unknown[]; evidence: string[] } = {
@@ -392,6 +491,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           };
         }
         // Persist intermediate result (without delivery) — compose's durable output.
+        const supersedes = (input).supersedesRunId ?? null;
         const partial: MeetingBriefRunResult = {
           version: 1,
           eventId: input.eventId,
@@ -409,12 +509,16 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             recipient: null,
             attempts: 0,
           },
-          supersedes: null,
+          supersedes,
         };
         ctx.writeFile("result.json", JSON.stringify(partial, null, 2) + "\n");
-        ctx.event("brief_composed", { eventVersion: input.version, guests: brief!.guests.length });
+        ctx.event("brief_composed", {
+          eventVersion: input.version,
+          guests: brief!.guests.length,
+          supersedes,
+        });
       });
-      // deliver — owner-only send via injected delivery
+      // deliver — owner-only send via injected delivery; rechecks Calendar before outward delivery
       let delivery: MeetingBriefDeliveryState = {
         status: "pending",
         sentAt: null,
@@ -422,7 +526,65 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         recipient: null,
         attempts: 0,
       };
+      let deliverSkipped = false;
+      let deliverSkipReason: string | null = null;
       await ctx.stage("deliver", async () => {
+        // Cancellation recheck before outward write (ADR-0033): active Run ends skipped when cancelled.
+        if (deps.calendarProvider) {
+          try {
+            const result = await deps.calendarProvider.listEvents({
+              calendarId: input.calendarId,
+              syncToken: null,
+            });
+            const current = result.events.find(
+              (e) => `${e.eventId}::${e.occurrenceId}` === occurrenceKey,
+            );
+            const domains = resolveDomains();
+            const owner = resolveOwner();
+            const stillEligible = current ? isEligibleMeeting(current, domains, owner) : false;
+            const isNotFound = !current;
+            const hasEvents = result.events.length > 0;
+            const isCancelled =
+              current?.status === "cancelled" ||
+              (current !== undefined && !stillEligible) ||
+              (isNotFound && hasEvents);
+            if (isCancelled) {
+              const reason =
+                isNotFound && hasEvents
+                  ? "occurrence_not_found"
+                  : current?.status === "cancelled"
+                    ? "cancelled"
+                    : "not_eligible_at_delivery";
+              // Persist delivery skipped state for audit while preserving composed brief
+              const skippedDelivery: MeetingBriefDeliveryState = {
+                status: "pending",
+                sentAt: null,
+                messageId: null,
+                recipient: null,
+                attempts: 0,
+              };
+              ctx.writeFile(
+                "delivery.json",
+                JSON.stringify({ ...skippedDelivery, skippedReason: reason }, null, 2) + "\n",
+              );
+              const prevRaw = ctx.readFile("result.json");
+              if (prevRaw) {
+                try {
+                  const prev = JSON.parse(prevRaw) as MeetingBriefRunResult;
+                  (prev as unknown as Record<string, unknown>).deliverySkippedReason = reason;
+                  ctx.writeFile("result.json", JSON.stringify(prev, null, 2) + "\n");
+                } catch {
+                  // ignore
+                }
+              }
+              deliverSkipped = true;
+              deliverSkipReason = reason;
+              return;
+            }
+          } catch {
+            // Provider failure — proceed to deliver (fail open) rather than false cancellation
+          }
+        }
         let recipient: string;
         let messageId: string | null;
         let sentAt: string | null;
@@ -453,6 +615,10 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         }
         if (deps.invalidateIndex) deps.invalidateIndex();
       });
+
+      if (deliverSkipped) {
+        return { status: "skipped", reason: deliverSkipReason ?? "cancelled_before_delivery" };
+      }
 
       const displayBrief = brief!;
       return {
