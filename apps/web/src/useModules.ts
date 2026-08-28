@@ -72,6 +72,14 @@ const MODULES: ModuleDescriptor[] = [
     status: "live",
     resultView: ContentScoutResultView,
   },
+  {
+    id: "meeting-brief-generator",
+    path: "/meeting-brief",
+    label: "Meeting Brief Generator",
+    description:
+      "Prepare concise briefings for upcoming meetings with external guests — history, company, intelligence, and profile.",
+    status: "planned",
+  },
 ];
 
 /**

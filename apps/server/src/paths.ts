@@ -7,6 +7,7 @@ export interface WorkspaceLayout {
   configFile: string;
   stateFile: string;
   mockResultFile: string;
+  intakeScheduleFile: string;
   runDir(runId: string): string;
 }
 
@@ -18,6 +19,7 @@ export function workspaceLayout(root: string): WorkspaceLayout {
     configFile: join(root, "config.json"),
     stateFile: join(root, "state.json"),
     mockResultFile: join(root, "mock-result.json"),
+    intakeScheduleFile: join(root, "intake-schedules.json"),
     runDir: (runId: string) => join(runsDir, runId),
   };
 }
