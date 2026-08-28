@@ -371,8 +371,8 @@ if [[ "$confirm_folder" == "y" ]]; then
   api GET /api/config
   say "Folder now: $(api_jq '.config.drive.folderName // empty')"
 fi
-ask POLL_MINUTES "Poll interval in minutes:"
-CUR_POLL="$(api GET /api/config && api_jq '.config.drive.pollIntervalMinutes // empty' || true)"
+CUR_POLL="$(api_jq '.config.drive.pollIntervalMinutes // empty')"
+ask POLL_MINUTES "Poll interval in minutes${CUR_POLL:+ [Enter keeps $CUR_POLL]}:"
 [[ -z "$POLL_MINUTES" ]] && POLL_MINUTES="${CUR_POLL:-2}"
 [[ "$POLL_MINUTES" =~ ^[0-9]+$ ]] || POLL_MINUTES=2
 api PUT /api/config "$(jq -n --argjson n "$POLL_MINUTES" '{drive: {enabled: true, pollIntervalMinutes: $n}}')"
@@ -549,26 +549,32 @@ else
   api POST /api/content-scout/notion/connect "$(jq -n --arg t "$NOTION_TOKEN" '{token: $t}')"
   [[ "$_API_CODE" == "200" ]] && say "Notion connected." || warn "connect failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
 fi
-if confirm "Create the Content Calendar database in Notion now? (writes a real page to your workspace)"; then
-  say "It needs a parent PAGE the integration can access (a database cannot parent it)."
-  ask NOTION_PARENT_URL "Paste the parent page's Notion URL:"
-  if [[ "$NOTION_PARENT_URL" =~ ([0-9a-fA-F]{32}) ]]; then
-    PARENT_ID="${BASH_REMATCH[1]}"
-    api POST /api/content-scout/notion/calendar "$(jq -n --arg p "$PARENT_ID" '{mode: "create", parentPageId: $p}')"
-    if [[ "$_API_CODE" == "200" ]]; then
-      CAL_URL="$(api_jq '.notion.url // empty')"
-      say "Content Calendar created: $CAL_URL"
-      [[ -n "$CAL_URL" ]] && open_url "$CAL_URL"
+EXISTING_CAL="$(jq -r '.modules["content-scout"].notion.databaseId // empty' workspace/config.json 2>/dev/null || echo)"
+if [[ -n "$EXISTING_CAL" ]] && ! confirm "A Content Calendar is already mapped ($EXISTING_CAL). Create a new one anyway?"; then
+  say "Content Calendar mapping kept."
+else
+  if confirm "Create the Content Calendar database in Notion now? (writes a real page to your workspace)"; then
+    say "It needs a parent PAGE the integration can access (a database cannot parent it)."
+    ask NOTION_PARENT_URL "Paste the parent page's Notion URL:"
+    NOTION_PARENT_HEX="$(printf '%s' "$NOTION_PARENT_URL" | sed -E 's/([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})/\1\2\3\4\5/g')"
+    if [[ "$NOTION_PARENT_HEX" =~ ([0-9a-fA-F]{32}) ]]; then
+      PARENT_ID="${BASH_REMATCH[1]}"
+      api POST /api/content-scout/notion/calendar "$(jq -n --arg p "$PARENT_ID" '{mode: "create", parentPageId: $p}')"
+      if [[ "$_API_CODE" == "200" ]]; then
+        CAL_URL="$(api_jq '.notion.url // empty')"
+        say "Content Calendar created: $CAL_URL"
+        [[ -n "$CAL_URL" ]] && open_url "$CAL_URL"
+      else
+        warn "creation failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
+        SKIPPED+=("Content Calendar database")
+      fi
     else
-      warn "creation failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
+      warn "that URL does not contain a Notion page id."
       SKIPPED+=("Content Calendar database")
     fi
   else
-    warn "that URL does not contain a Notion page id."
     SKIPPED+=("Content Calendar database")
   fi
-else
-  SKIPPED+=("Content Calendar database")
 fi
 
 # ── 12 · Content Scout sources ────────────────────────────────────────────
