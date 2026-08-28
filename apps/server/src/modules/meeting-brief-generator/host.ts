@@ -490,13 +490,11 @@ export class MeetingBriefHost implements HostedModule {
           return { id: r.id, meta, detail, result };
         })
         .filter((r) => r.meta?.externalId === key);
-
-      const inFlight = related.some(
+      const activeRuns = related.filter(
         (r) => r.meta && ["pending", "running", "blocked"].includes(r.meta.status),
       );
-      if (inFlight) {
-        const sameVersionInFlight = related.some((r) => {
-          if (!r.meta || !["pending", "running", "blocked"].includes(r.meta.status)) return false;
+      if (activeRuns.length > 0) {
+        const sameVersionActive = activeRuns.some((r) => {
           const snapRaw = this.deps.runs.open(r.id)?.readArtifact("snapshot.json");
           if (snapRaw) {
             try {
@@ -506,13 +504,20 @@ export class MeetingBriefHost implements HostedModule {
               return false;
             }
           }
-          const res = r.result;
-          return res?.eventVersion === input.version;
+          return r.result?.eventVersion === input.version;
         });
-        if (sameVersionInFlight) {
+        if (sameVersionActive) {
           this.clock.remove(record.module, key);
+          continue;
         }
-        continue;
+        const hasNonQuietActive = activeRuns.some(
+          (r) => !(r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period"),
+        );
+        if (hasNonQuietActive) {
+          // Defer revision while prior Run is still enriching/composing/delivering (non-quiet)
+          continue;
+        }
+        // All active are quiet_period waits — allow new revision to supersede and reset quiet period
       }
 
       const duplicateVersion = related.some((r) => r.result?.eventVersion === input.version);
@@ -526,7 +531,9 @@ export class MeetingBriefHost implements HostedModule {
       for (const r of doneRuns) {
         if (
           !latestDone ||
-          (r.meta && latestDone.meta && Date.parse(r.meta.createdAt) < Date.parse(r.meta.createdAt))
+          (r.meta &&
+            latestDone.meta &&
+            Date.parse(r.meta.createdAt) > Date.parse(latestDone.meta.createdAt))
         ) {
           latestDone = r;
         }
@@ -578,7 +585,21 @@ export class MeetingBriefHost implements HostedModule {
         }
       }
 
-      const supersedesRunId = latestDone?.id ?? null;
+      // Quiet-period supersession: if a prior revision is blocked on quiet wait, supersede it directly
+      const quietBlocked = related.filter(
+        (r) => r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period",
+      );
+      let supersedesRunId: string | null;
+      if (quietBlocked.length > 0) {
+        let latestQuiet = quietBlocked[0]!;
+        for (const r of quietBlocked) {
+          if (Date.parse(r.meta!.createdAt) > Date.parse(latestQuiet.meta!.createdAt))
+            latestQuiet = r;
+        }
+        supersedesRunId = latestQuiet.id;
+      } else {
+        supersedesRunId = latestDone?.id ?? null;
+      }
       const runInput: MeetingBriefInput = {
         ...input,
         occurrenceKey: key,

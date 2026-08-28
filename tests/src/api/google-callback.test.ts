@@ -128,7 +128,7 @@ describe("GET /api/google/callback", () => {
     });
 
     expect(response.headers.location).toBe(
-      "/settings?google=scope_missing&missing=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.compose%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive",
+      "/settings?google=scope_missing&missing=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.compose%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.send%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly%2Chttps%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive",
     );
   });
 
