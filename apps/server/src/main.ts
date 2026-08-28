@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
+import { registerRelayRoutes } from "./relay/routes.js";
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
@@ -177,6 +178,8 @@ await registerApi(app, {
     }
   },
 });
+
+registerRelayRoutes(app, { workspaceDir });
 
 if (process.env.ENABLE_TEST_SEED === "1") {
   await registerTestSeed(app, {

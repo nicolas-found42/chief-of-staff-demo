@@ -384,6 +384,31 @@ export const api = {
     request<{ receipts: SourceCanaryReceipt[]; health: SourceCanaryHealth[] }>(
       "/api/content-scout/canary",
     ),
+  // Relay status — issue://80 Settings (relay/channel status + last wake-up, no secrets) + ADR-0031
+  relayStatus: () =>
+    request<{
+      installationId: string | null;
+      relayBaseUrl: string | null;
+      relayHealth: "ok" | "unreachable" | "not_configured";
+      channels: Array<{ channelId: string; expiration: string | null; resourceId: string | null }>;
+      lastWakeUpAt: string | null;
+      hasSecret: boolean;
+    }>("/api/relay/status"),
+  relayInstall: (relayBaseUrl?: string) =>
+    request<{
+      installationId: string | null;
+      relayBaseUrl: string | null;
+      channels: Array<{ channelId: string; expiration: string | null }>;
+      lastWakeUpAt: string | null;
+    }>("/api/relay/install", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(relayBaseUrl ? { relayBaseUrl } : {}),
+    }),
+  relayPoll: () =>
+    request<{ messages: unknown[]; lastWakeUpAt: string | null }>("/api/relay/poll", {
+      method: "POST",
+    }),
 };
 
 export function errorMessage(error: unknown): string {
