@@ -217,13 +217,12 @@ _Status_: live (spec #31 binding, 2026-08-24)
 _Avoid_: Idea Generator, Ideas Module
 
 **Meeting Brief Generator**:
-A planned Module that prepares a concise briefing for an upcoming meeting with external guests.
+A live Module that prepares a concise briefing for an upcoming meeting with external guests.
 Its live product includes relationship history, company records, public intelligence, relevant
 workspace material, and guest profiles rather than treating any one enrichment class as a later
 enhancement.
-_Status_: planned
+_Status_: live
 _Avoid_: Meeting Briefing Generator (the Relay original), Briefing Module
-
 **Meeting Brief**:
 The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
 evidence-backed guest and company context with concise conversation starters, source references and

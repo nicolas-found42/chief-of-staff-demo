@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type {
+  GuestProfileCheckResult,
+  GuestProfileStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
   ProviderId,
@@ -83,6 +85,13 @@ export function SettingsPage() {
   const [hubspotError, setHubspotError] = useState<string | null>(null);
   const [hubspotCheck, setHubspotCheck] = useState<HubSpotSetupCheck | null>(null);
   const [checkingHubspot, setCheckingHubspot] = useState(false);
+  const [guestProfileStatus, setGuestProfileStatus] = useState<GuestProfileStatus | null>(null);
+  const [guestProfileEndpointInput, setGuestProfileEndpointInput] = useState("");
+  const [guestProfileKeyInput, setGuestProfileKeyInput] = useState("");
+  const [guestProfileBusy, setGuestProfileBusy] = useState(false);
+  const [guestProfileError, setGuestProfileError] = useState<string | null>(null);
+  const [guestProfileCheck, setGuestProfileCheck] = useState<GuestProfileCheckResult | null>(null);
+  const [checkingGuestProfile, setCheckingGuestProfile] = useState(false);
   const [meetingBriefInternalDomains, setMeetingBriefInternalDomains] = useState("");
   const [meetingBriefSaving, setMeetingBriefSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -210,9 +219,24 @@ export function SettingsPage() {
       } catch {
         // meeting brief config not yet
       }
+      try {
+        const gp = await api.guestProfileStatus();
+        setGuestProfileStatus(gp);
+      } catch {
+        // guest profile not configured yet
+      }
     };
     void loadHubspot();
   }, []);
+
+  const refreshGuestProfile = async () => {
+    try {
+      const status = await api.guestProfileStatus();
+      setGuestProfileStatus(status);
+    } catch (err) {
+      setGuestProfileError(errorMessage(err));
+    }
+  };
 
   const refreshHubspot = async () => {
     try {
@@ -268,6 +292,54 @@ export function SettingsPage() {
     }
   };
 
+  const connectGuestProfile = async () => {
+    if (guestProfileBusy) return;
+    setGuestProfileBusy(true);
+    setGuestProfileError(null);
+    try {
+      const status = await api.guestProfileConnect(
+        guestProfileEndpointInput.trim(),
+        guestProfileKeyInput.trim(),
+      );
+      setGuestProfileStatus(status);
+      setGuestProfileKeyInput("");
+    } catch (err) {
+      setGuestProfileError(errorMessage(err));
+    } finally {
+      setGuestProfileBusy(false);
+    }
+  };
+
+  const disconnectGuestProfile = async () => {
+    if (guestProfileBusy) return;
+    setGuestProfileBusy(true);
+    setGuestProfileError(null);
+    setGuestProfileCheck(null);
+    try {
+      const status = await api.guestProfileDisconnect();
+      setGuestProfileStatus(status);
+    } catch (err) {
+      setGuestProfileError(errorMessage(err));
+    } finally {
+      setGuestProfileBusy(false);
+    }
+  };
+
+  const checkGuestProfile = async () => {
+    if (checkingGuestProfile) return;
+    setCheckingGuestProfile(true);
+    setGuestProfileError(null);
+    try {
+      const result = await api.guestProfileCheck();
+      setGuestProfileCheck(result);
+      await refreshGuestProfile();
+    } catch (err) {
+      setGuestProfileError(errorMessage(err));
+    } finally {
+      setCheckingGuestProfile(false);
+    }
+  };
+
   const saveMeetingBrief = async () => {
     if (meetingBriefSaving) return;
     setMeetingBriefSaving(true);
@@ -287,7 +359,6 @@ export function SettingsPage() {
       setMeetingBriefSaving(false);
     }
   };
-
   if (!form || !payload) {
     return (
       <div className="page">
@@ -1111,9 +1182,128 @@ export function SettingsPage() {
             </div>
           ) : null}
         </div>
+        <div className="card" role="group" aria-labelledby="group-guest-profile">
+          <h3 id="group-guest-profile">Guest Profile</h3>
+          <p className="muted">
+            Per-user provider for current role and background. Stores endpoint and API key via
+            Shell-credential/Module-call boundary; status shows redacted hint only.
+          </p>
+          {guestProfileStatus ? (
+            <p role="status">
+              <strong>Status:</strong> {guestProfileStatus.state}
+              {guestProfileStatus.endpoint ? ` · ${guestProfileStatus.endpoint}` : ""}
+              {guestProfileStatus.apiKeyHint ? ` (${guestProfileStatus.apiKeyHint})` : ""}
+              {guestProfileStatus.lastVerifiedAt
+                ? ` — last verified ${guestProfileStatus.lastVerifiedAt}`
+                : ""}
+            </p>
+          ) : (
+            <p className="muted" role="status">
+              Loading Guest Profile status…
+            </p>
+          )}
+          <div className="field">
+            <label htmlFor="guest-profile-endpoint">Guest Profile endpoint</label>
+            <input
+              id="guest-profile-endpoint"
+              type="url"
+              value={guestProfileEndpointInput}
+              onChange={(event) => setGuestProfileEndpointInput(event.target.value)}
+              placeholder="https://profile.example/api"
+              autoComplete="off"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="guest-profile-key">Guest Profile API key</label>
+            <input
+              id="guest-profile-key"
+              type="password"
+              value={guestProfileKeyInput}
+              onChange={(event) => setGuestProfileKeyInput(event.target.value)}
+              placeholder="sk-..."
+              autoComplete="off"
+            />
+            <p className="muted field-hint">
+              Provider supplies current employer evidence; no imported browser session or CAPTCHA
+              bypass.
+            </p>
+          </div>
+          {guestProfileError ? (
+            <p className="field-error" role="alert">
+              {guestProfileError}
+            </p>
+          ) : null}
+          <div className="field-row">
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void connectGuestProfile()}
+              aria-disabled={guestProfileBusy || guestProfileEndpointInput.trim() === ""}
+            >
+              {guestProfileBusy ? "Connecting…" : "Connect Guest Profile"}
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void disconnectGuestProfile()}
+              aria-disabled={guestProfileBusy || guestProfileStatus?.state === "unconfigured"}
+            >
+              Disconnect
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void checkGuestProfile()}
+              aria-disabled={checkingGuestProfile || guestProfileStatus?.state === "unconfigured"}
+            >
+              {checkingGuestProfile ? "Checking…" : "Check my setup"}
+            </button>
+          </div>
+          {guestProfileCheck ? (
+            <div className="banner" role="status">
+              <p>
+                <strong>Probe:</strong> {guestProfileCheck.state} — {guestProfileCheck.detail}
+              </p>
+              <p className="muted">Checked at {guestProfileCheck.checkedAt}</p>
+            </div>
+          ) : null}
+        </div>
+        <div className="card" role="group" aria-labelledby="group-google-meeting-brief">
+          <h3 id="group-google-meeting-brief">Google — Calendar, Gmail, Drive</h3>
+          <p className="muted">
+            Required scopes: calendar.readonly, gmail.readonly, gmail.send, gmail.compose, drive.
+            Use Check my setup in the Connections → Google card above to verify scopes and API
+            enablement. Calendar channel and sync token are shown below without secrets.
+          </p>
+          <p role="status" className="muted">
+            Google: {googleStatus?.state ?? "loading"}{" "}
+            {googleStatus?.email ? `as ${googleStatus.email}` : ""}
+          </p>
+          {googleCheck ? (
+            <ul>
+              {googleCheck.items.map((item, idx) => (
+                <li key={idx}>
+                  {item.label}: {item.ok ? "ok" : "failed"} — {item.detail}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Run Check my setup above to see per-surface results.</p>
+          )}
+        </div>
+        <div className="card" role="group" aria-labelledby="group-relay-summary">
+          <h3 id="group-relay-summary">Calendar Relay (opaque)</h3>
+          <p className="muted">
+            Relay stores only installation, channel, message, expiry and ack metadata; no Calendar
+            credentials or event data. See Calendar Relay section above for health/channel/last
+            wake-up. Relay health: {relayStatus?.relayHealth ?? "loading"}
+            {relayStatus?.lastWakeUpAt
+              ? ` · last wake-up ${relayStatus.lastWakeUpAt}`
+              : " · no wake-up yet"}
+            .
+          </p>
+        </div>
       </section>
-      {/* A Module's own settings surface, outside the form: it has its own
-          action and nothing to save alongside the Shell's fields. */}
       <section className="settings-section" aria-labelledby="section-youtube">
         <h2 id="section-youtube">YouTube Trends</h2>
         <SpreadsheetCard />

@@ -244,22 +244,21 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
-  await expect(tiles).toHaveCount(4);
+  await expect(tiles).toHaveCount(5);
   await expect(tiles.filter({ hasText: "Content Scout" })).not.toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Meeting Brief Generator" })).not.toContainText("Planned");
 
-  // Each tile is the way into its Module, and the planned one is announced on
-  // Home while holding no tab of its own (ADR-0014).
   const home = page.locator("main#main");
   for (const [label, path] of [
     ["Transcript → Tasks", "/transcript"],
     ["YouTube Trends", "/youtube"],
     ["Idea Engine", "/idea-engine"],
     ["Content Scout", "/content-scout"],
+    ["Meeting Brief Generator", "/meeting-brief"],
   ] as const) {
     await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }
 
-  // Into the Module, and back out by the wordmark.
   await home.getByRole("link", { name: "Transcript → Tasks" }).click();
   await expect(page).toHaveURL(/\/transcript$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");

@@ -142,12 +142,11 @@ beforeEach(() => {
   });
 });
 
-describe("Meeting Brief Generator v1 — planned Module contract", () => {
-  it("exists as planned with exactly 4 fixed Stages", () => {
+describe("Meeting Brief Generator v1 — live Module contract", () => {
+  it("exists as live with exactly 4 fixed Stages", () => {
     expect(MEETING_BRIEF_MODULE_ID).toBe("meeting-brief-generator");
     expect(MEETING_BRIEF_MODULE_VERSION).toBe(1);
     expect([...MEETING_BRIEF_STAGES]).toEqual(["snapshot", "enrich", "compose", "deliver"]);
-
     const mod = meetingBriefModule({ now: () => new Date(now) });
     expect(mod.id).toBe(MEETING_BRIEF_MODULE_ID);
     expect(mod.version).toBe(MEETING_BRIEF_MODULE_VERSION);

@@ -6,6 +6,8 @@ import type {
   ContentShortlist,
   DriveIntakeStatus,
   GoogleStatus,
+  GuestProfileCheckResult,
+  GuestProfileStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
   RedactedConfig,
@@ -422,6 +424,17 @@ export const api = {
     request<HubSpotStatus>("/api/meeting-brief/hubspot/disconnect", { method: "POST" }),
   hubspotCheck: () =>
     request<HubSpotSetupCheck>("/api/meeting-brief/hubspot/check", { method: "POST" }),
+  guestProfileStatus: () => request<GuestProfileStatus>("/api/meeting-brief/guest-profile/status"),
+  guestProfileConnect: (endpoint: string, apiKey: string) =>
+    request<GuestProfileStatus>("/api/meeting-brief/guest-profile/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ endpoint, apiKey }),
+    }),
+  guestProfileDisconnect: () =>
+    request<GuestProfileStatus>("/api/meeting-brief/guest-profile/disconnect", { method: "POST" }),
+  guestProfileCheck: () =>
+    request<GuestProfileCheckResult>("/api/meeting-brief/guest-profile/check", { method: "POST" }),
   meetingBriefConfig: () =>
     request<{ internalDomains: string[]; hubspot: HubSpotStatus }>("/api/meeting-brief/config"),
   saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
@@ -467,7 +480,6 @@ export const api = {
       lastSyncAt: string | null;
     }>("/api/meeting-brief/calendar/status"),
 };
-
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
