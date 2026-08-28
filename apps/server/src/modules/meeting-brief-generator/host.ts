@@ -28,6 +28,9 @@ import { createHttpGuestProfileProvider, type GuestProfileProvider } from "./pro
 import type { GmailProvider } from "./google/gmail.js";
 import type { CalendarHistoryProvider } from "./google/calendarHistory.js";
 import type { DriveProvider } from "./google/drive.js";
+import { HubSpotConnection } from "./hubspot/connection.js";
+import type { HubSpotApi } from "./hubspot/client.js";
+import type { PublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import {
   MeetingBriefCalendarStore,
   type CalendarEvent,
@@ -63,6 +66,10 @@ export interface MeetingBriefHostDeps {
   calendarHistoryProvider?: CalendarHistoryProvider | null;
   driveProvider?: DriveProvider | null;
   internalDomains?: string[];
+  hubSpotApi?: HubSpotApi | null;
+  hubSpotConnection?: HubSpotConnection;
+  publicIntelligenceProvider?: PublicIntelligenceProvider | null;
+  proposeEmployer?: MeetingBriefModuleDeps["proposeEmployer"];
 }
 function occurrenceKeyFor(event: MeetingBriefFixtureEvent): string {
   return `${event.eventId}::${event.occurrenceId}`;
@@ -125,6 +132,9 @@ export class MeetingBriefHost implements HostedModule {
   private timer: NodeJS.Timeout | undefined;
   private readonly guestProfileConnection: GuestProfileConnection | null;
   private readonly profileProvider: GuestProfileProvider | null;
+  private readonly hubSpotConnection: HubSpotConnection | null;
+  private readonly hubSpotApiInstance: HubSpotApi | null;
+  private readonly publicIntelligenceProvider: PublicIntelligenceProvider | null;
 
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -166,6 +176,61 @@ export class MeetingBriefHost implements HostedModule {
         return undefined;
       }
     })();
+    // HubSpot wiring — per-user private-app token, Shell stores secret (issue://86)
+    if (deps.hubSpotConnection) {
+      this.hubSpotConnection = deps.hubSpotConnection;
+    } else if (deps.configStore) {
+      this.hubSpotConnection = new HubSpotConnection(deps.configStore);
+    } else {
+      this.hubSpotConnection = null;
+    }
+    if (deps.hubSpotApi !== undefined) {
+      this.hubSpotApiInstance = deps.hubSpotApi;
+    } else if (this.hubSpotConnection) {
+      // Lazily create api from current token; if token missing, api() will throw provider-wide which fails enrich
+      const connection = this.hubSpotConnection;
+      const dynamicApi: HubSpotApi = {
+        async listContacts(limit: number) {
+          return connection.api().listContacts(limit);
+        },
+        async searchContactByEmail(email: string) {
+          return connection.api().searchContactByEmail(email);
+        },
+        async getAssociatedCompanyIds(contactId: string) {
+          return connection.api().getAssociatedCompanyIds(contactId);
+        },
+        async getCompany(companyId: string) {
+          return connection.api().getCompany(companyId);
+        },
+        async getAssociatedDealIds(contactId: string) {
+          return connection.api().getAssociatedDealIds(contactId);
+        },
+        async getDeal(dealId: string) {
+          return connection.api().getDeal(dealId);
+        },
+        async getAssociatedDealIdsForCompany(companyId: string) {
+          return connection.api().getAssociatedDealIdsForCompany(companyId);
+        },
+      };
+      // If token is empty, connection.api() will throw; we still expose dynamicApi so unified can attempt and get provider-wide failure
+      // To avoid always throwing at construction, we keep dynamicApi but check token lazily at call time
+      // For config without token, dynamicApi will throw on first use, which is desired for provider-wide failure
+      // However for hosts that don't have hubspot configured and are not expected to use it, we should not expose it as required.
+      // So we only expose dynamicApi if token exists, otherwise keep null to allow Google-only tests to succeed
+      try {
+        const token = (
+          deps.configStore?.get().modules["meeting-brief-generator"] as unknown as {
+            hubspot?: { token?: string };
+          }
+        )?.hubspot?.token;
+        this.hubSpotApiInstance = token ? dynamicApi : null;
+      } catch {
+        this.hubSpotApiInstance = null;
+      }
+    } else {
+      this.hubSpotApiInstance = null;
+    }
+    this.publicIntelligenceProvider = deps.publicIntelligenceProvider ?? null;
     const module = meetingBriefModule({
       now: this.now,
       ...(deps.enrich ? { enrich: deps.enrich } : {}),
@@ -175,8 +240,15 @@ export class MeetingBriefHost implements HostedModule {
       ...(status?.endpoint ? { guestProfileEndpoint: status.endpoint } : {}),
       ...(resolvedApiKey ? { guestProfileApiKey: resolvedApiKey } : {}),
       ...(deps.gmailProvider ? { gmailProvider: deps.gmailProvider } : {}),
-      ...(deps.calendarHistoryProvider ? { calendarHistoryProvider: deps.calendarHistoryProvider } : {}),
+      ...(deps.calendarHistoryProvider
+        ? { calendarHistoryProvider: deps.calendarHistoryProvider }
+        : {}),
       ...(deps.driveProvider ? { driveProvider: deps.driveProvider } : {}),
+      ...(this.hubSpotApiInstance ? { hubSpotApi: this.hubSpotApiInstance } : {}),
+      ...(this.publicIntelligenceProvider
+        ? { publicIntelligenceProvider: this.publicIntelligenceProvider }
+        : {}),
+      ...(deps.proposeEmployer ? { proposeEmployer: deps.proposeEmployer } : {}),
       ...(deps.internalDomains ? { internalDomains: deps.internalDomains } : {}),
       getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
@@ -211,6 +283,9 @@ export class MeetingBriefHost implements HostedModule {
       } catch {
         // config not loaded yet
       }
+    }
+    if (this.deps.internalDomains) {
+      return normalizeInternalDomains(this.deps.internalDomains);
     }
     return [];
   }
@@ -468,7 +543,7 @@ export class MeetingBriefHost implements HostedModule {
                   organizer?: boolean;
                   resource?: boolean;
                 }[]) ?? [],
-              attachments: (prevSnap.attachments) ?? [],
+              attachments: prevSnap.attachments ?? [],
             } as unknown as CalendarEvent;
             prevFingerprint = materialFingerprint(synthetic);
           } catch {

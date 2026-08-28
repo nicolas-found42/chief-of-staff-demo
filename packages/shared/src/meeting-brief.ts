@@ -280,10 +280,7 @@ export const GOOGLE_ENRICHMENT_MAX_CALENDAR_HISTORY = 10 as const;
 export const GOOGLE_ENRICHMENT_MAX_DRIVE_DOCS = 10 as const;
 
 export type GoogleEnrichmentSource =
-  | "gmail-exact"
-  | "gmail-company-domain"
-  | "calendar-history"
-  | "drive-docs";
+  "gmail-exact" | "gmail-company-domain" | "calendar-history" | "drive-docs";
 
 export type GoogleEnrichmentOutcome = "completed" | "empty" | "failed";
 
@@ -331,4 +328,58 @@ export function googleEnrichmentStableRef(
   companyDomain?: string | null,
 ): string {
   return googleEnrichmentKey(eventVersion, guestEmail, source, companyDomain);
+}
+
+export const PUBLIC_INTELLIGENCE_MAX_RESULTS = 10 as const;
+
+export type PublicIntelligenceSource = "company-news" | "industry-news" | "employer-verification";
+
+export type PublicIntelligenceOutcome = "completed" | "empty" | "failed";
+
+export interface PublicIntelligenceArtifact {
+  /** Stable key: `${eventVersion}::${guestEmail.toLowerCase()}::${source}::${companyName ?? ""}` trimmed */
+  key: string;
+  eventVersion: string;
+  guestEmail: string;
+  companyName?: string | null;
+  companyDomain?: string | null;
+  source: PublicIntelligenceSource;
+  status: PublicIntelligenceOutcome;
+  /** Untrusted evidence — treated as data, never as instructions */
+  evidence: string[];
+  references: string[];
+  diagnostics: {
+    bounded: boolean;
+    maxResults: number;
+    stableRef: string;
+    window?: { from: string; to: string };
+    truncated?: boolean;
+    httpStatus?: number | null;
+    errorCode?: string | null;
+    reason?: string;
+    attempts?: number;
+    orgs?: string[];
+    untrusted?: boolean;
+  };
+  stableRef: string;
+}
+
+export function publicIntelligenceKey(
+  eventVersion: string,
+  guestEmail: string,
+  source: PublicIntelligenceSource,
+  companyName?: string | null,
+): string {
+  const base = `${eventVersion}::${guestEmail.toLowerCase()}::${source}`;
+  if (companyName) return `${base}::${companyName.toLowerCase().trim()}`;
+  return base;
+}
+
+export function publicIntelligenceStableRef(
+  eventVersion: string,
+  guestEmail: string,
+  source: PublicIntelligenceSource,
+  companyName?: string | null,
+): string {
+  return publicIntelligenceKey(eventVersion, guestEmail, source, companyName);
 }
