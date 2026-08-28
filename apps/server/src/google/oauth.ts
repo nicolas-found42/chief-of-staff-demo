@@ -6,6 +6,10 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/gmail.readonly",
+  // Meeting Brief delivery owns send-only-to-owner (ADR-0034). This deliberate
+  // exception to the draft-only policy requests gmail.send without assuming it;
+  // verifySetup probes it read-only and the Module never sends to External Guests.
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/drive",
   /* ADR-0016: YouTube rides this connection rather than an API key. Read-only

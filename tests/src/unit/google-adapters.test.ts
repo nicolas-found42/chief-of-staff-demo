@@ -45,6 +45,7 @@ const sdk = vi.hoisted(() => {
     users: {
       drafts: { create: vi.fn(), list: vi.fn() },
       threads: { list: vi.fn() },
+      messages: { list: vi.fn(), get: vi.fn(), send: vi.fn() },
       getProfile: vi.fn(),
     },
   };
@@ -163,6 +164,8 @@ beforeEach(() => {
   });
   sdk.gmail.users.drafts.create.mockResolvedValue({ data: { id: "draft-1" } });
   sdk.gmail.users.drafts.list.mockResolvedValue({ data: { drafts: [] } });
+  sdk.gmail.users.threads.list.mockResolvedValue({ data: { threads: [] } });
+  sdk.gmail.users.messages.list.mockResolvedValue({ data: { messages: [] } });
   sdk.gmail.users.getProfile.mockResolvedValue({
     data: { emailAddress: "nicolas@found42.com" },
   });
@@ -530,7 +533,6 @@ describe("Google connection SDK probes", () => {
 
     await expect(google.state()).resolves.toMatchObject({ state: "connected", email: null });
   });
-
   it("checks every required Google surface with read-only calls", async () => {
     const google = openGoogleConnection(connectionConfig(), 4317);
 
@@ -540,6 +542,7 @@ describe("Google connection SDK probes", () => {
         { label: "Google Tasks", ok: true },
         { label: "Gmail drafts", ok: true },
         { label: "Gmail history", ok: true },
+        { label: "Gmail delivery", ok: true },
         { label: "Google Calendar", ok: true },
         { label: "Google Drive", ok: true },
         { label: "YouTube view counts", ok: true },
@@ -548,7 +551,16 @@ describe("Google connection SDK probes", () => {
     expect(sdk.tasks.tasklists.list).toHaveBeenCalledWith({ maxResults: 1 });
     expect(sdk.gmail.users.drafts.list).toHaveBeenCalledWith({ userId: "me", maxResults: 1 });
     expect(sdk.gmail.users.threads.list).toHaveBeenCalledWith({ userId: "me", maxResults: 1 });
-    expect(sdk.calendar.events.list).toHaveBeenCalledWith({ calendarId: "primary", maxResults: 1, singleEvents: true });
+    expect(sdk.gmail.users.messages.list).toHaveBeenCalledWith({
+      userId: "me",
+      maxResults: 1,
+      q: "in:sent",
+    });
+    expect(sdk.calendar.events.list).toHaveBeenCalledWith({
+      calendarId: "primary",
+      maxResults: 1,
+      singleEvents: true,
+    });
     expect(sdk.drive.files.list).toHaveBeenCalledWith({ pageSize: 1, fields: "files(id)" });
     expect(sdk.youtube.videos.list).toHaveBeenCalledWith({
       part: ["id"],

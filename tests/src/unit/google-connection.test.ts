@@ -383,6 +383,7 @@ describe("verifySetup — asking Google what is missing", () => {
       ["Google Tasks", true],
       ["Gmail drafts", true],
       ["Gmail history", true],
+      ["Gmail delivery", true],
       ["Google Calendar", true],
       ["Google Drive", true],
       ["YouTube view counts", true],

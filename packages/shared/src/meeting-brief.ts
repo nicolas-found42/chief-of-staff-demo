@@ -95,13 +95,15 @@ export interface MeetingBrief {
   uncertainty: string[];
 }
 
-/** Delivery state retained on the Run. */
+/** Delivery state retained on the Run (ADR-0034). */
 export interface MeetingBriefDeliveryState {
-  status: "sent" | "superseded" | "failed" | "pending";
+  status: "pending" | "sent" | "reconciled" | "superseded" | "skipped" | "failed";
   sentAt: string | null;
   messageId: string | null;
   recipient: string | null;
   attempts: number;
+  /** Stable idempotency key persisted before send; used to reconcile lost acks. */
+  deliveryId?: string | null;
 }
 
 /** `result.json` for one Meeting Brief Run. */

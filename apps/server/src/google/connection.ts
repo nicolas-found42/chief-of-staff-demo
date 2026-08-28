@@ -44,13 +44,22 @@ export function isRejectedGrant(error: unknown): boolean {
  * API key — and unlike the Picker it has a server-side surface, so **Check my
  * setup** probes it exactly as it probes the others.
  */
-const GOOGLE_SURFACES = ["tasks", "gmail", "gmail-read", "calendar", "drive", "youtube"] as const;
+const GOOGLE_SURFACES = [
+  "tasks",
+  "gmail",
+  "gmail-read",
+  "gmail-send",
+  "calendar",
+  "drive",
+  "youtube",
+] as const;
 export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
 const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
   tasks: { label: "Google Tasks", api: "Tasks API", scope: "tasks" },
   gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
   "gmail-read": { label: "Gmail history", api: "Gmail API", scope: "gmail.readonly" },
+  "gmail-send": { label: "Gmail delivery", api: "Gmail API", scope: "gmail.send" },
   calendar: { label: "Google Calendar", api: "Calendar API", scope: "calendar.readonly" },
   drive: { label: "Google Drive", api: "Drive API", scope: "drive" },
   youtube: { label: "YouTube view counts", api: "YouTube Data API v3", scope: "youtube.readonly" },
@@ -60,6 +69,7 @@ const SCOPE_LABELS: Record<string, string> = {
   "https://www.googleapis.com/auth/tasks": "Google Tasks",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
   "https://www.googleapis.com/auth/gmail.readonly": "Gmail history",
+  "https://www.googleapis.com/auth/gmail.send": "Gmail delivery",
   "https://www.googleapis.com/auth/calendar.readonly": "Google Calendar",
   "https://www.googleapis.com/auth/drive": "Google Drive",
   "https://www.googleapis.com/auth/youtube.readonly": "YouTube view counts",
@@ -212,9 +222,22 @@ const callSurface: SurfaceProbe = async (config, port, surface) => {
     await google.gmail({ version: "v1", auth }).users.threads.list({ userId: "me", maxResults: 1 });
     return;
   }
+  if (surface === "gmail-send") {
+    // Bounded read-only probe for delivery authority (ADR-0034). Read-only: listing
+    // one sent message validates Gmail API enabled + gmail.send without sending mail.
+    // A token missing gmail.send but holding gmail.readonly would still read sent,
+    // but the scope check at sign-in (findMissingScopes) gates the grant; this
+    // probe's job is API-enabled vs revoked, not granular scope isolation.
+    await google
+      .gmail({ version: "v1", auth })
+      .users.messages.list({ userId: "me", maxResults: 1, q: "in:sent" });
+    return;
+  }
   if (surface === "calendar") {
     // Bounded read-only probe: list one calendar event, validates calendar.readonly scope + Calendar API enabled.
-    await google.calendar({ version: "v3", auth }).events.list({ calendarId: "primary", maxResults: 1, singleEvents: true });
+    await google
+      .calendar({ version: "v3", auth })
+      .events.list({ calendarId: "primary", maxResults: 1, singleEvents: true });
     return;
   }
   if (surface === "youtube") {
