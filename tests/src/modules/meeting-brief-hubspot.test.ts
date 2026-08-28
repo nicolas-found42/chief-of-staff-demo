@@ -661,6 +661,18 @@ describe("Host seam — real Runs/Runner/durableClock/Workspace + fake HubSpot",
         occurrenceId: input.occurrenceId,
         eventVersion: input.version,
         generatedAt: new Date(now).toISOString(),
+        logistics: {
+          title: input.summary,
+          startAt: input.startAt,
+          endAt: input.endAt,
+          location: input.location ?? null,
+          conferenceLink: input.conferenceLink ?? null,
+          organizer: input.organizer
+            ? input.organizer.displayName !== undefined
+              ? { email: input.organizer.email, displayName: input.organizer.displayName }
+              : { email: input.organizer.email }
+            : null,
+        },
         summary: `Brief for ${input.summary}`,
         guests: input.attendees
           .filter((a) => !a.resource)
@@ -674,6 +686,7 @@ describe("Host seam — real Runs/Runner/durableClock/Workspace + fake HubSpot",
               a.email === "alice@external.co" ? "HubSpot: External Co — Deal One $25000" : null,
             talkingPoints: [],
             uncertainty: [],
+            evidenceReferences: ["https://app.hubspot.com/companies/201"],
           })),
         companies: [
           {
@@ -684,9 +697,10 @@ describe("Host seam — real Runs/Runner/durableClock/Workspace + fake HubSpot",
             news: [],
             industry: [],
             uncertainty: [],
+            evidenceReferences: ["https://app.hubspot.com/companies/201"],
           },
         ],
-        conversationStarters: [" starter 1", "starter 2"],
+        conversationStarters: ["starter 1", "starter 2"],
         sourceReferences: ["https://app.hubspot.com/companies/201"],
         missingEvidence: [],
         uncertainty: [],

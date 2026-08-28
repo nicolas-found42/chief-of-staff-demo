@@ -50,13 +50,23 @@ export interface MeetingBriefEnrichmentSection {
   references: string[];
 }
 
-/** Structured Meeting Brief retained in the Run (Module-owned Result Shape). */
+/** Structured Meeting Brief retained in the Run (Module-owned Result Shape). Includes deterministic logistics. */
+export interface MeetingBriefLogistics {
+  title: string;
+  startAt: string;
+  endAt: string;
+  location: string | null;
+  conferenceLink: string | null;
+  organizer: { email: string; displayName?: string } | null;
+}
+
 export interface MeetingBrief {
   version: 1;
   eventId: string;
   occurrenceId: string;
   eventVersion: string;
   generatedAt: string;
+  logistics: MeetingBriefLogistics;
   summary: string;
   guests: Array<{
     email: string;
@@ -67,6 +77,7 @@ export interface MeetingBrief {
     crmContext: string | null;
     talkingPoints: string[];
     uncertainty: string[];
+    evidenceReferences: string[];
   }>;
   companies: Array<{
     name: string;
@@ -76,6 +87,7 @@ export interface MeetingBrief {
     news: string[];
     industry: string[];
     uncertainty: string[];
+    evidenceReferences: string[];
   }>;
   conversationStarters: string[];
   sourceReferences: string[];

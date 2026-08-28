@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
+import type { CompleteJson } from "../../llm/providers.js";
 import type {
   GuestProfileArtifact,
   MeetingBrief,
   MeetingBriefDeliveryState,
   MeetingBriefFixtureEvent,
+  MeetingBriefEnrichmentSection,
   MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
 import { MEETING_BRIEF_MODULE_ID, MEETING_BRIEF_MODULE_VERSION } from "@chief-of-staff-demo/shared";
@@ -17,7 +19,8 @@ import type { HubSpotApi } from "./hubspot/client.js";
 import type { PublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import { snapshotEligibility, buildFrozenSnapshot } from "./snapshot.js";
 import type { CalendarProvider } from "./calendar.js";
-import { isEligibleMeeting } from "./eligibility.js";
+import { isEligibleMeeting, isExternalGuest } from "./eligibility.js";
+import { composeBrief } from "./compose.js";
 export type MeetingBriefInput = MeetingBriefFixtureEvent & {
   occurrenceKey: string;
   supersedesRunId?: string | null;
@@ -32,6 +35,7 @@ export interface MeetingBriefModuleDeps {
     evidence: string[];
   }>;
   completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
+  getCompleteJson?: () => CompleteJson;
   deliver?: (
     brief: MeetingBrief,
     event: MeetingBriefFixtureEvent,
@@ -338,55 +342,131 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         });
       });
 
-      // compose — structured Meeting Brief via injected model
-      // compose — structured Meeting Brief via injected model
+      // compose — structured Meeting Brief via LLM seam (Result Shape Binding, ADR-0029/0030)
       let brief: MeetingBrief;
       await ctx.stage("compose", async () => {
         if (deps.completeBrief) {
           brief = await deps.completeBrief(input, enrichResult);
+        } else if (deps.getCompleteJson) {
+          const sections = (enrichResult.sections as MeetingBriefEnrichmentSection[]) ?? [];
+          const snapshotForCompose = {
+            ...input,
+            occurrenceKey,
+          } as unknown as MeetingBriefFixtureEvent & { occurrenceKey: string };
+          const snapshotRaw = ctx.readFile("snapshot.json");
+          if (snapshotRaw) {
+            try {
+              const snap = JSON.parse(snapshotRaw) as MeetingBriefFixtureEvent & {
+                occurrenceKey?: string;
+                version?: string;
+              };
+              if (typeof snap.version === "string" && snap.version.length > 0) {
+                (snapshotForCompose as unknown as Record<string, unknown>).version = snap.version;
+              }
+              if (typeof snap.summary === "string") snapshotForCompose.summary = snap.summary;
+              if (typeof snap.startAt === "string")
+                (snapshotForCompose as unknown as Record<string, unknown>).startAt = snap.startAt;
+              if (typeof snap.endAt === "string")
+                (snapshotForCompose as unknown as Record<string, unknown>).endAt = snap.endAt;
+              if ("location" in snap)
+                (snapshotForCompose as unknown as Record<string, unknown>).location = (
+                  snap as unknown as Record<string, unknown>
+                ).location;
+              if ("conferenceLink" in snap)
+                (snapshotForCompose as unknown as Record<string, unknown>).conferenceLink = (
+                  snap as unknown as Record<string, unknown>
+                ).conferenceLink;
+              if ("organizer" in snap)
+                (snapshotForCompose as unknown as Record<string, unknown>).organizer = (
+                  snap as unknown as Record<string, unknown>
+                ).organizer;
+              if (Array.isArray((snap as unknown as Record<string, unknown>).attendees)) {
+                (snapshotForCompose as unknown as Record<string, unknown>).attendees = (
+                  snap as unknown as Record<string, unknown>
+                ).attendees;
+              }
+            } catch {
+              // ignore
+            }
+          }
+          const internalDomainsForCompose = deps.getInternalDomains
+            ? deps.getInternalDomains()
+            : (deps.internalDomains ?? []);
+          brief = await composeBrief({
+            now,
+            getCompleteJson: deps.getCompleteJson,
+            snapshot: snapshotForCompose,
+            sections,
+            internalDomains: internalDomainsForCompose,
+          });
         } else {
           const genAt = now().toISOString();
-          const guestList = input.attendees
-            .filter((a) => !a.resource)
-            .map((a) => ({
-              email: a.email,
-              name: a.displayName ?? null,
-              role: "Fixture Role",
-              background: `Background for ${a.email}`,
-              relationshipHistory: [`Prior meeting with ${a.email}`],
-              crmContext: `CRM context for ${a.email}`,
-              talkingPoints: [`Talk about ${input.summary} with ${a.email}`],
-              uncertainty: [],
-            }));
+          const internalDomainsForFixture = deps.getInternalDomains
+            ? deps.getInternalDomains()
+            : (deps.internalDomains ?? []);
+          const externalForFixture = input.attendees.filter(
+            (a) => !a.resource && isExternalGuest(a, internalDomainsForFixture),
+          );
+          const guestList = externalForFixture.map((a) => ({
+            email: a.email,
+            name: a.displayName ?? null,
+            role: "Fixture Role",
+            background: `Background for ${a.email}`,
+            relationshipHistory: [`Prior meeting with ${a.email}`],
+            crmContext: `CRM context for ${a.email}`,
+            talkingPoints: [`Talk about ${input.summary} with ${a.email}`],
+            uncertainty: [] as string[],
+            evidenceReferences:
+              (enrichResult as unknown as { evidence: string[] }).evidence?.slice(0, 3) ?? [],
+          }));
+          const sectionsForFixture =
+            (enrichResult.sections as unknown as MeetingBriefEnrichmentSection[]) ?? [];
+          const hasEmployerMatch = sectionsForFixture.some(
+            (s) => s.source === "employer-match" && s.status === "completed",
+          );
           brief = {
             version: 1,
             eventId: input.eventId,
             occurrenceId: input.occurrenceId,
             eventVersion: input.version,
             generatedAt: genAt,
+            logistics: {
+              title: input.summary,
+              startAt: input.startAt,
+              endAt: input.endAt,
+              location: input.location ?? null,
+              conferenceLink: input.conferenceLink ?? null,
+              organizer: input.organizer
+                ? input.organizer.displayName !== undefined
+                  ? { email: input.organizer.email, displayName: input.organizer.displayName }
+                  : { email: input.organizer.email }
+                : null,
+            },
             summary: `Brief for ${input.summary}`,
             guests: guestList,
-            companies: [
-              {
-                name: "Fixture Corp",
-                domain: "fixture.example",
-                hubspotContext: "HubSpot fixture",
-                docs: ["Drive doc fixture"],
-                news: ["Recent news fixture"],
-                industry: ["Industry fixture"],
-                uncertainty: [],
-              },
-            ],
+            companies: hasEmployerMatch
+              ? [
+                  {
+                    name: "Fixture Corp",
+                    domain: "fixture.example",
+                    hubspotContext: "HubSpot fixture",
+                    docs: ["Drive doc fixture"],
+                    news: ["Recent news fixture"],
+                    industry: ["Industry fixture"],
+                    uncertainty: [],
+                    evidenceReferences: [],
+                  },
+                ]
+              : [],
             conversationStarters: [
               `What brought you to ${input.summary}?`,
               `How does Fixture Corp approach this?`,
             ],
-            sourceReferences: enrichResult.evidence,
+            sourceReferences: (enrichResult as unknown as { evidence: string[] }).evidence ?? [],
             missingEvidence: [],
             uncertainty: [],
           };
         }
-        // Persist intermediate result (without delivery) — compose's durable output.
         const supersedes = input.supersedesRunId ?? null;
         const partial: MeetingBriefRunResult = {
           version: 1,

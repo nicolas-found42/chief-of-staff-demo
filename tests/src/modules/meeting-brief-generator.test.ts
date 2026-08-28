@@ -89,6 +89,18 @@ beforeEach(() => {
         occurrenceId: input.occurrenceId,
         eventVersion: input.version,
         generatedAt: new Date(now).toISOString(),
+        logistics: {
+          title: input.summary,
+          startAt: input.startAt,
+          endAt: input.endAt,
+          location: input.location ?? null,
+          conferenceLink: input.conferenceLink ?? null,
+          organizer: input.organizer
+            ? input.organizer.displayName !== undefined
+              ? { email: input.organizer.email, displayName: input.organizer.displayName }
+              : { email: input.organizer.email }
+            : null,
+        },
         summary: `Brief for ${input.summary}`,
         guests: [
           {
@@ -100,6 +112,7 @@ beforeEach(() => {
             crmContext: "HubSpot: deal open",
             talkingPoints: ["Talk about roadmap"],
             uncertainty: [],
+            evidenceReferences: ["https://mail.example.com/thread/1"],
           },
         ],
         companies: [
@@ -111,6 +124,7 @@ beforeEach(() => {
             news: ["External Co raised Series A"],
             industry: ["Industry news fixture"],
             uncertainty: [],
+            evidenceReferences: ["https://mail.example.com/thread/1"],
           },
         ],
         conversationStarters: [
