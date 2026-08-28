@@ -74,7 +74,19 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   // ---- Quiet period for revisions (ADR-0034) ----
   // First brief sends immediately; revision waits 5 min unless meeting is within 5 min.
   // Only for real Gmail delivery; fixture fakes bypass wait to keep tests immediate.
-  const isRevision = Boolean(input.supersedesRunId);
+  // isRevision must survive resume (planResume stub input has no supersedes) — check result.json fallback.
+  let isRevision = Boolean(input.supersedesRunId);
+  if (!isRevision) {
+    const resultRawForRevision = ctx.readFile("result.json");
+    if (resultRawForRevision) {
+      try {
+        const parsed = JSON.parse(resultRawForRevision) as { supersedes?: string | null };
+        if (parsed.supersedes) isRevision = true;
+      } catch {
+        // ignore
+      }
+    }
+  }
   const logisticsStart =
     (brief as unknown as { logistics?: { startAt?: string } }).logistics?.startAt ?? input.startAt;
   const startMs = Date.parse(logisticsStart);
@@ -180,6 +192,13 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
           eventVersion: brief.eventVersion,
           currentVersion: current.version,
           reason: "obsolete_revision",
+        });
+        ctx.event("delivery_superseded", {
+          occurrenceKey,
+          eventVersion: brief.eventVersion,
+          currentVersion: current.version,
+          reason: "obsolete_revision",
+          deliveryId: deliveryIdFor(occurrenceKey, brief.eventVersion),
         });
         return {
           skipped: false,
