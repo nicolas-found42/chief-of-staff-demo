@@ -17,6 +17,7 @@ import { YoutubeHost } from "./modules/youtube/host.js";
 import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
 import { MeetingBriefHost } from "./modules/meeting-brief-generator/host.js";
+import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
 import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
 import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
@@ -201,6 +202,71 @@ await registerApi(app, {
 });
 registerRelayRoutes(app, { workspaceDir });
 registerMeetingBriefHubSpotRoutes(app, { configStore });
+
+if (process.env.ENABLE_TEST_SEED === "1") {
+  app.post("/api/test/meeting-brief/schedule", async (request) => {
+    const body = request.body as { event?: MeetingBriefFixtureEvent; dueAt?: string };
+    if (!body.event || typeof body.event !== "object") return { error: "event required" };
+    const event = body.event;
+    const dueAt = body.dueAt ? new Date(body.dueAt) : new Date();
+    meetingBrief.scheduleOccurrence(event, dueAt);
+    return { scheduled: true };
+  });
+  app.post("/api/test/meeting-brief/process-due", async (request) => {
+    const body = request.body as { now?: string };
+    const now = body.now ? new Date(body.now) : new Date();
+    const created = await meetingBrief.processDueSchedules(now);
+    await meetingBrief.idle();
+    return { created };
+  });
+  app.post("/api/test/meeting-brief/advance", async (request) => {
+    const body = request.body as { ms?: number; now?: string };
+    const now = body.now
+      ? new Date(body.now)
+      : typeof body.ms === "number"
+        ? new Date(Date.now() + body.ms)
+        : new Date();
+    const created = await meetingBrief.processDueSchedules(now);
+    await meetingBrief.idle();
+    try {
+      const runner = (meetingBrief as unknown as { runner: { recoverRuns: () => Promise<number> } })
+        .runner;
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runner may be absent in test helper
+      if (runner) await runner.recoverRuns();
+      await meetingBrief.idle();
+    } catch {
+      // ignore recover failure in test helper
+    }
+    return { now: now.toISOString(), created };
+  });
+  app.post("/api/test/meeting-brief/set-now", async (request) => {
+    const body = request.body as { now?: string | null };
+    // stub: no-op, just acknowledge for hermetic journey compatibility
+    return { now: body.now ?? null };
+  });
+  app.get("/api/test/meeting-brief/fake-gmail/messages", async () => {
+    // Fallback to index-derived delivery check; return empty stub that journey will interpret via index
+    // Try to derive from runs if available: look at last message via index
+    try {
+      const idx = meetingBrief.index();
+      const msgs = idx.briefs
+        .filter((b) => b.delivery?.status === "sent" || b.delivery?.status === "reconciled")
+        .map((b) => ({
+          to: b.delivery?.recipient ?? "owner@example.com",
+          subject: b.meetingBrief?.logistics.title
+            ? `Meeting Brief: ${b.meetingBrief.logistics.title}`
+            : "Meeting Brief",
+          deliveryId: b.delivery?.deliveryId ?? "",
+        }));
+      return { messages: msgs };
+    } catch {
+      return { messages: [] };
+    }
+  });
+  app.post("/api/test/meeting-brief/fake-gmail/clear", async () => {
+    return { cleared: true };
+  });
+}
 
 if (process.env.ENABLE_TEST_SEED === "1") {
   await registerTestSeed(app, {

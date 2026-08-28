@@ -4,6 +4,7 @@ import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { IdeaEnginePage } from "./pages/IdeaEnginePage";
+import { MeetingBriefPage } from "./pages/MeetingBriefPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
@@ -71,6 +72,7 @@ export function App() {
           <Route path="/youtube" element={<YoutubePage />} />
           <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
+          <Route path="/meeting-brief" element={<MeetingBriefPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

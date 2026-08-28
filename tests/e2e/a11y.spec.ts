@@ -11,6 +11,7 @@ const ROUTES = [
   "/youtube",
   "/idea-engine",
   "/content-scout",
+  "/meeting-brief",
   "/settings",
   "/settings?google=connected",
   "/settings?google=error",

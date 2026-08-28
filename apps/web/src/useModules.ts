@@ -14,6 +14,7 @@ import type { ComponentType } from "react";
 import type { RunDetail } from "@chief-of-staff-demo/shared";
 import { TranscriptResultView } from "./modules/transcript/ResultView";
 import { ContentScoutResultView } from "./modules/content-scout/ResultView";
+import { MeetingBriefResultView } from "./modules/meeting-brief/ResultView";
 
 export interface ModuleDescriptor {
   /** Stable identity. Survives a route rename; never derived from `path`. */
@@ -78,7 +79,8 @@ const MODULES: ModuleDescriptor[] = [
     label: "Meeting Brief Generator",
     description:
       "Prepare concise briefings for upcoming meetings with external guests — history, company, intelligence, and profile.",
-    status: "planned",
+    status: "live",
+    resultView: MeetingBriefResultView,
   },
 ];
 

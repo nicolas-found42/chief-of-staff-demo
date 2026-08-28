@@ -654,7 +654,7 @@ export class MeetingBriefHost implements HostedModule {
     this.timer = undefined;
   }
 
-  // Keep Module planned — but expose narrow Settings/Intake + Guest Profile surface via host routes (issue://83,87).
+  // Live Module (issue://92) — Settings/Intake + Guest Profile surface via host routes (issue://83,87) plus Cross-Run index.
   async routes(app: FastifyInstance): Promise<void> {
     app.get("/api/meeting-brief/guest-profile/status", async () => {
       if (!this.guestProfileConnection) {
