@@ -61,6 +61,17 @@ export function SettingsPage() {
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [payload, setPayload] = useState<ConfigPayload | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  const [relayStatus, setRelayStatus] = useState<{
+    installationId: string | null;
+    relayBaseUrl: string | null;
+    relayHealth: "ok" | "unreachable" | "not_configured";
+    channels: Array<{ channelId: string; expiration: string | null; resourceId: string | null }>;
+    lastWakeUpAt: string | null;
+    hasSecret: boolean;
+  } | null>(null);
+  const [relayBaseUrlInput, setRelayBaseUrlInput] = useState("");
+  const [relayBusy, setRelayBusy] = useState(false);
+  const [relayError, setRelayError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   /* One flag per action, not one for the page: a shared flag marks controls
@@ -119,6 +130,57 @@ export function SettingsPage() {
       void refreshGoogle();
     }
   }, [payload, refreshGoogle]);
+
+  useEffect(() => {
+    const loadRelay = async () => {
+      try {
+        const status = await api.relayStatus();
+        setRelayStatus(status);
+        if (status.relayBaseUrl) setRelayBaseUrlInput(status.relayBaseUrl);
+      } catch {
+        // relay not configured yet — keep null
+      }
+    };
+    void loadRelay();
+  }, []);
+
+  const refreshRelay = async () => {
+    try {
+      const status = await api.relayStatus();
+      setRelayStatus(status);
+      if (status.relayBaseUrl) setRelayBaseUrlInput(status.relayBaseUrl);
+    } catch (err) {
+      setRelayError(errorMessage(err));
+    }
+  };
+
+  const installRelay = async () => {
+    if (relayBusy) return;
+    setRelayBusy(true);
+    setRelayError(null);
+    try {
+      await api.relayInstall(relayBaseUrlInput.trim() || undefined);
+      await refreshRelay();
+    } catch (err) {
+      setRelayError(errorMessage(err));
+    } finally {
+      setRelayBusy(false);
+    }
+  };
+
+  const pollRelay = async () => {
+    if (relayBusy) return;
+    setRelayBusy(true);
+    setRelayError(null);
+    try {
+      await api.relayPoll();
+      await refreshRelay();
+    } catch (err) {
+      setRelayError(errorMessage(err));
+    } finally {
+      setRelayBusy(false);
+    }
+  };
 
   if (!form || !payload) {
     return (
@@ -735,6 +797,86 @@ export function SettingsPage() {
         </div>
       </form>
 
+      {/* Relay status — issue://80 Settings + ADR-0031: health, channel status, last wake-up, no secrets */}
+      <section className="settings-section" aria-labelledby="section-relay">
+        <h2 id="section-relay">Calendar Relay</h2>
+        <div className="card">
+          <p className="muted">
+            Opaque calendar wake-up relay (ADR-0031). Stores only installation, channel, message,
+            expiry and ack metadata.
+          </p>
+          {relayStatus ? (
+            <div className="field-grid">
+              <p>
+                <strong>Installation:</strong> {relayStatus.installationId ?? "— not registered"}
+              </p>
+              <p>
+                <strong>Relay URL:</strong> {relayStatus.relayBaseUrl ?? "—"}
+              </p>
+              <p>
+                <strong>Relay health:</strong> {relayStatus.relayHealth}
+              </p>
+              <p>
+                <strong>Channels:</strong> {relayStatus.channels.length}
+                {relayStatus.channels.length > 0
+                  ? ` — ${relayStatus.channels.map((c) => c.channelId).join(", ")}`
+                  : ""}
+              </p>
+              <p>
+                <strong>Last wake-up:</strong> {relayStatus.lastWakeUpAt ?? "— none yet"}
+              </p>
+              <p className="muted">Secrets are kept in Workspace and never shown here.</p>
+            </div>
+          ) : (
+            <p className="muted" role="status">
+              Loading relay status…
+            </p>
+          )}
+          <div className="field">
+            <label htmlFor="relay-base-url">Relay base URL</label>
+            <input
+              id="relay-base-url"
+              value={relayBaseUrlInput}
+              onChange={(event) => setRelayBaseUrlInput(event.target.value)}
+              placeholder="http://127.0.0.1:4318"
+            />
+            <p className="muted field-hint">
+              Local default 4318; production is https://relay.example.com.
+            </p>
+          </div>
+          {relayError ? (
+            <p className="field-error" role="alert">
+              {relayError}
+            </p>
+          ) : null}
+          <div className="field-row">
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void installRelay()}
+              aria-disabled={relayBusy}
+            >
+              {relayBusy ? "Working…" : "Register / Update relay"}
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void pollRelay()}
+              aria-disabled={relayBusy}
+            >
+              Poll now
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void refreshRelay()}
+              aria-disabled={relayBusy}
+            >
+              Refresh status
+            </button>
+          </div>
+        </div>
+      </section>
       {/* A Module's own settings surface, outside the form: it has its own
           action and nothing to save alongside the Shell's fields. */}
       <section className="settings-section" aria-labelledby="section-youtube">

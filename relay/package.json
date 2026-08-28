@@ -1,0 +1,18 @@
+{
+  "name": "@chief-of-staff-demo/relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "fastify": "^5.12.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "~5.9.3"
+  }
+}
