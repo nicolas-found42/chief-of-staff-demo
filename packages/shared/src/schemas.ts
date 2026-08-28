@@ -145,6 +145,11 @@ export const ConfigSchema = z.strictObject({
             },
           },
         }),
+      "meeting-brief-generator": z
+        .strictObject({
+          internalDomains: z.array(z.string()).default([]),
+        })
+        .default({ internalDomains: [] }),
     })
     .default({
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
@@ -168,6 +173,7 @@ export const ConfigSchema = z.strictObject({
           },
         },
       },
+      "meeting-brief-generator": { internalDomains: [] },
     }),
 });
 export type AppConfig = z.infer<typeof ConfigSchema>;

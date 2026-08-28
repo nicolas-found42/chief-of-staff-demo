@@ -70,6 +70,7 @@ function defaultConfig(): AppConfig {
           },
         },
       },
+      "meeting-brief-generator": { internalDomains: [] },
     },
   };
 }

@@ -126,6 +126,7 @@ const config: AppConfig = {
         },
       },
     },
+    "meeting-brief-generator": { internalDomains: [] },
   },
 };
 
