@@ -4,6 +4,7 @@ import { HubSpotConnection } from "./connection.js";
 
 export interface HubSpotRouteOptions {
   configStore: ConfigStore;
+  connection?: HubSpotConnection;
 }
 
 export function registerMeetingBriefHubSpotRoutes(
@@ -11,9 +12,9 @@ export function registerMeetingBriefHubSpotRoutes(
   options: HubSpotRouteOptions,
 ): void {
   const { configStore } = options;
+  const connection = options.connection ?? new HubSpotConnection(configStore);
 
   app.get("/api/meeting-brief/hubspot/status", async () => {
-    const connection = new HubSpotConnection(configStore);
     return connection.status();
   });
 
@@ -24,7 +25,6 @@ export function registerMeetingBriefHubSpotRoutes(
       return;
     }
     try {
-      const connection = new HubSpotConnection(configStore);
       const status = await connection.connect(token);
       return status;
     } catch (error) {
@@ -34,12 +34,10 @@ export function registerMeetingBriefHubSpotRoutes(
   });
 
   app.post("/api/meeting-brief/hubspot/disconnect", async () => {
-    const connection = new HubSpotConnection(configStore);
     return connection.disconnect();
   });
 
   app.post("/api/meeting-brief/hubspot/check", async () => {
-    const connection = new HubSpotConnection(configStore);
     return connection.verifySetup();
   });
 }

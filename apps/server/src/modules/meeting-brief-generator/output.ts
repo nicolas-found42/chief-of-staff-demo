@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unnecessary-type-assertion -- output renders optional brief fields that may be absent */
 import type { MeetingBrief } from "@chief-of-staff-demo/shared";
 /**
  * Gmail Output Adapter — Meeting Brief rendering (ADR-0034).
@@ -43,38 +42,32 @@ export function renderMeetingBriefEmail(
   isRevision: boolean,
 ): RenderedMeetingBriefEmail {
   const prefix = isRevision ? "Updated Meeting Brief" : "Meeting Brief";
-  const logistics = (brief as unknown as { logistics?: MeetingBrief["logistics"] }).logistics;
-  const title = logistics?.title ?? brief.summary ?? "Meeting";
-  const when = logistics ? formatWhen(logistics.startAt, logistics.endAt) : "TBD";
+  const logistics = brief.logistics;
+  const title = logistics.title;
+  const when = formatWhen(logistics.startAt, logistics.endAt);
   const subject = `${prefix}: ${title}`;
 
   const lines: string[] = [];
   lines.push(`${prefix}: ${title}`);
   lines.push(`When: ${when}`);
-  if (logistics?.location) lines.push(`Where: ${logistics.location}`);
-  if (logistics?.conferenceLink) lines.push(`Join: ${logistics.conferenceLink}`);
-  if (logistics?.organizer) {
+  if (logistics.location) lines.push(`Where: ${logistics.location}`);
+  if (logistics.conferenceLink) lines.push(`Join: ${logistics.conferenceLink}`);
+  if (logistics.organizer) {
     const o = logistics.organizer;
     lines.push(`Organizer: ${o.displayName ? `${o.displayName} <${o.email}>` : o.email}`);
   }
   lines.push("");
-  lines.push(brief.summary ?? "");
+  lines.push(brief.summary);
   lines.push("");
 
-  const guests = (brief.guests ?? []) as MeetingBrief["guests"];
+  const guests = brief.guests;
   if (guests.length > 0) {
     lines.push("Guests:");
     for (const g of guests) {
-      const guest = g as unknown as {
-        relationshipHistory?: string[];
-        talkingPoints?: string[];
-        uncertainty?: string[];
-        evidenceReferences?: string[];
-      };
-      const guestHistory = guest.relationshipHistory ?? [];
-      const guestTalking = guest.talkingPoints ?? [];
-      const guestUncert = guest.uncertainty ?? [];
-      const guestRefs = guest.evidenceReferences ?? [];
+      const guestHistory = g.relationshipHistory;
+      const guestTalking = g.talkingPoints;
+      const guestUncert = g.uncertainty;
+      const guestRefs = g.evidenceReferences;
       lines.push(`- ${g.name ? `${g.name} <${g.email}>` : g.email}${g.role ? ` — ${g.role}` : ""}`);
       if (g.background) lines.push(`  Background: ${g.background}`);
       if (guestHistory.length > 0) {
@@ -92,22 +85,15 @@ export function renderMeetingBriefEmail(
     lines.push("");
   }
 
-  const companies = (brief.companies ?? []) as MeetingBrief["companies"];
+  const companies = brief.companies;
   if (companies.length > 0) {
     lines.push("Companies:");
     for (const c of companies) {
-      const comp = c as unknown as {
-        docs?: string[];
-        news?: string[];
-        industry?: string[];
-        uncertainty?: string[];
-        evidenceReferences?: string[];
-      };
-      const cDocs = comp.docs ?? [];
-      const cNews = comp.news ?? [];
-      const cIndustry = comp.industry ?? [];
-      const cUncert = comp.uncertainty ?? [];
-      const cRefs = comp.evidenceReferences ?? [];
+      const cDocs = c.docs;
+      const cNews = c.news;
+      const cIndustry = c.industry;
+      const cUncert = c.uncertainty;
+      const cRefs = c.evidenceReferences;
       lines.push(`- ${c.name}${c.domain ? ` (${c.domain})` : ""}`);
       if (c.hubspotContext) lines.push(`  HubSpot: ${c.hubspotContext}`);
       if (cDocs.length > 0) {
@@ -128,28 +114,28 @@ export function renderMeetingBriefEmail(
     lines.push("");
   }
 
-  const starters = (brief.conversationStarters ?? []) as string[];
+  const starters = brief.conversationStarters;
   if (starters.length > 0) {
     lines.push("Conversation starters:");
     for (const s of starters) lines.push(`- ${s}`);
     lines.push("");
   }
 
-  const srcRefs = (brief.sourceReferences ?? []) as string[];
+  const srcRefs = brief.sourceReferences;
   if (srcRefs.length > 0) {
     lines.push("Source references:");
     for (const r of srcRefs) lines.push(`- ${r}`);
     lines.push("");
   }
 
-  const missing = (brief.missingEvidence ?? []) as string[];
+  const missing = brief.missingEvidence;
   if (missing.length > 0) {
     lines.push("Missing evidence:");
     for (const m of missing) lines.push(`- ${m}`);
     lines.push("");
   }
 
-  const uncert = (brief.uncertainty ?? []) as string[];
+  const uncert = brief.uncertainty;
   if (uncert.length > 0) {
     lines.push("Uncertainty:");
     for (const u of uncert) lines.push(`- ${u}`);
@@ -169,33 +155,27 @@ export function renderMeetingBriefEmail(
   htmlLines.push(`<h2 style="margin:0 0 8px 0">${escapeHtml(prefix)}: ${escapeHtml(title)}</h2>`);
   htmlLines.push(`<div style="color:#555; font-size:14px; margin-bottom:12px">`);
   htmlLines.push(`<div>When: ${escapeHtml(when)}</div>`);
-  if (logistics?.location) htmlLines.push(`<div>Where: ${escapeHtml(logistics.location)}</div>`);
-  if (logistics?.conferenceLink)
+  if (logistics.location) htmlLines.push(`<div>Where: ${escapeHtml(logistics.location)}</div>`);
+  if (logistics.conferenceLink)
     htmlLines.push(
       `<div>Join: <a href="${escapeHtml(logistics.conferenceLink)}">${escapeHtml(logistics.conferenceLink)}</a></div>`,
     );
-  if (logistics?.organizer) {
+  if (logistics.organizer) {
     const o = logistics.organizer;
     htmlLines.push(
       `<div>Organizer: ${escapeHtml(o.displayName ? `${o.displayName} <${o.email}>` : o.email)}</div>`,
     );
   }
   htmlLines.push(`</div>`);
-  htmlLines.push(`<p>${escapeHtml(brief.summary ?? "")}</p>`);
+  htmlLines.push(`<p>${escapeHtml(brief.summary)}</p>`);
 
   if (guests.length > 0) {
     htmlLines.push(`<h3 style="margin:16px 0 8px 0">Guests</h3>`);
     for (const g of guests) {
-      const guest = g as unknown as {
-        relationshipHistory?: string[];
-        talkingPoints?: string[];
-        uncertainty?: string[];
-        evidenceReferences?: string[];
-      };
-      const gHistory = guest.relationshipHistory ?? [];
-      const gTalking = guest.talkingPoints ?? [];
-      const gUncert = guest.uncertainty ?? [];
-      const gRefs = guest.evidenceReferences ?? [];
+      const gHistory = g.relationshipHistory;
+      const gTalking = g.talkingPoints;
+      const gUncert = g.uncertainty;
+      const gRefs = g.evidenceReferences;
       htmlLines.push(
         `<div style="margin-bottom:12px; padding:8px; border:1px solid #eee; border-radius:8px">`,
       );
@@ -231,18 +211,11 @@ export function renderMeetingBriefEmail(
   if (companies.length > 0) {
     htmlLines.push(`<h3 style="margin:16px 0 8px 0">Companies</h3>`);
     for (const c of companies) {
-      const comp = c as unknown as {
-        docs?: string[];
-        news?: string[];
-        industry?: string[];
-        uncertainty?: string[];
-        evidenceReferences?: string[];
-      };
-      const cDocs = comp.docs ?? [];
-      const cNews = comp.news ?? [];
-      const cIndustry = comp.industry ?? [];
-      const cUncert = comp.uncertainty ?? [];
-      const cRefs = comp.evidenceReferences ?? [];
+      const cDocs = c.docs;
+      const cNews = c.news;
+      const cIndustry = c.industry;
+      const cUncert = c.uncertainty;
+      const cRefs = c.evidenceReferences;
       htmlLines.push(
         `<div style="margin-bottom:12px; padding:8px; border:1px solid #eee; border-radius:8px">`,
       );

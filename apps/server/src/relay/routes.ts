@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { RelayStateStore } from "./state.js";
-import { RelayClient } from "./client.js";
+import { relayAccess, type RelayMessage } from "./client.js";
 
 /**
  * Shell relay status routes — issue://80 Settings (relay/channel status + last wake-up)
@@ -10,6 +10,28 @@ import { RelayClient } from "./client.js";
 
 export interface RelayRoutesContext {
   workspaceDir: string;
+  processWakeUps?: (messages: RelayMessage[]) => Promise<void>;
+  onInstalled: () => Promise<void>;
+}
+
+export function publicRelayBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error("Relay base URL must be a valid URL.");
+  }
+  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) {
+    throw new Error(
+      "Relay base URL must use public HTTPS (HTTP is allowed only for loopback tests).",
+    );
+  }
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("Relay base URL must contain only scheme, host, and optional port.");
+  }
+  return trimmed;
 }
 
 export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContext): void {
@@ -50,21 +72,31 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
     if (body.relayBaseUrl !== undefined) {
       if (typeof body.relayBaseUrl !== "string")
         return reply.code(400).send({ error: "relayBaseUrl must be string" });
-      store.setRelayBaseUrl(body.relayBaseUrl);
+      try {
+        store.setRelayBaseUrl(publicRelayBaseUrl(body.relayBaseUrl));
+      } catch (error) {
+        return reply.code(400).send({
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
-    const { installationId, secret } = store.ensureInstallation();
+    store.ensureInstallation();
     const state = store.load();
     if (state.relayBaseUrl) {
-      const client = new RelayClient({
-        baseUrl: state.relayBaseUrl,
-        installationId,
-        secret,
-      });
+      const access = relayAccess(store);
+      if (!access.ok) return reply.code(400).send({ error: access.error });
       try {
-        await client.registerInstallation();
+        await access.client.registerInstallation();
       } catch (err) {
         return reply.code(502).send({
           error: `relay registration failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+      try {
+        await ctx.onInstalled();
+      } catch (err) {
+        return reply.code(502).send({
+          error: `Calendar watch bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
         });
       }
     }
@@ -89,10 +121,8 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
       | undefined;
     if (!body || !body.channelId || !body.token)
       return reply.code(400).send({ error: "channelId and token required" });
-    const state = store.load();
-    if (!state.installationId || !state.secret)
-      return reply.code(400).send({ error: "installation not initialized" });
-    if (!state.relayBaseUrl) return reply.code(400).send({ error: "relayBaseUrl not configured" });
+    const access = relayAccess(store);
+    if (!access.ok) return reply.code(400).send({ error: access.error });
 
     const channel = {
       channelId: body.channelId,
@@ -101,13 +131,8 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
       resourceId: body.resourceId ?? null,
     };
 
-    const client = new RelayClient({
-      baseUrl: state.relayBaseUrl,
-      installationId: state.installationId,
-      secret: state.secret,
-    });
     try {
-      await client.registerChannel(channel);
+      await access.client.registerChannel(channel);
     } catch (err) {
       return reply.code(502).send({
         error: `relay channel registration failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -120,17 +145,10 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
   // DELETE /api/relay/channels/:channelId — revoke
   app.delete("/api/relay/channels/:channelId", async (request, reply) => {
     const { channelId } = request.params as { channelId: string };
-    const state = store.load();
-    if (!state.installationId || !state.secret)
-      return reply.code(400).send({ error: "installation not initialized" });
-    if (!state.relayBaseUrl) return reply.code(400).send({ error: "relayBaseUrl not configured" });
-    const client = new RelayClient({
-      baseUrl: state.relayBaseUrl,
-      installationId: state.installationId,
-      secret: state.secret,
-    });
+    const access = relayAccess(store);
+    if (!access.ok) return reply.code(400).send({ error: access.error });
     try {
-      await client.revokeChannel(channelId);
+      await access.client.revokeChannel(channelId);
     } catch (err) {
       return reply
         .code(502)
@@ -154,16 +172,8 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
     if (!body || !body.oldChannelId || !body.newChannelId || !body.token) {
       return reply.code(400).send({ error: "oldChannelId, newChannelId, token required" });
     }
-    const state = store.load();
-    if (!state.installationId || !state.secret)
-      return reply.code(400).send({ error: "installation not initialized" });
-    if (!state.relayBaseUrl) return reply.code(400).send({ error: "relayBaseUrl not configured" });
-
-    const client = new RelayClient({
-      baseUrl: state.relayBaseUrl,
-      installationId: state.installationId,
-      secret: state.secret,
-    });
+    const access = relayAccess(store);
+    if (!access.ok) return reply.code(400).send({ error: access.error });
     const newChannel = {
       channelId: body.newChannelId,
       token: body.token,
@@ -171,7 +181,7 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
       resourceId: body.resourceId ?? null,
     };
     try {
-      await client.replaceChannel(body.oldChannelId, newChannel);
+      await access.client.replaceChannel(body.oldChannelId, newChannel);
     } catch (err) {
       return reply
         .code(502)
@@ -184,31 +194,29 @@ export function registerRelayRoutes(app: FastifyInstance, ctx: RelayRoutesContex
 
   // POST /api/relay/poll — Shell polls relay, updates lastWakeUpAt (Settings shows last wake-up)
   app.post("/api/relay/poll", async (_request, reply) => {
-    const state = store.load();
-    if (!state.installationId || !state.secret)
-      return reply.code(400).send({ error: "installation not initialized" });
-    if (!state.relayBaseUrl) return reply.code(400).send({ error: "relayBaseUrl not configured" });
-    const client = new RelayClient({
-      baseUrl: state.relayBaseUrl,
-      installationId: state.installationId,
-      secret: state.secret,
-    });
+    const access = relayAccess(store);
+    if (!access.ok) return reply.code(400).send({ error: access.error });
     let messages: Array<{ channelId: string; messageNumber: string; receivedAt: string }>;
     try {
-      messages = await client.pollMessages(0);
+      messages = await access.client.pollMessages(0);
     } catch (err) {
       return reply
         .code(502)
         .send({ error: `poll failed: ${err instanceof Error ? err.message : String(err)}` });
     }
     if (messages.length > 0) {
-      const latest = messages[messages.length - 1];
-      if (latest) store.setLastWakeUpAt(latest.receivedAt);
-      // At-least-once: ack after processing would be done by Intake; here we just report but do not ack automatically.
-      // For this endpoint we ack to keep buffer bounded in demo manual poll.
-      await client.ackMessages(
-        messages.map((m) => ({ channelId: m.channelId, messageNumber: m.messageNumber })),
-      );
+      try {
+        await ctx.processWakeUps?.(messages as RelayMessage[]);
+        await access.client.ackMessages(
+          messages.map((m) => ({ channelId: m.channelId, messageNumber: m.messageNumber })),
+        );
+        const latest = messages[messages.length - 1];
+        if (latest) store.setLastWakeUpAt(latest.receivedAt);
+      } catch (error) {
+        return reply.code(502).send({
+          error: `wake-up processing failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
     }
     const updated = store.load();
     return { messages, lastWakeUpAt: updated.lastWakeUpAt };

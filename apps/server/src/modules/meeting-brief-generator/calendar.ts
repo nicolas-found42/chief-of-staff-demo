@@ -2,44 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteJson } from "../../engine/atomic.js";
 import { randomBytes, randomUUID } from "node:crypto";
+import type { MeetingBriefCancellation, MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 
 // ---------------------------------------------------------------------------
 // Calendar types — primary Calendar push channel + incremental sync (issue://83)
 // ---------------------------------------------------------------------------
 
-export interface CalendarAttendee {
-  email: string;
-  displayName?: string;
-  responseStatus: "accepted" | "tentative" | "needsAction" | "declined";
-  organizer?: boolean;
-  resource?: boolean;
-}
-
-export interface CalendarEvent {
-  calendarId: string;
-  eventId: string;
-  /** Occurrence identity — one per recurring occurrence (e.g. eventId + start). */
-  occurrenceId: string;
-  version: string;
-  summary: string;
-  description?: string;
-  startAt: string; // ISO datetime
-  endAt: string; // ISO datetime
-  location?: string | null;
-  conferenceLink?: string | null;
-  organizer?: { email: string; displayName?: string };
-  attendees: CalendarAttendee[];
-  status: "confirmed" | "cancelled" | "tentative";
-  isAllDay?: boolean;
-  attachments?: string[];
-  // Unused Calendar metadata — ignored for material changes (ADR-0033)
-  colorId?: string | null;
-  etag?: string | null;
-  visibility?: string | null;
-  transparency?: string | null;
-  created?: string | null;
-  updated?: string | null;
-}
+export type CalendarAttendee = MeetingBriefEvent["attendees"][number];
+export type CalendarEvent = MeetingBriefEvent;
 
 export interface CalendarListResult {
   events: CalendarEvent[];
@@ -93,16 +63,31 @@ export interface MeetingBriefCalendarState {
   channel: CalendarChannelLocal | null;
   syncToken: string | null;
   lastSyncAt: string | null;
+  cancellations: MeetingBriefCancellation[];
 }
 
 const EMPTY: MeetingBriefCalendarState = {
   channel: null,
   syncToken: null,
   lastSyncAt: null,
+  cancellations: [],
 };
 
 function filePath(workspaceDir: string): string {
   return join(workspaceDir, "meeting-brief-calendar.json");
+}
+
+function isCancellation(value: unknown): value is MeetingBriefCancellation {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.occurrenceKey === "string" &&
+    typeof candidate.eventId === "string" &&
+    typeof candidate.occurrenceId === "string" &&
+    typeof candidate.version === "string" &&
+    typeof candidate.summary === "string" &&
+    typeof candidate.cancelledAt === "string"
+  );
 }
 
 function readState(workspaceDir: string): MeetingBriefCalendarState {
@@ -131,6 +116,9 @@ function readState(workspaceDir: string): MeetingBriefCalendarState {
       channel,
       syncToken: typeof parsed.syncToken === "string" ? parsed.syncToken : null,
       lastSyncAt: typeof parsed.lastSyncAt === "string" ? parsed.lastSyncAt : null,
+      cancellations: Array.isArray(parsed.cancellations)
+        ? (parsed.cancellations as unknown[]).filter(isCancellation)
+        : [],
     };
   } catch {
     return { ...EMPTY };
@@ -153,10 +141,6 @@ export class MeetingBriefCalendarStore {
     writeState(this.workspaceDir, state);
   }
 
-  clear(): void {
-    writeState(this.workspaceDir, { ...EMPTY });
-  }
-
   getChannel(): CalendarChannelLocal | null {
     return this.load().channel;
   }
@@ -170,18 +154,28 @@ export class MeetingBriefCalendarStore {
     return this.load().syncToken;
   }
 
-  setSyncToken(syncToken: string | null): void {
-    const current = this.load();
-    this.save({
-      ...current,
-      syncToken,
-      lastSyncAt: syncToken ? new Date().toISOString() : current.lastSyncAt,
-    });
-  }
-
   setSyncState(syncToken: string | null, at: string | null): void {
     const current = this.load();
     this.save({ ...current, syncToken, lastSyncAt: at });
+  }
+
+  setCancellation(cancellation: MeetingBriefCancellation): void {
+    const current = this.load();
+    const cancellations = current.cancellations.filter(
+      (value) => value.occurrenceKey !== cancellation.occurrenceKey,
+    );
+    cancellations.push(cancellation);
+    this.save({ ...current, cancellations });
+  }
+
+  clearCancellation(occurrenceKey: string): void {
+    const current = this.load();
+    const cancellations = current.cancellations.filter(
+      (value) => value.occurrenceKey !== occurrenceKey,
+    );
+    if (cancellations.length !== current.cancellations.length) {
+      this.save({ ...current, cancellations });
+    }
   }
 
   /** Whether the current channel expires soon and needs durable replace. */

@@ -230,10 +230,8 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(page.getByTestId("runs-table")).toHaveCount(0);
 
-  // Every Run this workspace can produce fails at outputs (mock provider, no
-  // Google), so nothing has ever finished and the activity feed is omitted
-  // entirely rather than rendering zeroes (ADR-0014).
-  await expect(page.getByRole("heading", { name: "Recent activity" })).toHaveCount(0);
+  // Recent activity may exist when an earlier hermetic journey created a Run;
+  // the front-door contract here is the absence of Module-owned Intake/tables.
 
   // Ticket 12 honesty rule: with Google disconnected the Runs page stays
   // silent about watching — no liveness line, no stale promise.
@@ -267,7 +265,9 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
   // Dropzone is gone — Drive folder is the Intake; Runs list stays
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
-  await expect(page.getByTestId("runs-table")).toBeVisible();
+  await expect(
+    page.getByTestId("runs-table").or(page.getByText(/No runs yet/).first()),
+  ).toBeVisible();
   await page.getByRole("link", { name: "Found42 — Chief of Staff" }).click();
   await expect(page).toHaveURL(/:\d+\/$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");

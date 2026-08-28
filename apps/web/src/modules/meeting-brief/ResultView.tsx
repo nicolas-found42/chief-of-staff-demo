@@ -1,24 +1,6 @@
 import type { MeetingBriefRunResult, RunDetail } from "@chief-of-staff-demo/shared";
 import { Link } from "react-router-dom";
-
-function deliveryLabel(status: string): string {
-  switch (status) {
-    case "sent":
-      return "Sent";
-    case "reconciled":
-      return "Sent (reconciled)";
-    case "pending":
-      return "Pending";
-    case "superseded":
-      return "Superseded — not sent (obsolete revision)";
-    case "skipped":
-      return "Skipped — not sent (cancelled)";
-    case "failed":
-      return "Failed";
-    default:
-      return status;
-  }
-}
+import { deliveryPresentation } from "./deliveryStatus";
 
 export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
   const result = detail.result as MeetingBriefRunResult | null;
@@ -38,6 +20,7 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
   }
   const brief = result.meetingBrief;
   const delivery = result.delivery;
+  const deliveryStatus = deliveryPresentation(delivery.status);
   const logistics = brief.logistics;
 
   return (
@@ -223,7 +206,7 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
       <div className="card">
         <h3>Delivery</h3>
         <p role="status">
-          <span className="status-badge status-done">{deliveryLabel(delivery.status)}</span>{" "}
+          <span className={`status-badge ${deliveryStatus.className}`}>{deliveryStatus.label}</span>{" "}
           {delivery.attempts > 0 ? `· attempts: ${delivery.attempts}` : ""}
         </p>
         {delivery.recipient ? <p>Recipient: {delivery.recipient}</p> : null}
@@ -235,21 +218,12 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
             <time dateTime={delivery.sentAt}>{new Date(delivery.sentAt).toLocaleString()}</time>
           </p>
         ) : null}
-        {delivery.status === "superseded" ? (
-          <p className="muted">
-            This revision was superseded by a newer material Calendar change; only the latest
-            revision sends.
-          </p>
-        ) : null}
-        {delivery.status === "failed" ? (
-          <p className="field-error" role="alert">
-            Delivery failed — retry will attempt the deliver Stage only and will reconcile Gmail
-            before retrying.
-          </p>
-        ) : null}
-        {delivery.status === "pending" ? (
-          <p className="muted">
-            Waiting for quiet period — delivery will resume after 5 minutes unless superseded.
+        {deliveryStatus.explanation ? (
+          <p
+            className={deliveryStatus.isError ? "field-error" : "muted"}
+            role={deliveryStatus.isError ? "alert" : undefined}
+          >
+            {deliveryStatus.explanation}
           </p>
         ) : null}
         <p className="muted">

@@ -7,6 +7,7 @@ import type {
 import { HUBSPOT_MAX_RESULTS } from "@chief-of-staff-demo/shared";
 import type { HubSpotApi } from "./client.js";
 import type { RunContext } from "../../../engine/module.js";
+import { isProviderWideError, readErrorCode, readErrorStatus } from "../enrichment/helpers.js";
 
 function stableRefFor(
   eventVersion: string,
@@ -18,15 +19,6 @@ function stableRefFor(
   return extra ? `${base}::${extra}` : base;
 }
 
-function artifactKey(
-  eventVersion: string,
-  guestEmail: string,
-  source: HubSpotEnrichmentArtifact["source"],
-  extra?: string,
-): string {
-  return stableRefFor(eventVersion, guestEmail, source, extra);
-}
-
 function fileNameForArtifact(artifact: HubSpotEnrichmentArtifact): string {
   const sanitized = artifact.guestEmail.replace(/[^a-zA-Z0-9]/g, "_");
   const extra = artifact.companyId ?? artifact.dealId ?? "";
@@ -34,20 +26,23 @@ function fileNameForArtifact(artifact: HubSpotEnrichmentArtifact): string {
   return `hubspot-${artifact.eventVersion}-${sanitized}-${artifact.source}${suffix}.json`;
 }
 
-function readErrorStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as Record<string, unknown>).status;
-    if (typeof value === "number") return value;
-  }
-  return null;
-}
-
-function readErrorCategory(error: unknown): string | null {
-  if (error && typeof error === "object" && "category" in error) {
-    const value = (error as Record<string, unknown>).category;
-    if (typeof value === "string") return value;
-  }
-  return null;
+function recordArtifact(
+  artifacts: HubSpotEnrichmentArtifact[],
+  sections: MeetingBriefEnrichmentSection[],
+  artifact: HubSpotEnrichmentArtifact,
+  ctx: Pick<RunContext, "writeFile"> | undefined,
+  company?: string,
+): void {
+  artifacts.push(artifact);
+  sections.push({
+    source: artifact.source,
+    guest: artifact.guestEmail,
+    ...(company ? { company } : {}),
+    status: artifact.status,
+    evidence: artifact.evidence,
+    references: artifact.references,
+  });
+  ctx?.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
 }
 
 export async function enrichGuestWithHubSpot(
@@ -55,6 +50,7 @@ export async function enrichGuestWithHubSpot(
   eventVersion: string,
   guestEmail: string,
   ctx?: Pick<RunContext, "writeFile" | "event">,
+  options?: { finalAttempt?: boolean },
 ): Promise<{
   artifacts: HubSpotEnrichmentArtifact[];
   sections: MeetingBriefEnrichmentSection[];
@@ -70,7 +66,7 @@ export async function enrichGuestWithHubSpot(
     contact = await api.searchContactByEmail(normalizedEmail);
     if (!contact) {
       const artifact: HubSpotEnrichmentArtifact = {
-        key: artifactKey(eventVersion, normalizedEmail, "hubspot-contact"),
+        key: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
         eventVersion,
         guestEmail: normalizedEmail,
         source: "hubspot-contact",
@@ -85,16 +81,8 @@ export async function enrichGuestWithHubSpot(
         },
         stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
       };
-      artifacts.push(artifact);
-      sections.push({
-        source: "hubspot-contact",
-        guest: normalizedEmail,
-        status: "empty",
-        evidence: [],
-        references: [],
-      });
+      recordArtifact(artifacts, sections, artifact, ctx);
       if (ctx) {
-        ctx.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
         ctx.event("hubspot_contact_empty", { guest: normalizedEmail, eventVersion });
       }
       return { artifacts, sections, employerMatch: null };
@@ -102,7 +90,7 @@ export async function enrichGuestWithHubSpot(
     const evidence = [`HubSpot contact ${contact.id} for ${normalizedEmail}`];
     const references = [`https://app.hubspot.com/contacts/${contact.id}`];
     const artifact: HubSpotEnrichmentArtifact = {
-      key: artifactKey(eventVersion, normalizedEmail, "hubspot-contact"),
+      key: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
       eventVersion,
       guestEmail: normalizedEmail,
       source: "hubspot-contact",
@@ -116,23 +104,17 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
     };
-    artifacts.push(artifact);
-    sections.push({
-      source: "hubspot-contact",
-      guest: normalizedEmail,
-      status: "completed",
-      evidence,
-      references,
-    });
+    recordArtifact(artifacts, sections, artifact, ctx);
     if (ctx) {
-      ctx.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
       ctx.event("hubspot_contact_found", { guest: normalizedEmail, contactId: contact.id });
     }
   } catch (error) {
+    if (isProviderWideError(error)) throw error;
+    if (options && options.finalAttempt === false) throw error;
     const detail = error instanceof Error ? error.message : String(error);
     const statusCode = readErrorStatus(error);
     const artifact: HubSpotEnrichmentArtifact = {
-      key: artifactKey(eventVersion, normalizedEmail, "hubspot-contact"),
+      key: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
       eventVersion,
       guestEmail: normalizedEmail,
       source: "hubspot-contact",
@@ -144,21 +126,13 @@ export async function enrichGuestWithHubSpot(
         maxResults: HUBSPOT_MAX_RESULTS,
         stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
         httpStatus: statusCode,
-        errorCode: readErrorCategory(error),
+        errorCode: readErrorCode(error),
         reason: detail.slice(0, 500),
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-contact"),
     };
-    artifacts.push(artifact);
-    sections.push({
-      source: "hubspot-contact",
-      guest: normalizedEmail,
-      status: "failed",
-      evidence: [],
-      references: [],
-    });
+    recordArtifact(artifacts, sections, artifact, ctx);
     if (ctx) {
-      ctx.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
       ctx.event("hubspot_contact_failed", { guest: normalizedEmail, error: detail });
     }
     return { artifacts, sections, employerMatch: null };
@@ -169,10 +143,12 @@ export async function enrichGuestWithHubSpot(
     companyIds = await api.getAssociatedCompanyIds(contact.id);
     companyIds = companyIds.slice(0, HUBSPOT_MAX_RESULTS);
   } catch (error) {
+    if (isProviderWideError(error)) throw error;
+    if (options && options.finalAttempt === false) throw error;
     const detail = error instanceof Error ? error.message : String(error);
     const statusCode = readErrorStatus(error);
     const artifact: HubSpotEnrichmentArtifact = {
-      key: artifactKey(eventVersion, normalizedEmail, "hubspot-company"),
+      key: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
       eventVersion,
       guestEmail: normalizedEmail,
       source: "hubspot-company",
@@ -184,21 +160,13 @@ export async function enrichGuestWithHubSpot(
         maxResults: HUBSPOT_MAX_RESULTS,
         stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
         httpStatus: statusCode,
-        errorCode: readErrorCategory(error),
+        errorCode: readErrorCode(error),
         reason: detail.slice(0, 500),
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
     };
-    artifacts.push(artifact);
-    sections.push({
-      source: "hubspot-company",
-      guest: normalizedEmail,
-      status: "failed",
-      evidence: [],
-      references: [],
-    });
+    recordArtifact(artifacts, sections, artifact, ctx);
     if (ctx) {
-      ctx.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
       ctx.event("hubspot_company_failed", { guest: normalizedEmail, error: detail });
     }
     companyIds = [];
@@ -206,7 +174,7 @@ export async function enrichGuestWithHubSpot(
 
   if (companyIds.length === 0) {
     const emptyArtifact: HubSpotEnrichmentArtifact = {
-      key: artifactKey(eventVersion, normalizedEmail, "hubspot-company"),
+      key: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
       eventVersion,
       guestEmail: normalizedEmail,
       source: "hubspot-company",
@@ -221,27 +189,14 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company"),
     };
-    artifacts.push(emptyArtifact);
-    sections.push({
-      source: "hubspot-company",
-      guest: normalizedEmail,
-      status: "empty",
-      evidence: [],
-      references: [],
-    });
-    if (ctx) {
-      ctx.writeFile(
-        fileNameForArtifact(emptyArtifact),
-        JSON.stringify(emptyArtifact, null, 2) + "\n",
-      );
-    }
+    recordArtifact(artifacts, sections, emptyArtifact, ctx);
   } else {
     for (const companyId of companyIds) {
       try {
         const company = await api.getCompany(companyId);
         if (!company) {
           const empty: HubSpotEnrichmentArtifact = {
-            key: artifactKey(eventVersion, normalizedEmail, "hubspot-company", companyId),
+            key: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
             eventVersion,
             guestEmail: normalizedEmail,
             companyId,
@@ -257,16 +212,7 @@ export async function enrichGuestWithHubSpot(
             },
             stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
           };
-          artifacts.push(empty);
-          sections.push({
-            source: "hubspot-company",
-            company: companyId,
-            guest: normalizedEmail,
-            status: "empty",
-            evidence: [],
-            references: [],
-          });
-          if (ctx) ctx.writeFile(fileNameForArtifact(empty), JSON.stringify(empty, null, 2) + "\n");
+          recordArtifact(artifacts, sections, empty, ctx, companyId);
           continue;
         }
         if (!employerMatch) employerMatch = company;
@@ -275,7 +221,7 @@ export async function enrichGuestWithHubSpot(
         ];
         const references = [`https://app.hubspot.com/companies/${company.id}`];
         const artifact: HubSpotEnrichmentArtifact = {
-          key: artifactKey(eventVersion, normalizedEmail, "hubspot-company", companyId),
+          key: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
           eventVersion,
           guestEmail: normalizedEmail,
           companyId,
@@ -292,22 +238,14 @@ export async function enrichGuestWithHubSpot(
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
           isEmployerMatch: true,
         };
-        artifacts.push(artifact);
-        sections.push({
-          source: "hubspot-company",
-          company: company.name,
-          guest: normalizedEmail,
-          status: "completed",
-          evidence,
-          references,
-        });
-        if (ctx)
-          ctx.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
+        recordArtifact(artifacts, sections, artifact, ctx, company.name);
       } catch (error) {
+        if (isProviderWideError(error)) throw error;
+        if (options && options.finalAttempt === false) throw error;
         const detail = error instanceof Error ? error.message : String(error);
         const statusCode = readErrorStatus(error);
         const failed: HubSpotEnrichmentArtifact = {
-          key: artifactKey(eventVersion, normalizedEmail, "hubspot-company", companyId),
+          key: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
           eventVersion,
           guestEmail: normalizedEmail,
           companyId,
@@ -320,21 +258,12 @@ export async function enrichGuestWithHubSpot(
             maxResults: HUBSPOT_MAX_RESULTS,
             stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
             httpStatus: statusCode,
-            errorCode: readErrorCategory(error),
+            errorCode: readErrorCode(error),
             reason: detail.slice(0, 500),
           },
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-company", companyId),
         };
-        artifacts.push(failed);
-        sections.push({
-          source: "hubspot-company",
-          company: companyId,
-          guest: normalizedEmail,
-          status: "failed",
-          evidence: [],
-          references: [],
-        });
-        if (ctx) ctx.writeFile(fileNameForArtifact(failed), JSON.stringify(failed, null, 2) + "\n");
+        recordArtifact(artifacts, sections, failed, ctx, companyId);
       }
     }
   }
@@ -349,16 +278,20 @@ export async function enrichGuestWithHubSpot(
         for (const did of companyDeals) {
           if (!dealIds.includes(did)) dealIds.push(did);
         }
-      } catch {
-        // per-company deal association failure is non-fatal
+      } catch (error) {
+        if (isProviderWideError(error)) throw error;
+        if (options && options.finalAttempt === false) throw error;
+        // per-company deal association failure is non-fatal on final attempt
       }
     }
     dealIds = dealIds.slice(0, HUBSPOT_MAX_RESULTS);
   } catch (error) {
+    if (isProviderWideError(error)) throw error;
+    if (options && options.finalAttempt === false) throw error;
     const detail = error instanceof Error ? error.message : String(error);
     const statusCode = readErrorStatus(error);
     const failed: HubSpotEnrichmentArtifact = {
-      key: artifactKey(eventVersion, normalizedEmail, "hubspot-deal"),
+      key: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
       eventVersion,
       guestEmail: normalizedEmail,
       source: "hubspot-deal",
@@ -370,26 +303,18 @@ export async function enrichGuestWithHubSpot(
         maxResults: HUBSPOT_MAX_RESULTS,
         stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
         httpStatus: statusCode,
-        errorCode: readErrorCategory(error),
+        errorCode: readErrorCode(error),
         reason: detail.slice(0, 500),
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
     };
-    artifacts.push(failed);
-    sections.push({
-      source: "hubspot-deal",
-      guest: normalizedEmail,
-      status: "failed",
-      evidence: [],
-      references: [],
-    });
-    if (ctx) ctx.writeFile(fileNameForArtifact(failed), JSON.stringify(failed, null, 2) + "\n");
+    recordArtifact(artifacts, sections, failed, ctx);
     return { artifacts, sections, employerMatch };
   }
 
   if (dealIds.length === 0) {
     const empty: HubSpotEnrichmentArtifact = {
-      key: artifactKey(eventVersion, normalizedEmail, "hubspot-deal"),
+      key: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
       eventVersion,
       guestEmail: normalizedEmail,
       source: "hubspot-deal",
@@ -404,22 +329,14 @@ export async function enrichGuestWithHubSpot(
       },
       stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal"),
     };
-    artifacts.push(empty);
-    sections.push({
-      source: "hubspot-deal",
-      guest: normalizedEmail,
-      status: "empty",
-      evidence: [],
-      references: [],
-    });
-    if (ctx) ctx.writeFile(fileNameForArtifact(empty), JSON.stringify(empty, null, 2) + "\n");
+    recordArtifact(artifacts, sections, empty, ctx);
   } else {
     for (const dealId of dealIds) {
       try {
         const deal = await api.getDeal(dealId);
         if (!deal) {
           const empty: HubSpotEnrichmentArtifact = {
-            key: artifactKey(eventVersion, normalizedEmail, "hubspot-deal", dealId),
+            key: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
             eventVersion,
             guestEmail: normalizedEmail,
             dealId,
@@ -435,21 +352,13 @@ export async function enrichGuestWithHubSpot(
             },
             stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
           };
-          artifacts.push(empty);
-          sections.push({
-            source: "hubspot-deal",
-            guest: normalizedEmail,
-            status: "empty",
-            evidence: [],
-            references: [],
-          });
-          if (ctx) ctx.writeFile(fileNameForArtifact(empty), JSON.stringify(empty, null, 2) + "\n");
+          recordArtifact(artifacts, sections, empty, ctx);
           continue;
         }
         const evidence = [`HubSpot deal ${deal.name ?? deal.id} (${deal.id})`];
         const references = [`https://app.hubspot.com/deals/${deal.id}`];
         const artifact: HubSpotEnrichmentArtifact = {
-          key: artifactKey(eventVersion, normalizedEmail, "hubspot-deal", dealId),
+          key: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
           eventVersion,
           guestEmail: normalizedEmail,
           dealId,
@@ -464,21 +373,14 @@ export async function enrichGuestWithHubSpot(
           },
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
         };
-        artifacts.push(artifact);
-        sections.push({
-          source: "hubspot-deal",
-          guest: normalizedEmail,
-          status: "completed",
-          evidence,
-          references,
-        });
-        if (ctx)
-          ctx.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
+        recordArtifact(artifacts, sections, artifact, ctx);
       } catch (error) {
+        if (isProviderWideError(error)) throw error;
+        if (options && options.finalAttempt === false) throw error;
         const detail = error instanceof Error ? error.message : String(error);
         const statusCode = readErrorStatus(error);
         const failed: HubSpotEnrichmentArtifact = {
-          key: artifactKey(eventVersion, normalizedEmail, "hubspot-deal", dealId),
+          key: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
           eventVersion,
           guestEmail: normalizedEmail,
           dealId,
@@ -491,20 +393,12 @@ export async function enrichGuestWithHubSpot(
             maxResults: HUBSPOT_MAX_RESULTS,
             stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
             httpStatus: statusCode,
-            errorCode: readErrorCategory(error),
+            errorCode: readErrorCode(error),
             reason: detail.slice(0, 500),
           },
           stableRef: stableRefFor(eventVersion, normalizedEmail, "hubspot-deal", dealId),
         };
-        artifacts.push(failed);
-        sections.push({
-          source: "hubspot-deal",
-          guest: normalizedEmail,
-          status: "failed",
-          evidence: [],
-          references: [],
-        });
-        if (ctx) ctx.writeFile(fileNameForArtifact(failed), JSON.stringify(failed, null, 2) + "\n");
+        recordArtifact(artifacts, sections, failed, ctx);
       }
     }
   }

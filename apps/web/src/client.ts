@@ -10,6 +10,7 @@ import type {
   GuestProfileStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
+  MeetingBriefIndex,
   RedactedConfig,
   RunDetail,
   RunPage,
@@ -435,27 +436,14 @@ export const api = {
     request<GuestProfileStatus>("/api/meeting-brief/guest-profile/disconnect", { method: "POST" }),
   guestProfileCheck: () =>
     request<GuestProfileCheckResult>("/api/meeting-brief/guest-profile/check", { method: "POST" }),
-  meetingBriefConfig: () =>
-    request<{ internalDomains: string[]; hubspot: HubSpotStatus }>("/api/meeting-brief/config"),
+  meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
   saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
-    request<{ internalDomains: string[]; hubspot: HubSpotStatus }>("/api/meeting-brief/config", {
+    request<{ internalDomains: string[] }>("/api/meeting-brief/config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(Array.isArray(input) ? { internalDomains: input } : input),
     }),
-  meetingBriefIndex: () =>
-    request<{
-      upcoming: Array<{
-        occurrenceKey: string;
-        eventId: string;
-        occurrenceId: string;
-        version: string;
-        summary: string;
-        startAt: string;
-        dueAt: string;
-      }>;
-      briefs: unknown[];
-    }>("/api/meeting-brief/index"),
+  meetingBriefIndex: () => request<MeetingBriefIndex>("/api/meeting-brief/index"),
   reconcileMeetingBrief: (forceFullSync = false) =>
     request<{
       scheduled: number;

@@ -7,12 +7,13 @@ import {
   MEETING_BRIEF_INTAKE,
   MEETING_BRIEF_MODULE_ID,
   MEETING_BRIEF_MODULE_VERSION,
-  type MeetingBriefFixtureEvent,
+  type MeetingBriefEvent,
   type MeetingBriefIndex,
   type MeetingBriefIndexEntry,
   type MeetingBriefRunResult,
   type MeetingBriefUpcoming,
   normalizeInternalDomains,
+  parseMeetingBriefOccurrenceKey,
 } from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
@@ -25,13 +26,9 @@ import {
 } from "./module.js";
 import { GuestProfileConnection } from "./connections/profile.js";
 import { createHttpGuestProfileProvider, type GuestProfileProvider } from "./profile/provider.js";
-import type { GmailProvider } from "./google/gmail.js";
-import type { CalendarHistoryProvider } from "./google/calendarHistory.js";
-import type { DriveProvider } from "./google/drive.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
 import type { HubSpotApi } from "./hubspot/client.js";
-import type { PublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
-import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
+import type { MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
 import {
   MeetingBriefCalendarStore,
   type CalendarEvent,
@@ -40,12 +37,13 @@ import {
   FakeCalendarProvider,
 } from "./calendar.js";
 import {
-  computeDueTime,
   ensureCalendarWatch,
   MEETING_BRIEF_CALENDAR_ID,
+  occurrenceKeyFor,
   reconcileCalendar,
 } from "./intake.js";
 import { materialFingerprint } from "./revision.js";
+import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
 
 export interface MeetingBriefHostDeps {
@@ -56,30 +54,18 @@ export interface MeetingBriefHostDeps {
   enrich?: MeetingBriefModuleDeps["enrich"];
   completeBrief?: MeetingBriefModuleDeps["completeBrief"];
   getCompleteJson?: MeetingBriefModuleDeps["getCompleteJson"];
-  deliver?: MeetingBriefModuleDeps["deliver"];
   gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
-  getGmailDeliveryProvider?: MeetingBriefModuleDeps["getGmailDeliveryProvider"];
   calendarProvider?: CalendarProvider;
+  calendarSnapshotRequired?: boolean;
+  calendarRecheckRequired?: boolean;
   configStore?: ConfigStore;
-  ownerEmail?: string | null;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
   guestProfileConnection?: GuestProfileConnection;
-  profileProvider?: GuestProfileProvider | null;
-  gmailProvider?: GmailProvider | null;
-  calendarHistoryProvider?: CalendarHistoryProvider | null;
-  driveProvider?: DriveProvider | null;
-  internalDomains?: string[];
-  hubSpotApi?: HubSpotApi | null;
+  enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
-  publicIntelligenceProvider?: PublicIntelligenceProvider | null;
-  proposeEmployer?: MeetingBriefModuleDeps["proposeEmployer"];
 }
-function occurrenceKeyFor(event: MeetingBriefFixtureEvent): string {
-  return `${event.eventId}::${event.occurrenceId}`;
-}
-
-function isFixtureEvent(value: unknown): value is MeetingBriefFixtureEvent {
+function isMeetingBriefEvent(value: unknown): value is MeetingBriefEvent {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return (
@@ -97,7 +83,7 @@ function toUpcoming(schedule: {
   input: unknown;
 }): MeetingBriefUpcoming | null {
   const input = schedule.input;
-  if (!isFixtureEvent(input)) return null;
+  if (!isMeetingBriefEvent(input)) return null;
   return {
     occurrenceKey: schedule.key,
     eventId: input.eventId,
@@ -122,7 +108,7 @@ function toUpcoming(schedule: {
  * - Incremental sync after each relay wake-up, startup + invalid-sync recovery triggers bounded reconciliation, duplicate harmless.
  * - Surface renders upcoming (Intake schedules) and completed fixture state via public host behavior (Cross-Run index derived on read).
  *
- * Planned until production providers are connected — not registered as live in `main.ts` yet.
+ * Production providers are supplied by the composition root; tests inject bounded fakes.
  */
 export class MeetingBriefHost implements HostedModule {
   readonly id = MEETING_BRIEF_MODULE_ID;
@@ -134,12 +120,13 @@ export class MeetingBriefHost implements HostedModule {
   private readonly calendarProvider: CalendarProvider;
   private readonly now: () => Date;
   private timer: NodeJS.Timeout | undefined;
+  private lastFullSyncAt: Date | null = null;
+  private maintenanceInProgress = false;
+  private readonly fullSyncIntervalMs = 6 * 60 * 60 * 1000;
   private readonly guestProfileConnection: GuestProfileConnection | null;
   private readonly profileProvider: GuestProfileProvider | null;
   private readonly hubSpotConnection: HubSpotConnection | null;
-  private readonly hubSpotApiInstance: HubSpotApi | null;
-  private readonly publicIntelligenceProvider: PublicIntelligenceProvider | null;
-  private readonly gmailDeliveryProvider: MeetingBriefModuleDeps["gmailDeliveryProvider"] | null;
+  private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
     this.clock = new DurableClock(deps.workspaceDir, this.now);
@@ -152,34 +139,30 @@ export class MeetingBriefHost implements HostedModule {
     } else {
       this.guestProfileConnection = null;
     }
-    if (deps.profileProvider !== undefined) {
-      this.profileProvider = deps.profileProvider;
+    if (deps.enrichmentProviders?.profileProvider !== undefined) {
+      this.profileProvider = deps.enrichmentProviders.profileProvider;
     } else if (this.guestProfileConnection) {
       const connection = this.guestProfileConnection;
       const dynamic: GuestProfileProvider = {
         id: GUEST_PROFILE_PROVIDER_ID,
         async lookup(input) {
           const current = connection.providerForCurrentConfig();
-          if (!current) throw new Error("Guest Profile not configured");
-          return current.lookup(input);
+          const status = connection.status();
+          if (!current || !status.endpoint)
+            throw new Error("missing_configuration: Guest Profile not configured");
+          const configured =
+            deps.configStore?.getModuleConfig(MEETING_BRIEF_MODULE_ID).guestProfile;
+          return current.lookup({
+            ...input,
+            endpoint: status.endpoint,
+            apiKey: configured?.apiKey ?? "",
+          });
         },
       };
       this.profileProvider = dynamic;
     } else {
       this.profileProvider = createHttpGuestProfileProvider();
     }
-    const status = this.guestProfileConnection?.status();
-    const resolvedApiKey = (() => {
-      if (!deps.configStore) return undefined;
-      try {
-        const cfg = deps.configStore.get().modules["meeting-brief-generator"] as unknown as {
-          guestProfile?: { apiKey: string };
-        };
-        return cfg.guestProfile?.apiKey ?? undefined;
-      } catch {
-        return undefined;
-      }
-    })();
     // HubSpot wiring — per-user private-app token, Shell stores secret (issue://86)
     if (deps.hubSpotConnection) {
       this.hubSpotConnection = deps.hubSpotConnection;
@@ -188,91 +171,32 @@ export class MeetingBriefHost implements HostedModule {
     } else {
       this.hubSpotConnection = null;
     }
-    if (deps.hubSpotApi !== undefined) {
-      this.hubSpotApiInstance = deps.hubSpotApi;
+    if (deps.enrichmentProviders?.getHubSpotApi !== undefined) {
+      this.getHubSpotApi = deps.enrichmentProviders.getHubSpotApi;
     } else if (this.hubSpotConnection) {
-      // Lazily create api from current token; if token missing, api() will throw provider-wide which fails enrich
       const connection = this.hubSpotConnection;
-      const dynamicApi: HubSpotApi = {
-        async listContacts(limit: number) {
-          return connection.api().listContacts(limit);
-        },
-        async searchContactByEmail(email: string) {
-          return connection.api().searchContactByEmail(email);
-        },
-        async getAssociatedCompanyIds(contactId: string) {
-          return connection.api().getAssociatedCompanyIds(contactId);
-        },
-        async getCompany(companyId: string) {
-          return connection.api().getCompany(companyId);
-        },
-        async getAssociatedDealIds(contactId: string) {
-          return connection.api().getAssociatedDealIds(contactId);
-        },
-        async getDeal(dealId: string) {
-          return connection.api().getDeal(dealId);
-        },
-        async getAssociatedDealIdsForCompany(companyId: string) {
-          return connection.api().getAssociatedDealIdsForCompany(companyId);
-        },
-      };
-      // If token is empty, connection.api() will throw; we still expose dynamicApi so unified can attempt and get provider-wide failure
-      // To avoid always throwing at construction, we keep dynamicApi but check token lazily at call time
-      // For config without token, dynamicApi will throw on first use, which is desired for provider-wide failure
-      // However for hosts that don't have hubspot configured and are not expected to use it, we should not expose it as required.
-      // So we only expose dynamicApi if token exists, otherwise keep null to allow Google-only tests to succeed
-      try {
-        const token = (
-          deps.configStore?.get().modules["meeting-brief-generator"] as unknown as {
-            hubspot?: { token?: string };
-          }
-        )?.hubspot?.token;
-        this.hubSpotApiInstance = token ? dynamicApi : null;
-      } catch {
-        this.hubSpotApiInstance = null;
-      }
+      this.getHubSpotApi = () => connection.api();
     } else {
-      this.hubSpotApiInstance = null;
+      this.getHubSpotApi = () => null;
     }
-    this.publicIntelligenceProvider = deps.publicIntelligenceProvider ?? null;
-    this.gmailDeliveryProvider = deps.gmailDeliveryProvider ?? null;
-    const resolveGmailDeliveryProvider: () => GmailDeliveryProvider | null = () => {
-      if (deps.getGmailDeliveryProvider) {
-        const viaGetter = deps.getGmailDeliveryProvider();
-        if (viaGetter) return viaGetter;
-      }
-      return this.gmailDeliveryProvider ?? null;
+    const enrichmentProviders: MeetingBriefEnrichmentProviders = {
+      ...deps.enrichmentProviders,
+      profileProvider: this.profileProvider,
+      getHubSpotApi: this.getHubSpotApi,
     };
     const module = meetingBriefModule({
       now: this.now,
       ...(deps.enrich ? { enrich: deps.enrich } : {}),
       ...(deps.completeBrief ? { completeBrief: deps.completeBrief } : {}),
       ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
-      ...(deps.deliver ? { deliver: deps.deliver } : {}),
-      ...(resolveGmailDeliveryProvider()
-        ? { gmailDeliveryProvider: resolveGmailDeliveryProvider()! }
-        : {}),
-      ...(resolveGmailDeliveryProvider()
-        ? { getGmailDeliveryProvider: resolveGmailDeliveryProvider }
-        : {}),
-      ...(this.profileProvider ? { profileProvider: this.profileProvider } : {}),
-      ...(status?.endpoint ? { guestProfileEndpoint: status.endpoint } : {}),
-      ...(resolvedApiKey ? { guestProfileApiKey: resolvedApiKey } : {}),
-      ...(deps.gmailProvider ? { gmailProvider: deps.gmailProvider } : {}),
-      ...(deps.calendarHistoryProvider
-        ? { calendarHistoryProvider: deps.calendarHistoryProvider }
-        : {}),
-      ...(deps.driveProvider ? { driveProvider: deps.driveProvider } : {}),
-      ...(this.hubSpotApiInstance ? { hubSpotApi: this.hubSpotApiInstance } : {}),
-      ...(this.publicIntelligenceProvider
-        ? { publicIntelligenceProvider: this.publicIntelligenceProvider }
-        : {}),
-      ...(deps.proposeEmployer ? { proposeEmployer: deps.proposeEmployer } : {}),
-      ...(deps.internalDomains ? { internalDomains: deps.internalDomains } : {}),
+      ...(deps.gmailDeliveryProvider ? { gmailDeliveryProvider: deps.gmailDeliveryProvider } : {}),
+      enrichmentProviders,
       getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
-      calendarProvider: this.calendarProvider,
-      invalidateIndex: () => {},
+      ...(deps.calendarProvider && (deps.calendarSnapshotRequired || deps.calendarRecheckRequired)
+        ? { calendarProvider: this.calendarProvider }
+        : {}),
+      ...(deps.calendarSnapshotRequired ? { calendarSnapshotRequired: true } : {}),
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
   }
@@ -297,22 +221,17 @@ export class MeetingBriefHost implements HostedModule {
     if (this.deps.configStore) {
       try {
         const fromConfig =
-          this.deps.configStore.get().modules["meeting-brief-generator"].internalDomains;
+          this.deps.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID).internalDomains;
         return normalizeInternalDomains(fromConfig);
       } catch {
         // config not loaded yet
       }
-    }
-    if (this.deps.internalDomains) {
-      return normalizeInternalDomains(this.deps.internalDomains);
     }
     return [];
   }
 
   getOwnerEmail(): string | null {
     if (this.deps.getOwnerEmail) return this.deps.getOwnerEmail();
-    if (this.deps.ownerEmail !== undefined) return this.deps.ownerEmail;
-    // Fallback: try to read from configStore? ownerEmail comes from Google connection; for fixture null is fine.
     return null;
   }
 
@@ -320,10 +239,10 @@ export class MeetingBriefHost implements HostedModule {
   setInternalDomains(domains: string[]): string[] {
     const normalized = normalizeInternalDomains(domains);
     if (this.deps.configStore) {
-      const current = this.deps.configStore.get().modules["meeting-brief-generator"];
+      const current = this.deps.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID);
       // Preserve other future fields (guest profile/hubspot) by merging
       const next = { ...current, internalDomains: normalized };
-      this.deps.configStore.setModuleConfig("meeting-brief-generator", next);
+      this.deps.configStore.setModuleConfig(MEETING_BRIEF_MODULE_ID, next);
     }
     return normalized;
   }
@@ -333,7 +252,7 @@ export class MeetingBriefHost implements HostedModule {
   // -------------------------------------------------------------------------
 
   /** Durably schedule a fixture occurrence (Intake schedule, not a Run). */
-  scheduleOccurrence(event: MeetingBriefFixtureEvent, dueAt: Date): void {
+  scheduleOccurrence(event: MeetingBriefEvent, dueAt: Date): void {
     const key = occurrenceKeyFor(event);
     this.clock.schedule({
       module: MEETING_BRIEF_MODULE_ID,
@@ -341,16 +260,6 @@ export class MeetingBriefHost implements HostedModule {
       dueAt: dueAt.toISOString(),
       input: event,
     });
-  }
-
-  /** Convenience: 4-hour preparation offset fixture (or immediate if inside window). */
-  scheduleFixture(event: MeetingBriefFixtureEvent): void {
-    const due = computeDueTime(event.startAt, this.now());
-    this.scheduleOccurrence(event, due);
-  }
-
-  removeOccurrence(eventId: string, occurrenceId: string): void {
-    this.clock.remove(MEETING_BRIEF_MODULE_ID, `${eventId}::${occurrenceId}`);
   }
 
   listUpcoming(): MeetingBriefUpcoming[] {
@@ -365,27 +274,69 @@ export class MeetingBriefHost implements HostedModule {
   index(): MeetingBriefIndex {
     const upcoming = this.listUpcoming();
     const briefs: MeetingBriefIndexEntry[] = [];
+    const cancellations = new Map(
+      this.calendarStore
+        .load()
+        .cancellations.map((cancellation) => [cancellation.occurrenceKey, cancellation]),
+    );
     for (const summary of this.deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs) {
       const detail = this.deps.runs.detail(summary.id);
       if (!detail) continue;
       const result = detail.result as MeetingBriefRunResult | null;
-      if (!result || typeof result !== "object" || !("occurrenceKey" in result)) {
-        continue;
+      const handle = this.deps.runs.open(summary.id);
+      const snapshotRaw = handle?.readArtifact("snapshot.json");
+      let snapshot: StoredSnapshot | null = null;
+      if (snapshotRaw) {
+        try {
+          snapshot = JSON.parse(snapshotRaw) as StoredSnapshot;
+        } catch {
+          snapshot = null;
+        }
       }
+      const meta = handle?.read();
+      const externalKey = meta?.externalId ?? null;
+      const occurrenceKey = result?.occurrenceKey ?? snapshot?.occurrenceKey ?? externalKey;
+      if (!occurrenceKey) continue;
+      const externalIdentity = externalKey ? parseMeetingBriefOccurrenceKey(externalKey) : null;
+      const eventId =
+        result?.eventId ?? snapshot?.eventId ?? externalIdentity?.eventId ?? "unknown";
+      const occurrenceId =
+        result?.occurrenceId ??
+        snapshot?.occurrenceId ??
+        externalIdentity?.occurrenceId ??
+        "unknown";
       briefs.push({
         runId: detail.id,
         createdAt: detail.createdAt,
         status: detail.status,
-        eventId: result.eventId,
-        occurrenceId: result.occurrenceId,
-        occurrenceKey: result.occurrenceKey,
-        eventVersion: result.eventVersion,
-        meetingBrief: result.meetingBrief,
-        delivery: result.delivery,
-        supersedes: result.supersedes ?? null,
+        eventId,
+        occurrenceId,
+        occurrenceKey,
+        eventVersion: result?.eventVersion ?? snapshot?.version ?? "unknown",
+        meetingBrief: result?.meetingBrief ?? null,
+        delivery: result?.delivery ?? null,
+        supersedes: result?.supersedes ?? snapshot?.supersedesRunId ?? null,
       });
+      if (
+        result?.deliverySkippedReason === "cancelled" ||
+        result?.deliverySkippedReason === "occurrence_not_found"
+      ) {
+        cancellations.set(result.occurrenceKey, {
+          occurrenceKey: result.occurrenceKey,
+          eventId: result.eventId,
+          occurrenceId: result.occurrenceId,
+          version: result.eventVersion,
+          summary: result.meetingBrief.logistics.title,
+          cancelledAt: detail.createdAt,
+        });
+      }
     }
-    return { upcoming, briefs };
+    briefs.sort((a, b) => {
+      if (a.supersedes === b.runId) return -1;
+      if (b.supersedes === a.runId) return 1;
+      return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    });
+    return { upcoming, briefs, cancellations: [...cancellations.values()] };
   }
 
   // -------------------------------------------------------------------------
@@ -394,18 +345,6 @@ export class MeetingBriefHost implements HostedModule {
 
   getCalendarState(): MeetingBriefCalendarState {
     return this.calendarStore.load();
-  }
-
-  getCalendarProvider(): CalendarProvider {
-    return this.calendarProvider;
-  }
-
-  getCalendarStore(): MeetingBriefCalendarStore {
-    return this.calendarStore;
-  }
-
-  getClock(): DurableClock {
-    return this.clock;
   }
 
   /** Ensure the primary Calendar push channel exists and is not expiring soon (durable replace before expiration). */
@@ -435,7 +374,7 @@ export class MeetingBriefHost implements HostedModule {
       store: this.calendarStore,
       clock: this.clock,
       internalDomains: this.getInternalDomains(),
-      ownerEmail: this.getOwnerEmail(),
+      ownerEmail: () => this.getOwnerEmail(),
       now: this.now(),
       calendarId: MEETING_BRIEF_CALENDAR_ID,
       forceFullSync: options.forceFullSync ?? false,
@@ -476,7 +415,7 @@ export class MeetingBriefHost implements HostedModule {
       if (record.module !== MEETING_BRIEF_MODULE_ID) continue;
       const key = record.key;
       const input = record.input;
-      if (!isFixtureEvent(input)) {
+      if (!isMeetingBriefEvent(input)) {
         this.clock.remove(record.module, key);
         continue;
       }
@@ -520,7 +459,18 @@ export class MeetingBriefHost implements HostedModule {
         // All active are quiet_period waits — allow new revision to supersede and reset quiet period
       }
 
-      const duplicateVersion = related.some((r) => r.result?.eventVersion === input.version);
+      const duplicateVersion = related.some((r) => {
+        const snapRaw = this.deps.runs.open(r.id)?.readArtifact("snapshot.json");
+        if (snapRaw) {
+          try {
+            const snap = JSON.parse(snapRaw) as { version?: string };
+            if (snap.version === input.version) return true;
+          } catch {
+            // ignore parse failure
+          }
+        }
+        return r.result?.eventVersion === input.version;
+      });
       if (duplicateVersion) {
         this.clock.remove(record.module, key);
         continue;
@@ -585,6 +535,69 @@ export class MeetingBriefHost implements HostedModule {
         }
       }
 
+      // Ignored-metadata dedup against newest blocked/active snapshot (quiet period)
+      {
+        let newestActive: (typeof related)[number] | null = null;
+        for (const r of related) {
+          if (r.meta && ["pending", "running", "blocked"].includes(r.meta.status)) {
+            if (
+              !newestActive ||
+              (r.meta &&
+                newestActive.meta &&
+                Date.parse(r.meta.createdAt) > Date.parse(newestActive.meta.createdAt))
+            ) {
+              newestActive = r;
+            }
+          }
+        }
+        if (newestActive) {
+          const activeSnapRaw = this.deps.runs.open(newestActive.id)?.readArtifact("snapshot.json");
+          let activeFingerprint: string | null = null;
+          if (activeSnapRaw) {
+            try {
+              const activeSnap = JSON.parse(activeSnapRaw) as Record<string, unknown> & {
+                summary: string;
+                description: string;
+                startAt: string;
+                endAt: string;
+                location: string | null;
+                conferenceLink: string | null;
+                attachments: string[];
+                organizer: { email: string } | undefined;
+                attendees: unknown[];
+              };
+              const syntheticActive = {
+                summary: String(activeSnap.summary ?? ""),
+                description: activeSnap.description as string | undefined,
+                startAt: String(activeSnap.startAt),
+                endAt: String(activeSnap.endAt),
+                location: activeSnap.location,
+                conferenceLink: activeSnap.conferenceLink,
+                organizer: activeSnap.organizer as { email: string } | undefined,
+                attendees:
+                  (activeSnap.attendees as {
+                    email: string;
+                    responseStatus: string;
+                    organizer?: boolean;
+                    resource?: boolean;
+                  }[]) ?? [],
+                attachments: activeSnap.attachments ?? [],
+              } as unknown as CalendarEvent;
+              activeFingerprint = materialFingerprint(syntheticActive);
+            } catch {
+              activeFingerprint = null;
+            }
+          }
+          if (activeFingerprint) {
+            const curFingerprint = materialFingerprint(input);
+            if (activeFingerprint === curFingerprint) {
+              this.clock.remove(record.module, key);
+              continue;
+            }
+          }
+        }
+      }
+
       // Quiet-period supersession: if a prior revision is blocked on quiet wait, supersede it directly
       const quietBlocked = related.filter(
         (r) => r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period",
@@ -622,14 +635,15 @@ export class MeetingBriefHost implements HostedModule {
   /** Recovery scans due records on boot (covers ADR-0032 without blocked Runs) + bounded Calendar reconciliation (issue://83). */
   async recover(): Promise<number> {
     const runsRecovered = await this.runner.recoverRuns();
-    // Calendar channel renewal + bounded reconciliation (startup recovery)
+    // Calendar channel renewal + bounded full look-ahead (startup establishes 90-day horizon)
     try {
       await this.ensureCalendarWatch();
     } catch {
       // provider may be fake or not configured — ignore
     }
     try {
-      await this.reconcileCalendar();
+      await this.reconcileCalendar({ forceFullSync: true });
+      this.lastFullSyncAt = new Date(this.now());
     } catch {
       // Calendar unavailable — durable schedules remain, recovery still returns
     }
@@ -640,11 +654,34 @@ export class MeetingBriefHost implements HostedModule {
     return runsRecovered;
   }
 
+  /** Periodic maintenance: watch renewal, bounded full reconcile on cadence, and due schedules. Avoids overlapping ticks. */
+  async maintenanceTick(now = this.now()): Promise<void> {
+    if (this.maintenanceInProgress) return;
+    this.maintenanceInProgress = true;
+    try {
+      await this.ensureCalendarWatch().catch(() => {});
+      const shouldFullSync =
+        this.lastFullSyncAt === null ||
+        now.getTime() - this.lastFullSyncAt.getTime() >= this.fullSyncIntervalMs;
+      if (shouldFullSync) {
+        try {
+          await this.reconcileCalendar({ forceFullSync: true });
+          this.lastFullSyncAt = new Date(now);
+        } catch {
+          // ignore — next tick will retry
+        }
+      }
+      await this.processDueSchedules(now);
+    } finally {
+      this.maintenanceInProgress = false;
+    }
+  }
+
   start(): void {
     this.runner.startRecoveryLoop();
     void this.recover();
     clearInterval(this.timer);
-    this.timer = setInterval(() => void this.processDueSchedules(), 30_000);
+    this.timer = setInterval(() => void this.maintenanceTick(), 30_000);
     this.timer.unref();
   }
 
@@ -715,13 +752,9 @@ export class MeetingBriefHost implements HostedModule {
       return this.index();
     });
 
-    // GET /api/meeting-brief/config — normalized Internal Domains + HubSpot status (unified, replaces hubspot/routes config)
+    // GET /api/meeting-brief/config — normalized Internal Domains only.
     app.get("/api/meeting-brief/config", async () => {
-      const internalDomains = this.getInternalDomains();
-      const hubspot = this.deps.configStore
-        ? new HubSpotConnection(this.deps.configStore).status()
-        : null;
-      return { internalDomains, hubspot };
+      return { internalDomains: this.getInternalDomains() };
     });
 
     // PUT /api/meeting-brief/config — configure normalized Internal Domains
@@ -740,10 +773,7 @@ export class MeetingBriefHost implements HostedModule {
       } catch {
         // ignore reconciliation failure — config still persisted
       }
-      const hubspot = this.deps.configStore
-        ? new HubSpotConnection(this.deps.configStore).status()
-        : null;
-      return { internalDomains: normalized, hubspot };
+      return { internalDomains: normalized };
     });
 
     // POST /api/meeting-brief/reconcile — manual trigger (for Settings "Check calendar" or tests)

@@ -7,14 +7,22 @@ import {
   MEETING_BRIEF_MODULE_VERSION,
   MEETING_BRIEF_STAGES,
   type MeetingBrief,
-  type MeetingBriefFixtureEvent,
+  type MeetingBriefEvent,
   type MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
 import { meetingBriefModule } from "../../../apps/server/src/modules/meeting-brief-generator/module";
+import {
+  FakeCalendarProvider,
+  type CalendarProvider,
+} from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
+import {
+  completeFixtureBrief,
+  fixtureGmailDeliveryProvider,
+} from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 
-function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
+function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
     calendarId: "primary",
     eventId: "evt_fixture_1",
@@ -38,6 +46,7 @@ function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): Meetin
     ],
     attachments: [],
     ...overrides,
+    status: overrides.status ?? "confirmed",
   };
 }
 
@@ -136,9 +145,7 @@ beforeEach(() => {
         uncertainty: [],
       };
     },
-    deliver: async () => {
-      return { messageId: "fixture-msg-123", recipient: "owner@example.com" };
-    },
+    gmailDeliveryProvider: fixtureGmailDeliveryProvider("fixture-msg-123"),
   });
 });
 
@@ -185,17 +192,55 @@ describe("durable Intake schedule via host (Shell durable clock)", () => {
     expect(upcoming[0]?.dueAt).toBe(secondDue.toISOString());
     expect(upcoming[0]?.version).toBe("v2");
   });
-
-  it("removes a schedule", () => {
-    const event = fixtureEvent();
-    host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
-    expect(host.listUpcoming()).toHaveLength(1);
-    host.removeOccurrence(event.eventId, event.occurrenceId);
-    expect(host.listUpcoming()).toHaveLength(0);
-  });
 });
 
 describe("fixture event → one Run at due time via real Runner/Runs/Workspace (no blocked future Run)", () => {
+  it("retries enrich from the frozen snapshot without fabricating Calendar input", async () => {
+    const retryWorkspace = mkdtempSync(join(tmpdir(), "mbf-retry-"));
+    const retryRuns = openRuns(retryWorkspace);
+    const event = fixtureEvent();
+    const calendar = new FakeCalendarProvider([{ ...event, status: "confirmed" }]);
+    const strictCalendar: CalendarProvider = {
+      watchChannel: (args) => calendar.watchChannel(args),
+      stopChannel: (args) => calendar.stopChannel(args),
+      async listEvents(args) {
+        if (args.calendarId !== event.calendarId) {
+          throw new Error(`Unexpected Calendar id ${args.calendarId}`);
+        }
+        return calendar.listEvents(args);
+      },
+    };
+    let enrichAttempts = 0;
+    const retryHost = new MeetingBriefHost({
+      runs: retryRuns,
+      workspaceDir: retryWorkspace,
+      now: () => new Date(now),
+      calendarProvider: strictCalendar,
+      getInternalDomains: () => ["example.com"],
+      getOwnerEmail: () => "owner@example.com",
+      enrich: async () => {
+        enrichAttempts += 1;
+        if (enrichAttempts === 1) throw new Error("temporary required-provider outage");
+        return { sections: [], evidence: [] };
+      },
+      completeBrief: completeFixtureBrief,
+      gmailDeliveryProvider: fixtureGmailDeliveryProvider("retry-msg"),
+    });
+
+    retryHost.scheduleOccurrence(event, new Date(now));
+    const [runId] = await retryHost.processDueSchedules(new Date(now));
+    await retryHost.idle();
+    expect(retryRuns.detail(runId)?.failedStage).toBe("enrich");
+
+    await retryHost.retryRun(runId);
+    await retryHost.idle();
+
+    const retried = retryRuns.detail(runId);
+    expect(retried?.status).toBe("done");
+    expect((retried?.result as MeetingBriefRunResult).eventVersion).toBe("v1");
+    expect(enrichAttempts).toBe(2);
+  });
+
   it("creates exactly one Run at due time and completes 4 Stages with fixture brief, artifacts, timeline, delivery", async () => {
     const event = fixtureEvent();
     const dueAt = new Date("2026-08-28T11:00:00.000Z");
@@ -289,12 +334,9 @@ describe("fixture event → one Run at due time via real Runner/Runs/Workspace (
       workspaceDir,
       now: () => new Date(now2),
       log: () => {},
-      profileProvider: null,
-      hubSpotApi: null,
-      publicIntelligenceProvider: null,
-      gmailProvider: null,
-      calendarHistoryProvider: null,
-      driveProvider: null,
+      enrich: async () => ({ sections: [], evidence: [] }),
+      completeBrief: completeFixtureBrief,
+      gmailDeliveryProvider: fixtureGmailDeliveryProvider("restart-msg"),
     });
     expect(host2.listUpcoming()).toHaveLength(1);
 

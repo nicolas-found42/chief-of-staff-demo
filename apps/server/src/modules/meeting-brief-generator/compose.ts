@@ -3,7 +3,7 @@ import { z } from "zod";
 import type {
   MeetingBrief,
   MeetingBriefEnrichmentSection,
-  MeetingBriefFixtureEvent,
+  MeetingBriefEvent,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { parseResultShape } from "../../llm/failure.js";
@@ -77,7 +77,7 @@ Rules you must follow:
 `;
 
 interface ComposePromptInput {
-  snapshot: MeetingBriefFixtureEvent & { occurrenceKey: string };
+  snapshot: MeetingBriefEvent & { occurrenceKey: string };
   sections: MeetingBriefEnrichmentSection[];
   externalGuestEmails: string[];
   acceptedEmployerMatches: Array<{
@@ -317,7 +317,7 @@ function validateGuestsAndCompanies(
   }
 }
 
-function composeLogistics(snapshot: MeetingBriefFixtureEvent): MeetingBrief["logistics"] {
+function composeLogistics(snapshot: MeetingBriefEvent): MeetingBrief["logistics"] {
   const organizer = snapshot.organizer
     ? snapshot.organizer.displayName !== undefined
       ? { email: snapshot.organizer.email, displayName: snapshot.organizer.displayName }
@@ -340,7 +340,7 @@ function composeLogistics(snapshot: MeetingBriefFixtureEvent): MeetingBrief["log
 export interface ComposeBriefDeps {
   now: () => Date;
   getCompleteJson: () => CompleteJson;
-  snapshot: MeetingBriefFixtureEvent & { occurrenceKey: string };
+  snapshot: MeetingBriefEvent & { occurrenceKey: string };
   sections: MeetingBriefEnrichmentSection[];
   internalDomains: string[];
 }
@@ -421,32 +421,6 @@ export async function composeBrief(deps: ComposeBriefDeps): Promise<MeetingBrief
     missingEvidence: modelOutput.missingEvidence,
     uncertainty: modelOutput.uncertainty,
   };
-
-  const FinalSchema = z.strictObject({
-    version: z.literal(1),
-    eventId: z.string().min(1),
-    occurrenceId: z.string().min(1),
-    eventVersion: z.string().min(1),
-    generatedAt: z.string().min(1),
-    logistics: z.strictObject({
-      title: z.string().min(1),
-      startAt: z.string().min(1),
-      endAt: z.string().min(1),
-      location: z.string().nullable(),
-      conferenceLink: z.string().nullable(),
-      organizer: z
-        .strictObject({ email: z.string().email(), displayName: z.string().optional() })
-        .nullable(),
-    }),
-    summary: z.string().min(1).max(300),
-    guests: z.array(GuestWireSchema).min(1),
-    companies: z.array(CompanyWireSchema),
-    conversationStarters: z.array(z.string().min(1).max(300)).min(2).max(3),
-    sourceReferences: z.array(z.string().min(1)).max(50),
-    missingEvidence: z.array(z.string().min(1)).max(20),
-    uncertainty: z.array(z.string().min(1)).max(20),
-  });
-  parseResultShape(MEETING_BRIEF_MODEL_SHAPE, FinalSchema, brief);
 
   return brief;
 }

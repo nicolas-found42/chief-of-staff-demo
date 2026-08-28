@@ -9,9 +9,10 @@ import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-
 import type { HubSpotCompany, HubSpotContact, HubSpotDeal } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
-import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
+import { fixtureGmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 
-function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
+function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
     calendarId: "primary",
     eventId: "evt_hubspot_1",
@@ -25,6 +26,7 @@ function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): Meetin
       { email: "bob@gmail.com", displayName: "Bob Consumer", responseStatus: "accepted" },
     ],
     ...overrides,
+    status: overrides.status ?? "confirmed",
   };
 }
 
@@ -70,6 +72,14 @@ function hubSpotError(status: number, category?: string, message?: string) {
   error.status = status;
   if (category) error.category = category;
   return error;
+}
+
+function seedHubSpotToken(configStore: ConfigStore, token: string): void {
+  const current = configStore.get().modules["meeting-brief-generator"];
+  configStore.setModuleConfig("meeting-brief-generator", {
+    ...current,
+    hubspot: { token, lastVerifiedAt: null },
+  });
 }
 
 describe("HubSpot connection — per-user private-app token, redacted, no shared credential", () => {
@@ -163,7 +173,7 @@ describe("HubSpot setup probe — bounded read-only, 5 states, no side effect", 
   });
 
   it("distinguishes rejected when HubSpot returns 401", async () => {
-    configStore.setHubSpotToken("pat-na1-bad-token", null);
+    seedHubSpotToken(configStore, "pat-na1-bad-token");
     const conn = new HubSpotConnection(
       configStore,
       () => ({
@@ -180,7 +190,7 @@ describe("HubSpot setup probe — bounded read-only, 5 states, no side effect", 
   });
 
   it("distinguishes missing_authority when 403 MISSING_SCOPES", async () => {
-    configStore.setHubSpotToken("pat-na1-no-scopes", null);
+    seedHubSpotToken(configStore, "pat-na1-no-scopes");
     const conn = new HubSpotConnection(
       configStore,
       () => ({
@@ -200,7 +210,7 @@ describe("HubSpot setup probe — bounded read-only, 5 states, no side effect", 
   });
 
   it("distinguishes unavailable on 500 and network error", async () => {
-    configStore.setHubSpotToken("pat-na1-unavailable", null);
+    seedHubSpotToken(configStore, "pat-na1-unavailable");
     const conn500 = new HubSpotConnection(
       configStore,
       () => ({
@@ -227,7 +237,7 @@ describe("HubSpot setup probe — bounded read-only, 5 states, no side effect", 
   });
 
   it("reports healthy on success — healthy empty data is still healthy", async () => {
-    configStore.setHubSpotToken("pat-na1-good-token", null);
+    seedHubSpotToken(configStore, "pat-na1-good-token");
     const conn = new HubSpotConnection(
       configStore,
       () => ({
@@ -248,7 +258,7 @@ describe("HubSpot setup probe — bounded read-only, 5 states, no side effect", 
   });
 
   it("probe is bounded (limit 1) and read-only — does not create side effects", async () => {
-    configStore.setHubSpotToken("pat-na1-good-token", null);
+    seedHubSpotToken(configStore, "pat-na1-good-token");
     const probe = vi.fn(async () => undefined);
     const conn = new HubSpotConnection(configStore, () => ({ probe }), now);
     await conn.verifySetup();
@@ -260,6 +270,39 @@ describe("HubSpot setup probe — bounded read-only, 5 states, no side effect", 
 });
 
 describe("HubSpot enrichment — exact-email + bounded company/deal, artifacts stable", () => {
+  it("propagates a contact-level integration outage instead of degrading it to a guest gap", async () => {
+    const api = fakeHubSpotApi({
+      async searchContactByEmail() {
+        throw hubSpotError(503, "UNAVAILABLE", "HubSpot unavailable");
+      },
+    });
+
+    await expect(enrichGuestWithHubSpot(api, "v1", "alice@external.co")).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+
+  it("propagates a provider-wide outage discovered after the contact lookup succeeds", async () => {
+    const api = fakeHubSpotApi({
+      async searchContactByEmail(email) {
+        return {
+          id: "contact-1",
+          email,
+          properties: { email },
+          associatedCompanyIds: [],
+          associatedDealIds: [],
+        };
+      },
+      async getAssociatedCompanyIds() {
+        throw hubSpotError(503, "UNAVAILABLE", "HubSpot company associations unavailable");
+      },
+    });
+
+    await expect(enrichGuestWithHubSpot(api, "v1", "alice@external.co")).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+
   it("contact+company+deal fixture creates completed artifacts with stable refs and employer match", async () => {
     const contact: HubSpotContact = {
       id: "101",
@@ -705,7 +748,7 @@ describe("Host seam — real Runs/Runner/durableClock/Workspace + fake HubSpot",
         missingEvidence: [],
         uncertainty: [],
       }),
-      deliver: async () => ({ messageId: "msg-123", recipient: "owner@example.com" }),
+      gmailDeliveryProvider: fixtureGmailDeliveryProvider("msg-123"),
     });
 
     const event = fixtureEvent({ version: "v1" });

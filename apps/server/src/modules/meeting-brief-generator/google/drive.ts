@@ -4,10 +4,11 @@ import {
   GOOGLE_ENRICHMENT_MAX_DRIVE_DOCS,
   type GoogleEnrichmentArtifact,
   googleEnrichmentKey,
-  googleEnrichmentStableRef,
 } from "@chief-of-staff-demo/shared";
 import type { RunContext } from "../../../engine/module.js";
 import type { MeetingBriefEnrichmentSection } from "@chief-of-staff-demo/shared";
+import { readErrorCode, readErrorStatus, sanitizeEvidence } from "../enrichment/helpers.js";
+import { runArtifactLifecycle } from "./artifactLifecycle.js";
 
 export interface DriveDoc {
   id: string;
@@ -17,44 +18,6 @@ export interface DriveDoc {
 
 export interface DriveProvider {
   searchDocs(query: string, maxResults: number): Promise<DriveDoc[]>;
-}
-
-function sanitizeEvidence(text: string): string {
-  // eslint-disable-next-line no-control-regex -- sanitize control characters from untrusted provider evidence (removing 0x00-0x1F)
-  return text.slice(0, 500).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-}
-
-function readErrorStatus(error: unknown): number | null {
-  const maybe = error as { code?: number; status?: number; response?: { status?: number } };
-  return maybe.code ?? maybe.status ?? maybe.response?.status ?? null;
-}
-
-function readErrorCode(error: unknown): string | null {
-  const maybe = error as {
-    code?: string;
-    reason?: string;
-    response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } };
-  };
-  if (typeof maybe.code === "string") return maybe.code;
-  if (typeof maybe.reason === "string") return maybe.reason;
-  const nested = maybe.response?.data?.error?.errors?.[0]?.reason;
-  if (typeof nested === "string") return nested;
-  return null;
-}
-
-function isProviderWideError(error: unknown): boolean {
-  const status = readErrorStatus(error);
-  const code = readErrorCode(error);
-  const msg = error instanceof Error ? error.message : String(error);
-  if (status === 401 || status === 403 || status === 503) return true;
-  if (code === "insufficientPermissions" || code === "accessNotConfigured") return true;
-  if (
-    /invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(
-      msg,
-    )
-  )
-    return true;
-  return false;
 }
 
 export function createDriveProvider(auth: GoogleAuth): DriveProvider {
@@ -69,11 +32,14 @@ export function createDriveProvider(auth: GoogleAuth): DriveProvider {
         includeItemsFromAllDrives: true,
       });
       const files = res.data.files ?? [];
-      return files.slice(0, maxResults).map((f) => ({
-        id: f.id ?? `doc-${Math.random()}`,
-        name: f.name ?? "",
-        webViewLink: f.webViewLink ?? `https://drive.google.com/file/d/${f.id}/view`,
-      }));
+      return files
+        .filter((file): file is typeof file & { id: string } => Boolean(file.id))
+        .slice(0, maxResults)
+        .map((f) => ({
+          id: f.id,
+          name: f.name ?? "",
+          webViewLink: f.webViewLink ?? `https://drive.google.com/file/d/${f.id}/view`,
+        }));
     },
   };
 }
@@ -158,39 +124,11 @@ export async function enrichDriveDocs(
   // Drive artifact keyed by guest + company presence; if companyDomain present, include it
   const source = "drive-docs" as const;
   const key = googleEnrichmentKey(eventVersion, normalizedGuest, source, normalizedDomain);
-  const stableRef = googleEnrichmentStableRef(
-    eventVersion,
-    normalizedGuest,
-    source,
-    normalizedDomain,
-  );
+  const stableRef = key;
   const maxResults = GOOGLE_ENRICHMENT_MAX_DRIVE_DOCS;
   const sanitizedGuest = normalizedGuest.replace(/[^a-z0-9]/g, "_");
   const sanitizedDomain = normalizedDomain ? normalizedDomain.replace(/[^a-z0-9]/g, "_") : "person";
   const filename = `drive-${sanitizedGuest}-${sanitizedDomain}-${eventVersion}.json`;
-
-  const existingRaw = ctx.readFile(filename);
-  if (existingRaw) {
-    try {
-      const existing = JSON.parse(existingRaw) as GoogleEnrichmentArtifact;
-      if (
-        existing.eventVersion === eventVersion &&
-        (existing.status === "completed" || existing.status === "empty")
-      ) {
-        const section = {
-          source,
-          guest: normalizedGuest,
-          ...(normalizedDomain ? { company: normalizedDomain } : {}),
-          status: existing.status,
-          evidence: existing.evidence,
-          references: existing.references,
-        } as MeetingBriefEnrichmentSection;
-        return { artifact: existing, section };
-      }
-    } catch {
-      // re-enrich
-    }
-  }
 
   // Build bounded query: for company domain, search for Drive docs containing company domain or guest email
   // For consumer domains, only guest-specific query
@@ -203,14 +141,14 @@ export async function enrichDriveDocs(
   }
   const query = queryParts.join(" or ");
 
-  let attempts = 1;
-  let lastError: unknown = null;
-  const maxAttempts = 2;
-  for (; attempts <= maxAttempts; attempts += 1) {
-    try {
+  return runArtifactLifecycle({
+    ctx,
+    filename,
+    eventVersion,
+    async lookup(attempts) {
       const docs = await provider.searchDocs(query, maxResults);
       if (docs.length === 0) {
-        const artifact: GoogleEnrichmentArtifact = {
+        return {
           key,
           eventVersion,
           guestEmail: normalizedGuest,
@@ -222,25 +160,12 @@ export async function enrichDriveDocs(
           diagnostics: { bounded: true, maxResults, stableRef, untrusted: true, attempts },
           stableRef,
         };
-        ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-        ctx.event("drive_empty", { guest: normalizedGuest, domain: normalizedDomain, attempts });
-        return {
-          artifact,
-          section: {
-            source,
-            guest: normalizedGuest,
-            ...(normalizedDomain ? { company: normalizedDomain } : {}),
-            status: "empty",
-            evidence: [],
-            references: [],
-          },
-        };
       }
       const limited = docs.slice(0, maxResults);
       const truncated = docs.length > maxResults;
       const evidence = limited.map((d) => sanitizeEvidence(d.name || `Doc ${d.id}`));
       const references = limited.map((d) => d.webViewLink);
-      const artifact: GoogleEnrichmentArtifact = {
+      return {
         key,
         eventVersion,
         guestEmail: normalizedGuest,
@@ -259,34 +184,12 @@ export async function enrichDriveDocs(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("drive_completed", {
-        guest: normalizedGuest,
-        domain: normalizedDomain,
-        count: evidence.length,
-      });
-      return {
-        artifact,
-        section: {
-          source,
-          guest: normalizedGuest,
-          ...(normalizedDomain ? { company: normalizedDomain } : {}),
-          status: "completed",
-          evidence,
-          references,
-        },
-      };
-    } catch (error) {
-      lastError = error;
-      if (isProviderWideError(error)) throw error;
-      if (attempts < maxAttempts) {
-        ctx.event("drive_retry", { guest: normalizedGuest, attempt: attempts });
-        continue;
-      }
+    },
+    failure(error, attempts) {
       const httpStatus = readErrorStatus(error);
       const errorCode = readErrorCode(error);
       const reason = error instanceof Error ? error.message : String(error);
-      const artifact: GoogleEnrichmentArtifact = {
+      return {
         key,
         eventVersion,
         guestEmail: normalizedGuest,
@@ -307,20 +210,29 @@ export async function enrichDriveDocs(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("drive_failed", { guest: normalizedGuest, error: reason.slice(0, 200) });
-      return {
-        artifact,
-        section: {
-          source,
+    },
+    onRetry(_error, attempt) {
+      ctx.event("drive_retry", { guest: normalizedGuest, attempt });
+    },
+    onSettled(artifact) {
+      if (artifact.status === "empty") {
+        ctx.event("drive_empty", {
           guest: normalizedGuest,
-          ...(normalizedDomain ? { company: normalizedDomain } : {}),
-          status: "failed",
-          evidence: [],
-          references: [],
-        },
-      };
-    }
-  }
-  throw lastError;
+          domain: normalizedDomain,
+          attempts: artifact.diagnostics.attempts,
+        });
+      } else if (artifact.status === "completed") {
+        ctx.event("drive_completed", {
+          guest: normalizedGuest,
+          domain: normalizedDomain,
+          count: artifact.evidence.length,
+        });
+      } else {
+        ctx.event("drive_failed", {
+          guest: normalizedGuest,
+          error: artifact.diagnostics.reason?.slice(0, 200) ?? "unknown error",
+        });
+      }
+    },
+  });
 }

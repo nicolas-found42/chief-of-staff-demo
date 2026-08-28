@@ -4,10 +4,11 @@ import {
   GOOGLE_ENRICHMENT_MAX_CALENDAR_HISTORY,
   type GoogleEnrichmentArtifact,
   googleEnrichmentKey,
-  googleEnrichmentStableRef,
 } from "@chief-of-staff-demo/shared";
 import type { RunContext } from "../../../engine/module.js";
 import type { MeetingBriefEnrichmentSection } from "@chief-of-staff-demo/shared";
+import { readErrorCode, readErrorStatus, sanitizeEvidence } from "../enrichment/helpers.js";
+import { runArtifactLifecycle } from "./artifactLifecycle.js";
 
 export interface CalendarHistoryEvent {
   id: string;
@@ -22,44 +23,6 @@ export interface CalendarHistoryProvider {
     maxResults: number,
     before: string,
   ): Promise<CalendarHistoryEvent[]>;
-}
-
-function sanitizeEvidence(text: string): string {
-  // eslint-disable-next-line no-control-regex -- sanitize control characters from untrusted provider evidence (removing 0x00-0x1F)
-  return text.slice(0, 500).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-}
-
-function readErrorStatus(error: unknown): number | null {
-  const maybe = error as { code?: number; status?: number; response?: { status?: number } };
-  return maybe.code ?? maybe.status ?? maybe.response?.status ?? null;
-}
-
-function readErrorCode(error: unknown): string | null {
-  const maybe = error as {
-    code?: string;
-    reason?: string;
-    response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } };
-  };
-  if (typeof maybe.code === "string") return maybe.code;
-  if (typeof maybe.reason === "string") return maybe.reason;
-  const nested = maybe.response?.data?.error?.errors?.[0]?.reason;
-  if (typeof nested === "string") return nested;
-  return null;
-}
-
-function isProviderWideError(error: unknown): boolean {
-  const status = readErrorStatus(error);
-  const code = readErrorCode(error);
-  const msg = error instanceof Error ? error.message : String(error);
-  if (status === 401 || status === 403 || status === 503) return true;
-  if (code === "insufficientPermissions" || code === "accessNotConfigured") return true;
-  if (
-    /invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(
-      msg,
-    )
-  )
-    return true;
-  return false;
 }
 
 export function createCalendarHistoryProvider(auth: GoogleAuth): CalendarHistoryProvider {
@@ -85,12 +48,13 @@ export function createCalendarHistoryProvider(auth: GoogleAuth): CalendarHistory
       const items = res.data.items ?? [];
       const filtered = items
         .filter((e) => {
+          if (!e.id) return false;
           const attendees = (e.attendees ?? []).map((a) => (a.email ?? "").toLowerCase());
           return attendees.includes(guestEmail.toLowerCase());
         })
         .slice(0, maxResults)
         .map((e) => ({
-          id: e.id ?? `evt-${Math.random()}`,
+          id: e.id!,
           summary: e.summary ?? "",
           startAt: e.start?.dateTime ?? e.start?.date ?? "",
           attendees: (e.attendees ?? []).map((a) => a.email ?? ""),
@@ -182,39 +146,18 @@ export async function enrichCalendarHistory(
 ): Promise<{ artifact: GoogleEnrichmentArtifact; section: MeetingBriefEnrichmentSection }> {
   const normalized = guestEmail.toLowerCase();
   const key = googleEnrichmentKey(eventVersion, normalized, "calendar-history");
-  const stableRef = googleEnrichmentStableRef(eventVersion, normalized, "calendar-history");
+  const stableRef = key;
   const maxResults = GOOGLE_ENRICHMENT_MAX_CALENDAR_HISTORY;
   const filename = `calendar-history-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`;
 
-  const existingRaw = ctx.readFile(filename);
-  if (existingRaw) {
-    try {
-      const existing = JSON.parse(existingRaw) as GoogleEnrichmentArtifact;
-      if (
-        existing.eventVersion === eventVersion &&
-        (existing.status === "completed" || existing.status === "empty")
-      ) {
-        const section: MeetingBriefEnrichmentSection = {
-          source: "calendar-history",
-          guest: normalized,
-          status: existing.status,
-          evidence: existing.evidence,
-          references: existing.references,
-        };
-        return { artifact: existing, section };
-      }
-    } catch {
-      // re-enrich
-    }
-  }
-  let attempts = 1;
-  let lastError: unknown = null;
-  const maxAttempts = 2;
-  for (; attempts <= maxAttempts; attempts += 1) {
-    try {
+  return runArtifactLifecycle({
+    ctx,
+    filename,
+    eventVersion,
+    async lookup(attempts) {
       const events = await provider.listPastMeetings(normalized, maxResults, before);
       if (events.length === 0) {
-        const artifact: GoogleEnrichmentArtifact = {
+        return {
           key,
           eventVersion,
           guestEmail: normalized,
@@ -225,18 +168,6 @@ export async function enrichCalendarHistory(
           diagnostics: { bounded: true, maxResults, stableRef, untrusted: true, attempts },
           stableRef,
         };
-        ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-        ctx.event("calendar_history_empty", { guest: normalized, attempts });
-        return {
-          artifact,
-          section: {
-            source: "calendar-history",
-            guest: normalized,
-            status: "empty",
-            evidence: [],
-            references: [],
-          },
-        };
       }
       const limited = events.slice(0, maxResults);
       const truncated = events.length > maxResults;
@@ -246,7 +177,7 @@ export async function enrichCalendarHistory(
       const references = limited.map(
         (e) => `https://calendar.google.com/calendar/event?eid=${encodeURIComponent(e.id)}`,
       );
-      const artifact: GoogleEnrichmentArtifact = {
+      return {
         key,
         eventVersion,
         guestEmail: normalized,
@@ -264,29 +195,12 @@ export async function enrichCalendarHistory(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("calendar_history_completed", { guest: normalized, count: evidence.length });
-      return {
-        artifact,
-        section: {
-          source: "calendar-history",
-          guest: normalized,
-          status: "completed",
-          evidence,
-          references,
-        },
-      };
-    } catch (error) {
-      lastError = error;
-      if (isProviderWideError(error)) throw error;
-      if (attempts < maxAttempts) {
-        ctx.event("calendar_history_retry", { guest: normalized, attempt: attempts });
-        continue;
-      }
+    },
+    failure(error, attempts) {
       const httpStatus = readErrorStatus(error);
       const errorCode = readErrorCode(error);
       const reason = error instanceof Error ? error.message : String(error);
-      const artifact: GoogleEnrichmentArtifact = {
+      return {
         key,
         eventVersion,
         guestEmail: normalized,
@@ -306,19 +220,27 @@ export async function enrichCalendarHistory(
         },
         stableRef,
       };
-      ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("calendar_history_failed", { guest: normalized, error: reason.slice(0, 200) });
-      return {
-        artifact,
-        section: {
-          source: "calendar-history",
+    },
+    onRetry(_error, attempt) {
+      ctx.event("calendar_history_retry", { guest: normalized, attempt });
+    },
+    onSettled(artifact) {
+      if (artifact.status === "empty") {
+        ctx.event("calendar_history_empty", {
           guest: normalized,
-          status: "failed",
-          evidence: [],
-          references: [],
-        },
-      };
-    }
-  }
-  throw lastError;
+          attempts: artifact.diagnostics.attempts,
+        });
+      } else if (artifact.status === "completed") {
+        ctx.event("calendar_history_completed", {
+          guest: normalized,
+          count: artifact.evidence.length,
+        });
+      } else {
+        ctx.event("calendar_history_failed", {
+          guest: normalized,
+          error: artifact.diagnostics.reason?.slice(0, 200) ?? "unknown error",
+        });
+      }
+    },
+  });
 }

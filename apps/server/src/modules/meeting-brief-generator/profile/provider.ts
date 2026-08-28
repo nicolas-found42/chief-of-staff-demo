@@ -4,7 +4,7 @@ import {
   GUEST_PROFILE_PROVIDER_NAME,
   type GuestProfileArtifact,
   type GuestProfileConfidence,
-} from "./types.js";
+} from "@chief-of-staff-demo/shared";
 
 export interface GuestProfileProvider {
   readonly id: typeof GUEST_PROFILE_PROVIDER_ID;
@@ -323,12 +323,6 @@ function normalizeArtifact(input: {
   };
 }
 
-export function isEmployerMatch(artifact: GuestProfileArtifact): boolean {
-  // One unambiguous current-employer profile result is direct Employer Match.
-  // Ambiguous/empty/malformed keep unresolved — already normalized to null or outcome !== completed.
-  return artifact.outcome === "completed" && artifact.currentEmployer !== null;
-}
-
 export function createHttpGuestProfileProvider(fetchImpl: HttpFetch = fetch): GuestProfileProvider {
   return {
     id: GUEST_PROFILE_PROVIDER_ID,
@@ -351,42 +345,14 @@ export function createHttpGuestProfileProvider(fetchImpl: HttpFetch = fetch): Gu
         clearTimeout(timeout);
         const durationMs = Date.now() - start;
         if (res.status === 401) {
-          return normalizeArtifact({
-            guestEmail: input.guestEmail,
-            occurrenceKey: input.occurrenceKey,
-            eventVersion: input.eventVersion,
-            endpoint: input.endpoint,
-            attemptedAt,
-            statusCode: 401,
-            error: "rejected: unauthorized (401)",
-            durationMs,
-            raw: null,
-          });
+          throw Object.assign(new Error("rejected: unauthorized (401)"), { status: 401 });
         }
         if (res.status === 403) {
-          return normalizeArtifact({
-            guestEmail: input.guestEmail,
-            occurrenceKey: input.occurrenceKey,
-            eventVersion: input.eventVersion,
-            endpoint: input.endpoint,
-            attemptedAt,
-            statusCode: 403,
-            error: "missing_authority: forbidden (403)",
-            durationMs,
-            raw: null,
-          });
+          throw Object.assign(new Error("missing_authority: forbidden (403)"), { status: 403 });
         }
         if (res.status === 503 || res.status === 502 || res.status === 504) {
-          return normalizeArtifact({
-            guestEmail: input.guestEmail,
-            occurrenceKey: input.occurrenceKey,
-            eventVersion: input.eventVersion,
-            endpoint: input.endpoint,
-            attemptedAt,
-            statusCode: res.status,
-            error: `unavailable: provider unavailable (${res.status})`,
-            durationMs,
-            raw: null,
+          throw Object.assign(new Error(`unavailable: provider unavailable (${res.status})`), {
+            status: res.status,
           });
         }
         if (res.status === 404) {
@@ -441,19 +407,22 @@ export function createHttpGuestProfileProvider(fetchImpl: HttpFetch = fetch): Gu
           raw: body,
         });
       } catch (e) {
-        const durationMs = Date.now() - start;
+        const maybe = e as { status?: number };
+        if (
+          maybe?.status === 401 ||
+          maybe?.status === 403 ||
+          maybe?.status === 502 ||
+          maybe?.status === 503 ||
+          maybe?.status === 504
+        )
+          throw e;
         const message = e instanceof Error ? e.message : String(e);
+        if (/rejected|missing_authority|unavailable/i.test(message)) throw e;
         const isAbort = message.toLowerCase().includes("abort");
-        return normalizeArtifact({
-          guestEmail: input.guestEmail,
-          occurrenceKey: input.occurrenceKey,
-          eventVersion: input.eventVersion,
-          endpoint: input.endpoint,
-          attemptedAt,
-          error: isAbort ? "unavailable: timeout" : `unavailable: ${message}`,
-          durationMs,
-          raw: null,
-        });
+        throw Object.assign(
+          new Error(isAbort ? "unavailable: timeout" : `unavailable: ${message}`),
+          { status: 503 },
+        );
       }
     },
   };

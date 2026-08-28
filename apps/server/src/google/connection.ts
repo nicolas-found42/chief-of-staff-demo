@@ -223,14 +223,26 @@ const callSurface: SurfaceProbe = async (config, port, surface) => {
     return;
   }
   if (surface === "gmail-send") {
-    // Bounded read-only probe for delivery authority (ADR-0034). Read-only: listing
-    // one sent message validates Gmail API enabled + gmail.send without sending mail.
-    // A token missing gmail.send but holding gmail.readonly would still read sent,
-    // but the scope check at sign-in (findMissingScopes) gates the grant; this
-    // probe's job is API-enabled vs revoked, not granular scope isolation.
-    await google
-      .gmail({ version: "v1", auth })
-      .users.messages.list({ userId: "me", maxResults: 1, q: "in:sent" });
+    // Token metadata is the only read-only way to distinguish gmail.send from
+    // gmail.readonly: listing Sent succeeds with either scope and would report a false healthy.
+    const access = await auth.getAccessToken();
+    const token = access.token ?? auth.credentials.access_token;
+    if (!token) throw new Error("Google did not return an access token for Gmail delivery check");
+    const info = await google.oauth2({ version: "v2", auth }).tokeninfo({ access_token: token });
+    const scopes = new Set((info.data.scope ?? "").split(/\s+/).filter(Boolean));
+    if (!scopes.has("https://www.googleapis.com/auth/gmail.send")) {
+      throw Object.assign(new Error("Gmail delivery scope is missing"), {
+        response: {
+          status: 403,
+          data: {
+            error: {
+              message: "Request had insufficient authentication scopes",
+              errors: [{ reason: "insufficientPermissions" }],
+            },
+          },
+        },
+      });
+    }
     return;
   }
   if (surface === "calendar") {

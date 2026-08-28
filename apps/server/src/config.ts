@@ -9,7 +9,6 @@ import {
   ConfigSchema,
   DEFAULT_MODELS,
   DEFAULT_OLLAMA_BASE_URL,
-  normalizeInternalDomains,
 } from "@chief-of-staff-demo/shared";
 
 /** Recursively merge `patch` over `base`; missing keys keep the base value. */
@@ -87,22 +86,12 @@ function defaultConfig(): AppConfig {
   };
 }
 
-/** Fill in the provider's default model when the stored model is empty and normalize meeting brief domains. */
+/** Fill in the provider's default model when the stored model is empty. */
 
 function normalize(config: AppConfig): AppConfig {
-  const internalDomains = normalizeInternalDomains(
-    config.modules["meeting-brief-generator"].internalDomains,
-  );
   return {
     ...config,
     model: config.model === "" ? DEFAULT_MODELS[config.provider] : config.model,
-    modules: {
-      ...config.modules,
-      "meeting-brief-generator": {
-        ...config.modules["meeting-brief-generator"],
-        internalDomains,
-      },
-    },
   };
 }
 
@@ -140,6 +129,10 @@ export class ConfigStore {
     return this.config;
   }
 
+  getModuleConfig<K extends keyof ModuleConfigs>(key: K): ModuleConfigs[K] {
+    return this.get().modules[key];
+  }
+
   /** Merge a partial update. Absent secret fields keep their stored values. */
   update(patch: ConfigUpdate): AppConfig {
     const merged = deepMerge(this.get(), patch);
@@ -156,15 +149,7 @@ export class ConfigStore {
    */
   setModuleConfig<K extends keyof ModuleConfigs>(key: K, next: ModuleConfigs[K]): void {
     const current = this.get();
-    let normalizedNext = next;
-    if (key === "meeting-brief-generator") {
-      const mbg = next as AppConfig["modules"]["meeting-brief-generator"];
-      normalizedNext = {
-        ...mbg,
-        internalDomains: normalizeInternalDomains(mbg.internalDomains),
-      } as ModuleConfigs[K];
-    }
-    this.config = { ...current, modules: { ...current.modules, [key]: normalizedNext } };
+    this.config = { ...current, modules: { ...current.modules, [key]: next } };
     this.persist();
   }
 
@@ -190,40 +175,6 @@ export class ConfigStore {
   setNotionToken(token: string, verifiedAt: string | null): void {
     const current = this.get();
     this.config = { ...current, notion: { token, lastVerifiedAt: verifiedAt } };
-    this.persist();
-  }
-
-  setHubSpotToken(token: string, verifiedAt: string | null): void {
-    const current = this.get();
-    const modules = current.modules["meeting-brief-generator"];
-    this.config = {
-      ...current,
-      modules: {
-        ...current.modules,
-        "meeting-brief-generator": { ...modules, hubspot: { token, lastVerifiedAt: verifiedAt } },
-      },
-    };
-    this.persist();
-  }
-
-  setGuestProfileToken(endpoint: string, apiKey: string, verifiedAt: string | null): void {
-    const current = this.get();
-    const modules = current.modules["meeting-brief-generator"];
-    this.config = {
-      ...current,
-      modules: {
-        ...current.modules,
-        "meeting-brief-generator": {
-          ...modules,
-          guestProfile: {
-            ...modules.guestProfile,
-            endpoint,
-            apiKey,
-            lastVerifiedAt: verifiedAt,
-          },
-        },
-      },
-    };
     this.persist();
   }
 

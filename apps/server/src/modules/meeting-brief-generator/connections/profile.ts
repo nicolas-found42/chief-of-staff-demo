@@ -1,26 +1,33 @@
-import { GUEST_PROFILE_PROVIDER_NAME, type GuestProfileConnectionState } from "../profile/types.js";
+import {
+  GUEST_PROFILE_PROVIDER_NAME,
+  MEETING_BRIEF_MODULE_ID,
+  type AppConfig,
+  type GuestProfileCheckResult,
+  type GuestProfileConnectionState,
+  type GuestProfileStatus,
+} from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../../../config.js";
 import { createHttpGuestProfileProvider, type GuestProfileProvider } from "../profile/provider.js";
 
-export interface GuestProfileStatus {
-  provider: typeof GUEST_PROFILE_PROVIDER_NAME;
-  endpoint: string | null;
-  apiKeyHint: string;
-  state: GuestProfileConnectionState;
-  lastVerifiedAt: string | null;
-  lastCheck?: { at: string; state: GuestProfileConnectionState; detail: string } | null;
-}
-
-export interface GuestProfileCheckResult {
-  state: GuestProfileConnectionState;
-  detail: string;
-  checkedAt: string;
-}
-
 type FetchProbe = (endpoint: string, apiKey: string, signal?: AbortSignal) => Promise<Response>;
+type GuestProfileConfig = AppConfig["modules"]["meeting-brief-generator"]["guestProfile"];
 
 function hint(apiKey: string): string {
   return apiKey ? `…${apiKey.slice(-4)}` : "";
+}
+
+function connectionState(value: string | null): GuestProfileConnectionState | null {
+  if (
+    value === "unconfigured" ||
+    value === "connected" ||
+    value === "unverified" ||
+    value === "rejected" ||
+    value === "missing_authority" ||
+    value === "unavailable"
+  ) {
+    return value;
+  }
+  return null;
 }
 
 export class GuestProfileConnection {
@@ -28,47 +35,34 @@ export class GuestProfileConnection {
     private readonly configStore: ConfigStore,
     private readonly fetchProbe: FetchProbe | null = null,
     private readonly now: () => Date = () => new Date(),
-    private readonly providerFactory: (
-      endpoint: string,
-      apiKey: string,
-    ) => GuestProfileProvider = () => createHttpGuestProfileProvider(),
   ) {}
 
   status(): GuestProfileStatus {
-    const cfg = this.configStore.get().modules["meeting-brief-generator"] as unknown as {
-      guestProfile?: {
-        endpoint: string;
-        apiKey: string;
-        lastVerifiedAt: string | null;
-        lastCheckAt?: string | null;
-        lastCheckState?: string | null;
-        lastCheckDetail?: string | null;
-      };
-    };
-    const gp = cfg.guestProfile;
-    if (!gp || !gp.endpoint || !gp.apiKey) {
+    const profile = this.currentConfig();
+    const lastCheckState = connectionState(profile.lastCheckState);
+    if (!profile.endpoint || !profile.apiKey) {
       return {
         provider: GUEST_PROFILE_PROVIDER_NAME,
-        endpoint: gp?.endpoint ? gp.endpoint : null,
-        apiKeyHint: hint(gp?.apiKey ?? ""),
+        endpoint: profile.endpoint || null,
+        apiKeyHint: hint(profile.apiKey),
         state: "unconfigured",
-        lastVerifiedAt: gp?.lastVerifiedAt ?? null,
+        lastVerifiedAt: profile.lastVerifiedAt,
         lastCheck: null,
       };
     }
-    const state: GuestProfileConnectionState = gp.lastVerifiedAt ? "connected" : "unverified";
+    const state: GuestProfileConnectionState = profile.lastVerifiedAt ? "connected" : "unverified";
     return {
       provider: GUEST_PROFILE_PROVIDER_NAME,
-      endpoint: gp.endpoint,
-      apiKeyHint: hint(gp.apiKey),
+      endpoint: profile.endpoint,
+      apiKeyHint: hint(profile.apiKey),
       state,
-      lastVerifiedAt: gp.lastVerifiedAt ?? null,
+      lastVerifiedAt: profile.lastVerifiedAt,
       lastCheck:
-        gp.lastCheckAt && gp.lastCheckState
+        profile.lastCheckAt && lastCheckState
           ? {
-              at: gp.lastCheckAt,
-              state: gp.lastCheckState as GuestProfileConnectionState,
-              detail: gp.lastCheckDetail ?? "",
+              at: profile.lastCheckAt,
+              state: lastCheckState,
+              detail: profile.lastCheckDetail ?? "",
             }
           : null,
     };
@@ -88,45 +82,26 @@ export class GuestProfileConnection {
     if (url.protocol !== "https:" && url.protocol !== "http:") {
       throw new Error("Guest Profile endpoint must be http or https.");
     }
-    const current = this.configStore.get();
-    const next = {
-      ...current.modules["meeting-brief-generator"],
-      guestProfile: {
-        endpoint: trimmedEndpoint,
-        apiKey: trimmedKey,
-        lastVerifiedAt:
-          (
-            current.modules["meeting-brief-generator"] as unknown as {
-              guestProfile?: { lastVerifiedAt: string | null };
-            }
-          ).guestProfile?.lastVerifiedAt ?? null,
-        lastCheckAt: null,
-        lastCheckState: null,
-        lastCheckDetail: null,
-      },
-      hubspot: (current.modules["meeting-brief-generator"] as unknown as { hubspot?: unknown })
-        .hubspot ?? { token: "", lastVerifiedAt: null },
-    };
-    this.configStore.setModuleConfig("meeting-brief-generator", next as never);
+    this.saveConfig({
+      ...this.currentConfig(),
+      endpoint: trimmedEndpoint,
+      apiKey: trimmedKey,
+      lastCheckAt: null,
+      lastCheckState: null,
+      lastCheckDetail: null,
+    });
     return this.status();
   }
 
   disconnect(): GuestProfileStatus {
-    const current = this.configStore.get();
-    const next = {
-      ...current.modules["meeting-brief-generator"],
-      guestProfile: {
-        endpoint: "",
-        apiKey: "",
-        lastVerifiedAt: null,
-        lastCheckAt: null,
-        lastCheckState: null,
-        lastCheckDetail: null,
-      },
-      hubspot: (current.modules["meeting-brief-generator"] as unknown as { hubspot?: unknown })
-        .hubspot ?? { token: "", lastVerifiedAt: null },
-    };
-    this.configStore.setModuleConfig("meeting-brief-generator", next as never);
+    this.saveConfig({
+      endpoint: "",
+      apiKey: "",
+      lastVerifiedAt: null,
+      lastCheckAt: null,
+      lastCheckState: null,
+      lastCheckDetail: null,
+    });
     return this.status();
   }
 
@@ -142,120 +117,81 @@ export class GuestProfileConnection {
   }
 
   async verifySetup(): Promise<GuestProfileCheckResult> {
-    const s = this.status();
-    if (s.state === "unconfigured") {
+    if (this.status().state === "unconfigured") {
       return {
         state: "unconfigured",
         detail: "Guest Profile endpoint and API key are not configured.",
         checkedAt: this.now().toISOString(),
       };
     }
-    const cfg = this.configStore.get().modules["meeting-brief-generator"] as unknown as {
-      guestProfile: { endpoint: string; apiKey: string; lastVerifiedAt: string | null };
-    };
-    const endpoint = cfg.guestProfile.endpoint;
-    const apiKey = cfg.guestProfile.apiKey;
+    const config = this.currentConfig();
     const checkedAt = this.now().toISOString();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
     try {
-      const res = await this.probeFetch(endpoint, apiKey, controller.signal);
+      const response = await this.probeFetch(config.endpoint, config.apiKey, controller.signal);
       clearTimeout(timeout);
       let state: GuestProfileConnectionState;
       let detail: string;
-      if (res.status === 200) {
-        // Bounded read-only probe — provider healthy. Try to distinguish empty vs data but both are healthy.
-        // We do not consume body beyond status; health is enough. Mark lastVerifiedAt.
+      if (response.status === 200) {
         state = "connected";
         detail = "Guest Profile provider accepted the credential and is reachable.";
-        const current = this.configStore.get();
-        const existing = current.modules["meeting-brief-generator"] as unknown as {
-          guestProfile: {
-            endpoint: string;
-            apiKey: string;
-            lastVerifiedAt: string | null;
-            lastCheckAt?: string | null;
-            lastCheckState?: string | null;
-            lastCheckDetail?: string | null;
-          };
-        };
-        this.configStore.setModuleConfig("meeting-brief-generator", {
-          ...current.modules["meeting-brief-generator"],
-          guestProfile: {
-            endpoint: existing.guestProfile.endpoint,
-            apiKey: existing.guestProfile.apiKey,
-            lastVerifiedAt: checkedAt,
-            lastCheckAt: checkedAt,
-            lastCheckState: state,
-            lastCheckDetail: detail,
-          },
-          hubspot: (current.modules["meeting-brief-generator"] as unknown as { hubspot?: unknown })
-            .hubspot ?? { token: "", lastVerifiedAt: null },
-        } as never);
-      } else if (res.status === 401) {
+        this.saveCheck(state, detail, checkedAt, checkedAt);
+      } else if (response.status === 401) {
         state = "rejected";
         detail = "Guest Profile credential was rejected (401). Check the API key.";
-      } else if (res.status === 403) {
+      } else if (response.status === 403) {
         state = "missing_authority";
         detail = "Guest Profile credential lacks required authority (403).";
-      } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+      } else if (response.status === 502 || response.status === 503 || response.status === 504) {
         state = "unavailable";
-        detail = `Guest Profile provider is unavailable (${res.status}).`;
+        detail = `Guest Profile provider is unavailable (${response.status}).`;
       } else {
         state = "unavailable";
-        detail = `Guest Profile probe failed with ${res.status}.`;
+        detail = `Guest Profile probe failed with ${response.status}.`;
       }
       if (state !== "connected") {
-        const current = this.configStore.get();
-        const existing = current.modules["meeting-brief-generator"] as unknown as {
-          guestProfile: { endpoint: string; apiKey: string; lastVerifiedAt: string | null };
-        };
-        this.configStore.setModuleConfig("meeting-brief-generator", {
-          ...current.modules["meeting-brief-generator"],
-          guestProfile: {
-            endpoint: existing.guestProfile.endpoint,
-            apiKey: existing.guestProfile.apiKey,
-            lastVerifiedAt: existing.guestProfile.lastVerifiedAt,
-            lastCheckAt: checkedAt,
-            lastCheckState: state,
-            lastCheckDetail: detail,
-          },
-        });
+        this.saveCheck(state, detail, checkedAt, config.lastVerifiedAt);
       }
       return { state, detail, checkedAt };
-    } catch (e) {
+    } catch (error) {
       clearTimeout(timeout);
-      const message = e instanceof Error ? e.message : String(e);
-      const isAbort = message.toLowerCase().includes("abort");
+      const message = error instanceof Error ? error.message : String(error);
       const state: GuestProfileConnectionState = "unavailable";
-      const detail = isAbort
+      const detail = message.toLowerCase().includes("abort")
         ? "Guest Profile probe timed out."
         : `Guest Profile is unreachable: ${message}`;
-      const current = this.configStore.get();
-      const existing = current.modules["meeting-brief-generator"] as unknown as {
-        guestProfile: { endpoint: string; apiKey: string; lastVerifiedAt: string | null };
-      };
-      this.configStore.setModuleConfig("meeting-brief-generator", {
-        ...current.modules["meeting-brief-generator"],
-        guestProfile: {
-          endpoint: existing.guestProfile.endpoint,
-          apiKey: existing.guestProfile.apiKey,
-          lastVerifiedAt: existing.guestProfile.lastVerifiedAt,
-          lastCheckAt: checkedAt,
-          lastCheckState: state,
-          lastCheckDetail: detail,
-        },
-      });
+      this.saveCheck(state, detail, checkedAt, config.lastVerifiedAt);
       return { state, detail, checkedAt };
     }
   }
 
   providerForCurrentConfig(): GuestProfileProvider | null {
-    const s = this.status();
-    if (s.state === "unconfigured" || !s.endpoint) return null;
-    const cfg = this.configStore.get().modules["meeting-brief-generator"] as unknown as {
-      guestProfile: { endpoint: string; apiKey: string };
-    };
-    return this.providerFactory(cfg.guestProfile.endpoint, cfg.guestProfile.apiKey);
+    if (this.status().state === "unconfigured") return null;
+    return createHttpGuestProfileProvider();
+  }
+
+  private currentConfig(): GuestProfileConfig {
+    return this.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID).guestProfile;
+  }
+
+  private saveConfig(guestProfile: GuestProfileConfig): void {
+    const moduleConfig = this.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID);
+    this.configStore.setModuleConfig(MEETING_BRIEF_MODULE_ID, { ...moduleConfig, guestProfile });
+  }
+
+  private saveCheck(
+    state: GuestProfileConnectionState,
+    detail: string,
+    checkedAt: string,
+    lastVerifiedAt: string | null,
+  ): void {
+    this.saveConfig({
+      ...this.currentConfig(),
+      lastVerifiedAt,
+      lastCheckAt: checkedAt,
+      lastCheckState: state,
+      lastCheckDetail: detail,
+    });
   }
 }

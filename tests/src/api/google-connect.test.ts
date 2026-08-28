@@ -38,6 +38,7 @@ beforeEach(async () => {
         throw new Error("no test reaches Google");
       },
     }),
+    onConfigChanged: () => {},
   } as unknown as ApiContext);
   await app.ready();
 });

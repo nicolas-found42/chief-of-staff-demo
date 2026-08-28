@@ -1,9 +1,9 @@
-import { eligibilityReason, isEligibleMeeting } from "./eligibility.js";
-import type { CalendarEvent } from "./calendar.js";
-import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import { eligibilityReason } from "./eligibility.js";
+import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
+import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { materialFingerprint } from "./revision.js";
 
-export type SnapshotSource = CalendarEvent | MeetingBriefFixtureEvent;
+export type SnapshotSource = MeetingBriefEvent;
 
 /**
  * Snapshot eligibility check (issue://84, ADR-0033).
@@ -15,13 +15,8 @@ export function snapshotEligibility(
   internalDomains: string[],
   ownerEmail: string | null,
 ): { eligible: boolean; reason: string } {
-  const eligible = isEligibleMeeting(
-    event as unknown as CalendarEvent,
-    internalDomains,
-    ownerEmail,
-  );
-  const reason = eligibilityReason(event as unknown as CalendarEvent, internalDomains, ownerEmail);
-  return { eligible, reason };
+  const reason = eligibilityReason(event, internalDomains, ownerEmail);
+  return { eligible: reason === "eligible", reason };
 }
 
 export interface FrozenSnapshot {
@@ -39,16 +34,23 @@ export interface FrozenSnapshot {
   conferenceLink: string | null;
   organizer?: { email: string; displayName?: string } | undefined;
   attendees: SnapshotSource["attendees"];
+  status: MeetingBriefEvent["status"];
+  isAllDay?: boolean | undefined;
   attachments?: string[] | undefined;
   capturedAt: string;
 }
 
+/** The snapshot.json fields the Host's Cross-Run indexes read back (module.ts adds eligible/skip/supersedes). */
+export type StoredSnapshot = Pick<
+  FrozenSnapshot,
+  "eventId" | "occurrenceId" | "occurrenceKey" | "version"
+> & {
+  supersedesRunId?: string | null;
+};
+
 /** Build frozen snapshot payload persisted as snapshot.json (retains version + material fingerprint). */
-export function buildFrozenSnapshot(
-  event: SnapshotSource,
-  occurrenceKey: string,
-  capturedAt: string,
-): FrozenSnapshot {
+export function buildFrozenSnapshot(event: SnapshotSource, capturedAt: string): FrozenSnapshot {
+  const { occurrenceKey } = meetingBriefOccurrenceIdentity(event.eventId, event.occurrenceId);
   return {
     calendarId: event.calendarId,
     eventId: event.eventId,
@@ -64,6 +66,8 @@ export function buildFrozenSnapshot(
     conferenceLink: event.conferenceLink ?? null,
     ...(event.organizer !== undefined ? { organizer: event.organizer } : {}),
     attendees: event.attendees,
+    status: event.status,
+    ...(event.isAllDay !== undefined ? { isAllDay: event.isAllDay } : {}),
     ...(event.attachments !== undefined ? { attachments: event.attachments } : {}),
     capturedAt,
   };

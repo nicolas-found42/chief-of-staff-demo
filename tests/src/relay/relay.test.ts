@@ -22,16 +22,36 @@ describe("relay health — issue://81", () => {
     expect(JSON.parse(res.body)).toMatchObject({ ok: true });
     await app.close();
   });
-
-  it("GET /api/health also ok", async () => {
-    const { app } = createRelayApp();
-    const res = await app.inject({ method: "GET", url: "/api/health" });
-    expect(res.statusCode).toBe(200);
-    await app.close();
-  });
 });
 
 describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () => {
+  it("enriches a pending channel registration with Google resource metadata", () => {
+    const store = new RelayStore();
+    const installationId = randomUUID();
+    const secret = token();
+    const channelId = randomUUID();
+    const channelToken = token();
+    store.createInstallation(installationId, verifier(secret));
+    store.createChannel({
+      installationId,
+      channelId,
+      tokenVerifier: verifier(channelToken),
+    });
+
+    const updated = store.createChannel({
+      installationId,
+      channelId,
+      tokenVerifier: verifier(channelToken),
+      resourceId: "google-resource-1",
+      expiration: "2026-09-04T10:00:00.000Z",
+    });
+
+    expect(updated).toMatchObject({
+      resourceId: "google-resource-1",
+      expiration: "2026-09-04T10:00:00.000Z",
+    });
+  });
+
   it("rejects missing required headers", async () => {
     const { app, store } = createRelayApp();
     const instId = randomUUID();
@@ -48,7 +68,7 @@ describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () 
     // missing X-Goog-Channel-Token
     const res = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-resource-id": "res-1",
@@ -74,7 +94,7 @@ describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () 
 
     const res = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": chToken,
@@ -106,7 +126,7 @@ describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () 
 
     const res = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": "wrong-token",
@@ -122,7 +142,7 @@ describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () 
     const { app } = createRelayApp();
     const res = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": "unknown-channel-id",
         "x-goog-channel-token": "any",
@@ -150,7 +170,7 @@ describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () 
 
     const res = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": chToken,
@@ -196,7 +216,7 @@ describe("validation — issue://81 + issue://80 Google headers + ADR-0031", () 
 
     const res = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": chToken,
@@ -243,7 +263,7 @@ describe("buffering, ack, at-least-once — issue://81", () => {
     for (const n of ["1", "2"]) {
       await app.inject({
         method: "POST",
-        url: "/push",
+        url: "/google/push",
         headers: {
           "x-goog-channel-id": chId,
           "x-goog-channel-token": chToken,
@@ -289,7 +309,7 @@ describe("buffering, ack, at-least-once — issue://81", () => {
 
     await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": chToken,
@@ -344,8 +364,8 @@ describe("buffering, ack, at-least-once — issue://81", () => {
       "x-goog-resource-id": "res-dup",
       "x-goog-message-number": "99",
     };
-    const r1 = await app.inject({ method: "POST", url: "/push", headers });
-    const r2 = await app.inject({ method: "POST", url: "/push", headers });
+    const r1 = await app.inject({ method: "POST", url: "/google/push", headers });
+    const r2 = await app.inject({ method: "POST", url: "/google/push", headers });
     expect(r1.statusCode).toBe(204);
     expect(r2.statusCode).toBe(204);
     expect(store.countMessages()).toBe(1);
@@ -368,7 +388,7 @@ describe("buffering, ack, at-least-once — issue://81", () => {
 
     await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": chToken,
@@ -407,7 +427,7 @@ describe("retention — issue://81 bounded retention", () => {
 
     await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chId,
         "x-goog-channel-token": chToken,
@@ -453,7 +473,7 @@ describe("channel replacement — issue://81 activates new before revoking old",
     // both accept pushes
     const rOld = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": oldId,
         "x-goog-channel-token": oldToken,
@@ -463,7 +483,7 @@ describe("channel replacement — issue://81 activates new before revoking old",
     });
     const rNew = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": newId,
         "x-goog-channel-token": newToken,
@@ -480,7 +500,7 @@ describe("channel replacement — issue://81 activates new before revoking old",
 
     const rOldAfter = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": oldId,
         "x-goog-channel-token": oldToken,
@@ -492,7 +512,7 @@ describe("channel replacement — issue://81 activates new before revoking old",
 
     const rNewAfter = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": newId,
         "x-goog-channel-token": newToken,
@@ -544,7 +564,7 @@ describe("channel replacement — issue://81 activates new before revoking old",
     // old rejected, new accepted
     const rOld = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": oldId,
         "x-goog-channel-token": oldToken,
@@ -556,7 +576,7 @@ describe("channel replacement — issue://81 activates new before revoking old",
 
     const rNew = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": newId,
         "x-goog-channel-token": newToken,
@@ -588,7 +608,7 @@ describe("installation isolation — issue://81", () => {
 
     await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chA,
         "x-goog-channel-token": tokA,
@@ -598,7 +618,7 @@ describe("installation isolation — issue://81", () => {
     });
     await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": chB,
         "x-goog-channel-token": tokB,

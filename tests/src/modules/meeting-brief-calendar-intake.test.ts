@@ -9,14 +9,16 @@ import {
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
 import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
+import { FakeGmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmailDelivery";
 import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
 import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
 import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
 import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
 import { isEligibleMeeting } from "../../../apps/server/src/modules/meeting-brief-generator/eligibility";
-import { normalizeInternalDomains, type AppConfig } from "@chief-of-staff-demo/shared";
+import { normalizeInternalDomains } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
+import { completeFixtureBrief } from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 
 function stubHubSpotApi(): HubSpotApi {
   return {
@@ -71,6 +73,9 @@ beforeEach(() => {
   runs = openRuns(workspaceDir);
   now = new Date("2026-08-28T09:00:00.000Z");
   fakeCal = new FakeCalendarProvider();
+  const gmailDelivery = new FakeGmailDeliveryProvider({
+    ownerEmail: "owner@example.com",
+  });
   host = new MeetingBriefHost({
     runs,
     workspaceDir,
@@ -79,12 +84,16 @@ beforeEach(() => {
     getInternalDomains: () => ["internal.com"],
     getOwnerEmail: () => "owner@example.com",
     log: () => {},
-    gmailProvider: new FakeGmailProvider(),
-    calendarHistoryProvider: new FakeCalendarHistoryProvider(),
-    driveProvider: new FakeDriveProvider(),
-    hubSpotApi: stubHubSpotApi(),
-    profileProvider: createFakeGuestProfileProvider({}),
-    publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+    gmailDeliveryProvider: gmailDelivery,
+    completeBrief: completeFixtureBrief,
+    enrichmentProviders: {
+      gmailProvider: new FakeGmailProvider(),
+      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+      driveProvider: new FakeDriveProvider(),
+      profileProvider: createFakeGuestProfileProvider({}),
+      getHubSpotApi: () => stubHubSpotApi(),
+      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+    },
   });
 });
 
@@ -96,23 +105,16 @@ describe("eligibility — Internal Domains normalized case-insensitive (issue://
     ]);
   });
 
-  it("config store normalizes on setModuleConfig and load", () => {
+  it("the Meeting Brief setting normalizes before generic ConfigStore persistence", () => {
     const dir = mkdtempSync(join(tmpdir(), "cfg-"));
     const store = new ConfigStore(join(dir, "config.json"));
     store.load();
-    const next = {
-      internalDomains: ["UPPER.COM", "upper.com", " Mixed.Org "],
-      guestProfile: {
-        endpoint: "",
-        apiKey: "",
-        lastVerifiedAt: null,
-        lastCheckAt: null,
-        lastCheckState: null,
-        lastCheckDetail: null,
-      },
-      hubspot: { token: "", lastVerifiedAt: null },
-    } satisfies AppConfig["modules"]["meeting-brief-generator"];
-    store.setModuleConfig("meeting-brief-generator", next);
+    const settingHost = new MeetingBriefHost({
+      runs: openRuns(dir),
+      workspaceDir: dir,
+      configStore: store,
+    });
+    settingHost.setInternalDomains(["UPPER.COM", "upper.com", " Mixed.Org "]);
     expect(store.get().modules["meeting-brief-generator"].internalDomains).toEqual([
       "upper.com",
       "mixed.org",
@@ -422,22 +424,41 @@ describe("Calendar push channel persistence + sync/renewal/recovery/dedup via ho
   });
 
   it("durable replace before expiration", async () => {
-    await host.ensureCalendarWatch();
-    const ch1 = host.getCalendarState().channel!;
-    // Fake expiration soon
-    const soon = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
-    host
-      .getCalendarStore()
-      .save({ ...host.getCalendarState(), channel: { ...ch1, expiration: soon } });
-    await host.ensureCalendarWatch();
-    const ch2 = host.getCalendarState().channel!;
+    class ExpiringCalendar extends FakeCalendarProvider {
+      private watchCount = 0;
+
+      override async watchChannel(args: Parameters<FakeCalendarProvider["watchChannel"]>[0]) {
+        const result = await super.watchChannel(args);
+        this.watchCount += 1;
+        return {
+          ...result,
+          expiration: new Date(
+            now.getTime() + (this.watchCount === 1 ? 30 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000),
+          ).toISOString(),
+        };
+      }
+    }
+    const expiringCalendar = new ExpiringCalendar();
+    const expiringHost = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(now),
+      calendarProvider: expiringCalendar,
+      getInternalDomains: () => ["internal.com"],
+      getOwnerEmail: () => "owner@example.com",
+    });
+
+    await expiringHost.ensureCalendarWatch();
+    const ch1 = expiringHost.getCalendarState().channel!;
+    await expiringHost.ensureCalendarWatch();
+    const ch2 = expiringHost.getCalendarState().channel!;
     expect(ch2.channelId).not.toBe(ch1.channelId);
-    expect(fakeCal.getWatchCalls().length).toBeGreaterThanOrEqual(2);
-    expect(fakeCal.getStopCalls()).toContain(ch1.channelId);
+    expect(expiringCalendar.getWatchCalls().length).toBeGreaterThanOrEqual(2);
+    expect(expiringCalendar.getStopCalls()).toContain(ch1.channelId);
     // duplicate ensure when not expiring does not create new channel
-    const before = fakeCal.getWatchCalls().length;
-    await host.ensureCalendarWatch();
-    expect(fakeCal.getWatchCalls()).toHaveLength(before);
+    const before = expiringCalendar.getWatchCalls().length;
+    await expiringHost.ensureCalendarWatch();
+    expect(expiringCalendar.getWatchCalls()).toHaveLength(before);
   });
 
   it("incremental sync reconciliation after each relay wake-up", async () => {

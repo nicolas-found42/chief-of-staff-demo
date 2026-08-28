@@ -1,4 +1,4 @@
-import { hashVerifier } from "./state.js";
+import { hashVerifier, type RelayStateStore } from "./state.js";
 
 /**
  * Shell relay client — issue://80 + ADR-0031 + issue://81.
@@ -33,10 +33,6 @@ export interface RelayMessage {
 export class RelayClient {
   constructor(private readonly opts: RelayClientOptions) {}
 
-  get installationId(): string {
-    return this.opts.installationId;
-  }
-
   private authHeader(): string {
     return `Bearer ${this.opts.secret}`;
   }
@@ -44,12 +40,6 @@ export class RelayClient {
   private url(path: string): string {
     const base = this.opts.baseUrl.replace(/\/+$/, "");
     return `${base}${path}`;
-  }
-
-  async health(): Promise<{ ok: boolean }> {
-    const res = await fetch(this.url("/health"), { method: "GET" });
-    if (!res.ok) throw new Error(`relay health failed: ${res.status}`);
-    return (await res.json()) as { ok: boolean };
   }
 
   async registerInstallation(): Promise<void> {
@@ -153,4 +143,30 @@ export class RelayClient {
       await this.revokeChannel(oldChannelId);
     }
   }
+}
+
+export function relayAccess(
+  store: RelayStateStore,
+  options: { ensureInstallation?: boolean } = {},
+): { ok: true; client: RelayClient } | { ok: false; error: string } {
+  const initial = store.load();
+  if (!initial.relayBaseUrl) {
+    return { ok: false, error: "relayBaseUrl not configured" };
+  }
+  if (options.ensureInstallation) store.ensureInstallation();
+  const state = store.load();
+  if (!state.relayBaseUrl) {
+    return { ok: false, error: "relayBaseUrl not configured" };
+  }
+  if (!state.installationId || !state.secret) {
+    return { ok: false, error: "installation not initialized" };
+  }
+  return {
+    ok: true,
+    client: new RelayClient({
+      baseUrl: state.relayBaseUrl,
+      installationId: state.installationId,
+      secret: state.secret,
+    }),
+  };
 }

@@ -9,8 +9,35 @@ export type MeetingBriefStage = (typeof MEETING_BRIEF_STAGES)[number];
 
 export const MEETING_BRIEF_INTAKE = "calendar" as const;
 
-/** Calendar event identity for one occurrence (per ADR-0033). */
-export interface MeetingBriefFixtureEvent {
+export interface MeetingBriefOccurrenceIdentity {
+  eventId: string;
+  occurrenceId: string;
+  occurrenceKey: string;
+}
+
+export function meetingBriefOccurrenceIdentity(
+  eventId: string,
+  occurrenceId: string,
+): MeetingBriefOccurrenceIdentity {
+  if (!eventId || !occurrenceId || eventId.includes("::") || occurrenceId.includes("::")) {
+    throw new Error("Meeting Brief occurrence identity requires non-empty delimiter-free parts");
+  }
+  return { eventId, occurrenceId, occurrenceKey: `${eventId}::${occurrenceId}` };
+}
+
+export function parseMeetingBriefOccurrenceKey(
+  occurrenceKey: string,
+): MeetingBriefOccurrenceIdentity | null {
+  const separator = occurrenceKey.indexOf("::");
+  if (separator <= 0 || separator !== occurrenceKey.lastIndexOf("::")) return null;
+  const eventId = occurrenceKey.slice(0, separator);
+  const occurrenceId = occurrenceKey.slice(separator + 2);
+  if (!occurrenceId) return null;
+  return { eventId, occurrenceId, occurrenceKey };
+}
+
+/** Current Calendar truth for one meeting occurrence (per ADR-0033). */
+export interface MeetingBriefEvent {
   calendarId: string;
   eventId: string;
   /** Occurrence identity — one per recurring occurrence (e.g. eventId + start). */
@@ -29,7 +56,10 @@ export interface MeetingBriefFixtureEvent {
     responseStatus: "accepted" | "tentative" | "needsAction" | "declined";
     organizer?: boolean;
     resource?: boolean;
+    self?: boolean;
   }>;
+  status: "confirmed" | "cancelled" | "tentative";
+  isAllDay?: boolean;
   attachments?: string[];
   // Unused metadata — ignored for material change detection (ADR-0033)
   colorId?: string | null;
@@ -40,7 +70,7 @@ export interface MeetingBriefFixtureEvent {
   updated?: string | null;
 }
 
-/** One enrichment source artifact (per fixture boundary). */
+/** One normalized enrichment section from a provider source. */
 export interface MeetingBriefEnrichmentSection {
   source: string;
   guest?: string;
@@ -119,12 +149,24 @@ export interface MeetingBriefRunResult {
   meetingBrief: MeetingBrief;
   delivery: MeetingBriefDeliveryState;
   supersedes?: string | null;
+  /** Audit reason when Calendar current truth prevents outward delivery. */
+  deliverySkippedReason?: string;
 }
 
 /** GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005). */
 export interface MeetingBriefIndex {
   upcoming: MeetingBriefUpcoming[];
   briefs: MeetingBriefIndexEntry[];
+  cancellations: MeetingBriefCancellation[];
+}
+
+export interface MeetingBriefCancellation {
+  occurrenceKey: string;
+  eventId: string;
+  occurrenceId: string;
+  version: string;
+  summary: string;
+  cancelledAt: string;
 }
 
 export interface MeetingBriefUpcoming {
@@ -335,15 +377,6 @@ export function googleEnrichmentKey(
   return base;
 }
 
-export function googleEnrichmentStableRef(
-  eventVersion: string,
-  guestEmail: string,
-  source: GoogleEnrichmentSource,
-  companyDomain?: string | null,
-): string {
-  return googleEnrichmentKey(eventVersion, guestEmail, source, companyDomain);
-}
-
 export const PUBLIC_INTELLIGENCE_MAX_RESULTS = 10 as const;
 
 export type PublicIntelligenceSource = "company-news" | "industry-news" | "employer-verification";
@@ -387,13 +420,4 @@ export function publicIntelligenceKey(
   const base = `${eventVersion}::${guestEmail.toLowerCase()}::${source}`;
   if (companyName) return `${base}::${companyName.toLowerCase().trim()}`;
   return base;
-}
-
-export function publicIntelligenceStableRef(
-  eventVersion: string,
-  guestEmail: string,
-  source: PublicIntelligenceSource,
-  companyName?: string | null,
-): string {
-  return publicIntelligenceKey(eventVersion, guestEmail, source, companyName);
 }

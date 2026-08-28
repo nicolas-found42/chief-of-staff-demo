@@ -98,9 +98,4 @@ export class DurableClock {
     const at = now.getTime();
     return readSchedules(this.workspaceDir).filter((s) => Date.parse(s.dueAt) <= at);
   }
-
-  /** Clear all schedules (test seam). */
-  clear(): void {
-    writeSchedules(this.workspaceDir, []);
-  }
 }

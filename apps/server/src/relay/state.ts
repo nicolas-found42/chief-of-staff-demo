@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { atomicWriteJson } from "../engine/atomic.js";
 
 /**
  * Shell-side relay workspace persistence — issue://80 (relay registration) + ADR-0031.
@@ -61,8 +61,7 @@ export class RelayStateStore {
   }
 
   save(state: RelayWorkspace): void {
-    mkdirSync(dirname(this.filePath), { recursive: true });
-    writeFileSync(this.filePath, JSON.stringify(state, null, 2) + "\n", "utf8");
+    atomicWriteJson(this.filePath, state);
   }
 
   ensureInstallation(): {
@@ -118,9 +117,5 @@ export class RelayStateStore {
   removeChannel(channelId: string): void {
     const current = this.load();
     this.save({ ...current, channels: current.channels.filter((c) => c.channelId !== channelId) });
-  }
-
-  clear(): void {
-    this.save({ ...EMPTY, channels: [] });
   }
 }

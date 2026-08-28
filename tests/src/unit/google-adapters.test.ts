@@ -52,6 +52,7 @@ const sdk = vi.hoisted(() => {
   const drive = { files: { get: vi.fn(), list: vi.fn() } };
   const youtube = { videos: { list: vi.fn() } };
   const calendar = { events: { list: vi.fn() } };
+  const oauth2 = { tokeninfo: vi.fn() };
   const credentials: Record<string, unknown> = {};
   const oauthClient = {
     credentials,
@@ -76,6 +77,8 @@ const sdk = vi.hoisted(() => {
     youtubeFactory: vi.fn(() => youtube),
     calendar,
     calendarFactory: vi.fn(() => calendar),
+    oauth2,
+    oauth2Factory: vi.fn(() => oauth2),
     credentials,
     oauthClient,
     oauthCtor,
@@ -90,6 +93,7 @@ vi.mock("googleapis", () => ({
     drive: sdk.driveFactory,
     youtube: sdk.youtubeFactory,
     calendar: sdk.calendarFactory,
+    oauth2: sdk.oauth2Factory,
     auth: { OAuth2: sdk.oauthCtor },
   },
 }));
@@ -168,6 +172,9 @@ beforeEach(() => {
   sdk.gmail.users.messages.list.mockResolvedValue({ data: { messages: [] } });
   sdk.gmail.users.getProfile.mockResolvedValue({
     data: { emailAddress: "nicolas@found42.com" },
+  });
+  sdk.oauth2.tokeninfo.mockResolvedValue({
+    data: { scope: GOOGLE_SCOPES.join(" ") },
   });
   sdk.drive.files.get.mockResolvedValue({ data: { id: "folder-1", name: "Transcripts" } });
   sdk.drive.files.list.mockResolvedValue({ data: { files: [] } });
@@ -551,10 +558,8 @@ describe("Google connection SDK probes", () => {
     expect(sdk.tasks.tasklists.list).toHaveBeenCalledWith({ maxResults: 1 });
     expect(sdk.gmail.users.drafts.list).toHaveBeenCalledWith({ userId: "me", maxResults: 1 });
     expect(sdk.gmail.users.threads.list).toHaveBeenCalledWith({ userId: "me", maxResults: 1 });
-    expect(sdk.gmail.users.messages.list).toHaveBeenCalledWith({
-      userId: "me",
-      maxResults: 1,
-      q: "in:sent",
+    expect(sdk.oauth2.tokeninfo).toHaveBeenCalledWith({
+      access_token: "access-token",
     });
     expect(sdk.calendar.events.list).toHaveBeenCalledWith({
       calendarId: "primary",
@@ -566,6 +571,19 @@ describe("Google connection SDK probes", () => {
       part: ["id"],
       chart: "mostPopular",
       maxResults: 1,
+    });
+  });
+
+  it("reports Gmail delivery unhealthy when the live token lacks gmail.send", async () => {
+    sdk.oauth2.tokeninfo.mockResolvedValueOnce({
+      data: { scope: GOOGLE_SCOPES.filter((scope) => !scope.endsWith("/gmail.send")).join(" ") },
+    });
+
+    const check = await openGoogleConnection(connectionConfig(), 4317).verifySetup();
+
+    expect(check.state).toBe("connected");
+    expect(check.items.find((item) => item.label === "Gmail delivery")).toMatchObject({
+      ok: false,
     });
   });
 

@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion -- public intelligence diagnostics use explicit casts */
+import { JSDOM } from "jsdom";
 import {
   PUBLIC_INTELLIGENCE_MAX_RESULTS,
   type PublicIntelligenceArtifact,
   publicIntelligenceKey,
-  publicIntelligenceStableRef,
   type PublicIntelligenceSource,
 } from "@chief-of-staff-demo/shared";
 import type { RunContext } from "../../../engine/module.js";
@@ -32,6 +31,68 @@ export interface PublicIntelligenceProvider {
     window: { from: string; to: string },
     maxResults: number,
   ): Promise<PublicSearchResult[]>;
+}
+
+type PublicSearchFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+/** Bounded public-search adapter; returned page text remains untrusted evidence. */
+export class DuckDuckGoPublicIntelligenceProvider implements PublicIntelligenceProvider {
+  constructor(private readonly fetchPage: PublicSearchFetch = fetch) {}
+
+  async search(
+    query: string,
+    window: { from: string; to: string },
+    maxResults: number,
+  ): Promise<PublicSearchResult[]> {
+    const from = window.from.slice(0, 10);
+    const to = window.to.slice(0, 10);
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${query} after:${from} before:${to}`)}`;
+    let response: Response;
+    try {
+      response = await this.fetchPage(url, {
+        method: "GET",
+        headers: { accept: "text/html", "user-agent": "chief-of-staff-demo/1.0" },
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch (error) {
+      // Network and timeout failures are provider-wide outages (ADR-0030 `unavailable` category).
+      const message = error instanceof Error ? error.message : String(error);
+      throw Object.assign(new Error(`unavailable: public search failed (${message})`), {
+        status: 503,
+      });
+    }
+    if (!response.ok)
+      throw Object.assign(new Error(`unavailable: public search failed (${response.status})`), {
+        status: response.status,
+      });
+    const document = new JSDOM(await response.text(), { url }).window.document;
+    const results: PublicSearchResult[] = [];
+    for (const node of document.querySelectorAll<HTMLElement>(".result")) {
+      if (results.length >= maxResults) break;
+      const link = node.querySelector<HTMLAnchorElement>(".result__a");
+      const snippet = node.querySelector<HTMLElement>(".result__snippet");
+      const href = duckDuckGoTarget(link?.href ?? "");
+      if (!link || !snippet || !href) continue;
+      const target = new URL(href);
+      results.push({
+        title: sanitizeEvidence(link.textContent),
+        snippet: sanitizeEvidence(snippet.textContent),
+        url: target.toString(),
+        org: target.hostname.toLowerCase().replace(/^www\./, ""),
+      });
+    }
+    return results;
+  }
+}
+
+function duckDuckGoTarget(value: string): string | null {
+  try {
+    const url = new URL(value, "https://html.duckduckgo.com");
+    const redirected = url.searchParams.get("uddg");
+    return redirected ? new URL(redirected).toString() : url.toString();
+  } catch {
+    return null;
+  }
 }
 
 // Helpers re-exported via helpers.ts: sanitizeEvidence, readErrorStatus, readErrorCode, isProviderWideError
@@ -133,7 +194,7 @@ async function enrichWithPublicSearch(
 ): Promise<{ artifact: PublicIntelligenceArtifact; section: MeetingBriefEnrichmentSection }> {
   const normalizedGuest = guestEmail.toLowerCase();
   const key = publicIntelligenceKey(eventVersion, normalizedGuest, source, companyName);
-  const stableRef = publicIntelligenceStableRef(eventVersion, normalizedGuest, source, companyName);
+  const stableRef = key;
   const maxResults = PUBLIC_INTELLIGENCE_MAX_RESULTS;
   const filename = fileNameFor(source, normalizedGuest, companyName, eventVersion);
 
@@ -203,10 +264,7 @@ async function enrichWithPublicSearch(
           stableRef,
         };
         ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-        ctx.event(
-          `${source}_empty` as never,
-          { guest: normalizedGuest, company: companyName, attempts } as never,
-        );
+        ctx.event(`${source}_empty`, { guest: normalizedGuest, company: companyName, attempts });
         const section: MeetingBriefEnrichmentSection = {
           source,
           guest: normalizedGuest,
@@ -247,15 +305,12 @@ async function enrichWithPublicSearch(
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event(
-        `${source}_completed` as never,
-        {
-          guest: normalizedGuest,
-          company: companyName,
-          count: evidence.length,
-          truncated: !!truncated,
-        } as never,
-      );
+      ctx.event(`${source}_completed`, {
+        guest: normalizedGuest,
+        company: companyName,
+        count: evidence.length,
+        truncated: !!truncated,
+      });
       const section: MeetingBriefEnrichmentSection = {
         source,
         guest: normalizedGuest,
@@ -271,10 +326,11 @@ async function enrichWithPublicSearch(
         throw error;
       }
       if (attempts < maxAttempts) {
-        ctx.event(
-          `${source}_retry` as never,
-          { guest: normalizedGuest, company: companyName, attempt: attempts } as never,
-        );
+        ctx.event(`${source}_retry`, {
+          guest: normalizedGuest,
+          company: companyName,
+          attempt: attempts,
+        });
         continue;
       }
       const httpStatus = readErrorStatus(error);
@@ -304,15 +360,12 @@ async function enrichWithPublicSearch(
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event(
-        `${source}_failed` as never,
-        {
-          guest: normalizedGuest,
-          company: companyName,
-          error: reason.slice(0, 200),
-          attempts,
-        } as never,
-      );
+      ctx.event(`${source}_failed`, {
+        guest: normalizedGuest,
+        company: companyName,
+        error: reason.slice(0, 200),
+        attempts,
+      });
       const section: MeetingBriefEnrichmentSection = {
         source,
         guest: normalizedGuest,
@@ -400,12 +453,7 @@ export async function enrichEmployerVerification(
     "employer-verification",
     companyName,
   );
-  const stableRef = publicIntelligenceStableRef(
-    eventVersion,
-    normalizedGuest,
-    "employer-verification",
-    companyName,
-  );
+  const stableRef = key;
   const maxResults = PUBLIC_INTELLIGENCE_MAX_RESULTS;
   const filename = fileNameFor("employer-verification", normalizedGuest, companyName, eventVersion);
 
@@ -488,10 +536,11 @@ export async function enrichEmployerVerification(
           stableRef,
         };
         ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-        ctx.event(
-          "employer_verification_completed" as never,
-          { guest: normalizedGuest, company: companyName, orgs } as never,
-        );
+        ctx.event("employer_verification_completed", {
+          guest: normalizedGuest,
+          company: companyName,
+          orgs,
+        });
         const section: MeetingBriefEnrichmentSection = {
           source: "employer-verification",
           guest: normalizedGuest,
@@ -526,10 +575,11 @@ export async function enrichEmployerVerification(
           stableRef,
         };
         ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-        ctx.event(
-          "employer_verification_empty" as never,
-          { guest: normalizedGuest, company: companyName, orgs: orgCount } as never,
-        );
+        ctx.event("employer_verification_empty", {
+          guest: normalizedGuest,
+          company: companyName,
+          orgs: orgCount,
+        });
         const section: MeetingBriefEnrichmentSection = {
           source: "employer-verification",
           guest: normalizedGuest,
@@ -544,10 +594,11 @@ export async function enrichEmployerVerification(
       lastError = error;
       if (isProviderWideError(error)) throw error;
       if (attempts < maxAttempts) {
-        ctx.event(
-          "employer_verification_retry" as never,
-          { guest: normalizedGuest, company: companyName, attempt: attempts } as never,
-        );
+        ctx.event("employer_verification_retry", {
+          guest: normalizedGuest,
+          company: companyName,
+          attempt: attempts,
+        });
         continue;
       }
       const httpStatus = readErrorStatus(error);
@@ -577,15 +628,12 @@ export async function enrichEmployerVerification(
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event(
-        "employer_verification_failed" as never,
-        {
-          guest: normalizedGuest,
-          company: companyName,
-          error: reason.slice(0, 200),
-          attempts,
-        } as never,
-      );
+      ctx.event("employer_verification_failed", {
+        guest: normalizedGuest,
+        company: companyName,
+        error: reason.slice(0, 200),
+        attempts,
+      });
       const section: MeetingBriefEnrichmentSection = {
         source: "employer-verification",
         guest: normalizedGuest,

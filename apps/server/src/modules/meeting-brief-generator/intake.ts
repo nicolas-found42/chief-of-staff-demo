@@ -1,4 +1,7 @@
-import { MEETING_BRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
+import {
+  MEETING_BRIEF_MODULE_ID,
+  meetingBriefOccurrenceIdentity,
+} from "@chief-of-staff-demo/shared";
 import type { DurableClock } from "../../engine/durableClock.js";
 import { isEligibleMeeting } from "./eligibility.js";
 import {
@@ -16,12 +19,12 @@ export const MEETING_BRIEF_CALENDAR_ID = "primary" as const;
 const PREPARATION_LEAD_MS = 4 * 60 * 60 * 1000;
 
 /** Occurrence key for deduplication and durableClock key (ADR-0033). */
-function occurrenceKeyFor(event: Pick<CalendarEvent, "eventId" | "occurrenceId">): string {
-  return `${event.eventId}::${event.occurrenceId}`;
+export function occurrenceKeyFor(event: Pick<CalendarEvent, "eventId" | "occurrenceId">): string {
+  return meetingBriefOccurrenceIdentity(event.eventId, event.occurrenceId).occurrenceKey;
 }
 
 /** Compute due time: 4h before start, or immediate if inside window. */
-export function computeDueTime(startAt: string, now: Date): Date {
+function computeDueTime(startAt: string, now: Date): Date {
   const startMs = Date.parse(startAt);
   if (Number.isNaN(startMs)) return now;
   const dueMs = startMs - PREPARATION_LEAD_MS;
@@ -82,7 +85,7 @@ export async function reconcileCalendar(args: {
   store: MeetingBriefCalendarStore;
   clock: DurableClock;
   internalDomains: string[];
-  ownerEmail: string | null;
+  ownerEmail: string | null | (() => string | null);
   now: Date;
   calendarId?: string;
   forceFullSync?: boolean;
@@ -136,16 +139,55 @@ export async function reconcileCalendar(args: {
 
   let scheduled = 0;
   let removed = 0;
+  const ownerEmail = typeof args.ownerEmail === "function" ? args.ownerEmail() : args.ownerEmail;
 
-  // Build set of occurrenceKeys seen as eligible in this sync, to handle deletions via ineligible removal
-  // For incremental sync we only see changed events; we don't remove unseen eligible ones.
-  // For full sync (syncToken null) we see all future events — we should also remove schedules for occurrences not returned but previously eligible? However spec says incremental sync reconciliation after each wake-up; so incremental sees only changed. For test bounded reconciliation, we'll handle both: for full sync we reconcile all returned.
+  // A full sync has a complete view, so unseen schedules can be removed. Incremental syncs only
+  // reconcile the occurrences returned by Google.
   const seenKeys = new Set<string>();
 
   for (const event of events) {
+    // Sparse cancelled non-recurring tombstones without start/end: remove by eventId using durable identity
+    const isSparseCancelled =
+      event.status === "cancelled" && (!event.startAt || Number.isNaN(Date.parse(event.startAt)));
+    if (isSparseCancelled) {
+      const matching = args.clock.list(MEETING_BRIEF_MODULE_ID).filter((s) => {
+        const input = s.input as CalendarEvent | null;
+        return input !== null && typeof input === "object" && input.eventId === event.eventId;
+      });
+      if (matching.length > 0) {
+        for (const matched of matching) {
+          args.clock.remove(MEETING_BRIEF_MODULE_ID, matched.key);
+          removed += 1;
+          const storedInput = matched.input as CalendarEvent;
+          args.store.setCancellation({
+            occurrenceKey: matched.key,
+            eventId: event.eventId,
+            occurrenceId: storedInput.occurrenceId,
+            version: event.version,
+            summary: event.summary,
+            cancelledAt: args.now.toISOString(),
+          });
+          seenKeys.add(matched.key);
+        }
+      } else {
+        // No prior schedule, still record cancellation using incoming identity
+        const fallbackKey = occurrenceKeyFor(event);
+        args.store.setCancellation({
+          occurrenceKey: fallbackKey,
+          eventId: event.eventId,
+          occurrenceId: event.occurrenceId,
+          version: event.version,
+          summary: event.summary,
+          cancelledAt: args.now.toISOString(),
+        });
+        seenKeys.add(fallbackKey);
+      }
+      continue;
+    }
+
     const key = occurrenceKeyFor(event);
     seenKeys.add(key);
-    const eligible = isEligibleMeeting(event, args.internalDomains, args.ownerEmail);
+    const eligible = isEligibleMeeting(event, args.internalDomains, ownerEmail);
     const startMs = Date.parse(event.startAt);
     const isFuture = !Number.isNaN(startMs) && startMs > args.now.getTime();
 
@@ -154,10 +196,21 @@ export async function reconcileCalendar(args: {
       const before = args.clock.list(MEETING_BRIEF_MODULE_ID).some((s) => s.key === key);
       args.clock.remove(MEETING_BRIEF_MODULE_ID, key);
       if (before) removed += 1;
+      if (event.status === "cancelled") {
+        args.store.setCancellation({
+          occurrenceKey: key,
+          eventId: event.eventId,
+          occurrenceId: event.occurrenceId,
+          version: event.version,
+          summary: event.summary,
+          cancelledAt: args.now.toISOString(),
+        });
+      }
       continue;
     }
 
     // Eligible future → schedule 4h before or immediate
+    args.store.clearCancellation(key);
     const dueAt = computeDueTime(event.startAt, args.now);
     // Durably schedule (atomic replace)
     args.clock.schedule({
@@ -169,28 +222,13 @@ export async function reconcileCalendar(args: {
     scheduled += 1;
   }
 
-  // On full sync (no syncToken), remove schedules for eligible occurrences that disappeared (deleted/cancelled)
-  // This handles cancellation before Run: removes future candidate without creating Run (ADR-0033).
+  // A missing occurrence in a full sync was deleted or is no longer eligible.
   if (syncToken === null) {
     const currentKeys = args.clock.list(MEETING_BRIEF_MODULE_ID).map((s) => s.key);
     for (const key of currentKeys) {
       if (!seenKeys.has(key)) {
-        // Check if this occurrence corresponds to an event that is no longer returned in full sync — treat as removed (deleted).
-        // For safety, only remove if the stored input's eventId not in returned set? Simpler: remove if not seen — but incremental sync would incorrectly remove.
-        // So only do this cleanup on full sync + invalidSyncRecovered or initial sync.
-        // For initial full sync, there is no prior schedule to cleanup incorrectly.
-        // For invalid sync recovery, we have full list, so missing keys mean deleted/ineligible.
-        if (invalidSyncRecovered || args.store.getSyncToken() === nextSyncToken) {
-          // Only if we did a full sync and have a complete view, missing keys should be removed.
-          // To keep bounded, we remove only if the stored schedule's input is not in returned eligible set.
-          // Since fake provider returns all events on full sync, missing means deleted.
-          // We conservatively remove.
-          const stillExists = events.some((e) => occurrenceKeyFor(e) === key);
-          if (!stillExists) {
-            args.clock.remove(MEETING_BRIEF_MODULE_ID, key);
-            removed += 1;
-          }
-        }
+        args.clock.remove(MEETING_BRIEF_MODULE_ID, key);
+        removed += 1;
       }
     }
   }

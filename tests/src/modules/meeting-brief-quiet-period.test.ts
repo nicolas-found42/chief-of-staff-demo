@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MEETING_BRIEF_MODULE_ID,
-  type MeetingBriefFixtureEvent,
+  type MeetingBriefEvent,
   type MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
 import { openRuns } from "../../../apps/server/src/runs";
@@ -14,11 +14,14 @@ import {
   FakeCalendarProvider,
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
-import { FakeGmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmailDelivery";
+import {
+  FakeGmailDeliveryProvider,
+  type GmailDeliveryProvider,
+} from "../../../apps/server/src/modules/meeting-brief-generator/google/gmailDelivery";
 import { deliveryIdFor } from "../../../apps/server/src/modules/meeting-brief-generator/deliver";
 import type { MeetingBriefModuleDeps } from "../../../apps/server/src/modules/meeting-brief-generator/module";
 
-function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
+function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
     calendarId: "cal_primary",
     eventId: "evt_quiet_1",
@@ -37,10 +40,11 @@ function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): Meetin
       { email: "alice@external.co", displayName: "Alice", responseStatus: "accepted" },
     ],
     ...overrides,
+    status: overrides.status ?? "confirmed",
   };
 }
 
-function calFromFixture(f: MeetingBriefFixtureEvent): CalendarEvent {
+function calFromFixture(f: MeetingBriefEvent): CalendarEvent {
   return {
     calendarId: f.calendarId,
     eventId: f.eventId,
@@ -77,7 +81,7 @@ function defaultEnrich(): MeetingBriefModuleDeps["enrich"] {
   };
 }
 function defaultCompleteBrief(nowRef: () => Date): MeetingBriefModuleDeps["completeBrief"] {
-  return async (input: MeetingBriefFixtureEvent) => {
+  return async (input: MeetingBriefEvent) => {
     return {
       version: 1 as const,
       eventId: input.eventId,
@@ -135,9 +139,9 @@ function makeHostWithFakeTime(
     now: () => new Date(now),
     log: () => {},
     calendarProvider: fakeCal,
+    calendarRecheckRequired: true,
     gmailDeliveryProvider: fakeGmail,
-    getGmailDeliveryProvider: () => fakeGmail,
-    ownerEmail: "owner@example.com",
+    getOwnerEmail: () => "owner@example.com",
     enrich: defaultEnrich(),
     completeBrief: defaultCompleteBrief(() => now),
   });
@@ -147,18 +151,116 @@ function makeHostWithFakeTime(
   };
   const advance = async (ms: number) => {
     now = new Date(now.getTime() + ms);
-    const runner: any = (host as any).runner;
-    if (runner?.recoverRuns) await runner.recoverRuns();
+    await host.recover();
     await host.idle();
     await host.processDueSchedules(new Date(now));
     await host.idle();
-    if (runner?.recoverRuns) await runner.recoverRuns();
+    await host.recover();
     await host.idle();
   };
   return { workspaceDir, runs, fakeCal, fakeGmail, host, getNow, setNow, advance };
 }
 
 describe("Quiet period — initial immediate; revisions 5-min quiet via Runner wait", () => {
+  it("fails deliver without sending when the immediate Calendar recheck is unavailable", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const fakeCal = new FakeCalendarProvider();
+    fakeCal.listEvents = async () => {
+      throw new Error("Calendar unavailable during delivery recheck");
+    };
+    const { host, runs, fakeGmail } = makeHostWithFakeTime(now, { fakeCal });
+    const event = fixtureEvent();
+
+    host.scheduleOccurrence(event, now);
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    expect(runs.detail(runId!)?.status).toBe("failed");
+    expect(runs.detail(runId!)?.failedStage).toBe("deliver");
+    expect((runs.detail(runId!)?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
+    expect(fakeGmail.messages).toHaveLength(0);
+  });
+
+  it("skips delivery when the occurrence disappeared before the outward write", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const fakeCal = new FakeCalendarProvider();
+    const { host, runs, fakeGmail } = makeHostWithFakeTime(now, { fakeCal });
+    const event = fixtureEvent();
+
+    host.scheduleOccurrence(event, now);
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    expect(runs.detail(runId!)?.status).toBe("skipped");
+    expect((runs.detail(runId!)?.result as MeetingBriefRunResult).delivery.status).toBe("skipped");
+    expect(fakeGmail.messages).toHaveLength(0);
+  });
+
+  it("fails deliver without sending when Gmail reconciliation is unavailable", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const fakeCal = new FakeCalendarProvider();
+    const event = fixtureEvent();
+    fakeCal.setEvents([calFromFixture(event)]);
+    let sends = 0;
+    const gmail: GmailDeliveryProvider = {
+      async findByDeliveryId() {
+        throw new Error("Gmail reconciliation unavailable");
+      },
+      async send() {
+        sends += 1;
+        return { messageId: "should-not-send", recipient: "owner@example.com" };
+      },
+    };
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbq-reconcile-"));
+    const runs = openRuns(workspaceDir);
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => now,
+      calendarProvider: fakeCal,
+      gmailDeliveryProvider: gmail,
+      getOwnerEmail: () => "owner@example.com",
+      enrich: defaultEnrich(),
+      completeBrief: defaultCompleteBrief(() => now),
+    });
+
+    host.scheduleOccurrence(event, now);
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    expect(runs.detail(runId!)?.status).toBe("failed");
+    expect(runs.detail(runId!)?.failedStage).toBe("deliver");
+    expect((runs.detail(runId!)?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
+    expect(sends).toBe(0);
+  });
+
+  it("fails deliver instead of manufacturing a sent message when no Output Adapter exists", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const fakeCal = new FakeCalendarProvider();
+    const event = fixtureEvent();
+    fakeCal.setEvents([calFromFixture(event)]);
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbq-no-output-"));
+    const runs = openRuns(workspaceDir);
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => now,
+      calendarProvider: fakeCal,
+      getOwnerEmail: () => "owner@example.com",
+      enrich: defaultEnrich(),
+      completeBrief: defaultCompleteBrief(() => now),
+    });
+
+    host.scheduleOccurrence(event, now);
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    const detail = runs.detail(runId!);
+    expect(detail?.status).toBe("failed");
+    expect(detail?.failedStage).toBe("deliver");
+    expect((detail?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
+  });
+
   it("initial brief sends immediately (no wait); revision waits 5min after latest material change", async () => {
     const startFar = new Date("2026-08-28T15:00:00.000Z");
     const nowInit = new Date("2026-08-28T10:00:00.000Z");
@@ -342,7 +444,89 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
     );
     expect(hasWait).toBe(false);
   });
+  it("quiet wait arms from the current Calendar start, not the snapshot-frozen start, when the event moves mid-Run", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const startFar = new Date("2026-08-28T20:00:00.000Z");
+    const fakeCal = new FakeCalendarProvider();
+    const fakeGmail = new FakeGmailDeliveryProvider({ ownerEmail: "owner@example.com" });
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbq-midrun-"));
+    const runs = openRuns(workspaceDir);
+    const baseEnrich = defaultEnrich();
+    let enrichCalls = 0;
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => now,
+      log: () => {},
+      calendarProvider: fakeCal,
+      calendarRecheckRequired: true,
+      gmailDeliveryProvider: fakeGmail,
+      getOwnerEmail: () => "owner@example.com",
+      enrich: async (input, ctx) => {
+        enrichCalls += 1;
+        if (enrichCalls === 2) {
+          // A Calendar move lands while v2 is mid-Run (wake-up not yet reconciled):
+          // the meeting now starts in three minutes, but v2's frozen snapshot start
+          // is still 20:00. The quiet gate must consult Calendar, not the snapshot.
+          fakeCal.setEvents([
+            calFromFixture(
+              fixtureEvent({
+                version: "v3",
+                summary: "Moved into window",
+                startAt: new Date("2026-08-28T10:03:00.000Z").toISOString(),
+                endAt: new Date("2026-08-28T10:33:00.000Z").toISOString(),
+              }),
+            ),
+          ]);
+        }
+        return baseEnrich!(input, ctx);
+      },
+      completeBrief: defaultCompleteBrief(() => now),
+    });
 
+    const v1 = fixtureEvent({
+      version: "v1",
+      summary: "Initial",
+      startAt: startFar.toISOString(),
+      endAt: new Date(startFar.getTime() + 30 * 60000).toISOString(),
+    });
+    fakeCal.setEvents([calFromFixture(v1)]);
+    host.scheduleOccurrence(v1, now);
+    const created1 = await host.processDueSchedules(now);
+    await host.idle();
+    expect(
+      (runs.detail(created1[0] as string)!.result as MeetingBriefRunResult).delivery.status,
+    ).toBe("sent");
+
+    const v2 = fixtureEvent({
+      version: "v2",
+      summary: "Revised title",
+      startAt: startFar.toISOString(),
+      endAt: new Date(startFar.getTime() + 30 * 60000).toISOString(),
+    });
+    fakeCal.setEvents([calFromFixture(v2)]);
+    host.scheduleOccurrence(v2, now);
+    const created2 = await host.processDueSchedules(now);
+    await host.idle();
+
+    // v2 is already obsolete (Calendar moved past it mid-Run), so it must not park
+    // on a doomed five-minute quiet wait: it ends superseded immediately, no email.
+    const d2 = runs.detail(created2[0] as string)!;
+    expect(d2.status).toBe("done");
+    expect((d2.result as MeetingBriefRunResult).delivery.status).toBe("superseded");
+    const hasQuietWait = d2.events.some((e) => {
+      if (e.type !== "run_blocked") return false;
+      const detail: unknown = e.detail;
+      return (
+        typeof detail === "object" &&
+        detail !== null &&
+        "reason" in detail &&
+        detail.reason === "quiet_period"
+      );
+    });
+    expect(hasQuietWait).toBe(false);
+    expect(fakeGmail.messages).toHaveLength(1);
+  });
   it("cancellation marks revision as skipped (not superseded) and preserves completed history", async () => {
     const startFar = new Date("2026-08-28T15:00:00.000Z");
     const nowInit = new Date("2026-08-28T10:00:00.000Z");
@@ -380,6 +564,9 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
     expect(fakeGmail.messages).toHaveLength(1);
     expect(runs.detail(run1Id)!.status).toBe("done");
     expect(runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs).toHaveLength(2);
+    expect(host.index().cancellations).toEqual([
+      expect.objectContaining({ occurrenceKey: `${v2.eventId}::${v2.occurrenceId}` }),
+    ]);
   });
 
   it("supersession older Run remains readable but records why no email sent", async () => {
@@ -469,19 +656,18 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
       log: () => {},
       calendarProvider: fakeCal,
       gmailDeliveryProvider: fakeGmail,
-      getGmailDeliveryProvider: () => fakeGmail,
-      ownerEmail: "owner@example.com",
+      getOwnerEmail: () => "owner@example.com",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(() => now),
     });
-    await (host2 as any).runner.recoverRuns();
+    await host2.recover();
     await host2.idle();
     expect(runs.open(run2Id)!.read().status).toBe("blocked");
     const waitAfter = runs.open(run2Id)!.read().wait?.timeout;
     if (!waitAfter || waitAfter.kind !== "at") throw new Error("expected at");
     expect(waitAfter.at).toBe(waitAt);
     now = new Date(Date.parse(waitAt) + 1000);
-    await (host2 as any).runner.recoverRuns();
+    await host2.recover();
     await host2.idle();
     const d2 = runs.detail(run2Id)!;
     expect(d2.status).toBe("done");
@@ -496,8 +682,7 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
       log: () => {},
       calendarProvider: fakeCal,
       gmailDeliveryProvider: fakeGmail,
-      getGmailDeliveryProvider: () => fakeGmail,
-      ownerEmail: "owner@example.com",
+      getOwnerEmail: () => "owner@example.com",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(() => futureNow),
     });
@@ -518,8 +703,7 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
       log: () => {},
       calendarProvider: fakeCal,
       gmailDeliveryProvider: fakeGmail,
-      getGmailDeliveryProvider: () => fakeGmail,
-      ownerEmail: "owner@example.com",
+      getOwnerEmail: () => "owner@example.com",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(() => futureNow),
     });
@@ -587,8 +771,7 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
       log: () => {},
       calendarProvider: fakeCal,
       gmailDeliveryProvider: fakeGmailPerm,
-      getGmailDeliveryProvider: () => fakeGmailPerm,
-      ownerEmail: "owner@example.com",
+      getOwnerEmail: () => "owner@example.com",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(() => now),
     });

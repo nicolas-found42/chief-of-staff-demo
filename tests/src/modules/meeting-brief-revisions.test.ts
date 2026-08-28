@@ -1,11 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, no-useless-assignment */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, no-useless-assignment */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MEETING_BRIEF_MODULE_ID,
-  type MeetingBriefFixtureEvent,
+  type MeetingBriefEvent,
   type MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
@@ -16,7 +16,7 @@ import {
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
 import type { MeetingBriefModuleDeps } from "../../../apps/server/src/modules/meeting-brief-generator/module";
 
-function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
+function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
     calendarId: "primary",
     eventId: "evt_rev_1",
@@ -40,10 +40,11 @@ function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): Meetin
     ],
     attachments: [],
     ...overrides,
+    status: overrides.status ?? "confirmed",
   };
 }
 
-function calFromFixture(f: MeetingBriefFixtureEvent): CalendarEvent {
+function calFromFixture(f: MeetingBriefEvent): CalendarEvent {
   return {
     calendarId: f.calendarId,
     eventId: f.eventId,
@@ -74,10 +75,12 @@ function makeHost(
   opts: {
     enrich?: MeetingBriefModuleDeps["enrich"];
     completeBrief?: MeetingBriefModuleDeps["completeBrief"];
-    deliver?: MeetingBriefModuleDeps["deliver"];
     getInternalDomains?: () => string[];
     ownerEmail?: string | null;
     calendarProvider?: FakeCalendarProvider;
+    calendarSnapshotRequired?: boolean;
+    calendarRecheckRequired?: boolean;
+    gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
   } = {},
 ) {
   workspaceDir = mkdtempSync(join(tmpdir(), "mbr-"));
@@ -92,11 +95,13 @@ function makeHost(
     now: () => new Date(now),
     log: () => {},
     calendarProvider: fakeCal,
+    ...(opts.calendarSnapshotRequired ? { calendarSnapshotRequired: true } : {}),
+    ...(opts.calendarRecheckRequired ? { calendarRecheckRequired: true } : {}),
+    ...(opts.gmailDeliveryProvider ? { gmailDeliveryProvider: opts.gmailDeliveryProvider } : {}),
     ...(domainsFn ? { getInternalDomains: domainsFn } : {}),
-    ...(owner !== null ? { ownerEmail: owner } : {}),
+    ...(owner !== null ? { getOwnerEmail: () => owner } : {}),
     ...(opts.enrich ? { enrich: opts.enrich } : {}),
     ...(opts.completeBrief ? { completeBrief: opts.completeBrief } : {}),
-    ...(opts.deliver ? { deliver: opts.deliver } : {}),
   });
   return { host, runs, fakeCal, getNow: () => now, setNow: (d: Date) => (now = d) };
 }
@@ -120,13 +125,21 @@ function defaultEnrich() {
   };
 }
 function defaultCompleteBrief() {
-  return async (input: MeetingBriefFixtureEvent) => {
+  return async (input: MeetingBriefEvent) => {
     return {
       version: 1 as const,
       eventId: input.eventId,
       occurrenceId: input.occurrenceId,
       eventVersion: input.version,
       generatedAt: new Date(now).toISOString(),
+      logistics: {
+        title: input.summary,
+        startAt: input.startAt,
+        endAt: input.endAt,
+        location: input.location ?? null,
+        conferenceLink: input.conferenceLink ?? null,
+        organizer: input.organizer ?? null,
+      },
       summary: `Brief for ${input.summary}`,
       guests: [
         {
@@ -138,6 +151,7 @@ function defaultCompleteBrief() {
           crmContext: null,
           talkingPoints: [],
           uncertainty: [],
+          evidenceReferences: [],
         },
       ],
       companies: [],
@@ -145,19 +159,64 @@ function defaultCompleteBrief() {
       sourceReferences: [],
       missingEvidence: [],
       uncertainty: [],
-    } as any;
+    };
   };
 }
 function defaultDeliver() {
-  return async () => ({ messageId: "msg-1", recipient: "owner@example.com" });
+  return {
+    async findByDeliveryId() {
+      return null;
+    },
+    async send() {
+      return { messageId: "msg-1", recipient: "owner@example.com" };
+    },
+  };
 }
 
 describe("Snapshot freezes event identity/version/occurrence, skipped when not Eligible", () => {
+  it("skips when production Calendar truth no longer contains the occurrence", async () => {
+    const { host, runs } = makeHost({
+      calendarSnapshotRequired: true,
+      enrich: defaultEnrich(),
+      completeBrief: defaultCompleteBrief(),
+      gmailDeliveryProvider: defaultDeliver(),
+    });
+    host.scheduleOccurrence(fixtureEvent(), new Date("2026-08-28T11:00:00.000Z"));
+    now = new Date("2026-08-28T11:00:00.000Z");
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    expect(runs.detail(runId)!.status).toBe("skipped");
+    expect(runs.open(runId)!.read().skipReason).toBe("occurrence_not_found");
+  });
+
+  it("fails snapshot when production Calendar cannot establish current truth", async () => {
+    class UnavailableCalendar extends FakeCalendarProvider {
+      override async listEvents(): Promise<never> {
+        throw new Error("Calendar unavailable");
+      }
+    }
+    const { host, runs } = makeHost({
+      calendarProvider: new UnavailableCalendar(),
+      calendarSnapshotRequired: true,
+      enrich: defaultEnrich(),
+      completeBrief: defaultCompleteBrief(),
+      gmailDeliveryProvider: defaultDeliver(),
+    });
+    host.scheduleOccurrence(fixtureEvent(), new Date("2026-08-28T11:00:00.000Z"));
+    now = new Date("2026-08-28T11:00:00.000Z");
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    expect(runs.detail(runId)!.status).toBe("failed");
+    expect(runs.detail(runId)!.failedStage).toBe("snapshot");
+  });
+
   it("freezes snapshot version and occurrence, retains frozen version", async () => {
     const { host, runs } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const event = fixtureEvent({ version: "v1", summary: "Original Title" });
     const due = new Date("2026-08-28T11:00:00.000Z");
@@ -191,7 +250,7 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
         return { sections: [], evidence: [] };
       },
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const event = fixtureEvent({ version: "v1" }); // alice@external.co and owner@example.com both internal now -> no external guest
     host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
@@ -218,7 +277,7 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
       ownerEmail: "owner@example.com",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const event = fixtureEvent({
       version: "v1",
@@ -245,15 +304,12 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
     const { host, runs, fakeCal } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
-    // Seed fakeCal with cancelled event, then reconcile to schedule? But scheduleOccurrence bypasses eligibility.
-    // Instead test snapshot skipped via direct schedule with cancelled status mimicked via provider? We'll schedule via host directly with ineligible all-day flag.
-    // Simpler: schedule event that is all-day (ineligible)
     const event = fixtureEvent({
       version: "v1",
+      isAllDay: true,
     });
-    (event as unknown as CalendarEvent).isAllDay = true;
     host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
     now = new Date("2026-08-28T11:00:00.000Z");
     const created = await host.processDueSchedules(new Date(now));
@@ -267,7 +323,7 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
 describe("Material change detection — every consumed field triggers revision, ignored metadata does not", () => {
   const materialCases: Array<{
     name: string;
-    mutate: (e: MeetingBriefFixtureEvent) => MeetingBriefFixtureEvent;
+    mutate: (e: MeetingBriefEvent) => MeetingBriefEvent;
   }> = [
     { name: "title/summary", mutate: (e) => ({ ...e, summary: "New Title v2", version: "v2" }) },
     {
@@ -343,7 +399,7 @@ describe("Material change detection — every consumed field triggers revision, 
       const { host, runs } = makeHost({
         enrich: defaultEnrich(),
         completeBrief: defaultCompleteBrief(),
-        deliver: defaultDeliver(),
+        gmailDeliveryProvider: defaultDeliver(),
       });
       const v1 = fixtureEvent({ version: "v1" });
       host.scheduleOccurrence(v1, new Date("2026-08-28T11:00:00.000Z"));
@@ -395,7 +451,7 @@ describe("Material change detection — every consumed field triggers revision, 
     const { host, runs } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const v1 = fixtureEvent({ version: "v1", colorId: "1", etag: "etag1" });
     host.scheduleOccurrence(v1, new Date("2026-08-28T11:00:00.000Z"));
@@ -422,12 +478,56 @@ describe("Material change detection — every consumed field triggers revision, 
   });
 });
 
+describe("Cross-Run index", () => {
+  it("keeps a newest failed revision current even when it has no result artifact", async () => {
+    let failEnrichment = false;
+    const { host, runs } = makeHost({
+      enrich: async (...args) => {
+        if (failEnrichment) throw new Error("HubSpot unavailable");
+        return defaultEnrich()(...args);
+      },
+      completeBrief: defaultCompleteBrief(),
+      gmailDeliveryProvider: defaultDeliver(),
+    });
+    host.scheduleOccurrence(fixtureEvent({ version: "v1" }), new Date("2026-08-28T11:00:00Z"));
+    now = new Date("2026-08-28T11:00:00Z");
+    const [run1Id] = await host.processDueSchedules(now);
+    await host.idle();
+    expect(runs.detail(run1Id)!.status).toBe("done");
+
+    failEnrichment = true;
+    const v2 = fixtureEvent({
+      version: "v2",
+      description: "Materially changed description",
+      startAt: "2026-08-28T11:02:00.000Z",
+      endAt: "2026-08-28T11:32:00.000Z",
+    });
+    host.scheduleOccurrence(v2, now);
+    const [run2Id] = await host.processDueSchedules(now);
+    await host.idle();
+    expect(runs.detail(run2Id)!.status).toBe("failed");
+    expect(runs.open(run2Id)!.readArtifact("result.json")).toBeNull();
+
+    const revisions = host
+      .index()
+      .briefs.filter((brief) => brief.occurrenceKey === "evt_rev_1::2026-08-28T15:00:00Z");
+    expect(revisions).toHaveLength(2);
+    expect(revisions[0]).toMatchObject({
+      runId: run2Id,
+      status: "failed",
+      eventVersion: "v2",
+      meetingBrief: null,
+      delivery: null,
+    });
+  });
+});
+
 describe("Duplicate version deduped — one material version creates at most one Run", () => {
   it("duplicate notifications for same version are idempotent", async () => {
     const { host, runs } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const v1 = fixtureEvent({ version: "v1" });
     host.scheduleOccurrence(v1, new Date("2026-08-28T11:00:00.000Z"));
@@ -448,7 +548,7 @@ describe("Duplicate version deduped — one material version creates at most one
       calendarProvider: fake,
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     // Need to use same workspace? For dedup via provider, we test host2 isolated
     // Seed schedule via reconcile
@@ -474,7 +574,7 @@ describe("Rapid two versions and in-flight vs completed", () => {
     const { host, runs } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const v1 = fixtureEvent({ version: "v1" });
     host.scheduleOccurrence(v1, new Date("2026-08-28T11:00:00.000Z"));
@@ -517,7 +617,7 @@ describe("Rapid two versions and in-flight vs completed", () => {
     const { host, runs } = makeHost({
       enrich: enrichDeferred,
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const v1 = fixtureEvent({ version: "v1" });
     host.scheduleOccurrence(v1, new Date("2026-08-28T11:00:00.000Z"));
@@ -557,7 +657,7 @@ describe("Rapid two versions and in-flight vs completed", () => {
     const { host, runs } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const v1 = fixtureEvent({ version: "v1" });
     host.scheduleOccurrence(v1, new Date("2026-08-28T11:00:00.000Z"));
@@ -602,7 +702,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
       calendarProvider: fake,
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     // Reconcile should schedule
     await host.reconcileCalendar();
@@ -629,11 +729,17 @@ describe("Cancellation — removes future candidate, skips active before deliver
     const deliverCalls: string[] = [];
     const { host, runs } = makeHost({
       calendarProvider: fake,
+      calendarRecheckRequired: true,
       enrich: enrichDeferred,
       completeBrief: defaultCompleteBrief(),
-      deliver: async () => {
-        deliverCalls.push("called");
-        return { messageId: "msg-should-not-send", recipient: "owner@example.com" };
+      gmailDeliveryProvider: {
+        async findByDeliveryId() {
+          return null;
+        },
+        async send() {
+          deliverCalls.push("called");
+          return { messageId: "msg-should-not-send", recipient: "owner@example.com" };
+        },
       },
     });
     await host.reconcileCalendar();
@@ -667,7 +773,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
       calendarProvider: fake,
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     await host.reconcileCalendar();
     now = new Date("2026-08-28T12:00:00.000Z");
@@ -685,6 +791,12 @@ describe("Cancellation — removes future candidate, skips active before deliver
     expect(index.upcoming).toHaveLength(0);
     expect(index.briefs).toHaveLength(1);
     expect(index.briefs[0].runId).toBe(run1Id);
+    expect(index.cancellations).toEqual([
+      expect.objectContaining({
+        occurrenceKey: "evt_rev_1::2026-08-28T15:00:00Z",
+        version: "v1",
+      }),
+    ]);
   });
 
   it("cancellation via eligibility (owner declined) also skips active delivery", async () => {
@@ -693,13 +805,21 @@ describe("Cancellation — removes future candidate, skips active before deliver
     const { host, runs } = makeHost({
       calendarProvider: fake,
       ownerEmail: "owner@example.com",
+      calendarRecheckRequired: true,
       enrich: async (_input, ctx) => {
         await gate;
         ctx.event("enrich_done", {});
         return { sections: [], evidence: [] };
       },
       completeBrief: defaultCompleteBrief(),
-      deliver: async () => ({ messageId: "msg", recipient: "owner@example.com" }),
+      gmailDeliveryProvider: {
+        async findByDeliveryId() {
+          return null;
+        },
+        async send() {
+          return { messageId: "msg", recipient: "owner@example.com" };
+        },
+      },
     });
     await host.reconcileCalendar();
     const created = await host.processDueSchedules(new Date("2026-08-28T12:00:00.000Z"));
@@ -742,7 +862,7 @@ describe("Independent recurring occurrences", () => {
     const { host, runs } = makeHost({
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
-      deliver: defaultDeliver(),
+      gmailDeliveryProvider: defaultDeliver(),
     });
     const occ1 = fixtureEvent({
       eventId: "evt_recurring",

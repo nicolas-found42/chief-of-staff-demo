@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
-import { RelayStore, RETENTION_MS, type MessageRecord } from "./store.js";
+import { RelayStore, type MessageRecord } from "./store.js";
 
 /**
  * Opaque relay HTTP contract — issue://80 (opaque relay) + ADR-0031.
@@ -49,10 +49,26 @@ export function createRelayApp(options: RelayAppOptions = {}): {
   const store = options.store ?? new RelayStore(options.now);
   const app = Fastify({ logger: false });
 
+  const authenticateInstallation = (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    installationId: string,
+  ): boolean => {
+    const secret = extractBearer(request.headers.authorization);
+    if (!secret) {
+      void reply.code(401).send({ error: "missing authorization" });
+      return false;
+    }
+    const result = store.authenticateInstallation(installationId, secret);
+    if (!result.ok) {
+      void reply.code(result.statusCode).send({ error: result.error });
+      return false;
+    }
+    return true;
+  };
+
   // Health — issue://81 production topology gate
   app.get("/health", async () => ({ ok: true, service: "relay" }));
-  app.get("/api/health", async () => ({ ok: true, service: "relay" }));
-  app.get("/_health", async () => ({ ok: true }));
 
   // Installation registration — hashed verifier only, no credentials stored
   app.post("/v1/installations", async (request, reply) => {
@@ -74,11 +90,7 @@ export function createRelayApp(options: RelayAppOptions = {}): {
   // Channel registration — authenticated via installation secret bearer
   app.post("/v1/installations/:installationId/channels", async (request, reply) => {
     const { installationId } = request.params as { installationId: string };
-    const auth = extractBearer(request.headers.authorization);
-    if (!auth) return reply.code(401).send({ error: "missing authorization" });
-    if (!store.verifyInstallationSecret(installationId, auth)) {
-      return reply.code(401).send({ error: "invalid installation secret" });
-    }
+    if (!authenticateInstallation(request, reply, installationId)) return reply;
     const parsed = ChannelSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid channel body", details: parsed.error.issues });
@@ -105,11 +117,7 @@ export function createRelayApp(options: RelayAppOptions = {}): {
       installationId: string;
       channelId: string;
     };
-    const auth = extractBearer(request.headers.authorization);
-    if (!auth) return reply.code(401).send({ error: "missing authorization" });
-    if (!store.verifyInstallationSecret(installationId, auth)) {
-      return reply.code(401).send({ error: "invalid installation secret" });
-    }
+    if (!authenticateInstallation(request, reply, installationId)) return reply;
     try {
       store.revokeChannel(installationId, channelId);
       return reply.code(204).send();
@@ -122,13 +130,7 @@ export function createRelayApp(options: RelayAppOptions = {}): {
   // Long-poll — authenticated, installation-isolated, at-least-once, offline buffering
   app.get("/v1/installations/:installationId/messages", async (request, reply) => {
     const { installationId } = request.params as { installationId: string };
-    const auth = extractBearer(request.headers.authorization);
-    if (!auth) return reply.code(401).send({ error: "missing authorization" });
-    if (!store.getInstallation(installationId))
-      return reply.code(404).send({ error: "unknown installation" });
-    if (!store.verifyInstallationSecret(installationId, auth)) {
-      return reply.code(401).send({ error: "invalid installation secret" });
-    }
+    if (!authenticateInstallation(request, reply, installationId)) return reply;
     const query = request.query as { wait?: string };
     const waitSec = query.wait ? Math.min(30, Math.max(0, Number(query.wait) || 0)) : 0;
 
@@ -149,13 +151,7 @@ export function createRelayApp(options: RelayAppOptions = {}): {
   // Ack — authenticated, idempotent
   app.post("/v1/installations/:installationId/ack", async (request, reply) => {
     const { installationId } = request.params as { installationId: string };
-    const auth = extractBearer(request.headers.authorization);
-    if (!auth) return reply.code(401).send({ error: "missing authorization" });
-    if (!store.getInstallation(installationId))
-      return reply.code(404).send({ error: "unknown installation" });
-    if (!store.verifyInstallationSecret(installationId, auth)) {
-      return reply.code(401).send({ error: "invalid installation secret" });
-    }
+    if (!authenticateInstallation(request, reply, installationId)) return reply;
     const parsed = AckSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid ack body", details: parsed.error.issues });
@@ -196,26 +192,15 @@ export function createRelayApp(options: RelayAppOptions = {}): {
       return reply.code(400).send({ error: "invalid message number" });
     }
 
-    const channel = store.getChannel(channelId);
-    if (!channel) {
-      return reply.code(404).send({ error: "unknown channel" });
-    }
-    if (channel.revokedAt) {
-      return reply.code(404).send({ error: "revoked channel" });
-    }
-    // Expiration check on channel
-    if (channel.expiration) {
-      const exp = Date.parse(channel.expiration);
-      if (!Number.isNaN(exp) && Date.now() > exp) {
-        return reply.code(410).send({ error: "channel expired" });
-      }
-    }
-    if (!store.verifyChannelToken(channelId, channelToken)) {
-      return reply.code(401).send({ error: "invalid channel token" });
+    const channelAuthentication = store.authenticateChannel(channelId, channelToken);
+    if (!channelAuthentication.ok) {
+      return reply
+        .code(channelAuthentication.statusCode)
+        .send({ error: channelAuthentication.error });
     }
 
     try {
-      store.appendMessage({
+      store.appendMessage(channelAuthentication.value, {
         channelId,
         messageNumber,
         resourceId,
@@ -230,15 +215,7 @@ export function createRelayApp(options: RelayAppOptions = {}): {
     }
   };
 
-  app.post("/push", pushHandler);
   app.post("/google/push", pushHandler);
-  app.post("/v1/push", pushHandler);
-  app.post("/notify", pushHandler);
-
-  // For testing retention / isolation, expose metrics (not for production, but minimal)
-  app.get("/_metrics", async (_request, reply) => {
-    return reply.send({ retentionMs: RETENTION_MS });
-  });
 
   return { app, store };
 }

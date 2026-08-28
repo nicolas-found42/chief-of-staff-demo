@@ -1,6 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- revision compares optional Calendar fields that may be absent */
-import type { CalendarEvent } from "./calendar.js";
-import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 
 /**
  * Material Calendar change detection (ADR-0033, issue://84).
@@ -12,8 +10,6 @@ import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
  * Unused metadata (colorId, etag, visibility, transparency, created, updated,
  * calendarId etc.) is ignored.
  */
-
-export type AnyEvent = CalendarEvent | MeetingBriefFixtureEvent;
 
 interface MaterialSnapshot {
   summary: string;
@@ -33,10 +29,10 @@ interface MaterialSnapshot {
 }
 
 /** Produce deterministic material snapshot for comparison (ADR-0033). */
-function materialSnapshot(event: AnyEvent): MaterialSnapshot {
+function materialSnapshot(event: MeetingBriefEvent): MaterialSnapshot {
   const attachments = [...(event.attachments ?? [])].sort();
-  const organizerEmail = event.organizer?.email?.trim().toLowerCase() ?? null;
-  const attendees = (event.attendees ?? [])
+  const organizerEmail = event.organizer?.email.trim().toLowerCase() ?? null;
+  const attendees = event.attendees
     .map((a) => ({
       email: a.email.trim().toLowerCase(),
       responseStatus: a.responseStatus,
@@ -47,7 +43,7 @@ function materialSnapshot(event: AnyEvent): MaterialSnapshot {
       (a, b) => a.email.localeCompare(b.email) || a.responseStatus.localeCompare(b.responseStatus),
     );
   return {
-    summary: event.summary ?? "",
+    summary: event.summary,
     description: event.description ?? "",
     startAt: event.startAt,
     endAt: event.endAt,
@@ -59,6 +55,6 @@ function materialSnapshot(event: AnyEvent): MaterialSnapshot {
   };
 }
 
-export function materialFingerprint(event: AnyEvent): string {
+export function materialFingerprint(event: MeetingBriefEvent): string {
   return JSON.stringify(materialSnapshot(event));
 }

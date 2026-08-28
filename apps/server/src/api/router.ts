@@ -144,6 +144,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
      accounts and recovering from a rejected token both start here. */
   app.post("/api/google/disconnect", async () => {
     ctx.google.disconnect();
+    ctx.onConfigChanged();
     return ctx.google.state();
   });
 
@@ -188,6 +189,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     }
     try {
       await ctx.google.completeSignIn(query.code);
+      ctx.onConfigChanged();
       reply.redirect("/settings?google=connected");
     } catch (error) {
       if (error instanceof IncompleteGrantError) {

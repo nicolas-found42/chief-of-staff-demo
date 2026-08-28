@@ -4,7 +4,9 @@ import type {
   HubSpotSetupCheck,
   HubSpotStatus,
 } from "@chief-of-staff-demo/shared";
+import { MEETING_BRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
 import { hubSpotApi, type HubSpotApi } from "./client.js";
+import { readErrorCode, readErrorStatus } from "../enrichment/helpers.js";
 
 export type HubSpotProbeFactory = (token: string) => {
   probe(): Promise<void>;
@@ -34,7 +36,7 @@ export class HubSpotConnection {
   ) {}
 
   status(): HubSpotStatus {
-    const hubspot = this.configStore.get().modules["meeting-brief-generator"].hubspot;
+    const hubspot = this.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID).hubspot;
     if (!hubspot.token) {
       return { state: "unconfigured", tokenHint: "", lastVerifiedAt: null };
     }
@@ -48,23 +50,23 @@ export class HubSpotConnection {
     const trimmed = token.trim();
     if (!trimmed) throw new Error("A HubSpot private-app token is required.");
     await this.buildProbe(trimmed).probe();
-    this.configStore.setHubSpotToken(trimmed, this.now().toISOString());
+    this.setToken(trimmed, this.now().toISOString());
     return this.status();
   }
 
   disconnect(): HubSpotStatus {
-    this.configStore.setHubSpotToken("", null);
+    this.setToken("", null);
     return this.status();
   }
 
   api(): HubSpotApi {
-    const hubspot = this.configStore.get().modules["meeting-brief-generator"].hubspot;
+    const hubspot = this.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID).hubspot;
     if (!hubspot.token) throw new Error("Connect your HubSpot private app first.");
     return hubSpotApi(hubspot.token);
   }
 
   async verifySetup(): Promise<HubSpotSetupCheck> {
-    const hubspot = this.configStore.get().modules["meeting-brief-generator"].hubspot;
+    const hubspot = this.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID).hubspot;
     const checkedAt = this.now().toISOString();
     if (!hubspot.token) {
       return {
@@ -76,7 +78,7 @@ export class HubSpotConnection {
     }
     try {
       await this.buildProbe(hubspot.token).probe();
-      this.configStore.setHubSpotToken(hubspot.token, checkedAt);
+      this.setToken(hubspot.token, checkedAt);
       return {
         state: "healthy",
         detail: "HubSpot accepted the probe. Token is valid with required scopes.",
@@ -141,27 +143,19 @@ export class HubSpotConnection {
       };
     }
   }
-}
 
-function readStatus(error: unknown): number | undefined {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as Record<string, unknown>).status;
-    if (typeof value === "number") return value;
+  private setToken(token: string, lastVerifiedAt: string | null): void {
+    const current = this.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID);
+    this.configStore.setModuleConfig(MEETING_BRIEF_MODULE_ID, {
+      ...current,
+      hubspot: { token, lastVerifiedAt },
+    });
   }
-  return undefined;
-}
-
-function readCategory(error: unknown): string {
-  if (error && typeof error === "object" && "category" in error) {
-    const value = (error as Record<string, unknown>).category;
-    if (typeof value === "string") return value;
-  }
-  return "";
 }
 
 function classifyHubSpotProbeError(error: unknown): HubSpotProbeState {
-  const status = readStatus(error);
-  const category = readCategory(error);
+  const status = readErrorStatus(error);
+  const category = readErrorCode(error);
   const text = error instanceof Error ? error.message : String(error);
   if (
     status === 401 ||
@@ -178,11 +172,11 @@ function classifyHubSpotProbeError(error: unknown): HubSpotProbeState {
   ) {
     return "missing_authority";
   }
-  if (status !== undefined && status >= 500 && status < 600) return "unavailable";
+  if (status !== null && status >= 500 && status < 600) return "unavailable";
   if (status === 429) return "unavailable";
   if (error instanceof TypeError && /fetch|network|ECONNREFUSED|ETIMEDOUT/i.test(text))
     return "unavailable";
-  if (status === undefined && /unavailable|network|timeout|5\d\d/i.test(text)) return "unavailable";
-  if (status !== undefined) return "unavailable";
+  if (status === null && /unavailable|network|timeout|5\d\d/i.test(text)) return "unavailable";
+  if (status !== null) return "unavailable";
   return "unavailable";
 }

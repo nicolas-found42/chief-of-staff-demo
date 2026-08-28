@@ -2,21 +2,22 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 import { isGuestProfileEmployerMatch } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { GuestProfileConnection } from "../../../apps/server/src/modules/meeting-brief-generator/connections/profile";
-import {
-  createFakeGuestProfileProvider,
-  isEmployerMatch,
-} from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
+import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
 import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
 import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
 import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
 import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
+import {
+  completeFixtureBrief,
+  fixtureGmailDeliveryProvider,
+} from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 
 function stubHubSpotApi(): HubSpotApi {
   return {
@@ -44,7 +45,9 @@ function stubHubSpotApi(): HubSpotApi {
   };
 }
 
-function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
+const fixtureDeliver = fixtureGmailDeliveryProvider();
+
+function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
     calendarId: "cal_primary",
     eventId: "evt_profile_1",
@@ -64,6 +67,7 @@ function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): Meetin
       { email: "bob@external.co", displayName: "Bob External", responseStatus: "needsAction" },
     ],
     ...overrides,
+    status: overrides.status ?? "confirmed",
   };
 }
 
@@ -198,14 +202,18 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
       configStore,
       guestProfileConnection: connection,
-      profileProvider: fake,
-      hubSpotApi: stubHubSpotApi(),
-      gmailProvider: new FakeGmailProvider(),
-      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
-      driveProvider: new FakeDriveProvider(),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      enrichmentProviders: {
+        gmailProvider: new FakeGmailProvider(),
+        calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+        driveProvider: new FakeDriveProvider(),
+        profileProvider: fake,
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
     const event = fixtureEvent({ version: "v_profile_1" });
     const dueAt = new Date("2026-08-28T11:00:00.000Z");
@@ -250,12 +258,16 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      profileProvider: fakeExact,
-      hubSpotApi: stubHubSpotApi(),
-      gmailProvider: new FakeGmailProvider(),
-      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
-      driveProvider: new FakeDriveProvider(),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: new FakeGmailProvider(),
+        calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+        driveProvider: new FakeDriveProvider(),
+        profileProvider: fakeExact,
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
     const event = fixtureEvent({
       version: "v_employer_1",
@@ -280,23 +292,23 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
     const bobArt = JSON.parse(
       runs.open(runId)!.readArtifact("profile-bob_external_co-v_employer_1.json")!,
     );
-    expect(isEmployerMatch(aliceArt)).toBe(true);
     expect(isGuestProfileEmployerMatch(aliceArt)).toBe(true);
-    expect(isEmployerMatch(bobArt)).toBe(false);
+    expect(isGuestProfileEmployerMatch(bobArt)).toBe(false);
     expect(bobArt.currentEmployer).toBeNull();
-    // enrich.json should carry employerMatch flag but bob not counted as match
+    // The unified enrichment output attributes an explicit employer match only to Alice.
     const enrich = JSON.parse(runs.open(runId)!.readArtifact("enrich.json")!) as {
-      sections: Array<{ guest?: string; employerMatch?: boolean; source?: string }>;
+      sections: Array<{ guest?: string; source?: string }>;
     };
-    const aliceSection = enrich.sections.find(
-      (s) => s.guest === "alice@external.co" && s.source === "guest-profile",
-    );
-    const bobSection = enrich.sections.find(
-      (s) => s.guest === "bob@external.co" && s.source === "guest-profile",
-    );
-    // alice section should have employerMatch true, bob false/undefined
-    expect(aliceSection?.employerMatch).toBe(true);
-    expect(bobSection?.employerMatch).toBe(false);
+    expect(
+      enrich.sections.some(
+        (section) => section.guest === "alice@external.co" && section.source === "employer-match",
+      ),
+    ).toBe(true);
+    expect(
+      enrich.sections.some(
+        (section) => section.guest === "bob@external.co" && section.source === "employer-match",
+      ),
+    ).toBe(false);
   });
 
   it("fixtures cover 6 response shapes: exact, ambiguous, empty, malformed, rejected, unavailable", async () => {
@@ -317,12 +329,16 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      profileProvider: fake,
-      hubSpotApi: stubHubSpotApi(),
-      gmailProvider: new FakeGmailProvider(),
-      calendarHistoryProvider: new FakeCalendarHistoryProvider(),
-      driveProvider: new FakeDriveProvider(),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: new FakeGmailProvider(),
+        calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+        driveProvider: new FakeDriveProvider(),
+        profileProvider: fake,
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
     const event = fixtureEvent({
       version: "v_fixtures",

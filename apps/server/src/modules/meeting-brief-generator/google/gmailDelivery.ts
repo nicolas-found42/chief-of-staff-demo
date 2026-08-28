@@ -1,6 +1,6 @@
 import { google } from "googleapis";
+import { createHash } from "node:crypto";
 import type { GoogleAuth } from "../../../google/oauth.js";
-import { isExternalGuest } from "../eligibility.js";
 
 /**
  * Gmail Delivery Output Adapter — send-only-to-owner (ADR-0034).
@@ -19,21 +19,32 @@ import { isExternalGuest } from "../eligibility.js";
 export interface GmailDeliveryProvider {
   /**
    * Send the rendered Meeting Brief to the workspace owner.
-   * The recipient is fixed at construction (ownerEmail).
-   * Returns the Gmail messageId.
+   * The recipient is resolved from the authenticated Gmail profile.
+   * Returns both the Gmail messageId and that authenticated recipient.
    */
   send(params: {
     subject: string;
     text: string;
     html: string;
     deliveryId: string;
-  }): Promise<string>;
+  }): Promise<{ messageId: string; recipient: string }>;
 
   /**
    * Reconcile: did a message with this deliveryId already send?
    * Read-only; used before retry so a lost ack converges to one message.
    */
   findByDeliveryId(deliveryId: string): Promise<{ messageId: string; recipient: string } | null>;
+}
+
+/** Resolve the recipient from the authenticated Gmail account, never Calendar/model input. */
+export async function gmailOwnerEmail(auth: GoogleAuth): Promise<string> {
+  const gmail = google.gmail({ version: "v1", auth });
+  const response = await gmail.users.getProfile({ userId: "me" });
+  const email = response.data.emailAddress?.trim().toLowerCase();
+  if (!email || !isValidEmail(email)) {
+    throw new Error("Gmail profile returned no valid authenticated owner email");
+  }
+  return email;
 }
 
 function encodeMeetingBriefRaw(
@@ -45,9 +56,12 @@ function encodeMeetingBriefRaw(
 ): string {
   // Deterministic MIME with stable delivery header for reconciliation.
   const boundary = `mb_${deliveryId.replace(/[^a-zA-Z0-9]/g, "_")}_b`;
+  const messageId = messageIdFor(deliveryId);
+  const safeSubject = subject.replace(/[\r\n]+/g, " ").trim();
   const headers = [
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${safeSubject}`,
+    `Message-ID: <${messageId}>`,
     `X-MeetingBrief-Delivery-Id: ${deliveryId}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -70,6 +84,11 @@ function encodeMeetingBriefRaw(
   return Buffer.from(mime, "utf8").toString("base64url");
 }
 
+function messageIdFor(deliveryId: string): string {
+  const digest = createHash("sha256").update(deliveryId, "utf8").digest("hex");
+  return `meeting-brief-${digest}@chief-of-staff-demo.local`;
+}
+
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -84,14 +103,10 @@ export function createGmailDeliveryProvider(
   const owner = ownerEmail.trim();
 
   return {
-    async send({ subject, text, html, deliveryId }): Promise<string> {
+    async send({ subject, text, html, deliveryId }) {
       // Owner-only enforcement: recipient is fixed, never from model/event.
-      // Double-guard against External Guest leakage even if caller confused.
-      // Here owner is trusted; we just ensure we never accept an external Guest address.
-      // The adapter itself never takes a `to` param; it is bound to owner at construction.
+      // The adapter itself never takes a `to` parameter; it is bound to owner at construction.
       if (!deliveryId) throw new Error("deliveryId is required for idempotency");
-      // Defensive: if internalDomains were provided, we could check isExternalGuest, but owner by definition is not external.
-      // Still, ensure we never send to a consumer domain that looks external? Owner is always allowed.
       const raw = encodeMeetingBriefRaw(owner, subject, text, html, deliveryId);
       const gmail = google.gmail({ version: "v1", auth });
       const res = await gmail.users.messages.send({
@@ -100,7 +115,7 @@ export function createGmailDeliveryProvider(
       });
       const id = (res.data as { id?: string }).id;
       if (!id) throw new Error(`Gmail send returned no id for delivery ${deliveryId}`);
-      return id;
+      return { messageId: id, recipient: owner };
     },
 
     async findByDeliveryId(
@@ -108,33 +123,29 @@ export function createGmailDeliveryProvider(
     ): Promise<{ messageId: string; recipient: string } | null> {
       if (!deliveryId) return null;
       const gmail = google.gmail({ version: "v1", auth });
-      // Read-only reconciliation: search sent mailbox for the delivery header value.
-      // Gmail's free-text search indexes header values, so querying the id suffices.
-      const q = `"${deliveryId}" in:sent`;
+      // Gmail exposes an exact RFC Message-ID search operator. The hashed ID is
+      // deterministic and contains no provider-controlled query syntax.
+      const q = `rfc822msgid:${messageIdFor(deliveryId)} in:sent`;
       const list = await gmail.users.messages.list({ userId: "me", maxResults: 10, q });
       const messages = (list.data as { messages?: Array<{ id?: string }> }).messages ?? [];
       for (const m of messages) {
         const id = m.id;
         if (!id) continue;
-        try {
-          const get = await gmail.users.messages.get({
-            userId: "me",
-            id,
-            format: "metadata",
-            metadataHeaders: ["X-MeetingBrief-Delivery-Id", "To"],
-          });
-          const headers = (
-            get.data as { payload?: { headers?: Array<{ name?: string; value?: string }> } }
-          ).payload?.headers;
-          const headerId = headers?.find(
-            (h) => h.name?.toLowerCase() === "x-meetingbrief-delivery-id",
-          )?.value;
-          if (headerId === deliveryId) {
-            const to = headers?.find((h) => h.name?.toLowerCase() === "to")?.value ?? owner;
-            return { messageId: id, recipient: to };
-          }
-        } catch {
-          // Ignore per-message fetch errors; continue.
+        const get = await gmail.users.messages.get({
+          userId: "me",
+          id,
+          format: "metadata",
+          metadataHeaders: ["X-MeetingBrief-Delivery-Id", "Message-ID", "To"],
+        });
+        const headers = (
+          get.data as { payload?: { headers?: Array<{ name?: string; value?: string }> } }
+        ).payload?.headers;
+        const headerId = headers?.find(
+          (h) => h.name?.toLowerCase() === "x-meetingbrief-delivery-id",
+        )?.value;
+        if (headerId === deliveryId) {
+          const to = headers?.find((h) => h.name?.toLowerCase() === "to")?.value ?? owner;
+          return { messageId: id, recipient: to };
         }
       }
       return null;
@@ -153,13 +164,11 @@ export interface FakeGmailDeliveryOptions {
   mode?: FakeGmailDeliveryMode;
   /** Fail the Nth send call (1-indexed) with transient error for lostAck simulation. */
   failOnAttempt?: number | null;
-  internalDomains?: string[];
 }
 
 export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
   private readonly ownerEmail: string;
   private readonly mode: FakeGmailDeliveryMode;
-  private readonly internalDomains: string[];
   private failOnAttempt: number | null;
   private sendCount = 0;
   private readonly sentByDeliveryId = new Map<
@@ -179,7 +188,6 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     if (!opts.ownerEmail) throw new Error("FakeGmailDeliveryProvider requires ownerEmail");
     this.ownerEmail = opts.ownerEmail;
     this.mode = opts.mode ?? "normal";
-    this.internalDomains = opts.internalDomains ?? [];
     this.failOnAttempt = opts.failOnAttempt ?? null;
   }
 
@@ -196,10 +204,6 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     return this.sendCount;
   }
 
-  getSentByDeliveryId(deliveryId: string): { messageId: string; recipient: string } | undefined {
-    return this.sentByDeliveryId.get(deliveryId);
-  }
-
   clear(): void {
     this.sentByDeliveryId.clear();
     this.allMessages.length = 0;
@@ -211,13 +215,8 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     text: string;
     html: string;
     deliveryId: string;
-  }): Promise<string> {
+  }): Promise<{ messageId: string; recipient: string }> {
     this.sendCount++;
-    // Owner-only enforcement: this fake MUST reject any attempt to send to non-owner.
-    // The real adapter binds `to` at construction; the fake mirrors that structural guarantee.
-    // If caller tries to bypass by passing external Guest via any backdoor, we check.
-    // Here we only have deliveryId, but we expose ownerEmail check via a backdoor method below.
-
     if (this.mode === "unavailable") {
       throw Object.assign(new Error("Gmail delivery unavailable (fake)"), {
         code: 503,
@@ -231,14 +230,6 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     }
     if (this.mode === "permanentFailure") {
       throw new Error("Fake permanent Gmail failure");
-    }
-
-    // Enforce: never email External Guest. Since this fake's recipient is always owner,
-    // we just double-check owner is not considered external when internalDomains includes owner domain.
-    if (isExternalGuest({ email: this.ownerEmail } as never, this.internalDomains)) {
-      // If owner domain is mistakenly considered external (should not happen via normalized domains),
-      // this is a test misconfiguration, but we guard.
-      // Allow owner anyway; the check is for non-owner recipients which this fake never uses.
     }
 
     const messageId = `fake-msg-${params.deliveryId}-${this.sendCount}-${Date.now()}`;
@@ -274,24 +265,7 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
       html: params.html,
       deliveryId: params.deliveryId,
     });
-    return messageId;
-  }
-
-  /**
-   * Owner-only enforcement backdoor: if a test tries to call a method that would send to arbitrary recipient,
-   * it should be caught. This fake deliberately has no `sendTo(to)` method — only the owner-bound `send` exists.
-   * Tests can attempt to misuse via casting; we expose a guarded method for verification.
-   */
-  async sendTo(
-    to: string,
-    _params: { subject: string; text: string; html: string; deliveryId: string },
-  ): Promise<string> {
-    if (to.toLowerCase() !== this.ownerEmail.toLowerCase()) {
-      throw new Error(
-        `Gmail delivery is owner-only: refusing to send to ${to} (owner is ${this.ownerEmail}); External Guests never emailed`,
-      );
-    }
-    return this.send(_params);
+    return { messageId, recipient: this.ownerEmail };
   }
 
   async findByDeliveryId(
@@ -300,27 +274,5 @@ export class FakeGmailDeliveryProvider implements GmailDeliveryProvider {
     const found = this.sentByDeliveryId.get(deliveryId);
     if (!found) return null;
     return { messageId: found.messageId, recipient: found.recipient };
-  }
-
-  /** Direct manipulation for tests: inject a sent message without going through send() */
-  injectSent(params: {
-    deliveryId: string;
-    messageId: string;
-    recipient: string;
-    subject?: string;
-  }): void {
-    this.sentByDeliveryId.set(params.deliveryId, {
-      messageId: params.messageId,
-      recipient: params.recipient,
-      subject: params.subject ?? "Injected",
-    });
-    this.allMessages.push({
-      messageId: params.messageId,
-      to: params.recipient,
-      subject: params.subject ?? "Injected",
-      text: "injected",
-      html: "<p>injected</p>",
-      deliveryId: params.deliveryId,
-    });
   }
 }

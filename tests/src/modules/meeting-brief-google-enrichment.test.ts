@@ -3,7 +3,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
+import {
+  completeFixtureBrief,
+  fixtureGmailDeliveryProvider,
+} from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 import { GOOGLE_ENRICHMENT_MAX_GMAIL_EXACT } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
@@ -13,6 +17,7 @@ import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brie
 import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
 import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
+import { enrichUnified } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/enrich";
 
 function stubHubSpotApi(): HubSpotApi {
   return {
@@ -40,7 +45,9 @@ function stubHubSpotApi(): HubSpotApi {
   };
 }
 
-function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): MeetingBriefFixtureEvent {
+const fixtureDeliver = fixtureGmailDeliveryProvider();
+
+function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
     calendarId: "primary",
     eventId: "evt_google_1",
@@ -65,6 +72,7 @@ function fixtureEvent(overrides: Partial<MeetingBriefFixtureEvent> = {}): Meetin
     ],
     attachments: [],
     ...overrides,
+    status: overrides.status ?? "confirmed",
   };
 }
 
@@ -79,6 +87,146 @@ beforeEach(() => {
 });
 
 describe("Google enrichment via host seam — bounded, keyed, diagnostics, untrusted", () => {
+  it("same-version retry preserves the complete HubSpot contact/company/deal checkpoint", async () => {
+    const files = new Map<string, string>();
+    const calls: string[] = [];
+    const hubSpotApi: HubSpotApi = {
+      async listContacts() {
+        return { results: [] };
+      },
+      async searchContactByEmail(email) {
+        calls.push(`contact:${email}`);
+        return {
+          id: "contact-1",
+          email,
+          properties: {},
+          associatedCompanyIds: [],
+          associatedDealIds: [],
+        };
+      },
+      async getAssociatedCompanyIds() {
+        calls.push("company-associations");
+        return ["company-1"];
+      },
+      async getCompany() {
+        calls.push("company");
+        return { id: "company-1", name: "External Co", domain: "external.co", properties: {} };
+      },
+      async getAssociatedDealIds() {
+        calls.push("contact-deals");
+        return ["deal-1"];
+      },
+      async getAssociatedDealIdsForCompany() {
+        calls.push("company-deals");
+        return [];
+      },
+      async getDeal() {
+        calls.push("deal");
+        return { id: "deal-1", name: "Renewal", amount: null, stage: null, properties: {} };
+      },
+    };
+    const ctx = {
+      readFile: (name: string) => files.get(name) ?? null,
+      writeFile: (name: string, value: string) => files.set(name, value),
+      event: () => {},
+    };
+    const deps = {
+      providers: {
+        gmailProvider: new FakeGmailProvider(),
+        calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+        driveProvider: new FakeDriveProvider(),
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => hubSpotApi,
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
+      internalDomains: ["example.com"],
+    };
+    const event = fixtureEvent({
+      attendees: [
+        { email: "alice@external.co", responseStatus: "accepted" },
+        { email: "owner@example.com", responseStatus: "accepted", organizer: true },
+      ],
+    });
+
+    const first = await enrichUnified(event, ctx, deps);
+    const callCount = calls.length;
+    const second = await enrichUnified(event, ctx, deps);
+
+    expect(calls).toHaveLength(callCount);
+    expect(first.sections.filter((section) => section.source.startsWith("hubspot-"))).toEqual(
+      second.sections.filter((section) => section.source.startsWith("hubspot-")),
+    );
+    expect(second.sections.some((section) => section.source === "hubspot-company")).toBe(true);
+    expect(second.sections.some((section) => section.source === "hubspot-deal")).toBe(true);
+  });
+
+  it("same-version retry requests only failed HubSpot work and reuses completed contact work", async () => {
+    const files = new Map<string, string>();
+    let contactCalls = 0;
+    let companyAssociationCalls = 0;
+    const apiWithPartialFailure: HubSpotApi = {
+      ...stubHubSpotApi(),
+      async searchContactByEmail(email) {
+        contactCalls += 1;
+        return {
+          id: "contact-1",
+          email,
+          properties: {},
+          associatedCompanyIds: [],
+          associatedDealIds: [],
+        };
+      },
+      async getAssociatedCompanyIds() {
+        companyAssociationCalls += 1;
+        if (companyAssociationCalls === 1) {
+          throw Object.assign(new Error("temporary company source failure"), { status: 500 });
+        }
+        return ["company-1"];
+      },
+      async getCompany() {
+        return { id: "company-1", name: "External Co", domain: "external.co", properties: {} };
+      },
+    };
+    const ctx = {
+      readFile: (name: string) => files.get(name) ?? null,
+      writeFile: (name: string, value: string) => files.set(name, value),
+      event: () => {},
+    };
+    const deps = {
+      providers: {
+        gmailProvider: new FakeGmailProvider(),
+        calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+        driveProvider: new FakeDriveProvider(),
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => apiWithPartialFailure,
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
+      internalDomains: ["example.com"],
+    };
+    const event = fixtureEvent({
+      attendees: [
+        { email: "alice@external.co", responseStatus: "accepted" },
+        { email: "owner@example.com", responseStatus: "accepted", organizer: true },
+      ],
+    });
+
+    const first = await enrichUnified(event, ctx, deps);
+    const second = await enrichUnified(event, ctx, deps);
+
+    expect(
+      first.sections.some(
+        (section) => section.source === "hubspot-company" && section.status === "completed",
+      ),
+    ).toBe(true);
+    expect(
+      second.sections.some(
+        (section) => section.source === "hubspot-company" && section.status === "completed",
+      ),
+    ).toBe(true);
+    expect(contactCalls).toBe(1);
+    expect(companyAssociationCalls).toBe(2);
+  });
+
   it("collects at most 10 exact-address Gmail, bounded company-domain for non-Consumer, 10 prior meetings, bounded Docs", async () => {
     const gmail = new FakeGmailProvider();
     // Alice exact: 12 threads (should be limited to 10, truncated), company domain threads 3, dedup tested via duplicate ids
@@ -128,13 +276,17 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: gmail,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      internalDomains: ["internal.example"],
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: gmail,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
+      getInternalDomains: () => ["internal.example"],
     });
 
     const event = fixtureEvent({ version: "v1" });
@@ -253,13 +405,17 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: failingGmail,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      internalDomains: [],
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: failingGmail,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
+      getInternalDomains: () => [],
     });
 
     const event = fixtureEvent({
@@ -324,12 +480,16 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: gmail,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: gmail,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
 
     const event = fixtureEvent({ version: "v1" });
@@ -363,12 +523,16 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: gmailUnavail,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: gmailUnavail,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
 
     const eventV1 = fixtureEvent({ version: "v1" });
@@ -388,12 +552,16 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: gmail2,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: gmail2,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
     // Simulate revision: new event version v2 distinct occurrence to avoid dedup with failed v1 same key
     const eventV2 = fixtureEvent({
@@ -427,12 +595,16 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: gmail3,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: gmail3,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
     const eventV3 = fixtureEvent({
       version: "v3",
@@ -487,12 +659,16 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       workspaceDir,
       now: () => new Date(now),
       log: () => {},
-      gmailProvider: gmail,
-      calendarHistoryProvider: calendar,
-      driveProvider: drive,
-      hubSpotApi: stubHubSpotApi(),
-      profileProvider: createFakeGuestProfileProvider({}),
-      publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: gmail,
+        calendarHistoryProvider: calendar,
+        driveProvider: drive,
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
     });
     const event = fixtureEvent({
       version: "v1",

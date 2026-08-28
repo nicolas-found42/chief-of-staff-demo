@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { MeetingBriefIndexEntry, MeetingBriefUpcoming } from "@chief-of-staff-demo/shared";
+import type {
+  MeetingBriefCancellation,
+  MeetingBriefIndexEntry,
+  MeetingBriefUpcoming,
+} from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
+import { deliveryPresentation } from "../modules/meeting-brief/deliveryStatus";
 
 type IndexState = {
   upcoming: MeetingBriefUpcoming[];
   briefs: MeetingBriefIndexEntry[];
+  cancellations: MeetingBriefCancellation[];
 };
 
 function groupByOccurrence(
@@ -20,7 +26,11 @@ function groupByOccurrence(
     groups.set(entry.occurrenceKey, list);
   }
   for (const [key, list] of groups) {
-    list.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    list.sort((a, b) => {
+      if (a.supersedes === b.runId) return -1;
+      if (b.supersedes === a.runId) return 1;
+      return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    });
     groups.set(key, list);
   }
   return groups;
@@ -28,26 +38,10 @@ function groupByOccurrence(
 
 function DeliveryBadge({ delivery }: { delivery: MeetingBriefIndexEntry["delivery"] }) {
   if (!delivery) return <span className="muted">No delivery</span>;
-  const LABEL_BY_STATUS: Record<string, string> = {
-    sent: "Sent",
-    reconciled: "Sent (reconciled)",
-    superseded: "Superseded",
-    pending: "Pending",
-    failed: "Failed",
-    skipped: "Skipped",
-  };
-  const label = LABEL_BY_STATUS[delivery.status] ?? delivery.status;
-  const cls =
-    delivery.status === "sent" || delivery.status === "reconciled"
-      ? "status-done"
-      : delivery.status === "failed"
-        ? "status-failed"
-        : delivery.status === "superseded"
-          ? "status-active"
-          : "muted";
+  const presentation = deliveryPresentation(delivery.status);
   return (
-    <span className={`status-badge ${cls}`} role="status">
-      {label}
+    <span className={`status-badge ${presentation.className}`} role="status">
+      {presentation.label}
     </span>
   );
 }
@@ -64,9 +58,7 @@ export function MeetingBriefPage() {
     setError(null);
     try {
       const data = await api.meetingBriefIndex();
-      const briefs = data.briefs as unknown as MeetingBriefIndexEntry[];
-      const upcoming = data.upcoming as unknown as MeetingBriefUpcoming[];
-      setIndex({ upcoming, briefs });
+      setIndex(data);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -94,12 +86,14 @@ export function MeetingBriefPage() {
 
   const currentByOccurrence = useMemo(() => {
     const map = new Map<string, MeetingBriefIndexEntry>();
+    const cancelled = new Set(index?.cancellations.map((item) => item.occurrenceKey) ?? []);
     for (const [key, list] of groups) {
-      const latestDone = list.find((e) => e.status === "done") ?? list[0];
-      if (latestDone) map.set(key, latestDone);
+      if (cancelled.has(key)) continue;
+      const latestRevision = list[0];
+      if (latestRevision) map.set(key, latestRevision);
     }
     return map;
-  }, [groups]);
+  }, [groups, index]);
 
   if (!index) {
     return (
@@ -219,16 +213,9 @@ export function MeetingBriefPage() {
                     {entry.delivery?.messageId ? `· ${entry.delivery.messageId}` : ""}{" "}
                     {entry.delivery?.deliveryId ? `· ${entry.delivery.deliveryId}` : ""}
                   </p>
-                  {entry.delivery?.status === "superseded" ? (
+                  {entry.delivery && deliveryPresentation(entry.delivery.status).explanation ? (
                     <p className="muted">
-                      This brief was superseded by a newer material Calendar change — only the
-                      latest revision sends.
-                    </p>
-                  ) : null}
-                  {entry.delivery?.status === "pending" ? (
-                    <p className="muted">
-                      Waiting for quiet period — will send after 5 minutes unless a newer change
-                      arrives.
+                      {deliveryPresentation(entry.delivery.status).explanation}
                     </p>
                   ) : null}
                   {brief ? (
@@ -312,6 +299,29 @@ export function MeetingBriefPage() {
         )}
       </section>
 
+      <section aria-labelledby="cancellation-heading">
+        <h2 id="cancellation-heading">Cancelled meetings</h2>
+        {index.cancellations.length === 0 ? (
+          <p className="muted">No cancelled meeting occurrences.</p>
+        ) : (
+          <ul className="card-list">
+            {index.cancellations.map((cancellation) => (
+              <li key={cancellation.occurrenceKey} className="card">
+                <h3>{cancellation.summary}</h3>
+                <p>
+                  <span className="status-badge status-active">Cancelled</span> · occurrence{" "}
+                  {cancellation.occurrenceId} · version {cancellation.version}
+                </p>
+                <p className="muted">
+                  Completed Runs remain in revision history, but this occurrence is no longer a
+                  current brief.
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section aria-labelledby="history-heading">
         <h2 id="history-heading">Revision history</h2>
         {briefs.length === 0 ? (
@@ -342,6 +352,11 @@ export function MeetingBriefPage() {
                         Supersedes <Link to={`/runs/${entry.supersedes}`}>{entry.supersedes}</Link>
                       </p>
                     ) : null}
+                    {entry.delivery && deliveryPresentation(entry.delivery.status).explanation ? (
+                      <p className="muted">
+                        {deliveryPresentation(entry.delivery.status).explanation}
+                      </p>
+                    ) : null}
                     {entry.meetingBrief ? (
                       <p className="muted">{entry.meetingBrief.summary}</p>
                     ) : null}
@@ -356,20 +371,6 @@ export function MeetingBriefPage() {
               })}
           </ul>
         )}
-      </section>
-
-      <section aria-labelledby="cancellation-heading">
-        <h2 id="cancellation-heading">Cancellation & skipped</h2>
-        <p className="muted">
-          Cancellation removes future Intake candidates without creating a Runs history entry.
-          Active Runs recheck Calendar before delivery and end skipped if cancelled; completed
-          history remains but current state shows cancelled.
-        </p>
-        {briefs.filter((b) => b.status === "skipped").length === 0 ? (
-          <p className="muted">
-            No skipped briefs — cancellation state will appear here when Calendar reports cancelled.
-          </p>
-        ) : null}
       </section>
 
       <div className="card">

@@ -94,40 +94,7 @@ export function isEligibleMeeting(
   internalDomains: string[],
   ownerEmail: string | null,
 ): boolean {
-  // Timed only — all-day excluded
-  if (event.isAllDay === true) return false;
-
-  // Require startAt; if missing, not timed
-  if (!event.startAt || !event.endAt) return false;
-
-  // Non-cancelled only
-  if (event.status === "cancelled") return false;
-
-  // Owner not declined — if ownerEmail provided, check matching attendee
-  if (ownerEmail) {
-    const normalizedOwner = ownerEmail.trim().toLowerCase();
-    for (const attendee of event.attendees) {
-      if (isResourceAttendee(attendee)) continue;
-      if (attendee.email.trim().toLowerCase() === normalizedOwner) {
-        if (attendee.responseStatus === "declined") return false;
-        break;
-      }
-    }
-    // Also check organizer if attendee list missing owner? Organizer declined not modeled; rely on attendee.
-  }
-
-  // At least one non-declined External Guest
-  let hasExternalNonDeclined = false;
-  for (const attendee of event.attendees) {
-    if (isResourceAttendee(attendee)) continue;
-    if (!isExternalGuest(attendee, internalDomains)) continue;
-    // Consumer domains remain external — no extra filter
-    if (attendee.responseStatus === "declined") continue;
-    // accepted, tentative, needsAction count
-    hasExternalNonDeclined = true;
-    break;
-  }
-  return hasExternalNonDeclined;
+  return eligibilityReason(event, internalDomains, ownerEmail) === "eligible";
 }
 
 /** Helper for tests: classify a meeting with diagnostic reason when ineligible. */
@@ -142,7 +109,7 @@ export function eligibilityReason(
   if (ownerEmail) {
     const normalizedOwner = ownerEmail.trim().toLowerCase();
     for (const attendee of event.attendees) {
-      if (attendee.resource) continue;
+      if (isResourceAttendee(attendee)) continue;
       if (
         attendee.email.trim().toLowerCase() === normalizedOwner &&
         attendee.responseStatus === "declined"
@@ -153,7 +120,7 @@ export function eligibilityReason(
   }
   let hasExternal = false;
   for (const a of event.attendees) {
-    if (a.resource) continue;
+    if (isResourceAttendee(a)) continue;
     if (!isExternalGuest(a, internalDomains)) continue;
     if (a.responseStatus !== "declined") {
       hasExternal = true;

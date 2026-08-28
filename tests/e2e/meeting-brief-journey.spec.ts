@@ -64,10 +64,9 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   await expect(
     page.getByRole("heading", { name: "Google — Calendar, Gmail, Drive" }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Calendar Relay" })).toBeVisible();
   // Relay health/channel/last wake-up visible in Settings (relay section)
-  await expect(page.getByRole("heading", { name: "Calendar Relay" })).toBeVisible();
-  await expect(page.getByText(/Relay health/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Calendar Relay", exact: true })).toBeVisible();
+  await expect(page.getByText("Relay health:", { exact: true })).toBeVisible();
 
   // 2. Seed Calendar wake-up (header-only wake never mistaken for data — we reconcile)
   // Clear any prior fake gmail
@@ -96,7 +95,9 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   await expect(page.getByText("Initial Meeting")).toBeVisible();
   await expect(page.getByText(/Current briefs/)).toBeVisible();
   // Live tab is live (not headless) and shows 4 Stages hint
-  await expect(page.getByText(/Stages: snapshot/)).toBeVisible();
+  await expect(
+    page.getByText("Stages: snapshot | enrich | compose | deliver (fixed 4)", { exact: true }),
+  ).toBeVisible();
 
   // 3. Advance fake clock to due → Intake creates Run with 4 Stages and completes
   const advance1 = await request.post("/api/test/meeting-brief/advance", {
@@ -132,20 +133,20 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
 
   // Re-open tab and assert current brief rendering, evidence warnings, delivery state
   await page.goto("/meeting-brief");
-  await expect(page.getByText("Initial Meeting")).toBeVisible();
+  const currentBriefs = page.getByLabel("Current briefs");
+  await expect(currentBriefs.getByRole("heading", { name: /Initial Meeting · Run/ })).toBeVisible();
   // Current brief section shows linked Run and delivery sent
-  await expect(page.getByText(/Current briefs/)).toBeVisible();
-  await expect(page.getByText(/Brief for Initial Meeting/)).toBeVisible();
+  await expect(currentBriefs.getByText("Brief for Initial Meeting", { exact: true })).toBeVisible();
   // Source links (at least one)
-  const sourceLink = page.getByRole("link", { name: /https:\/\/example.com\/alice/ });
+  const sourceLink = currentBriefs.getByRole("link", { name: /https:\/\/example.com\/alice/ });
   await expect(sourceLink.first()).toBeVisible();
   // Missing-evidence warnings
-  await expect(page.getByText(/Missing evidence/)).toBeVisible();
-  await expect(page.getByText(/Drive Docs for Acme/)).toBeVisible();
+  await expect(currentBriefs.getByText(/Missing evidence/)).toBeVisible();
+  await expect(currentBriefs.getByText(/Drive Docs for Acme/)).toBeVisible();
   // Delivery state pending/sent/superseded/failed with Gmail identity
-  await expect(page.getByText(/Delivery:/)).toBeVisible();
-  await expect(page.getByText(/Sent/)).toBeVisible();
-  await expect(page.getByText(/owner@example.com/)).toBeVisible();
+  await expect(currentBriefs.getByText(/Delivery:/)).toBeVisible();
+  await expect(currentBriefs.getByText("Sent", { exact: true })).toBeVisible();
+  await expect(currentBriefs.getByText(/owner@example.com/)).toBeVisible();
   // Check fake gmail messages — owner-only send state, never External Guest
   const gmail1 = (await (
     await request.get("/api/test/meeting-brief/fake-gmail/messages")
@@ -164,16 +165,16 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   await expect(page).toHaveURL(/\/runs\/run_/);
   await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
   // 4 Stages snapshot|enrich|compose|deliver
-  await expect(page.getByText("snapshot")).toBeVisible();
-  await expect(page.getByText("enrich")).toBeVisible();
-  await expect(page.getByText("compose")).toBeVisible();
-  await expect(page.getByText("deliver")).toBeVisible();
+  await expect(page.getByText("snapshot", { exact: true })).toBeVisible();
+  await expect(page.getByText("enrich", { exact: true })).toBeVisible();
+  await expect(page.getByText("compose", { exact: true })).toBeVisible();
+  await expect(page.getByText("deliver", { exact: true })).toBeVisible();
   // Meeting Brief result view shows logistics, guests, companies, starters, sources, gaps, warnings, delivery identity
   await expect(page.getByRole("heading", { name: "Meeting Brief" })).toBeVisible();
-  await expect(page.getByText(/Logistics/)).toBeVisible();
-  await expect(page.getByText(/Delivery/)).toBeVisible();
-  await expect(page.getByText(/owner@example.com/)).toBeVisible();
-  await expect(page.getByText(/Message ID/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Logistics" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Delivery" })).toBeVisible();
+  await expect(page.getByText("Recipient: owner@example.com", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Message ID:/)).toBeVisible();
 
   // Back to tab for revision
   await page.goto("/meeting-brief");
@@ -268,17 +269,22 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
 
   // Tab shows updated revision as current, and superseded explain
   await page.goto("/meeting-brief");
-  await expect(page.getByText("Final revised title")).toBeVisible();
-  await expect(page.getByText(/Updated Meeting Brief/)).not.toBeVisible(); // subject is email, not tab — tab shows Brief for ...
-  await expect(page.getByText(/Brief for Final revised title/)).toBeVisible();
+  await expect(
+    currentBriefs.getByRole("heading", { name: /Final revised title · Run/ }),
+  ).toBeVisible();
+  await expect(currentBriefs.getByText(/Updated Meeting Brief/)).not.toBeVisible(); // subject is email, not tab — tab shows Brief for ...
+  await expect(
+    currentBriefs.getByText("Brief for Final revised title", { exact: true }),
+  ).toBeVisible();
   // Superseded entry explains obsolete
-  await expect(page.getByText(/Superseded/)).toBeVisible();
-  await expect(page.getByText(/only the latest revision sends/)).toBeVisible();
+  const revisionHistory = page.getByLabel("Revision history");
+  await expect(revisionHistory.getByText("Superseded", { exact: true }).first()).toBeVisible();
+  await expect(revisionHistory.getByText(/only the latest revision sends/)).toBeVisible();
 
   // Revision history shows chain
   await expect(page.getByRole("heading", { name: "Revision history" })).toBeVisible();
-  await expect(page.getByText("v3")).toBeVisible();
-  await expect(page.getByText("v2")).toBeVisible();
+  await expect(revisionHistory.getByText(/version v3/)).toBeVisible();
+  await expect(revisionHistory.getByText(/version v2/)).toBeVisible();
 
   // Ensure tab and Runs surfaces are accessible (keyboard, status without color etc covered by existing a11y)
   // Verify source link names are accessible

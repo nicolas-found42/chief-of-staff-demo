@@ -182,7 +182,7 @@ _Avoid_: LLM error, provider error, extraction error (that is the Run event, not
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
 expiry being a weekly event rather than a fault. It is the only route to a Google surface
-(Tasks, Gmail, Drive, YouTube, Sheets) and the only holder of client credentials and refresh
+(Tasks, Calendar, Gmail, Drive, YouTube, Sheets) and the only holder of client credentials and refresh
 tokens; a Module's Intake or Output Adapter reaches Google with credentials from the connection
 or not at all.
 _Avoid_: Google auth, login, OAuth (the protocol is not the connection)
@@ -223,6 +223,7 @@ workspace material, and guest profiles rather than treating any one enrichment c
 enhancement.
 _Status_: live
 _Avoid_: Meeting Briefing Generator (the Relay original), Briefing Module
+
 **Meeting Brief**:
 The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
 evidence-backed guest and company context with concise conversation starters, source references and

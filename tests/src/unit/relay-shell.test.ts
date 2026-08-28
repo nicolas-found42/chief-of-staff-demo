@@ -2,17 +2,24 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import Fastify from "fastify";
 import { RelayStateStore, hashVerifier } from "../../../apps/server/src/relay/state.js";
 import { RelayClient } from "../../../apps/server/src/relay/client.js";
 import { createRelayApp } from "../../../relay/src/app.js";
-import { registerRelayRoutes } from "../../../apps/server/src/relay/routes.js";
+import { publicRelayBaseUrl, registerRelayRoutes } from "../../../apps/server/src/relay/routes.js";
+import { RelayWakeUpPoller } from "../../../apps/server/src/relay/poller.js";
 
 // Shell relay client, workspace persistence, Settings status — issue://80 + ADR-0031 + issue://81
 // Tests: local generation, Workspace persistence, status without secrets, channel replacement ordering.
 
 describe("RelayStateStore workspace persistence — issue://81", () => {
+  it("requires public HTTPS except for explicit loopback development URLs", () => {
+    expect(publicRelayBaseUrl("https://relay.example.com/")).toBe("https://relay.example.com");
+    expect(publicRelayBaseUrl("http://127.0.0.1:4318")).toBe("http://127.0.0.1:4318");
+    expect(() => publicRelayBaseUrl("http://relay:4318")).toThrow(/public HTTPS/);
+  });
+
   it("generates installation identity+secret locally and persists secret in Workspace", () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-shell-"));
     const store = new RelayStateStore(join(dir, "relay.json"));
@@ -55,7 +62,7 @@ describe("Settings status without exposing secrets — issue://81", () => {
   it("GET /api/relay/status reports installation/channel/lastWakeUp without secrets", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-shell-"));
     const app = Fastify({ logger: false });
-    registerRelayRoutes(app, { workspaceDir: dir });
+    registerRelayRoutes(app, { workspaceDir: dir, onInstalled: async () => undefined });
 
     // initially no installation
     const empty = await app.inject({ method: "GET", url: "/api/relay/status" });
@@ -132,13 +139,16 @@ describe("Shell relay client channel replacement — issue://81", () => {
     await client.replaceChannel(oldChannelId, { channelId: newChannelId, token: newToken });
 
     // old should be revoked
-    expect(store.getChannel(oldChannelId)?.revokedAt).toBeTruthy();
-    expect(store.getChannel(newChannelId)).toBeTruthy();
+    expect(store.authenticateChannel(oldChannelId, oldToken)).toMatchObject({
+      ok: false,
+      error: "revoked channel",
+    });
+    expect(store.authenticateChannel(newChannelId, newToken)).toMatchObject({ ok: true });
 
     // new still accepts, old rejected
     const ok = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": newChannelId,
         "x-goog-channel-token": newToken,
@@ -150,7 +160,7 @@ describe("Shell relay client channel replacement — issue://81", () => {
 
     const bad = await app.inject({
       method: "POST",
-      url: "/push",
+      url: "/google/push",
       headers: {
         "x-goog-channel-id": oldChannelId,
         "x-goog-channel-token": oldToken,
@@ -163,3 +173,193 @@ describe("Shell relay client channel replacement — issue://81", () => {
     await app.close();
   });
 });
+
+describe("Shell relay wake-up processing — issue://81", () => {
+  it("reports Calendar watch bootstrap failure when relay installation succeeds", async () => {
+    const { app: relay } = createRelayApp();
+    await relay.listen({ port: 0, host: "127.0.0.1" });
+    const address = relay.server.address() as { port: number };
+    const shell = Fastify({ logger: false });
+    registerRelayRoutes(shell, {
+      workspaceDir: mkdtempSync(join(tmpdir(), "relay-shell-bootstrap-")),
+      onInstalled: async () => {
+        throw new Error("Google Calendar watch refused");
+      },
+    });
+
+    const response = await shell.inject({
+      method: "POST",
+      url: "/api/relay/install",
+      payload: { relayBaseUrl: `http://127.0.0.1:${address.port}` },
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({
+      error: "Calendar watch bootstrap failed: Google Calendar watch refused",
+    });
+    await shell.close();
+    await relay.close();
+  });
+
+  it("long-polls in the background and sends each wake-up through Intake before ack", async () => {
+    const { app: relay } = createRelayApp();
+    await relay.listen({ port: 0, host: "127.0.0.1" });
+    const relayAddress = relay.server.address() as { port: number };
+    const relayBaseUrl = `http://127.0.0.1:${relayAddress.port}`;
+    const workspaceDir = mkdtempSync(join(tmpdir(), "relay-shell-background-"));
+    const shell = Fastify({ logger: false });
+    const onInstalled = vi.fn(async () => undefined);
+    registerRelayRoutes(shell, { workspaceDir, onInstalled });
+    await shell.inject({
+      method: "POST",
+      url: "/api/relay/install",
+      payload: { relayBaseUrl },
+    });
+    expect(onInstalled).toHaveBeenCalledOnce();
+    await shell.inject({
+      method: "POST",
+      url: "/api/relay/channels",
+      payload: { channelId: "calendar-background", token: "background-token" },
+    });
+    await relay.inject({
+      method: "POST",
+      url: "/google/push",
+      headers: {
+        "x-goog-channel-id": "calendar-background",
+        "x-goog-channel-token": "background-token",
+        "x-goog-resource-id": "resource-background",
+        "x-goog-resource-state": "exists",
+        "x-goog-message-number": "1",
+      },
+    });
+    const processed: unknown[][] = [];
+    const poller = new RelayWakeUpPoller({
+      store: new RelayStateStore(join(workspaceDir, "relay.json")),
+      processWakeUps: async (messages) => {
+        processed.push(messages);
+      },
+      waitSeconds: 0,
+      idleDelayMs: 5,
+    });
+
+    poller.start();
+    await vi.waitFor(() => expect(processed).toHaveLength(1));
+    poller.stop();
+
+    expect(processed[0]).toHaveLength(1);
+    await shell.close();
+    await relay.close();
+  });
+
+  it("processes buffered wake-ups before acknowledging them", async () => {
+    const { app: relay, store: relayStore } = createRelayApp();
+    await relay.listen({ port: 0, host: "127.0.0.1" });
+    const relayAddress = relay.server.address() as { port: number };
+    const relayBaseUrl = `http://127.0.0.1:${relayAddress.port}`;
+    const workspaceDir = mkdtempSync(join(tmpdir(), "relay-shell-poll-"));
+    const shell = Fastify({ logger: false });
+    const processed: unknown[][] = [];
+    registerRelayRoutes(shell, {
+      workspaceDir,
+      onInstalled: async () => undefined,
+      processWakeUps: async (messages: unknown[]) => {
+        processed.push(messages);
+      },
+    });
+
+    expect(
+      (
+        await shell.inject({
+          method: "POST",
+          url: "/api/relay/install",
+          payload: { relayBaseUrl },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await shell.inject({
+          method: "POST",
+          url: "/api/relay/channels",
+          payload: { channelId: "calendar-1", token: "calendar-token" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await relay.inject({
+          method: "POST",
+          url: "/google/push",
+          headers: {
+            "x-goog-channel-id": "calendar-1",
+            "x-goog-channel-token": "calendar-token",
+            "x-goog-resource-id": "resource-1",
+            "x-goog-resource-state": "exists",
+            "x-goog-message-number": "1",
+          },
+        })
+      ).statusCode,
+    ).toBe(204);
+
+    const polled = await shell.inject({ method: "POST", url: "/api/relay/poll" });
+
+    expect(polled.statusCode).toBe(200);
+    expect(processed).toHaveLength(1);
+    expect(processed[0]).toHaveLength(1);
+    expect(relayStore.listPending(processedInstallationId(workspaceDir))).toHaveLength(0);
+
+    await shell.close();
+    await relay.close();
+  });
+
+  it("leaves wake-ups unacknowledged when Intake processing fails", async () => {
+    const { app: relay, store: relayStore } = createRelayApp();
+    await relay.listen({ port: 0, host: "127.0.0.1" });
+    const relayAddress = relay.server.address() as { port: number };
+    const relayBaseUrl = `http://127.0.0.1:${relayAddress.port}`;
+    const workspaceDir = mkdtempSync(join(tmpdir(), "relay-shell-retry-"));
+    const shell = Fastify({ logger: false });
+    registerRelayRoutes(shell, {
+      workspaceDir,
+      onInstalled: async () => undefined,
+      processWakeUps: async () => {
+        throw new Error("Calendar reconciliation unavailable");
+      },
+    });
+    await shell.inject({
+      method: "POST",
+      url: "/api/relay/install",
+      payload: { relayBaseUrl },
+    });
+    await shell.inject({
+      method: "POST",
+      url: "/api/relay/channels",
+      payload: { channelId: "calendar-2", token: "calendar-token-2" },
+    });
+    await relay.inject({
+      method: "POST",
+      url: "/google/push",
+      headers: {
+        "x-goog-channel-id": "calendar-2",
+        "x-goog-channel-token": "calendar-token-2",
+        "x-goog-resource-id": "resource-2",
+        "x-goog-resource-state": "exists",
+        "x-goog-message-number": "1",
+      },
+    });
+
+    const polled = await shell.inject({ method: "POST", url: "/api/relay/poll" });
+
+    expect(polled.statusCode).toBe(502);
+    expect(relayStore.listPending(processedInstallationId(workspaceDir))).toHaveLength(1);
+
+    await shell.close();
+    await relay.close();
+  });
+});
+
+function processedInstallationId(workspaceDir: string): string {
+  const state = new RelayStateStore(join(workspaceDir, "relay.json")).load();
+  if (!state.installationId) throw new Error("expected relay installation");
+  return state.installationId;
+}

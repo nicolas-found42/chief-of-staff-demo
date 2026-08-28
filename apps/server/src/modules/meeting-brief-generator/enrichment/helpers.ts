@@ -16,6 +16,10 @@ export function readErrorStatus(error: unknown): number | null {
     const v = (error as Record<string, unknown>).status;
     if (typeof v === "number") return v;
   }
+  if (error && typeof error === "object" && "code" in error) {
+    const v = (error as Record<string, unknown>).code;
+    if (typeof v === "number") return v;
+  }
   if (error && typeof error === "object" && "httpStatus" in error) {
     const v = (error as Record<string, unknown>).httpStatus;
     if (typeof v === "number") return v;
@@ -43,10 +47,18 @@ export function readErrorCode(error: unknown): string | null {
     const v = (error as Record<string, unknown>).code;
     if (typeof v === "string") return v;
   }
+  if (error && typeof error === "object" && "reason" in error) {
+    const v = (error as Record<string, unknown>).reason;
+    if (typeof v === "string") return v;
+  }
   if (error && typeof error === "object" && "errorCode" in error) {
     const v = (error as Record<string, unknown>).errorCode;
     if (typeof v === "string") return v;
   }
+  const nested = (
+    error as { response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } } }
+  )?.response?.data?.error?.errors?.[0]?.reason;
+  if (typeof nested === "string") return nested;
   return null;
 }
 
@@ -55,6 +67,9 @@ export function isProviderWideError(error: unknown): boolean {
   const status = maybe?.status ?? maybe?.code ?? maybe?.response?.status ?? readErrorStatus(error);
   const msg = error instanceof Error ? error.message : String(error);
   if (status === 401 || status === 403 || status === 503) return true;
+  // Providers declare outages with the `unavailable:` category (ADR-0030 classified facts), so a
+  // 502/504 from Guest Profile or public search classifies provider-wide by message; other 4xx
+  // statuses (404 empty, 429 rate-limited) stay per-source explicit gaps after retry (US69).
   if (
     /invalid_grant|insufficient authentication|ACCESS_TOKEN|accessNotConfigured|has not been used|is disabled|not configured|missing_configuration|rejected|unavailable|missing_authority/i.test(
       msg,
@@ -65,6 +80,36 @@ export function isProviderWideError(error: unknown): boolean {
   if (code && /rejected|missing_authority|unavailable|missing_configuration/i.test(code))
     return true;
   return false;
+}
+
+/** Per-source bounded retry policy (issue #80 US67/US68): two attempts; provider-wide failures abort immediately. */
+export const PROVIDER_RETRY_ATTEMPTS = 2;
+
+export async function withBoundedRetry<T>(options: {
+  attempt: (attemptNumber: number, finalAttempt: boolean) => Promise<T>;
+  onRetry?: (error: unknown, attempt: number) => void;
+  /** Runs before a provider-wide error rethrows, so callers can persist resumable state. */
+  onProviderWide?: (error: unknown) => void;
+}): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  for (let attempt = 1; attempt <= PROVIDER_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return {
+        ok: true,
+        value: await options.attempt(attempt, attempt === PROVIDER_RETRY_ATTEMPTS),
+      };
+    } catch (error) {
+      if (isProviderWideError(error)) {
+        options.onProviderWide?.(error);
+        throw error;
+      }
+      if (attempt < PROVIDER_RETRY_ATTEMPTS) {
+        options.onRetry?.(error, attempt);
+        continue;
+      }
+      return { ok: false, error };
+    }
+  }
+  throw new Error("unreachable");
 }
 
 export function deduplicateEvidence(evidence: string[]): string[] {

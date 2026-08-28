@@ -37,6 +37,9 @@ export interface MessageRecord {
   ack: boolean;
 }
 
+export type AuthenticationResult<T> =
+  { ok: true; value: T } | { ok: false; statusCode: 401 | 404 | 410; error: string };
+
 function hashHex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -82,14 +85,16 @@ export class RelayStore {
     return rec;
   }
 
-  getInstallation(installationId: string): InstallationRecord | undefined {
-    return this.installations.get(installationId);
-  }
-
-  verifyInstallationSecret(installationId: string, secret: string): boolean {
+  authenticateInstallation(
+    installationId: string,
+    secret: string,
+  ): AuthenticationResult<InstallationRecord> {
     const inst = this.installations.get(installationId);
-    if (!inst) return false;
-    return safeEqualHash(secret, inst.verifier);
+    if (!inst) return { ok: false, statusCode: 404, error: "unknown installation" };
+    if (!safeEqualHash(secret, inst.verifier)) {
+      return { ok: false, statusCode: 401, error: "invalid installation secret" };
+    }
+    return { ok: true, value: inst };
   }
 
   // --- Channel ---
@@ -116,6 +121,8 @@ export class RelayStore {
       if (!safeEqualHex(existing.tokenVerifier, tokenVerifier)) {
         throw Object.assign(new Error("channel verifier mismatch"), { statusCode: 409 });
       }
+      existing.resourceId = resourceId ?? existing.resourceId;
+      existing.expiration = expiration ?? existing.expiration;
       return existing;
     }
     const rec: ChannelRecord = {
@@ -140,25 +147,26 @@ export class RelayStore {
     ch.revokedAt = this.now().toISOString();
   }
 
-  getChannel(channelId: string): ChannelRecord | undefined {
-    return this.channels.get(channelId);
-  }
-
-  listChannels(installationId: string): ChannelRecord[] {
-    return [...this.channels.values()].filter(
-      (c) => c.installationId === installationId && !c.revokedAt,
-    );
-  }
-
-  verifyChannelToken(channelId: string, token: string): boolean {
+  private activeChannel(channelId: string): AuthenticationResult<ChannelRecord> {
     const ch = this.channels.get(channelId);
-    if (!ch || ch.revokedAt) return false;
-    // Expiration check: if expiration is ISO and now past it, treat as expired -> reject
+    if (!ch) return { ok: false, statusCode: 404, error: "unknown channel" };
+    if (ch.revokedAt) return { ok: false, statusCode: 404, error: "revoked channel" };
     if (ch.expiration) {
       const exp = Date.parse(ch.expiration);
-      if (!Number.isNaN(exp) && this.now().getTime() > exp) return false;
+      if (!Number.isNaN(exp) && this.now().getTime() > exp) {
+        return { ok: false, statusCode: 410, error: "channel expired" };
+      }
     }
-    return safeEqualHash(token, ch.tokenVerifier);
+    return { ok: true, value: ch };
+  }
+
+  authenticateChannel(channelId: string, token: string): AuthenticationResult<ChannelRecord> {
+    const active = this.activeChannel(channelId);
+    if (!active.ok) return active;
+    if (!safeEqualHash(token, active.value.tokenVerifier)) {
+      return { ok: false, statusCode: 401, error: "invalid channel token" };
+    }
+    return active;
   }
 
   // --- Messages (wake-ups) ---
@@ -177,24 +185,17 @@ export class RelayStore {
     // also prune channels whose expiration passed? Not auto, but push will reject
   }
 
-  appendMessage(args: {
-    channelId: string;
-    messageNumber: string;
-    resourceId: string;
-    resourceState: string;
-    resourceUri: string | null;
-    channelExpiration: string | null;
-  }): { created: boolean; record: MessageRecord | null } {
-    const ch = this.channels.get(args.channelId);
-    if (!ch || ch.revokedAt) {
-      throw Object.assign(new Error("unknown channel"), { statusCode: 404 });
-    }
-    if (ch.expiration) {
-      const exp = Date.parse(ch.expiration);
-      if (!Number.isNaN(exp) && this.now().getTime() > exp) {
-        throw Object.assign(new Error("channel expired"), { statusCode: 410 });
-      }
-    }
+  appendMessage(
+    channel: ChannelRecord,
+    args: {
+      channelId: string;
+      messageNumber: string;
+      resourceId: string;
+      resourceState: string;
+      resourceUri: string | null;
+      channelExpiration: string | null;
+    },
+  ): { created: boolean; record: MessageRecord | null } {
     const key = `${args.channelId}:${args.messageNumber}`;
     const existing = this.messages.get(key);
     if (existing) {
@@ -204,7 +205,7 @@ export class RelayStore {
     const receivedAt = this.now().toISOString();
     const expiresAt = new Date(this.now().getTime() + RETENTION_MS).toISOString();
     const rec: MessageRecord = {
-      installationId: ch.installationId,
+      installationId: channel.installationId,
       channelId: args.channelId,
       messageNumber: args.messageNumber,
       resourceId: args.resourceId,
@@ -216,10 +217,10 @@ export class RelayStore {
       ack: false,
     };
     this.messages.set(key, rec);
-    if (!this.messagesByInstallation.has(ch.installationId)) {
-      this.messagesByInstallation.set(ch.installationId, new Set());
+    if (!this.messagesByInstallation.has(channel.installationId)) {
+      this.messagesByInstallation.set(channel.installationId, new Set());
     }
-    this.messagesByInstallation.get(ch.installationId)!.add(key);
+    this.messagesByInstallation.get(channel.installationId)!.add(key);
     return { created: true, record: rec };
   }
 
@@ -265,13 +266,6 @@ export class RelayStore {
   countMessages(): number {
     return this.messages.size;
   }
-
-  countPending(installationId: string): number {
-    return this.listPending(installationId).length;
-  }
-
-  // For retention test: allow manual time injection via `now` provider; also expose direct prune with custom now?
-  // Tests can create store with mocked now.
 
   // Utility to check forbidden storage: ensure no extra fields stored
   snapshot(): unknown {
