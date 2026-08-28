@@ -212,6 +212,14 @@ api_jq() {
   printf '%s' "$_API_BODY" | jq -r "$1"
 }
 
+# load_config — GET /api/config into _API_BODY, warning on transport failure.
+load_config() {
+  if ! api GET /api/config; then
+    warn "could not read config from $APP"
+    return 1
+  fi
+}
+
 # wait_health SECONDS — poll /api/health until ok.
 wait_health() {
   local deadline=$(( $(date +%s) + $1 ))
@@ -254,7 +262,7 @@ fi
 
 # ── 2 · Extraction provider (LLM) ─────────────────────────────────────────
 stage "Extraction provider"
-api GET /api/config
+load_config
 CUR_PROVIDER="$(api_jq '.config.provider')"
 CUR_MODEL="$(api_jq '.config.model')"
 CUR_KEY_SET="$(api_jq '.config.apiKey.set')"
@@ -277,7 +285,7 @@ body=$(jq -n --arg p "$PROVIDER" --arg m "$MODEL" --arg k "$API_KEY" \
   '{provider: $p, model: $m} + (if $k == "" then {} else {apiKey: $k} end)')
 api PUT /api/config "$body"
 if [[ "$_API_CODE" == "200" ]]; then
-  api GET /api/config
+  load_config
   say "Saved: provider=$(api_jq '.config.provider') model=$(api_jq '.config.model') key hint …$(api_jq '.config.apiKey.hint')"
 else
   warn "config save failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
@@ -285,7 +293,7 @@ fi
 
 # ── 3 · Google OAuth client ───────────────────────────────────────────────
 stage "Google OAuth client"
-api GET /api/config
+load_config
 if [[ "$(api_jq '.config.google.clientSecret.set')" == "true" ]] && ! confirm "Replace the existing Google OAuth client?"; then
   say "Keeping the existing Google OAuth client."
 else
@@ -307,9 +315,10 @@ fi
 # ── 4 · Google connect + verify ───────────────────────────────────────────
 stage "Google sign-in"
 api GET /api/google/status
-GS="$(api_jq '.state // empty')"
-if [[ "$GS" == "connected" ]] && ! confirm "Sign in to Google again anyway?"; then
+GOOGLE_STATE="$(api_jq '.state // empty')"
+if [[ "$GOOGLE_STATE" == "connected" ]] && ! confirm "Sign in to Google again anyway?"; then
   say "Google connection kept."
+  note "Personal accounts re-auth about weekly — re-running this script lands here: choose to sign in again."
 else
   api GET /api/google/connect
   if [[ "$_API_CODE" != "200" ]]; then
@@ -322,21 +331,22 @@ else
     note "Personal account: the 'unverified app' screen is expected — click Continue (small link, bottom left)."
     pause "Press Enter once you have completed the consent screen…"
     say "Waiting for Google to call back"
-    ok=""
+    CONNECTED=""
     for _ in $(seq 1 60); do
       api GET /api/google/status
-      S="$(api_jq '.state // empty')"
-      [[ "$S" == "connected" ]] && { ok=1; break; }
+      STATE="$(api_jq '.state // empty')"
+      [[ "$STATE" == "connected" ]] && { CONNECTED=1; break; }
       printf '.'
       sleep 5
     done
     printf '\n'
-    if [[ -n "$ok" ]]; then
+    if [[ -n "$CONNECTED" ]]; then
       say "Connected."
       api POST /api/google/check
       say "Check my setup: $(printf '%s' "$_API_BODY" | jq -c .)"
     else
       warn "not connected after 5 minutes — check the Google card in Settings, then re-run."
+      note "Failure symptoms are tabled in ONBOARDING.md → 'When something is wrong'."
       SKIPPED+=("Google sign-in verification")
     fi
   fi
@@ -344,7 +354,7 @@ fi
 
 # ── 5 · Drive intake folder ───────────────────────────────────────────────
 stage "Drive transcripts folder"
-api GET /api/config
+load_config
 CUR_FOLDER="$(api_jq '.config.drive.folderName // empty')"
 if [[ -n "$CUR_FOLDER" ]]; then
   say "Current folder: $CUR_FOLDER"
@@ -375,7 +385,7 @@ if ! confirm "Run the end-to-end smoke test now?"; then
   SKIPPED+=("Transcript smoke test")
   warn "skipped — run it later: upload the sample transcript, then Sync now in Settings."
 else
-  api GET /api/config
+  load_config
   FOLDER_ID="$(api_jq '.config.drive.folderId // empty')"
   [[ -n "$FOLDER_ID" ]] && open_url "https://drive.google.com/drive/folders/$FOLDER_ID" \
     || open_url "https://drive.google.com"
@@ -393,29 +403,36 @@ else
     say "Watching run $RUN_ID"
     for _ in $(seq 1 60); do
       api GET "/api/runs/$RUN_ID"
-      S="$(api_jq '.status')"
-      case "$S" in done|failed|skipped) break ;; esac
+      RUN_STATUS="$(api_jq '.status')"
+      case "$RUN_STATUS" in done|failed|skipped) break ;; esac
       printf '.'
       sleep 5
     done
     printf '\n'
-    say "Run $RUN_ID → $S"
-    [[ "$S" == "done" ]] && step "Confirm: Google Tasks list 'Meeting Followups' has 3 tasks; Gmail Drafts has 1 draft."
+    say "Run $RUN_ID → $RUN_STATUS"
+    [[ "$RUN_STATUS" == "done" ]] && step "Confirm: Google Tasks list 'Meeting Followups' has 3 tasks; Gmail Drafts has 1 draft."
   fi
 fi
 
 # ── 7 · YouTube channels ──────────────────────────────────────────────────
 stage "YouTube channels"
-while true; do
-  ask CHANNEL_URL "Channel URL (youtube.com/@name or /channel/UC…, empty to stop):"
-  [[ -z "$CHANNEL_URL" ]] && break
-  api POST /api/youtube/channels "$(jq -n --arg u "$CHANNEL_URL" '{url: $u}')"
-  if [[ "$_API_CODE" == "201" ]]; then
-    say "Tracking: $(api_jq '.channel.title')"
-  else
-    warn "$(api_jq '.error // "failed (HTTP '"$_API_CODE"')"')"
-  fi
-done
+api GET /api/youtube/trends
+EXISTING_CHANNELS="$(api_jq '.channels | length')"
+if [[ "$EXISTING_CHANNELS" =~ ^[0-9]+$ ]] && (( EXISTING_CHANNELS > 0 )) \
+  && confirm "Keep the $EXISTING_CHANNELS channel(s) already being tracked?"; then
+  say "Channels kept."
+else
+  while true; do
+    ask CHANNEL_URL "Channel URL (youtube.com/@name or /channel/UC…, empty to stop):"
+    [[ -z "$CHANNEL_URL" ]] && break
+    api POST /api/youtube/channels "$(jq -n --arg u "$CHANNEL_URL" '{url: $u}')"
+    if [[ "$_API_CODE" == "201" ]]; then
+      say "Tracking: $(api_jq '.channel.title')"
+    else
+      warn "$(api_jq '.error // "failed (HTTP '"$_API_CODE"')"')"
+    fi
+  done
+fi
 
 # ── 8 · YouTube Trends spreadsheet (creates a real Sheet) ─────────────────
 stage "YouTube Trends spreadsheet"
@@ -431,6 +448,9 @@ else
     if [[ "$_API_CODE" == "201" ]]; then
       open_url "$(api_jq '.spreadsheet.url')"
       say "Created."
+    elif [[ "$_API_CODE" == "409" ]]; then
+      say "Already exists (someone created it moments ago)."
+      open_url "$(api_jq '.spreadsheet.url // empty')"
     else
       warn "creation failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
       SKIPPED+=("YouTube Trends spreadsheet")
@@ -485,30 +505,38 @@ fi
 stage "Content Scout schedule"
 api GET /api/content-scout
 say "Current: $(printf '%s' "$_API_BODY" | jq -c '.settings // empty')"
-ask SCOUT_TZ "IANA time zone:"
-ask SCOUT_DAILY "Daily scout time (HH:MM):"
-ask SCOUT_WDAY "Weekly discovery weekday (1=Mon…7=Sun):"
-ask SCOUT_WTIME "Weekly discovery time (HH:MM):"
-ask SCOUT_SIZE "Shortlist size (3–10):"
-CUR_SETTINGS="$(printf '%s' "$_API_BODY" | jq -c '.settings // {}')"
-SCOUT_TZ="${SCOUT_TZ:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.timeZone // empty')}"
-SCOUT_DAILY="${SCOUT_DAILY:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.dailyTime // "08:00"')}"
-SCOUT_WDAY="${SCOUT_WDAY:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.weeklyDiscoveryDay // 1')}"
-SCOUT_WTIME="${SCOUT_WTIME:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.weeklyDiscoveryTime // "09:00"')}"
-SCOUT_SIZE="${SCOUT_SIZE:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.shortlistSize // 5')}"
-body=$(jq -n --arg tz "$SCOUT_TZ" --arg d "$SCOUT_DAILY" --argjson wd "$SCOUT_WDAY" \
-  --arg wt "$SCOUT_WTIME" --argjson sz "$SCOUT_SIZE" \
-  '{timeZone: $tz, dailyTime: $d, weeklyDiscoveryDay: $wd, weeklyDiscoveryTime: $wt, shortlistSize: $sz}')
-api PATCH /api/content-scout/settings "$body"
-if [[ "$_API_CODE" == "200" ]]; then
-  say "Schedule saved: daily $SCOUT_DAILY $SCOUT_TZ, discovery weekday $SCOUT_WDAY at $SCOUT_WTIME, shortlist $SCOUT_SIZE."
+if confirm "Keep the current schedule?"; then
+  say "Schedule kept."
 else
-  warn "save failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
+  ask SCOUT_TZ "IANA time zone:"
+  ask SCOUT_DAILY "Daily scout time (HH:MM):"
+  ask SCOUT_WDAY "Weekly discovery weekday (1=Mon…7=Sun):"
+  ask SCOUT_WTIME "Weekly discovery time (HH:MM):"
+  ask SCOUT_SIZE "Shortlist size (3–10):"
+  CUR_SETTINGS="$(printf '%s' "$_API_BODY" | jq -c '.settings // {}')"
+  SCOUT_TZ="${SCOUT_TZ:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.timeZone // empty')}"
+  SCOUT_DAILY="${SCOUT_DAILY:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.dailyTime // "08:00"')}"
+  SCOUT_WDAY="${SCOUT_WDAY:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.weeklyDiscoveryDay // 1')}"
+  SCOUT_WTIME="${SCOUT_WTIME:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.weeklyDiscoveryTime // "09:00"')}"
+  SCOUT_SIZE="${SCOUT_SIZE:-$(printf '%s' "$CUR_SETTINGS" | jq -r '.shortlistSize // 5')}"
+  [[ "$SCOUT_WDAY" =~ ^[1-7]$ ]] || SCOUT_WDAY=1
+  [[ "$SCOUT_SIZE" =~ ^[0-9]+$ ]] || SCOUT_SIZE=5
+  if (( SCOUT_SIZE < 3 )); then SCOUT_SIZE=3; fi
+  if (( SCOUT_SIZE > 10 )); then SCOUT_SIZE=10; fi
+  body=$(jq -n --arg tz "$SCOUT_TZ" --arg d "$SCOUT_DAILY" --argjson wd "$SCOUT_WDAY" \
+    --arg wt "$SCOUT_WTIME" --argjson sz "$SCOUT_SIZE" \
+    '{timeZone: $tz, dailyTime: $d, weeklyDiscoveryDay: $wd, weeklyDiscoveryTime: $wt, shortlistSize: $sz}')
+  api PATCH /api/content-scout/settings "$body"
+  if [[ "$_API_CODE" == "200" ]]; then
+    say "Schedule saved: daily $SCOUT_DAILY $SCOUT_TZ, discovery weekday $SCOUT_WDAY at $SCOUT_WTIME, shortlist $SCOUT_SIZE."
+  else
+    warn "save failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
+  fi
 fi
 
 # ── 11 · Notion connection + content calendar ─────────────────────────────
 stage "Notion"
-api GET /api/config
+load_config
 if [[ "$(api_jq '.config.notion.token.set')" == "true" ]] && ! confirm "Replace the existing Notion connection?"; then
   say "Keeping the existing Notion connection."
 else
@@ -604,7 +632,7 @@ fi
 stage "Final check"
 api GET /api/health
 say "App: $( [[ "$_API_CODE" == "200" ]] && printf 'healthy' || printf 'UNHEALTHY' ) at $APP"
-api GET /api/config
+load_config
 say "Provider: $(api_jq '.config.provider') / $(api_jq '.config.model') · key set: $(api_jq '.config.apiKey.set')"
 say "Google client: $(api_jq '.config.google.clientSecret.set' | sed 's/true/set/; s/false/unset/') · Notion token: $(api_jq '.config.notion.token.set' | sed 's/true/set/; s/false/unset/')"
 say "Drive folder: $(api_jq '.config.drive.folderName // "none"') (polling $(api_jq '.config.drive.enabled' | sed 's/true/on/; s/false/off/'))"
@@ -620,5 +648,6 @@ api GET /api/meeting-brief/config
 say "Meeting Brief: $(printf '%s' "$_API_BODY" | jq -c '{internalDomains: (.internalDomains | length), hubspot: .hubspot.state}')"
 say ""
 say "Open the app: $APP"
+note "Anything misbehave? ONBOARDING.md → 'When something is wrong' names the fix."
 
 finish
