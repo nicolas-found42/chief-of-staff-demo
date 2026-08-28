@@ -6,6 +6,8 @@ import type {
   ContentShortlist,
   DriveIntakeStatus,
   GoogleStatus,
+  HubSpotSetupCheck,
+  HubSpotStatus,
   RedactedConfig,
   RunDetail,
   RunPage,
@@ -409,13 +411,24 @@ export const api = {
     request<{ messages: unknown[]; lastWakeUpAt: string | null }>("/api/relay/poll", {
       method: "POST",
     }),
-  // Meeting Brief Generator — Internal Domains + calendar reconciliation (issue://83)
-  meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
-  saveMeetingBriefConfig: (internalDomains: string[]) =>
-    request<{ internalDomains: string[] }>("/api/meeting-brief/config", {
+  hubspotStatus: () => request<HubSpotStatus>("/api/meeting-brief/hubspot/status"),
+  hubspotConnect: (token: string) =>
+    request<HubSpotStatus>("/api/meeting-brief/hubspot/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+  hubspotDisconnect: () =>
+    request<HubSpotStatus>("/api/meeting-brief/hubspot/disconnect", { method: "POST" }),
+  hubspotCheck: () =>
+    request<HubSpotSetupCheck>("/api/meeting-brief/hubspot/check", { method: "POST" }),
+  meetingBriefConfig: () =>
+    request<{ internalDomains: string[]; hubspot: HubSpotStatus }>("/api/meeting-brief/config"),
+  saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
+    request<{ internalDomains: string[]; hubspot: HubSpotStatus }>("/api/meeting-brief/config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ internalDomains }),
+      body: JSON.stringify(Array.isArray(input) ? { internalDomains: input } : input),
     }),
   meetingBriefIndex: () =>
     request<{

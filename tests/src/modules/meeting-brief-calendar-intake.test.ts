@@ -9,7 +9,7 @@ import {
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
 import { isEligibleMeeting } from "../../../apps/server/src/modules/meeting-brief-generator/eligibility";
-import { normalizeInternalDomains } from "@chief-of-staff-demo/shared";
+import { normalizeInternalDomains, type AppConfig } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
 
 function calEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -62,9 +62,19 @@ describe("eligibility — Internal Domains normalized case-insensitive (issue://
     const dir = mkdtempSync(join(tmpdir(), "cfg-"));
     const store = new ConfigStore(join(dir, "config.json"));
     store.load();
-    store.setModuleConfig("meeting-brief-generator", {
+    const next = {
       internalDomains: ["UPPER.COM", "upper.com", " Mixed.Org "],
-    });
+      guestProfile: {
+        endpoint: "",
+        apiKey: "",
+        lastVerifiedAt: null,
+        lastCheckAt: null,
+        lastCheckState: null,
+        lastCheckDetail: null,
+      },
+      hubspot: { token: "", lastVerifiedAt: null },
+    } satisfies AppConfig["modules"]["meeting-brief-generator"];
+    store.setModuleConfig("meeting-brief-generator", next);
     expect(store.get().modules["meeting-brief-generator"].internalDomains).toEqual([
       "upper.com",
       "mixed.org",

@@ -196,6 +196,40 @@ export class ConfigStore {
     this.persist();
   }
 
+  setHubSpotToken(token: string, verifiedAt: string | null): void {
+    const current = this.get();
+    const modules = current.modules["meeting-brief-generator"];
+    this.config = {
+      ...current,
+      modules: {
+        ...current.modules,
+        "meeting-brief-generator": { ...modules, hubspot: { token, lastVerifiedAt: verifiedAt } },
+      },
+    };
+    this.persist();
+  }
+
+  setGuestProfileToken(endpoint: string, apiKey: string, verifiedAt: string | null): void {
+    const current = this.get();
+    const modules = current.modules["meeting-brief-generator"];
+    this.config = {
+      ...current,
+      modules: {
+        ...current.modules,
+        "meeting-brief-generator": {
+          ...modules,
+          guestProfile: {
+            ...modules.guestProfile,
+            endpoint,
+            apiKey,
+            lastVerifiedAt: verifiedAt,
+          },
+        },
+      },
+    };
+    this.persist();
+  }
+
   /**
    * Record that Google has refused this grant at least once. Latching rather
    * than toggling: the fact stored is "this consent screen does expire", which
