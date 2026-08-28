@@ -140,16 +140,27 @@ const contentScout = new ContentScoutHost({
   runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
   log: (message) => console.log(`[content-scout] ${message}`),
 });
-
+const meetingBriefCompleteJson = () => {
+  const current = configStore.get();
+  return makeCompleteJson(
+    {
+      provider: current.provider,
+      model: current.model,
+      apiKey: current.apiKey,
+      baseUrl: current.ollama.baseUrl,
+    },
+    layout.mockResultFile,
+  );
+};
 const meetingBrief = new MeetingBriefHost({
   runs,
   workspaceDir,
   configStore,
+  getCompleteJson: meetingBriefCompleteJson,
   // Calendar provider is injectable/fake for tests; real Google Calendar provider lands in later wave.
   getOwnerEmail: () => null,
   log: (message) => console.log(`[meeting-brief] ${message}`),
 });
-
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [transcript, youtube, ideaEngine, contentScout, meetingBrief];

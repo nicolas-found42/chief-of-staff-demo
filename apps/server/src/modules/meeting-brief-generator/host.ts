@@ -54,6 +54,7 @@ export interface MeetingBriefHostDeps {
   log?: (message: string) => void;
   enrich?: MeetingBriefModuleDeps["enrich"];
   completeBrief?: MeetingBriefModuleDeps["completeBrief"];
+  getCompleteJson?: MeetingBriefModuleDeps["getCompleteJson"];
   deliver?: MeetingBriefModuleDeps["deliver"];
   calendarProvider?: CalendarProvider;
   configStore?: ConfigStore;
@@ -235,6 +236,7 @@ export class MeetingBriefHost implements HostedModule {
       now: this.now,
       ...(deps.enrich ? { enrich: deps.enrich } : {}),
       ...(deps.completeBrief ? { completeBrief: deps.completeBrief } : {}),
+      ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
       ...(deps.deliver ? { deliver: deps.deliver } : {}),
       ...(this.profileProvider ? { profileProvider: this.profileProvider } : {}),
       ...(status?.endpoint ? { guestProfileEndpoint: status.endpoint } : {}),
