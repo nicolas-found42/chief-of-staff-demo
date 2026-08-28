@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition -- revision compares optional Calendar fields that may be absent */
 import type { CalendarEvent } from "./calendar.js";
 import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
 

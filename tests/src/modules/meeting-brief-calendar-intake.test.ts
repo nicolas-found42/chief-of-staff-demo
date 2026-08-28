@@ -8,9 +8,41 @@ import {
   FakeCalendarProvider,
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
+import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
+import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
+import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
+import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
+import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
+import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
 import { isEligibleMeeting } from "../../../apps/server/src/modules/meeting-brief-generator/eligibility";
 import { normalizeInternalDomains, type AppConfig } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
+
+function stubHubSpotApi(): HubSpotApi {
+  return {
+    async listContacts() {
+      return { results: [] };
+    },
+    async searchContactByEmail() {
+      return null;
+    },
+    async getAssociatedCompanyIds() {
+      return [];
+    },
+    async getCompany() {
+      return null;
+    },
+    async getAssociatedDealIds() {
+      return [];
+    },
+    async getDeal() {
+      return null;
+    },
+    async getAssociatedDealIdsForCompany() {
+      return [];
+    },
+  };
+}
 
 function calEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
   return {
@@ -47,6 +79,12 @@ beforeEach(() => {
     getInternalDomains: () => ["internal.com"],
     getOwnerEmail: () => "owner@example.com",
     log: () => {},
+    gmailProvider: new FakeGmailProvider(),
+    calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+    driveProvider: new FakeDriveProvider(),
+    hubSpotApi: stubHubSpotApi(),
+    profileProvider: createFakeGuestProfileProvider({}),
+    publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
   });
 });
 

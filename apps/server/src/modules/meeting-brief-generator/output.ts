@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition, @typescript-eslint/no-unnecessary-type-assertion -- output renders optional brief fields that may be absent */
 import type { MeetingBrief } from "@chief-of-staff-demo/shared";
 /**
  * Gmail Output Adapter — Meeting Brief rendering (ADR-0034).

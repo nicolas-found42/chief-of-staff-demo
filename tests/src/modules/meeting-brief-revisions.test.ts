@@ -359,7 +359,9 @@ describe("Material change detection — every consumed field triggers revision, 
       expect(run1Result.supersedes).toBeNull();
 
       const v2 = c.mutate({ ...v1 });
-      host.scheduleOccurrence(v2, new Date("2026-08-28T11:00:00.000Z"));
+      v2.startAt = new Date(now.getTime() + 2 * 60 * 1000).toISOString();
+      v2.endAt = new Date(now.getTime() + 32 * 60 * 1000).toISOString();
+      host.scheduleOccurrence(v2, new Date(now));
       created = await host.processDueSchedules(new Date(now));
       expect(created).toHaveLength(1);
       await host.idle();
@@ -532,6 +534,8 @@ describe("Rapid two versions and in-flight vs completed", () => {
     }
     // While in-flight, material change v2 arrives
     const v2 = fixtureEvent({ version: "v2", summary: "Title v2" });
+    v2.startAt = new Date(now.getTime() + 2 * 60 * 1000).toISOString();
+    v2.endAt = new Date(now.getTime() + 32 * 60 * 1000).toISOString();
     host.scheduleOccurrence(v2, new Date(now));
     const createdWhileInflight = await host.processDueSchedules(new Date(now));
     expect(createdWhileInflight).toHaveLength(0); // deferred
@@ -562,6 +566,8 @@ describe("Rapid two versions and in-flight vs completed", () => {
     await host.idle();
     const run1Id = created[0];
     const v2 = fixtureEvent({ version: "v2", description: "new desc" });
+    v2.startAt = new Date(now.getTime() + 2 * 60 * 1000).toISOString();
+    v2.endAt = new Date(now.getTime() + 32 * 60 * 1000).toISOString();
     host.scheduleOccurrence(v2, new Date(now));
     created = await host.processDueSchedules(new Date(now));
     await host.idle();

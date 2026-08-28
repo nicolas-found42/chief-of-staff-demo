@@ -9,6 +9,7 @@ import {
   ConfigSchema,
   DEFAULT_MODELS,
   DEFAULT_OLLAMA_BASE_URL,
+  normalizeInternalDomains,
 } from "@chief-of-staff-demo/shared";
 
 /** Recursively merge `patch` over `base`; missing keys keep the base value. */
@@ -87,10 +88,6 @@ function defaultConfig(): AppConfig {
 }
 
 /** Fill in the provider's default model when the stored model is empty and normalize meeting brief domains. */
-function normalizeInternalDomains(domains: string[]): string[] {
-  const normalized = domains.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
-  return [...new Set(normalized)];
-}
 
 function normalize(config: AppConfig): AppConfig {
   const internalDomains = normalizeInternalDomains(

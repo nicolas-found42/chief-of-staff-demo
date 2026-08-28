@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJson } from "./atomic.js";
 
 /**
  * Shell durable Intake schedule (ADR-0032).
@@ -46,10 +47,7 @@ function readSchedules(workspaceDir: string): DurableSchedule[] {
 
 function writeSchedules(workspaceDir: string, schedules: DurableSchedule[]): void {
   const file = scheduleFile(workspaceDir);
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(schedules, null, 2) + "\n", "utf8");
-  renameSync(tmp, file);
+  atomicWriteJson(file, schedules);
 }
 
 /**

@@ -25,13 +25,7 @@ export function hubSpotSetupProbe(
   return new HubSpotConnection(configStore, probeFactory, now).verifySetup();
 }
 
-export function normalizeInternalDomains(domains: string[]): string[] {
-  return domains
-    .map((d) => d.trim().toLowerCase())
-    .filter((d) => d.length > 0)
-    .filter((d, idx, arr) => arr.indexOf(d) === idx)
-    .sort();
-}
+export { normalizeInternalDomains } from "@chief-of-staff-demo/shared";
 
 /**
  * Classification helpers for HubSpot errors — keep at failure site (ADR-0008).

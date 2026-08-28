@@ -1,6 +1,7 @@
 import { eligibilityReason, isEligibleMeeting } from "./eligibility.js";
 import type { CalendarEvent } from "./calendar.js";
 import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import { materialFingerprint } from "./revision.js";
 
 export type SnapshotSource = CalendarEvent | MeetingBriefFixtureEvent;
 
@@ -14,7 +15,11 @@ export function snapshotEligibility(
   internalDomains: string[],
   ownerEmail: string | null,
 ): { eligible: boolean; reason: string } {
-  const eligible = isEligibleMeeting(event as unknown as CalendarEvent, internalDomains, ownerEmail);
+  const eligible = isEligibleMeeting(
+    event as unknown as CalendarEvent,
+    internalDomains,
+    ownerEmail,
+  );
   const reason = eligibilityReason(event as unknown as CalendarEvent, internalDomains, ownerEmail);
   return { eligible, reason };
 }
@@ -25,6 +30,7 @@ export interface FrozenSnapshot {
   occurrenceId: string;
   occurrenceKey: string;
   version: string;
+  materialFingerprint: string;
   summary: string;
   description?: string | undefined;
   startAt: string;
@@ -37,7 +43,7 @@ export interface FrozenSnapshot {
   capturedAt: string;
 }
 
-/** Build frozen snapshot payload persisted as snapshot.json (retains version). */
+/** Build frozen snapshot payload persisted as snapshot.json (retains version + material fingerprint). */
 export function buildFrozenSnapshot(
   event: SnapshotSource,
   occurrenceKey: string,
@@ -49,6 +55,7 @@ export function buildFrozenSnapshot(
     occurrenceId: event.occurrenceId,
     occurrenceKey,
     version: event.version,
+    materialFingerprint: materialFingerprint(event),
     summary: event.summary,
     ...(event.description !== undefined ? { description: event.description } : {}),
     startAt: event.startAt,

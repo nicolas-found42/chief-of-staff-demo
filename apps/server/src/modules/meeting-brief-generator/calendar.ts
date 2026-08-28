@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJson } from "../../engine/atomic.js";
 import { randomBytes, randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -138,10 +139,7 @@ function readState(workspaceDir: string): MeetingBriefCalendarState {
 
 function writeState(workspaceDir: string, state: MeetingBriefCalendarState): void {
   const file = filePath(workspaceDir);
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", "utf8");
-  renameSync(tmp, file);
+  atomicWriteJson(file, state);
 }
 
 export class MeetingBriefCalendarStore {
