@@ -20,19 +20,24 @@ export interface DriveProvider {
 }
 
 function sanitizeEvidence(text: string): string {
+  // eslint-disable-next-line no-control-regex -- sanitize control characters from untrusted provider evidence (removing 0x00-0x1F)
   return text.slice(0, 500).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
 }
 
 function readErrorStatus(error: unknown): number | null {
   const maybe = error as { code?: number; status?: number; response?: { status?: number } };
-  return maybe?.code ?? maybe?.status ?? maybe?.response?.status ?? null;
+  return maybe.code ?? maybe.status ?? maybe.response?.status ?? null;
 }
 
 function readErrorCode(error: unknown): string | null {
-  const maybe = error as { code?: string; reason?: string; response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } } };
-  if (typeof maybe?.code === "string") return maybe.code;
-  if (typeof maybe?.reason === "string") return maybe.reason;
-  const nested = maybe?.response?.data?.error?.errors?.[0]?.reason;
+  const maybe = error as {
+    code?: string;
+    reason?: string;
+    response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } };
+  };
+  if (typeof maybe.code === "string") return maybe.code;
+  if (typeof maybe.reason === "string") return maybe.reason;
+  const nested = maybe.response?.data?.error?.errors?.[0]?.reason;
   if (typeof nested === "string") return nested;
   return null;
 }
@@ -43,7 +48,12 @@ function isProviderWideError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   if (status === 401 || status === 403 || status === 503) return true;
   if (code === "insufficientPermissions" || code === "accessNotConfigured") return true;
-  if (/invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(msg)) return true;
+  if (
+    /invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(
+      msg,
+    )
+  )
+    return true;
   return false;
 }
 
@@ -61,8 +71,8 @@ export function createDriveProvider(auth: GoogleAuth): DriveProvider {
       const files = res.data.files ?? [];
       return files.slice(0, maxResults).map((f) => ({
         id: f.id ?? `doc-${Math.random()}`,
-        name: (f.name ?? ""),
-        webViewLink: (f.webViewLink ?? `https://drive.google.com/file/d/${f.id}/view`),
+        name: f.name ?? "",
+        webViewLink: f.webViewLink ?? `https://drive.google.com/file/d/${f.id}/view`,
       }));
     },
   };
@@ -88,12 +98,13 @@ export class FakeDriveProvider implements DriveProvider {
   private docs: Map<string, DriveDoc[]>;
   private callCounts = new Map<string, number>();
   private failCounts = new Map<string, number>();
-
   constructor(opts: FakeDriveOptions = {}) {
     this.mode = opts.mode ?? "normal";
     this.failFirstFor = new Set([...(opts.failFirstFor ?? [])].map((s) => s.toLowerCase()));
-    this.unavailableError = opts.unavailableError ?? Object.assign(new Error("Drive unavailable"), { status: 503, code: 503 });
-    this.docs = opts.docs ?? new Map();
+    this.unavailableError =
+      opts.unavailableError ??
+      Object.assign(new Error("Drive unavailable"), { status: 503, code: 503 });
+    this.docs = opts.docs ?? new Map<string, DriveDoc[]>();
   }
 
   setDocs(queryKey: string, docs: DriveDoc[]): void {
@@ -147,7 +158,12 @@ export async function enrichDriveDocs(
   // Drive artifact keyed by guest + company presence; if companyDomain present, include it
   const source = "drive-docs" as const;
   const key = googleEnrichmentKey(eventVersion, normalizedGuest, source, normalizedDomain);
-  const stableRef = googleEnrichmentStableRef(eventVersion, normalizedGuest, source, normalizedDomain);
+  const stableRef = googleEnrichmentStableRef(
+    eventVersion,
+    normalizedGuest,
+    source,
+    normalizedDomain,
+  );
   const maxResults = GOOGLE_ENRICHMENT_MAX_DRIVE_DOCS;
   const sanitizedGuest = normalizedGuest.replace(/[^a-z0-9]/g, "_");
   const sanitizedDomain = normalizedDomain ? normalizedDomain.replace(/[^a-z0-9]/g, "_") : "person";
@@ -157,7 +173,10 @@ export async function enrichDriveDocs(
   if (existingRaw) {
     try {
       const existing = JSON.parse(existingRaw) as GoogleEnrichmentArtifact;
-      if (existing.eventVersion === eventVersion && (existing.status === "completed" || existing.status === "empty")) {
+      if (
+        existing.eventVersion === eventVersion &&
+        (existing.status === "completed" || existing.status === "empty")
+      ) {
         const section = {
           source,
           guest: normalizedGuest,
@@ -184,10 +203,10 @@ export async function enrichDriveDocs(
   }
   const query = queryParts.join(" or ");
 
-  let attempts = 0;
+  let attempts = 1;
   let lastError: unknown = null;
   const maxAttempts = 2;
-  for (attempts = 1; attempts <= maxAttempts; attempts += 1) {
+  for (; attempts <= maxAttempts; attempts += 1) {
     try {
       const docs = await provider.searchDocs(query, maxResults);
       if (docs.length === 0) {
@@ -207,7 +226,14 @@ export async function enrichDriveDocs(
         ctx.event("drive_empty", { guest: normalizedGuest, domain: normalizedDomain, attempts });
         return {
           artifact,
-          section: { source, guest: normalizedGuest, ...(normalizedDomain ? { company: normalizedDomain } : {}), status: "empty", evidence: [], references: [] },
+          section: {
+            source,
+            guest: normalizedGuest,
+            ...(normalizedDomain ? { company: normalizedDomain } : {}),
+            status: "empty",
+            evidence: [],
+            references: [],
+          },
         };
       }
       const limited = docs.slice(0, maxResults);
@@ -223,14 +249,32 @@ export async function enrichDriveDocs(
         status: "completed",
         evidence,
         references,
-        diagnostics: { bounded: true, maxResults, stableRef, untrusted: true, ...(truncated ? { truncated: true } : {}), attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          untrusted: true,
+          ...(truncated ? { truncated: true } : {}),
+          attempts,
+        },
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("drive_completed", { guest: normalizedGuest, domain: normalizedDomain, count: evidence.length });
+      ctx.event("drive_completed", {
+        guest: normalizedGuest,
+        domain: normalizedDomain,
+        count: evidence.length,
+      });
       return {
         artifact,
-        section: { source, guest: normalizedGuest, ...(normalizedDomain ? { company: normalizedDomain } : {}), status: "completed", evidence, references },
+        section: {
+          source,
+          guest: normalizedGuest,
+          ...(normalizedDomain ? { company: normalizedDomain } : {}),
+          status: "completed",
+          evidence,
+          references,
+        },
       };
     } catch (error) {
       lastError = error;
@@ -251,14 +295,30 @@ export async function enrichDriveDocs(
         status: "failed",
         evidence: [],
         references: [],
-        diagnostics: { bounded: true, maxResults, stableRef, httpStatus, errorCode, reason: reason.slice(0, 500), untrusted: true, attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          httpStatus,
+          errorCode,
+          reason: reason.slice(0, 500),
+          untrusted: true,
+          attempts,
+        },
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
       ctx.event("drive_failed", { guest: normalizedGuest, error: reason.slice(0, 200) });
       return {
         artifact,
-        section: { source, guest: normalizedGuest, ...(normalizedDomain ? { company: normalizedDomain } : {}), status: "failed", evidence: [], references: [] },
+        section: {
+          source,
+          guest: normalizedGuest,
+          ...(normalizedDomain ? { company: normalizedDomain } : {}),
+          status: "failed",
+          evidence: [],
+          references: [],
+        },
       };
     }
   }

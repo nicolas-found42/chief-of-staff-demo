@@ -17,23 +17,32 @@ export interface CalendarHistoryEvent {
 }
 
 export interface CalendarHistoryProvider {
-  listPastMeetings(guestEmail: string, maxResults: number, before: string): Promise<CalendarHistoryEvent[]>;
+  listPastMeetings(
+    guestEmail: string,
+    maxResults: number,
+    before: string,
+  ): Promise<CalendarHistoryEvent[]>;
 }
 
 function sanitizeEvidence(text: string): string {
+  // eslint-disable-next-line no-control-regex -- sanitize control characters from untrusted provider evidence (removing 0x00-0x1F)
   return text.slice(0, 500).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
 }
 
 function readErrorStatus(error: unknown): number | null {
   const maybe = error as { code?: number; status?: number; response?: { status?: number } };
-  return maybe?.code ?? maybe?.status ?? maybe?.response?.status ?? null;
+  return maybe.code ?? maybe.status ?? maybe.response?.status ?? null;
 }
 
 function readErrorCode(error: unknown): string | null {
-  const maybe = error as { code?: string; reason?: string; response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } } };
-  if (typeof maybe?.code === "string") return maybe.code;
-  if (typeof maybe?.reason === "string") return maybe.reason;
-  const nested = maybe?.response?.data?.error?.errors?.[0]?.reason;
+  const maybe = error as {
+    code?: string;
+    reason?: string;
+    response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } };
+  };
+  if (typeof maybe.code === "string") return maybe.code;
+  if (typeof maybe.reason === "string") return maybe.reason;
+  const nested = maybe.response?.data?.error?.errors?.[0]?.reason;
   if (typeof nested === "string") return nested;
   return null;
 }
@@ -44,13 +53,22 @@ function isProviderWideError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   if (status === 401 || status === 403 || status === 503) return true;
   if (code === "insufficientPermissions" || code === "accessNotConfigured") return true;
-  if (/invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(msg)) return true;
+  if (
+    /invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(
+      msg,
+    )
+  )
+    return true;
   return false;
 }
 
 export function createCalendarHistoryProvider(auth: GoogleAuth): CalendarHistoryProvider {
   return {
-    async listPastMeetings(guestEmail: string, maxResults: number, before: string): Promise<CalendarHistoryEvent[]> {
+    async listPastMeetings(
+      guestEmail: string,
+      maxResults: number,
+      before: string,
+    ): Promise<CalendarHistoryEvent[]> {
       const calendar = google.calendar({ version: "v3", auth });
       const timeMax = before;
       // Look back 90 days, bounded
@@ -73,8 +91,8 @@ export function createCalendarHistoryProvider(auth: GoogleAuth): CalendarHistory
         .slice(0, maxResults)
         .map((e) => ({
           id: e.id ?? `evt-${Math.random()}`,
-          summary: (e.summary ?? ""),
-          startAt: (e.start?.dateTime ?? e.start?.date ?? ""),
+          summary: e.summary ?? "",
+          startAt: e.start?.dateTime ?? e.start?.date ?? "",
           attendees: (e.attendees ?? []).map((a) => a.email ?? ""),
         }));
       return filtered;
@@ -102,12 +120,13 @@ export class FakeCalendarHistoryProvider implements CalendarHistoryProvider {
   private pastMeetings: Map<string, CalendarHistoryEvent[]>;
   private callCounts = new Map<string, number>();
   private failCounts = new Map<string, number>();
-
   constructor(opts: FakeCalendarHistoryOptions = {}) {
     this.mode = opts.mode ?? "normal";
     this.failFirstFor = new Set([...(opts.failFirstFor ?? [])].map((s) => s.toLowerCase()));
-    this.unavailableError = opts.unavailableError ?? Object.assign(new Error("Calendar unavailable"), { status: 503, code: 503 });
-    this.pastMeetings = opts.pastMeetings ?? new Map();
+    this.unavailableError =
+      opts.unavailableError ??
+      Object.assign(new Error("Calendar unavailable"), { status: 503, code: 503 });
+    this.pastMeetings = opts.pastMeetings ?? new Map<string, CalendarHistoryEvent[]>();
   }
 
   setPastMeetings(guestEmail: string, events: CalendarHistoryEvent[]): void {
@@ -125,8 +144,12 @@ export class FakeCalendarHistoryProvider implements CalendarHistoryProvider {
   getCallCount(guestEmail: string): number {
     return this.callCounts.get(guestEmail.toLowerCase()) ?? 0;
   }
-
-  async listPastMeetings(guestEmail: string, maxResults: number, _before: string): Promise<CalendarHistoryEvent[]> {
+  async listPastMeetings(
+    guestEmail: string,
+    maxResults: number,
+    _before: string,
+  ): Promise<CalendarHistoryEvent[]> {
+    void _before;
     void maxResults;
     const key = guestEmail.toLowerCase();
     this.callCounts.set(key, (this.callCounts.get(key) ?? 0) + 1);
@@ -167,7 +190,10 @@ export async function enrichCalendarHistory(
   if (existingRaw) {
     try {
       const existing = JSON.parse(existingRaw) as GoogleEnrichmentArtifact;
-      if (existing.eventVersion === eventVersion && (existing.status === "completed" || existing.status === "empty")) {
+      if (
+        existing.eventVersion === eventVersion &&
+        (existing.status === "completed" || existing.status === "empty")
+      ) {
         const section: MeetingBriefEnrichmentSection = {
           source: "calendar-history",
           guest: normalized,
@@ -181,11 +207,10 @@ export async function enrichCalendarHistory(
       // re-enrich
     }
   }
-
-  let attempts = 0;
+  let attempts = 1;
   let lastError: unknown = null;
   const maxAttempts = 2;
-  for (attempts = 1; attempts <= maxAttempts; attempts += 1) {
+  for (; attempts <= maxAttempts; attempts += 1) {
     try {
       const events = await provider.listPastMeetings(normalized, maxResults, before);
       if (events.length === 0) {
@@ -202,12 +227,25 @@ export async function enrichCalendarHistory(
         };
         ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
         ctx.event("calendar_history_empty", { guest: normalized, attempts });
-        return { artifact, section: { source: "calendar-history", guest: normalized, status: "empty", evidence: [], references: [] } };
+        return {
+          artifact,
+          section: {
+            source: "calendar-history",
+            guest: normalized,
+            status: "empty",
+            evidence: [],
+            references: [],
+          },
+        };
       }
       const limited = events.slice(0, maxResults);
       const truncated = events.length > maxResults;
-      const evidence = limited.map((e) => sanitizeEvidence(e.summary || `Meeting ${e.id} at ${e.startAt}`));
-      const references = limited.map((e) => `https://calendar.google.com/calendar/event?eid=${encodeURIComponent(e.id)}`);
+      const evidence = limited.map((e) =>
+        sanitizeEvidence(e.summary || `Meeting ${e.id} at ${e.startAt}`),
+      );
+      const references = limited.map(
+        (e) => `https://calendar.google.com/calendar/event?eid=${encodeURIComponent(e.id)}`,
+      );
       const artifact: GoogleEnrichmentArtifact = {
         key,
         eventVersion,
@@ -216,12 +254,28 @@ export async function enrichCalendarHistory(
         status: "completed",
         evidence,
         references,
-        diagnostics: { bounded: true, maxResults, stableRef, untrusted: true, ...(truncated ? { truncated: true } : {}), attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          untrusted: true,
+          ...(truncated ? { truncated: true } : {}),
+          attempts,
+        },
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
       ctx.event("calendar_history_completed", { guest: normalized, count: evidence.length });
-      return { artifact, section: { source: "calendar-history", guest: normalized, status: "completed", evidence, references } };
+      return {
+        artifact,
+        section: {
+          source: "calendar-history",
+          guest: normalized,
+          status: "completed",
+          evidence,
+          references,
+        },
+      };
     } catch (error) {
       lastError = error;
       if (isProviderWideError(error)) throw error;
@@ -240,12 +294,30 @@ export async function enrichCalendarHistory(
         status: "failed",
         evidence: [],
         references: [],
-        diagnostics: { bounded: true, maxResults, stableRef, httpStatus, errorCode, reason: reason.slice(0, 500), untrusted: true, attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          httpStatus,
+          errorCode,
+          reason: reason.slice(0, 500),
+          untrusted: true,
+          attempts,
+        },
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
       ctx.event("calendar_history_failed", { guest: normalized, error: reason.slice(0, 200) });
-      return { artifact, section: { source: "calendar-history", guest: normalized, status: "failed", evidence: [], references: [] } };
+      return {
+        artifact,
+        section: {
+          source: "calendar-history",
+          guest: normalized,
+          status: "failed",
+          evidence: [],
+          references: [],
+        },
+      };
     }
   }
   throw lastError;

@@ -1,4 +1,7 @@
-import type { MeetingBriefEnrichmentSection, MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
+import type {
+  MeetingBriefEnrichmentSection,
+  MeetingBriefFixtureEvent,
+} from "@chief-of-staff-demo/shared";
 import type { GoogleEnrichmentArtifact } from "@chief-of-staff-demo/shared";
 import { extractDomain, isConsumerDomain, isExternalGuest } from "../eligibility.js";
 import type { GmailProvider } from "../google/gmail.js";
@@ -32,7 +35,9 @@ export async function enrichWithGoogle(
   const sections: MeetingBriefEnrichmentSection[] = [];
 
   // Determine external guests (exclude resources)
-  const externalGuests = event.attendees.filter((a) => !a.resource && isExternalGuest(a, deps.internalDomains));
+  const externalGuests = event.attendees.filter(
+    (a) => !a.resource && isExternalGuest(a, deps.internalDomains),
+  );
   // Keep guest with no Employer Match person-level — no filtering, keep all external
   // No company inference for Consumer Domains handled below
 
@@ -43,7 +48,12 @@ export async function enrichWithGoogle(
 
     // 1. Gmail exact-address (at most 10)
     try {
-      const { artifact, section } = await enrichGmailExact(deps.gmailProvider, version, guestEmail, ctx);
+      const { artifact, section } = await enrichGmailExact(
+        deps.gmailProvider,
+        version,
+        guestEmail,
+        ctx,
+      );
       artifacts.push(artifact);
       sections.push(section);
     } catch (error) {
@@ -61,7 +71,13 @@ export async function enrichWithGoogle(
       const isInternal = deps.internalDomains.map((d) => d.toLowerCase()).includes(lowerDomain);
       if (!isInternal) {
         try {
-          const { artifact, section } = await enrichGmailCompanyDomain(deps.gmailProvider, version, guestEmail, lowerDomain, ctx);
+          const { artifact, section } = await enrichGmailCompanyDomain(
+            deps.gmailProvider,
+            version,
+            guestEmail,
+            lowerDomain,
+            ctx,
+          );
           artifacts.push(artifact);
           sections.push(section);
         } catch (error) {
@@ -73,7 +89,13 @@ export async function enrichWithGoogle(
 
     // 3. Calendar history — 10 prior meetings
     try {
-      const { artifact, section } = await enrichCalendarHistory(deps.calendarProvider, version, guestEmail, before, ctx);
+      const { artifact, section } = await enrichCalendarHistory(
+        deps.calendarProvider,
+        version,
+        guestEmail,
+        before,
+        ctx,
+      );
       artifacts.push(artifact);
       sections.push(section);
     } catch (error) {
@@ -92,7 +114,13 @@ export async function enrichWithGoogle(
       return lower;
     })();
     try {
-      const { artifact, section } = await enrichDriveDocs(deps.driveProvider, version, guestEmail, finalCompany, ctx);
+      const { artifact, section } = await enrichDriveDocs(
+        deps.driveProvider,
+        version,
+        guestEmail,
+        finalCompany,
+        ctx,
+      );
       artifacts.push(artifact);
       sections.push(section);
     } catch (error) {
@@ -106,9 +134,14 @@ export async function enrichWithGoogle(
 
 function isProviderWide(error: unknown): boolean {
   const maybe = error as { status?: number; code?: number; response?: { status?: number } };
-  const status = maybe?.status ?? maybe?.code ?? maybe?.response?.status;
+  const status = maybe.status ?? maybe.code ?? maybe.response?.status;
   const msg = error instanceof Error ? error.message : String(error);
   if (status === 401 || status === 403 || status === 503) return true;
-  if (/invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|accessNotConfigured|has not been used in project|is disabled/i.test(msg)) return true;
+  if (
+    /invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|accessNotConfigured|has not been used in project|is disabled/i.test(
+      msg,
+    )
+  )
+    return true;
   return false;
 }
