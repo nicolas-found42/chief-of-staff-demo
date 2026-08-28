@@ -207,6 +207,5 @@ npm run test:e2e                      # hermetic browser test with the mock prov
 - Secrets live in `workspace/config.json` (keep the workspace private). The API redacts them:
   GET returns only `set` + last-4 hints; PUT keeps stored values when a secret field is omitted.
 - The server binds to `127.0.0.1` only.
-- Mail can never be sent: `google/gmail.ts` contains no delivery call, and
-  `tests/src/unit/draft-mime.test.ts` fails the build if one appears.
+- Mail drafts are the only Gmail write most Modules may perform: `apps/server/src/google/gmail.ts` contains no delivery call, and `tests/src/unit/draft-mime.test.ts` fails the build if one appears there. The Meeting Brief Generator owns the deliberate send-only-to-owner exception (`modules/meeting-brief-generator/google/gmailDelivery.ts`, recipient fixed from the connected Google identity, never from event/API/model, never to an External Guest) — see ADR-0034.
 - The Settings page is the only place the app loads remote code (Google's Picker script at `https://apis.google.com/js/api.js`, fetched on click only). The per-pick access token is short-lived, never persisted, never logged, and carries every scope the connection holds.

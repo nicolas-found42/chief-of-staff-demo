@@ -31,6 +31,7 @@ import type { DriveProvider } from "./google/drive.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
 import type { HubSpotApi } from "./hubspot/client.js";
 import type { PublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
+import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import {
   MeetingBriefCalendarStore,
   type CalendarEvent,
@@ -56,6 +57,8 @@ export interface MeetingBriefHostDeps {
   completeBrief?: MeetingBriefModuleDeps["completeBrief"];
   getCompleteJson?: MeetingBriefModuleDeps["getCompleteJson"];
   deliver?: MeetingBriefModuleDeps["deliver"];
+  gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
+  getGmailDeliveryProvider?: MeetingBriefModuleDeps["getGmailDeliveryProvider"];
   calendarProvider?: CalendarProvider;
   configStore?: ConfigStore;
   ownerEmail?: string | null;
@@ -136,7 +139,7 @@ export class MeetingBriefHost implements HostedModule {
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly hubSpotApiInstance: HubSpotApi | null;
   private readonly publicIntelligenceProvider: PublicIntelligenceProvider | null;
-
+  private readonly gmailDeliveryProvider: MeetingBriefModuleDeps["gmailDeliveryProvider"] | null;
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
     this.clock = new DurableClock(deps.workspaceDir, this.now);
@@ -232,12 +235,26 @@ export class MeetingBriefHost implements HostedModule {
       this.hubSpotApiInstance = null;
     }
     this.publicIntelligenceProvider = deps.publicIntelligenceProvider ?? null;
+    this.gmailDeliveryProvider = deps.gmailDeliveryProvider ?? null;
+    const resolveGmailDeliveryProvider: () => GmailDeliveryProvider | null = () => {
+      if (deps.getGmailDeliveryProvider) {
+        const viaGetter = deps.getGmailDeliveryProvider();
+        if (viaGetter) return viaGetter;
+      }
+      return this.gmailDeliveryProvider ?? null;
+    };
     const module = meetingBriefModule({
       now: this.now,
       ...(deps.enrich ? { enrich: deps.enrich } : {}),
       ...(deps.completeBrief ? { completeBrief: deps.completeBrief } : {}),
       ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
       ...(deps.deliver ? { deliver: deps.deliver } : {}),
+      ...(resolveGmailDeliveryProvider()
+        ? { gmailDeliveryProvider: resolveGmailDeliveryProvider()! }
+        : {}),
+      ...(resolveGmailDeliveryProvider()
+        ? { getGmailDeliveryProvider: resolveGmailDeliveryProvider }
+        : {}),
       ...(this.profileProvider ? { profileProvider: this.profileProvider } : {}),
       ...(status?.endpoint ? { guestProfileEndpoint: status.endpoint } : {}),
       ...(resolvedApiKey ? { guestProfileApiKey: resolvedApiKey } : {}),
