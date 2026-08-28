@@ -42,5 +42,4 @@ export function registerMeetingBriefHubSpotRoutes(
     const connection = new HubSpotConnection(configStore);
     return connection.verifySetup();
   });
-
 }
