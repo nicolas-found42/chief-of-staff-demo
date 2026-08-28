@@ -44,12 +44,14 @@ export function isRejectedGrant(error: unknown): boolean {
  * API key — and unlike the Picker it has a server-side surface, so **Check my
  * setup** probes it exactly as it probes the others.
  */
-const GOOGLE_SURFACES = ["tasks", "gmail", "drive", "youtube"] as const;
+const GOOGLE_SURFACES = ["tasks", "gmail", "gmail-read", "calendar", "drive", "youtube"] as const;
 export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
 const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string }> = {
   tasks: { label: "Google Tasks", api: "Tasks API", scope: "tasks" },
   gmail: { label: "Gmail drafts", api: "Gmail API", scope: "gmail.compose" },
+  "gmail-read": { label: "Gmail history", api: "Gmail API", scope: "gmail.readonly" },
+  calendar: { label: "Google Calendar", api: "Calendar API", scope: "calendar.readonly" },
   drive: { label: "Google Drive", api: "Drive API", scope: "drive" },
   youtube: { label: "YouTube view counts", api: "YouTube Data API v3", scope: "youtube.readonly" },
 };
@@ -57,6 +59,8 @@ const SURFACE: Record<GoogleSurface, { label: string; api: string; scope: string
 const SCOPE_LABELS: Record<string, string> = {
   "https://www.googleapis.com/auth/tasks": "Google Tasks",
   "https://www.googleapis.com/auth/gmail.compose": "Gmail drafts",
+  "https://www.googleapis.com/auth/gmail.readonly": "Gmail history",
+  "https://www.googleapis.com/auth/calendar.readonly": "Google Calendar",
   "https://www.googleapis.com/auth/drive": "Google Drive",
   "https://www.googleapis.com/auth/youtube.readonly": "YouTube view counts",
 };
@@ -201,6 +205,16 @@ const callSurface: SurfaceProbe = async (config, port, surface) => {
        gmail.compose, and getProfile is not reachable with that scope alone — it
        would report a correctly configured Gmail as broken. */
     await google.gmail({ version: "v1", auth }).users.drafts.list({ userId: "me", maxResults: 1 });
+    return;
+  }
+  if (surface === "gmail-read") {
+    // Bounded read-only probe: at most one thread, no side effects, validates gmail.readonly scope + Gmail API enabled.
+    await google.gmail({ version: "v1", auth }).users.threads.list({ userId: "me", maxResults: 1 });
+    return;
+  }
+  if (surface === "calendar") {
+    // Bounded read-only probe: list one calendar event, validates calendar.readonly scope + Calendar API enabled.
+    await google.calendar({ version: "v3", auth }).events.list({ calendarId: "primary", maxResults: 1, singleEvents: true });
     return;
   }
   if (surface === "youtube") {
