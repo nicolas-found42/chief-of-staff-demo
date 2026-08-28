@@ -31,6 +31,13 @@ export interface MeetingBriefFixtureEvent {
     resource?: boolean;
   }>;
   attachments?: string[];
+  // Unused metadata — ignored for material change detection (ADR-0033)
+  colorId?: string | null;
+  etag?: string | null;
+  visibility?: string | null;
+  transparency?: string | null;
+  created?: string | null;
+  updated?: string | null;
 }
 
 /** One enrichment source artifact (per fixture boundary). */
