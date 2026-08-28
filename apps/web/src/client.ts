@@ -409,6 +409,50 @@ export const api = {
     request<{ messages: unknown[]; lastWakeUpAt: string | null }>("/api/relay/poll", {
       method: "POST",
     }),
+  // Meeting Brief Generator — Internal Domains + calendar reconciliation (issue://83)
+  meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
+  saveMeetingBriefConfig: (internalDomains: string[]) =>
+    request<{ internalDomains: string[] }>("/api/meeting-brief/config", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ internalDomains }),
+    }),
+  meetingBriefIndex: () =>
+    request<{
+      upcoming: Array<{
+        occurrenceKey: string;
+        eventId: string;
+        occurrenceId: string;
+        version: string;
+        summary: string;
+        startAt: string;
+        dueAt: string;
+      }>;
+      briefs: unknown[];
+    }>("/api/meeting-brief/index"),
+  reconcileMeetingBrief: (forceFullSync = false) =>
+    request<{
+      scheduled: number;
+      removed: number;
+      invalidSyncRecovered: boolean;
+      upcoming: unknown[];
+    }>("/api/meeting-brief/reconcile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ forceFullSync }),
+    }),
+  meetingBriefCalendarStatus: () =>
+    request<{
+      channel: {
+        channelId: string;
+        resourceId: string | null;
+        expiration: string | null;
+        calendarId: string;
+      } | null;
+      syncToken: string | null;
+      hasToken: boolean;
+      lastSyncAt: string | null;
+    }>("/api/meeting-brief/calendar/status"),
 };
 
 export function errorMessage(error: unknown): string {

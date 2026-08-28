@@ -15,6 +15,7 @@ import { TranscriptHost } from "./modules/transcript/host.js";
 import { YoutubeHost } from "./modules/youtube/host.js";
 import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
+import { MeetingBriefHost } from "./modules/meeting-brief-generator/host.js";
 import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
 import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
@@ -139,10 +140,18 @@ const contentScout = new ContentScoutHost({
   log: (message) => console.log(`[content-scout] ${message}`),
 });
 
+const meetingBrief = new MeetingBriefHost({
+  runs,
+  workspaceDir,
+  configStore,
+  // Calendar provider is injectable/fake for tests; real Google Calendar provider lands in later wave.
+  getOwnerEmail: () => null,
+  log: (message) => console.log(`[meeting-brief] ${message}`),
+});
+
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
-const modules: HostedModule[] = [transcript, youtube, ideaEngine, contentScout];
-
+const modules: HostedModule[] = [transcript, youtube, ideaEngine, contentScout, meetingBrief];
 const app = fastify({ logger: false });
 
 app.setErrorHandler((error: FastifyError, _request, reply) => {

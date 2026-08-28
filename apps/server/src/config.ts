@@ -70,16 +70,42 @@ function defaultConfig(): AppConfig {
           },
         },
       },
-      "meeting-brief-generator": { internalDomains: [] },
+      "meeting-brief-generator": {
+        internalDomains: [],
+        guestProfile: {
+          endpoint: "",
+          apiKey: "",
+          lastVerifiedAt: null,
+          lastCheckAt: null,
+          lastCheckState: null,
+          lastCheckDetail: null,
+        },
+        hubspot: { token: "", lastVerifiedAt: null },
+      },
     },
   };
 }
 
-/** Fill in the provider's default model when the stored model is empty. */
+/** Fill in the provider's default model when the stored model is empty and normalize meeting brief domains. */
+function normalizeInternalDomains(domains: string[]): string[] {
+  const normalized = domains.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
+  return [...new Set(normalized)];
+}
+
 function normalize(config: AppConfig): AppConfig {
+  const internalDomains = normalizeInternalDomains(
+    config.modules["meeting-brief-generator"].internalDomains,
+  );
   return {
     ...config,
     model: config.model === "" ? DEFAULT_MODELS[config.provider] : config.model,
+    modules: {
+      ...config.modules,
+      "meeting-brief-generator": {
+        ...config.modules["meeting-brief-generator"],
+        internalDomains,
+      },
+    },
   };
 }
 
@@ -133,7 +159,15 @@ export class ConfigStore {
    */
   setModuleConfig<K extends keyof ModuleConfigs>(key: K, next: ModuleConfigs[K]): void {
     const current = this.get();
-    this.config = { ...current, modules: { ...current.modules, [key]: next } };
+    let normalizedNext = next;
+    if (key === "meeting-brief-generator") {
+      const mbg = next as AppConfig["modules"]["meeting-brief-generator"];
+      normalizedNext = {
+        ...mbg,
+        internalDomains: normalizeInternalDomains(mbg.internalDomains),
+      } as ModuleConfigs[K];
+    }
+    this.config = { ...current, modules: { ...current.modules, [key]: normalizedNext } };
     this.persist();
   }
 
