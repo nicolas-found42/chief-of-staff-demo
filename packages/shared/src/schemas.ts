@@ -29,11 +29,6 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
 /** Ollama's default listen address. `host.docker.internal` inside a container. */
 export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 
-export function normalizeInternalDomains(domains: string[]): string[] {
-  const normalized = domains.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
-  return [...new Set(normalized)];
-}
-
 export const ConfigSchema = z.strictObject({
   provider: ProviderIdSchema,
   model: z.string(),

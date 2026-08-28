@@ -175,3 +175,89 @@ export interface GuestProfileCheckResult {
 export function isGuestProfileEmployerMatch(artifact: GuestProfileArtifact): boolean {
   return artifact.outcome === "completed" && artifact.currentEmployer !== null;
 }
+
+// ---------------------------------------------------------------------------
+// HubSpot CRM — per-user private-app token, read-only contact/company/deal
+// (issue://86, Spec #80). Shell stores secret + classifies state, Module owns
+// query semantics. No shared Found42 credential.
+// ---------------------------------------------------------------------------
+
+export const HUBSPOT_CONNECTION_STATES = ["unconfigured", "unverified", "connected"] as const;
+export type HubSpotConnectionState = (typeof HUBSPOT_CONNECTION_STATES)[number];
+
+export interface HubSpotStatus {
+  state: HubSpotConnectionState;
+  tokenHint: string;
+  lastVerifiedAt: string | null;
+}
+
+/** Bounded read-only probe classification (5 states). */
+export const HUBSPOT_PROBE_STATES = [
+  "missing_configuration",
+  "rejected",
+  "missing_authority",
+  "unavailable",
+  "healthy",
+] as const;
+export type HubSpotProbeState = (typeof HUBSPOT_PROBE_STATES)[number];
+
+export interface HubSpotSetupCheck {
+  state: HubSpotProbeState;
+  /** Human-readable detail for the current state. */
+  detail: string;
+  /** One line per checked surface (contact/company/deal) — bounded, read-only. */
+  items: Array<{ label: string; ok: boolean; detail: string }>;
+  checkedAt: string;
+}
+
+/** HubSpot contact as returned for an exact-email lookup. */
+export interface HubSpotContact {
+  id: string;
+  email: string;
+  properties: Record<string, string>;
+  associatedCompanyIds: string[];
+  associatedDealIds: string[];
+}
+
+export interface HubSpotCompany {
+  id: string;
+  name: string;
+  domain: string | null;
+  properties: Record<string, string>;
+}
+
+export interface HubSpotDeal {
+  id: string;
+  name: string | null;
+  amount: string | null;
+  stage: string | null;
+  properties: Record<string, string>;
+}
+
+/** One HubSpot enrichment artifact — stable per eventVersion + guest + source. */
+export interface HubSpotEnrichmentArtifact {
+  /** Stable key: `${eventVersion}::${guestEmail}::${source}` or company/deal scoped. */
+  key: string;
+  eventVersion: string;
+  guestEmail: string;
+  companyId?: string | null;
+  dealId?: string | null;
+  source: "hubspot-contact" | "hubspot-company" | "hubspot-deal";
+  status: "completed" | "empty" | "failed";
+  evidence: string[];
+  references: string[];
+  diagnostics: {
+    probeState?: HubSpotProbeState;
+    httpStatus?: number | null;
+    errorCode?: string | null;
+    bounded: boolean;
+    maxResults: number;
+    stableRef: string;
+    employerMatch?: boolean;
+    reason?: string;
+  };
+  stableRef: string;
+  isEmployerMatch?: boolean;
+}
+
+export const HUBSPOT_MAX_RESULTS = 10 as const;

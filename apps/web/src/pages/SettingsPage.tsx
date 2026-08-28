@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
+import type {
+  HubSpotSetupCheck,
+  HubSpotStatus,
+  ProviderId,
+  SetupCheck,
+} from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
 import { SpreadsheetCard } from "../modules/youtube/SpreadsheetCard";
@@ -72,12 +77,14 @@ export function SettingsPage() {
   const [relayBaseUrlInput, setRelayBaseUrlInput] = useState("");
   const [relayBusy, setRelayBusy] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
-  // Meeting Brief Generator — Internal Domains + Calendar authority (issue://83)
-  const [meetingBriefInput, setMeetingBriefInput] = useState("");
+  const [hubspotStatus, setHubspotStatus] = useState<HubSpotStatus | null>(null);
+  const [hubspotTokenInput, setHubspotTokenInput] = useState("");
+  const [hubspotBusy, setHubspotBusy] = useState(false);
+  const [hubspotError, setHubspotError] = useState<string | null>(null);
+  const [hubspotCheck, setHubspotCheck] = useState<HubSpotSetupCheck | null>(null);
+  const [checkingHubspot, setCheckingHubspot] = useState(false);
+  const [meetingBriefInternalDomains, setMeetingBriefInternalDomains] = useState("");
   const [meetingBriefSaving, setMeetingBriefSaving] = useState(false);
-  const [meetingBriefError, setMeetingBriefError] = useState<string | null>(null);
-  const [meetingBriefSaved, setMeetingBriefSaved] = useState(false);
-  const [meetingBriefLoaded, setMeetingBriefLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   /* One flag per action, not one for the page: a shared flag marks controls
@@ -150,19 +157,6 @@ export function SettingsPage() {
     void loadRelay();
   }, []);
 
-  useEffect(() => {
-    const loadMeetingBrief = async () => {
-      try {
-        const cfg = await api.meetingBriefConfig();
-        setMeetingBriefInput(cfg.internalDomains.join(", "));
-        setMeetingBriefLoaded(true);
-      } catch {
-        // not configured yet
-        setMeetingBriefLoaded(true);
-      }
-    };
-    void loadMeetingBrief();
-  }, []);
   const refreshRelay = async () => {
     try {
       const status = await api.relayStatus();
@@ -201,25 +195,99 @@ export function SettingsPage() {
     }
   };
 
+  useEffect(() => {
+    const loadHubspot = async () => {
+      try {
+        const status = await api.hubspotStatus();
+        setHubspotStatus(status);
+      } catch {
+        // hubspot not configured yet
+      }
+      try {
+        const cfg = await api.meetingBriefConfig();
+        setMeetingBriefInternalDomains(cfg.internalDomains.join(", "));
+        setHubspotStatus(cfg.hubspot);
+      } catch {
+        // meeting brief config not yet
+      }
+    };
+    void loadHubspot();
+  }, []);
+
+  const refreshHubspot = async () => {
+    try {
+      const status = await api.hubspotStatus();
+      setHubspotStatus(status);
+    } catch (err) {
+      setHubspotError(errorMessage(err));
+    }
+  };
+
+  const connectHubspot = async () => {
+    if (hubspotBusy) return;
+    setHubspotBusy(true);
+    setHubspotError(null);
+    try {
+      const status = await api.hubspotConnect(hubspotTokenInput.trim());
+      setHubspotStatus(status);
+      setHubspotTokenInput("");
+    } catch (err) {
+      setHubspotError(errorMessage(err));
+    } finally {
+      setHubspotBusy(false);
+    }
+  };
+
+  const disconnectHubspot = async () => {
+    if (hubspotBusy) return;
+    setHubspotBusy(true);
+    setHubspotError(null);
+    setHubspotCheck(null);
+    try {
+      const status = await api.hubspotDisconnect();
+      setHubspotStatus(status);
+    } catch (err) {
+      setHubspotError(errorMessage(err));
+    } finally {
+      setHubspotBusy(false);
+    }
+  };
+
+  const checkHubspot = async () => {
+    if (checkingHubspot) return;
+    setCheckingHubspot(true);
+    setHubspotError(null);
+    try {
+      const result = await api.hubspotCheck();
+      setHubspotCheck(result);
+      await refreshHubspot();
+    } catch (err) {
+      setHubspotError(errorMessage(err));
+    } finally {
+      setCheckingHubspot(false);
+    }
+  };
+
   const saveMeetingBrief = async () => {
     if (meetingBriefSaving) return;
     setMeetingBriefSaving(true);
-    setMeetingBriefError(null);
-    setMeetingBriefSaved(false);
+    setError(null);
     try {
-      const raw = meetingBriefInput
-        .split(/[,\n]+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      const saved = await api.saveMeetingBriefConfig(raw);
-      setMeetingBriefInput(saved.internalDomains.join(", "));
-      setMeetingBriefSaved(true);
+      const domains = meetingBriefInternalDomains
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean);
+      const result = await api.saveMeetingBriefConfig({ internalDomains: domains });
+      setMeetingBriefInternalDomains(result.internalDomains.join(", "));
+      setHubspotStatus(result.hubspot);
+      setSaved(true);
     } catch (err) {
-      setMeetingBriefError(errorMessage(err));
+      setError(errorMessage(err));
     } finally {
       setMeetingBriefSaving(false);
     }
   };
+
   if (!form || !payload) {
     return (
       <div className="page">
@@ -915,68 +983,133 @@ export function SettingsPage() {
           </div>
         </div>
       </section>
-      {/* Meeting Brief Generator — Internal Domains + Calendar authority (issue://83) */}
       <section className="settings-section" aria-labelledby="section-meeting-brief">
         <h2 id="section-meeting-brief">Meeting Brief Generator</h2>
-        <div className="card" role="group" aria-labelledby="group-meeting-brief">
-          <h3 id="group-meeting-brief">Internal Domains</h3>
+        <div className="card" role="group" aria-labelledby="group-meeting-brief-domains">
+          <h3 id="group-meeting-brief-domains">Internal Domains</h3>
           <p className="muted">
             Email domains belonging to your organization. Attendees from these domains are not
             treated as External Guests. Domains are compared case-insensitively after normalized
-            email parsing and stored lowercased.
+            email parsing and stored lowercased. Consumer domains (gmail.com, outlook.com,
+            icloud.com, etc.) remain external and are never treated as employer evidence.
           </p>
           <p className="muted">
             Calendar authority required by the Google connection: Calendar read and watch (calendar,
             calendar.events) to watch your primary Calendar, plus Gmail read/send and Drive for
             enrichment. Use <strong>Check my setup</strong> above to verify the required scopes and
             that the Calendar and Gmail APIs are enabled. No Calendar credentials or event data are
-            stored by the relay ( ADR-0031).
+            stored by the relay (ADR-0031).
           </p>
           <div className="field">
-            <label htmlFor="meeting-brief-internal-domains">
+            <label htmlFor="meeting-brief-domains">
               Internal Domains (comma or newline separated)
             </label>
             <input
-              id="meeting-brief-internal-domains"
-              value={meetingBriefInput}
-              onChange={(event) => {
-                setMeetingBriefInput(event.target.value);
-                setMeetingBriefSaved(false);
-              }}
+              id="meeting-brief-domains"
+              value={meetingBriefInternalDomains}
+              onChange={(event) => setMeetingBriefInternalDomains(event.target.value)}
               placeholder="example.com, internal.example.org"
               aria-describedby="meeting-brief-domains-hint"
             />
             <p id="meeting-brief-domains-hint" className="muted field-hint">
               Enter one or more domains, separated by commas or new lines. Saved domains are
-              normalized to lower case; duplicates are removed. Consumer domains (gmail.com,
-              outlook.com, icloud.com, etc.) remain external and are never treated as employer
-              evidence.
+              normalized to lower case; duplicates are removed. Example: found42.com, example.com
             </p>
           </div>
-          {meetingBriefError ? (
-            <p className="field-error" role="alert">
-              {meetingBriefError}
-            </p>
-          ) : null}
-          {meetingBriefSaved ? (
-            <p className="ok" role="status">
-              Saved — domains normalized to lower case.
-            </p>
-          ) : null}
           <div className="field-row">
             <button
               type="button"
               className="action-button"
               onClick={() => void saveMeetingBrief()}
               aria-disabled={meetingBriefSaving}
-              disabled={!meetingBriefLoaded || meetingBriefSaving}
             >
-              {meetingBriefSaving ? "Saving…" : "Save internal domains"}
+              {meetingBriefSaving ? "Saving…" : "Save domains"}
             </button>
-            <span className="muted" role="status">
-              {meetingBriefLoaded ? "" : "Loading…"}
-            </span>
           </div>
+        </div>
+        <div className="card" role="group" aria-labelledby="group-hubspot">
+          <h3 id="group-hubspot">HubSpot CRM</h3>
+          <p className="muted">
+            Per-user private-app token (read-only contacts, companies, deals). Never uses a shared
+            Found42 credential. Stored via Shell-credential/Module-call boundary; status shows
+            redacted hint only.
+          </p>
+          {hubspotStatus ? (
+            <p role="status">
+              <strong>Status:</strong> {hubspotStatus.state}
+              {hubspotStatus.tokenHint ? ` (${hubspotStatus.tokenHint})` : ""}
+              {hubspotStatus.lastVerifiedAt
+                ? ` — last verified ${hubspotStatus.lastVerifiedAt}`
+                : ""}
+            </p>
+          ) : (
+            <p className="muted" role="status">
+              Loading HubSpot status…
+            </p>
+          )}
+          <div className="field">
+            <label htmlFor="hubspot-token">HubSpot private-app token</label>
+            <input
+              id="hubspot-token"
+              type="password"
+              value={hubspotTokenInput}
+              onChange={(event) => setHubspotTokenInput(event.target.value)}
+              placeholder="pat-na1-..."
+              autoComplete="off"
+            />
+            <p className="muted field-hint">
+              Create a private app in HubSpot with scopes crm.objects.contacts.read,
+              crm.objects.companies.read, crm.objects.deals.read, then paste its access token.
+            </p>
+          </div>
+          {hubspotError ? (
+            <p className="field-error" role="alert">
+              {hubspotError}
+            </p>
+          ) : null}
+          <div className="field-row">
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void connectHubspot()}
+              aria-disabled={hubspotBusy || hubspotTokenInput.trim() === ""}
+            >
+              {hubspotBusy ? "Connecting…" : "Connect HubSpot"}
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void disconnectHubspot()}
+              aria-disabled={hubspotBusy || hubspotStatus?.state === "unconfigured"}
+            >
+              Disconnect
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void checkHubspot()}
+              aria-disabled={checkingHubspot || hubspotStatus?.state === "unconfigured"}
+            >
+              {checkingHubspot ? "Checking…" : "Check my setup"}
+            </button>
+          </div>
+          {hubspotCheck ? (
+            <div className="banner" role="status">
+              <p>
+                <strong>Probe:</strong> {hubspotCheck.state} — {hubspotCheck.detail}
+              </p>
+              {hubspotCheck.items.length > 0 && (
+                <ul>
+                  {hubspotCheck.items.map((item, idx) => (
+                    <li key={idx}>
+                      {item.label}: {item.ok ? "ok" : "failed"} — {item.detail}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="muted">Checked at {hubspotCheck.checkedAt}</p>
+            </div>
+          ) : null}
         </div>
       </section>
       {/* A Module's own settings surface, outside the form: it has its own
