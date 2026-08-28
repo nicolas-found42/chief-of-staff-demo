@@ -186,13 +186,55 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
     const fakeCal = new FakeCalendarProvider();
     const { host, runs, fakeGmail } = makeHostWithFakeTime(now, { fakeCal });
     const event = fixtureEvent();
-
+    // Genuine deletion: the calendar still lists other events, but this occurrence is
+    // gone. Absence within a non-empty read is evidence — delivery skips terminally.
+    const bystander = fixtureEvent({
+      eventId: "evt_bystander",
+      summary: "Unrelated meeting",
+      attendees: [
+        {
+          email: "owner@example.com",
+          displayName: "Owner",
+          responseStatus: "accepted",
+          organizer: true,
+        },
+        { email: "bob@external.co", displayName: "Bob", responseStatus: "accepted" },
+      ],
+    });
+    fakeCal.setEvents([calFromFixture(event), calFromFixture(bystander)]);
+    fakeCal.removeOccurrence(event.eventId, event.occurrenceId);
     host.scheduleOccurrence(event, now);
     const [runId] = await host.processDueSchedules(now);
     await host.idle();
 
     expect(runs.detail(runId!)?.status).toBe("skipped");
     expect((runs.detail(runId!)?.result as MeetingBriefRunResult).delivery.status).toBe("skipped");
+    expect(fakeGmail.messages).toHaveLength(0);
+  });
+  it("fails deliver retryably when Calendar transiently returns an empty list, never terminal skip", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const { host, runs, fakeCal, fakeGmail } = makeHostWithFakeTime(now);
+    const event = fixtureEvent();
+    fakeCal.setEvents([calFromFixture(event)]);
+    // A transient empty read (e.g. a sync hiccup) at the deliver recheck carries no
+    // evidence about the occurrence: it must fail the deliver Stage — Brief preserved,
+    // retryable — not terminally skip a valid delivery.
+    const realListEvents = fakeCal.listEvents.bind(fakeCal);
+    let reads = 0;
+    fakeCal.listEvents = async (args: { calendarId: string; syncToken?: string | null }) => {
+      reads += 1;
+      if (reads >= 2) return { events: [], nextSyncToken: null };
+      return realListEvents(args);
+    };
+
+    host.scheduleOccurrence(event, now);
+    const [runId] = await host.processDueSchedules(now);
+    await host.idle();
+
+    const detail = runs.detail(runId!);
+    expect(detail?.status).toBe("failed");
+    expect(detail?.failedStage).toBe("deliver");
+    expect((detail?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
     expect(fakeGmail.messages).toHaveLength(0);
   });
 

@@ -131,6 +131,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   // window before deliver first runs.
   let currentEvent: MeetingBriefEvent | null = null;
   let calendarRecheckError: string | null = null;
+  let calendarReadEmpty = false;
   if (calendarProvider) {
     try {
       const result = await calendarProvider.listEvents({
@@ -143,6 +144,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
             meetingBriefOccurrenceIdentity(event.eventId, event.occurrenceId).occurrenceKey ===
             occurrenceKey,
         ) ?? null;
+      calendarReadEmpty = result.events.length === 0;
     } catch (error) {
       calendarRecheckError = error instanceof Error ? error.message : String(error);
     }
@@ -192,7 +194,15 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     }
   }
 
-  // A failed fetch is surfaced here, at the pre-send recheck point.
+  // A failed fetch is surfaced here, at the pre-send recheck point. An empty successful
+  // read is equally unreliable — it carries no evidence about the occurrence (transient
+  // sync state) — so it fails deliver retryably instead of terminally skipping a valid
+  // delivery. Absence within a non-empty read is evidence and skips below.
+  if (calendarProvider && calendarRecheckError === null && calendarReadEmpty) {
+    const reason = "Calendar recheck returned no events";
+    persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx) + 1, reason);
+    throw new StageFailure("deliver", `Calendar recheck failed: ${reason}`);
+  }
   if (calendarProvider && calendarRecheckError !== null) {
     persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx) + 1, calendarRecheckError);
     throw new StageFailure("deliver", `Calendar recheck failed: ${calendarRecheckError}`);
