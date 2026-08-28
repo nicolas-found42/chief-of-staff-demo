@@ -375,6 +375,7 @@ CUR_POLL="$(api_jq '.config.drive.pollIntervalMinutes // empty')"
 ask POLL_MINUTES "Poll interval in minutes${CUR_POLL:+ [Enter keeps $CUR_POLL]}:"
 [[ -z "$POLL_MINUTES" ]] && POLL_MINUTES="${CUR_POLL:-2}"
 [[ "$POLL_MINUTES" =~ ^[0-9]+$ ]] || POLL_MINUTES=2
+if (( POLL_MINUTES < 1 )); then POLL_MINUTES=1; fi
 api PUT /api/config "$(jq -n --argjson n "$POLL_MINUTES" '{drive: {enabled: true, pollIntervalMinutes: $n}}')"
 [[ "$_API_CODE" == "200" ]] && say "Drive polling on, every $POLL_MINUTES min." || warn "save failed (HTTP $_API_CODE)"
 
