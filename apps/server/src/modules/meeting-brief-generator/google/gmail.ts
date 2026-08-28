@@ -31,8 +31,10 @@ function sanitizeEvidence(text: string): string {
 
 function readErrorStatus(error: unknown): number | null {
   if (error && typeof error === "object") {
-    if ("status" in error && typeof (error as Record<string, unknown>).status === "number") return (error as { status: number }).status;
-    if ("code" in error && typeof (error as Record<string, unknown>).code === "number") return (error as { code: number }).code;
+    if ("status" in error && typeof (error as Record<string, unknown>).status === "number")
+      return (error as { status: number }).status;
+    if ("code" in error && typeof (error as Record<string, unknown>).code === "number")
+      return (error as { code: number }).code;
     if ("response" in error) {
       const resp = (error as { response?: { status?: number } }).response;
       if (resp && typeof resp.status === "number") return resp.status;
@@ -43,9 +45,13 @@ function readErrorStatus(error: unknown): number | null {
 
 function readErrorCode(error: unknown): string | null {
   if (error && typeof error === "object") {
-    if ("code" in error && typeof (error as Record<string, unknown>).code === "string") return (error as { code: string }).code;
-    if ("reason" in error && typeof (error as Record<string, unknown>).reason === "string") return (error as { reason: string }).reason;
-    const nested = (error as { response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } } }).response?.data?.error?.errors?.[0]?.reason;
+    if ("code" in error && typeof (error as Record<string, unknown>).code === "string")
+      return (error as { code: string }).code;
+    if ("reason" in error && typeof (error as Record<string, unknown>).reason === "string")
+      return (error as { reason: string }).reason;
+    const nested = (
+      error as { response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } } }
+    ).response?.data?.error?.errors?.[0]?.reason;
     if (typeof nested === "string") return nested;
   }
   return null;
@@ -58,7 +64,12 @@ function isProviderWideError(error: unknown): boolean {
   // 401 rejected, 403 missing authority/insufficientPermissions, 503 unavailable
   if (status === 401 || status === 403 || status === 503) return true;
   if (code === "insufficientPermissions" || code === "accessNotConfigured") return true;
-  if (/invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(msg)) return true;
+  if (
+    /invalid_grant|insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|has not been used in project|is disabled/i.test(
+      msg,
+    )
+  )
+    return true;
   return false;
 }
 
@@ -72,7 +83,7 @@ export function createGmailProvider(auth: GoogleAuth): GmailProvider {
       const threads = res.data.threads ?? [];
       return threads.slice(0, maxResults).map((t) => ({
         id: t.id ?? `thread-${Math.random()}`,
-        snippet: (t.snippet ?? ""),
+        snippet: t.snippet ?? "",
       }));
     },
     async listCompanyThreads(companyDomain: string, maxResults: number): Promise<GmailThread[]> {
@@ -82,7 +93,7 @@ export function createGmailProvider(auth: GoogleAuth): GmailProvider {
       const threads = res.data.threads ?? [];
       return threads.slice(0, maxResults).map((t) => ({
         id: t.id ?? `thread-${Math.random()}`,
-        snippet: (t.snippet ?? ""),
+        snippet: t.snippet ?? "",
       }));
     },
   };
@@ -119,7 +130,9 @@ export class FakeGmailProvider implements GmailProvider {
   constructor(opts: FakeGmailOptions = {}) {
     this.mode = opts.mode ?? "normal";
     this.failFirstFor = new Set([...(opts.failFirstFor ?? [])].map((s) => s.toLowerCase()));
-    this.unavailableError = opts.unavailableError ?? Object.assign(new Error("Gmail unavailable"), { status: 503, code: 503 });
+    this.unavailableError =
+      opts.unavailableError ??
+      Object.assign(new Error("Gmail unavailable"), { status: 503, code: 503 });
     this.exactThreads = opts.exactThreads ?? new Map<string, GmailThread[]>();
     this.companyThreads = opts.companyThreads ?? new Map<string, GmailThread[]>();
   }
@@ -154,7 +167,8 @@ export class FakeGmailProvider implements GmailProvider {
       this.failCounts.set(key, count + 1);
       throw Object.assign(new Error("transient gmail exact failure"), { status: 500 });
     }
-    const all = this.exactThreads.get(guestEmail.toLowerCase()) ?? this.generateDefaultExact(guestEmail);
+    const all =
+      this.exactThreads.get(guestEmail.toLowerCase()) ?? this.generateDefaultExact(guestEmail);
     // Deduplicate by id preserving order, then bound
     const seen = new Set<string>();
     const deduped: GmailThread[] = [];
@@ -177,7 +191,9 @@ export class FakeGmailProvider implements GmailProvider {
       this.failCounts.set(key, count + 1);
       throw Object.assign(new Error("transient gmail company failure"), { status: 500 });
     }
-    const all = this.companyThreads.get(companyDomain.toLowerCase()) ?? this.generateDefaultCompany(companyDomain);
+    const all =
+      this.companyThreads.get(companyDomain.toLowerCase()) ??
+      this.generateDefaultCompany(companyDomain);
     const seen = new Set<string>();
     const deduped: GmailThread[] = [];
     for (const t of all) {
@@ -216,11 +232,16 @@ export async function enrichGmailExact(
   const maxAttempts = 2;
 
   // Same-version retry preservation: if artifact exists and is completed/empty, reuse without calling provider.
-  const existingRaw = ctx.readFile(`gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`);
+  const existingRaw = ctx.readFile(
+    `gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`,
+  );
   if (existingRaw) {
     try {
       const existing = JSON.parse(existingRaw) as GoogleEnrichmentArtifact;
-      if (existing.eventVersion === eventVersion && (existing.status === "completed" || existing.status === "empty")) {
+      if (
+        existing.eventVersion === eventVersion &&
+        (existing.status === "completed" || existing.status === "empty")
+      ) {
         // Preserve completed/empty without crossing revision
         const section: MeetingBriefEnrichmentSection = {
           source: "gmail-exact",
@@ -275,7 +296,9 @@ export async function enrichGmailExact(
       }
       const limited = deduped.slice(0, maxResults);
       const truncated = deduped.length > maxResults || threads.length > maxResults;
-      const evidence = limited.map((t) => sanitizeEvidence(t.snippet || `Gmail thread ${t.id} with ${normalized}`));
+      const evidence = limited.map((t) =>
+        sanitizeEvidence(t.snippet || `Gmail thread ${t.id} with ${normalized}`),
+      );
       const references = limited.map((t) => `https://mail.google.com/mail/u/0/#inbox/${t.id}`);
       const artifact: GoogleEnrichmentArtifact = {
         key,
@@ -285,12 +308,23 @@ export async function enrichGmailExact(
         status: "completed",
         evidence,
         references,
-        diagnostics: { bounded: true, maxResults, stableRef, untrusted: true, ...(truncated ? { truncated: true } : {}), attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          untrusted: true,
+          ...(truncated ? { truncated: true } : {}),
+          attempts,
+        },
         stableRef,
       };
       const filename = `gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`;
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("gmail_exact_completed", { guest: normalized, count: evidence.length, truncated: !!truncated });
+      ctx.event("gmail_exact_completed", {
+        guest: normalized,
+        count: evidence.length,
+        truncated: !!truncated,
+      });
       const section: MeetingBriefEnrichmentSection = {
         source: "gmail-exact",
         guest: normalized,
@@ -306,7 +340,11 @@ export async function enrichGmailExact(
         throw error;
       }
       if (attempts < maxAttempts) {
-        ctx.event("gmail_exact_retry", { guest: normalized, attempt: attempts, error: error instanceof Error ? error.message : String(error) });
+        ctx.event("gmail_exact_retry", {
+          guest: normalized,
+          attempt: attempts,
+          error: error instanceof Error ? error.message : String(error),
+        });
         continue;
       }
       const httpStatus = readErrorStatus(error);
@@ -320,7 +358,16 @@ export async function enrichGmailExact(
         status: "failed",
         evidence: [],
         references: [],
-        diagnostics: { bounded: true, maxResults, stableRef, httpStatus, errorCode, reason: reason.slice(0, 500), untrusted: true, attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          httpStatus,
+          errorCode,
+          reason: reason.slice(0, 500),
+          untrusted: true,
+          attempts,
+        },
         stableRef,
       };
       const filename = `gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`;
@@ -348,8 +395,18 @@ export async function enrichGmailCompanyDomain(
 ): Promise<{ artifact: GoogleEnrichmentArtifact; section: MeetingBriefEnrichmentSection }> {
   const normalizedGuest = guestEmail.toLowerCase();
   const normalizedDomain = companyDomain.toLowerCase();
-  const key = googleEnrichmentKey(eventVersion, normalizedGuest, "gmail-company-domain", normalizedDomain);
-  const stableRef = googleEnrichmentStableRef(eventVersion, normalizedGuest, "gmail-company-domain", normalizedDomain);
+  const key = googleEnrichmentKey(
+    eventVersion,
+    normalizedGuest,
+    "gmail-company-domain",
+    normalizedDomain,
+  );
+  const stableRef = googleEnrichmentStableRef(
+    eventVersion,
+    normalizedGuest,
+    "gmail-company-domain",
+    normalizedDomain,
+  );
   const maxResults = GOOGLE_ENRICHMENT_MAX_GMAIL_COMPANY;
 
   const sanitizedGuest = normalizedGuest.replace(/[^a-z0-9]/g, "_");
@@ -359,7 +416,10 @@ export async function enrichGmailCompanyDomain(
   if (existingRaw) {
     try {
       const existing = JSON.parse(existingRaw) as GoogleEnrichmentArtifact;
-      if (existing.eventVersion === eventVersion && (existing.status === "completed" || existing.status === "empty")) {
+      if (
+        existing.eventVersion === eventVersion &&
+        (existing.status === "completed" || existing.status === "empty")
+      ) {
         const section: MeetingBriefEnrichmentSection = {
           source: "gmail-company-domain",
           guest: normalizedGuest,
@@ -395,10 +455,21 @@ export async function enrichGmailCompanyDomain(
           stableRef,
         };
         ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-        ctx.event("gmail_company_empty", { guest: normalizedGuest, domain: normalizedDomain, attempts });
+        ctx.event("gmail_company_empty", {
+          guest: normalizedGuest,
+          domain: normalizedDomain,
+          attempts,
+        });
         return {
           artifact,
-          section: { source: "gmail-company-domain", guest: normalizedGuest, company: normalizedDomain, status: "empty", evidence: [], references: [] },
+          section: {
+            source: "gmail-company-domain",
+            guest: normalizedGuest,
+            company: normalizedDomain,
+            status: "empty",
+            evidence: [],
+            references: [],
+          },
         };
       }
       const seen = new Set<string>();
@@ -411,7 +482,9 @@ export async function enrichGmailCompanyDomain(
       }
       const limited = deduped.slice(0, maxResults);
       const truncated = deduped.length > maxResults;
-      const evidence = limited.map((t) => sanitizeEvidence(t.snippet || `Company Gmail thread ${t.id} @${normalizedDomain}`));
+      const evidence = limited.map((t) =>
+        sanitizeEvidence(t.snippet || `Company Gmail thread ${t.id} @${normalizedDomain}`),
+      );
       const references = limited.map((t) => `https://mail.google.com/mail/u/0/#inbox/${t.id}`);
       const artifact: GoogleEnrichmentArtifact = {
         key,
@@ -422,20 +495,42 @@ export async function enrichGmailCompanyDomain(
         status: "completed",
         evidence,
         references,
-        diagnostics: { bounded: true, maxResults, stableRef, untrusted: true, ...(truncated ? { truncated: true } : {}), attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          untrusted: true,
+          ...(truncated ? { truncated: true } : {}),
+          attempts,
+        },
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("gmail_company_completed", { guest: normalizedGuest, domain: normalizedDomain, count: evidence.length });
+      ctx.event("gmail_company_completed", {
+        guest: normalizedGuest,
+        domain: normalizedDomain,
+        count: evidence.length,
+      });
       return {
         artifact,
-        section: { source: "gmail-company-domain", guest: normalizedGuest, company: normalizedDomain, status: "completed", evidence, references },
+        section: {
+          source: "gmail-company-domain",
+          guest: normalizedGuest,
+          company: normalizedDomain,
+          status: "completed",
+          evidence,
+          references,
+        },
       };
     } catch (error) {
       lastError = error;
       if (isProviderWideError(error)) throw error;
       if (attempts < maxAttempts) {
-        ctx.event("gmail_company_retry", { guest: normalizedGuest, domain: normalizedDomain, attempt: attempts });
+        ctx.event("gmail_company_retry", {
+          guest: normalizedGuest,
+          domain: normalizedDomain,
+          attempt: attempts,
+        });
         continue;
       }
       const httpStatus = readErrorStatus(error);
@@ -450,14 +545,34 @@ export async function enrichGmailCompanyDomain(
         status: "failed",
         evidence: [],
         references: [],
-        diagnostics: { bounded: true, maxResults, stableRef, httpStatus, errorCode, reason: reason.slice(0, 500), untrusted: true, attempts },
+        diagnostics: {
+          bounded: true,
+          maxResults,
+          stableRef,
+          httpStatus,
+          errorCode,
+          reason: reason.slice(0, 500),
+          untrusted: true,
+          attempts,
+        },
         stableRef,
       };
       ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-      ctx.event("gmail_company_failed", { guest: normalizedGuest, domain: normalizedDomain, error: reason.slice(0, 200) });
+      ctx.event("gmail_company_failed", {
+        guest: normalizedGuest,
+        domain: normalizedDomain,
+        error: reason.slice(0, 200),
+      });
       return {
         artifact,
-        section: { source: "gmail-company-domain", guest: normalizedGuest, company: normalizedDomain, status: "failed", evidence: [], references: [] },
+        section: {
+          source: "gmail-company-domain",
+          guest: normalizedGuest,
+          company: normalizedDomain,
+          status: "failed",
+          evidence: [],
+          references: [],
+        },
       };
     }
   }
