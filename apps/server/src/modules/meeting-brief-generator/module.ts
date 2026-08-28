@@ -6,22 +6,15 @@ import type {
   MeetingBriefFixtureEvent,
   MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
-import {
-  GUEST_PROFILE_PROVIDER_ID,
-  MEETING_BRIEF_MODULE_ID,
-  MEETING_BRIEF_MODULE_VERSION,
-} from "@chief-of-staff-demo/shared";
+import { MEETING_BRIEF_MODULE_ID, MEETING_BRIEF_MODULE_VERSION } from "@chief-of-staff-demo/shared";
 import type { RunOutcome } from "../../runs.js";
 import type { RunContext, ShellModule } from "../../engine/module.js";
 import type { GuestProfileProvider } from "./profile/provider.js";
-import { isEmployerMatch } from "./profile/provider.js";
 import type { GmailProvider } from "./google/gmail.js";
-import { enrichGmailCompanyDomain, enrichGmailExact } from "./google/gmail.js";
 import type { CalendarHistoryProvider } from "./google/calendarHistory.js";
-import { enrichCalendarHistory } from "./google/calendarHistory.js";
 import type { DriveProvider } from "./google/drive.js";
-import { enrichDriveDocs } from "./google/drive.js";
-import { extractDomain, isConsumerDomain, isExternalGuest } from "./eligibility.js";
+import type { HubSpotApi } from "./hubspot/client.js";
+import type { PublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import { snapshotEligibility, buildFrozenSnapshot } from "./snapshot.js";
 import type { CalendarProvider } from "./calendar.js";
 import { isEligibleMeeting } from "./eligibility.js";
@@ -53,6 +46,13 @@ export interface MeetingBriefModuleDeps {
   gmailProvider?: GmailProvider | null;
   calendarHistoryProvider?: CalendarHistoryProvider | null;
   driveProvider?: DriveProvider | null;
+  hubSpotApi?: HubSpotApi | null;
+  publicIntelligenceProvider?: PublicIntelligenceProvider | null;
+  proposeEmployer?: (
+    guestEmail: string,
+    guestName: string | null,
+    eventVersion: string,
+  ) => Promise<{ name: string; domain: string | null } | null>;
   internalDomains?: string[];
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
@@ -260,7 +260,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         return { status: "skipped", reason: snapshotSkipReason };
       }
 
-      // enrich — bounded evidence via injected fakes + Guest Profile provider per guest
+      // enrich — unified evidence via Google, HubSpot, Guest Profile, Public Intelligence (issue://88)
       let enrichResult: { sections: unknown[]; evidence: string[] } = {
         sections: [],
         evidence: [],
@@ -269,107 +269,50 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
       await ctx.stage("enrich", async () => {
         if (deps.enrich) {
           enrichResult = await deps.enrich(input, ctx);
-        } else if (deps.gmailProvider || deps.calendarHistoryProvider || deps.driveProvider) {
-          // Google bounded enrichment path (issue://85) — static imports, no dynamic import.
-          const internalDomains = deps.getInternalDomains ? deps.getInternalDomains() : (deps.internalDomains ?? []);
-          const gmailProvider = deps.gmailProvider ?? null;
-          const calendarProvider = deps.calendarHistoryProvider ?? null;
-          const driveProvider = deps.driveProvider ?? null;
-
-          // Determine external guests (exclude resources, internal domain)
-          const externalAttendees = input.attendees.filter((a) => !a.resource && isExternalGuest(a, internalDomains));
-          const allSections: unknown[] = [];
-          const googleArtifacts: unknown[] = [];
-
-          // For each external guest, run Google enrichment bounded per source
-          for (const attendee of externalAttendees) {
-            const guestEmail = attendee.email;
-            const domain = extractDomain(guestEmail) ?? "";
-            const lowerDomain = domain.toLowerCase();
-            const isConsumer = isConsumerDomain(lowerDomain);
-            const isInternal = internalDomains.map((d) => d.toLowerCase()).includes(lowerDomain);
-            if (gmailProvider) {
-              const { artifact, section } = await enrichGmailExact(gmailProvider, input.version, guestEmail, ctx);
-              googleArtifacts.push(artifact);
-              allSections.push(section);
-              // Company-domain for non-Consumer non-Internal
-              if (domain && !isConsumer && !isInternal) {
-                const { artifact: compArtifact, section: compSection } = await enrichGmailCompanyDomain(gmailProvider, input.version, guestEmail, lowerDomain, ctx);
-                googleArtifacts.push(compArtifact);
-                allSections.push(compSection);
+        } else if (
+          deps.gmailProvider ||
+          deps.calendarHistoryProvider ||
+          deps.driveProvider ||
+          deps.profileProvider ||
+          deps.hubSpotApi ||
+          deps.publicIntelligenceProvider
+        ) {
+          // Resolve frozen version for retry preservation (snapshot.json holds original version if retry input is stub)
+          const snapshotRawForVersion = ctx.readFile("snapshot.json");
+          let frozenVersion = input.version;
+          if (snapshotRawForVersion) {
+            try {
+              const snap = JSON.parse(snapshotRawForVersion) as { version?: string };
+              if (typeof snap.version === "string" && snap.version.length > 0) {
+                frozenVersion = snap.version;
               }
-            }
-            if (calendarProvider) {
-              const { artifact, section } = await enrichCalendarHistory(calendarProvider, input.version, guestEmail, input.startAt, ctx);
-              googleArtifacts.push(artifact);
-              allSections.push(section);
-            }
-            if (driveProvider) {
-              const companyForDrive = !isConsumer && !isInternal && domain ? lowerDomain : null;
-              const { artifact, section } = await enrichDriveDocs(driveProvider, input.version, guestEmail, companyForDrive, ctx);
-              googleArtifacts.push(artifact);
-              allSections.push(section);
+            } catch {
+              // ignore
             }
           }
-
-          // Bounded Guest Profile lookup per External Guest (kept for completeness)
-          const guestsForProfile = externalAttendees.map((a) => a.email);
-          if (deps.profileProvider) {
-            for (const email of guestsForProfile) {
-              const artifact = await deps.profileProvider.lookup({
-                guestEmail: email,
-                endpoint: deps.guestProfileEndpoint ?? "",
-                apiKey: deps.guestProfileApiKey ?? "",
-                occurrenceKey,
-                eventVersion: input.version,
-              });
-              const sanitized = email.replace(/[^a-zA-Z0-9]/g, "_");
-              ctx.writeFile(
-                `profile-${sanitized}-${input.version}.json`,
-                JSON.stringify(artifact, null, 2) + "\n",
-              );
-              const status =
-                artifact.outcome === "completed"
-                  ? "completed"
-                  : artifact.outcome === "empty"
-                    ? "empty"
-                    : "failed";
-              allSections.push({
-                source: GUEST_PROFILE_PROVIDER_ID,
-                guest: email,
-                status,
-                evidence:
-                  artifact.outcome === "completed"
-                    ? [
-                        ...(artifact.role ? [artifact.role] : []),
-                        ...(artifact.background ? [artifact.background] : []),
-                        ...(artifact.currentEmployer ? [artifact.currentEmployer.name] : []),
-                      ]
-                    : [],
-                references: artifact.references,
-                diagnostics: artifact.diagnostics,
-                identityConfidence: artifact.identityConfidence,
-                role: artifact.role,
-                background: artifact.background,
-                currentEmployer: artifact.currentEmployer,
-                employerMatch: isEmployerMatch(artifact),
-              });
-              ctx.event("guest_profile_enriched", {
-                guest: email,
-                outcome: artifact.outcome,
-                employerMatch: isEmployerMatch(artifact),
-              });
-            }
-          }
-
-          // If no external guests (should not happen because snapshot would have skipped, but keep graceful)
-          // Still produce empty result rather than failing
-          enrichResult = {
-            sections: allSections,
-            evidence: (allSections as { evidence: string[] }[]).flatMap((s) => s.evidence),
-          };
-          // Also write google artifacts count for diagnostics
-          ctx.event("google_enrich_completed", { guests: externalAttendees.length, artifacts: googleArtifacts.length });
+          const useInput: MeetingBriefInput =
+            frozenVersion !== input.version ? { ...input, version: frozenVersion } : input;
+          const internalDomainsForEnrich = deps.getInternalDomains
+            ? deps.getInternalDomains()
+            : (deps.internalDomains ?? []);
+          const { enrichUnified } = await import("./enrichment/enrich.js");
+          const result = await enrichUnified(useInput, ctx, {
+            gmailProvider: deps.gmailProvider ?? null,
+            calendarHistoryProvider: deps.calendarHistoryProvider ?? null,
+            driveProvider: deps.driveProvider ?? null,
+            profileProvider: deps.profileProvider ?? null,
+            hubSpotApi: deps.hubSpotApi ?? null,
+            publicIntelligenceProvider: deps.publicIntelligenceProvider ?? null,
+            ...(deps.proposeEmployer ? { proposeEmployer: deps.proposeEmployer } : {}),
+            internalDomains: internalDomainsForEnrich,
+            now,
+            ...(deps.guestProfileEndpoint
+              ? { guestProfileEndpoint: deps.guestProfileEndpoint }
+              : {}),
+            ...(deps.guestProfileApiKey ? { guestProfileApiKey: deps.guestProfileApiKey } : {}),
+            occurrenceKey,
+          });
+          enrichResult = result;
         } else {
           // Default fixture enrichment — deterministic evidence per guest/company (legacy for tracer bullet tests).
           const guests = input.attendees.filter((a) => !a.resource).map((a) => a.email);
@@ -380,54 +323,6 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             evidence: [`fixture evidence for ${email}`],
             references: [`https://example.com/${email}`],
           }));
-          // Bounded Guest Profile lookup per External Guest (fixed contract, no LinkedIn scraping)
-          if (deps.profileProvider) {
-            for (const email of guests) {
-              const artifact = await deps.profileProvider.lookup({
-                guestEmail: email,
-                endpoint: deps.guestProfileEndpoint ?? "",
-                apiKey: deps.guestProfileApiKey ?? "",
-                occurrenceKey,
-                eventVersion: input.version,
-              });
-              const sanitized = email.replace(/[^a-zA-Z0-9]/g, "_");
-              ctx.writeFile(
-                `profile-${sanitized}-${input.version}.json`,
-                JSON.stringify(artifact, null, 2) + "\n",
-              );
-              const status =
-                artifact.outcome === "completed"
-                  ? "completed"
-                  : artifact.outcome === "empty"
-                    ? "empty"
-                    : "failed";
-              sections.push({
-                source: GUEST_PROFILE_PROVIDER_ID,
-                guest: email,
-                status,
-                evidence:
-                  artifact.outcome === "completed"
-                    ? [
-                        ...(artifact.role ? [artifact.role] : []),
-                        ...(artifact.background ? [artifact.background] : []),
-                        ...(artifact.currentEmployer ? [artifact.currentEmployer.name] : []),
-                      ]
-                    : [],
-                references: artifact.references,
-                diagnostics: artifact.diagnostics,
-                identityConfidence: artifact.identityConfidence,
-                role: artifact.role,
-                background: artifact.background,
-                currentEmployer: artifact.currentEmployer,
-                employerMatch: isEmployerMatch(artifact),
-              });
-              ctx.event("guest_profile_enriched", {
-                guest: email,
-                outcome: artifact.outcome,
-                employerMatch: isEmployerMatch(artifact),
-              });
-            }
-          }
           enrichResult = {
             sections,
             evidence: (sections as { evidence: string[] }[]).flatMap((s) => s.evidence),
@@ -443,6 +338,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         });
       });
 
+      // compose — structured Meeting Brief via injected model
       // compose — structured Meeting Brief via injected model
       let brief: MeetingBrief;
       await ctx.stage("compose", async () => {
@@ -491,7 +387,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           };
         }
         // Persist intermediate result (without delivery) — compose's durable output.
-        const supersedes = (input).supersedesRunId ?? null;
+        const supersedes = input.supersedesRunId ?? null;
         const partial: MeetingBriefRunResult = {
           version: 1,
           eventId: input.eventId,
