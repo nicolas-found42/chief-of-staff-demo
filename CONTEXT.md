@@ -216,6 +216,46 @@ filterable by content type.
 _Status_: live (spec #31 binding, 2026-08-24)
 _Avoid_: Idea Generator, Ideas Module
 
+**Meeting Brief Generator**:
+A planned Module that prepares a concise briefing for an upcoming meeting with external guests.
+Its live product includes relationship history, company records, public intelligence, relevant
+workspace material, and guest profiles rather than treating any one enrichment class as a later
+enhancement.
+_Status_: planned
+_Avoid_: Meeting Briefing Generator (the Relay original), Briefing Module
+
+**Meeting Brief**:
+The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
+evidence-backed guest and company context with concise conversation starters, source references and
+explicit uncertainty; every Output Adapter renders this same result.
+_Avoid_: Briefing, prep brief, email body
+
+**Internal Domain**:
+An email domain configured as belonging to the workspace owner's organization.
+_Avoid_: Company email domain, owner domain
+
+**External Guest**:
+A Calendar attendee whose email domain is not one of the Meeting Brief Generator's Internal
+Domains. An External Guest with a Consumer Domain remains external and is enriched person-first.
+_Avoid_: External attendee, outsider
+
+**Eligible Meeting**:
+A timed, non-cancelled Calendar event that the workspace owner has not declined and that includes at
+least one External Guest who has not declined.
+_Avoid_: Qualifying event, trigger event, candidate meeting
+
+**Consumer Domain**:
+An email domain belonging to a personal mailbox provider rather than identifying the External
+Guest's employer. It is not company evidence.
+_Avoid_: Personal email domain, free email provider
+
+**Employer Match**:
+The evidence-backed association between an External Guest with a Consumer Domain and their current
+employer. One explicit authoritative link establishes it; otherwise a model may propose a candidate,
+but two different organizations must each state the same guest-company relationship before the
+association is accepted.
+_Avoid_: Company guess, inferred company, likely employer
+
 **Content Idea**:
 One idea extracted from a transcript, attributed to the workspace owner with evidence (time
 stamp + verbatim quote, confidence ≥0.9). Carries Title, Description, Target Audience, CTA,
