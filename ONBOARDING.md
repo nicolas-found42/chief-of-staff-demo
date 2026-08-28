@@ -7,6 +7,7 @@ You do not need to know Docker, and you do not need to install Node or anything 
 Desktop runs the whole app for you.
 
 Work through the steps in order. Do not skip one.
+Prefer a script? Run `scripts/setup-wizard.sh` from the repo root — it walks through the same steps interactively and skips anything already set up.
 
 ---
 
