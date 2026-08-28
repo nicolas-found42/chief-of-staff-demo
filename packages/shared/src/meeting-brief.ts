@@ -261,3 +261,67 @@ export interface HubSpotEnrichmentArtifact {
 }
 
 export const HUBSPOT_MAX_RESULTS = 10 as const;
+
+// ---------------------------------------------------------------------------
+// Google enrichment — bounded Gmail, Calendar history, Drive Docs
+// (issue://85, Spec #80). Module-owned, bounded, per eventVersion+guest/company+source.
+// ---------------------------------------------------------------------------
+
+export const GOOGLE_ENRICHMENT_MAX_GMAIL_EXACT = 10 as const;
+export const GOOGLE_ENRICHMENT_MAX_GMAIL_COMPANY = 10 as const;
+export const GOOGLE_ENRICHMENT_MAX_CALENDAR_HISTORY = 10 as const;
+export const GOOGLE_ENRICHMENT_MAX_DRIVE_DOCS = 10 as const;
+
+export type GoogleEnrichmentSource =
+  | "gmail-exact"
+  | "gmail-company-domain"
+  | "calendar-history"
+  | "drive-docs";
+
+export type GoogleEnrichmentOutcome = "completed" | "empty" | "failed";
+
+export interface GoogleEnrichmentArtifact {
+  /** Stable key: `${eventVersion}::${guestEmail.toLowerCase()}::${source}::${companyDomain ?? ""}` trimmed */
+  key: string;
+  eventVersion: string;
+  guestEmail: string;
+  /** For company-domain Gmail and company Drive — null for person-level */
+  companyDomain?: string | null;
+  source: GoogleEnrichmentSource;
+  status: GoogleEnrichmentOutcome;
+  /** Untrusted evidence — treated as data, never as instructions */
+  evidence: string[];
+  references: string[];
+  diagnostics: {
+    bounded: boolean;
+    maxResults: number;
+    stableRef: string;
+    httpStatus?: number | null;
+    errorCode?: string | null;
+    reason?: string;
+    truncated?: boolean;
+    untrusted?: boolean;
+    attempts?: number;
+  };
+  stableRef: string;
+}
+
+export function googleEnrichmentKey(
+  eventVersion: string,
+  guestEmail: string,
+  source: GoogleEnrichmentSource,
+  companyDomain?: string | null,
+): string {
+  const base = `${eventVersion}::${guestEmail.toLowerCase()}::${source}`;
+  if (companyDomain) return `${base}::${companyDomain.toLowerCase()}`;
+  return base;
+}
+
+export function googleEnrichmentStableRef(
+  eventVersion: string,
+  guestEmail: string,
+  source: GoogleEnrichmentSource,
+  companyDomain?: string | null,
+): string {
+  return googleEnrichmentKey(eventVersion, guestEmail, source, companyDomain);
+}

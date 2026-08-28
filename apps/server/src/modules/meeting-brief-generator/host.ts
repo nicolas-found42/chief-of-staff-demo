@@ -24,6 +24,9 @@ import {
 } from "./module.js";
 import { GuestProfileConnection } from "./connections/profile.js";
 import { createHttpGuestProfileProvider, type GuestProfileProvider } from "./profile/provider.js";
+import type { GmailProvider } from "./google/gmail.js";
+import type { CalendarHistoryProvider } from "./google/calendarHistory.js";
+import type { DriveProvider } from "./google/drive.js";
 import {
   MeetingBriefCalendarStore,
   type CalendarProvider,
@@ -53,8 +56,11 @@ export interface MeetingBriefHostDeps {
   getOwnerEmail?: () => string | null;
   guestProfileConnection?: GuestProfileConnection;
   profileProvider?: GuestProfileProvider | null;
+  gmailProvider?: GmailProvider | null;
+  calendarHistoryProvider?: CalendarHistoryProvider | null;
+  driveProvider?: DriveProvider | null;
+  internalDomains?: string[];
 }
-
 function occurrenceKeyFor(event: MeetingBriefFixtureEvent): string {
   return `${event.eventId}::${event.occurrenceId}`;
 }
@@ -165,6 +171,11 @@ export class MeetingBriefHost implements HostedModule {
       ...(this.profileProvider ? { profileProvider: this.profileProvider } : {}),
       ...(status?.endpoint ? { guestProfileEndpoint: status.endpoint } : {}),
       ...(resolvedApiKey ? { guestProfileApiKey: resolvedApiKey } : {}),
+      ...(deps.gmailProvider ? { gmailProvider: deps.gmailProvider } : {}),
+      ...(deps.calendarHistoryProvider ? { calendarHistoryProvider: deps.calendarHistoryProvider } : {}),
+      ...(deps.driveProvider ? { driveProvider: deps.driveProvider } : {}),
+      ...(deps.internalDomains ? { internalDomains: deps.internalDomains } : {}),
+      getInternalDomains: () => this.getInternalDomains(),
       invalidateIndex: () => {},
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });

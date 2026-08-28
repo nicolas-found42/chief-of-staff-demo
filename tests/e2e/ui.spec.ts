@@ -66,10 +66,12 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
   await expect(page.locator(".setup-copy > code")).toHaveText([
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/youtube.readonly",
   ]);
-  await expect(page.locator(".copy-button")).toHaveCount(4);
+  await expect(page.locator(".copy-button")).toHaveCount(6);
   await expect(
     page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true }),
   ).toBeVisible();

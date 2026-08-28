@@ -5,6 +5,8 @@ import type { AppConfig } from "@chief-of-staff-demo/shared";
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/drive",
   /* ADR-0016: YouTube rides this connection rather than an API key. Read-only
      is the narrowest of the four scopes that answer `videos.list`, and reading
