@@ -31,7 +31,6 @@ import type { HubSpotApi } from "./hubspot/client.js";
 import type { MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
 import {
   MeetingBriefCalendarStore,
-  type CalendarEvent,
   type CalendarProvider,
   type MeetingBriefCalendarState,
   FakeCalendarProvider,
@@ -56,8 +55,18 @@ export interface MeetingBriefHostDeps {
   getCompleteJson?: MeetingBriefModuleDeps["getCompleteJson"];
   gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
   calendarProvider?: CalendarProvider;
-  calendarSnapshotRequired?: boolean;
-  calendarRecheckRequired?: boolean;
+  /**
+   * What a Run does with Calendar. The provider above always drives Intake
+   * reconciliation and watch renewal; this decides whether a Run sees it at all,
+   * because most hosts want Calendar for Intake and nothing more.
+   * - "snapshot": Calendar is authoritative. A failed read fails the snapshot
+   *   Stage and a missing occurrence is an explicit skip. Delivery rechecks too,
+   *   since a Run that holds the provider always rechecks before it sends.
+   * - "recheck": the provider reaches delivery only; a failed snapshot read is
+   *   best-effort and falls back to the Intake event.
+   * Omitted, a Run never receives the provider.
+   */
+  calendarUse?: "snapshot" | "recheck";
   configStore?: ConfigStore;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
@@ -65,6 +74,31 @@ export interface MeetingBriefHostDeps {
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
 }
+/**
+ * The one place snapshot.json is turned into a value. Null means the Run has no
+ * snapshot or the file will not parse; every caller reads that as "nothing known
+ * about this Run" and falls back to the Run result.
+ */
+function parseSnapshot(raw: string | null | undefined): StoredSnapshot | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The material fingerprint a Run froze at snapshot time. Reading it back beats
+ * rebuilding the frozen event and re-fingerprinting it: the stored value is what
+ * the Run actually compared against, and it cannot drift from `materialSnapshot`'s
+ * field list. Null when the snapshot is missing or predates the field, which the
+ * callers read as "cannot prove this revision is immaterial" and let the Run proceed.
+ */
+function storedFingerprint(snapshot: StoredSnapshot | null): string | null {
+  return typeof snapshot?.materialFingerprint === "string" ? snapshot.materialFingerprint : null;
+}
+
 function isMeetingBriefEvent(value: unknown): value is MeetingBriefEvent {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -106,7 +140,7 @@ function toUpcoming(schedule: {
  * - Intake reconciles Calendar current state (header-only wake-ups never mistaken for data) via injectable CalendarProvider.
  * - Primary Calendar push channel persistence: local state for channel identity/token/resource/expiration/syncToken, durable replace before expiration.
  * - Incremental sync after each relay wake-up, startup + invalid-sync recovery triggers bounded reconciliation, duplicate harmless.
- * - Surface renders upcoming (Intake schedules) and completed fixture state via public host behavior (Cross-Run index derived on read).
+ * - Surface renders upcoming (Intake schedules) and completed Run state via public host behavior (Cross-Run index derived on read).
  *
  * Production providers are supplied by the composition root; tests inject bounded fakes.
  */
@@ -193,10 +227,10 @@ export class MeetingBriefHost implements HostedModule {
       enrichmentProviders,
       getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
-      ...(deps.calendarProvider && (deps.calendarSnapshotRequired || deps.calendarRecheckRequired)
+      ...(deps.calendarProvider && deps.calendarUse
         ? { calendarProvider: this.calendarProvider }
         : {}),
-      ...(deps.calendarSnapshotRequired ? { calendarSnapshotRequired: true } : {}),
+      ...(deps.calendarUse === "snapshot" ? { calendarSnapshotRequired: true } : {}),
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
   }
@@ -248,10 +282,15 @@ export class MeetingBriefHost implements HostedModule {
   }
 
   // -------------------------------------------------------------------------
-  // Durable Intake schedule API (fixture + calendar reconciliation)
+  // Durable Intake schedule API (occurrences + Calendar reconciliation)
   // -------------------------------------------------------------------------
 
-  /** Durably schedule a fixture occurrence (Intake schedule, not a Run). */
+  /** `parseSnapshot` for a Run this caller has no handle on. */
+  private readSnapshot(runId: string): StoredSnapshot | null {
+    return parseSnapshot(this.deps.runs.open(runId)?.readArtifact("snapshot.json"));
+  }
+
+  /** Durably schedule a meeting occurrence (Intake schedule, not a Run). */
   scheduleOccurrence(event: MeetingBriefEvent, dueAt: Date): void {
     const key = occurrenceKeyFor(event);
     this.clock.schedule({
@@ -284,15 +323,7 @@ export class MeetingBriefHost implements HostedModule {
       if (!detail) continue;
       const result = detail.result as MeetingBriefRunResult | null;
       const handle = this.deps.runs.open(summary.id);
-      const snapshotRaw = handle?.readArtifact("snapshot.json");
-      let snapshot: StoredSnapshot | null = null;
-      if (snapshotRaw) {
-        try {
-          snapshot = JSON.parse(snapshotRaw) as StoredSnapshot;
-        } catch {
-          snapshot = null;
-        }
-      }
+      const snapshot = parseSnapshot(handle?.readArtifact("snapshot.json"));
       const meta = handle?.read();
       const externalKey = meta?.externalId ?? null;
       const occurrenceKey = result?.occurrenceKey ?? snapshot?.occurrenceKey ?? externalKey;
@@ -434,15 +465,8 @@ export class MeetingBriefHost implements HostedModule {
       );
       if (activeRuns.length > 0) {
         const sameVersionActive = activeRuns.some((r) => {
-          const snapRaw = this.deps.runs.open(r.id)?.readArtifact("snapshot.json");
-          if (snapRaw) {
-            try {
-              const snap = JSON.parse(snapRaw) as { version?: string };
-              return snap.version === input.version;
-            } catch {
-              return false;
-            }
-          }
+          const snap = this.readSnapshot(r.id);
+          if (snap) return snap.version === input.version;
           return r.result?.eventVersion === input.version;
         });
         if (sameVersionActive) {
@@ -460,15 +484,8 @@ export class MeetingBriefHost implements HostedModule {
       }
 
       const duplicateVersion = related.some((r) => {
-        const snapRaw = this.deps.runs.open(r.id)?.readArtifact("snapshot.json");
-        if (snapRaw) {
-          try {
-            const snap = JSON.parse(snapRaw) as { version?: string };
-            if (snap.version === input.version) return true;
-          } catch {
-            // ignore parse failure
-          }
-        }
+        const snap = this.readSnapshot(r.id);
+        if (snap?.version === input.version) return true;
         return r.result?.eventVersion === input.version;
       });
       if (duplicateVersion) {
@@ -489,43 +506,7 @@ export class MeetingBriefHost implements HostedModule {
         }
       }
       if (latestDone && latestDone.result) {
-        const prevSnapRaw = this.deps.runs.open(latestDone.id)?.readArtifact("snapshot.json");
-        let prevFingerprint: string | null = null;
-        if (prevSnapRaw) {
-          try {
-            const prevSnap = JSON.parse(prevSnapRaw) as Record<string, unknown> & {
-              summary: string;
-              description: string;
-              startAt: string;
-              endAt: string;
-              location: string | null;
-              conferenceLink: string | null;
-              attachments: string[];
-              organizer: { email: string } | undefined;
-              attendees: unknown[];
-            };
-            const synthetic = {
-              summary: String(prevSnap.summary ?? ""),
-              description: prevSnap.description as string | undefined,
-              startAt: String(prevSnap.startAt),
-              endAt: String(prevSnap.endAt),
-              location: prevSnap.location,
-              conferenceLink: prevSnap.conferenceLink,
-              organizer: prevSnap.organizer as { email: string } | undefined,
-              attendees:
-                (prevSnap.attendees as {
-                  email: string;
-                  responseStatus: string;
-                  organizer?: boolean;
-                  resource?: boolean;
-                }[]) ?? [],
-              attachments: prevSnap.attachments ?? [],
-            } as unknown as CalendarEvent;
-            prevFingerprint = materialFingerprint(synthetic);
-          } catch {
-            prevFingerprint = null;
-          }
-        }
+        const prevFingerprint = storedFingerprint(this.readSnapshot(latestDone.id));
         if (prevFingerprint) {
           const curFingerprint = materialFingerprint(input);
           if (prevFingerprint === curFingerprint) {
@@ -551,43 +532,7 @@ export class MeetingBriefHost implements HostedModule {
           }
         }
         if (newestActive) {
-          const activeSnapRaw = this.deps.runs.open(newestActive.id)?.readArtifact("snapshot.json");
-          let activeFingerprint: string | null = null;
-          if (activeSnapRaw) {
-            try {
-              const activeSnap = JSON.parse(activeSnapRaw) as Record<string, unknown> & {
-                summary: string;
-                description: string;
-                startAt: string;
-                endAt: string;
-                location: string | null;
-                conferenceLink: string | null;
-                attachments: string[];
-                organizer: { email: string } | undefined;
-                attendees: unknown[];
-              };
-              const syntheticActive = {
-                summary: String(activeSnap.summary ?? ""),
-                description: activeSnap.description as string | undefined,
-                startAt: String(activeSnap.startAt),
-                endAt: String(activeSnap.endAt),
-                location: activeSnap.location,
-                conferenceLink: activeSnap.conferenceLink,
-                organizer: activeSnap.organizer as { email: string } | undefined,
-                attendees:
-                  (activeSnap.attendees as {
-                    email: string;
-                    responseStatus: string;
-                    organizer?: boolean;
-                    resource?: boolean;
-                  }[]) ?? [],
-                attachments: activeSnap.attachments ?? [],
-              } as unknown as CalendarEvent;
-              activeFingerprint = materialFingerprint(syntheticActive);
-            } catch {
-              activeFingerprint = null;
-            }
-          }
+          const activeFingerprint = storedFingerprint(this.readSnapshot(newestActive.id));
           if (activeFingerprint) {
             const curFingerprint = materialFingerprint(input);
             if (activeFingerprint === curFingerprint) {

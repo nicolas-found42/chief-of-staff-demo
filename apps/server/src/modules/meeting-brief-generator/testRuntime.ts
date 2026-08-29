@@ -101,11 +101,10 @@ export function createMeetingBriefTestRuntime(
     configStore: options.configStore,
     now: () => new Date(now),
     calendarProvider: calendar,
-    // Both, because production sets calendarSnapshotRequired and the journey is
-    // the gate that blesses production wiring: running only the recheck path
-    // here would leave the snapshot path production enables unexercised.
-    calendarSnapshotRequired: true,
-    calendarRecheckRequired: true,
+    // Matches production, because the journey is the gate that blesses production
+    // wiring: "snapshot" exercises both the authoritative snapshot read and the
+    // delivery recheck, which is exactly what production enables.
+    calendarUse: "snapshot",
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",
     hubSpotConnection,

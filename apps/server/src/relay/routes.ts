@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { RelayStateStore } from "./state.js";
+import { RelayStateStore, relayBaseUrlShape } from "./state.js";
 import { relayAccess, type RelayMessage } from "./client.js";
 
 /**
@@ -14,22 +14,26 @@ export interface RelayRoutesContext {
   onInstalled: () => Promise<void>;
 }
 
+/**
+ * Hold a URL a person typed into Settings to public HTTPS. Plain HTTP is a
+ * loopback development affordance and nothing more; the environment's own
+ * address obeys the looser rule in `environmentRelayBaseUrl` instead.
+ */
 export function publicRelayBaseUrl(value: string): string {
-  const trimmed = value.trim().replace(/\/+$/, "");
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    throw new Error("Relay base URL must be a valid URL.");
+  const shape = relayBaseUrlShape(value);
+  if (!shape.ok) {
+    throw new Error(
+      shape.reason === "unparseable"
+        ? "Relay base URL must be a valid URL."
+        : "Relay base URL must contain only scheme, host, and optional port.",
+    );
   }
+  const { trimmed, url } = shape;
   const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
   if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) {
     throw new Error(
       "Relay base URL must use public HTTPS (HTTP is allowed only for loopback tests).",
     );
-  }
-  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("Relay base URL must contain only scheme, host, and optional port.");
   }
   return trimmed;
 }

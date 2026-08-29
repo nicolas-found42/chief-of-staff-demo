@@ -223,7 +223,6 @@ workspace material, and guest profiles rather than treating any one enrichment c
 enhancement.
 _Status_: live
 _Avoid_: Meeting Briefing Generator (the Relay original), Briefing Module
-
 **Meeting Brief**:
 The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
 evidence-backed guest and company context with concise conversation starters, source references and

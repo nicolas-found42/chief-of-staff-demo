@@ -78,8 +78,7 @@ function makeHost(
     getInternalDomains?: () => string[];
     ownerEmail?: string | null;
     calendarProvider?: FakeCalendarProvider;
-    calendarSnapshotRequired?: boolean;
-    calendarRecheckRequired?: boolean;
+    calendarUse?: "snapshot" | "recheck";
     gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
   } = {},
 ) {
@@ -95,8 +94,7 @@ function makeHost(
     now: () => new Date(now),
     log: () => {},
     calendarProvider: fakeCal,
-    ...(opts.calendarSnapshotRequired ? { calendarSnapshotRequired: true } : {}),
-    ...(opts.calendarRecheckRequired ? { calendarRecheckRequired: true } : {}),
+    ...(opts.calendarUse ? { calendarUse: opts.calendarUse } : {}),
     ...(opts.gmailDeliveryProvider ? { gmailDeliveryProvider: opts.gmailDeliveryProvider } : {}),
     ...(domainsFn ? { getInternalDomains: domainsFn } : {}),
     ...(owner !== null ? { getOwnerEmail: () => owner } : {}),
@@ -176,7 +174,7 @@ function defaultDeliver() {
 describe("Snapshot freezes event identity/version/occurrence, skipped when not Eligible", () => {
   it("skips when production Calendar truth no longer contains the occurrence", async () => {
     const { host, runs } = makeHost({
-      calendarSnapshotRequired: true,
+      calendarUse: "snapshot",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
       gmailDeliveryProvider: defaultDeliver(),
@@ -198,7 +196,7 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
     }
     const { host, runs } = makeHost({
       calendarProvider: new UnavailableCalendar(),
-      calendarSnapshotRequired: true,
+      calendarUse: "snapshot",
       enrich: defaultEnrich(),
       completeBrief: defaultCompleteBrief(),
       gmailDeliveryProvider: defaultDeliver(),
@@ -729,7 +727,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
     const deliverCalls: string[] = [];
     const { host, runs } = makeHost({
       calendarProvider: fake,
-      calendarRecheckRequired: true,
+      calendarUse: "recheck",
       enrich: enrichDeferred,
       completeBrief: defaultCompleteBrief(),
       gmailDeliveryProvider: {
@@ -805,7 +803,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
     const { host, runs } = makeHost({
       calendarProvider: fake,
       ownerEmail: "owner@example.com",
-      calendarRecheckRequired: true,
+      calendarUse: "recheck",
       enrich: async (_input, ctx) => {
         await gate;
         ctx.event("enrich_done", {});

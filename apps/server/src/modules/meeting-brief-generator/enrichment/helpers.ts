@@ -91,25 +91,19 @@ export async function withBoundedRetry<T>(options: {
   /** Runs before a provider-wide error rethrows, so callers can persist resumable state. */
   onProviderWide?: (error: unknown) => void;
 }): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
-  for (let attempt = 1; attempt <= PROVIDER_RETRY_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; ; attempt += 1) {
+    const finalAttempt = attempt === PROVIDER_RETRY_ATTEMPTS;
     try {
-      return {
-        ok: true,
-        value: await options.attempt(attempt, attempt === PROVIDER_RETRY_ATTEMPTS),
-      };
+      return { ok: true, value: await options.attempt(attempt, finalAttempt) };
     } catch (error) {
       if (isProviderWideError(error)) {
         options.onProviderWide?.(error);
         throw error;
       }
-      if (attempt < PROVIDER_RETRY_ATTEMPTS) {
-        options.onRetry?.(error, attempt);
-        continue;
-      }
-      return { ok: false, error };
+      if (finalAttempt) return { ok: false, error };
+      options.onRetry?.(error, attempt);
     }
   }
-  throw new Error("unreachable");
 }
 
 export function deduplicateEvidence(evidence: string[]): string[] {

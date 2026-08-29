@@ -36,27 +36,47 @@ export function hashVerifier(secret: string): string {
 }
 
 /**
+ * The shape every relay address must have, wherever it came from: scheme, host and
+ * optional port, with trailing slashes trimmed. A value carrying credentials, a
+ * path, a query or a fragment is not an origin and is refused here.
+ *
+ * The protocol rule is deliberately left to the caller, because Settings and the
+ * deployment environment accept different protocols, and so is the failure mode:
+ * one reports to a person, the other must never stop the Shell from booting.
+ */
+export type RelayBaseUrlShape =
+  | { ok: true; trimmed: string; url: URL }
+  | { ok: false; reason: "unparseable" | "not_bare_origin" };
+
+export function relayBaseUrlShape(value: string): RelayBaseUrlShape {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return { ok: false, reason: "unparseable" };
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return { ok: false, reason: "unparseable" };
+  }
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    return { ok: false, reason: "not_bare_origin" };
+  }
+  return { ok: true, trimmed, url };
+}
+
+/**
  * Accept a relay address declared by the operator in the deployment
  * environment. This is not the same input as a URL typed into Settings, which
  * `publicRelayBaseUrl` holds to public HTTPS: the environment value names a
  * service on the operator's own network — the bundled relay is
  * `http://relay:4318`, reachable only on the Compose network — so plain HTTP is
  * accepted here and nowhere else, and then only for an address that cannot be
- * public. The shape is still pinned to scheme, host and optional port, so a
- * value carrying credentials, a path or a query is refused rather than stored.
- * Returns null for anything unusable; seeding is a convenience and must never
- * stop the Shell from booting.
+ * public. Returns null for anything unusable; seeding is a convenience and must
+ * never stop the Shell from booting.
  */
 export function environmentRelayBaseUrl(value: string): string | null {
-  const trimmed = value.trim().replace(/\/+$/, "");
-  if (!trimmed) return null;
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null;
+  const shape = relayBaseUrlShape(value);
+  if (!shape.ok) return null;
+  const { trimmed, url } = shape;
   if (url.protocol === "https:") return trimmed;
   if (url.protocol !== "http:") return null;
   // Plain HTTP only where the address cannot be a public one. The installation

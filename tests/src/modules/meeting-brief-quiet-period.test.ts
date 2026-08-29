@@ -139,7 +139,7 @@ function makeHostWithFakeTime(
     now: () => new Date(now),
     log: () => {},
     calendarProvider: fakeCal,
-    calendarRecheckRequired: true,
+    calendarUse: "recheck",
     gmailDeliveryProvider: fakeGmail,
     getOwnerEmail: () => "owner@example.com",
     enrich: defaultEnrich(),
@@ -501,7 +501,7 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
       now: () => now,
       log: () => {},
       calendarProvider: fakeCal,
-      calendarRecheckRequired: true,
+      calendarUse: "recheck",
       gmailDeliveryProvider: fakeGmail,
       getOwnerEmail: () => "owner@example.com",
       enrich: async (input, ctx) => {

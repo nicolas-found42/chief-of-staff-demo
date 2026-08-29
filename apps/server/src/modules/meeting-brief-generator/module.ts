@@ -210,8 +210,9 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             } catch (error) {
               if (deps.calendarSnapshotRequired) throw error;
             }
-            // Direct fixture schedules may inject Calendar only for delivery recheck. Production
-            // always sets calendarSnapshotRequired, so a failed list cannot reach this branch.
+            // A host with calendarUse "recheck" injects Calendar for delivery only, so a
+            // failed list lands here best-effort. Production uses "snapshot", which sets
+            // calendarSnapshotRequired above, so a failed list cannot reach this branch.
             if (result) {
               const found = result.events.find(
                 (event) =>

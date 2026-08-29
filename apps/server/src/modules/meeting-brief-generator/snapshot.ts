@@ -45,6 +45,12 @@ export type StoredSnapshot = Pick<
   FrozenSnapshot,
   "eventId" | "occurrenceId" | "occurrenceKey" | "version"
 > & {
+  /**
+   * Written by every `buildFrozenSnapshot` caller. The Host compares it against the
+   * current event to decide whether a revision is material, rather than rebuilding
+   * the event the snapshot froze.
+   */
+  materialFingerprint?: string;
   supersedesRunId?: string | null;
 };
 

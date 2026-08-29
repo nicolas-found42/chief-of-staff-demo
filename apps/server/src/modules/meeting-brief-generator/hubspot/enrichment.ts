@@ -45,6 +45,17 @@ function recordArtifact(
   ctx?.writeFile(fileNameForArtifact(artifact), JSON.stringify(artifact, null, 2) + "\n");
 }
 
+/**
+ * Rethrow an error this attempt must not record as a failed artifact. A
+ * provider-wide error abandons the whole source, and before the final attempt the
+ * bounded retry needs the throw to get its next try — only the last attempt is
+ * allowed to settle a guest as failed.
+ */
+function rethrowUnlessRecordable(error: unknown, options?: { finalAttempt?: boolean }): void {
+  if (isProviderWideError(error)) throw error;
+  if (options && options.finalAttempt === false) throw error;
+}
+
 export async function enrichGuestWithHubSpot(
   api: HubSpotApi,
   eventVersion: string,
@@ -109,8 +120,7 @@ export async function enrichGuestWithHubSpot(
       ctx.event("hubspot_contact_found", { guest: normalizedEmail, contactId: contact.id });
     }
   } catch (error) {
-    if (isProviderWideError(error)) throw error;
-    if (options && options.finalAttempt === false) throw error;
+    rethrowUnlessRecordable(error, options);
     const detail = error instanceof Error ? error.message : String(error);
     const statusCode = readErrorStatus(error);
     const artifact: HubSpotEnrichmentArtifact = {
@@ -143,8 +153,7 @@ export async function enrichGuestWithHubSpot(
     companyIds = await api.getAssociatedCompanyIds(contact.id);
     companyIds = companyIds.slice(0, HUBSPOT_MAX_RESULTS);
   } catch (error) {
-    if (isProviderWideError(error)) throw error;
-    if (options && options.finalAttempt === false) throw error;
+    rethrowUnlessRecordable(error, options);
     const detail = error instanceof Error ? error.message : String(error);
     const statusCode = readErrorStatus(error);
     const artifact: HubSpotEnrichmentArtifact = {
@@ -240,8 +249,7 @@ export async function enrichGuestWithHubSpot(
         };
         recordArtifact(artifacts, sections, artifact, ctx, company.name);
       } catch (error) {
-        if (isProviderWideError(error)) throw error;
-        if (options && options.finalAttempt === false) throw error;
+        rethrowUnlessRecordable(error, options);
         const detail = error instanceof Error ? error.message : String(error);
         const statusCode = readErrorStatus(error);
         const failed: HubSpotEnrichmentArtifact = {
@@ -279,15 +287,13 @@ export async function enrichGuestWithHubSpot(
           if (!dealIds.includes(did)) dealIds.push(did);
         }
       } catch (error) {
-        if (isProviderWideError(error)) throw error;
-        if (options && options.finalAttempt === false) throw error;
+        rethrowUnlessRecordable(error, options);
         // per-company deal association failure is non-fatal on final attempt
       }
     }
     dealIds = dealIds.slice(0, HUBSPOT_MAX_RESULTS);
   } catch (error) {
-    if (isProviderWideError(error)) throw error;
-    if (options && options.finalAttempt === false) throw error;
+    rethrowUnlessRecordable(error, options);
     const detail = error instanceof Error ? error.message : String(error);
     const statusCode = readErrorStatus(error);
     const failed: HubSpotEnrichmentArtifact = {
@@ -375,8 +381,7 @@ export async function enrichGuestWithHubSpot(
         };
         recordArtifact(artifacts, sections, artifact, ctx);
       } catch (error) {
-        if (isProviderWideError(error)) throw error;
-        if (options && options.finalAttempt === false) throw error;
+        rethrowUnlessRecordable(error, options);
         const detail = error instanceof Error ? error.message : String(error);
         const statusCode = readErrorStatus(error);
         const failed: HubSpotEnrichmentArtifact = {

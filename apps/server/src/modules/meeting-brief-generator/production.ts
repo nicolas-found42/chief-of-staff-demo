@@ -120,7 +120,7 @@ export function createMeetingBriefProductionRuntime(
     configStore: options.configStore,
     getCompleteJson: options.getCompleteJson,
     calendarProvider: googleCalendarProvider,
-    calendarSnapshotRequired: true,
+    calendarUse: "snapshot",
     enrichmentProviders: {
       gmailProvider,
       calendarHistoryProvider,
