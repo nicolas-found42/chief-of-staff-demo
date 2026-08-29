@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { HubSpotConnection } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/connection";
 import { enrichGuestWithHubSpot } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/enrichment";
@@ -10,7 +10,10 @@ import type { HubSpotCompany, HubSpotContact, HubSpotDeal } from "@chief-of-staf
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
 import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
-import { fixtureGmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
+import {
+  createMeetingBriefTestRuntime,
+  fixtureGmailDeliveryProvider,
+} from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 
 function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
@@ -806,5 +809,78 @@ describe("Host seam — real Runs/Runner/durableClock/Workspace + fake HubSpot",
     };
     expect(companyArtifact.isEmployerMatch).toBe(true);
     expect(companyArtifact.stableRef).toBe("v1::alice@external.co::hubspot-company::201");
+  });
+});
+
+describe("HubSpot probe seam — hermetic under the test runtime, real HubSpot without it", () => {
+  let workspaceDir: string;
+  let configStore: ConfigStore;
+  let runs: Runs;
+  const now = () => new Date("2026-08-28T10:00:00.000Z");
+
+  beforeEach(() => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "hubspot-seam-"));
+    configStore = new ConfigStore(join(workspaceDir, "config.json"));
+    configStore.load();
+    runs = openRuns(workspaceDir);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("the test runtime's connection answers offline — the journey reaches HubSpot never", async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error("hermetic runtime must not reach the network");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const runtime = createMeetingBriefTestRuntime({
+      runs,
+      workspaceDir,
+      configStore,
+      initialNow: now(),
+    });
+    const status = await runtime.hubSpotConnection.connect("pat-na1-fake-journey-token");
+    expect(status.state).toBe("connected");
+    const check = await runtime.hubSpotConnection.verifySetup();
+    expect(check.state).toBe("healthy");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("without that seam the default probe calls HubSpot — bounded contacts GET, bearer token", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const conn = new HubSpotConnection(configStore, undefined, now);
+    const status = await conn.connect("pat-na1-production-token");
+    expect(status.state).toBe("connected");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("https://api.hubapi.com/crm/v3/objects/contacts");
+    expect(url).toContain("limit=1");
+    expect(init.method).toBe("GET");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer pat-na1-production-token",
+    );
+  });
+
+  it("without that seam a rejected token fails the real probe — nothing stored, fixture prefix is not special", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ category: "INVALID_AUTHENTICATION", message: "bad token" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const conn = new HubSpotConnection(configStore, undefined, now);
+    await expect(conn.connect("pat-na1-fake-journey-token")).rejects.toThrow(/bad token/i);
+    expect(configStore.get().modules["meeting-brief-generator"].hubspot.token).toBe("");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
