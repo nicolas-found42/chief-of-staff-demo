@@ -15,7 +15,7 @@ import type { MeetingBriefFixtureEvent } from "@chief-of-staff-demo/shared";
 
 export type AnyEvent = CalendarEvent | MeetingBriefFixtureEvent;
 
-export interface MaterialSnapshot {
+interface MaterialSnapshot {
   summary: string;
   description: string;
   startAt: string;
@@ -33,7 +33,7 @@ export interface MaterialSnapshot {
 }
 
 /** Produce deterministic material snapshot for comparison (ADR-0033). */
-export function materialSnapshot(event: AnyEvent): MaterialSnapshot {
+function materialSnapshot(event: AnyEvent): MaterialSnapshot {
   const attachments = [...(event.attachments ?? [])].sort();
   const organizerEmail = event.organizer?.email?.trim().toLowerCase() ?? null;
   const attendees = (event.attendees ?? [])
@@ -61,26 +61,4 @@ export function materialSnapshot(event: AnyEvent): MaterialSnapshot {
 
 export function materialFingerprint(event: AnyEvent): string {
   return JSON.stringify(materialSnapshot(event));
-}
-
-export function isMaterialChange(prev: AnyEvent, next: AnyEvent): boolean {
-  return materialFingerprint(prev) !== materialFingerprint(next);
-}
-
-/** Whether two events have identical material content (ignoring version/ignored metadata). */
-export function isSameMaterialVersion(prev: AnyEvent, next: AnyEvent): boolean {
-  return !isMaterialChange(prev, next);
-}
-
-/** Find the latest Run id for an occurrenceKey among a list of entries (by createdAt desc). */
-export function latestRunIdForOccurrence(
-  entries: Array<{ occurrenceKey: string; runId: string; createdAt: string }>,
-  occurrenceKey: string,
-): string | null {
-  let latest: { runId: string; createdAt: string } | null = null;
-  for (const e of entries) {
-    if (e.occurrenceKey !== occurrenceKey) continue;
-    if (!latest || Date.parse(e.createdAt) > Date.parse(latest.createdAt)) latest = e;
-  }
-  return latest?.runId ?? null;
 }

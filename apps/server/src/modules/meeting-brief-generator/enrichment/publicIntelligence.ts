@@ -62,7 +62,7 @@ function normalizeSnippet(snippet: string): string {
   return snippet.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
 }
 
-export function previousMonthWindow(eventStartAt: string): { from: string; to: string } {
+function previousMonthWindow(eventStartAt: string): { from: string; to: string } {
   const start = new Date(eventStartAt);
   const from = new Date(start);
   from.setMonth(from.getMonth() - 1);

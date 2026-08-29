@@ -12,13 +12,3 @@ export function atomicWriteJson(filePath: string, data: unknown): void {
   writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf8");
   renameSync(tmp, filePath);
 }
-
-/**
- * Atomically write raw text to `filePath` (same mkdir/tmp/rename pattern).
- */
-export function atomicWriteText(filePath: string, text: string): void {
-  mkdirSync(dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.tmp`;
-  writeFileSync(tmp, text, "utf8");
-  renameSync(tmp, filePath);
-}

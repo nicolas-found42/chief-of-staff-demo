@@ -2,7 +2,7 @@
 export const GUEST_PROFILE_PROVIDER_ID = "guest-profile" as const;
 export const GUEST_PROFILE_PROVIDER_NAME = "Guest Profile" as const;
 
-export type GuestProfileOutcome = "completed" | "empty" | "failed";
+type GuestProfileOutcome = "completed" | "empty" | "failed";
 export type GuestProfileConfidence = "high" | "medium" | "low";
 export type GuestProfileConnectionState =
   | "unconfigured"
@@ -32,14 +32,4 @@ export interface GuestProfileArtifact {
     attemptedAt: string;
     durationMs?: number;
   };
-}
-
-export interface GuestProfileRaw {
-  statusCode: number;
-  body: unknown;
-}
-
-export interface GuestProfileLookupResult {
-  artifact: GuestProfileArtifact;
-  isEmployerMatch: boolean;
 }

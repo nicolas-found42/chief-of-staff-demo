@@ -5,7 +5,7 @@ import type { CalendarAttendee, CalendarEvent } from "./calendar.js";
  * but must not be treated as employer evidence (issue://80 #32, #31).
  * For eligibility they count as external guests; for employer inference they are ignored (later waves).
  */
-export const CONSUMER_DOMAINS: ReadonlySet<string> = new Set([
+const CONSUMER_DOMAINS: ReadonlySet<string> = new Set([
   "gmail.com",
   "googlemail.com",
   "outlook.com",
@@ -34,7 +34,7 @@ export const CONSUMER_DOMAINS: ReadonlySet<string> = new Set([
 ]);
 
 /** Normalize a domain for case-insensitive comparison after email parsing. */
-export function normalizeDomain(domain: string): string {
+function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase();
 }
 
@@ -57,7 +57,7 @@ export function isConsumerDomain(domain: string): boolean {
 }
 
 /** Whether an email's domain is contained in the normalized internalDomains set. */
-export function isInternalDomain(email: string, internalDomains: string[]): boolean {
+function isInternalDomain(email: string, internalDomains: string[]): boolean {
   const domain = extractDomain(email);
   if (!domain) return false;
   const normalized = normalizeDomain(domain);
@@ -68,7 +68,7 @@ export function isInternalDomain(email: string, internalDomains: string[]): bool
 }
 
 /** Whether this attendee is a room/resource and must be ignored as guest. */
-export function isResourceAttendee(attendee: CalendarAttendee): boolean {
+function isResourceAttendee(attendee: CalendarAttendee): boolean {
   return attendee.resource === true;
 }
 

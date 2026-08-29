@@ -14,8 +14,6 @@ export interface HubSpotApi {
   getAssociatedDealIdsForCompany(companyId: string): Promise<string[]>;
 }
 
-export type HubSpotApiFactory = (token: string) => HubSpotApi;
-
 type FetchLike = typeof fetch;
 
 interface HubSpotErrorShape {

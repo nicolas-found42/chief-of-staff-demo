@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 /**
@@ -30,10 +30,6 @@ const EMPTY: RelayWorkspace = {
   channels: [],
   lastWakeUpAt: null,
 };
-
-export function relayFile(workspaceDir: string): string {
-  return join(workspaceDir, "relay.json");
-}
 
 export function hashVerifier(secret: string): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");

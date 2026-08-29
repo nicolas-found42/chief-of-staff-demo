@@ -159,7 +159,7 @@ function readCategory(error: unknown): string {
   return "";
 }
 
-export function classifyHubSpotProbeError(error: unknown): HubSpotProbeState {
+function classifyHubSpotProbeError(error: unknown): HubSpotProbeState {
   const status = readStatus(error);
   const category = readCategory(error);
   const text = error instanceof Error ? error.message : String(error);

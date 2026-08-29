@@ -53,9 +53,9 @@ const ModelOutputSchema = z.strictObject({
   uncertainty: z.array(boundedString(500)).max(20),
 });
 
-export type ModelOutput = z.infer<typeof ModelOutputSchema>;
+type ModelOutput = z.infer<typeof ModelOutputSchema>;
 
-export const MEETING_BRIEF_MODEL_SHAPE = "MeetingBrief" as const;
+const MEETING_BRIEF_MODEL_SHAPE = "MeetingBrief" as const;
 
 // ---------------------------------------------------------------------------
 // Prompt building — evidence delimited as untrusted data
@@ -76,7 +76,7 @@ Rules you must follow:
 - Source references: list every distinct source identifier you relied on. Missing evidence: name gaps by guest/company/source. Uncertainty: list explicit unknowns.
 `;
 
-export interface ComposePromptInput {
+interface ComposePromptInput {
   snapshot: MeetingBriefFixtureEvent & { occurrenceKey: string };
   sections: MeetingBriefEnrichmentSection[];
   externalGuestEmails: string[];
@@ -89,13 +89,13 @@ export interface ComposePromptInput {
   now: Date;
 }
 
-export interface ComposeMessages {
+interface ComposeMessages {
   system: string;
   user: string;
   schema: typeof ModelOutputSchema;
 }
 
-export function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
+function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
   const {
     snapshot,
     sections,
@@ -202,7 +202,7 @@ function isValidCitationFormat(value: unknown): boolean {
   return true;
 }
 
-export function validateCitations(modelOutput: ModelOutput, allowed: Set<string>): void {
+function validateCitations(modelOutput: ModelOutput, allowed: Set<string>): void {
   const issues: Array<{ field: string; value: string; reason: string }> = [];
 
   function checkList(values: string[], fieldPath: string) {
@@ -256,7 +256,7 @@ export function validateCitations(modelOutput: ModelOutput, allowed: Set<string>
   }
 }
 
-export function validateGuestsAndCompanies(
+function validateGuestsAndCompanies(
   modelOutput: ModelOutput,
   externalGuestEmails: string[],
   allowedCompanyNames: Set<string>,
@@ -317,7 +317,7 @@ export function validateGuestsAndCompanies(
   }
 }
 
-export function composeLogistics(snapshot: MeetingBriefFixtureEvent): MeetingBrief["logistics"] {
+function composeLogistics(snapshot: MeetingBriefFixtureEvent): MeetingBrief["logistics"] {
   const organizer = snapshot.organizer
     ? snapshot.organizer.displayName !== undefined
       ? { email: snapshot.organizer.email, displayName: snapshot.organizer.displayName }
@@ -449,16 +449,4 @@ export async function composeBrief(deps: ComposeBriefDeps): Promise<MeetingBrief
   parseResultShape(MEETING_BRIEF_MODEL_SHAPE, FinalSchema, brief);
 
   return brief;
-}
-
-// ---------------------------------------------------------------------------
-// Test helper: render prompt evidence delimiter check
-// ---------------------------------------------------------------------------
-
-export function isEvidenceDelimited(messages: ComposeMessages): boolean {
-  return (
-    messages.user.includes("<untrusted-evidence>") &&
-    messages.user.includes("</untrusted-evidence>") &&
-    messages.user.includes("<trusted-context>")
-  );
 }

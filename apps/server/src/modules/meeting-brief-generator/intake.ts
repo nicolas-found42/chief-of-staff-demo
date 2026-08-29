@@ -13,10 +13,10 @@ import {
 export const MEETING_BRIEF_CALENDAR_ID = "primary" as const;
 
 /** Four hours preparation lead time (issue://80). Fixed, no setting. */
-export const PREPARATION_LEAD_MS = 4 * 60 * 60 * 1000;
+const PREPARATION_LEAD_MS = 4 * 60 * 60 * 1000;
 
 /** Occurrence key for deduplication and durableClock key (ADR-0033). */
-export function occurrenceKeyFor(event: Pick<CalendarEvent, "eventId" | "occurrenceId">): string {
+function occurrenceKeyFor(event: Pick<CalendarEvent, "eventId" | "occurrenceId">): string {
   return `${event.eventId}::${event.occurrenceId}`;
 }
 

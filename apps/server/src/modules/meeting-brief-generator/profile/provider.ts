@@ -612,5 +612,3 @@ export function createFakeGuestProfileProvider(
     },
   };
 }
-
-export { normalizeArtifact };
