@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && npm run build --workspace @chief-of-staff-demo/web",
     "typecheck": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && tsc -p tests --noEmit",
-    "lint": "eslint .",
+    "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run knip && npm test",

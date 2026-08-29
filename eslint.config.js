@@ -24,6 +24,7 @@ export default tseslint.config(
       ".claude/worktrees/**",
       ".scratch/**",
       ".archive/**",
+      "coverage/**",
       "**/test-results/**",
       "**/playwright-report/**",
       "p/**",
