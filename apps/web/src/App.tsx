@@ -78,7 +78,10 @@ export function App() {
         </Routes>
       </main>
       <footer className="app-footer">
-        <span>Drafts are created, mail is never sent.</span>
+        <span>
+          Drafts are created, mail is never sent — except Meeting Briefs, which go only to your
+          connected account.
+        </span>
       </footer>
     </div>
   );

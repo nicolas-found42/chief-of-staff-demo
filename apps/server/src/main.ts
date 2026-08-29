@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError } from "fastify";
-import fastifyStatic from "@fastify/static";
 import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
+import { registerStaticServing } from "./api/static.js";
 import { registerRelayRoutes } from "./relay/routes.js";
 import { registerMeetingBriefHubSpotRoutes } from "./modules/meeting-brief-generator/hubspot/routes.js";
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
@@ -188,21 +188,7 @@ app.setErrorHandler((error: FastifyError, _request, reply) => {
 });
 
 const webDist = fileURLToPath(new URL("../../web/dist", import.meta.url));
-const webIndex = existsSync(`${webDist}/index.html`);
-if (webIndex) {
-  await app.register(fastifyStatic, { root: webDist, wildcard: false });
-}
-app.setNotFoundHandler((request, reply) => {
-  if (request.url.startsWith("/api/") || request.method !== "GET") {
-    reply.code(404).send({ error: "not found" });
-    return;
-  }
-  if (webIndex) {
-    reply.code(200).sendFile("index.html");
-    return;
-  }
-  reply.code(404).send({ error: "not found" });
-});
+await registerStaticServing(app, { webDist });
 
 await registerApi(app, {
   runs,

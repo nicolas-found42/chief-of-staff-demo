@@ -129,6 +129,12 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
     await expect(shellBanner, `banner on ${path}`).toContainText(
       "Google is not set up, so nothing can be created in Tasks or Gmail.",
     );
+    // The footer is the other piece of Shell chrome on every page, and it has
+    // to name the one shipped exception to draft-only (ADR-0034) or it tells
+    // the person something untrue about a Module they can turn on.
+    await expect(page.locator(".app-footer"), `footer on ${path}`).toContainText(
+      "mail is never sent — except Meeting Briefs, which go only to your connected account",
+    );
   }
 
   // Absent on Settings, where it would sit directly above a card that says the
