@@ -123,6 +123,8 @@ const config: AppConfig = {
       weeklyDiscoveryDay: 1,
       weeklyDiscoveryTime: "09:00",
       shortlistSize: 5,
+      canaryIntervalHours: 12,
+      canaryDisabledAdapters: [],
       notion: {
         databaseId: "",
         dataSourceId: "",

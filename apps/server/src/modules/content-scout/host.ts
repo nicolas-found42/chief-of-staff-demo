@@ -18,6 +18,7 @@ import {
   CONTENT_SCOUT_MODULE_VERSION,
   isSuccessfulSourceDiagnostic,
   SOURCE_BACKFILL_WINDOWS_DAYS,
+  CANARY_INTERVAL_MS,
 } from "@chief-of-staff-demo/shared";
 import { evaluateLinkedInEvidenceGate, type LinkedInCanaryEvidence } from "./adapters/linkedin.js";
 import type { HostedModule } from "../../engine/host.js";
@@ -190,6 +191,15 @@ export class ContentScoutHost implements HostedModule {
       adapters: deps.adapters,
       store: this.canaryStore,
       now,
+      // Say it before it happens: a batch reaches public third-party services, and
+      // issue #104 was that the traffic was invisible at the moment it left.
+      announce: (targetCount) =>
+        deps.log(
+          `Content Scout canary batch starting: ${targetCount} public target(s) will be contacted`,
+        ),
+      intervalMs: () => this.canaryIntervalMs(),
+      disabledAdapters: () =>
+        this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].canaryDisabledAdapters ?? [],
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
     });
   }
@@ -381,6 +391,25 @@ export class ContentScoutHost implements HostedModule {
 
   canaryHealth() {
     return this.canaryStore.allHealth(this.deps.adapters);
+  }
+
+  /** Configured hours between automatic batches, falling back to the shipped cadence. */
+  private canaryIntervalMs(): number {
+    const hours = this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].canaryIntervalHours;
+    return typeof hours === "number" && hours > 0 ? hours * 60 * 60 * 1000 : CANARY_INTERVAL_MS;
+  }
+
+  /**
+   * What the Settings surface needs to tell the truth about outbound canary traffic:
+   * whether automatic batches are running at all, and when the last one went out.
+   */
+  canarySchedule(): { lastRunAt: string | null; automatic: boolean; intervalHours: number } {
+    const lastRunAt = this.canaryStore.lastRunAt();
+    return {
+      lastRunAt,
+      automatic: lastRunAt !== null,
+      intervalHours: Math.round(this.canaryIntervalMs() / (60 * 60 * 1000)),
+    };
   }
 
   async runCanaries() {
@@ -862,6 +891,7 @@ export class ContentScoutHost implements HostedModule {
     app.get("/api/content-scout/canary", async () => ({
       receipts: this.canaryReceipts(),
       health: this.canaryHealth(),
+      schedule: this.canarySchedule(),
     }));
 
     app.patch("/api/content-scout/suggestions/:id", async (request, reply) => {
@@ -896,6 +926,8 @@ export class ContentScoutHost implements HostedModule {
         weeklyDiscoveryDay: number;
         weeklyDiscoveryTime: string;
         shortlistSize: number;
+        canaryIntervalHours: number;
+        canaryDisabledAdapters: string[];
       }>;
       if (
         !body.timeZone ||
@@ -907,10 +939,16 @@ export class ContentScoutHost implements HostedModule {
         body.weeklyDiscoveryDay! > 7 ||
         !Number.isInteger(body.shortlistSize) ||
         body.shortlistSize! < 3 ||
-        body.shortlistSize! > 10
+        body.shortlistSize! > 10 ||
+        !Number.isInteger(body.canaryIntervalHours) ||
+        body.canaryIntervalHours! < 1 ||
+        body.canaryIntervalHours! > 168 ||
+        !Array.isArray(body.canaryDisabledAdapters) ||
+        body.canaryDisabledAdapters.some((id) => typeof id !== "string")
       ) {
         reply.code(400).send({
-          error: "Use an IANA time zone, valid local times, weekday 1–7, and shortlist size 3–10.",
+          error:
+            "Use an IANA time zone, valid local times, weekday 1–7, shortlist size 3–10, and a canary interval of 1–168 hours.",
         });
         return;
       }
@@ -922,6 +960,8 @@ export class ContentScoutHost implements HostedModule {
         weeklyDiscoveryDay: body.weeklyDiscoveryDay!,
         weeklyDiscoveryTime: body.weeklyDiscoveryTime!,
         shortlistSize: body.shortlistSize!,
+        canaryIntervalHours: body.canaryIntervalHours!,
+        canaryDisabledAdapters: body.canaryDisabledAdapters,
       });
       return {
         settings: this.deps.configStore.get().modules[CONTENT_SCOUT_MODULE_ID],

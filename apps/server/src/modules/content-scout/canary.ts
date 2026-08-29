@@ -123,6 +123,15 @@ export interface ContentScoutCanaryRunnerDeps {
   store: ContentScoutCanaryStore;
   now?: () => Date;
   sleep?: (milliseconds: number) => Promise<void>;
+  /**
+   * Called with the target count immediately before a batch reaches the network, so
+   * the egress is announced rather than merely reported afterwards (issue #104).
+   */
+  announce?: (targetCount: number) => void;
+  /** Overrides CANARY_INTERVAL_MS when the workspace has configured its own cadence. */
+  intervalMs?: () => number;
+  /** Adapter ids this workspace declines to contact at all (issue #104). */
+  disabledAdapters?: () => readonly string[];
 }
 
 export class ContentScoutCanaryRunner {
@@ -134,9 +143,18 @@ export class ContentScoutCanaryRunner {
 
   async runOnce(): Promise<SourceCanaryReceipt[]> {
     const receipts: SourceCanaryReceipt[] = [];
-    for (const adapter of this.deps.adapters) {
+    const declined = new Set(this.deps.disabledAdapters?.() ?? []);
+    const eligible = this.deps.adapters.filter(
+      (adapter) =>
+        !declined.has(adapter.id) && (adapter.canaryTargets ?? []).length >= CANARY_MIN_TARGETS,
+    );
+    const targetCount = eligible.reduce(
+      (total, adapter) => total + (adapter.canaryTargets ?? []).length,
+      0,
+    );
+    if (targetCount > 0) this.deps.announce?.(targetCount);
+    for (const adapter of eligible) {
       const targets = adapter.canaryTargets ?? [];
-      if (targets.length < CANARY_MIN_TARGETS) continue;
       for (const target of targets) {
         const receipt = await this.runTarget(adapter, target);
         receipts.push(receipt);
@@ -148,13 +166,19 @@ export class ContentScoutCanaryRunner {
     return receipts;
   }
 
+  /**
+   * The scheduled batch, which reaches eight third-party services. A workspace that
+   * has never run one does not get one from merely starting the Shell (issue #104):
+   * the first batch is an explicit `runOnce`, and its timestamp is what puts the
+   * workspace on the cadence. Nothing here asks a person, so nothing here starts.
+   */
   async checkSchedule(): Promise<SourceCanaryReceipt[] | null> {
     const lastRunAt = this.deps.store.lastRunAt();
-    if (lastRunAt) {
-      const elapsed = this.now().getTime() - Date.parse(lastRunAt);
-      if (!Number.isFinite(elapsed) || elapsed < CANARY_INTERVAL_MS) {
-        return null;
-      }
+    if (!lastRunAt) return null;
+    const elapsed = this.now().getTime() - Date.parse(lastRunAt);
+    const interval = this.deps.intervalMs?.() ?? CANARY_INTERVAL_MS;
+    if (!Number.isFinite(elapsed) || elapsed < interval) {
+      return null;
     }
     return await this.runOnce();
   }

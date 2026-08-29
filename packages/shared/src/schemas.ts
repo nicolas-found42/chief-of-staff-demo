@@ -98,6 +98,10 @@ export const ConfigSchema = z.strictObject({
           weeklyDiscoveryDay: z.number().int().min(1).max(7).default(1),
           weeklyDiscoveryTime: z.string().default("09:00"),
           shortlistSize: z.number().int().min(3).max(10).default(5),
+          /** Hours between automatic canary batches. The first batch is always explicit (issue #104). */
+          canaryIntervalHours: z.number().int().min(1).max(168).default(12),
+          /** Adapter ids whose canary targets this workspace declines to contact (issue #104). */
+          canaryDisabledAdapters: z.array(z.string()).default([]),
           notion: z
             .strictObject({
               databaseId: z.string().default(""),
@@ -138,6 +142,8 @@ export const ConfigSchema = z.strictObject({
           weeklyDiscoveryDay: 1,
           weeklyDiscoveryTime: "09:00",
           shortlistSize: 5,
+          canaryIntervalHours: 12,
+          canaryDisabledAdapters: [],
           notion: {
             databaseId: "",
             dataSourceId: "",
@@ -203,6 +209,8 @@ export const ConfigSchema = z.strictObject({
         weeklyDiscoveryDay: 1,
         weeklyDiscoveryTime: "09:00",
         shortlistSize: 5,
+        canaryIntervalHours: 12,
+        canaryDisabledAdapters: [],
         notion: {
           databaseId: "",
           dataSourceId: "",

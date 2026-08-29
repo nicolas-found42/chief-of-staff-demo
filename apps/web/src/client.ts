@@ -105,6 +105,8 @@ export interface ContentScoutState {
     weeklyDiscoveryDay: number;
     weeklyDiscoveryTime: string;
     shortlistSize: number;
+    canaryIntervalHours: number;
+    canaryDisabledAdapters: string[];
     notion: {
       databaseId: string;
       dataSourceId: string;
@@ -365,6 +367,8 @@ export const api = {
     weeklyDiscoveryDay: number;
     weeklyDiscoveryTime: string;
     shortlistSize: number;
+    canaryIntervalHours: number;
+    canaryDisabledAdapters: string[];
   }) =>
     request<ContentScoutState>("/api/content-scout/settings", {
       method: "PATCH",

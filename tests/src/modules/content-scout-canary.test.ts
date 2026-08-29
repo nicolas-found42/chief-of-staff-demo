@@ -166,8 +166,11 @@ describe("Content Scout external canaries and release receipts", () => {
       log: () => undefined,
     });
 
-    // First check runs immediately because there is no prior receipt.
+    // The schedule alone never starts a workspace off (issue #104): the first batch
+    // is explicit, and it is what puts this workspace on the cadence.
     await host.checkCanarySchedule();
+    expect(calls).toBe(0);
+    await host.runCanaries();
     expect(calls).toBe(3); // 3 targets
     expect(host.canaryReceipts()).toHaveLength(3);
     const firstReceipt = host.canaryReceipts()[0];
@@ -616,5 +619,108 @@ describe("Content Scout external canaries and release receipts", () => {
       adapterVersion: "linkedin-public-browser-v0",
       reason: expect.stringContaining("stale adapter version"),
     });
+  });
+
+  it("announces the batch before it reaches the network (issue #104)", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-canary-announce-"));
+    const now = new Date(START.getTime());
+    const order: string[] = [];
+    const runner = new ContentScoutCanaryRunner({
+      adapters: [
+        canaryAdapter("rss", "v1", async () => {
+          order.push("contacted");
+          return successCollect(now);
+        }),
+      ],
+      store: new ContentScoutCanaryStore(workspaceDir, () => now),
+      now: () => now,
+      announce: (targetCount) => order.push(`announced:${targetCount}`),
+    });
+
+    await runner.runOnce();
+
+    // Announced once, with the real target count, and before the first request left.
+    expect(order[0]).toBe("announced:3");
+    expect(order.filter((entry) => entry.startsWith("announced:"))).toHaveLength(1);
+    expect(order.slice(1)).toEqual(["contacted", "contacted", "contacted"]);
+  });
+
+  it("contacts no targets for an adapter the workspace declined (issue #104)", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-canary-declined-"));
+    const now = new Date(START.getTime());
+    const contacted: string[] = [];
+    const adapterFor = (id: string) =>
+      canaryAdapter(id, "v1", async () => {
+        contacted.push(id);
+        return successCollect(now);
+      });
+    const store = new ContentScoutCanaryStore(workspaceDir, () => now);
+    const runner = new ContentScoutCanaryRunner({
+      adapters: [adapterFor("rss"), adapterFor("youtube")],
+      store,
+      now: () => now,
+      disabledAdapters: () => ["youtube"],
+    });
+
+    const receipts = await runner.runOnce();
+
+    expect(new Set(contacted)).toEqual(new Set(["rss"]));
+    expect(receipts.every((receipt) => receipt.adapterId === "rss")).toBe(true);
+    expect(receipts).toHaveLength(3);
+  });
+
+  it("honours a workspace-configured canary interval (issue #104)", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-canary-interval-"));
+    let now = new Date(START.getTime());
+    const oneHour = 60 * 60 * 1000;
+    const store = new ContentScoutCanaryStore(workspaceDir, () => now);
+    const runner = new ContentScoutCanaryRunner({
+      adapters: [canaryAdapter("rss", "v1", async () => successCollect(now))],
+      store,
+      now: () => now,
+      intervalMs: () => oneHour,
+    });
+
+    await runner.runOnce();
+    expect(store.list()).toHaveLength(3);
+
+    // The shipped 12-hour cadence would still be waiting here; this workspace is not.
+    now = new Date(now.getTime() + oneHour - 1000);
+    expect(await runner.checkSchedule()).toBeNull();
+    now = new Date(now.getTime() + 2000);
+    expect(await runner.checkSchedule()).toHaveLength(3);
+    expect(oneHour).toBeLessThan(CANARY_INTERVAL_MS);
+  });
+
+  it("never fires the canary batch until someone asks for it once (issue #104)", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-canary-first-run-"));
+    let now = new Date(START.getTime());
+    const store = new ContentScoutCanaryStore(workspaceDir, () => now);
+    const runner = new ContentScoutCanaryRunner({
+      adapters: [canaryAdapter("rss", "v1", async () => successCollect(now))],
+      store,
+      now: () => now,
+    });
+
+    // A fresh workspace has never run: starting the Shell must generate no egress.
+    expect(await runner.checkSchedule()).toBeNull();
+    expect(store.list()).toHaveLength(0);
+    expect(store.lastRunAt()).toBeNull();
+
+    // Waiting does not earn it either — the first batch is the person's call, not the clock's.
+    now = new Date(START.getTime() + CANARY_INTERVAL_MS * 3);
+    expect(await runner.checkSchedule()).toBeNull();
+    expect(store.list()).toHaveLength(0);
+
+    // An explicit run is what establishes the cadence.
+    expect(await runner.runOnce()).toHaveLength(3);
+    expect(store.lastRunAt()).not.toBeNull();
+
+    now = new Date(now.getTime() + 1000);
+    expect(await runner.checkSchedule()).toBeNull();
+
+    // Once established, automatic runs proceed on the interval as before.
+    now = new Date(now.getTime() + CANARY_INTERVAL_MS);
+    expect(await runner.checkSchedule()).toHaveLength(3);
   });
 });

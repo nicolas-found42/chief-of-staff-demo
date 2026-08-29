@@ -964,6 +964,8 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
     weeklyDiscoveryDay: 1,
     weeklyDiscoveryTime: "09:00",
     shortlistSize: 5,
+    canaryIntervalHours: 12,
+    canaryDisabledAdapters: [],
     notion: {
       databaseId: "",
       dataSourceId: "",
@@ -982,6 +984,10 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
   const [weeklyDiscoveryDay, setWeeklyDiscoveryDay] = useState(initial.weeklyDiscoveryDay);
   const [weeklyDiscoveryTime, setWeeklyDiscoveryTime] = useState(initial.weeklyDiscoveryTime);
   const [shortlistSize, setShortlistSize] = useState(initial.shortlistSize);
+  const [canaryIntervalHours, setCanaryIntervalHours] = useState(initial.canaryIntervalHours);
+  const [canaryDisabledAdapters, setCanaryDisabledAdapters] = useState<string[]>(
+    initial.canaryDisabledAdapters,
+  );
   const [parentPageId, setParentPageId] = useState("");
   const [databaseId, setDatabaseId] = useState(initial.notion.databaseId);
   const [dataSourceId, setDataSourceId] = useState(initial.notion.dataSourceId);
@@ -1018,6 +1024,8 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
                     weeklyDiscoveryDay,
                     weeklyDiscoveryTime,
                     shortlistSize,
+                    canaryIntervalHours,
+                    canaryDisabledAdapters,
                   }),
                 "Content Scout schedule saved.",
               );
@@ -1053,6 +1061,17 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
                 />
               </label>
               <label className="field">
+                Canary interval (hours)
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={canaryIntervalHours}
+                  onChange={(event) => setCanaryIntervalHours(Number(event.target.value))}
+                  required
+                />
+              </label>
+              <label className="field">
                 Discovery weekday
                 <select
                   value={weeklyDiscoveryDay}
@@ -1083,6 +1102,32 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
                 />
               </label>
             </div>
+            <fieldset className="field">
+              <legend>Canary targets contacted</legend>
+              <p className="muted">
+                Canary batches contact these public services to prove each adapter still works. The
+                first batch only runs when you ask for it; after that it repeats on the interval
+                above. Clear an adapter to stop contacting its targets entirely.
+              </p>
+              {state.adapters
+                .filter((adapter) => adapter.canaryTargets.length > 0)
+                .map((adapter) => (
+                  <label key={adapter.id} className="field-inline">
+                    <input
+                      type="checkbox"
+                      checked={!canaryDisabledAdapters.includes(adapter.id)}
+                      onChange={(event) =>
+                        setCanaryDisabledAdapters((current) =>
+                          event.target.checked
+                            ? current.filter((id) => id !== adapter.id)
+                            : [...current, adapter.id],
+                        )
+                      }
+                    />
+                    {adapter.id} ({adapter.canaryTargets.length} targets)
+                  </label>
+                ))}
+            </fieldset>
             <button className="primary" type="submit" aria-disabled={busy}>
               Save schedule
             </button>
