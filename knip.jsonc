@@ -5,15 +5,6 @@
       "project": ["*.js"],
     },
     "apps/server": {
-      // The three Google provider factory files below are the production seams
-      // for the Meeting Brief real-provider wave — kept for issue #103 (real
-      // Calendar provider + owner email in the production bootstrap).
-      // main.ts wires them when that wave lands; do not delete.
-      "entry": [
-        "src/modules/meeting-brief-generator/google/calendarHistory.ts",
-        "src/modules/meeting-brief-generator/google/drive.ts",
-        "src/modules/meeting-brief-generator/google/gmailDelivery.ts",
-      ],
       "project": ["src/**/*.ts"],
     },
     "apps/web": {
