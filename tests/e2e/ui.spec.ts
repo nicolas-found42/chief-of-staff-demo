@@ -62,16 +62,19 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
   // The scopes step carries its exact values, each offered to copy so none has
   // to be typed out. YouTube joined them under ADR-0016, which is the one real
   // cost of that decision: every existing connection consents once more.
+  // Gmail send joined them for the Meeting Brief owner-only auto-send
+  // (ADR-0034), with the same consent cost.
   await toggle(4).click();
   await expect(page.locator(".setup-copy > code")).toHaveText([
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/youtube.readonly",
   ]);
-  await expect(page.locator(".copy-button")).toHaveCount(6);
+  await expect(page.locator(".copy-button")).toHaveCount(7);
   await expect(
     page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true }),
   ).toBeVisible();
@@ -656,8 +659,12 @@ test("choosing a work account drops the test-user step", async ({ page }) => {
   // The open index survives the switch, so progress renumbers against the
   // shorter list. "Internal" lives in step 3's body (Google Auth Platform)
   // which is collapsed as done — open it to read the body, or check the
-  // audience hint that is always visible.
-  await expect(page.getByText("Internal")).toBeVisible();
+  // audience hint that is always visible. The hint alone names the
+  // work-account path this way, so pin it rather than the bare word, which
+  // three elements carry.
+  await expect(
+    page.getByText("A work account can set the consent screen to Internal"),
+  ).toBeVisible();
   await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 6");
   await page.getByRole("radio", { name: /personal account/ }).check();
   await expect(page.locator(".setup-steps > li")).toHaveCount(7);

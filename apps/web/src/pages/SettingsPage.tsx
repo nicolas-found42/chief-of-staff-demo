@@ -1139,11 +1139,16 @@ export function SettingsPage() {
             </p>
           ) : null}
           <div className="field-row">
+            {/* Unavailable because nothing is configured — no token typed, no
+                connection to tear down — is native `disabled`; busy is
+                `aria-disabled`, which is what the accessibility suite's busy
+                query reads. The two states never share a signal. */}
             <button
               type="button"
               className="action-button"
               onClick={() => void connectHubspot()}
-              aria-disabled={hubspotBusy || hubspotTokenInput.trim() === ""}
+              disabled={hubspotTokenInput.trim() === ""}
+              aria-disabled={hubspotBusy}
             >
               {hubspotBusy ? "Connecting…" : "Connect HubSpot"}
             </button>
@@ -1151,7 +1156,8 @@ export function SettingsPage() {
               type="button"
               className="action-button"
               onClick={() => void disconnectHubspot()}
-              aria-disabled={hubspotBusy || hubspotStatus?.state === "unconfigured"}
+              disabled={hubspotStatus?.state === "unconfigured"}
+              aria-disabled={hubspotBusy}
             >
               Disconnect
             </button>
@@ -1159,7 +1165,8 @@ export function SettingsPage() {
               type="button"
               className="action-button"
               onClick={() => void checkHubspot()}
-              aria-disabled={checkingHubspot || hubspotStatus?.state === "unconfigured"}
+              disabled={hubspotStatus?.state === "unconfigured"}
+              aria-disabled={checkingHubspot}
             >
               {checkingHubspot ? "Checking…" : "Check my setup"}
             </button>
@@ -1238,7 +1245,8 @@ export function SettingsPage() {
               type="button"
               className="action-button"
               onClick={() => void connectGuestProfile()}
-              aria-disabled={guestProfileBusy || guestProfileEndpointInput.trim() === ""}
+              disabled={guestProfileEndpointInput.trim() === ""}
+              aria-disabled={guestProfileBusy}
             >
               {guestProfileBusy ? "Connecting…" : "Connect Guest Profile"}
             </button>
@@ -1246,7 +1254,8 @@ export function SettingsPage() {
               type="button"
               className="action-button"
               onClick={() => void disconnectGuestProfile()}
-              aria-disabled={guestProfileBusy || guestProfileStatus?.state === "unconfigured"}
+              disabled={guestProfileStatus?.state === "unconfigured"}
+              aria-disabled={guestProfileBusy}
             >
               Disconnect
             </button>
@@ -1254,7 +1263,8 @@ export function SettingsPage() {
               type="button"
               className="action-button"
               onClick={() => void checkGuestProfile()}
-              aria-disabled={checkingGuestProfile || guestProfileStatus?.state === "unconfigured"}
+              disabled={guestProfileStatus?.state === "unconfigured"}
+              aria-disabled={checkingGuestProfile}
             >
               {checkingGuestProfile ? "Checking…" : "Check my setup"}
             </button>

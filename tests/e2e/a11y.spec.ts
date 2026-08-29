@@ -250,6 +250,11 @@ test("a busy control is styled, not dimmed, and only the pressed one is busy", a
   expectLegible(saving);
   // Finding 5: a page-level busy flag reported all three buttons as disabled.
   expect(saving.map((control) => control.text)).toEqual(["Saving…"]);
+  // Unavailable is not busy. The Meeting Brief connection controls that sit
+  // unused on a fresh workspace are natively disabled, so they never enter
+  // the busy query above — only a control an action actually started does.
+  await expect(page.getByRole("button", { name: "Connect HubSpot" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Disconnect" }).first()).toBeDisabled();
   await expect(save).toHaveAttribute("aria-disabled", "false", { timeout: 15_000 });
 
   await page.route("**/api/drive/sync", stall);
@@ -441,14 +446,15 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
-  // The bar lists live Modules only; Content Scout joined that sequence when
-  // its first complete selection-to-pack path became real.
+  // The bar lists live Modules only; Meeting Brief Generator joined that
+  // sequence when its production wiring became real.
   for (const name of [
     "Found42 — Chief of Staff",
     "Transcript → Tasks",
     "YouTube Trends",
     "Idea Engine",
     "Content Scout",
+    "Meeting Brief Generator",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");
