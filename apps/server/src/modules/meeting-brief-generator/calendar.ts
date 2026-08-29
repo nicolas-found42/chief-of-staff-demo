@@ -47,6 +47,39 @@ export interface CalendarProvider {
   }): Promise<CalendarListResult>;
 }
 
+/** How far ahead Intake will ever schedule an occurrence. */
+export const INTAKE_HORIZON_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Slack either side of the horizon, so an occurrence starting right now or
+ *  moved slightly outside the window is still returned. */
+const LOOKUP_PADDING_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Bound a full read that is looking for one known occurrence.
+ *
+ * A `syncToken: null` read with no window asks Google for the entire calendar
+ * and pages it 2500 events at a time, which is what the snapshot and pre-send
+ * rechecks were doing on every Run. The window is anchored on the horizon
+ * Intake itself works in, so every occurrence the Module could legitimately be
+ * holding falls inside it, and it is widened to contain the occurrence's own
+ * start so an imminent or slightly-moved meeting is still found rather than
+ * mistaken for a deleted one.
+ */
+export function occurrenceLookupWindow(
+  now: Date,
+  occurrenceStartAt: string | null | undefined,
+): { timeMin: string; timeMax: string } {
+  const nowMs = now.getTime();
+  const parsed = occurrenceStartAt ? Date.parse(occurrenceStartAt) : Number.NaN;
+  const startMs = Number.isNaN(parsed) ? nowMs : parsed;
+  return {
+    timeMin: new Date(Math.min(nowMs, startMs) - LOOKUP_PADDING_MS).toISOString(),
+    timeMax: new Date(
+      Math.max(nowMs + INTAKE_HORIZON_MS, startMs + LOOKUP_PADDING_MS),
+    ).toISOString(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Local durable state for channel identity/token/resource identity/expiration/syncToken (issue://83)
 // ---------------------------------------------------------------------------

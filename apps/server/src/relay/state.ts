@@ -41,10 +41,11 @@ export function hashVerifier(secret: string): string {
  * `publicRelayBaseUrl` holds to public HTTPS: the environment value names a
  * service on the operator's own network — the bundled relay is
  * `http://relay:4318`, reachable only on the Compose network — so plain HTTP is
- * accepted here and nowhere else. The shape is still pinned to scheme, host and
- * optional port, so a value carrying credentials, a path or a query is refused
- * rather than stored. Returns null for anything unusable; seeding is a
- * convenience and must never stop the Shell from booting.
+ * accepted here and nowhere else, and then only for an address that cannot be
+ * public. The shape is still pinned to scheme, host and optional port, so a
+ * value carrying credentials, a path or a query is refused rather than stored.
+ * Returns null for anything unusable; seeding is a convenience and must never
+ * stop the Shell from booting.
  */
 export function environmentRelayBaseUrl(value: string): string | null {
   const trimmed = value.trim().replace(/\/+$/, "");
@@ -55,9 +56,17 @@ export function environmentRelayBaseUrl(value: string): string | null {
   } catch {
     return null;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null;
-  return trimmed;
+  if (url.protocol === "https:") return trimmed;
+  if (url.protocol !== "http:") return null;
+  // Plain HTTP only where the address cannot be a public one. The installation
+  // secret travels as a bearer token, so anything resolvable on the internet
+  // must be HTTPS even when the operator declared it: a dotless hostname is a
+  // container/service name on the operator's own network (`relay`), and
+  // loopback is the local development case.
+  const host = url.hostname;
+  const privateHost = host === "127.0.0.1" || host === "::1" || host === "localhost";
+  return privateHost || !host.includes(".") ? trimmed : null;
 }
 
 export class RelayStateStore {

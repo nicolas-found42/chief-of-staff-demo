@@ -900,3 +900,46 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
     );
   });
 });
+
+describe("Calendar reads that look for one occurrence are bounded — issue #110", () => {
+  it("sends a time window on every full read, so no Run pages the whole calendar", async () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const fakeCal = new FakeCalendarProvider();
+    const realListEvents = fakeCal.listEvents.bind(fakeCal);
+    const calls: Array<{
+      syncToken: string | null | undefined;
+      timeMin: string | null | undefined;
+      timeMax: string | null | undefined;
+    }> = [];
+    fakeCal.listEvents = async (args: {
+      calendarId: string;
+      syncToken?: string | null;
+      timeMin?: string | null;
+      timeMax?: string | null;
+    }) => {
+      calls.push({ syncToken: args.syncToken, timeMin: args.timeMin, timeMax: args.timeMax });
+      return realListEvents(args);
+    };
+    const { host } = makeHostWithFakeTime(now, { fakeCal });
+    const event = fixtureEvent();
+
+    host.scheduleOccurrence(event, now);
+    await host.processDueSchedules(now);
+    await host.idle();
+
+    // Both the snapshot freeze and the pre-send recheck are full reads.
+    const fullReads = calls.filter((call) => !call.syncToken);
+    expect(fullReads.length).toBeGreaterThanOrEqual(2);
+    for (const read of fullReads) {
+      expect(read.timeMin).toBeTruthy();
+      expect(read.timeMax).toBeTruthy();
+      // The window contains the occurrence it is looking for, and starts no
+      // earlier than a day before now — never the beginning of the calendar.
+      expect(Date.parse(read.timeMin!)).toBeLessThanOrEqual(Date.parse(event.startAt));
+      expect(Date.parse(read.timeMax!)).toBeGreaterThanOrEqual(Date.parse(event.startAt));
+      expect(Date.parse(read.timeMin!)).toBeGreaterThanOrEqual(
+        now.getTime() - 24 * 60 * 60 * 1000 - 1,
+      );
+    }
+  });
+});

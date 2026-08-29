@@ -7,6 +7,7 @@ import { isEligibleMeeting } from "./eligibility.js";
 import {
   type CalendarEvent,
   type CalendarProvider,
+  INTAKE_HORIZON_MS,
   InvalidSyncTokenError,
   type MeetingBriefCalendarStore,
   newChannelId,
@@ -102,7 +103,7 @@ export async function reconcileCalendar(args: {
     // Bounded full sync uses timeMin/timeMax window (next 90 days)
     if (token === null) {
       const timeMin = args.now.toISOString();
-      const timeMax = new Date(args.now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+      const timeMax = new Date(args.now.getTime() + INTAKE_HORIZON_MS).toISOString();
       return args.provider.listEvents({ calendarId, syncToken: null, timeMin, timeMax });
     }
     return args.provider.listEvents({ calendarId, syncToken: token });

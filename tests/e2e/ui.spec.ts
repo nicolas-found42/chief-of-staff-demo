@@ -236,8 +236,11 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(page.getByTestId("runs-table")).toHaveCount(0);
 
-  // Recent activity may exist when an earlier hermetic journey created a Run;
-  // the front-door contract here is the absence of Module-owned Intake/tables.
+  // No assertion that "Recent activity" is absent: ADR-0014 revised ADR-0010 and
+  // gives Home exactly that feed, so its presence is the contract, not a leak.
+  // Whether it renders depends on whether finished Runs exist, which the shared
+  // hermetic server makes order-dependent — so the front-door contract pinned
+  // here is the absence of Module-owned Intake and tables, which is invariant.
 
   // Ticket 12 honesty rule: with Google disconnected the Runs page stays
   // silent about watching — no liveness line, no stale promise.
@@ -269,7 +272,11 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await home.getByRole("link", { name: "Transcript → Tasks" }).click();
   await expect(page).toHaveURL(/\/transcript$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
-  // Dropzone is gone — Drive folder is the Intake; Runs list stays
+  // Dropzone is gone — Drive folder is the Intake; the Runs list stays with
+  // Transcript. Either branch of the list is that surface: the table when this
+  // Module has Runs, its empty state when it has none. Which one shows depends
+  // on what earlier specs left on the shared server, so pinning the table alone
+  // would test spec order rather than the contract.
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(
     page.getByTestId("runs-table").or(page.getByText(/No runs yet/).first()),

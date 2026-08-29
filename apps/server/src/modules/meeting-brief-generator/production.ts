@@ -39,6 +39,8 @@ export interface MeetingBriefProductionRuntime {
   relayPoller: RelayWakeUpPoller;
   hubSpotConnection: HubSpotConnection;
   invalidateGoogleIdentity(): void;
+  /** Read the connected Google identity and cache it as the workspace owner. */
+  refreshOwnerIdentity(): Promise<string | null>;
 }
 
 /** Production composition root for the complete live Meeting Brief Generator. */
@@ -50,11 +52,25 @@ export function createMeetingBriefProductionRuntime(
     if (!access.ok) throw new Error(`missing_configuration: Google connection is ${access.state}`);
     return access.auth;
   };
-  let calendarOwnerEmail: string | null = null;
+  /**
+   * The workspace owner, and its only source is the connected Google identity
+   * (ADR-0034). Never event data: an attendee marked `self` is the same address
+   * in the happy case, but it arrives from the Calendar payload, it is absent
+   * whenever a read returns no event carrying it, and reading it there makes
+   * every eligibility decision depend on what a list call happened to return.
+   * `refreshOwnerIdentity` is awaited before the Module starts, so the owner is
+   * known before the first Run rather than discovered by one.
+   */
+  let ownerEmail: string | null = null;
   let deliveryOwnerEmail: string | null = null;
   const invalidateGoogleIdentity = (): void => {
-    calendarOwnerEmail = null;
+    ownerEmail = null;
     deliveryOwnerEmail = null;
+  };
+  const refreshOwnerIdentity = async (): Promise<string | null> => {
+    const status = await options.google.state();
+    ownerEmail = status.state === "connected" && status.email ? status.email.toLowerCase() : null;
+    return ownerEmail;
   };
 
   const gmailProvider: GmailProvider = {
@@ -97,27 +113,13 @@ export function createMeetingBriefProductionRuntime(
     googleCalendarTransport(requireGoogleAuth),
     workspaceCalendarRelayRegistry(relayStore),
   );
-  const calendarProvider = {
-    watchChannel: (args: Parameters<typeof googleCalendarProvider.watchChannel>[0]) =>
-      googleCalendarProvider.watchChannel(args),
-    stopChannel: (args: Parameters<typeof googleCalendarProvider.stopChannel>[0]) =>
-      googleCalendarProvider.stopChannel(args),
-    async listEvents(args: Parameters<typeof googleCalendarProvider.listEvents>[0]) {
-      const result = await googleCalendarProvider.listEvents(args);
-      const self = result.events
-        .flatMap((event) => event.attendees)
-        .find((attendee) => attendee.self && attendee.email);
-      if (self) calendarOwnerEmail = self.email.toLowerCase();
-      return result;
-    },
-  };
   const hubSpotConnection = new HubSpotConnection(options.configStore);
   const host = new MeetingBriefHost({
     runs: options.runs,
     workspaceDir: options.workspaceDir,
     configStore: options.configStore,
     getCompleteJson: options.getCompleteJson,
-    calendarProvider,
+    calendarProvider: googleCalendarProvider,
     calendarSnapshotRequired: true,
     enrichmentProviders: {
       gmailProvider,
@@ -128,7 +130,7 @@ export function createMeetingBriefProductionRuntime(
     },
     hubSpotConnection,
     gmailDeliveryProvider,
-    getOwnerEmail: () => calendarOwnerEmail,
+    getOwnerEmail: () => ownerEmail,
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({
@@ -136,5 +138,11 @@ export function createMeetingBriefProductionRuntime(
     processWakeUps: (messages) => host.handleRelayWakeUp(messages).then(() => undefined),
     ...(options.log ? { log: options.log } : {}),
   });
-  return { host, relayPoller, hubSpotConnection, invalidateGoogleIdentity };
+  return {
+    host,
+    relayPoller,
+    hubSpotConnection,
+    invalidateGoogleIdentity,
+    refreshOwnerIdentity,
+  };
 }

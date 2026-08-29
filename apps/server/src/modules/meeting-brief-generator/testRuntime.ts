@@ -101,6 +101,10 @@ export function createMeetingBriefTestRuntime(
     configStore: options.configStore,
     now: () => new Date(now),
     calendarProvider: calendar,
+    // Both, because production sets calendarSnapshotRequired and the journey is
+    // the gate that blesses production wiring: running only the recheck path
+    // here would leave the snapshot path production enables unexercised.
+    calendarSnapshotRequired: true,
     calendarRecheckRequired: true,
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",

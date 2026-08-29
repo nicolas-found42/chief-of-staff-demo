@@ -14,7 +14,7 @@ import {
 import type { RunOutcome } from "../../runs.js";
 import type { RunContext, ShellModule } from "../../engine/module.js";
 import { snapshotEligibility, buildFrozenSnapshot } from "./snapshot.js";
-import type { CalendarProvider } from "./calendar.js";
+import { occurrenceLookupWindow, type CalendarProvider } from "./calendar.js";
 import { composeBrief } from "./compose.js";
 import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { executeDeliver, deliveryIdFor, deliveryState } from "./deliver.js";
@@ -205,6 +205,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
               result = await deps.calendarProvider.listEvents({
                 calendarId: input.calendarId,
                 syncToken: null,
+                ...occurrenceLookupWindow(now(), input.startAt),
               });
             } catch (error) {
               if (deps.calendarSnapshotRequired) throw error;

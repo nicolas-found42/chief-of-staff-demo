@@ -419,6 +419,17 @@ describe("relay base URL seeded from the deployment environment — issue #109",
     expect(() => publicRelayBaseUrl("http://relay:4318")).toThrow(/public HTTPS/);
   });
 
+  it("refuses plain HTTP for an address that could be public, even from the environment", () => {
+    // The installation secret travels as a bearer token, so being declared by
+    // the operator does not buy a resolvable host the right to cleartext.
+    expect(environmentRelayBaseUrl("http://relay.example.com")).toBeNull();
+    expect(environmentRelayBaseUrl("http://203.0.113.7:4318")).toBeNull();
+    // Same hosts over HTTPS are fine, as are the private forms over HTTP.
+    expect(environmentRelayBaseUrl("https://relay.example.com")).toBe("https://relay.example.com");
+    expect(environmentRelayBaseUrl("http://127.0.0.1:4318")).toBe("http://127.0.0.1:4318");
+    expect(environmentRelayBaseUrl("http://localhost:4318")).toBe("http://localhost:4318");
+  });
+
   it("a seeded address is what status probes, and status still exposes no secrets", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
     const { app: relay } = createRelayApp();

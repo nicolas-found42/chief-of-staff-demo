@@ -202,6 +202,9 @@ await registerApi(app, {
       module.start?.();
     }
     meetingBriefProduction?.invalidateGoogleIdentity();
+    // Connecting a different Google account changes who the owner is, so read
+    // the new identity rather than leaving it null until the next restart.
+    void meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
     meetingBrief.start();
   },
 });
@@ -249,6 +252,18 @@ await app.listen({ port, host });
 console.log(
   `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`,
 );
+
+// The workspace owner has to be known before the first Run, not discovered by
+// one: eligibility drops the owner-declined rule when it is null (ADR-0034), so
+// a Run that raced the lookup would silently brief a declined meeting. Google
+// being unreachable leaves it null and is not fatal — deliver then fails
+// retryably rather than sending to nobody.
+await meetingBriefProduction?.refreshOwnerIdentity().catch((error: unknown) => {
+  console.log(
+    `[meeting-brief] owner identity unavailable at boot: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  return null;
+});
 
 for (const module of modules) {
   module.start?.();
