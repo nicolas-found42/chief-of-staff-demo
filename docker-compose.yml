@@ -7,6 +7,11 @@ services:
     # OAuth redirect URI.
     ports:
       - "127.0.0.1:4317:4317"
+    environment:
+      # Seeds the relay address on a Workspace that has none, so a fresh
+      # `docker compose up` reaches the bundled relay without a manual install
+      # step. An address stored in the Workspace always wins (issue #109).
+      RELAY_BASE_URL: http://relay:4318
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s

@@ -7,6 +7,7 @@ import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { registerStaticServing } from "./api/static.js";
 import { registerRelayRoutes } from "./relay/routes.js";
+import { seedRelayBaseUrlFromEnv } from "./relay/state.js";
 import { registerMeetingBriefHubSpotRoutes } from "./modules/meeting-brief-generator/hubspot/routes.js";
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
 import type { HostedModule } from "./engine/host.js";
@@ -204,6 +205,10 @@ await registerApi(app, {
     meetingBrief.start();
   },
 });
+// A fresh Workspace adopts the relay address the deployment declares, so the
+// bundled relay is reachable before anyone opens Settings. A stored address
+// wins, so this never overrides an operator's own choice (issue #109).
+seedRelayBaseUrlFromEnv(workspaceDir, process.env.RELAY_BASE_URL);
 registerRelayRoutes(app, {
   workspaceDir,
   processWakeUps: (messages) => meetingBrief.handleRelayWakeUp(messages).then(() => undefined),

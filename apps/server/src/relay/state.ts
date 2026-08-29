@@ -35,6 +35,31 @@ export function hashVerifier(secret: string): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
+/**
+ * Accept a relay address declared by the operator in the deployment
+ * environment. This is not the same input as a URL typed into Settings, which
+ * `publicRelayBaseUrl` holds to public HTTPS: the environment value names a
+ * service on the operator's own network — the bundled relay is
+ * `http://relay:4318`, reachable only on the Compose network — so plain HTTP is
+ * accepted here and nowhere else. The shape is still pinned to scheme, host and
+ * optional port, so a value carrying credentials, a path or a query is refused
+ * rather than stored. Returns null for anything unusable; seeding is a
+ * convenience and must never stop the Shell from booting.
+ */
+export function environmentRelayBaseUrl(value: string): string | null {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null;
+  return trimmed;
+}
+
 export class RelayStateStore {
   constructor(private readonly filePath: string) {}
 
@@ -118,4 +143,26 @@ export class RelayStateStore {
     const current = this.load();
     this.save({ ...current, channels: current.channels.filter((c) => c.channelId !== channelId) });
   }
+}
+
+/**
+ * Seed the relay address from the deployment environment on a Workspace that
+ * has none, so a fresh `docker compose up` reaches the bundled relay without
+ * anyone opening Settings first (issue #109).
+ *
+ * A stored address always wins. The environment is a default for a Workspace
+ * that never had one, never a correction to one an operator chose: overwriting
+ * would silently undo that choice on every restart.
+ */
+export function seedRelayBaseUrlFromEnv(
+  workspaceDir: string,
+  envBaseUrl: string | undefined,
+): string | null {
+  if (!envBaseUrl) return null;
+  const seeded = environmentRelayBaseUrl(envBaseUrl);
+  if (!seeded) return null;
+  const store = new RelayStateStore(`${workspaceDir}/relay.json`);
+  if (store.load().relayBaseUrl) return null;
+  store.setRelayBaseUrl(seeded);
+  return seeded;
 }

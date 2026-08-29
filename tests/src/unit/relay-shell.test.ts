@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import Fastify from "fastify";
-import { RelayStateStore, hashVerifier } from "../../../apps/server/src/relay/state.js";
+import {
+  RelayStateStore,
+  environmentRelayBaseUrl,
+  hashVerifier,
+  seedRelayBaseUrlFromEnv,
+} from "../../../apps/server/src/relay/state.js";
 import { RelayClient } from "../../../apps/server/src/relay/client.js";
 import { createRelayApp } from "../../../relay/src/app.js";
 import { publicRelayBaseUrl, registerRelayRoutes } from "../../../apps/server/src/relay/routes.js";
@@ -363,3 +368,111 @@ function processedInstallationId(workspaceDir: string): string {
   if (!state.installationId) throw new Error("expected relay installation");
   return state.installationId;
 }
+
+describe("relay base URL seeded from the deployment environment — issue #109", () => {
+  it("seeds a Workspace that has no stored address, and reports what it stored", () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
+    const store = new RelayStateStore(join(dir, "relay.json"));
+    expect(store.load().relayBaseUrl).toBeNull();
+
+    expect(seedRelayBaseUrlFromEnv(dir, "http://relay:4318")).toBe("http://relay:4318");
+    expect(store.load().relayBaseUrl).toBe("http://relay:4318");
+  });
+
+  it("never overwrites a stored address — an operator's choice survives restarts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
+    const store = new RelayStateStore(join(dir, "relay.json"));
+    store.setRelayBaseUrl("https://relay.example.com");
+
+    // Every boot re-runs the seed; the stored value has to win each time.
+    expect(seedRelayBaseUrlFromEnv(dir, "http://relay:4318")).toBeNull();
+    expect(seedRelayBaseUrlFromEnv(dir, "http://relay:4318")).toBeNull();
+    expect(store.load().relayBaseUrl).toBe("https://relay.example.com");
+  });
+
+  it("leaves the Workspace alone when the environment declares nothing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
+    expect(seedRelayBaseUrlFromEnv(dir, undefined)).toBeNull();
+    expect(seedRelayBaseUrlFromEnv(dir, "   ")).toBeNull();
+    expect(new RelayStateStore(join(dir, "relay.json")).load().relayBaseUrl).toBeNull();
+  });
+
+  it("refuses an unusable environment value rather than storing it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
+    for (const value of [
+      "not-a-url",
+      "ftp://relay:4318",
+      "http://user:pw@relay:4318",
+      "http://relay:4318/base",
+      "http://relay:4318/?x=1",
+    ]) {
+      expect(environmentRelayBaseUrl(value), value).toBeNull();
+      expect(seedRelayBaseUrlFromEnv(dir, value), value).toBeNull();
+    }
+    expect(new RelayStateStore(join(dir, "relay.json")).load().relayBaseUrl).toBeNull();
+  });
+
+  it("accepts the Compose default's plain HTTP, which Settings input still refuses", () => {
+    // The environment names a service on the operator's own network; a URL a
+    // person types into Settings is held to public HTTPS. Both rules stand.
+    expect(environmentRelayBaseUrl("http://relay:4318")).toBe("http://relay:4318");
+    expect(() => publicRelayBaseUrl("http://relay:4318")).toThrow(/public HTTPS/);
+  });
+
+  it("a seeded address is what status probes, and status still exposes no secrets", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
+    const { app: relay } = createRelayApp();
+    await relay.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = relay.server.address() as { port: number };
+
+    seedRelayBaseUrlFromEnv(dir, `http://127.0.0.1:${port}`);
+    const store = new RelayStateStore(join(dir, "relay.json"));
+    store.ensureInstallation();
+
+    const app = Fastify();
+    registerRelayRoutes(app, { workspaceDir: dir, onInstalled: async () => {} });
+    const res = await app.inject({ method: "GET", url: "/api/relay/status" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ relayBaseUrl: string; relayHealth: string }>();
+    expect(body.relayBaseUrl).toBe(`http://127.0.0.1:${port}`);
+    expect(body.relayHealth).toBe("ok");
+    // There is a secret in the Workspace, and none of it reaches the status body.
+    const secret = store.load().secret;
+    expect(secret).toMatch(/^[a-f0-9]{64}$/);
+    expect(res.body).not.toContain(secret);
+
+    await app.close();
+    await relay.close();
+  });
+
+  it("install registers against the seeded address with no body of its own", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-seed-"));
+    const { app: relay, store: relayStore } = createRelayApp();
+    await relay.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = relay.server.address() as { port: number };
+
+    seedRelayBaseUrlFromEnv(dir, `http://127.0.0.1:${port}`);
+
+    let installed = 0;
+    const app = Fastify();
+    registerRelayRoutes(app, {
+      workspaceDir: dir,
+      onInstalled: async () => {
+        installed += 1;
+      },
+    });
+    // No relayBaseUrl in the body: the seeded address is the whole input.
+    const res = await app.inject({ method: "POST", url: "/api/relay/install", payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(installed).toBe(1);
+
+    const state = new RelayStateStore(join(dir, "relay.json")).load();
+    expect(state.relayBaseUrl).toBe(`http://127.0.0.1:${port}`);
+    expect(state.installationId).not.toBeNull();
+    // The relay itself holds the installation, so registration really happened.
+    expect(relayStore.authenticateInstallation(state.installationId!, state.secret!).ok).toBe(true);
+
+    await app.close();
+    await relay.close();
+  });
+});
