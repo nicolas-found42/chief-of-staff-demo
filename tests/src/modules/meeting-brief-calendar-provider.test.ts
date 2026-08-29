@@ -151,4 +151,120 @@ describe("Google Calendar Intake adapter — issues #81 and #83", () => {
       ],
     });
   });
+
+  it("stops the Google channel and revokes the relay registration (issue #110)", async () => {
+    const order: string[] = [];
+    const relay: CalendarRelayRegistry = {
+      callbackUrl: () => "https://relay.example/google/push",
+      async registerChannel() {},
+      async revokeChannel(channelId) {
+        order.push(`relay:revoke:${channelId}`);
+      },
+    };
+    const transport: GoogleCalendarTransport = {
+      async watch() {
+        return { resourceId: null, expiration: null };
+      },
+      async stop(args) {
+        order.push(`google:stop:${args.channelId}:${String(args.resourceId)}`);
+      },
+      async list() {
+        return { events: [], nextSyncToken: null };
+      },
+    };
+
+    await createGoogleCalendarProvider(transport, relay).stopChannel({
+      channelId: "channel-1",
+      resourceId: "resource-1",
+    });
+
+    // Google first, then the relay: the registration outlives the channel it points at.
+    expect(order).toEqual(["google:stop:channel-1:resource-1", "relay:revoke:channel-1"]);
+  });
+
+  it("revokes the relay registration even when Google's stop fails, then reports the failure (issue #110)", async () => {
+    // The dangling-registration case: if a failed Google stop skipped the revoke, the
+    // relay would keep forwarding wake-ups for a channel nothing owns.
+    const revoked: string[] = [];
+    const relay: CalendarRelayRegistry = {
+      callbackUrl: () => "https://relay.example/google/push",
+      async registerChannel() {},
+      async revokeChannel(channelId) {
+        revoked.push(channelId);
+      },
+    };
+    const transport: GoogleCalendarTransport = {
+      async watch() {
+        return { resourceId: null, expiration: null };
+      },
+      async stop() {
+        throw new Error("google stop refused");
+      },
+      async list() {
+        return { events: [], nextSyncToken: null };
+      },
+    };
+
+    await expect(
+      createGoogleCalendarProvider(transport, relay).stopChannel({
+        channelId: "channel-1",
+        resourceId: "resource-1",
+      }),
+    ).rejects.toThrow(/google stop refused/);
+    expect(revoked).toEqual(["channel-1"]);
+  });
+
+  it("passes a bounded full-sync window and an incremental sync token to the transport (issue #110)", async () => {
+    const calls: {
+      calendarId: string;
+      syncToken: string | null | undefined;
+      timeMin: string | null | undefined;
+      timeMax: string | null | undefined;
+    }[] = [];
+    const relay: CalendarRelayRegistry = {
+      callbackUrl: () => "https://relay.example/google/push",
+      async registerChannel() {},
+      async revokeChannel() {},
+    };
+    const transport: GoogleCalendarTransport = {
+      async watch() {
+        return { resourceId: null, expiration: null };
+      },
+      async stop() {},
+      async list(args) {
+        calls.push({
+          calendarId: args.calendarId,
+          syncToken: args.syncToken,
+          timeMin: args.timeMin,
+          timeMax: args.timeMax,
+        });
+        return { events: [], nextSyncToken: "sync-next" };
+      },
+    };
+    const provider = createGoogleCalendarProvider(transport, relay);
+
+    // Bounded full sync: a window, no token.
+    await provider.listEvents({
+      calendarId: "primary",
+      syncToken: null,
+      timeMin: "2026-08-28T00:00:00.000Z",
+      timeMax: "2026-08-30T00:00:00.000Z",
+    });
+    // Incremental sync: a token, no window.
+    const incremental = await provider.listEvents({
+      calendarId: "primary",
+      syncToken: "sync-1",
+    });
+
+    expect(calls).toEqual([
+      {
+        calendarId: "primary",
+        syncToken: null,
+        timeMin: "2026-08-28T00:00:00.000Z",
+        timeMax: "2026-08-30T00:00:00.000Z",
+      },
+      { calendarId: "primary", syncToken: "sync-1", timeMin: undefined, timeMax: undefined },
+    ]);
+    expect(incremental.nextSyncToken).toBe("sync-next");
+  });
 });
