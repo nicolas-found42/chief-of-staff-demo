@@ -425,7 +425,7 @@ describe("Calendar push channel persistence + sync/renewal/recovery/dedup via ho
     await host.ensureCalendarWatch();
     const ch1 = host.getCalendarState().channel!;
     // Fake expiration soon
-    const soon = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const soon = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
     host
       .getCalendarStore()
       .save({ ...host.getCalendarState(), channel: { ...ch1, expiration: soon } });
