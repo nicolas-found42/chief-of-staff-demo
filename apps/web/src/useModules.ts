@@ -82,6 +82,13 @@ const MODULES: ModuleDescriptor[] = [
     status: "live",
     resultView: MeetingBriefResultView,
   },
+  {
+    id: "content-research",
+    path: "/content-research",
+    label: "Content Research",
+    description: "Named people, what is resonating for them, and why — ranked by resonance.",
+    status: "live",
+  },
 ];
 
 /**

@@ -66,6 +66,20 @@ export function MeetingBriefPage() {
     }
   }, []);
 
+  const prepareNow = useCallback(async (occurrenceKey: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.prepareMeetingBriefNow(occurrenceKey);
+      const data = await api.meetingBriefIndex();
+      setIndex(data);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -170,6 +184,16 @@ export function MeetingBriefPage() {
                   <span className="muted">Preparation due:</span>{" "}
                   <time dateTime={item.dueAt}>{new Date(item.dueAt).toLocaleString()}</time>
                 </p>
+                <button
+                  type="button"
+                  aria-disabled={busy}
+                  onClick={() => {
+                    if (busy) return;
+                    void prepareNow(item.occurrenceKey);
+                  }}
+                >
+                  Prepare now
+                </button>
               </li>
             ))}
           </ul>

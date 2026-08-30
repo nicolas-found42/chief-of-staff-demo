@@ -18,7 +18,7 @@ import {
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
-import { DurableClock } from "../../engine/durableClock.js";
+import { DurableClock, type DurableSchedule } from "../../engine/durableClock.js";
 import {
   meetingBriefModule,
   type MeetingBriefInput,
@@ -444,137 +444,160 @@ export class MeetingBriefHost implements HostedModule {
     const created: string[] = [];
     for (const record of due) {
       if (record.module !== MEETING_BRIEF_MODULE_ID) continue;
-      const key = record.key;
-      const input = record.input;
-      if (!isMeetingBriefEvent(input)) {
-        this.clock.remove(record.module, key);
-        continue;
-      }
-      const related = this.deps.runs
-        .list({ module: MEETING_BRIEF_MODULE_ID })
-        .runs.map((r) => {
-          const handle = this.deps.runs.open(r.id);
-          const meta = handle?.read();
-          const detail = this.deps.runs.detail(r.id);
-          const result = detail?.result as MeetingBriefRunResult | null;
-          return { id: r.id, meta, detail, result };
-        })
-        .filter((r) => r.meta?.externalId === key);
-      const activeRuns = related.filter(
-        (r) => r.meta && ["pending", "running", "blocked"].includes(r.meta.status),
-      );
-      if (activeRuns.length > 0) {
-        const sameVersionActive = activeRuns.some((r) => {
-          const snap = this.readSnapshot(r.id);
-          if (snap) return snap.version === input.version;
-          return r.result?.eventVersion === input.version;
-        });
-        if (sameVersionActive) {
-          this.clock.remove(record.module, key);
-          continue;
-        }
-        const hasNonQuietActive = activeRuns.some(
-          (r) => !(r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period"),
-        );
-        if (hasNonQuietActive) {
-          // Defer revision while prior Run is still enriching/composing/delivering (non-quiet)
-          continue;
-        }
-        // All active are quiet_period waits — allow new revision to supersede and reset quiet period
-      }
-
-      const duplicateVersion = related.some((r) => {
-        const snap = this.readSnapshot(r.id);
-        if (snap?.version === input.version) return true;
-        return r.result?.eventVersion === input.version;
-      });
-      if (duplicateVersion) {
-        this.clock.remove(record.module, key);
-        continue;
-      }
-
-      const doneRuns = related.filter((r) => r.meta?.status === "done" && r.result);
-      let latestDone: (typeof doneRuns)[number] | null = null;
-      for (const r of doneRuns) {
-        if (
-          !latestDone ||
-          (r.meta &&
-            latestDone.meta &&
-            Date.parse(r.meta.createdAt) > Date.parse(latestDone.meta.createdAt))
-        ) {
-          latestDone = r;
-        }
-      }
-      if (latestDone && latestDone.result) {
-        const prevFingerprint = storedFingerprint(this.readSnapshot(latestDone.id));
-        if (prevFingerprint) {
-          const curFingerprint = materialFingerprint(input);
-          if (prevFingerprint === curFingerprint) {
-            this.clock.remove(record.module, key);
-            continue;
-          }
-        }
-      }
-
-      // Ignored-metadata dedup against newest blocked/active snapshot (quiet period)
-      {
-        let newestActive: (typeof related)[number] | null = null;
-        for (const r of related) {
-          if (r.meta && ["pending", "running", "blocked"].includes(r.meta.status)) {
-            if (
-              !newestActive ||
-              (r.meta &&
-                newestActive.meta &&
-                Date.parse(r.meta.createdAt) > Date.parse(newestActive.meta.createdAt))
-            ) {
-              newestActive = r;
-            }
-          }
-        }
-        if (newestActive) {
-          const activeFingerprint = storedFingerprint(this.readSnapshot(newestActive.id));
-          if (activeFingerprint) {
-            const curFingerprint = materialFingerprint(input);
-            if (activeFingerprint === curFingerprint) {
-              this.clock.remove(record.module, key);
-              continue;
-            }
-          }
-        }
-      }
-
-      // Quiet-period supersession: if a prior revision is blocked on quiet wait, supersede it directly
-      const quietBlocked = related.filter(
-        (r) => r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period",
-      );
-      let supersedesRunId: string | null;
-      if (quietBlocked.length > 0) {
-        let latestQuiet = quietBlocked[0]!;
-        for (const r of quietBlocked) {
-          if (Date.parse(r.meta!.createdAt) > Date.parse(latestQuiet.meta!.createdAt))
-            latestQuiet = r;
-        }
-        supersedesRunId = latestQuiet.id;
-      } else {
-        supersedesRunId = latestDone?.id ?? null;
-      }
-      const runInput: MeetingBriefInput = {
-        ...input,
-        occurrenceKey: key,
-        ...(supersedesRunId ? { supersedesRunId } : {}),
-      };
-      const runId = await this.runner.startRun(
-        {
-          intake: MEETING_BRIEF_INTAKE,
-          sourceUrl: null,
-          externalId: key,
-        },
-        runInput,
-      );
-      this.clock.remove(record.module, key);
-      created.push(runId);
+      const runId = await this.startBriefForSchedule(record);
+      if (runId) created.push(runId);
     }
     return created;
+  }
+
+  /**
+   * Turn one durable schedule into a Run, applying the supersession and
+   * fingerprint rules that decide whether this occurrence still deserves one.
+   * Returns the Run id, or null when the schedule was spent without a Run.
+   */
+  private async startBriefForSchedule(record: DurableSchedule): Promise<string | null> {
+    const key = record.key;
+    const input = record.input;
+    if (!isMeetingBriefEvent(input)) {
+      this.clock.remove(record.module, key);
+      return null;
+    }
+    const related = this.deps.runs
+      .list({ module: MEETING_BRIEF_MODULE_ID })
+      .runs.map((r) => {
+        const handle = this.deps.runs.open(r.id);
+        const meta = handle?.read();
+        const detail = this.deps.runs.detail(r.id);
+        const result = detail?.result as MeetingBriefRunResult | null;
+        return { id: r.id, meta, detail, result };
+      })
+      .filter((r) => r.meta?.externalId === key);
+    const activeRuns = related.filter(
+      (r) => r.meta && ["pending", "running", "blocked"].includes(r.meta.status),
+    );
+    if (activeRuns.length > 0) {
+      const sameVersionActive = activeRuns.some((r) => {
+        const snap = this.readSnapshot(r.id);
+        if (snap) return snap.version === input.version;
+        return r.result?.eventVersion === input.version;
+      });
+      if (sameVersionActive) {
+        this.clock.remove(record.module, key);
+        return null;
+      }
+      const hasNonQuietActive = activeRuns.some(
+        (r) => !(r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period"),
+      );
+      if (hasNonQuietActive) {
+        // Defer revision while prior Run is still enriching/composing/delivering (non-quiet)
+        return null;
+      }
+      // All active are quiet_period waits — allow new revision to supersede and reset quiet period
+    }
+
+    const duplicateVersion = related.some((r) => {
+      const snap = this.readSnapshot(r.id);
+      if (snap?.version === input.version) return true;
+      return r.result?.eventVersion === input.version;
+    });
+    if (duplicateVersion) {
+      this.clock.remove(record.module, key);
+      return null;
+    }
+
+    const doneRuns = related.filter((r) => r.meta?.status === "done" && r.result);
+    let latestDone: (typeof doneRuns)[number] | null = null;
+    for (const r of doneRuns) {
+      if (
+        !latestDone ||
+        (r.meta &&
+          latestDone.meta &&
+          Date.parse(r.meta.createdAt) > Date.parse(latestDone.meta.createdAt))
+      ) {
+        latestDone = r;
+      }
+    }
+    if (latestDone && latestDone.result) {
+      const prevFingerprint = storedFingerprint(this.readSnapshot(latestDone.id));
+      if (prevFingerprint) {
+        const curFingerprint = materialFingerprint(input);
+        if (prevFingerprint === curFingerprint) {
+          this.clock.remove(record.module, key);
+          return null;
+        }
+      }
+    }
+
+    // Ignored-metadata dedup against newest blocked/active snapshot (quiet period)
+    {
+      let newestActive: (typeof related)[number] | null = null;
+      for (const r of related) {
+        if (r.meta && ["pending", "running", "blocked"].includes(r.meta.status)) {
+          if (
+            !newestActive ||
+            (r.meta &&
+              newestActive.meta &&
+              Date.parse(r.meta.createdAt) > Date.parse(newestActive.meta.createdAt))
+          ) {
+            newestActive = r;
+          }
+        }
+      }
+      if (newestActive) {
+        const activeFingerprint = storedFingerprint(this.readSnapshot(newestActive.id));
+        if (activeFingerprint) {
+          const curFingerprint = materialFingerprint(input);
+          if (activeFingerprint === curFingerprint) {
+            this.clock.remove(record.module, key);
+            return null;
+          }
+        }
+      }
+    }
+
+    // Quiet-period supersession: if a prior revision is blocked on quiet wait, supersede it directly
+    const quietBlocked = related.filter(
+      (r) => r.meta?.status === "blocked" && r.meta.wait?.reason === "quiet_period",
+    );
+    let supersedesRunId: string | null;
+    if (quietBlocked.length > 0) {
+      let latestQuiet = quietBlocked[0]!;
+      for (const r of quietBlocked) {
+        if (Date.parse(r.meta!.createdAt) > Date.parse(latestQuiet.meta!.createdAt))
+          latestQuiet = r;
+      }
+      supersedesRunId = latestQuiet.id;
+    } else {
+      supersedesRunId = latestDone?.id ?? null;
+    }
+    const runInput: MeetingBriefInput = {
+      ...input,
+      occurrenceKey: key,
+      ...(supersedesRunId ? { supersedesRunId } : {}),
+    };
+    const runId = await this.runner.startRun(
+      {
+        intake: MEETING_BRIEF_INTAKE,
+        sourceUrl: null,
+        externalId: key,
+      },
+      runInput,
+    );
+    this.clock.remove(record.module, key);
+    return runId;
+  }
+
+  /**
+   * Prepare a scheduled occurrence now rather than at its due time — the
+   * Module's manual Run. It takes the same path a due schedule does, so
+   * supersession, versioning and dedup behave identically.
+   */
+  async prepareNow(occurrenceKey: string): Promise<string | null> {
+    const record = this.clock
+      .list(MEETING_BRIEF_MODULE_ID)
+      .find((schedule) => schedule.key === occurrenceKey);
+    if (!record) throw new Error(`Meeting occurrence is not scheduled: ${occurrenceKey}`);
+    return this.startBriefForSchedule(record);
   }
 
   /** Recovery scans due records on boot (covers ADR-0032 without blocked Runs) + bounded Calendar reconciliation (issue://83). */
@@ -737,6 +760,24 @@ export class MeetingBriefHost implements HostedModule {
     });
 
     // GET /api/meeting-brief/calendar/status — channel + sync state (no token secret)
+    /* The Module's manual Run: prepare an upcoming brief without waiting for
+       its scheduled prep time. */
+    app.post("/api/meeting-brief/prepare", async (request, reply) => {
+      const body = (request.body as { occurrenceKey?: unknown } | undefined) ?? {};
+      const occurrenceKey = typeof body.occurrenceKey === "string" ? body.occurrenceKey : "";
+      if (!occurrenceKey) {
+        reply.code(400).send({ error: "occurrenceKey is required" });
+        return;
+      }
+      try {
+        const runId = await this.prepareNow(occurrenceKey);
+        return { runId, upcoming: this.listUpcoming() };
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
     app.get("/api/meeting-brief/calendar/status", async () => {
       const state = this.getCalendarState();
       return {

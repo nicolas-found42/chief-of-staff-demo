@@ -69,7 +69,9 @@ function feedMedia(entry: FeedItem): SourceItem["media"] {
 }
 
 export class RssSourceAdapter implements SourceAdapter {
-  readonly id: "rss" | "substack";
+  /** The platform id this instance collects under: `rss`, `substack`, or a
+      re-declared feed platform such as `news` (Google News RSS). */
+  readonly id: string;
   readonly state = "available" as const;
   readonly version = "rss-parser@3";
   /** The feed is fetched fresh and filtered by `since`, so any requested window is honored honestly — bounded by whatever history the feed itself still carries. */
@@ -117,7 +119,7 @@ export class RssSourceAdapter implements SourceAdapter {
   constructor(
     private readonly fetchText: PublicHttpFetch = publicHttpFetch,
     private readonly now: () => Date = () => new Date(),
-    declaration: { id: "rss" | "substack" } = { id: "rss" },
+    declaration: { id: string } = { id: "rss" },
   ) {
     this.id = declaration.id;
   }

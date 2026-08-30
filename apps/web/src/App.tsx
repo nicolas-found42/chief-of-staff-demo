@@ -2,6 +2,7 @@ import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
+import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { IdeaEnginePage } from "./pages/IdeaEnginePage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
@@ -73,6 +74,7 @@ export function App() {
           <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
           <Route path="/meeting-brief" element={<MeetingBriefPage />} />
+          <Route path="/content-research" element={<ContentResearchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

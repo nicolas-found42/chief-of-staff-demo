@@ -72,6 +72,12 @@ function defaultConfig(): AppConfig {
           },
         },
       },
+      "content-research": {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        dailyTime: "08:00",
+        weeklyDiscoveryDay: 1,
+        weeklyDiscoveryTime: "09:00",
+      },
       "meeting-brief-generator": {
         internalDomains: [],
         guestProfile: {

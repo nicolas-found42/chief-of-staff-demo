@@ -138,6 +138,12 @@ const config: AppConfig = {
         },
       },
     },
+    "content-research": {
+      timeZone: "UTC",
+      dailyTime: "08:00",
+      weeklyDiscoveryDay: 1,
+      weeklyDiscoveryTime: "09:00",
+    },
     "meeting-brief-generator": {
       internalDomains: [],
       guestProfile: {

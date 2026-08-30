@@ -100,6 +100,10 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function epochSeconds(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const text = typeof value === "string" ? value.trim() : "";
@@ -550,6 +554,18 @@ export class RedditSourceAdapter implements SourceAdapter {
       if (publishedAt && Date.parse(publishedAt) < since) continue;
       const title = stringValue(data.title) ?? null;
       const body = stringValue(data.selftext) ?? null;
+      /* Reddit publishes a post's score and comment count on the JSON route.
+         They are observed counts, so they are carried; the RSS and HTML routes
+         expose neither and report no engagement rather than a zero. */
+      const score = numberValue(data.score) ?? numberValue(data.ups);
+      const commentCount = numberValue(data.num_comments);
+      const engagement =
+        score !== null || commentCount !== null
+          ? {
+              ...(score !== null ? { redditScore: score } : {}),
+              ...(commentCount !== null ? { commentCount } : {}),
+            }
+          : undefined;
       items.push(
         this.sourceItem(request.target.id, response.url, {
           externalId,
@@ -559,6 +575,7 @@ export class RedditSourceAdapter implements SourceAdapter {
           body,
           description: null,
           publishedAt,
+          ...(engagement ? { engagement } : {}),
         }),
       );
     }
@@ -609,7 +626,14 @@ export class RedditSourceAdapter implements SourceAdapter {
     evidenceRoute: string,
     fields: Pick<
       SourceItem,
-      "externalId" | "canonicalUrl" | "author" | "title" | "body" | "description" | "publishedAt"
+      | "externalId"
+      | "canonicalUrl"
+      | "author"
+      | "title"
+      | "body"
+      | "description"
+      | "publishedAt"
+      | "engagement"
     >,
   ): SourceItem {
     const retrievedAt = this.now().toISOString();

@@ -157,6 +157,19 @@ export const ConfigSchema = z.strictObject({
             },
           },
         }),
+      "content-research": z
+        .strictObject({
+          timeZone: z.string().default("UTC"),
+          dailyTime: z.string().default("08:00"),
+          weeklyDiscoveryDay: z.number().int().min(1).max(7).default(1),
+          weeklyDiscoveryTime: z.string().default("09:00"),
+        })
+        .default({
+          timeZone: "UTC",
+          dailyTime: "08:00",
+          weeklyDiscoveryDay: 1,
+          weeklyDiscoveryTime: "09:00",
+        }),
       "meeting-brief-generator": z
         .strictObject({
           internalDomains: z
@@ -223,6 +236,12 @@ export const ConfigSchema = z.strictObject({
             scheduledDate: "Scheduled date",
           },
         },
+      },
+      "content-research": {
+        timeZone: "UTC",
+        dailyTime: "08:00",
+        weeklyDiscoveryDay: 1,
+        weeklyDiscoveryTime: "09:00",
       },
       "meeting-brief-generator": {
         internalDomains: [],

@@ -79,6 +79,18 @@ export interface SourceComment {
   engagement: number | null;
 }
 
+/** Counts a platform publishes about an item. Every field is optional: an
+    adapter reports what its platform exposes and nothing more. */
+export interface SourceEngagement {
+  views?: number;
+  likes?: number;
+  votes?: number;
+  hnPoints?: number;
+  redditScore?: number;
+  reposts?: number;
+  commentCount?: number;
+}
+
 export interface SourceItem {
   id: string;
   externalId: string;
@@ -103,6 +115,13 @@ export interface SourceItem {
     comments: SourceFieldState;
     media: SourceFieldState;
   };
+  /**
+   * Engagement the platform itself reported for this item, when it reports any.
+   * Observed counts only — never a model's estimate — and absent rather than
+   * zero when the platform exposes none, so "no engagement surface" stays
+   * distinguishable from "nobody engaged".
+   */
+  engagement?: SourceEngagement;
   /** Adapter-supplied stable story identity when the platform exposes one. */
   storyKey?: string;
   /** Deterministic claim support produced by extraction/enrichment, when known. */

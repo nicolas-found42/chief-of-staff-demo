@@ -3,6 +3,7 @@ import type {
   BrandProfileProposal,
   ContentDraft,
   ContentPack,
+  ContentResearchIndex,
   ContentShortlist,
   DriveIntakeStatus,
   GoogleStatus,
@@ -11,6 +12,8 @@ import type {
   HubSpotSetupCheck,
   HubSpotStatus,
   MeetingBriefIndex,
+  NamedPerson,
+  PersonSuggestion,
   RedactedConfig,
   RunDetail,
   RunPage,
@@ -459,6 +462,12 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ forceFullSync }),
     }),
+  prepareMeetingBriefNow: (occurrenceKey: string) =>
+    request<{ runId: string | null; upcoming: unknown[] }>("/api/meeting-brief/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ occurrenceKey }),
+    }),
   meetingBriefCalendarStatus: () =>
     request<{
       channel: {
@@ -471,6 +480,46 @@ export const api = {
       hasToken: boolean;
       lastSyncAt: string | null;
     }>("/api/meeting-brief/calendar/status"),
+  contentResearchIndex: () => request<ContentResearchIndex>("/api/content-research/index"),
+  contentResearchPeople: async (): Promise<NamedPerson[]> => {
+    const raw = await request<NamedPerson[] | { people: NamedPerson[] }>(
+      "/api/content-research/people",
+    );
+    return Array.isArray(raw) ? raw : raw.people;
+  },
+  addContentResearchPerson: (name: string, handleHints?: NamedPerson["handleHints"]) =>
+    request<{ person: NamedPerson } | NamedPerson>("/api/content-research/people", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(handleHints ? { name, handleHints } : { name }),
+    }),
+  stopWatchingContentResearchPerson: (id: string) =>
+    request<NamedPerson>(`/api/content-research/people/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  contentResearchSuggestions: async (): Promise<PersonSuggestion[]> => {
+    const raw = await request<PersonSuggestion[] | { suggestions: PersonSuggestion[] }>(
+      "/api/content-research/discovery/suggestions",
+    );
+    return Array.isArray(raw) ? raw : raw.suggestions;
+  },
+  decideContentResearchSuggestion: (id: string, action: "approved" | "dismissed" | "restore") => {
+    const path =
+      action === "restore"
+        ? `/api/content-research/discovery/${encodeURIComponent(id)}/restore`
+        : `/api/content-research/discovery/${encodeURIComponent(id)}/${action}`;
+    return request<{ suggestion: PersonSuggestion } | PersonSuggestion>(path, { method: "POST" });
+  },
+  runContentResearch: () =>
+    request<{ runId: string }>("/api/content-research/run", { method: "POST" }),
+  backfillContentResearch: (windowDays: 7 | 30 | 90) =>
+    request<{ runId: string }>("/api/content-research/backfill", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ windowDays }),
+    }),
+  discoverContentResearchPeople: () =>
+    request<{ runId: string }>("/api/content-research/discover", { method: "POST" }),
 };
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

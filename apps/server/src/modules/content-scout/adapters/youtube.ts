@@ -23,6 +23,8 @@ interface YouTubeSourceVideo {
   description: string | null;
   channelTitle: string | null;
   publishedAt: string;
+  /** What YouTube reports about the video's reception, when the API returns it. */
+  statistics?: { views?: number; likes?: number; commentCount?: number };
 }
 
 export interface YouTubeSourceClient {
@@ -33,6 +35,13 @@ export interface YouTubeSourceClient {
 
 export type YouTubeSourceAccess =
   { ok: true; client: YouTubeSourceClient } | { ok: false; state: GoogleConnectionState };
+
+/** YouTube returns counts as strings; anything unparseable is simply not a count. */
+function countOf(value: string | null | undefined): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 export function youtubeSourceClient(auth: GoogleAuth): YouTubeSourceClient {
   const api = google.youtube({ version: "v3", auth });
@@ -84,6 +93,40 @@ export function youtubeSourceClient(auth: GoogleAuth): YouTubeSourceClient {
         }
         pageToken = reachedOld ? undefined : (response.data.nextPageToken ?? undefined);
       } while (pageToken);
+      /* playlistItems carries no counts, so the statistics come from one
+         videos.list per 50 ids — YouTube's own numbers, which is what resonance
+         is scored on. A statistics call that fails leaves the videos without
+         counts rather than losing the videos. */
+      for (let index = 0; index < videos.length; index += 50) {
+        const batch = videos.slice(index, index + 50);
+        try {
+          const stats = await api.videos.list({
+            part: ["statistics"],
+            id: batch.map((video) => video.id),
+            maxResults: 50,
+          });
+          const byId = new Map(
+            (stats.data.items ?? []).flatMap((item) =>
+              item.id ? [[item.id, item.statistics] as const] : [],
+            ),
+          );
+          for (const video of batch) {
+            const statistics = byId.get(video.id);
+            if (!statistics) continue;
+            const views = countOf(statistics.viewCount);
+            const likes = countOf(statistics.likeCount);
+            const commentCount = countOf(statistics.commentCount);
+            if (views === undefined && likes === undefined && commentCount === undefined) continue;
+            video.statistics = {
+              ...(views !== undefined ? { views } : {}),
+              ...(likes !== undefined ? { likes } : {}),
+              ...(commentCount !== undefined ? { commentCount } : {}),
+            };
+          }
+        } catch {
+          // counts are an enrichment; losing them must not lose the uploads
+        }
+      }
       return videos;
     },
 
@@ -557,6 +600,7 @@ export class YouTubeSourceAdapter implements SourceAdapter {
         evidence: [
           { route: "youtube.data.playlistItems.list", retrievedAt: this.now().toISOString() },
         ],
+        ...(video.statistics ? { engagement: video.statistics } : {}),
         completeness: {
           title: "available",
           body: video.description ? "available" : "unavailable",

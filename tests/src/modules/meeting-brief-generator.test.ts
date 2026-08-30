@@ -241,6 +241,31 @@ describe("fixture event → one Run at due time via real Runner/Runs/Workspace (
     expect(enrichAttempts).toBe(2);
   });
 
+  it("prepares a scheduled brief on demand, before its due time, through the same path", async () => {
+    const event = fixtureEvent();
+    const dueAt = new Date("2026-08-28T11:00:00.000Z");
+    host.scheduleOccurrence(event, dueAt);
+
+    /* Well before the Module would wake itself: the operator should not have to
+       wait for the clock to see a brief. */
+    now = new Date("2026-08-28T09:00:00.000Z");
+    expect(await host.processDueSchedules(new Date(now))).toHaveLength(0);
+
+    const runId = await host.prepareNow(host.listUpcoming()[0].occurrenceKey);
+    expect(runId).toBeTruthy();
+    await host.idle();
+
+    const runList = runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs;
+    expect(runList).toHaveLength(1);
+    expect(runs.detail(runList[0].id)!.status).toBe("done");
+    // The schedule is spent, exactly as a due-time Run would leave it.
+    expect(host.listUpcoming()).toHaveLength(0);
+  });
+
+  it("refuses to prepare an occurrence that is not scheduled", async () => {
+    await expect(host.prepareNow("no-such-occurrence")).rejects.toThrow(/not scheduled/i);
+  });
+
   it("creates exactly one Run at due time and completes 4 Stages with fixture brief, artifacts, timeline, delivery", async () => {
     const event = fixtureEvent();
     const dueAt = new Date("2026-08-28T11:00:00.000Z");

@@ -1,0 +1,530 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import {
+  CONTENT_RESEARCH_MODULE_ID,
+  CONTENT_RESEARCH_MODULE_VERSION,
+  type ContentResearchIndex,
+  type ContentResearchRunResult,
+  type NamedPerson,
+  type PersonSuggestion,
+} from "@chief-of-staff-demo/shared";
+import type { HostedModule } from "../../engine/host.js";
+import { Runner } from "../../engine/runner.js";
+import type { Runs } from "../../runs.js";
+import type { ConfigStore } from "../../config.js";
+import { ContentResearchStore } from "./store.js";
+import { createFeedDiscoverer, type FeedDiscoverer } from "./feeds.js";
+import type { HookExtractor, PeopleDiscoverer, SheetsAccess, GmailAccess } from "./ports.js";
+import type { SourceAdapter } from "../content-scout/ports.js";
+import {
+  CONTENT_RESEARCH_DISCOVERY_INTAKE,
+  CONTENT_RESEARCH_INTAKE,
+  CONTENT_RESEARCH_BACKFILL_INTAKE,
+  contentResearchBackfillModule,
+  contentResearchModule,
+  peopleDiscoveryModule,
+  type ContentResearchInput,
+} from "./module.js";
+import { DateTime } from "luxon";
+import { errorMessage } from "../../engine/failure.js";
+
+export interface ContentResearchHostDeps {
+  runs: Runs;
+  workspaceDir: string;
+  adapters: SourceAdapter[];
+  hookExtractor: HookExtractor;
+  discoverer?: PeopleDiscoverer;
+  sheetsFactory?: () => SheetsAccess;
+  gmailFactory?: () => GmailAccess;
+  getOwnerEmail?: () => string | null;
+  getBrandProfile?: () => { markdown: string } | null;
+  discoverFeeds?: FeedDiscoverer;
+  configStore?: ConfigStore;
+  now?: () => Date;
+  log?: (message: string) => void;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+export class ContentResearchHost implements HostedModule {
+  readonly id = CONTENT_RESEARCH_MODULE_ID;
+  readonly version = CONTENT_RESEARCH_MODULE_VERSION;
+
+  private readonly store: ContentResearchStore;
+  private readonly runner: Runner<ContentResearchInput>;
+  private readonly backfillRunner: Runner<{ windowDays: 7 | 30 | 90 }>;
+  private readonly discoveryRunner: Runner<{ invocation: "manual" | "scheduled" }>;
+  private scheduleTimer: NodeJS.Timeout | null = null;
+  private checkingSchedule = false;
+  private readonly deps: ContentResearchHostDeps;
+  private readonly discoverFeeds: FeedDiscoverer;
+
+  constructor(deps: ContentResearchHostDeps) {
+    this.deps = deps;
+    const now = deps.now ?? (() => new Date());
+    const log = deps.log ?? (() => {});
+    const sleep =
+      deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    this.store = new ContentResearchStore(deps.workspaceDir, now);
+    this.discoverFeeds = deps.discoverFeeds ?? createFeedDiscoverer();
+
+    const hookExtractor = deps.hookExtractor;
+    const sheets = deps.sheetsFactory ?? (() => ({ ok: false, state: "unconfigured" }));
+    const gmail = deps.gmailFactory ?? (() => ({ ok: false, state: "unconfigured" }));
+    const getOwnerEmail = deps.getOwnerEmail ?? (() => null);
+
+    this.runner = new Runner({
+      runs: deps.runs,
+      module: contentResearchModule({
+        store: this.store,
+        adapters: deps.adapters,
+        hookExtractor,
+        sheets,
+        gmail,
+        getOwnerEmail,
+        now,
+        sleep,
+        runs: deps.runs,
+        log,
+      }),
+      now,
+      log,
+    });
+
+    this.backfillRunner = new Runner({
+      runs: deps.runs,
+      module: contentResearchBackfillModule({
+        store: this.store,
+        adapters: deps.adapters,
+        hookExtractor,
+        sheets,
+        gmail,
+        getOwnerEmail,
+        now,
+        sleep,
+        runs: deps.runs,
+      }),
+      now,
+      log,
+    });
+
+    this.discoveryRunner = new Runner({
+      runs: deps.runs,
+      module: peopleDiscoveryModule({
+        store: this.store,
+        brandProfile: deps.getBrandProfile ?? (() => null),
+        discoverer: deps.discoverer ?? {
+          async discover() {
+            return [];
+          },
+        },
+        now,
+      }),
+      now,
+      log,
+    });
+  }
+
+  addPerson(input: {
+    name: string;
+    handleHints?: NamedPerson["handleHints"];
+    discoveredSourceTargets?: NamedPerson["discoveredSourceTargets"];
+  }): NamedPerson {
+    return this.store.addPerson(input);
+  }
+
+  /**
+   * Resolve the feeds a Named Person's known sites declare about themselves and
+   * record them as `rss` Source Targets, so adding or approving a person is one
+   * click and the watchlist covers wherever they publish (spec #116 stories 2
+   * and 24). A site that cannot be reached simply contributes no feed: the
+   * person stays watched on every surface that resolved.
+   */
+  async resolveSourceTargets(personId: string): Promise<NamedPerson> {
+    const person = this.store.getPerson(personId);
+    if (!person) throw new Error(`Named Person not found: ${personId}`);
+    const targets = [...person.discoveredSourceTargets];
+    const known = new Set(targets.map((target) => target.url));
+    const sites = new Set<string>();
+    for (const value of [
+      ...person.handleHints.blogRssHints,
+      ...person.discoveredSourceTargets.map((target) => target.url),
+    ]) {
+      try {
+        sites.add(`${new URL(value).origin}/`);
+      } catch {
+        // a hint that is not a URL names no site to ask
+      }
+    }
+    for (const site of sites) {
+      let feeds: Awaited<ReturnType<FeedDiscoverer>>;
+      try {
+        feeds = await this.discoverFeeds(site);
+      } catch (error) {
+        this.deps.log?.(`Feed discovery failed for ${site}: ${errorMessage(error)}`);
+        continue;
+      }
+      for (const feed of feeds) {
+        if (known.has(feed.url)) continue;
+        known.add(feed.url);
+        targets.push({
+          adapterId: "rss",
+          url: feed.url,
+          label: feed.title ?? `${person.name} feed`,
+        });
+      }
+    }
+    return targets.length === person.discoveredSourceTargets.length
+      ? person
+      : this.store.updatePersonSourceTargets(personId, targets);
+  }
+
+  /** Resolves when every enqueued Run has settled (test seam). */
+  idle(): Promise<void> {
+    return Promise.all([
+      this.runner.idle(),
+      this.backfillRunner.idle(),
+      this.discoveryRunner.idle(),
+    ]).then(() => undefined);
+  }
+
+  listPeople(): NamedPerson[] {
+    return this.store.listPeople();
+  }
+
+  listAllPeople(): NamedPerson[] {
+    return this.store.listAllPeople();
+  }
+
+  archivePerson(id: string): NamedPerson {
+    return this.store.archivePerson(id);
+  }
+
+  listSuggestions(): PersonSuggestion[] {
+    return this.store.listSuggestions();
+  }
+
+  decideSuggestion(
+    id: string,
+    decision: "approved" | "dismissed",
+    reason: string | null,
+  ): PersonSuggestion {
+    return this.store.decideSuggestion(id, decision, reason);
+  }
+
+  restoreSuggestion(id: string): PersonSuggestion {
+    return this.store.restoreSuggestion(id);
+  }
+
+  scheduleState() {
+    return this.store.scheduleState();
+  }
+
+  getDailyCheckpoint(): string | null {
+    return this.store.getDailyCheckpoint();
+  }
+
+  async researchNow(
+    invocation: "manual" | "scheduled" = "manual",
+    period?: string,
+  ): Promise<string> {
+    return this.runner.startRun(
+      {
+        intake: CONTENT_RESEARCH_INTAKE,
+        fileName: "Content Research daily",
+        sourceUrl: null,
+        externalId: period ?? null,
+      },
+      { kind: "intake", invocation },
+    );
+  }
+
+  async backfillNow(windowDays: 7 | 30 | 90): Promise<string> {
+    return this.backfillRunner.startRun(
+      {
+        intake: CONTENT_RESEARCH_BACKFILL_INTAKE,
+        fileName: `Content Research backfill ${windowDays}d`,
+        sourceUrl: null,
+        externalId: `backfill:${windowDays}`,
+      },
+      { windowDays },
+    );
+  }
+  async discoverNow(
+    invocation: "manual" | "scheduled" = "manual",
+    period?: string,
+  ): Promise<string> {
+    return this.discoveryRunner.startRun(
+      {
+        intake: CONTENT_RESEARCH_DISCOVERY_INTAKE,
+        fileName: "People Discovery",
+        sourceUrl: null,
+        externalId: period ?? null,
+      },
+      { invocation },
+    );
+  }
+
+  async retryRun(id: string): Promise<import("@chief-of-staff-demo/shared").RunMeta> {
+    // Try each runner that may own the run
+    try {
+      return await this.runner.retryRun(id);
+    } catch {
+      try {
+        return await this.backfillRunner.retryRun(id);
+      } catch {
+        return await this.discoveryRunner.retryRun(id);
+      }
+    }
+  }
+
+  getIndex(): ContentResearchIndex {
+    const all = this.deps.runs.list({ module: this.id, limit: 200 });
+    const byPersonMap = new Map<string, ContentResearchIndex["byPerson"][number]>();
+    const runs: ContentResearchIndex["runs"] = [];
+
+    for (const summary of all.runs) {
+      runs.push({
+        runId: summary.id,
+        intake: summary.intake,
+        status: summary.status,
+        createdAt: summary.createdAt,
+        summary: summary.summary ?? "",
+      });
+
+      const handle = this.deps.runs.open(summary.id);
+      if (!handle) continue;
+      const raw = handle.readArtifact("result.json");
+      if (!raw) continue;
+      try {
+        const result = JSON.parse(raw) as ContentResearchRunResult;
+        for (const report of result.reports) {
+          let entry = byPersonMap.get(report.personId);
+          if (!entry) {
+            entry = { personId: report.personId, personName: report.personName, reports: [] };
+            byPersonMap.set(report.personId, entry);
+          }
+          const maxScore =
+            report.items.length > 0 ? Math.max(...report.items.map((i) => i.resonanceScore)) : 0;
+          entry.reports.push({
+            runId: summary.id,
+            generatedAt: report.generatedAt,
+            resonanceScoreMax: maxScore,
+            items: report.items,
+          });
+        }
+      } catch {
+        // ignore parse failure
+      }
+    }
+
+    // Sort reports newest first
+    for (const entry of byPersonMap.values()) {
+      entry.reports.sort((a, b) => (a.generatedAt < b.generatedAt ? 1 : -1));
+    }
+
+    return { byPerson: [...byPersonMap.values()], runs };
+  }
+
+  start(): void {
+    this.runner.startRecoveryLoop();
+    this.backfillRunner.startRecoveryLoop();
+    this.discoveryRunner.startRecoveryLoop();
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer);
+    void this.checkSchedules();
+    this.scheduleTimer = setInterval(() => {
+      void this.checkSchedules();
+    }, 30_000);
+    this.scheduleTimer.unref();
+  }
+
+  stop(): void {
+    this.runner.stopRecoveryLoop();
+    this.backfillRunner.stopRecoveryLoop();
+    this.discoveryRunner.stopRecoveryLoop();
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer);
+    this.scheduleTimer = null;
+  }
+
+  /** Daily Run at the configured local time; weekly People Discovery, same clock. */
+  async checkSchedules(): Promise<void> {
+    if (this.checkingSchedule || !this.deps.configStore) return;
+    this.checkingSchedule = true;
+    try {
+      const config = this.deps.configStore.get().modules[CONTENT_RESEARCH_MODULE_ID];
+      const local = DateTime.fromJSDate((this.deps.now ?? (() => new Date()))()).setZone(
+        config.timeZone,
+      );
+      if (!local.isValid) {
+        this.deps.log?.(`Content Research schedule has invalid IANA time zone: ${config.timeZone}`);
+        return;
+      }
+      const state = this.store.scheduleState();
+      const hasPeople = this.store.listPeople().length > 0;
+
+      const dailyPeriod = local.toISODate();
+      const [dailyHour, dailyMinute] = parseLocalTime(config.dailyTime);
+      const dailyDue =
+        local.hour > dailyHour || (local.hour === dailyHour && local.minute >= dailyMinute);
+      if (
+        hasPeople &&
+        dailyDue &&
+        state.lastSuccessfulDailyPeriod !== dailyPeriod &&
+        !this.periodRunExists(CONTENT_RESEARCH_INTAKE, dailyPeriod)
+      ) {
+        await this.researchNow("scheduled", dailyPeriod);
+      }
+
+      const weeklyPeriod = `${local.weekYear}-W${String(local.weekNumber).padStart(2, "0")}`;
+      const [weeklyHour, weeklyMinute] = parseLocalTime(config.weeklyDiscoveryTime);
+      const weeklyDue =
+        local.weekday > config.weeklyDiscoveryDay ||
+        (local.weekday === config.weeklyDiscoveryDay &&
+          (local.hour > weeklyHour || (local.hour === weeklyHour && local.minute >= weeklyMinute)));
+      if (
+        hasPeople &&
+        weeklyDue &&
+        state.lastSuccessfulDiscoveryPeriod !== weeklyPeriod &&
+        !this.periodRunExists(CONTENT_RESEARCH_DISCOVERY_INTAKE, weeklyPeriod)
+      ) {
+        await this.discoverNow("scheduled", weeklyPeriod);
+      }
+    } finally {
+      this.checkingSchedule = false;
+    }
+  }
+
+  private periodRunExists(intake: string, period: string): boolean {
+    return this.deps.runs.list({ module: this.id }).runs.some((summary) => {
+      const run = this.deps.runs.open(summary.id)?.read();
+      return run?.intake === intake && run.externalId === period;
+    });
+  }
+  routes(app: FastifyInstance): void {
+    app.get("/api/content-research/people", async () => this.listPeople());
+
+    app.post("/api/content-research/people", async (request, reply) => {
+      const body = (request.body ?? {}) as { name?: unknown; handleHints?: unknown };
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name) {
+        reply.code(400).send({ error: "name is required" });
+        return;
+      }
+      const handleHints = (body.handleHints as NamedPerson["handleHints"] | undefined) ?? {
+        blogRssHints: [],
+      };
+      const person = this.addPerson({ name, handleHints });
+      /* Adding a person is one click: their sites are asked what feeds they
+         publish before the answer comes back (spec #116 story 2). */
+      return this.resolveSourceTargets(person.id);
+    });
+
+    /* Archived, not deleted: the Runs that already scored this person keep
+       naming someone the Workspace can still resolve. */
+    app.delete("/api/content-research/people/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        return this.archivePerson(id);
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.get("/api/content-research/discovery/suggestions", async () => this.listSuggestions());
+
+    app.post("/api/content-research/discovery/:id/approve", async (request, reply) => {
+      const params = request.params as { id: string };
+      try {
+        const suggestion = this.decideSuggestion(params.id, "approved", null);
+        const person = this.listPeople().find(
+          (candidate) => candidate.name.toLowerCase() === suggestion.name.toLowerCase(),
+        );
+        if (person) await this.resolveSourceTargets(person.id);
+        return suggestion;
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.post("/api/content-research/discovery/:id/dismiss", async (request, reply) => {
+      const params = request.params as { id: string };
+      const body = (request.body as { reason?: unknown } | null) ?? {};
+      const reason = typeof body.reason === "string" ? body.reason : null;
+      try {
+        const result = this.decideSuggestion(params.id, "dismissed", reason);
+        return result;
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.post("/api/content-research/discovery/:id/restore", async (request, reply) => {
+      const params = request.params as { id: string };
+      try {
+        const result = this.restoreSuggestion(params.id);
+        return result;
+      } catch (error) {
+        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    });
+
+    app.get("/api/content-research/index", async () => this.getIndex());
+
+    app.get("/api/content-research/runs", async () => {
+      const page = this.deps.runs.list({ module: this.id, limit: 50 });
+      return page;
+    });
+
+    app.get("/api/content-research/report/:runId", async (request, reply) => {
+      const params = request.params as { runId: string };
+      const handle = this.deps.runs.open(params.runId);
+      if (!handle) {
+        reply.code(404).send({ error: "Run not found" });
+        return;
+      }
+      const raw = handle.readArtifact("result.json");
+      if (!raw) {
+        reply.code(404).send({ error: "Result not found" });
+        return;
+      }
+      reply.header("content-type", "application/json");
+      return reply.send(raw);
+    });
+
+    app.post("/api/content-research/run", async () => {
+      const id = await this.researchNow("manual");
+      return { runId: id };
+    });
+
+    const backfillSchema = z.object({
+      windowDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
+    });
+    app.post("/api/content-research/backfill", async (request, reply) => {
+      const parsed = backfillSchema.safeParse(request.body);
+      if (!parsed.success) {
+        reply.code(400).send({ error: "windowDays must be 7, 30, or 90" });
+        return;
+      }
+      const id = await this.backfillNow(parsed.data.windowDays);
+      return { runId: id };
+    });
+
+    app.post("/api/content-research/discover", async () => {
+      const id = await this.discoverNow("manual");
+      return { runId: id };
+    });
+
+    app.get("/api/content-research/schedule", async () => this.scheduleState());
+  }
+}
+
+function parseLocalTime(value: string): [number, number] {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return [0, 0];
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  return hour <= 23 && minute <= 59 ? [hour, minute] : [0, 0];
+}

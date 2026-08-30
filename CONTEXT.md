@@ -288,3 +288,29 @@ _Avoid_: Custom Prompt, custom prompt
 **Evidence**:
 The time stamp and verbatim quote that prove a Content Idea was said by the workspace owner,
 plus a confidence score. Stored in the Run result for audit; not written to the Sheet.
+_Avoid_: proof (alone), citation (alone)
+
+**Content Research**:
+A Module that watches a curated set of Named People wherever they publish and reports what is resonating, why, and with what hook. It owns its Runs; it does not reuse Content Scout's Runs.
+_Status_: live (spec #116, 2026-08-30)
+_Avoid_: Content Scout, LinkedIn Content Researcher, Post Analyzer
+
+**Named Person**:
+A person Content Research is configured to watch. They are identified by name and optional handle hints (for example Bluesky DID, YouTube channel, HN username) and resolve to one or more Source Target-equivalent feeds or channels. The set is curated by the workspace owner.
+_Avoid_: profile, handle (alone), lead
+
+**Person Suggestion**:
+A proposed Named Person found during a People Discovery Run. It records why it was suggested, the supporting URLs, and its relationship to the Brand Profile or approved Named People. It is never watched on schedule until a person approves it; dismissed suggestions remain local and may later be restored, and prevent automatic re-suggestion while dismissed.
+_Avoid_: Discovered person, recommendation (alone)
+
+**People Discovery Run**:
+A weekly or manually started Content Research Run that uses the Brand Profile, approved Named People, and their collected Source Items to propose Person Suggestions from co-mentions, citations, outbound links, and related accounts surfaced by public search. It finishes without waiting for approval; suggestion decisions live in the Module's persistent person view.
+_Avoid_: Discovery scan, people crawl
+
+**Resonance Report**:
+The structured result one Content Research Run produces for one Named Person: the top timely Source Items attributed to that person, each with its resonance evidence and a hook. It is the Module's primary result; Output Adapters render the same report.
+_Avoid_: Briefing (alone), digest (alone), content report
+
+**Resonance Score**:
+The per–Source Item measure of how much a piece is resonating, computed as a z-score against the person's 90-day baseline rolled up across platforms, combined with platform-weighted counts. It is an observed signal, not an LLM judgement.
+_Avoid_: popularity score, engagement score, virality

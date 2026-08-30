@@ -12,6 +12,7 @@ const ROUTES = [
   "/idea-engine",
   "/content-scout",
   "/meeting-brief",
+  "/content-research",
   "/settings",
   "/settings?google=connected",
   "/settings?google=error",
@@ -446,8 +447,8 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
-  // The bar lists live Modules only; Meeting Brief Generator joined that
-  // sequence when its production wiring became real.
+  // The bar lists live Modules only; each Module joins that sequence when its
+  // production wiring becomes real.
   for (const name of [
     "Found42 — Chief of Staff",
     "Transcript → Tasks",
@@ -455,6 +456,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
     "Idea Engine",
     "Content Scout",
     "Meeting Brief Generator",
+    "Content Research",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");

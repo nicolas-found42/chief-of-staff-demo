@@ -1,0 +1,5 @@
+# Content Research watches Named People and is its own Module
+
+Content Research replaces Relay's LinkedIn-facing "11 profiles" watch (LI Content Researcher / LinkedIn Post Analyzer) with a people-first watch that survives the loss of LinkedIn. We decided it is its own Module watching Named People wherever they publish (not a Content Scout Source Target set with a different output), with a weekly People Discovery Run proposing Person Suggestions and a daily Run producing a per-person Resonance Report scored by velocity (z-score vs 90-day baseline) plus an LLM-extracted hook.
+
+We chose people-first because the job is "what is *this person* saying that's landing, and why" — not "what did these feeds publish." A source-first config would conflate Content Scout's brand-aligned opportunity discovery with people-tracking and lose the per-person baseline that makes "resonating" meaningful. The separate Module keeps Content Scout's Source Discovery Run, Content Opportunity, and Content Pack intact while giving Content Research its own cross-Run index (primary by Person), Resonance Score definition, and Sheet ledger keyed on (person, canonicalUrl).

@@ -5,4 +5,5 @@ export * from "./youtube.js";
 export * from "./idea-engine.js";
 export * from "./content-scout.js";
 export * from "./meeting-brief.js";
+export * from "./content-research.js";
 export * from "./llm.js";

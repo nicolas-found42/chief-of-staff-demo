@@ -169,3 +169,43 @@ export function isSpreadsheetMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /Requested entity was not found|notFound/i.test(message);
 }
+
+/**
+ * Read every row of one tab, or null when the tab has no values yet. Exists for
+ * the read-then-write ledger upsert (spec #116): whether a (person, canonicalUrl)
+ * row already exists is a fact about the Sheet, not about the Run asking.
+ */
+export async function readRows(
+  auth: GoogleAuth,
+  spreadsheetId: string,
+  tab: string,
+): Promise<(string | number)[][] | null> {
+  const sheets = google.sheets({ version: "v4", auth });
+  const read = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${tab.replace(/'/g, "''")}'`,
+  });
+  const values = read.data.values;
+  return Array.isArray(values) ? (values as (string | number)[][]) : null;
+}
+
+/**
+ * Rewrite one row in place (1-indexed including the header). Reserved for the
+ * ledger upsert's update branch: an existing (person, canonicalUrl) row whose
+ * resonanceScore moved. Everything else stays append-only.
+ */
+export async function updateRow(
+  auth: GoogleAuth,
+  spreadsheetId: string,
+  tab: string,
+  rowNumber: number,
+  values: (string | number)[],
+): Promise<void> {
+  const sheets = google.sheets({ version: "v4", auth });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${tab.replace(/'/g, "''")}'!A${rowNumber}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [values] },
+  });
+}

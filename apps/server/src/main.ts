@@ -40,6 +40,21 @@ import {
 } from "./modules/content-scout/notion.js";
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
+import { ContentResearchHost } from "./modules/content-research/host.js";
+import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
+import { contentResearchProductionAdapters } from "./modules/content-research/adapters/production.js";
+import { seedContentResearchV1 } from "./modules/content-research/seed.js";
+import { ContentScoutStore } from "./modules/content-scout/store.js";
+import { buildGoogleAuth } from "./google/oauth.js";
+import {
+  createSpreadsheet,
+  ensureTab,
+  appendRows,
+  readRows,
+  updateRow,
+  isSpreadsheetMissing,
+} from "./google/sheets.js";
+import { createGmailDraft } from "./google/gmail.js";
 
 const port = Number(process.env.PORT ?? 4317);
 /* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
@@ -146,6 +161,99 @@ const contentScout = new ContentScoutHost({
   runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
   log: (message) => console.log(`[content-scout] ${message}`),
 });
+const contentResearchCompleteJson = () => {
+  const current = configStore.get();
+  return makeCompleteJson(
+    {
+      provider: current.provider,
+      model: current.model,
+      apiKey: current.apiKey,
+      baseUrl: current.ollama.baseUrl,
+    },
+    layout.mockResultFile,
+  );
+};
+/* Owner identity, read once and held until the connection changes (ADR-0036):
+   the digest is a draft to the owner only, so the address must be the
+   connected account's, never something a Run discovered. */
+let contentResearchOwnerEmail: string | null = null;
+const refreshContentResearchOwner = async (): Promise<void> => {
+  const status = await googleConnection.state();
+  contentResearchOwnerEmail =
+    status.state === "connected" && status.email ? status.email.toLowerCase() : null;
+};
+const contentResearchScoutStore = new ContentScoutStore(workspaceDir, () => new Date());
+const contentResearch = new ContentResearchHost({
+  runs,
+  workspaceDir,
+  adapters: contentResearchProductionAdapters({
+    workspaceDir,
+    renderBrowser: playwrightBrowserRenderer(),
+    getYouTubeAccess: () => {
+      const access = googleConnection.auth();
+      return access.ok
+        ? { ok: true, client: youtubeSourceClient(access.auth) }
+        : { ok: false, state: access.state };
+    },
+  }),
+  hookExtractor: {
+    extract: async (input) => {
+      const extractor = createHookExtractor(contentResearchCompleteJson);
+      return extractor(input);
+    },
+  },
+  discoverer: {
+    discover: async (input) => {
+      const shape = await createPeopleDiscoverer(contentResearchCompleteJson)(input);
+      return shape.candidates.map((candidate) => ({
+        ...candidate,
+        relationshipToBrand: candidate.relationshipToBrand ?? "unspecified",
+        source: "llm-public-search",
+      }));
+    },
+  },
+  sheetsFactory: () => {
+    const access = googleConnection.auth();
+    if (!access.ok) return { ok: false, state: access.state };
+    const auth = buildGoogleAuth(configStore.get(), port);
+    return {
+      ok: true,
+      client: {
+        createSpreadsheet: (title: string) => createSpreadsheet(auth, title),
+        ensureTab: (spreadsheetId: string, title: string, header: string[]) =>
+          ensureTab(auth, spreadsheetId, title, header),
+        appendRows: (spreadsheetId: string, tab: string, rows: (string | number)[][]) =>
+          appendRows(auth, spreadsheetId, tab, rows),
+        readRows: (spreadsheetId: string, tab: string) => readRows(auth, spreadsheetId, tab),
+        updateRow: (
+          spreadsheetId: string,
+          tab: string,
+          rowNumber: number,
+          values: (string | number)[],
+        ) => updateRow(auth, spreadsheetId, tab, rowNumber, values),
+        isMissing: (error: unknown) => isSpreadsheetMissing(error),
+      },
+      spreadsheet: null,
+    };
+  },
+  gmailFactory: () => {
+    const access = googleConnection.auth();
+    if (!access.ok) return { ok: false, state: access.state };
+    const auth = buildGoogleAuth(configStore.get(), port);
+    return {
+      ok: true,
+      client: {
+        createDraft: (draft: { to: string; subject: string; body: string }) =>
+          createGmailDraft(auth, draft),
+      },
+    };
+  },
+  getOwnerEmail: () => contentResearchOwnerEmail,
+  getBrandProfile: () => contentResearchScoutStore.currentBrandProfile(),
+  configStore,
+  log: (message) => console.log(`[content-research] ${message}`),
+});
+seedContentResearchV1(contentResearch);
 const meetingBriefCompleteJson = () => {
   const current = configStore.get();
   return makeCompleteJson(
@@ -181,7 +289,14 @@ const meetingBriefProduction = meetingBriefTest
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
-const modules: HostedModule[] = [transcript, youtube, ideaEngine, contentScout, meetingBrief];
+const modules: HostedModule[] = [
+  transcript,
+  youtube,
+  ideaEngine,
+  contentScout,
+  contentResearch,
+  meetingBrief,
+];
 const app = fastify({ logger: false });
 
 app.setErrorHandler((error: FastifyError, _request, reply) => {
@@ -265,6 +380,11 @@ await meetingBriefProduction?.refreshOwnerIdentity().catch((error: unknown) => {
   return null;
 });
 
+/* Same rule for the Content Research digest: the owner is known before the
+   first Run, and Google being unreachable at boot is not fatal. */
+await refreshContentResearchOwner().catch(() => {
+  contentResearchOwnerEmail = null;
+});
 for (const module of modules) {
   module.start?.();
 }
