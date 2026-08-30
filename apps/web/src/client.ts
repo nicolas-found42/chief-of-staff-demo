@@ -481,14 +481,9 @@ export const api = {
       lastSyncAt: string | null;
     }>("/api/meeting-brief/calendar/status"),
   contentResearchIndex: () => request<ContentResearchIndex>("/api/content-research/index"),
-  contentResearchPeople: async (): Promise<NamedPerson[]> => {
-    const raw = await request<NamedPerson[] | { people: NamedPerson[] }>(
-      "/api/content-research/people",
-    );
-    return Array.isArray(raw) ? raw : raw.people;
-  },
+  contentResearchPeople: () => request<NamedPerson[]>("/api/content-research/people"),
   addContentResearchPerson: (name: string, handleHints?: NamedPerson["handleHints"]) =>
-    request<{ person: NamedPerson } | NamedPerson>("/api/content-research/people", {
+    request<NamedPerson>("/api/content-research/people", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(handleHints ? { name, handleHints } : { name }),
@@ -497,12 +492,8 @@ export const api = {
     request<NamedPerson>(`/api/content-research/people/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
-  contentResearchSuggestions: async (): Promise<PersonSuggestion[]> => {
-    const raw = await request<PersonSuggestion[] | { suggestions: PersonSuggestion[] }>(
-      "/api/content-research/discovery/suggestions",
-    );
-    return Array.isArray(raw) ? raw : raw.suggestions;
-  },
+  contentResearchSuggestions: () =>
+    request<PersonSuggestion[]>("/api/content-research/discovery/suggestions"),
   decideContentResearchSuggestion: (id: string, action: "approved" | "dismissed" | "restore") => {
     const path =
       action === "restore"

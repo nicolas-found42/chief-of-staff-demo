@@ -1,22 +1,14 @@
-import type { ResonanceHookShape, PeopleSuggestionShape } from "@chief-of-staff-demo/shared";
+import type { PeopleSuggestionShape } from "@chief-of-staff-demo/shared";
 import { ResonanceHookShapeSchema, PeopleSuggestionShapeSchema } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { parseResultShape } from "../../llm/failure.js";
+import type { HookExtractor, PeopleDiscoveryInput } from "./ports.js";
 
-export type HookExtractorFn = (input: {
-  personName: string;
-  items: {
-    title: string | null;
-    excerpt: string;
-    transcript: string | null;
-  }[];
-}) => Promise<ResonanceHookShape>;
+/* The ports own these shapes; the model functions are the implementations, so
+   they take their input from the port rather than restating it. */
+export type HookExtractorFn = HookExtractor["extract"];
 
-export type PeopleSuggestorFn = (input: {
-  brandProfile: { markdown: string } | null;
-  approvedPeople: { name: string }[];
-  recentItems: { title: string | null; author: string | null; canonicalUrl: string }[];
-}) => Promise<PeopleSuggestionShape>;
+export type PeopleSuggestorFn = (input: PeopleDiscoveryInput) => Promise<PeopleSuggestionShape>;
 
 export function createHookExtractor(getCompleteJson: () => CompleteJson): HookExtractorFn {
   return async (input) => {
@@ -45,7 +37,10 @@ export function createPeopleDiscoverer(getCompleteJson: () => CompleteJson): Peo
       `People already watched: ${input.approvedPeople.map((p) => p.name).join(", ") || "none"}.`,
       `Recently collected public items (title, author, url) — co-mentions, citations, and outbound links in these are the signals:`,
       JSON.stringify(input.recentItems.slice(0, 50)),
-      `Propose at most three new people worth watching. Every supportingUrl must be copied verbatim from the collected items; never invent a URL.`,
+      input.searchResults.length > 0
+        ? `Public search results for the watchlist, for co-mentions and related accounts:\n${JSON.stringify(input.searchResults)}`
+        : "Public search returned nothing for the watchlist.",
+      `Propose at most three new people worth watching. Every supportingUrl must be copied verbatim from the collected items or the search results; never invent a URL.`,
     ].join("\n");
     const raw = await getCompleteJson()({
       system: "You propose Person Suggestions. Return JSON with candidates array.",

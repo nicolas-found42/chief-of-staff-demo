@@ -17,7 +17,8 @@ import {
 import type { RunOutcome } from "../../runs.js";
 import type { Runs } from "../../runs.js";
 import type { ContentResearchStore } from "./store.js";
-import type { HookExtractor, SheetsAccess, GmailAccess } from "./ports.js";
+import type { HookExtractor, PeopleDiscoverer, SheetsAccess, GmailAccess } from "./ports.js";
+import { coMentionQueries, type PublicSearch, type PublicSearchResult } from "./search.js";
 import type { SourceAdapter } from "../content-scout/ports.js";
 import { toScoredItem } from "./scoring.js";
 import { personSourceTargets } from "./targets.js";
@@ -59,21 +60,8 @@ export interface ContentResearchBackfillDeps {
 export interface PeopleDiscoveryDeps {
   store: ContentResearchStore;
   brandProfile: () => { markdown: string } | null;
-  discoverer: {
-    discover(input: {
-      brandProfile: { markdown: string } | null;
-      approvedPeople: { name: string }[];
-      recentItems: SourceItem[];
-    }): Promise<
-      {
-        name: string;
-        reason: string;
-        supportingUrls: string[];
-        relationshipToBrand: string;
-        source: string;
-      }[]
-    >;
-  };
+  discoverer: PeopleDiscoverer;
+  searchPublic: PublicSearch;
   now: () => Date;
 }
 
@@ -288,28 +276,53 @@ type PersonItems = Map<
  * buckets, so each scores it against their own baseline while the item store
  * holds a single copy.
  */
+/**
+ * Carry each Target's validators and checkpoint forward, so tomorrow's fetch is
+ * conditional. Only completed collections are remembered: a failure has nothing
+ * trustworthy to say about what the resource looks like now.
+ */
+function rememberCollectionState(
+  collected: CollectedPersonTarget[],
+  store: ContentResearchStore,
+): void {
+  for (const entry of collected) {
+    if (entry.result.kind !== "completed") continue;
+    store.recordCollectionSuccess(
+      entry.target.url,
+      entry.result.checkpoint,
+      entry.result.conditional ?? null,
+    );
+  }
+}
+
 function attributeItemsPerPerson(
   collected: CollectedPersonTarget[],
   people: NamedPerson[],
 ): { perPerson: PersonItems; uniqueItems: SourceItem[] } {
-  const global = new Map<string, { item: SourceItem; adapterId: string; personIds: Set<string> }>();
+  /* Dedup is global on canonicalUrl, but attribution is per Person: the same
+     post reaches two people through different adapters, and each must keep the
+     adapter that actually found it or the second is labelled with the first
+     Person's platform (spec #116 story 11's co-authored post). */
+  const global = new Map<string, { item: SourceItem; adapterByPerson: Map<string, string> }>();
   for (const entry of collected) {
     for (const item of entry.result.items) {
       const existing = global.get(item.canonicalUrl);
-      if (existing) existing.personIds.add(entry.personId);
-      else
+      if (existing) {
+        if (!existing.adapterByPerson.has(entry.personId))
+          existing.adapterByPerson.set(entry.personId, entry.adapter.id);
+      } else {
         global.set(item.canonicalUrl, {
           item,
-          adapterId: entry.adapter.id,
-          personIds: new Set([entry.personId]),
+          adapterByPerson: new Map([[entry.personId, entry.adapter.id]]),
         });
+      }
     }
   }
   const perPerson: PersonItems = new Map();
   for (const person of people) perPerson.set(person.id, { person, items: [] });
   for (const value of global.values()) {
-    for (const personId of value.personIds) {
-      perPerson.get(personId)?.items.push({ item: value.item, adapterId: value.adapterId });
+    for (const [personId, adapterId] of value.adapterByPerson) {
+      perPerson.get(personId)?.items.push({ item: value.item, adapterId });
     }
   }
   return { perPerson, uniqueItems: [...global.values()].map((value) => value.item) };
@@ -474,7 +487,9 @@ export function contentResearchModule(
         const personsTargets = people.map((person) => ({
           id: person.id,
           name: person.name,
-          targets: deps.adapters.flatMap((adapter) => personSourceTargets(person, adapter)),
+          targets: deps.adapters.flatMap((adapter) =>
+            personSourceTargets(person, adapter, (url) => deps.store.getCollectionState(url)),
+          ),
         }));
         // If adapters empty, still collect nothing but record.
         if (deps.adapters.length === 0) {
@@ -505,6 +520,7 @@ export function contentResearchModule(
             items: entry.result.items.length,
           });
         }
+        rememberCollectionState(collected, deps.store);
         ctx.event("collect_done", { collected: collected.length });
       });
 
@@ -641,7 +657,9 @@ export function contentResearchBackfillModule(
         const personsTargets = people.map((person) => ({
           id: person.id,
           name: person.name,
-          targets: deps.adapters.flatMap((adapter) => personSourceTargets(person, adapter)),
+          targets: deps.adapters.flatMap((adapter) =>
+            personSourceTargets(person, adapter, (url) => deps.store.getCollectionState(url)),
+          ),
         }));
         collected = await collectContentResearch({
           persons: personsTargets,
@@ -664,6 +682,7 @@ export function contentResearchBackfillModule(
             `No Source Adapter honors a ${windowDays}-day backfill for this watchlist.`,
           );
         }
+        rememberCollectionState(collected, deps.store);
         ctx.event("backfill_collect_done", {
           windowDays,
           collected: collectedCount,
@@ -746,10 +765,24 @@ export function peopleDiscoveryModule(
       let count = 0;
       await ctx.stage("discover", async () => {
         const approvedPeople = deps.store.listPeople();
+        /* Co-mentions come from public search, so the proposal is grounded in
+           who is actually being named alongside the watchlist rather than in
+           what the model recalls (spec #116 story 21). A sick search route
+           narrows the evidence; it does not fail the Run. */
+        const searchResults: PublicSearchResult[] = [];
+        for (const query of coMentionQueries(approvedPeople)) {
+          try {
+            searchResults.push(...(await deps.searchPublic(query)));
+          } catch {
+            ctx.event("discovery_search_failed", { queries: 1 });
+          }
+        }
+        ctx.event("discovery_search_done", { results: searchResults.length });
         const proposals = await deps.discoverer.discover({
           brandProfile: deps.brandProfile(),
           approvedPeople: approvedPeople.map((p) => ({ name: p.name })),
           recentItems: deps.store.listItems(50),
+          searchResults,
         });
         const saved = deps.store.saveSuggestions(
           proposals.map((p) => ({

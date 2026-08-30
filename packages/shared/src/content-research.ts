@@ -1,4 +1,9 @@
 import { z } from "zod";
+import type {
+  SourceAdapterState,
+  SourceDiagnosticClassification,
+  SourceFieldState,
+} from "./content-scout.js";
 
 export const CONTENT_RESEARCH_MODULE_ID = "content-research" as const;
 export const CONTENT_RESEARCH_MODULE_VERSION = 1 as const;
@@ -59,6 +64,18 @@ export const CONTENT_RESEARCH_PLATFORM_WEIGHTS = {
   reposts: 4,
 } as const;
 
+/** The surfaces a Named Person is watched on (spec #116 V1 portfolio). */
+export const CONTENT_RESEARCH_PLATFORMS = ["rss", "youtube", "reddit", "hn", "news"] as const;
+export type ContentResearchPlatform = (typeof CONTENT_RESEARCH_PLATFORMS)[number];
+
+/**
+ * What a `resonanceScore` actually is. A z-score needs a baseline with spread;
+ * until a Person has one, the number is a raw level or a bare delta and must
+ * not be read as a z-score.
+ */
+export const RESONANCE_SCORE_BASES = ["z_score", "delta_from_mean", "raw_level"] as const;
+export type ResonanceScoreBasis = (typeof RESONANCE_SCORE_BASES)[number];
+
 export interface ResonanceCounts {
   views?: number;
   votes?: number;
@@ -70,23 +87,25 @@ export interface ResonanceCounts {
 
 export interface ResonanceScoredItem {
   canonicalUrl: string;
-  platform: string;
+  platform: ContentResearchPlatform;
   title: string | null;
   publishedAt: string | null;
   discoveredAt: string;
   counts: ResonanceCounts;
   weightedCount: number;
   resonanceScore: number;
+  /** How to read `resonanceScore` — never assume it is a z-score. */
+  resonanceBasis: ResonanceScoreBasis;
   hook: string | null;
   evidenceQuote?: string | null;
   evidenceUrl: string | null;
   completeness: {
-    title: string;
-    body: string;
-    description: string;
-    transcript: string;
-    comments: string;
-    media: string;
+    title: SourceFieldState;
+    body: SourceFieldState;
+    description: SourceFieldState;
+    transcript: SourceFieldState;
+    comments: SourceFieldState;
+    media: SourceFieldState;
   };
   sourceItemId: string;
 }
@@ -103,10 +122,10 @@ export interface ContentResearchRunResult {
   reports: ResonanceReport[];
   adapters: {
     adapterId: string;
-    state: string;
-    outcome: string;
+    state: SourceAdapterState;
+    outcome: SourceDiagnosticClassification;
     itemsFound: number;
-    errorClassifications: string[];
+    errorClassifications: SourceDiagnosticClassification[];
   }[];
   ledgerRows: ContentResearchLedgerRow[];
 }
@@ -116,7 +135,7 @@ export interface ContentResearchLedgerRow {
   personId: string;
   canonicalUrl: string;
   publishedAt: string | null;
-  platform: string;
+  platform: ContentResearchPlatform;
   title: string | null;
   url: string;
   views: number | null;

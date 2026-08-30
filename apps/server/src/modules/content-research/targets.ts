@@ -11,7 +11,19 @@ import type { SourceAdapter } from "../content-scout/ports.js";
  * hand (spec story 2). An adapter with nothing resolvable produces no target at
  * all: an invented placeholder URL would only manufacture failures.
  */
-export function personSourceTargets(person: NamedPerson, adapter: SourceAdapter): SourceTarget[] {
+/**
+ * The Source Targets a Person presents to one adapter. `storedState` supplies
+ * the checkpoint and validators a previous Run recorded for that URL, so a
+ * re-derived Target still makes a conditional request (spec #116 story 8).
+ */
+export function personSourceTargets(
+  person: NamedPerson,
+  adapter: SourceAdapter,
+  storedState?: (url: string) => {
+    checkpoint: string | null;
+    conditional: { etag: string | null; lastModified: string | null } | null;
+  } | null,
+): SourceTarget[] {
   const explicit = person.discoveredSourceTargets.filter((t) => t.adapterId === adapter.id);
   const derived = deriveTargets(person, adapter.id);
   const seen = new Set<string>();
@@ -19,6 +31,7 @@ export function personSourceTargets(person: NamedPerson, adapter: SourceAdapter)
   const push = (label: string, url: string) => {
     if (seen.has(url)) return;
     seen.add(url);
+    const stored = storedState?.(url) ?? null;
     targets.push({
       id: `${person.id}__${adapter.id}__${targets.length}`,
       adapterId: adapter.id,
@@ -27,9 +40,9 @@ export function personSourceTargets(person: NamedPerson, adapter: SourceAdapter)
       state: "active",
       createdAt: person.createdAt,
       archivedAt: null,
-      checkpoint: null,
+      checkpoint: stored?.checkpoint ?? null,
       lastSuccessfulAt: null,
-      conditional: null,
+      conditional: stored?.conditional ?? null,
     });
   };
   for (const t of explicit) push(t.label, t.url);

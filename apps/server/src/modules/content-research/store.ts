@@ -21,18 +21,32 @@ interface ContentResearchLedgerRef {
   spreadsheetUrl: string | null;
 }
 
+/**
+ * What a feed told us last time, so the next fetch can be conditional. Keyed by
+ * the URL the validators belong to, because Source Targets are re-derived from
+ * a Person's hints each Run and carry no identity across Runs.
+ */
+interface ContentResearchCollectionState {
+  url: string;
+  checkpoint: string | null;
+  conditional: { etag: string | null; lastModified: string | null } | null;
+  lastSuccessfulAt: string;
+}
+
 interface ContentResearchState {
   people: NamedPerson[];
   suggestions: PersonSuggestion[];
   baselines: ContentResearchBaseline[];
   schedule: ContentResearchScheduleState;
   ledger: ContentResearchLedgerRef;
+  collection: ContentResearchCollectionState[];
 }
 
 const EMPTY: ContentResearchState = {
   people: [],
   suggestions: [],
   baselines: [],
+  collection: [],
   schedule: {
     lastSuccessfulDailyPeriod: null,
     lastSuccessfulDiscoveryPeriod: null,
@@ -82,6 +96,7 @@ export class ContentResearchStore {
         people: Array.isArray(parsed.people) ? parsed.people : [],
         suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
         baselines: Array.isArray(parsed.baselines) ? parsed.baselines : [],
+        collection: Array.isArray(parsed.collection) ? parsed.collection : [],
         schedule: parsed.schedule ?? structuredClone(EMPTY.schedule),
         ledger: parsed.ledger ?? structuredClone(EMPTY.ledger),
       };
@@ -138,6 +153,34 @@ export class ContentResearchStore {
 
   listAllPeople(): NamedPerson[] {
     return this.readState().people;
+  }
+
+  /** The stored validators for a URL, or null when it has never been fetched. */
+  getCollectionState(url: string): {
+    checkpoint: string | null;
+    conditional: ContentResearchCollectionState["conditional"];
+  } | null {
+    const found = this.readState().collection.find((entry) => entry.url === url);
+    return found ? { checkpoint: found.checkpoint, conditional: found.conditional } : null;
+  }
+
+  /** Remember what a successful fetch reported, so the next one can be conditional. */
+  recordCollectionSuccess(
+    url: string,
+    checkpoint: string | null,
+    conditional: ContentResearchCollectionState["conditional"],
+  ): void {
+    const state = this.readState();
+    const existing = state.collection.find((entry) => entry.url === url);
+    const lastSuccessfulAt = this.now().toISOString();
+    if (existing) {
+      existing.checkpoint = checkpoint;
+      existing.conditional = conditional;
+      existing.lastSuccessfulAt = lastSuccessfulAt;
+    } else {
+      state.collection.push({ url, checkpoint, conditional, lastSuccessfulAt });
+    }
+    this.writeState(state);
   }
 
   getPerson(id: string): NamedPerson | null {
@@ -259,10 +302,6 @@ export class ContentResearchStore {
 
   getBaseline(personId: string): ContentResearchBaseline | null {
     return this.readState().baselines.find((b) => b.personId === personId) ?? null;
-  }
-
-  listBaselines(): ContentResearchBaseline[] {
-    return this.readState().baselines;
   }
 
   recordBaseline(personId: string, weightedCounts: number[]): ContentResearchBaseline {

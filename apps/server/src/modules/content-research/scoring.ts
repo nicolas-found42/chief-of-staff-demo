@@ -1,7 +1,9 @@
 import type { SourceItem } from "@chief-of-staff-demo/shared";
 import {
   CONTENT_RESEARCH_PLATFORM_WEIGHTS,
+  type ContentResearchPlatform,
   type ResonanceCounts,
+  type ResonanceScoreBasis,
   type ResonanceScoredItem,
 } from "@chief-of-staff-demo/shared";
 
@@ -37,15 +39,23 @@ function weightedCount(counts: ResonanceCounts): number {
   );
 }
 
-function platformForAdapter(adapterId: string): string {
-  const lower = adapterId.toLowerCase();
-  if (lower.includes("youtube") || lower.includes("yt")) return "youtube";
-  if (lower.includes("reddit")) return "reddit";
-  if (lower.includes("hacker") || lower.includes("hn")) return "hn";
-  if (lower.includes("news") || lower.includes("google")) return "news";
-  if (lower.includes("rss") || lower.includes("substack") || lower.includes("website"))
-    return "rss";
-  return adapterId;
+/**
+ * Adapter ids are known constants, so the platform is a lookup rather than a
+ * guess: substring matching mislabels any future id that merely contains "hn".
+ * An id with no entry reads as `rss`, the plain-feed surface.
+ */
+const PLATFORM_BY_ADAPTER: Record<string, ContentResearchPlatform> = {
+  rss: "rss",
+  website: "rss",
+  substack: "rss",
+  youtube: "youtube",
+  reddit: "reddit",
+  hn: "hn",
+  news: "news",
+};
+
+function platformForAdapter(adapterId: string): ContentResearchPlatform {
+  return PLATFORM_BY_ADAPTER[adapterId.toLowerCase()] ?? "rss";
 }
 
 export function toScoredItem(input: {
@@ -57,10 +67,14 @@ export function toScoredItem(input: {
 }): ResonanceScoredItem {
   const counts = extractCounts(input.item);
   const w = weightedCount(counts);
-  const score = (() => {
-    if (!input.baseline || input.baseline.historyLength === 0) return w;
-    if (input.baseline.stdDev === 0) return w - input.baseline.mean;
-    return (w - input.baseline.mean) / input.baseline.stdDev;
+  /* A z-score needs a baseline with spread. Until the Person has one, say so
+     rather than passing a raw level off as a z-score. */
+  const { score, basis } = ((): { score: number; basis: ResonanceScoreBasis } => {
+    if (!input.baseline || input.baseline.historyLength === 0)
+      return { score: w, basis: "raw_level" };
+    if (input.baseline.stdDev === 0)
+      return { score: w - input.baseline.mean, basis: "delta_from_mean" };
+    return { score: (w - input.baseline.mean) / input.baseline.stdDev, basis: "z_score" };
   })();
   return {
     canonicalUrl: input.item.canonicalUrl,
@@ -71,17 +85,13 @@ export function toScoredItem(input: {
     counts,
     weightedCount: w,
     resonanceScore: score,
+    resonanceBasis: basis,
     hook: input.hook,
     evidenceQuote: input.evidenceQuote ?? null,
     evidenceUrl: input.item.evidence[0]?.route ?? input.item.canonicalUrl,
-    completeness: {
-      title: String(input.item.completeness.title),
-      body: String(input.item.completeness.body),
-      description: String(input.item.completeness.description),
-      transcript: String(input.item.completeness.transcript),
-      comments: String(input.item.completeness.comments),
-      media: String(input.item.completeness.media),
-    },
+    /* The adapter already reported each field's state; carrying it through as
+       the domain type keeps `unsupported` distinguishable from `failed`. */
+    completeness: { ...input.item.completeness },
     sourceItemId: input.item.id,
   };
 }

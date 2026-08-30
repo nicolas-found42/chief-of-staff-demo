@@ -5,18 +5,18 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "./ports.js";
 import { sanitizeAdapterDiagnostic } from "./diagnostics.js";
+import {
+  COLLECTION_DEFAULT_BACKOFF_MS as DEFAULT_BACKOFF_MS,
+  COLLECTION_GLOBAL_CONCURRENCY as CONTENT_SCOUT_COLLECTION_GLOBAL_CONCURRENCY,
+  COLLECTION_MAX_ATTEMPTS as CONTENT_SCOUT_COLLECTION_MAX_ATTEMPTS,
+  RETRYABLE_COLLECTION_OUTCOMES as RETRYABLE,
+  failedResult,
+  hostOf,
+  mapLimit,
+  unavailableAdapter,
+} from "./collection-core.js";
 
 /** Shared Daily Intake limits. Targets on one host are always serialized. */
-const CONTENT_SCOUT_COLLECTION_GLOBAL_CONCURRENCY = 4;
-const CONTENT_SCOUT_COLLECTION_MAX_ATTEMPTS = 3;
-const DEFAULT_BACKOFF_MS = 500;
-
-const RETRYABLE = new Set<SourceCollectionResult["outcome"]>([
-  "rate_limit",
-  "timeout",
-  "internal_failure",
-]);
-
 export interface CollectedSourceTarget {
   target: SourceTarget;
   adapter: SourceAdapter;
@@ -28,72 +28,6 @@ export interface CollectedSourceTargetProgress {
   targetId: string;
   result: SourceCollectionResult;
   attempts: SourceCollectionAttemptReceipt[];
-}
-
-function hostOf(target: SourceTarget): string {
-  try {
-    return new URL(target.url).hostname.toLowerCase();
-  } catch {
-    return `invalid:${target.id}`;
-  }
-}
-
-function unavailableAdapter(target: SourceTarget): SourceAdapter {
-  return {
-    id: target.adapterId,
-    state: "coming_later",
-    version: "unavailable",
-    supports: (candidate) => candidate.adapterId === target.adapterId,
-    async collect() {
-      throw new Error("Unavailable Source Adapters cannot collect.");
-    },
-  };
-}
-
-function failedResult(input: {
-  target: SourceTarget;
-  adapter: SourceAdapter;
-  startedAt: string;
-  finishedAt: string;
-  outcome: "unsupported_capability" | "internal_failure";
-  cause: string;
-}): SourceCollectionResult {
-  return {
-    kind: "failed",
-    outcome: input.outcome,
-    items: [],
-    checkpoint: null,
-    diagnostic: {
-      classification: input.outcome,
-      route: input.target.url,
-      status: null,
-      contentType: null,
-      parserStage: "adapter_boundary",
-      responseHash: "",
-      adapterVersion: input.adapter.version,
-      startedAt: input.startedAt,
-      finishedAt: input.finishedAt,
-      retries: 0,
-      affectedCapabilities: ["items"],
-      causeChain: [input.cause],
-    },
-  };
-}
-
-async function mapLimit<T>(
-  items: readonly T[],
-  limit: number,
-  work: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      await work(items[index]!);
-    }
-  });
-  await Promise.all(workers);
 }
 
 export async function collectSourceTargets(input: {

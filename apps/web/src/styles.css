@@ -1669,3 +1669,87 @@ code {
 .video-chart-cell {
   padding-top: 0;
 }
+
+/* Content Research — the watchlist, its Resonance Reports and Person Suggestions. */
+.research-toolbar {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.research-add-form {
+  margin-top: 0.75rem;
+}
+
+.research-person-row {
+  margin-bottom: 0.5rem;
+}
+
+/* Per-Person resonance over recent Runs; each bar's height is the only value
+   the data decides, so it stays on the element. */
+.research-sparkline {
+  display: flex;
+  gap: 0.35rem;
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.research-sparkline-bar {
+  width: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.research-report {
+  margin-bottom: 0.5rem;
+}
+
+.research-item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.research-item {
+  border-bottom: 1px solid var(--line);
+  padding: 0.6rem 0;
+}
+
+.research-item-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.research-item-title {
+  margin-top: 0.35rem;
+}
+
+.research-item-hook {
+  margin: 0.25rem 0;
+}
+
+.research-item-note {
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+}
+
+.research-item-detail {
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: var(--surface-alt);
+  border-radius: 4px;
+}
+
+.research-gated-list {
+  margin-top: 0.5rem;
+}
+
+.research-gated-row {
+  margin-bottom: 0.35rem;
+}
+
+.research-suggestion-actions {
+  margin-top: 0.35rem;
+}

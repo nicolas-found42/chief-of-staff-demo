@@ -1,24 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type {
-  ContentResearchIndex,
-  NamedPerson,
-  PersonSuggestion,
-  ResonanceScoredItem,
+import {
+  CONTENT_RESEARCH_PLATFORMS,
+  type ContentResearchIndex,
+  type ContentResearchPlatform,
+  type NamedPerson,
+  type PersonSuggestion,
+  type ResonanceScoredItem,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
-type PlatformFilter = "all" | "rss" | "youtube" | "reddit" | "hn" | "news" | "bluesky" | "mastodon";
+type PlatformFilter = "all" | ContentResearchPlatform;
+
+const PLATFORM_LABELS: Record<ContentResearchPlatform, string> = {
+  rss: "RSS",
+  youtube: "YouTube",
+  reddit: "Reddit",
+  hn: "HN",
+  news: "News",
+};
 
 const PLATFORM_OPTIONS: { value: PlatformFilter; label: string }[] = [
   { value: "all", label: "All platforms" },
-  { value: "rss", label: "RSS" },
-  { value: "youtube", label: "YouTube" },
-  { value: "reddit", label: "Reddit" },
-  { value: "hn", label: "HN" },
-  { value: "news", label: "News" },
+  ...CONTENT_RESEARCH_PLATFORMS.map((platform) => ({
+    value: platform,
+    label: PLATFORM_LABELS[platform],
+  })),
 ];
 
 function formatHandleHints(person: NamedPerson): string {
@@ -33,11 +42,16 @@ function formatHandleHints(person: NamedPerson): string {
   return hints.length > 0 ? hints.join(" · ") : "No handle hints";
 }
 
+/**
+ * Which fields the adapter actually got. Anything the source did not supply —
+ * `unavailable`, `unsupported`, `failed` — is absent here rather than listed as
+ * though it were present.
+ */
 function completenessSummary(item: ResonanceScoredItem): string {
   const parts = Object.entries(item.completeness)
-    .filter(([, value]) => value && value !== "missing" && value !== "empty")
+    .filter(([, value]) => value === "available")
     .map(([key]) => key);
-  return parts.length > 0 ? parts.join(", ") : "missing";
+  return parts.length > 0 ? parts.join(", ") : "nothing available";
 }
 
 /**
@@ -66,6 +80,8 @@ export function ContentResearchPage() {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [newName, setNewName] = useState("");
   const [newSite, setNewSite] = useState("");
+  const [newYoutube, setNewYoutube] = useState("");
+  const [newHn, setNewHn] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -129,15 +145,25 @@ export function ContentResearchPage() {
       return;
     }
     setAddError(null);
-    /* The hint names where to look: a feed is watched directly, a site is asked
-       for the feeds it declares. Without one, only the name-searched surfaces
-       (Reddit, HN, News) can find this person. */
+    /* Each hint names a surface to watch: a feed is read directly, a site is
+       asked for the feeds it declares, and the channel and username reach
+       YouTube and HN. With none, only the name-searched surfaces find them. */
+    const youtubeChannelId = newYoutube.trim();
+    const hnUsername = newHn.trim();
+    const handleHints = {
+      blogRssHints: site ? [site] : [],
+      ...(youtubeChannelId ? { youtubeChannelId } : {}),
+      ...(hnUsername ? { hnUsername } : {}),
+    };
+    const hasHint = site || youtubeChannelId || hnUsername;
     await act(
-      () => api.addContentResearchPerson(name, site ? { blogRssHints: [site] } : undefined),
+      () => api.addContentResearchPerson(name, hasHint ? handleHints : undefined),
       `Watching ${name}.`,
     );
     setNewName("");
     setNewSite("");
+    setNewYoutube("");
+    setNewHn("");
   };
 
   const toggleReport = (runId: string) => {
@@ -199,7 +225,7 @@ export function ContentResearchPage() {
       </div>
 
       {/* Controls */}
-      <div className="toolbar" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
+      <div className="toolbar research-toolbar">
         <button
           type="button"
           className="primary"
@@ -274,7 +300,7 @@ export function ContentResearchPage() {
         ) : (
           <ul>
             {people.map((person) => (
-              <li key={person.id} style={{ marginBottom: "0.5rem" }}>
+              <li key={person.id} className="research-person-row">
                 <strong>{person.name}</strong>{" "}
                 <span className="muted">· {formatHandleHints(person)}</span>{" "}
                 <span className="muted">
@@ -297,7 +323,7 @@ export function ContentResearchPage() {
             ))}
           </ul>
         )}
-        <form onSubmit={(event) => void handleAddPerson(event)} style={{ marginTop: "0.75rem" }}>
+        <form onSubmit={(event) => void handleAddPerson(event)} className="research-add-form">
           <div className="field-row">
             <input
               aria-label="Person name"
@@ -311,6 +337,18 @@ export function ContentResearchPage() {
               value={newSite}
               onChange={(event) => setNewSite(event.target.value)}
             />
+            <input
+              aria-label="YouTube channel id"
+              placeholder="YouTube channel id — e.g. UC…"
+              value={newYoutube}
+              onChange={(event) => setNewYoutube(event.target.value)}
+            />
+            <input
+              aria-label="Hacker News username"
+              placeholder="HN username"
+              value={newHn}
+              onChange={(event) => setNewHn(event.target.value)}
+            />
             <button type="submit" aria-disabled={busy}>
               Add person
             </button>
@@ -321,9 +359,9 @@ export function ContentResearchPage() {
             </p>
           )}
           <p className="muted field-hint">
-            People-first watchlist — no LinkedIn. The site or feed is optional: paste a feed to
-            watch it directly, or a site and its declared feeds are discovered. Without one, only
-            Reddit, HN and News are searched by name.
+            People-first watchlist — no LinkedIn. Every hint is optional: paste a feed to watch it
+            directly, or a site and its declared feeds are discovered; a channel id and an HN
+            username add those surfaces. With none, Reddit, HN and News are searched by name.
           </p>
         </form>
       </section>
@@ -369,14 +407,7 @@ export function ContentResearchPage() {
                       currentPerson.reports.length - 1
                     ]!.resonanceScoreMax.toFixed(2)}
                   </p>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "0.35rem",
-                      alignItems: "end",
-                      marginBottom: "0.75rem",
-                    }}
-                  >
+                  <div className="research-sparkline">
                     {[...currentPerson.reports]
                       .slice()
                       .reverse()
@@ -393,13 +424,8 @@ export function ContentResearchPage() {
                           <span
                             key={report.runId}
                             title={`${report.generatedAt}: ${report.resonanceScoreMax.toFixed(2)}`}
-                            style={{
-                              width: "10px",
-                              height: `${height}px`,
-                              background: "var(--accent)",
-                              borderRadius: "2px",
-                              display: "inline-block",
-                            }}
+                            className="research-sparkline-bar"
+                            style={{ height: `${height}px` }}
                           />
                         );
                       })}
@@ -416,10 +442,9 @@ export function ContentResearchPage() {
                       return (
                         <details
                           key={report.runId}
-                          className="disclosure"
+                          className="disclosure research-report"
                           open={isOpen}
                           onToggle={() => toggleReport(report.runId)}
-                          style={{ marginBottom: "0.5rem" }}
                         >
                           <summary>
                             <Link
@@ -438,7 +463,7 @@ export function ContentResearchPage() {
                             {filtered.length === 0 ? (
                               <p className="muted">No items for this platform in this report.</p>
                             ) : (
-                              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                              <ul className="research-item-list">
                                 {filtered
                                   .slice()
                                   .sort((a, b) => b.resonanceScore - a.resonanceScore)
@@ -446,20 +471,8 @@ export function ContentResearchPage() {
                                     const itemKey = `${report.runId}:${item.sourceItemId}`;
                                     const itemOpen = expandedItems.has(itemKey);
                                     return (
-                                      <li
-                                        key={item.sourceItemId}
-                                        style={{
-                                          borderBottom: "1px solid var(--line)",
-                                          padding: "0.6rem 0",
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            gap: "0.5rem",
-                                            flexWrap: "wrap",
-                                          }}
-                                        >
+                                      <li key={item.sourceItemId} className="research-item">
+                                        <div className="research-item-badges">
                                           <span className="status-badge">{item.platform}</span>
                                           <span className="status-badge">
                                             resonance {item.resonanceScore.toFixed(2)}
@@ -468,7 +481,7 @@ export function ContentResearchPage() {
                                             weighted {item.weightedCount}
                                           </span>
                                         </div>
-                                        <div style={{ marginTop: "0.35rem" }}>
+                                        <div className="research-item-title">
                                           <strong>{item.title ?? "(untitled)"}</strong>{" "}
                                           <a
                                             href={item.canonicalUrl}
@@ -498,7 +511,7 @@ export function ContentResearchPage() {
                                             )}
                                         </div>
                                         {item.hook && (
-                                          <p style={{ margin: "0.25rem 0" }}>
+                                          <p className="research-item-hook">
                                             <em>{item.hook}</em>
                                             {item.evidenceQuote && (
                                               <span className="muted">
@@ -508,10 +521,7 @@ export function ContentResearchPage() {
                                             )}
                                           </p>
                                         )}
-                                        <p
-                                          className="muted"
-                                          style={{ margin: "0.2rem 0", fontSize: "0.85rem" }}
-                                        >
+                                        <p className="muted research-item-note">
                                           completeness: {completenessSummary(item)} · counts:{" "}
                                           {Object.entries(item.counts)
                                             .filter(([, value]) => value !== undefined)
@@ -529,14 +539,7 @@ export function ContentResearchPage() {
                                           {itemOpen ? "Hide detail" : "Show detail"}
                                         </button>
                                         {itemOpen && (
-                                          <div
-                                            style={{
-                                              marginTop: "0.35rem",
-                                              padding: "0.5rem",
-                                              background: "var(--surface-alt)",
-                                              borderRadius: "4px",
-                                            }}
-                                          >
+                                          <div className="research-item-detail">
                                             <dl className="receipt-grid">
                                               <div className="receipt-row">
                                                 <dt>canonicalUrl</dt>
@@ -615,9 +618,9 @@ export function ContentResearchPage() {
               {gatedRuns.length === 1 ? "" : "s"}
             </button>
             {showGated && (
-              <ul style={{ marginTop: "0.5rem" }}>
+              <ul className="research-gated-list">
                 {gatedRuns.map((run) => (
-                  <li key={run.runId} style={{ marginBottom: "0.35rem" }}>
+                  <li key={run.runId} className="research-gated-row">
                     <Link to={`/runs/${run.runId}`}>{run.runId.slice(0, 8)}</Link>{" "}
                     <span className="status-badge status-skipped">{run.status}</span>{" "}
                     <span className="muted">{run.intake}</span> · {run.summary}
@@ -638,25 +641,20 @@ export function ContentResearchPage() {
             No suggestions. Use Discover Now to propose people related to the brand.
           </p>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <ul className="research-item-list">
             {suggestions.map((suggestion) => (
-              <li
-                key={suggestion.id}
-                style={{ borderBottom: "1px solid var(--line)", padding: "0.6rem 0" }}
-              >
-                <div
-                  style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}
-                >
+              <li key={suggestion.id} className="research-item">
+                <div className="research-item-badges">
                   <strong>{suggestion.name}</strong>
                   <span className="status-badge">{suggestion.state}</span>
                   <span className="muted">{suggestion.source}</span>
                 </div>
-                <p style={{ margin: "0.25rem 0" }}>{suggestion.reason}</p>
-                <p className="muted" style={{ margin: "0.2rem 0", fontSize: "0.85rem" }}>
+                <p className="research-item-hook">{suggestion.reason}</p>
+                <p className="muted research-item-note">
                   Relationship: {suggestion.relationshipToBrand}
                 </p>
                 {suggestion.supportingUrls.length > 0 && (
-                  <p className="muted" style={{ margin: "0.2rem 0", fontSize: "0.85rem" }}>
+                  <p className="muted research-item-note">
                     Evidence:{" "}
                     {suggestion.supportingUrls.map((url, index) => (
                       <span key={url}>
@@ -669,11 +667,9 @@ export function ContentResearchPage() {
                   </p>
                 )}
                 {suggestion.decisionReason && (
-                  <p className="muted" style={{ fontSize: "0.85rem" }}>
-                    Decision: {suggestion.decisionReason}
-                  </p>
+                  <p className="muted research-item-note">Decision: {suggestion.decisionReason}</p>
                 )}
-                <div className="toolbar" style={{ marginTop: "0.35rem" }}>
+                <div className="toolbar research-suggestion-actions">
                   {suggestion.state === "pending" && (
                     <>
                       <button

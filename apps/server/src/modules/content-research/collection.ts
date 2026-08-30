@@ -1,22 +1,21 @@
 import type {
-  AdapterDiagnostic,
   SourceBackfillWindowDays,
   SourceCollectionAttemptReceipt,
-  SourceDiagnosticClassification,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter, SourceCollectionResult } from "../content-scout/ports.js";
 import { sanitizeAdapterDiagnostic } from "../content-scout/diagnostics.js";
-
-const GLOBAL_CONCURRENCY = 4;
-const MAX_ATTEMPTS = 3;
-const DEFAULT_BACKOFF_MS = 500;
-
-const RETRYABLE = new Set<SourceCollectionResult["outcome"]>([
-  "rate_limit",
-  "timeout",
-  "internal_failure",
-]);
+import {
+  COLLECTION_DEFAULT_BACKOFF_MS as DEFAULT_BACKOFF_MS,
+  COLLECTION_GLOBAL_CONCURRENCY as GLOBAL_CONCURRENCY,
+  COLLECTION_MAX_ATTEMPTS as MAX_ATTEMPTS,
+  RETRYABLE_COLLECTION_OUTCOMES as RETRYABLE,
+  failedResult,
+  hostOf,
+  type AttemptReceipt,
+  mapLimit,
+  unavailableAdapter,
+} from "../content-scout/collection-core.js";
 
 export interface CollectedPersonTarget {
   personId: string;
@@ -25,90 +24,6 @@ export interface CollectedPersonTarget {
   adapter: SourceAdapter;
   result: SourceCollectionResult;
   attempts: SourceCollectionAttemptReceipt[];
-}
-
-function hostOf(target: SourceTarget): string {
-  try {
-    return new URL(target.url).hostname.toLowerCase();
-  } catch {
-    return `invalid:${target.id}`;
-  }
-}
-
-function unavailableAdapter(target: SourceTarget): SourceAdapter {
-  return {
-    id: target.adapterId,
-    state: "coming_later",
-    version: "unknown",
-    supports: () => false,
-    async collect(): Promise<SourceCollectionResult> {
-      throw new Error("unavailable");
-    },
-  };
-}
-
-function failedResult(input: {
-  target: SourceTarget;
-  adapter: SourceAdapter;
-  startedAt: string;
-  finishedAt: string;
-  outcome: FailedOutcome;
-  cause: string;
-}): SourceCollectionResult {
-  return {
-    kind: "failed",
-    outcome: input.outcome,
-    items: [],
-    checkpoint: null,
-    diagnostic: {
-      classification: input.outcome,
-      route: sanitizeRoute(input.target.url),
-      status: null,
-      contentType: null,
-      parserStage: "fetch",
-      responseHash: "",
-      adapterVersion: input.adapter.version,
-      startedAt: input.startedAt,
-      finishedAt: input.finishedAt,
-      retries: 0,
-      affectedCapabilities: [],
-      causeChain: [input.cause],
-    },
-  };
-}
-
-function sanitizeRoute(value: string): string {
-  try {
-    const url = new URL(value);
-    return `${url.origin}/`;
-  } catch {
-    return "/";
-  }
-}
-
-type FailedOutcome = Exclude<
-  SourceDiagnosticClassification,
-  "items_found" | "legitimate_empty" | "no_new_material"
->;
-
-/** A receipt whose diagnostic is always present — the shape attempts are written with. */
-type AttemptReceipt = Omit<SourceCollectionAttemptReceipt, "diagnostic"> & {
-  diagnostic: AdapterDiagnostic;
-};
-
-async function mapLimit<T>(
-  items: readonly T[],
-  limit: number,
-  work: (item: T) => Promise<void>,
-): Promise<void> {
-  let index = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (index < items.length) {
-      const current = index++;
-      await work(items[current]!);
-    }
-  });
-  await Promise.all(workers);
 }
 
 export async function collectContentResearch(input: {

@@ -1,4 +1,5 @@
 import type { ResonanceHookShape, SourceItem } from "@chief-of-staff-demo/shared";
+import type { PublicSearchResult } from "./search.js";
 
 type ResonanceHookInput = {
   personName: string;
@@ -9,12 +10,16 @@ export interface HookExtractor {
   extract(input: ResonanceHookInput): Promise<ResonanceHookShape>;
 }
 
+export interface PeopleDiscoveryInput {
+  brandProfile: { markdown: string } | null;
+  approvedPeople: { name: string }[];
+  recentItems: SourceItem[];
+  /** What public search returned for the watchlist's co-mention queries. */
+  searchResults: PublicSearchResult[];
+}
+
 export interface PeopleDiscoverer {
-  discover(input: {
-    brandProfile: { markdown: string } | null;
-    approvedPeople: { name: string }[];
-    recentItems: SourceItem[];
-  }): Promise<
+  discover(input: PeopleDiscoveryInput): Promise<
     {
       name: string;
       reason: string;

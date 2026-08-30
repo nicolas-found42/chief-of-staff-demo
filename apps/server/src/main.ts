@@ -44,6 +44,7 @@ import { ContentResearchHost } from "./modules/content-research/host.js";
 import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
 import { contentResearchProductionAdapters } from "./modules/content-research/adapters/production.js";
 import { seedContentResearchV1 } from "./modules/content-research/seed.js";
+import { createPublicSearch } from "./modules/content-research/search.js";
 import { ContentScoutStore } from "./modules/content-scout/store.js";
 import { buildGoogleAuth } from "./google/oauth.js";
 import {
@@ -196,12 +197,8 @@ const contentResearch = new ContentResearchHost({
         : { ok: false, state: access.state };
     },
   }),
-  hookExtractor: {
-    extract: async (input) => {
-      const extractor = createHookExtractor(contentResearchCompleteJson);
-      return extractor(input);
-    },
-  },
+  hookExtractor: { extract: createHookExtractor(contentResearchCompleteJson) },
+  searchPublic: createPublicSearch(),
   discoverer: {
     discover: async (input) => {
       const shape = await createPeopleDiscoverer(contentResearchCompleteJson)(input);

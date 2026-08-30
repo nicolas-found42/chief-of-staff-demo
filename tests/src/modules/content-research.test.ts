@@ -72,7 +72,13 @@ function makeItem(input: {
   };
 }
 
-type RecordedCall = { targetId: string; since: string; until: string };
+type RecordedCall = {
+  targetId: string;
+  since: string;
+  until: string;
+  checkpoint: string | null;
+  conditional: { etag: string | null; lastModified: string | null } | null;
+};
 
 function makeAdapter(input: {
   id: string;
@@ -88,8 +94,14 @@ function makeAdapter(input: {
     ...(input.backfillWindowsDays ? { backfillWindowsDays: input.backfillWindowsDays } : {}),
     calls,
     supports: (target) => target.adapterId === input.id,
-    async collect({ target, since, until }) {
-      calls.push({ targetId: target.id, since, until });
+    async collect({ target, since, until, checkpoint, conditional }) {
+      calls.push({
+        targetId: target.id,
+        since,
+        until,
+        checkpoint: checkpoint ?? null,
+        conditional: conditional ?? null,
+      });
       if (input.failWith) return input.failWith;
       const personId = target.id.split("__")[0] ?? "";
       const items = input.itemsFor(personId);
@@ -97,6 +109,7 @@ function makeAdapter(input: {
         kind: "completed",
         outcome: items.length > 0 ? "items_found" : "legitimate_empty",
         checkpoint: until,
+        conditional: { etag: `W/"${input.id}-etag"`, lastModified: null },
         items,
         diagnostic: {
           classification: items.length > 0 ? "items_found" : "legitimate_empty",
@@ -230,6 +243,7 @@ interface HarnessOptions {
   sheets?: ReturnType<typeof makeSheets>;
   gmail?: ReturnType<typeof makeGmail>;
   discoverFeeds?: FeedDiscoverer;
+  searchPublic?: (query: string) => Promise<{ title: string; url: string; snippet: string }[]>;
 }
 
 function makeHarness(options: HarnessOptions) {
@@ -245,6 +259,7 @@ function makeHarness(options: HarnessOptions) {
     hookExtractor,
     ...(options.discoverer ? { discoverer: options.discoverer } : {}),
     discoverFeeds: options.discoverFeeds ?? (async () => []),
+    searchPublic: options.searchPublic ?? (async () => []),
     sheetsFactory: sheets.factory,
     gmailFactory: gmail.factory,
     getOwnerEmail: () => "owner@example.com",
@@ -259,7 +274,13 @@ interface RunResultShape {
   reports: {
     personId: string;
     personName: string;
-    items: { canonicalUrl: string; resonanceScore: number; weightedCount: number }[];
+    items: {
+      canonicalUrl: string;
+      platform: string;
+      resonanceScore: number;
+      resonanceBasis: string;
+      weightedCount: number;
+    }[];
   }[];
   adapters: { adapterId: string; outcome: string; errorClassifications: string[] }[];
   ledgerRows: { personId: string; canonicalUrl: string; platform: string }[];
@@ -333,6 +354,74 @@ describe("Content Research", () => {
     // One owner-only draft digest was created.
     expect(gmail.drafts).toHaveLength(1);
     expect(gmail.drafts[0]?.to).toBe("owner@example.com");
+  });
+
+  it("daily run: the next Run asks conditionally with what the last one was told", async () => {
+    /* Source Targets are re-derived from a Person's hints every Run, so the
+       validators have to be remembered against the URL or every fetch is
+       unconditional (spec #116 story 8). */
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const { host } = makeHarness({ adapters: [rss] });
+    host.addPerson({
+      name: "Ada",
+      handleHints: { blogRssHints: ["https://ada.example/feed"] },
+    });
+
+    await host.researchNow();
+    await host.idle();
+    const first = rss.calls.find((c) => c.targetId.endsWith("__0"));
+    expect(first?.conditional).toBeNull();
+    expect(first?.checkpoint).toBeNull();
+
+    rss.calls.length = 0;
+    await host.researchNow();
+    await host.idle();
+    const second = rss.calls.find((c) => c.targetId.endsWith("__0"));
+    expect(second?.conditional).toEqual({ etag: 'W/"rss-etag"', lastModified: null });
+    expect(second?.checkpoint).not.toBeNull();
+  });
+
+  it("daily run: a URL reaching two people by different adapters keeps each person's own platform", async () => {
+    /* Dedup is global on canonicalUrl, so the shared post is stored once — but
+       Ben found it on his feed and Ava on her channel, and labelling Ava's copy
+       "rss" because Ben was seen first would misreport where it resonated. */
+    const shared = {
+      url: "https://example.com/shared",
+      title: "Shared post",
+      counts: { views: 100 },
+    };
+    const rss = makeAdapter({
+      id: "rss",
+      itemsFor: (pid) => (pid === benId ? [makeItem({ ...shared, adapterId: "rss" })] : []),
+    });
+    const youtube = makeAdapter({
+      id: "youtube",
+      itemsFor: (pid) => (pid === avaId ? [makeItem({ ...shared, adapterId: "youtube" })] : []),
+    });
+    const { runs, host } = makeHarness({ adapters: [rss, youtube] });
+
+    const ben = host.addPerson({
+      name: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    const ava = host.addPerson({
+      name: "Ava",
+      handleHints: { blogRssHints: [], youtubeChannelId: "UC_ava" },
+    });
+    const benId = ben.id;
+    const avaId = ava.id;
+
+    const runId = await host.researchNow();
+    await host.idle();
+
+    const result = readResult(runs, runId);
+    const platformFor = (personId: string) =>
+      result.reports
+        .find((r) => r.personId === personId)
+        ?.items.find((i) => i.canonicalUrl === shared.url)?.platform;
+
+    expect(platformFor(benId)).toBe("rss");
+    expect(platformFor(avaId)).toBe("youtube");
   });
 
   it("daily run: hook extraction is one call per person and never sees the other person's items", async () => {
@@ -562,6 +651,48 @@ describe("Content Research", () => {
     const events = runs.detail(runId)?.events ?? [];
     const notification = events.find((e) => e.type === "home_notification");
     expect(String(notification?.detail?.message)).toContain("Ben");
+  });
+
+  it("people discovery: public search for co-mentions reaches the proposer, and a sick search still runs", async () => {
+    /* Story 21 sources candidates from co-mentions found by public search, not
+       from what the model happens to recall. */
+    const queries: string[] = [];
+    let seen: { title: string; url: string; snippet: string }[] = [];
+    const discoverer: PeopleDiscoverer = {
+      discover: async (input) => {
+        seen = input.searchResults;
+        return [];
+      },
+    };
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const { host } = makeHarness({
+      adapters: [rss],
+      discoverer,
+      searchPublic: async (query) => {
+        queries.push(query);
+        return [{ title: "Ada and Grace", url: "https://example.com/a", snippet: "co-mention" }];
+      },
+    });
+    host.addPerson({ name: "Ada", handleHints: { blogRssHints: [] } });
+
+    await host.discoverNow();
+    await host.idle();
+
+    expect(queries.some((q) => q.includes("Ada"))).toBe(true);
+    expect(seen.map((r) => r.url)).toEqual(["https://example.com/a"]);
+
+    // A search route that throws narrows the evidence rather than failing the Run.
+    const sick = makeHarness({
+      adapters: [makeAdapter({ id: "rss", itemsFor: () => [] })],
+      discoverer,
+      searchPublic: async () => {
+        throw new Error("search unavailable");
+      },
+    });
+    sick.host.addPerson({ name: "Ada", handleHints: { blogRssHints: [] } });
+    const sickRunId = await sick.host.discoverNow();
+    await sick.host.idle();
+    expect(sick.runs.open(sickRunId)?.read().status).toBe("done");
   });
 
   it("people discovery: proposes, approves into a watched person, dismisses against re-suggestion, restores", async () => {

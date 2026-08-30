@@ -7,6 +7,7 @@ import {
   type ContentResearchRunResult,
   type NamedPerson,
   type PersonSuggestion,
+  type RunMeta,
 } from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
@@ -14,6 +15,7 @@ import type { Runs } from "../../runs.js";
 import type { ConfigStore } from "../../config.js";
 import { ContentResearchStore } from "./store.js";
 import { createFeedDiscoverer, type FeedDiscoverer } from "./feeds.js";
+import { createPublicSearch, type PublicSearch } from "./search.js";
 import type { HookExtractor, PeopleDiscoverer, SheetsAccess, GmailAccess } from "./ports.js";
 import type { SourceAdapter } from "../content-scout/ports.js";
 import {
@@ -39,6 +41,7 @@ export interface ContentResearchHostDeps {
   getOwnerEmail?: () => string | null;
   getBrandProfile?: () => { markdown: string } | null;
   discoverFeeds?: FeedDiscoverer;
+  searchPublic?: PublicSearch;
   configStore?: ConfigStore;
   now?: () => Date;
   log?: (message: string) => void;
@@ -117,6 +120,7 @@ export class ContentResearchHost implements HostedModule {
             return [];
           },
         },
+        searchPublic: deps.searchPublic ?? createPublicSearch(),
         now,
       }),
       now,
@@ -264,17 +268,15 @@ export class ContentResearchHost implements HostedModule {
     );
   }
 
-  async retryRun(id: string): Promise<import("@chief-of-staff-demo/shared").RunMeta> {
-    // Try each runner that may own the run
-    try {
-      return await this.runner.retryRun(id);
-    } catch {
-      try {
-        return await this.backfillRunner.retryRun(id);
-      } catch {
-        return await this.discoveryRunner.retryRun(id);
-      }
-    }
+  /**
+   * The three Runners share this Module id, so the Run's own Intake — not a
+   * chain of failed attempts — says which one owns it.
+   */
+  async retryRun(id: string): Promise<RunMeta> {
+    const intake = this.deps.runs.open(id)?.read().intake;
+    if (intake === CONTENT_RESEARCH_BACKFILL_INTAKE) return this.backfillRunner.retryRun(id);
+    if (intake === CONTENT_RESEARCH_DISCOVERY_INTAKE) return this.discoveryRunner.retryRun(id);
+    return this.runner.retryRun(id);
   }
 
   getIndex(): ContentResearchIndex {
