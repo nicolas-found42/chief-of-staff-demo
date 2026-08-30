@@ -229,6 +229,22 @@ evidence-backed guest and company context with concise conversation starters, so
 explicit uncertainty; every Output Adapter renders this same result.
 _Avoid_: Briefing, prep brief, email body
 
+**Executive Assistant**:
+A planned Module that reads a meeting transcript from the Transcripts Drive folder and produces a
+Meeting Debrief for the workspace owner. It is named for the role it plays rather than for the one
+artifact it produces today, so further retrospective work can join it without renaming the Module.
+_Status_: planned (grilled #15, 2026-08-29)
+_Avoid_: Executive Coach (the Relay original's framing, and the voice the model is cast in, not the
+Module), Meeting Debrief Generator, Coach Module
+
+**Meeting Debrief**:
+The structured result one Executive Assistant Run extracts from a transcript after a meeting: the
+firm decisions taken, action items carrying an inferred owner and an optional due date, the
+questions left open, a short summary, an effectiveness assessment with the specific evidence behind
+it, and coaching advice. Every Output Adapter renders this same result.
+_Avoid_: Meeting Brief (that one is prospective, prepared from Calendar before a meeting; a Meeting
+Debrief is retrospective, extracted from a transcript afterwards), debrief email, meeting notes
+
 **Internal Domain**:
 An email domain configured as belonging to the workspace owner's organization.
 _Avoid_: Company email domain, owner domain
