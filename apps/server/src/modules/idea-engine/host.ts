@@ -5,6 +5,7 @@ import type { ConfigStore } from "../../config.js";
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
+import { reclaimStrandedDriveRun } from "../../state.js";
 import { IDEA_ENGINE_INTAKE, ideaEngineModule, type IdeaEngineInput } from "./module.js";
 import { IdeaEngineIntake, type DriveFileClient } from "./intake.js";
 import { IdeaIndex } from "./index.js";
@@ -125,6 +126,14 @@ export class IdeaEngineHost implements HostedModule {
   }
 
   start(): void {
+    /* Runs interrupted before `convert` cannot be recovered and their file is
+       already checkpointed, so return that work to the poller first. */
+    reclaimStrandedDriveRun({
+      runs: this.deps.runs,
+      stateFile: workspaceLayout(this.deps.workspaceDir).stateFile,
+      moduleId: IDEA_ENGINE_MODULE_ID,
+      durableFile: "transcript.txt",
+    });
     this.runner.startRecoveryLoop();
     this.intake.start();
   }

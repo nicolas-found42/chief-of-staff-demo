@@ -118,20 +118,23 @@ export function youtubeTrendsModule(deps: YoutubeDeps): ShellModule<YoutubeInput
    * and proof against this app disappearing. Appended, never overwritten, so the
    * spreadsheet holds the same history the app does.
    *
-   * A Run with no spreadsheet has no `publish` Stage at all: the operator has
-   * not asked for one, and the trend is complete without it. A spreadsheet that
-   * once existed and has gone is the opposite case, and fails the Run.
+   * A Run without a spreadsheet fails visibly after preserving its measured
+   * result, so a retry can publish that same snapshot after setup is complete.
+   * A spreadsheet that once existed and has gone fails the same Stage.
    */
   const publish = async (ctx: RunContext, measured: YoutubeRunResult): Promise<void> => {
     const access = deps.getSheets();
-    if (access.ok && access.spreadsheet === null) {
-      return;
-    }
     await ctx.stage("publish", async () => {
       if (!access.ok) {
         throw connectionUnavailable(ctx, access.state);
       }
-      const sheet = access.spreadsheet!;
+      if (access.spreadsheet === null) {
+        throw new StageFailure(
+          "spreadsheet_not_configured",
+          "Create the spreadsheet in Settings → YouTube Trends, then retry. The measured view counts are already recorded and will not be fetched again.",
+        );
+      }
+      const sheet = access.spreadsheet;
       for (const channel of measured.channels) {
         const tab = tabNameFor({ title: channel.title, id: channel.channelId });
         const rows = channel.videos.map((video) => [

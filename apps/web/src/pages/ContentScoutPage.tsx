@@ -410,6 +410,9 @@ function PacksView({ packs }: { packs: ContentPack[] }) {
                 <h3>{pack.opportunityTitle}</h3>
                 <p className="muted">
                   {pack.draftIds.length}/23 local drafts · {pack.notionPages.length}/23 Notion pages
+                  {Number.isInteger(pack.supportingSourceItemCount)
+                    ? ` · ${pack.supportingSourceItemCount} supporting Source Item${pack.supportingSourceItemCount === 1 ? "" : "s"}`
+                    : ""}
                 </p>
               </div>
               <span

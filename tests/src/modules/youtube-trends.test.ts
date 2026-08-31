@@ -187,6 +187,7 @@ function withSpreadsheet(): void {
 
 describe("the daily Run", () => {
   it("records every video on the channel, and says so in one line", async () => {
+    withSpreadsheet();
     const id = await measure();
 
     const detail = runs.detail(id)!;
@@ -199,6 +200,8 @@ describe("the daily Run", () => {
       "channel_enumerated",
       "stage_started",
       "channel_counted",
+      "stage_started",
+      "rows_appended",
       "run_done",
     ]);
     const result = resultOf(id);
@@ -218,6 +221,7 @@ describe("the daily Run", () => {
   });
 
   it("reads the back catalogue too, in chunks, with no cutoff", async () => {
+    withSpreadsheet();
     youtube.uploads = Array.from({ length: 120 }, (_, index) => `v${index}`);
     youtube.views = Object.fromEntries(youtube.uploads.map((id, index) => [id, index]));
 
@@ -229,6 +233,7 @@ describe("the daily Run", () => {
   });
 
   it("names a video YouTube will not answer for, and finishes anyway", async () => {
+    withSpreadsheet();
     youtube.unavailable = new Set(["v2"]);
 
     const id = await measure();
@@ -243,7 +248,7 @@ describe("the daily Run", () => {
     });
   });
 
-  it("fails the Run when the consent screen is missing the scope, naming what to add", async () => {
+  it("fails the Run when the saved sign-in lacks the scope, naming what to add", async () => {
     youtube.throws = SCOPE_MISSING;
 
     const id = await measure();
@@ -268,6 +273,7 @@ describe("the daily Run", () => {
   });
 
   it("retries in place, from the top, rather than as a second Run for the day", async () => {
+    withSpreadsheet();
     youtube.throws = SCOPE_MISSING;
     const id = await measure();
     expect(runs.detail(id)!.status).toBe("failed");
@@ -283,6 +289,7 @@ describe("the daily Run", () => {
   });
 
   it("recovers an orphaned measurement in place from enumeration", async () => {
+    withSpreadsheet();
     const orphan = runs.create({
       module: YOUTUBE_MODULE_ID,
       moduleVersion: YOUTUBE_MODULE_VERSION,
@@ -353,11 +360,16 @@ describe("the daily Run", () => {
 });
 
 describe("the spreadsheet", () => {
-  it("has no publish Stage at all until there is a spreadsheet to write to", async () => {
+  it("keeps the measured result but fails publish visibly until a spreadsheet exists", async () => {
     const id = await measure();
     expect(runs.detail(id)!.events.map((event) => event.type)).not.toContain("rows_appended");
     expect(sheets.appended).toEqual([]);
-    expect(runs.detail(id)!.status).toBe("done");
+    expect(runs.detail(id)).toMatchObject({
+      status: "failed",
+      failedStage: "publish",
+      failureHint: expect.stringContaining("Create the spreadsheet"),
+    });
+    expect(runs.open(id)!.readArtifact("result.json")).not.toBeNull();
   });
 
   it("appends the day as rows, one tab per channel, long rather than wide", async () => {
@@ -462,15 +474,30 @@ describe("one Run per calendar day", () => {
     expect(started).toEqual(["2026-08-23", "2026-08-24"]);
   });
 
-  it("refuses a manual run on a day already recorded, and says which day", async () => {
+  it("allows repeat manual runs on a day already recorded, so intra-day view changes are visible", async () => {
+    /* View counts move through the day, so a person may measure whenever they
+       like. The automatic schedule stays at one Run per day; only the manual
+       trigger repeats, and every Run is kept because each is a measurement. */
     const started: string[] = [];
     const now = at("2026-08-23T07:00:00");
     const daily = intake(() => now, started);
     await daily.runNow();
+    await daily.runNow();
+    await daily.runNow();
 
-    await expect(daily.runNow()).rejects.toThrow(/2026-08-23 is already recorded/);
-    expect(started).toHaveLength(1);
+    expect(started).toEqual(["2026-08-23", "2026-08-23", "2026-08-23"]);
     expect(daily.status()).toEqual({ lastRunDay: "2026-08-23", todayRecorded: true });
+  });
+
+  it("keeps the automatic schedule at one Run per day", async () => {
+    const started: string[] = [];
+    let now = at("2026-08-23T07:00:00");
+    const daily = intake(() => now, started);
+    expect(await daily.tick()).not.toBeNull();
+    await daily.runNow();
+    now = at("2026-08-23T18:00:00");
+    expect(await daily.tick()).toBeNull();
+    expect(started).toEqual(["2026-08-23", "2026-08-23"]);
   });
 
   it("does not burn the day when there is nothing to measure yet", async () => {
@@ -537,8 +564,8 @@ describe("the trend, derived from the Runs", () => {
     expect(trend.lastDay).toBe("2026-08-08");
     const channel = trend.channels[0];
     expect(channel.totals).toEqual([
-      { day: "2026-08-01", views: 140 },
-      { day: "2026-08-08", views: 210 },
+      { day: "2026-08-01", measuredAt: "2026-08-01T07:00:00.000Z", views: 140 },
+      { day: "2026-08-08", measuredAt: "2026-08-08T07:00:00.000Z", views: 210 },
     ]);
     expect(channel.latest).toBe(210);
     /* Seven days back is a measurement, not an interpolation. */

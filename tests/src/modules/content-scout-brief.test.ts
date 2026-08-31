@@ -1020,12 +1020,11 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
     expect(runAfterRestart).toBe(briefBefore);
   });
 
-  it("rejects insufficient evidence when fewer than three qualifying Source Items", async () => {
+  it("creates a visibly single-source Opportunity Brief at the floor of one", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-brief-insufficient-"));
     const runs = openRuns(workspaceDir);
     const items = [
       makeItem({ id: "rss:one", canonicalUrl: "https://example.com/one", targetId: "t" }),
-      makeItem({ id: "rss:two", canonicalUrl: "https://example.com/two", targetId: "t" }),
     ];
     const ranker: OpportunityRanker = {
       async rank({ items }) {
@@ -1090,18 +1089,15 @@ describe("Opportunity Brief evidence-complete immutability (ticket 58)", () => {
     const oppId = host.activeShortlist()!.opportunities[0].id;
     await host.select(runId, [oppId]);
     await host.idle();
-    const detail = runs.detail(runId)!;
-    expect(detail.status).toBe("failed");
-    expect(detail.failedStage).toBe("draft");
-    expect(detail.failureHint).toMatch(/insufficient/i);
-    expect(detail.failureHint).toMatch(/3/);
-    // No brief should be considered evidence-complete, but artifact may exist with 2 items? It should fail before writing complete brief? Check that draft stage failed
-    const briefArtifact = runs.open(runId)!.readArtifact(`brief-brief-${runId}--${oppId}.json`);
-    // If brief was not written due to insufficient evidence, it may be null or incomplete; either is acceptable but should not be used for generation
-    if (briefArtifact) {
-      const brief = JSON.parse(briefArtifact);
-      expect(brief.sourceItems.length).toBeLessThan(3);
-    }
+    expect(runs.detail(runId)!.status).toBe("done");
+    const brief = JSON.parse(
+      runs.open(runId)!.readArtifact(`brief-brief-${runId}--${oppId}.json`)!,
+    ) as OpportunityBrief;
+    expect(brief.supportingSourceItemCount).toBe(1);
+    expect(brief.sourceItems.map((item) => item.id)).toEqual(["rss:one"]);
+    expect(host.listContentPacks()).toEqual([
+      expect.objectContaining({ supportingSourceItemCount: 1 }),
+    ]);
   });
 
   it("uses the complete collected evidence when only some items were enriched", async () => {

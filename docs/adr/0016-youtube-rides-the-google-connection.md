@@ -1,5 +1,9 @@
 # YouTube view counts ride the Google connection, not an API key
 
+**Note (2026-08-31):** An insufficient-scope response does not distinguish a saved sign-in that
+predates the scope from a consent screen that does not declare it. The operator is now told to sign
+in again first and to check Data Access only if re-authentication does not resolve the refusal.
+
 **Note (2026-08-24, correction):** an earlier draft of this ADR named `videos.batchGetStats` as
 the statistics call and said it returns a `failedVideoIds` list. What is built calls `videos.list`
 and derives the failed ids from the ids that did not come back. **The code is right and this ADR

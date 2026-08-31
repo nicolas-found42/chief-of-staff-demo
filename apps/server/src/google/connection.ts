@@ -171,7 +171,7 @@ export function googleSurfaceHint(surface: GoogleSurface, error: unknown): strin
     reason === "insufficientPermissions" ||
     /insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(message)
   ) {
-    return `The consent screen is missing the ${SURFACE[surface].scope} scope. Add it under Data Access, then sign in again.`;
+    return `The saved Google sign-in does not have the ${SURFACE[surface].scope} scope. Sign in again first. If that does not fix it, add the scope under Data Access, then sign in again.`;
   }
   if (surface === "drive") {
     const raw = error as {

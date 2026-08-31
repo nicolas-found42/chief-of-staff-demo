@@ -24,6 +24,14 @@ import {
 } from "./google/calendar.js";
 import { DuckDuckGoPublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import { createEmployerProposer } from "./enrichment/employerProposer.js";
+import { PersonProfileResolver } from "../../person-profile/resolver.js";
+import { PersonProfileStore } from "../../person-profile/store.js";
+import {
+  createHubSpotPersonProfileSource,
+  createPublicWebPersonProfileSource,
+} from "../../person-profile/sources.js";
+import { createPublicSearch } from "../content-research/search.js";
+import { createFeedDiscoverer } from "../content-research/feeds.js";
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;
@@ -114,6 +122,16 @@ export function createMeetingBriefProductionRuntime(
     workspaceCalendarRelayRegistry(relayStore),
   );
   const hubSpotConnection = new HubSpotConnection(options.configStore);
+  const personProfiles = new PersonProfileResolver({
+    store: new PersonProfileStore(options.workspaceDir),
+    sources: [
+      createHubSpotPersonProfileSource(() => hubSpotConnection.api()),
+      createPublicWebPersonProfileSource({
+        search: createPublicSearch(),
+        discoverFeeds: createFeedDiscoverer(),
+      }),
+    ],
+  });
   const host = new MeetingBriefHost({
     runs: options.runs,
     workspaceDir: options.workspaceDir,
@@ -125,6 +143,7 @@ export function createMeetingBriefProductionRuntime(
       gmailProvider,
       calendarHistoryProvider,
       driveProvider,
+      personProfiles,
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
     },

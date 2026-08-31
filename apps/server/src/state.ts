@@ -129,3 +129,57 @@ export function rememberSeenForModule(
   }
   rememberSeen(stateFile, externalId);
 }
+
+/** Release a remembered Drive file so the next poll ingests it again. */
+function forgetSeenForModule(stateFile: string, moduleId: string, externalId: string): void {
+  const state = loadState(stateFile);
+  const ids =
+    moduleId === IDEA_ENGINE_MODULE_ID ? state.ideaEngine.ingestedIds : state.drive.ingestedIds;
+  const at = ids.indexOf(externalId);
+  if (at === -1) return;
+  ids.splice(at, 1);
+  saveState(stateFile, state);
+}
+
+/**
+ * A Drive Run holds its bytes only in memory until its first Stage writes
+ * `durableFile`; the poller, however, remembers the file as ingested the moment
+ * the Run exists. A restart in between therefore leaves a Run that
+ * `planRecovery` can never resume and a checkpoint that stops the poller ever
+ * re-queuing it, so the transcript is lost with no trace.
+ *
+ * Reclaiming fails those Runs visibly and forgets their file, which returns the
+ * work to the poller. A Run that already wrote `durableFile` is left alone —
+ * `planRecovery` can resume that one.
+ */
+export function reclaimStrandedDriveRun(args: {
+  runs: {
+    list: (query: { module: string }) => { runs: Array<{ id: string; status: string }> };
+    open: (id: string) => {
+      read: () => { intake: string | null; externalId?: string | null };
+      readArtifact: (name: string) => string | null;
+      failed: (stage: string, reason: string, hint: string) => void;
+    } | null;
+  };
+  stateFile: string;
+  moduleId: string;
+  durableFile: string;
+}): number {
+  let reclaimed = 0;
+  for (const summary of args.runs.list({ module: args.moduleId }).runs) {
+    if (summary.status !== "pending" && summary.status !== "running") continue;
+    const run = args.runs.open(summary.id);
+    if (!run) continue;
+    const meta = run.read();
+    if (meta.intake !== "drive") continue;
+    if (run.readArtifact(args.durableFile) !== null) continue;
+    run.failed(
+      "convert",
+      "stranded_before_convert",
+      "The Run was interrupted before its transcript was stored. The file has been returned to the Drive poller and will be ingested again.",
+    );
+    if (meta.externalId) forgetSeenForModule(args.stateFile, args.moduleId, meta.externalId);
+    reclaimed += 1;
+  }
+  return reclaimed;
+}

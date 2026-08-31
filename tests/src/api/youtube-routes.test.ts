@@ -116,6 +116,8 @@ describe("YoutubeHost lifecycle", () => {
           addedAt: "2026-08-01T00:00:00.000Z",
         },
       ],
+      spreadsheetId: "sheet-1",
+      spreadsheetUrl: "https://docs.google.com/sheet-1",
     });
     const orphan = runs.create({
       module: YOUTUBE_MODULE_ID,
@@ -232,7 +234,7 @@ describe("POST /api/youtube/run", () => {
     expect(response.json().error).toContain("Add a channel first");
   });
 
-  it("records the day once, then refuses and says which day", async () => {
+  it("records again on a day already recorded, so intra-day movement is visible", async () => {
     await app.inject({
       method: "POST",
       url: "/api/youtube/channels",
@@ -243,8 +245,10 @@ describe("POST /api/youtube/run", () => {
     await host.idle();
 
     const second = await app.inject({ method: "POST", url: "/api/youtube/run" });
-    expect(second.statusCode).toBe(409);
-    expect(second.json().error).toContain("2026-08-23 is already recorded");
+    expect(second.statusCode).toBe(200);
+    await host.idle();
+    /* Both Runs are kept: each is a measurement, not a correction of the other. */
+    expect(first.json().runId).not.toBe(second.json().runId);
   });
 });
 

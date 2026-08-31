@@ -32,6 +32,10 @@ const SCORE_KEYS = [
   "speculationRisk",
 ] as const;
 
+function hasMeaningfulText(value: string): boolean {
+  return /[\p{L}\p{N}]/u.test(value);
+}
+
 /* Each schema is both the provider contract and the validation seam for its
    Stage. It travels with its own call, so a Stage cannot silently receive
    another Stage's Result Shape. */
@@ -111,6 +115,14 @@ scores contains ${SCORE_KEYS.join(", ")}, each 0..1; speculationRisk is risk, so
         const knownIds = new Set(items.map((item) => item.id));
         const knownUrls = new Set(items.map((item) => item.canonicalUrl));
         return (
+          [
+            opportunity.title,
+            opportunity.angleDescription,
+            opportunity.urgency,
+            opportunity.explanation,
+          ].every(hasMeaningfulText) &&
+          (opportunity.materialDevelopment === null ||
+            hasMeaningfulText(opportunity.materialDevelopment.explanation)) &&
           opportunity.sourceItemIds.length > 0 &&
           opportunity.sourceItemIds.every((id) => knownIds.has(id)) &&
           opportunity.sourceUrls.every((url) => knownUrls.has(url))

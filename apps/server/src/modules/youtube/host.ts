@@ -26,7 +26,7 @@ import {
   type SheetsAccess,
   type SheetsClient,
 } from "./spreadsheet.js";
-import { DayAlreadyRecordedError, NothingToMeasureError, YoutubeIntake } from "./intake.js";
+import { NothingToMeasureError, YoutubeIntake } from "./intake.js";
 import {
   YOUTUBE_INTAKE,
   YOUTUBE_MODULE_ID,
@@ -233,10 +233,6 @@ export class YoutubeHost implements HostedModule {
       try {
         return { runId: await this.intake.runNow() };
       } catch (error) {
-        if (error instanceof DayAlreadyRecordedError) {
-          reply.code(409).send({ error: error.message });
-          return;
-        }
         if (error instanceof NothingToMeasureError) {
           reply.code(400).send({ error: error.message });
           return;

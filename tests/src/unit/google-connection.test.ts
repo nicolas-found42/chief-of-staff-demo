@@ -423,7 +423,7 @@ describe("verifySetup — asking Google what is missing", () => {
     expect(check.items[0].detail).toMatch(/few minutes/i);
   });
 
-  it("names the scope the consent screen is missing", async () => {
+  it("treats a stale saved sign-in as the first insufficient-scope remedy", async () => {
     withToken();
     const check = await checking((surface) => {
       if (surface === "gmail") {
@@ -431,8 +431,13 @@ describe("verifySetup — asking Google what is missing", () => {
       }
     }).verifySetup();
 
-    expect(check.items[1].detail).toContain("gmail.compose");
-    expect(check.items[1].detail).toContain("Data Access");
+    const detail = check.items[1].detail;
+    expect(detail).toContain("gmail.compose");
+    expect(detail).toMatch(/sign in again first/i);
+    expect(detail).toContain("If that does not fix it");
+    expect(detail.toLowerCase().indexOf("sign in again first")).toBeLessThan(
+      detail.indexOf("Data Access"),
+    );
   });
 
   it("records a refused grant, so a Run does not have to rediscover it", async () => {

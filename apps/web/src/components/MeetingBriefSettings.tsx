@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
   GoogleStatus,
-  GuestProfileCheckResult,
-  GuestProfileStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
   SetupCheck,
@@ -38,13 +36,6 @@ export function MeetingBriefSettings({
   const [hubSpotError, setHubSpotError] = useState<string | null>(null);
   const [hubSpotCheck, setHubSpotCheck] = useState<HubSpotSetupCheck | null>(null);
   const [checkingHubSpot, setCheckingHubSpot] = useState(false);
-  const [profileStatus, setProfileStatus] = useState<GuestProfileStatus | null>(null);
-  const [profileEndpoint, setProfileEndpoint] = useState("");
-  const [profileKey, setProfileKey] = useState("");
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [profileCheck, setProfileCheck] = useState<GuestProfileCheckResult | null>(null);
-  const [checkingProfile, setCheckingProfile] = useState(false);
 
   const refreshRelay = async () => {
     try {
@@ -64,18 +55,9 @@ export function MeetingBriefSettings({
     }
   };
 
-  const refreshProfile = async () => {
-    try {
-      setProfileStatus(await api.guestProfileStatus());
-    } catch (error) {
-      setProfileError(errorMessage(error));
-    }
-  };
-
   useEffect(() => {
     void refreshRelay();
     void refreshHubSpot();
-    void refreshProfile();
     void api
       .meetingBriefConfig()
       .then((config) => setInternalDomains(config.internalDomains.join(", ")))
@@ -154,48 +136,6 @@ export function MeetingBriefSettings({
       setHubSpotError(errorMessage(error));
     } finally {
       setCheckingHubSpot(false);
-    }
-  };
-
-  const connectProfile = async () => {
-    if (profileBusy) return;
-    setProfileBusy(true);
-    setProfileError(null);
-    try {
-      setProfileStatus(await api.guestProfileConnect(profileEndpoint.trim(), profileKey.trim()));
-      setProfileKey("");
-    } catch (error) {
-      setProfileError(errorMessage(error));
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const disconnectProfile = async () => {
-    if (profileBusy) return;
-    setProfileBusy(true);
-    setProfileError(null);
-    setProfileCheck(null);
-    try {
-      setProfileStatus(await api.guestProfileDisconnect());
-    } catch (error) {
-      setProfileError(errorMessage(error));
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const checkProfile = async () => {
-    if (checkingProfile) return;
-    setCheckingProfile(true);
-    setProfileError(null);
-    try {
-      setProfileCheck(await api.guestProfileCheck());
-      await refreshProfile();
-    } catch (error) {
-      setProfileError(errorMessage(error));
-    } finally {
-      setCheckingProfile(false);
     }
   };
 
@@ -407,94 +347,22 @@ export function MeetingBriefSettings({
           ) : null}
         </div>
 
-        <div className="card" role="group" aria-labelledby="group-guest-profile">
-          <h3 id="group-guest-profile">Guest Profile</h3>
+        <div className="card" role="group" aria-labelledby="group-person-profiles">
+          <h3 id="group-person-profiles">Person Profiles</h3>
           <p className="muted">
-            Per-user provider for current role and background. Status exposes only a redacted key
-            hint.
+            Reusable, evidence-backed identity records for people encountered across Modules.
+            Meeting Brief Generator resolves each external attendee from their email and displayed
+            name, then preserves the exact profile revision used by the brief.
           </p>
-          {profileStatus ? (
-            <p role="status">
-              <strong>Status:</strong> {profileStatus.state}
-              {profileStatus.endpoint ? ` · ${profileStatus.endpoint}` : ""}
-              {profileStatus.apiKeyHint ? ` (${profileStatus.apiKeyHint})` : ""}
-              {profileStatus.lastVerifiedAt
-                ? ` — last verified ${profileStatus.lastVerifiedAt}`
-                : ""}
-            </p>
-          ) : (
-            <p className="muted" role="status">
-              Loading Guest Profile status…
-            </p>
-          )}
-          <div className="field">
-            <label htmlFor="guest-profile-endpoint">Guest Profile endpoint</label>
-            <input
-              id="guest-profile-endpoint"
-              type="url"
-              value={profileEndpoint}
-              onChange={(event) => setProfileEndpoint(event.target.value)}
-              placeholder="https://profile.example/api"
-              autoComplete="off"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="guest-profile-key">Guest Profile API key</label>
-            <input
-              id="guest-profile-key"
-              type="password"
-              value={profileKey}
-              onChange={(event) => setProfileKey(event.target.value)}
-              placeholder="sk-..."
-              autoComplete="off"
-            />
-            <p className="muted field-hint">
-              Provider supplies current employer evidence; no imported browser session or CAPTCHA
-              bypass.
-            </p>
-          </div>
-          {profileError ? (
-            <p className="field-error" role="alert">
-              {profileError}
-            </p>
-          ) : null}
-          <div className="field-row">
-            <button
-              type="button"
-              className="action-button"
-              onClick={() => void connectProfile()}
-              disabled={profileEndpoint.trim() === ""}
-              aria-disabled={profileBusy}
-            >
-              {profileBusy ? "Connecting…" : "Connect Guest Profile"}
-            </button>
-            <button
-              type="button"
-              className="action-button"
-              onClick={() => void disconnectProfile()}
-              disabled={profileStatus?.state === "unconfigured"}
-              aria-disabled={profileBusy}
-            >
-              Disconnect
-            </button>
-            <button
-              type="button"
-              className="action-button"
-              onClick={() => void checkProfile()}
-              disabled={profileStatus?.state === "unconfigured"}
-              aria-disabled={checkingProfile}
-            >
-              {checkingProfile ? "Checking…" : "Check my setup"}
-            </button>
-          </div>
-          {profileCheck ? (
-            <div className="banner" role="status">
-              <p>
-                <strong>Probe:</strong> {profileCheck.state} — {profileCheck.detail}
-              </p>
-              <p className="muted">Checked at {profileCheck.checkedAt}</p>
-            </div>
-          ) : null}
+          <p role="status">
+            <strong>Sources:</strong> connected HubSpot records, public-web mentions and social
+            references, and feeds declared by high-confidence matched personal sites.
+          </p>
+          <p className="muted field-hint">
+            Email addresses, full names, handles, profile URLs, and employer clues participate in
+            identity matching. LinkedIn enters only through publicly indexed references or a future
+            explicitly authorized adapter—never an imported browser session or CAPTCHA bypass.
+          </p>
         </div>
 
         <div className="card" role="group" aria-labelledby="group-google-meeting-brief">

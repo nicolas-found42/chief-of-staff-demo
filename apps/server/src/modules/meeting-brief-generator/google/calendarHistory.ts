@@ -7,7 +7,12 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { RunContext } from "../../../engine/module.js";
 import type { MeetingBriefEnrichmentSection } from "@chief-of-staff-demo/shared";
-import { readErrorCode, readErrorStatus, sanitizeEvidence } from "../enrichment/helpers.js";
+import {
+  readErrorCode,
+  readErrorStatus,
+  sanitizeArtifactVersion,
+  sanitizeEvidence,
+} from "../enrichment/helpers.js";
 import { runArtifactLifecycle } from "./artifactLifecycle.js";
 
 export interface CalendarHistoryEvent {
@@ -148,7 +153,7 @@ export async function enrichCalendarHistory(
   const key = googleEnrichmentKey(eventVersion, normalized, "calendar-history");
   const stableRef = key;
   const maxResults = GOOGLE_ENRICHMENT_MAX_CALENDAR_HISTORY;
-  const filename = `calendar-history-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`;
+  const filename = `calendar-history-${normalized.replace(/[^a-z0-9]/g, "_")}-${sanitizeArtifactVersion(eventVersion)}.json`;
 
   return runArtifactLifecycle({
     ctx,

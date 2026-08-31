@@ -31,7 +31,10 @@ type FeedItem = {
   mediaThumbnail?: { $?: Record<string, string> } | { $?: Record<string, string> }[];
 };
 
-function failedOutcome(status: number): "blocked_access" | "rate_limit" | "internal_failure" {
+function failedOutcome(
+  status: number,
+): "not_found" | "blocked_access" | "rate_limit" | "internal_failure" {
+  if (status === 404) return "not_found";
   if (status === 401 || status === 403) return "blocked_access";
   if (status === 429) return "rate_limit";
   return "internal_failure";

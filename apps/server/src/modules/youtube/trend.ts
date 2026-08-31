@@ -44,7 +44,9 @@ export class TrendIndex {
       /* Oldest first, so every series reads left to right. Days with no Run are
          simply absent: no API returns a past day's view count, so a gap is the
          truth about what was measured and is never filled in. */
-      this.days = this.results().sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+      this.days = this.results().sort((a, b) =>
+        a.measuredAt < b.measuredAt ? -1 : a.measuredAt > b.measuredAt ? 1 : 0,
+      );
     }
     const days = this.days;
     const status = this.deps.status();
@@ -124,12 +126,13 @@ function trendFor(channel: YoutubeChannel, days: YoutubeRunResult[]): ChannelTre
     }
     totals.push({
       day: result.day,
+      measuredAt: result.measuredAt,
       views: counts.videos.reduce((sum, video) => sum + video.viewCount, 0),
     });
     for (const video of counts.videos) {
       titles.set(video.id, video.title);
       const series = seriesByVideo.get(video.id) ?? [];
-      series.push({ day: result.day, views: video.viewCount });
+      series.push({ day: result.day, measuredAt: result.measuredAt, views: video.viewCount });
       seriesByVideo.set(video.id, series);
     }
     latestVideoIds = counts.videos.map((video) => video.id);

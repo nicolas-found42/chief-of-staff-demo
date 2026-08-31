@@ -11,6 +11,16 @@ export function sanitizeEvidence(text: string): string {
     .trim();
 }
 
+/**
+ * Artifact filenames interpolate the Calendar event version, but Google returns
+ * `etag` as a quoted string (`"3576241611505950"`). Run artifact names are
+ * restricted to /^[A-Za-z0-9][A-Za-z0-9._-]*$/, so the version is folded the
+ * same way guest addresses and domains already are.
+ */
+export function sanitizeArtifactVersion(eventVersion: string): string {
+  return eventVersion.replace(/[^A-Za-z0-9]/g, "_");
+}
+
 export function readErrorStatus(error: unknown): number | null {
   if (error && typeof error === "object" && "status" in error) {
     const v = (error as Record<string, unknown>).status;
@@ -68,7 +78,7 @@ export function isProviderWideError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   if (status === 401 || status === 403 || status === 503) return true;
   // Providers declare outages with the `unavailable:` category (ADR-0030 classified facts), so a
-  // 502/504 from Guest Profile or public search classifies provider-wide by message; other 4xx
+  // 502/504 from the legacy profile provider or public search classifies provider-wide by message; other 4xx
   // statuses (404 empty, 429 rate-limited) stay per-source explicit gaps after retry (US69).
   if (
     /invalid_grant|insufficient authentication|ACCESS_TOKEN|accessNotConfigured|has not been used|is disabled|not configured|missing_configuration|rejected|unavailable|missing_authority/i.test(

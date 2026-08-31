@@ -659,7 +659,9 @@ export class MeetingBriefHost implements HostedModule {
     this.timer = undefined;
   }
 
-  // Live Module (issue://92) — Settings/Intake + Guest Profile surface via host routes (issue://83,87) plus Cross-Run index.
+  // Live Module (issue://92) — Settings/Intake plus Cross-Run index. The
+  // guest-profile routes below are compatibility-only for Workspaces created
+  // before Person Profiles became a built-in Workspace capability (ADR-0042).
   async routes(app: FastifyInstance): Promise<void> {
     app.get("/api/meeting-brief/guest-profile/status", async () => {
       if (!this.guestProfileConnection) {

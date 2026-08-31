@@ -258,6 +258,42 @@ describe("Source Discovery evidence routes", () => {
     });
   });
 
+  it("searches the Brand Profile business domain instead of delivery-method differentiators", async () => {
+    const fetched: string[] = [];
+    const fetchText: PublicHttpFetch = async (url) => {
+      fetched.push(url);
+      if (url.startsWith("https://search.example/")) return htmlResponse(searchHtml([]), url);
+      return htmlResponse("<!doctype html><html><body></body></html>", url);
+    };
+    const discoverer = new PublicRouteSourceDiscoverer(
+      fetchText,
+      (query) => `https://search.example/?q=${encodeURIComponent(query)}`,
+    );
+
+    await discoverer.discover({
+      brandProfile: {
+        ...brandProfile(),
+        markdown: `# Brand Profile
+
+## Positioning
+AI-driven growth for founders and executives.
+
+## Differentiators
+Hands-on practical keyboard training rather than abstract theoretical lectures.
+
+## Content themes
+Executive AI education, business workflow automation, and SaaS growth.`,
+      },
+      approvedTargets: [sourceTarget(TARGET_URL, "source-1")],
+    });
+
+    const queries = fetched
+      .filter((url) => url.startsWith("https://search.example/"))
+      .map((url) => new URL(url).searchParams.get("q") ?? "");
+    expect(queries.some((query) => /executive AI education/i.test(query))).toBe(true);
+    expect(queries.every((query) => !/hands-on practical keyboard/i.test(query))).toBe(true);
+  });
+
   it("isolates a partial route failure and a missing target from the other routes", async () => {
     const failingPage = `<!doctype html>
 <html><body><div class="related"><a href="https://related.example/topic">Related</a></div></body></html>`;

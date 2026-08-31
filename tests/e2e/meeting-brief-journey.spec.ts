@@ -49,18 +49,12 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   });
   expect(hubRes.ok()).toBe(true);
 
-  // Fake Guest Profile connection (endpoint + key, redacted)
-  const gpRes = await request.post("/api/meeting-brief/guest-profile/connect", {
-    data: { endpoint: "https://profile.example", apiKey: "sk-fake-1234567890" },
-  });
-  expect(gpRes.ok()).toBe(true);
-
   // Verify Settings coherently presents diagnostics (one place: Settings page)
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Meeting Brief Generator" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Internal Domains" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "HubSpot CRM" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Guest Profile" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Person Profiles" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Google — Calendar, Gmail, Drive" }),
   ).toBeVisible();

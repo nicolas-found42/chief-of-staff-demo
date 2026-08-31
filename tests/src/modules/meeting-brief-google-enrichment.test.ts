@@ -503,6 +503,41 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
     expect(detail.failedStage).toBe("enrich");
   });
 
+  it("a quoted Google ETag event version still composes valid artifact names", async () => {
+    // Google Calendar returns `etag` as a quoted string, e.g. "\"3576241611505950\"".
+    // Every artifact filename interpolates eventVersion, and runs.ts rejects names
+    // outside /^[A-Za-z0-9][A-Za-z0-9._-]*$/ — so the quotes must be sanitized.
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(now),
+      log: () => {},
+      gmailDeliveryProvider: fixtureDeliver,
+      completeBrief: completeFixtureBrief,
+      enrichmentProviders: {
+        gmailProvider: new FakeGmailProvider(),
+        calendarHistoryProvider: new FakeCalendarHistoryProvider(),
+        driveProvider: new FakeDriveProvider(),
+        profileProvider: createFakeGuestProfileProvider({}),
+        getHubSpotApi: () => stubHubSpotApi(),
+        publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
+      },
+    });
+
+    const event = fixtureEvent({ version: '"3576241611505950"' });
+    host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
+    now = new Date("2026-08-28T11:00:00.000Z");
+    const created = await host.processDueSchedules(new Date(now));
+    await host.idle();
+    const detail = runs.detail(created[0]);
+
+    const invalidName = detail?.events.find((e) =>
+      JSON.stringify(e.detail ?? {}).includes("Invalid artifact name"),
+    );
+    expect(invalidName).toBeUndefined();
+    expect(detail?.failedStage).not.toBe("enrich");
+  });
+
   it("same-version retry preserves completed/empty without crossing revision version", async () => {
     // First, test preservation within same Run via internal bounded retry + manual retry
     // Create a provider that fails first call for alice, then succeeds; our enrich per-source already retries boundedly, so this will succeed without manual retry.

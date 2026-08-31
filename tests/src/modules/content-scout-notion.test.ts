@@ -212,6 +212,7 @@ describe("one-way Notion calendar publication", () => {
         },
       },
       sourceItems: [],
+      supportingSourceItemCount: 0,
       claims: [],
       brandProfileRevisionId: "brand-1",
       brandProfileMarkdown: "# Brand",

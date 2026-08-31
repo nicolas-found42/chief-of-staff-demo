@@ -103,22 +103,23 @@ function brandKeywords(markdown: string): string[] {
 
 /** Semantic Brand Profile values used as category-level discovery queries. */
 function brandCategories(markdown: string): string[] {
-  const categorySections = new Set([
+  const categorySections = [
+    "content themes",
+    "customer problems",
+    "products",
+    "customers",
     "positioning",
-    "audiences",
-    "offers",
-    "differentiators",
-    "content constraints",
-  ]);
+  ] as const;
+  const categorySectionSet = new Set<string>(categorySections);
   let section = "";
-  const categories: string[] = [];
+  const valuesBySection = new Map<string, string[]>();
   for (const rawLine of markdown.split("\n")) {
     const heading = rawLine.match(/^#{2,6}\s+(.+?)\s*$/);
     if (heading) {
       section = heading[1]!.trim().toLowerCase();
       continue;
     }
-    if (!categorySections.has(section)) continue;
+    if (!categorySectionSet.has(section)) continue;
     const phrase = rawLine
       .replace(/^\s*[-*+]\s+/, "")
       .replace(/[*_`#[\]]/g, "")
@@ -128,9 +129,12 @@ function brandCategories(markdown: string): string[] {
       .split(" ")
       .slice(0, 10)
       .join(" ");
-    if (phrase.length >= 8 && !categories.includes(phrase)) categories.push(phrase);
+    if (phrase.length < 8) continue;
+    const values = valuesBySection.get(section) ?? [];
+    if (!values.includes(phrase)) values.push(phrase);
+    valuesBySection.set(section, values);
   }
-  return categories;
+  return categorySections.flatMap((name) => valuesBySection.get(name) ?? []);
 }
 
 function resolveUrl(href: string | null, base: string): URL | null {

@@ -299,7 +299,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         }
       }
 
-      // enrich — unified evidence via Google, HubSpot, Guest Profile, Public Intelligence (issue://88)
+      // enrich — unified evidence via Google, HubSpot, Person Profiles, Public Intelligence
       let enrichResult: { sections: unknown[]; evidence: string[] } = {
         sections: [],
         evidence: [],

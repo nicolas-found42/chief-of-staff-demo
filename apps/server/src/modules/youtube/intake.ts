@@ -24,15 +24,6 @@ export function dueNow(now: Date, lastRunDay: string | null): boolean {
   return lastRunDay !== localDay(now);
 }
 
-export class DayAlreadyRecordedError extends Error {
-  constructor(readonly day: string) {
-    super(
-      `${day} is already recorded. There is one Run per day, so today's numbers are already in.`,
-    );
-    this.name = "DayAlreadyRecordedError";
-  }
-}
-
 export class NothingToMeasureError extends Error {
   constructor() {
     super("Add a channel first — there is nothing to measure.");
@@ -123,9 +114,10 @@ export class YoutubeIntake {
    */
   async runNow(): Promise<string> {
     const day = localDay(this.deps.now());
-    if (this.remembered() === day) {
-      throw new DayAlreadyRecordedError(day);
-    }
+    /* View counts move through the day, so a person may measure as often as
+       they like. Every Run is kept: each one is a real measurement, and the
+       trend reads them in `measuredAt` order. Only the automatic schedule
+       below stays at one Run per day. */
     const started = await this.begin(day);
     if (started === null) {
       throw new NothingToMeasureError();

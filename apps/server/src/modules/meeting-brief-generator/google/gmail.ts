@@ -8,7 +8,12 @@ import {
   type GoogleEnrichmentArtifact,
   googleEnrichmentKey,
 } from "@chief-of-staff-demo/shared";
-import { readErrorCode, readErrorStatus, sanitizeEvidence } from "../enrichment/helpers.js";
+import {
+  readErrorCode,
+  readErrorStatus,
+  sanitizeArtifactVersion,
+  sanitizeEvidence,
+} from "../enrichment/helpers.js";
 import { runArtifactLifecycle } from "./artifactLifecycle.js";
 
 export interface GmailThread {
@@ -170,7 +175,7 @@ export async function enrichGmailExact(
   const key = googleEnrichmentKey(eventVersion, normalized, "gmail-exact");
   const stableRef = key;
   const maxResults = GOOGLE_ENRICHMENT_MAX_GMAIL_EXACT;
-  const filename = `gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${eventVersion}.json`;
+  const filename = `gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${sanitizeArtifactVersion(eventVersion)}.json`;
   return runArtifactLifecycle({
     ctx,
     filename,
@@ -300,7 +305,7 @@ export async function enrichGmailCompanyDomain(
 
   const sanitizedGuest = normalizedGuest.replace(/[^a-z0-9]/g, "_");
   const sanitizedDomain = normalizedDomain.replace(/[^a-z0-9]/g, "_");
-  const filename = `gmail-company-${sanitizedGuest}-${sanitizedDomain}-${eventVersion}.json`;
+  const filename = `gmail-company-${sanitizedGuest}-${sanitizedDomain}-${sanitizeArtifactVersion(eventVersion)}.json`;
   return runArtifactLifecycle({
     ctx,
     filename,

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { TrendPoint } from "@chief-of-staff-demo/shared";
 import { chartGeometry, daysBetween } from "../../../apps/web/src/chart";
 
-const point = (day: string, views: number): TrendPoint => ({ day, views });
+const point = (day: string, views: number): TrendPoint => ({
+  day,
+  measuredAt: `${day}T12:00:00.000Z`,
+  views,
+});
 
 describe("chartGeometry", () => {
   it("draws nothing until there are two measured days", () => {

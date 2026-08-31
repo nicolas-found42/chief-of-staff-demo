@@ -12,6 +12,7 @@ import {
   readErrorCode,
   readErrorStatus,
   sanitizeEvidence,
+  sanitizeArtifactVersion,
 } from "./helpers.js";
 // ---------------------------------------------------------------------------
 // Public search result — normalized evidence, source ownership preserved
@@ -174,7 +175,7 @@ function fileNameFor(
       : source === "industry-news"
         ? "public-industry-news"
         : "public-employer-verification";
-  return `${prefix}-${sanitizedGuest}${sanitizedCompany}-${eventVersion}.json`;
+  return `${prefix}-${sanitizedGuest}${sanitizedCompany}-${sanitizeArtifactVersion(eventVersion)}.json`;
 }
 
 // ---------------------------------------------------------------------------

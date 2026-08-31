@@ -7,7 +7,12 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { RunContext } from "../../../engine/module.js";
 import type { MeetingBriefEnrichmentSection } from "@chief-of-staff-demo/shared";
-import { readErrorCode, readErrorStatus, sanitizeEvidence } from "../enrichment/helpers.js";
+import {
+  readErrorCode,
+  readErrorStatus,
+  sanitizeArtifactVersion,
+  sanitizeEvidence,
+} from "../enrichment/helpers.js";
 import { runArtifactLifecycle } from "./artifactLifecycle.js";
 
 export interface DriveDoc {
@@ -128,7 +133,7 @@ export async function enrichDriveDocs(
   const maxResults = GOOGLE_ENRICHMENT_MAX_DRIVE_DOCS;
   const sanitizedGuest = normalizedGuest.replace(/[^a-z0-9]/g, "_");
   const sanitizedDomain = normalizedDomain ? normalizedDomain.replace(/[^a-z0-9]/g, "_") : "person";
-  const filename = `drive-${sanitizedGuest}-${sanitizedDomain}-${eventVersion}.json`;
+  const filename = `drive-${sanitizedGuest}-${sanitizedDomain}-${sanitizeArtifactVersion(eventVersion)}.json`;
 
   // Build bounded query: for company domain, search for Drive docs containing company domain or guest email
   // For consumer domains, only guest-specific query

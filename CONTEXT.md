@@ -84,8 +84,9 @@ _Avoid_: Source (ambiguous with Source Target), content (too broad), post (not e
 
 **Opportunity Brief**:
 The immutable input shared by all independent Content Draft generations for one selected Content
-Opportunity. It contains the opportunity, strongest supporting Source Items, bounded enrichment,
-claim evidence, Brand Profile revision and snapshot, and no sibling Content Drafts.
+Opportunity. It contains one to eight of the strongest supporting Source Items, states their count,
+and carries bounded enrichment, claim evidence, the Brand Profile revision and snapshot, and no
+sibling Content Drafts.
 _Avoid_: Prompt, context (alone), research bundle
 
 **Source Discovery Run**:
@@ -219,10 +220,30 @@ _Avoid_: Idea Generator, Ideas Module
 **Meeting Brief Generator**:
 A live Module that prepares a concise briefing for an upcoming meeting with external guests.
 Its live product includes relationship history, company records, public intelligence, relevant
-workspace material, and guest profiles rather than treating any one enrichment class as a later
+workspace material, and Person Profiles rather than treating any one enrichment class as a later
 enhancement.
 _Status_: live
 _Avoid_: Meeting Briefing Generator (the Relay original), Briefing Module
+
+**Person Profile**:
+A durable, reusable, evidence-backed record of one person, resolved from Identity Signals and
+composed of sourced Person Evidence. It is owned by the Workspace rather than by the workflow that
+first requested it, so meeting preparation, content research, and future outreach may reuse the same
+identity without silently sharing guesses.
+_Avoid_: Guest Profile, guest dossier, contact profile (the person need not be a contact)
+
+**Identity Signal**:
+An email address, full name, social handle, profile URL, employer clue, or other observed identifier
+used to resolve evidence to one Person Profile. A signal is an input to matching, not proof that two
+records identify the same person.
+_Avoid_: Identity, lookup key, match (a match is a conclusion)
+
+**Person Evidence**:
+A sourced claim, profile reference, publication, activity, or mention attributed to a Person Profile
+with its provenance and match confidence. Ambiguous evidence remains visible but cannot establish a
+person, employer, or owned publishing surface as fact.
+_Avoid_: Profile data, intelligence (alone), fact (unless the evidence establishes it)
+
 **Meeting Brief**:
 The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
 evidence-backed guest and company context with concise conversation starters, source references and
@@ -297,6 +318,8 @@ _Avoid_: Content Scout, LinkedIn Content Researcher, Post Analyzer
 
 **Named Person**:
 A person Content Research is configured to watch. They are identified by name and optional handle hints (for example Bluesky DID, YouTube channel, HN username) and resolve to one or more Source Target-equivalent feeds or channels. The set is curated by the workspace owner.
+They may reference a Person Profile, but the watch-list decision and the reusable identity record are
+different concepts.
 _Avoid_: profile, handle (alone), lead
 
 **Person Suggestion**:

@@ -12,6 +12,7 @@ export const SOURCE_DIAGNOSTIC_CLASSIFICATIONS = [
   "legitimate_empty",
   "no_new_material",
   "unsupported_capability",
+  "not_found",
   "blocked_access",
   "response_shape_change",
   "rate_limit",
@@ -736,8 +737,10 @@ export interface OpportunityBrief {
   createdAt: string;
   /** Frozen opportunity identity: angle, urgency, explanation and ranking dimensions are immutable. */
   opportunity: RankedOpportunity;
-  /** Strongest three to eight qualifying Source Items, bounded and with explicit completeness. */
+  /** Strongest one to eight qualifying Source Items, bounded and with explicit completeness. */
   sourceItems: SourceItem[];
+  /** Visible count of the supporting Source Items frozen into this Opportunity Brief. */
+  supportingSourceItemCount: number;
   /** Factual claims stored separately from titles, each grounded to one or more canonical URLs. */
   claims: { claim: string; sourceUrls: string[] }[];
   brandProfileRevisionId: string;
@@ -767,6 +770,8 @@ export interface ContentPack {
   opportunityId: string;
   opportunityTitle: string;
   briefId: string;
+  /** Count of supporting Source Items in the immutable Opportunity Brief. */
+  supportingSourceItemCount: number;
   createdAt: string;
   draftIds: string[];
   notionPageKeys: string[];

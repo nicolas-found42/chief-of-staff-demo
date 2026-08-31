@@ -79,40 +79,26 @@ function storyTokens(item: SourceItem): string[] {
   ].sort();
 }
 
-const STOP_WORDS = new Set([
-  "the",
-  "and",
-  "for",
-  "from",
-  "with",
-  "that",
-  "this",
-  "what",
-  "into",
-  "publish",
-  "publishes",
-  "published",
-  "regulator",
-  "regulators",
-  "rule",
-  "rules",
-  "new",
-  "change",
-  "changes",
-  "force",
-  "forces",
-  "product",
-  "products",
-  "team",
-  "teams",
-]);
+const STOP_WORDS = new Set(["the", "and", "for", "from", "with", "that", "this", "what", "into"]);
+
+const MIN_SHARED_STORY_TOKENS = 2;
+const MIN_STORY_JACCARD = 0.18;
 
 function storySeed(item: SourceItem): string {
   return item.storyKey?.trim().toLowerCase() || storyTokens(item).slice(0, 16).join("-");
 }
 
 function sameInferredStory(left: SourceItem, right: SourceItem): boolean {
-  return storySeed(left) === storySeed(right);
+  const leftKey = left.storyKey?.trim().toLowerCase();
+  const rightKey = right.storyKey?.trim().toLowerCase();
+  if (leftKey || rightKey) return Boolean(leftKey && rightKey && leftKey === rightKey);
+
+  const leftTokens = new Set(storyTokens(left));
+  const rightTokens = new Set(storyTokens(right));
+  const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  if (shared < MIN_SHARED_STORY_TOKENS) return false;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return union > 0 && shared / union >= MIN_STORY_JACCARD;
 }
 
 function inferredGroupSeed(groupItems: SourceItem[]): string {

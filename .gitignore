@@ -8,6 +8,7 @@ test-results/
 coverage/
 ACCESSIBILITY-AUDIT.md
 .archive/
+.firecrawl/
 
 # Wayfinder maps and their tickets. Local planning artifacts: they record how a
 # decision was reached, which the ADRs and CONTEXT.md already carry once it is.

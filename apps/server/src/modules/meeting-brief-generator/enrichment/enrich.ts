@@ -7,9 +7,11 @@ import type {
   HubSpotEnrichmentArtifact,
   MeetingBriefEnrichmentSection,
   MeetingBriefEvent,
+  PersonProfile,
 } from "@chief-of-staff-demo/shared";
 import {
   GUEST_PROFILE_PROVIDER_ID,
+  PERSON_PROFILE_SOURCE_ID,
   isGuestProfileEmployerMatch,
 } from "@chief-of-staff-demo/shared";
 import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
@@ -21,6 +23,7 @@ import { enrichCalendarHistory } from "../google/calendarHistory.js";
 import type { DriveProvider } from "../google/drive.js";
 import { enrichDriveDocs } from "../google/drive.js";
 import type { GuestProfileProvider } from "../profile/provider.js";
+import type { PersonProfiles } from "../../../person-profile/resolver.js";
 import type { HubSpotApi } from "../hubspot/client.js";
 import { enrichGuestWithHubSpot } from "../hubspot/enrichment.js";
 import type { PublicIntelligenceProvider } from "./publicIntelligence.js";
@@ -36,6 +39,7 @@ import {
   readErrorStatus,
   sanitizeEvidence,
   withBoundedRetry,
+  sanitizeArtifactVersion,
 } from "./helpers.js";
 // ---------------------------------------------------------------------------
 // Unified enrich deps — all providers injectable fakes
@@ -44,6 +48,8 @@ export interface MeetingBriefEnrichmentProviders {
   gmailProvider?: GmailProvider | null;
   calendarHistoryProvider?: CalendarHistoryProvider | null;
   driveProvider?: DriveProvider | null;
+  personProfiles?: PersonProfiles | null;
+  /** @deprecated Legacy single-endpoint adapter retained while stored config and old Runs migrate. */
   profileProvider?: GuestProfileProvider | null;
   getHubSpotApi?: (() => HubSpotApi | null) | null;
   publicIntelligenceProvider?: PublicIntelligenceProvider | null;
@@ -80,6 +86,75 @@ function profileSection(
   };
 }
 
+function personProfileSection(
+  profile: PersonProfile,
+  guestEmail: string,
+): MeetingBriefEnrichmentSection {
+  const directEvidence = [profile.role, profile.background, profile.currentEmployer]
+    .filter((value): value is string => Boolean(value))
+    .map(sanitizeEvidence);
+  const sourcedEvidence = profile.evidence
+    .map((item) => sanitizeEvidence(item.summary || item.title))
+    .filter(Boolean);
+  const references = deduplicateEvidence([
+    ...profile.profileUrls,
+    ...profile.websites,
+    ...profile.feeds.map((feed) => feed.url),
+    ...profile.evidence.map((item) => item.url),
+  ]);
+  return {
+    source: PERSON_PROFILE_SOURCE_ID,
+    guest: guestEmail.toLowerCase(),
+    status: directEvidence.length > 0 || sourcedEvidence.length > 0 ? "completed" : "empty",
+    evidence: deduplicateEvidence([...directEvidence, ...sourcedEvidence]),
+    references,
+  };
+}
+
+async function enrichPersonProfile(
+  profiles: PersonProfiles,
+  input: {
+    guestEmail: string;
+    guestName: string | null;
+    companyDomain: string | null;
+    eventVersion: string;
+  },
+  ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
+): Promise<{ profile: PersonProfile; section: MeetingBriefEnrichmentSection }> {
+  const sanitized = input.guestEmail.replace(/[^a-zA-Z0-9]/g, "_");
+  const filename = `person-profile-${sanitized}-${sanitizeArtifactVersion(input.eventVersion)}.json`;
+  const existingRaw = ctx.readFile(filename);
+  if (existingRaw) {
+    try {
+      const existing = JSON.parse(existingRaw) as PersonProfile;
+      if (existing.id && existing.revision > 0)
+        return {
+          profile: existing,
+          section: personProfileSection(existing, input.guestEmail),
+        };
+    } catch {
+      // A malformed Run-local snapshot is refreshed from the canonical Workspace profile.
+    }
+  }
+  const profile = await profiles.resolve({
+    emails: [input.guestEmail],
+    fullNames: input.guestName ? [input.guestName] : [],
+    handles: {},
+    profileUrls: [],
+    employerHints: input.companyDomain ? [input.companyDomain] : [],
+  });
+  ctx.writeFile(filename, `${JSON.stringify(profile, null, 2)}\n`);
+  const section = personProfileSection(profile, input.guestEmail);
+  ctx.event("person_profile_resolved", {
+    guest: input.guestEmail.toLowerCase(),
+    profileId: profile.id,
+    profileRevision: profile.revision,
+    outcome: section.status,
+    sources: profile.sourceDiagnostics.map((item) => item.source),
+  });
+  return { profile, section };
+}
+
 // Preservation helpers for hubspot/profile
 
 async function enrichProfileWithRetry(
@@ -92,7 +167,7 @@ async function enrichProfileWithRetry(
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
 ): Promise<{ artifact: GuestProfileArtifact; section: MeetingBriefEnrichmentSection }> {
   const sanitized = guestEmail.replace(/[^a-zA-Z0-9]/g, "_");
-  const filename = `profile-${sanitized}-${eventVersion}.json`;
+  const filename = `profile-${sanitized}-${sanitizeArtifactVersion(eventVersion)}.json`;
 
   const existingRaw = ctx.readFile(filename);
   if (existingRaw) {
@@ -177,7 +252,7 @@ async function enrichHubSpotWithRetry(
   employerMatch: HubSpotCompany | null;
 }> {
   const sanitized = guestEmail.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_");
-  const checkpointFilename = `hubspot-${eventVersion}-${sanitized}-checkpoint.json`;
+  const checkpointFilename = `hubspot-${sanitizeArtifactVersion(eventVersion)}-${sanitized}-checkpoint.json`;
   interface HubSpotCheckpointCache {
     contact?: HubSpotContact | null;
     companyIds?: string[];
@@ -305,7 +380,7 @@ async function enrichHubSpotWithRetry(
       },
       stableRef: `${eventVersion}::${guestEmail.toLowerCase()}::hubspot-contact`,
     };
-    const failedFilename = `hubspot-${eventVersion}-${sanitized}-hubspot-contact.json`;
+    const failedFilename = `hubspot-${sanitizeArtifactVersion(eventVersion)}-${sanitized}-hubspot-contact.json`;
     ctx.writeFile(failedFilename, JSON.stringify(failedArtifact, null, 2) + "\n");
     return {
       artifacts: [failedArtifact],
@@ -353,7 +428,7 @@ export async function enrichUnified(
     if (!providers.gmailProvider) missing.push("gmail");
     if (!providers.calendarHistoryProvider) missing.push("calendarHistory");
     if (!providers.driveProvider) missing.push("drive");
-    if (!providers.profileProvider) missing.push("guestProfile");
+    if (!providers.personProfiles && !providers.profileProvider) missing.push("personProfile");
     if (!hubSpotApi) missing.push("hubSpot");
     if (!providers.publicIntelligenceProvider) missing.push("publicIntelligence");
     if (missing.length > 0) {
@@ -421,10 +496,26 @@ export async function enrichUnified(
       allSections.push(section);
     }
 
-    // 5. Guest Profile
+    // 5. Person Profile. New Runs use the Workspace-owned resolver; the legacy
+    // single-endpoint provider remains readable for old tests/config during migration.
     let profileArtifact: GuestProfileArtifact | null = null;
     let profileEmployerMatch: { name: string; domain: string | null } | null = null;
-    if (providers.profileProvider) {
+    if (providers.personProfiles) {
+      const { profile, section } = await enrichPersonProfile(
+        providers.personProfiles,
+        {
+          guestEmail,
+          guestName,
+          companyDomain: !isConsumer && !isInternal && domain ? lowerDomain : null,
+          eventVersion,
+        },
+        ctx,
+      );
+      if (profile.currentEmployer) {
+        profileEmployerMatch = { name: profile.currentEmployer, domain: null };
+      }
+      allSections.push(section);
+    } else if (providers.profileProvider) {
       const { artifact, section } = await enrichProfileWithRetry(
         providers.profileProvider,
         guestEmail,
@@ -478,8 +569,14 @@ export async function enrichUnified(
         domain: profileEmployerMatch.domain,
         source: "profile",
       };
-      employerMatchEvidence = profileArtifact?.currentEmployer?.evidence ?? [];
-      employerMatchReferences = profileArtifact?.references ?? [];
+      const personProfileSection = allSections.find(
+        (section) =>
+          section.source === PERSON_PROFILE_SOURCE_ID && section.guest === guestEmail.toLowerCase(),
+      );
+      employerMatchEvidence =
+        profileArtifact?.currentEmployer?.evidence ?? personProfileSection?.evidence ?? [];
+      employerMatchReferences =
+        profileArtifact?.references ?? personProfileSection?.references ?? [];
     } else if (providers.proposeEmployer && providers.publicIntelligenceProvider) {
       // Model proposes candidate to drive research
       const candidate = await providers.proposeEmployer(guestEmail, guestName, eventVersion);

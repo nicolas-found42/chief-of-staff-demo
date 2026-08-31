@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig, RunMeta } from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
@@ -5,6 +6,7 @@ import type { GoogleConnection } from "../../google/connection.js";
 import { DriveIntake } from "../../intake/drive.js";
 import type { CompleteJson } from "../../llm/providers.js";
 import { Pipeline } from "../../pipeline/run.js";
+import { reclaimStrandedDriveRun } from "../../state.js";
 import type { Runs } from "../../runs.js";
 import { TRANSCRIPT_MODULE_ID, TRANSCRIPT_MODULE_VERSION, type RunSourceSpec } from "./module.js";
 
@@ -30,8 +32,12 @@ export class TranscriptHost implements HostedModule {
   readonly version = TRANSCRIPT_MODULE_VERSION;
   private readonly pipeline: Pipeline;
   private readonly intake: DriveIntake;
+  private readonly runs: Runs;
+  private readonly stateFile: string;
 
   constructor(deps: TranscriptHostDeps) {
+    this.runs = deps.runs;
+    this.stateFile = join(deps.workspaceDir, "state.json");
     this.pipeline = new Pipeline({
       runs: deps.runs,
       getCompleteJson: deps.getCompleteJson,
@@ -60,6 +66,14 @@ export class TranscriptHost implements HostedModule {
   }
 
   start(): void {
+    /* Runs interrupted before `convert` cannot be recovered and their file is
+       already checkpointed, so return that work to the poller first. */
+    reclaimStrandedDriveRun({
+      runs: this.runs,
+      stateFile: this.stateFile,
+      moduleId: TRANSCRIPT_MODULE_ID,
+      durableFile: "transcript.txt",
+    });
     this.pipeline.startRecoveryLoop();
     this.intake.start();
   }

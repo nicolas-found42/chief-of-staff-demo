@@ -411,10 +411,10 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
     const qualifying = mapped.filter(isQualifyingSourceItem);
     const adapterStates = new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state]));
     const evidence = selectStrongestEvidence({ qualifying, adapterStates, now: deps.now() });
-    if (evidence.length < 3) {
+    if (evidence.length < 1) {
       throw new StageFailure(
         "insufficient_evidence",
-        `Insufficient evidence: the selected opportunity has only ${evidence.length} qualifying Source Items; at least 3 are required for an evidence-complete brief.`,
+        "The selected Content Opportunity has no qualifying supporting Source Items.",
       );
     }
     const claims = extractGroundedClaims(evidence);
@@ -439,6 +439,7 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       createdAt: deps.now().toISOString(),
       opportunity: frozenOpportunity,
       sourceItems: evidence,
+      supportingSourceItemCount: evidence.length,
       claims: groundedClaims,
       brandProfileRevisionId: profile.id,
       brandProfileMarkdown: profile.markdown,
@@ -494,6 +495,7 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
             opportunityId: opportunity.id,
             opportunityTitle: opportunity.title,
             briefId: brief.id,
+            supportingSourceItemCount: brief.supportingSourceItemCount,
             createdAt: deps.now().toISOString(),
             draftIds: [],
             notionPageKeys: [],

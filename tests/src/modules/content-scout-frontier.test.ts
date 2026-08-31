@@ -19,6 +19,7 @@ import type {
 } from "../../../apps/server/src/modules/content-scout/ports";
 import { openRuns } from "../../../apps/server/src/runs";
 import { ExternalRuntimeInspector } from "../../../apps/server/src/modules/content-scout/runtime";
+import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";
 
 const START = Date.parse("2026-08-25T12:00:00.000Z");
 
@@ -283,6 +284,49 @@ describe("Content Scout frontier contracts", () => {
       etag: "etag-https://one.example/retry",
       lastModified: "Tue, 25 Aug 2026 12:00:00 GMT",
     });
+  });
+
+  it("classifies a missing RSS Source Target permanently and does not retry it", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-frontier-rss-not-found-"));
+    const runs = openRuns(workspaceDir);
+    let fetches = 0;
+    const adapter = new RssSourceAdapter(
+      async () => {
+        fetches += 1;
+        return {
+          url: "https://a16z.com/feed/",
+          status: 404,
+          contentType: "text/html",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: "Not found",
+        };
+      },
+      () => new Date(START),
+    );
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(START),
+      sleep: async () => undefined,
+      adapters: [adapter],
+      ranker: noOpRanker,
+      log: () => undefined,
+    });
+    acceptProfile(host);
+    host.addSourceTarget({ adapterId: "rss", label: "a16z", url: "https://a16z.com/feed/" });
+
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    expect(fetches).toBe(1);
+    expect(
+      runs
+        .detail(runId)!
+        .events.filter((event) => event.type === "source_adapter_attempted")
+        .map((event) => event.detail?.outcome),
+    ).toEqual(["not_found"]);
   });
 
   it("persists one sanitized Source Adapter summary without losing per-Source-Target attempt receipts", async () => {
@@ -722,7 +766,7 @@ describe("Content Scout frontier contracts", () => {
             targetId: target.id,
             adapterId: "rss",
             canonicalUrl: "https://wire.example/acme-rule",
-            title: "Regulators publish Acme interoperability rule and 2026 deadline",
+            title: "37,000 people watched Infinite Slop so I registered InfiniteSlop.ai",
           }),
           sourceItem("stale", {
             targetId: target.id,
@@ -788,7 +832,7 @@ describe("Content Scout frontier contracts", () => {
               targetId: target.id,
               adapterId: "instagram",
               canonicalUrl: "https://instagram.example/p/acme-rule",
-              title: "New Acme deadline forces interoperability changes for product teams",
+              title: "I built Infinite Slop, an infinite interactive AI generated live stream",
             }),
             sourceItem("exact-url-duplicate", {
               targetId: target.id,

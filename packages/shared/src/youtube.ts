@@ -49,15 +49,20 @@ export interface YoutubeChannelCounts {
 /** `result.json` for one daily Run: the day's counts, and nothing derived. */
 export interface YoutubeRunResult {
   version: 1;
-  /** The local calendar day measured, `YYYY-MM-DD`. One Run per day. */
+  /** The local calendar day measured, `YYYY-MM-DD`. May repeat across Runs. */
   day: string;
   measuredAt: string;
   channels: YoutubeChannelCounts[];
 }
 
-/** One measured day. Days with no Run are absent, never interpolated. */
+/**
+ * One measurement. Days with no Run are absent, never interpolated, and a day
+ * measured more than once contributes one point per Run — `measuredAt`, not
+ * `day`, is what orders and distinguishes them.
+ */
 export interface TrendPoint {
   day: string;
+  measuredAt: string;
   views: number;
 }
 
@@ -77,7 +82,7 @@ export interface ChannelTrend {
   channelId: string;
   handle: string;
   title: string;
-  /** The channel's total views per measured day. */
+  /** The channel's total views, one point per Run, oldest first. */
   totals: TrendPoint[];
   latest: number;
   change7: number | null;

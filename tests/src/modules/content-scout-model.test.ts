@@ -111,6 +111,21 @@ describe("Content Scout model adapters", () => {
     expect(attempts).toBe(2);
   });
 
+  it("does not expose punctuation-only model fragments as Content Opportunity text", async () => {
+    const ranker = modelOpportunityRanker(() => async () => ({
+      opportunities: [{ ...opportunity, urgency: "},{" }],
+    }));
+
+    const ranked = await ranker.rank({
+      brandProfile: profile,
+      items: [sourceItem],
+      storyGroups: [{ canonicalKey: "verified-change", sourceItemIds: [sourceItem.id] }],
+      limit: 5,
+    });
+
+    expect(ranked).toEqual([]);
+  });
+
   it("retries capacity while generating a Content Draft", async () => {
     let attempts = 0;
     const generator = modelDraftGenerator(() => async () => {
@@ -125,6 +140,7 @@ describe("Content Scout model adapters", () => {
       createdAt: "2026-08-25T12:00:00.000Z",
       opportunity: { ...opportunity, id: "opportunity-1" },
       sourceItems: [sourceItem],
+      supportingSourceItemCount: 1,
       claims: [],
       brandProfileRevisionId: profile.id,
       brandProfileMarkdown: profile.markdown,
