@@ -1,4 +1,4 @@
-import type { SourceAdapter } from "../../../workspace/public-research/source-adapter.js";
+import type { SourceAdapter } from "../../../source-adapters/source-adapter.js";
 import { ContentScoutRetention } from "../retention.js";
 import { ExternalRuntimeInspector } from "../runtime.js";
 import type { BrowserRenderer } from "./browser.js";

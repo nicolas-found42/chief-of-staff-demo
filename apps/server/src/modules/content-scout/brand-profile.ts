@@ -17,7 +17,7 @@ import {
   assertPublicHttpUrl,
   publicHttpFetch,
   type PublicHttpFetch,
-} from "../../workspace/public-research/http.js";
+} from "../../source-adapters/http.js";
 import { completeJsonWithCapacityRetries } from "./model-retry.js";
 import type { BrandProfileCrawler, BrandProfileProposer } from "./ports.js";
 import type { ContentScoutStore } from "./store.js";

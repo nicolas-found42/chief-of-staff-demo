@@ -1,10 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type {
-  BrandProfileRevision,
-  BrandProfileSourceScan,
-} from "@chief-of-staff-demo/shared";
+import type { BrandProfileRevision, BrandProfileSourceScan } from "@chief-of-staff-demo/shared";
 
 type BrandProfileMetadata = Omit<BrandProfileRevision, "markdown">;
 
@@ -31,7 +28,7 @@ export class WorkspaceBrandProfileStore {
 
   constructor(
     workspaceDir: string,
-    private readonly now: () => Date,
+    private readonly now: () => Date = () => new Date(),
   ) {
     this.root = join(workspaceDir, "content-scout");
     this.profilesDir = join(this.root, "brand-profiles");
@@ -102,7 +99,10 @@ export class WorkspaceBrandProfileStore {
     }
   }
 
-  private writeState(state: { brandProfiles: BrandProfileMetadata[]; [key: string]: unknown }): void {
+  private writeState(state: {
+    brandProfiles: BrandProfileMetadata[];
+    [key: string]: unknown;
+  }): void {
     this.writeAtomic(this.stateFile, `${JSON.stringify(state, null, 2)}\n`);
   }
 

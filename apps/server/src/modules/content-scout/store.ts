@@ -15,7 +15,7 @@ import type {
   SourceSuggestion,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
-import { WorkspaceBrandProfileStore } from "../../workspace/brand-profile.js";
+import { WorkspaceBrandProfileStore } from "../../brand-profile/store.js";
 
 interface ContentScoutState {
   brandProfiles: Omit<BrandProfileRevision, "markdown">[];

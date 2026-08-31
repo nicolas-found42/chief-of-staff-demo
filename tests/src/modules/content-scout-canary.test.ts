@@ -12,7 +12,7 @@ import { openRuns } from "../../../apps/server/src/runs";
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../apps/server/src/workspace/public-research/source-adapter";
+} from "../../../apps/server/src/source-adapters/source-adapter";
 import type { AdapterDiagnostic } from "@chief-of-staff-demo/shared";
 import { CANARY_INTERVAL_MS, CANARY_MIN_TARGETS } from "@chief-of-staff-demo/shared";
 import {

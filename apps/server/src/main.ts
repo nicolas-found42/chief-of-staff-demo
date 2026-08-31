@@ -44,8 +44,8 @@ import { openRuns } from "./runs.js";
 import { ContentResearchHost } from "./modules/content-research/host.js";
 import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
 import { seedContentResearchV1 } from "./modules/content-research/seed.js";
-import { createPublicSearch } from "./workspace/public-research/search.js";
-import { WorkspaceBrandProfileStore } from "./workspace/brand-profile.js";
+import { createPublicSearch } from "./source-adapters/search.js";
+import { WorkspaceBrandProfileStore } from "./brand-profile/store.js";
 import { buildGoogleAuth } from "./google/oauth.js";
 import {
   createSpreadsheet,
@@ -183,7 +183,7 @@ const refreshContentResearchOwner = async (): Promise<void> => {
   contentResearchOwnerEmail =
     status.state === "connected" && status.email ? status.email.toLowerCase() : null;
 };
-const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir, () => new Date());
+const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
 const contentResearch = new ContentResearchHost({
   runs,
   workspaceDir,

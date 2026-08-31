@@ -7,8 +7,8 @@ import type {
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../workspace/public-research/source-adapter.js";
-import { responseHash } from "../../../workspace/public-research/http.js";
+} from "../../../source-adapters/source-adapter.js";
+import { responseHash } from "../../../source-adapters/http.js";
 import {
   checkpointOf,
   classifyPublicCommandFailure,

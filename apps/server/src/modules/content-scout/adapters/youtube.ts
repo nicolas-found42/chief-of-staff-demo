@@ -15,7 +15,7 @@ import { parseChannelUrl, type ChannelRef } from "../../youtube/channels.js";
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../workspace/public-research/source-adapter.js";
+} from "../../../source-adapters/source-adapter.js";
 import { commandAdapterResults } from "./public-command.js";
 
 const execFileAsync = promisify(execFile);

@@ -24,10 +24,10 @@ import type { DraftGenerator, NotionPublisher, OpportunityRanker } from "./ports
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../workspace/public-research/source-adapter.js";
+} from "../../source-adapters/source-adapter.js";
 import type { ContentScoutStore } from "./store.js";
 import { collectSourceTargets, type CollectedSourceTargetProgress } from "./collection.js";
-import { sanitizeDiagnosticRoute } from "../../workspace/public-research/diagnostics.js";
+import { sanitizeDiagnosticRoute } from "../../source-adapters/diagnostics.js";
 import { determineEligibility, enforceOpportunityIdentity } from "./eligibility.js";
 import {
   CONTENT_SCOUT_MAX_COMMENTS,
