@@ -10,7 +10,7 @@ import type {
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../workspace/public-research/source-adapter.js";
+} from "../../../source-adapters/source-adapter.js";
 import type { BrowserRenderer, BrowserRenderResult } from "./browser.js";
 import {
   canonicalUrl,
@@ -19,7 +19,7 @@ import {
   retryAfterMilliseconds,
   type PublicHttpResponse,
   type PublicHttpFetch,
-} from "../../../workspace/public-research/http.js";
+} from "../../../source-adapters/http.js";
 
 export class WebsiteSourceAdapter implements SourceAdapter {
   readonly id = "website";

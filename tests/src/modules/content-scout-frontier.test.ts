@@ -16,7 +16,7 @@ import type { OpportunityRanker } from "../../../apps/server/src/modules/content
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../apps/server/src/workspace/public-research/source-adapter";
+} from "../../../apps/server/src/source-adapters/source-adapter";
 import { openRuns } from "../../../apps/server/src/runs";
 import { ExternalRuntimeInspector } from "../../../apps/server/src/modules/content-scout/runtime";
 import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";

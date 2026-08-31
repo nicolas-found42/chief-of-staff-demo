@@ -1,11 +1,7 @@
 import { JSDOM } from "jsdom";
 import type { SourceSuggestion } from "@chief-of-staff-demo/shared";
 import type { SourceDiscoverer } from "./ports.js";
-import {
-  canonicalUrl,
-  publicHttpFetch,
-  type PublicHttpFetch,
-} from "../../workspace/public-research/http.js";
+import { canonicalUrl, publicHttpFetch, type PublicHttpFetch } from "../../source-adapters/http.js";
 
 const MAX_TARGETS = 20;
 const MAX_ANCHORS = 200;

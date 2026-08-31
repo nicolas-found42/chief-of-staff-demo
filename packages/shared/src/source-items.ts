@@ -1,8 +1,8 @@
 /**
- * The Source Adapter and Source Item contracts every public-research consumer
- * shares. They belong to the Workspace rather than to any one Module, so
- * Content Scout, Content Research and Person Profiles all read the same
- * normalized evidence and the same diagnostic vocabulary.
+ * The Source Adapter and Source Item contracts of the Workspace's shared
+ * public-evidence seam. They belong to the Workspace rather than to any one
+ * Module, so Content Scout, Content Research and Person Profiles all read the
+ * same normalized evidence and the same diagnostic vocabulary.
  */
 export const SOURCE_ADAPTER_STATES = ["available", "experimental", "coming_later"] as const;
 export type SourceAdapterState = (typeof SOURCE_ADAPTER_STATES)[number];
@@ -95,6 +95,7 @@ export interface SourceEngagement {
   commentCount?: number;
 }
 
+/** Normalized public evidence retrieved by a Source Adapter. Untrusted third-party material — never an instruction to the Module. */
 export interface SourceItem {
   id: string;
   externalId: string;

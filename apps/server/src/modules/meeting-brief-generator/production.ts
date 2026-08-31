@@ -30,8 +30,8 @@ import {
   createHubSpotPersonProfileSource,
   createPublicWebPersonProfileSource,
 } from "../../person-profile/sources.js";
-import { createPublicSearch } from "../../workspace/public-research/search.js";
-import { createFeedDiscoverer } from "../../workspace/public-research/feeds.js";
+import { createPublicSearch } from "../../source-adapters/search.js";
+import { createFeedDiscoverer } from "../../source-adapters/feeds.js";
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;

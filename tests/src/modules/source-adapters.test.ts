@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   sanitizeAdapterDiagnostic,
   sanitizeDiagnosticBody,
-} from "../../../apps/server/src/workspace/public-research/diagnostics.js";
-import { createPublicSearch } from "../../../apps/server/src/workspace/public-research/search.js";
-import { createFeedDiscoverer } from "../../../apps/server/src/workspace/public-research/feeds.js";
-import { failedResult } from "../../../apps/server/src/workspace/public-research/collection.js";
-import type { SourceAdapter } from "../../../apps/server/src/workspace/public-research/source-adapter.js";
+} from "../../../apps/server/src/source-adapters/diagnostics.js";
+import { createPublicSearch } from "../../../apps/server/src/source-adapters/search.js";
+import { createFeedDiscoverer } from "../../../apps/server/src/source-adapters/feeds.js";
+import { failedResult } from "../../../apps/server/src/source-adapters/collection.js";
+import type { SourceAdapter } from "../../../apps/server/src/source-adapters/source-adapter.js";
 
-describe("Workspace public research diagnostics", () => {
+describe("Source Adapter diagnostics", () => {
   it("persists bounded diagnostics without public response content or route values", () => {
     const diagnostic = sanitizeAdapterDiagnostic(
       {
@@ -40,7 +40,7 @@ describe("Workspace public research diagnostics", () => {
   });
 });
 
-describe("Workspace public research discovery", () => {
+describe("Source Adapter discovery", () => {
   it("returns bounded normalized results from anonymous public search", async () => {
     const search = createPublicSearch(async () => ({
       url: "https://html.duckduckgo.com/html/",

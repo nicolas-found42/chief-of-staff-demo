@@ -8,14 +8,14 @@ import {
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../workspace/public-research/source-adapter.js";
+} from "../../../source-adapters/source-adapter.js";
 import {
   canonicalUrl,
   publicHttpFetch,
   responseHash,
   retryAfterMilliseconds,
   type PublicHttpFetch,
-} from "../../../workspace/public-research/http.js";
+} from "../../../source-adapters/http.js";
 
 type FeedItem = {
   guid?: string;

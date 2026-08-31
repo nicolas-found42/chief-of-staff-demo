@@ -10,8 +10,8 @@ import {
   type SourceCanaryHealth,
   type SourceCapability,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter } from "../../workspace/public-research/source-adapter.js";
-import { sanitizeAdapterDiagnostic } from "../../workspace/public-research/diagnostics.js";
+import type { SourceAdapter } from "../../source-adapters/source-adapter.js";
+import { sanitizeAdapterDiagnostic } from "../../source-adapters/diagnostics.js";
 
 interface CanaryState {
   receipts: SourceCanaryReceipt[];

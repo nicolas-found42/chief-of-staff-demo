@@ -7,10 +7,10 @@ import type {
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../workspace/public-research/source-adapter.js";
+} from "../../../source-adapters/source-adapter.js";
 import { JSDOM } from "jsdom";
 import type { BrowserRenderer } from "./browser.js";
-import { responseHash } from "../../../workspace/public-research/http.js";
+import { responseHash } from "../../../source-adapters/http.js";
 
 /**
  * LinkedIn Coming later evidence gate (issue #61).

@@ -10,7 +10,7 @@ import {
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../workspace/public-research/source-adapter.js";
+} from "../../../source-adapters/source-adapter.js";
 import {
   canonicalUrl,
   publicHttpFetch,
@@ -18,7 +18,7 @@ import {
   retryAfterMilliseconds,
   type PublicHttpResponse,
   type PublicHttpFetch,
-} from "../../../workspace/public-research/http.js";
+} from "../../../source-adapters/http.js";
 
 type FeedEntry = {
   link?: string;

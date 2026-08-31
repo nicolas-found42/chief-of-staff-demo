@@ -7,7 +7,7 @@ import type {
   SourceCollectionAttemptReceipt,
   SourceDiagnosticClassification,
   SourceItem,
-} from "./public-research.js";
+} from "./source-items.js";
 
 export const CONTENT_SCOUT_MODULE_ID = "content-scout";
 export const CONTENT_SCOUT_MODULE_VERSION = 1;

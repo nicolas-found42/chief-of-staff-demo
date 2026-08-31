@@ -21,7 +21,7 @@ import { collectSourceTargets, type CollectedSourceTargetProgress } from "./coll
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../workspace/public-research/source-adapter.js";
+} from "../../source-adapters/source-adapter.js";
 import type { ContentScoutStore } from "./store.js";
 
 export const CONTENT_SCOUT_BACKFILL_INTAKE = "source-backfill";

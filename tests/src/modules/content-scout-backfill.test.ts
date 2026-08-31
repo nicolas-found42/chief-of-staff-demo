@@ -7,7 +7,7 @@ import type { ContentScoutRunResult, SourceItem } from "@chief-of-staff-demo/sha
 import { SOURCE_BACKFILL_WINDOWS_DAYS } from "@chief-of-staff-demo/shared";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
 import type { OpportunityRanker } from "../../../apps/server/src/modules/content-scout/ports";
-import type { SourceAdapter } from "../../../apps/server/src/workspace/public-research/source-adapter";
+import type { SourceAdapter } from "../../../apps/server/src/source-adapters/source-adapter";
 import { openRuns } from "../../../apps/server/src/runs";
 
 const START = Date.parse("2026-08-25T12:00:00.000Z");

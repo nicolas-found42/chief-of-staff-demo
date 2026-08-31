@@ -18,7 +18,7 @@ import type {
 import {
   sanitizeDiagnosticBody,
   sanitizeDiagnosticContentType,
-} from "../../workspace/public-research/diagnostics.js";
+} from "../../source-adapters/diagnostics.js";
 
 interface TemporaryRecord {
   id: string;

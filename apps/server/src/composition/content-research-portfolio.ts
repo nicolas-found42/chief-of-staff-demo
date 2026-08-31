@@ -1,4 +1,4 @@
-import type { SourceAdapter } from "../workspace/public-research/source-adapter.js";
+import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import { ContentScoutRetention } from "../modules/content-scout/retention.js";
 import { ExternalRuntimeInspector } from "../modules/content-scout/runtime.js";
 import type { BrowserRenderer } from "../modules/content-scout/adapters/browser.js";
@@ -18,8 +18,8 @@ import { HnAlgoliaSourceAdapter } from "../modules/content-research/adapters/hn.
  * them into its own portfolio is its own business and stays in the feature.
  * Content Research borrows six of those implementations. Assembling them inside
  * Content Research would be the reverse feature dependency issue #118 removes;
- * assembling them inside `workspace/` would be worse, because nothing in the
- * shared layer may reach into a feature. So the wiring belongs to neither and
+ * assembling them inside `source-adapters/` would be worse, because nothing in
+ * the shared layer may reach into a feature. So the wiring belongs to neither and
  * sits in the composition layer, above both, with the bootstrap that calls it.
  *
  * The asymmetry is the point: it marks which Module owns its collectors and

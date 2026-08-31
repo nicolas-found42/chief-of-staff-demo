@@ -6,8 +6,8 @@ import type {
 import type {
   SourceAdapter,
   SourceCollectionResult,
-} from "../../workspace/public-research/source-adapter.js";
-import { sanitizeAdapterDiagnostic } from "../../workspace/public-research/diagnostics.js";
+} from "../../source-adapters/source-adapter.js";
+import { sanitizeAdapterDiagnostic } from "../../source-adapters/diagnostics.js";
 import {
   COLLECTION_DEFAULT_BACKOFF_MS as DEFAULT_BACKOFF_MS,
   COLLECTION_GLOBAL_CONCURRENCY as GLOBAL_CONCURRENCY,
@@ -18,7 +18,7 @@ import {
   type AttemptReceipt,
   mapLimit,
   unavailableAdapter,
-} from "../../workspace/public-research/collection.js";
+} from "../../source-adapters/collection.js";
 
 export interface CollectedPersonTarget {
   personId: string;
