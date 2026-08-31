@@ -1,6 +1,9 @@
 node_modules/
 dist/
-workspace/
+# Anchored: the runtime data directory is the repo root one. Unanchored, this
+# also swallowed source directories named `workspace`, such as the Workspace-owned
+# server namespaces.
+/workspace/
 .DS_Store
 *.tsbuildinfo
 playwright-report/
@@ -18,4 +21,4 @@ ACCESSIBILITY-AUDIT.md
 # (Google shows the secret once, in a dialog people screenshot) and the account
 # email. This repo is public.
 screenshots/
-workspace.backup-*/
+/workspace.backup-*/
