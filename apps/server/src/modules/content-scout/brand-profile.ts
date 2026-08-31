@@ -13,7 +13,7 @@ import type { CompleteJson } from "../../llm/providers.js";
 import { parseResultShape } from "../../llm/failure.js";
 import { StageFailure, type RetryPlan, type ShellModule } from "../../engine/module.js";
 import type { RunOutcome } from "../../runs.js";
-import { assertPublicHttpUrl, publicHttpFetch, type PublicHttpFetch } from "./adapters/http.js";
+import { assertPublicHttpUrl, publicHttpFetch, type PublicHttpFetch } from "../../workspace/public-research/http.js";
 import { completeJsonWithCapacityRetries } from "./model-retry.js";
 import type { BrandProfileCrawler, BrandProfileProposer } from "./ports.js";
 import type { ContentScoutStore } from "./store.js";

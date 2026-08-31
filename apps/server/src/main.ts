@@ -24,8 +24,15 @@ import {
   registerMeetingBriefTestRoutes,
 } from "./modules/meeting-brief-generator/testRuntime.js";
 import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
-import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
+import {
+  YouTubeSourceAdapter,
+  youtubeSourceClient,
+} from "./modules/content-scout/adapters/youtube.js";
+import { RssSourceAdapter } from "./modules/content-scout/adapters/rss.js";
+import { WebsiteSourceAdapter } from "./modules/content-scout/adapters/website.js";
+import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
+import { ContentScoutRetention } from "./modules/content-scout/retention.js";
 import { contentScoutProductionAdapters } from "./modules/content-scout/adapters/production.js";
 import { PublicRouteSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
@@ -42,10 +49,10 @@ import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 import { ContentResearchHost } from "./modules/content-research/host.js";
 import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
-import { contentResearchProductionAdapters } from "./modules/content-research/adapters/production.js";
+import { HnAlgoliaSourceAdapter } from "./modules/content-research/adapters/hn.js";
 import { seedContentResearchV1 } from "./modules/content-research/seed.js";
-import { createPublicSearch } from "./modules/content-research/search.js";
-import { ContentScoutStore } from "./modules/content-scout/store.js";
+import { createPublicSearch } from "./workspace/public-research/search.js";
+import { WorkspaceBrandProfileStore } from "./workspace/brand-profile.js";
 import { buildGoogleAuth } from "./google/oauth.js";
 import {
   createSpreadsheet,
@@ -183,20 +190,30 @@ const refreshContentResearchOwner = async (): Promise<void> => {
   contentResearchOwnerEmail =
     status.state === "connected" && status.email ? status.email.toLowerCase() : null;
 };
-const contentResearchScoutStore = new ContentScoutStore(workspaceDir, () => new Date());
+const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
 const contentResearch = new ContentResearchHost({
   runs,
   workspaceDir,
-  adapters: contentResearchProductionAdapters({
-    workspaceDir,
-    renderBrowser: playwrightBrowserRenderer(),
-    getYouTubeAccess: () => {
+  adapters: [
+    new RssSourceAdapter(),
+    new RssSourceAdapter(undefined, () => new Date(), { id: "news" }),
+    new WebsiteSourceAdapter(undefined, () => new Date(), playwrightBrowserRenderer()),
+    new YouTubeSourceAdapter(
+      () => {
       const access = googleConnection.auth();
       return access.ok
         ? { ok: true, client: youtubeSourceClient(access.auth) }
         : { ok: false, state: access.state };
-    },
-  }),
+      },
+      () => new Date(),
+      {
+        runtimeInspector: new ExternalRuntimeInspector(),
+        retention: new ContentScoutRetention(workspaceDir, () => new Date()),
+      },
+    ),
+    new RedditSourceAdapter(),
+    new HnAlgoliaSourceAdapter(),
+  ],
   hookExtractor: { extract: createHookExtractor(contentResearchCompleteJson) },
   searchPublic: createPublicSearch(),
   discoverer: {
@@ -246,7 +263,7 @@ const contentResearch = new ContentResearchHost({
     };
   },
   getOwnerEmail: () => contentResearchOwnerEmail,
-  getBrandProfile: () => contentResearchScoutStore.currentBrandProfile(),
+  getBrandProfile: () => brandProfiles.current(),
   configStore,
   log: (message) => console.log(`[content-research] ${message}`),
 });

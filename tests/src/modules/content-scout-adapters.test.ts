@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";
 import { SubstackEnrichmentAdapter } from "../../../apps/server/src/modules/content-scout/adapters/substack";
-import type { PublicHttpResponse } from "../../../apps/server/src/modules/content-scout/adapters/http";
+import type { PublicHttpResponse } from "../../../apps/server/src/workspace/public-research/http";
 import { WebsiteSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/website";
 import { ExperimentalPublicPageAdapter } from "../../../apps/server/src/modules/content-scout/adapters/experimental";
 import { TikTokYtDlpAdapter } from "../../../apps/server/src/modules/content-scout/adapters/tiktok";

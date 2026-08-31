@@ -18,7 +18,7 @@ import {
 } from "../../engine/module.js";
 import type { RunOutcome } from "../../runs.js";
 import { collectSourceTargets, type CollectedSourceTargetProgress } from "./collection.js";
-import type { SourceAdapter, SourceCollectionResult } from "./ports.js";
+import type { SourceAdapter, SourceCollectionResult } from "../../workspace/public-research/source-adapter.js";
 import type { ContentScoutStore } from "./store.js";
 
 export const CONTENT_SCOUT_BACKFILL_INTAKE = "source-backfill";

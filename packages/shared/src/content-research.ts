@@ -3,7 +3,7 @@ import type {
   SourceAdapterState,
   SourceDiagnosticClassification,
   SourceFieldState,
-} from "./content-scout.js";
+} from "./public-research.js";
 
 export const CONTENT_RESEARCH_MODULE_ID = "content-research" as const;
 export const CONTENT_RESEARCH_MODULE_VERSION = 1 as const;

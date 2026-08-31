@@ -14,10 +14,16 @@ import { Runner } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
 import type { ConfigStore } from "../../config.js";
 import { ContentResearchStore } from "./store.js";
-import { createFeedDiscoverer, type FeedDiscoverer } from "./feeds.js";
-import { createPublicSearch, type PublicSearch } from "./search.js";
+import {
+  createFeedDiscoverer,
+  type FeedDiscoverer,
+} from "../../workspace/public-research/feeds.js";
+import {
+  createPublicSearch,
+  type PublicSearch,
+} from "../../workspace/public-research/search.js";
 import type { HookExtractor, PeopleDiscoverer, SheetsAccess, GmailAccess } from "./ports.js";
-import type { SourceAdapter } from "../content-scout/ports.js";
+import type { SourceAdapter } from "../../workspace/public-research/source-adapter.js";
 import {
   CONTENT_RESEARCH_DISCOVERY_INTAKE,
   CONTENT_RESEARCH_INTAKE,

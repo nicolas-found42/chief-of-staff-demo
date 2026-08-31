@@ -3,8 +3,11 @@ import type {
   SourceCollectionAttemptReceipt,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "./ports.js";
-import { sanitizeAdapterDiagnostic } from "./diagnostics.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../workspace/public-research/source-adapter.js";
+import { sanitizeAdapterDiagnostic } from "../../workspace/public-research/diagnostics.js";
 import {
   COLLECTION_DEFAULT_BACKOFF_MS as DEFAULT_BACKOFF_MS,
   COLLECTION_GLOBAL_CONCURRENCY as CONTENT_SCOUT_COLLECTION_GLOBAL_CONCURRENCY,
@@ -14,7 +17,7 @@ import {
   hostOf,
   mapLimit,
   unavailableAdapter,
-} from "./collection-core.js";
+} from "../../workspace/public-research/collection.js";
 
 /** Shared Daily Intake limits. Targets on one host are always serialized. */
 export interface CollectedSourceTarget {

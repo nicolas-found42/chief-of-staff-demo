@@ -8,9 +8,9 @@ import type {
   BrandProfileProposer,
   NotionPublisher,
   OpportunityRanker,
-  SourceAdapter,
   RuntimeInspector,
 } from "../modules/content-scout/ports.js";
+import type { SourceAdapter } from "../workspace/public-research/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 

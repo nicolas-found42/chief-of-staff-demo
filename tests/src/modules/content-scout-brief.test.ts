@@ -7,8 +7,8 @@ import type {
   DraftGenerator,
   NotionPublisher,
   OpportunityRanker,
-  SourceAdapter,
 } from "../../../apps/server/src/modules/content-scout/ports";
+import type { SourceAdapter } from "../../../apps/server/src/workspace/public-research/source-adapter";
 import { openRuns } from "../../../apps/server/src/runs";
 import type { OpportunityBrief, SourceItem, SourceComment } from "@chief-of-staff-demo/shared";
 

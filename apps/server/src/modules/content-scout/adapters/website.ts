@@ -7,7 +7,7 @@ import type {
   SourceAdapterCanaryTarget,
   SourceItem,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
+import type { SourceAdapter, SourceCollectionResult } from "../../../workspace/public-research/source-adapter.js";
 import type { BrowserRenderer, BrowserRenderResult } from "./browser.js";
 import {
   canonicalUrl,
@@ -16,7 +16,7 @@ import {
   retryAfterMilliseconds,
   type PublicHttpResponse,
   type PublicHttpFetch,
-} from "./http.js";
+} from "../../../workspace/public-research/http.js";
 
 export class WebsiteSourceAdapter implements SourceAdapter {
   readonly id = "website";

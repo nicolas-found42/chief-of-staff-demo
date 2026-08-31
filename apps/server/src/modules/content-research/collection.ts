@@ -3,8 +3,11 @@ import type {
   SourceCollectionAttemptReceipt,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "../content-scout/ports.js";
-import { sanitizeAdapterDiagnostic } from "../content-scout/diagnostics.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../workspace/public-research/source-adapter.js";
+import { sanitizeAdapterDiagnostic } from "../../workspace/public-research/diagnostics.js";
 import {
   COLLECTION_DEFAULT_BACKOFF_MS as DEFAULT_BACKOFF_MS,
   COLLECTION_GLOBAL_CONCURRENCY as GLOBAL_CONCURRENCY,
@@ -15,7 +18,7 @@ import {
   type AttemptReceipt,
   mapLimit,
   unavailableAdapter,
-} from "../content-scout/collection-core.js";
+} from "../../workspace/public-research/collection.js";
 
 export interface CollectedPersonTarget {
   personId: string;

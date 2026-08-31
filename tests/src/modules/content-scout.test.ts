@@ -9,8 +9,8 @@ import type {
   DraftGenerator,
   NotionPublisher,
   OpportunityRanker,
-  SourceAdapter,
 } from "../../../apps/server/src/modules/content-scout/ports";
+import type { SourceAdapter } from "../../../apps/server/src/workspace/public-research/source-adapter";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { CONTENT_SCOUT_DRAFT_TARGETS_V1 } from "@chief-of-staff-demo/shared";
 import type { RankedOpportunity } from "@chief-of-staff-demo/shared";
