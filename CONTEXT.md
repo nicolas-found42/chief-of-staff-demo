@@ -34,8 +34,44 @@ _Avoid_: Background Module, planned Module (a planned Module is unbuilt; a headl
 **Content Scout**:
 A live Module that monitors recurring sources for timely, brand-aligned subjects, presents a
 shortlist for a person to select from, and creates a Content Pack for each selection.
-_Status_: live
+_Status_: live; its Content Pack output is retired by ADR-0043 at the consolidation cutover
 _Avoid_: Hot Take, Daily Hot Take, Daily Content Scout, Daily Post Scout
+
+**Content Engine**:
+The product area in which an Authorized Author turns one evidence-backed subject into independent
+Platform Outlines and optional Content Engine Drafts for selected publication targets.
+_Status_: planned (ADR-0043)
+_Avoid_: Content Studio, Content Generator, Content Scout (that remains the opportunity-discovery Module)
+
+**Content Project**:
+One durable scope of Content Engine work, carrying its subject, Authorized Author, input revisions,
+approved Outline Briefs, Platform Outlines and optional Content Engine Drafts.
+_Avoid_: Idea, campaign, Content Pack
+
+**Authorized Author**:
+The workspace owner or a confirmed Person Profile that Workspace policy permits Content Engine to
+represent as the authorial point of view.
+_Avoid_: Subject, Person Profile (not every Profile may author content), voice
+
+**Content Voice**:
+The manually approved author-specific writing guidance that Content Engine combines with the Brand
+Profile; it is consumer policy rather than Person Evidence.
+_Avoid_: Person Profile voice, inferred voice, style clone
+
+**Outline Brief**:
+The immutable approved input shared by all independent Platform Outline generations in one Content
+Project revision, including intent, evidence and the exact Brand Profile revision.
+_Avoid_: Opportunity Brief, prompt, research bundle
+
+**Platform Outline**:
+One versioned publication-target plan generated from an Outline Brief, containing structure,
+evidence placement and target constraints but not complete publishable copy.
+_Avoid_: Content Draft, post, template
+
+**Content Engine Draft**:
+One optional immutable copy-ready or record-ready output generated from an approved Platform
+Outline for one target at a time.
+_Avoid_: Content Draft (that belongs to a Content Pack), publication, post
 
 **Brand Profile**:
 The workspace owner's editable local description of the company, including its positioning,
@@ -43,6 +79,7 @@ audiences, offers, differentiators, proof, tone, vocabulary, and content constra
 generated from a bounded crawl of the company's website; thereafter owned by the person, not the
 website. Its canonical representation is versioned local Markdown. A rescan proposes a three-way
 diff against the previous website baseline and the person's current revision, never an overwrite.
+Content Engine presents this resource under the user-facing label **Brand Voice**.
 _Avoid_: Brand document, Brand Guide, Brand Brief
 
 **Source Target**:
@@ -107,6 +144,7 @@ The complete set of Content Drafts that Content Scout creates independently from
 subject. Every supported publication channel and draft format is represented, and every draft has
 been published to its own Notion page. Successful local drafts survive a partial generation or
 publication failure and retries create only missing work.
+_Status_: retired at the consolidation cutover (ADR-0043)
 _Avoid_: Draft bundle, content bundle
 
 **Content Draft**:
@@ -244,6 +282,33 @@ with its provenance and match confidence. Ambiguous evidence remains visible but
 person, employer, or owned publishing surface as fact.
 _Avoid_: Profile data, intelligence (alone), fact (unless the evidence establishes it)
 
+**Transcript Catalog**:
+The Workspace-owned collection of immutable Transcripts, source and meeting metadata, extracted
+mentions, match candidates, review decisions and deletion state shared by meeting consumers.
+_Status_: planned (ADR-0043)
+_Avoid_: Transcript store, Drive folder, Debrief intake
+
+**Transcript Mention**:
+One preserved transcript span classified as a possible person or other entity; it is evidence that
+a string occurred in context, not proof of canonical identity.
+_Avoid_: Person, Profile match, extracted contact
+
+**Organization Mention**:
+One preserved transcript span and normalized identifiers that may refer to an organization without
+creating a canonical Organization Profile.
+_Avoid_: Organization Profile, employer fact, company record
+
+**Identity Decision**:
+The durable reviewed or policy-made conclusion that a Transcript Mention refers to one Person
+Profile, is not a person, or remains unresolved.
+_Avoid_: Match score, candidate, guess
+
+**Meeting Wizard**:
+The product area that presents Calendar occurrences, Meeting Briefs, Transcripts and Meeting
+Debriefs together while their prospective and retrospective Runs remain separate.
+_Status_: planned (ADR-0043)
+_Avoid_: Meeting Module, combined meeting workflow, Meeting Brief Generator
+
 **Meeting Brief**:
 The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
 evidence-backed guest and company context with concise conversation starters, source references and
@@ -277,7 +342,7 @@ _Avoid_: External attendee, outsider
 
 **Eligible Meeting**:
 A timed, non-cancelled Calendar event that the workspace owner has not declined and that includes at
-least one External Guest who has not declined.
+least one other attendee who has not declined; the attendee may be internal or external.
 _Avoid_: Qualifying event, trigger event, candidate meeting
 
 **Consumer Domain**:
