@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConfigSchema } from "@chief-of-staff-demo/shared";
 import {
   previewWorkspaceMigration,
+  type RemoteRecordDisclosure,
   type UnsafeMixedStateFinding,
   type WorkspaceMigrationCategory,
+  type WorkspaceMigrationDisposition,
   type WorkspaceMigrationClassification,
   type WorkspaceMigrationPreview,
 } from "../../../apps/server/src/migration/workspace";
@@ -208,6 +210,7 @@ function completeWorkspace(label: string): string {
     "content-scout/evidence-transcripts/item_1.txt": "evidence\n",
     "content-research/people.json": { people: [] },
     "content-research/items/item_1.json": { url: "https://example.test" },
+    ".DS_Store": "\u0000\u0000\u0000\u0001Bud1",
   });
 }
 
@@ -237,6 +240,32 @@ function named(
   return categories(preview)
     .filter((category) => category.classification === classification)
     .map((category) => category.name);
+}
+
+function remoteRecords(preview: WorkspaceMigrationPreview): RemoteRecordDisclosure[] {
+  if (preview.outcome !== "inventory") {
+    throw new Error(`expected an inventory, got ${JSON.stringify(preview)}`);
+  }
+  return preview.remoteRecords;
+}
+
+/** What the preview must say about one category, minus the name it is looked up by. */
+function category(
+  classification: WorkspaceMigrationDisposition,
+  count: number,
+): Omit<WorkspaceMigrationCategory, "name"> {
+  return { classification, count };
+}
+
+/** What the preview must say about every kind of provider-owned record. */
+function disclosure(name: string, count: number): RemoteRecordDisclosure {
+  return {
+    name,
+    classification: "remote-reference",
+    count,
+    localCategory: "non-auth-workflow-configuration",
+    deletedByReset: false,
+  };
 }
 
 function findings(preview: WorkspaceMigrationPreview): UnsafeMixedStateFinding[] {
@@ -285,7 +314,15 @@ describe("Workspace migration preview", () => {
       "watch-channel-registrations",
       "non-auth-workflow-configuration",
       "mock-provider-state",
-      "remote-record-references",
+      "operating-system-metadata",
+    ]);
+    expect(remoteRecords(preview).every((record) => record.count === 0)).toBe(true);
+    expect(remoteRecords(preview).map((record) => record.name)).toEqual([
+      "google-tasklists",
+      "google-drive-folders",
+      "google-sheets-spreadsheets",
+      "youtube-channels",
+      "notion-databases",
     ]);
   });
 
@@ -293,89 +330,75 @@ describe("Workspace migration preview", () => {
     const categories = inventory(previewWorkspaceMigration(completeWorkspace("credentials")));
 
     /* The Shell's model key and the Meeting Brief guest profile key. */
-    expect(categories.get("provider-api-keys")).toEqual({
-      classification: "authentication",
-      count: 2,
-    });
+    expect(categories.get("provider-api-keys")).toEqual(category("authentication", 2));
     /* The Google OAuth client id and secret. */
-    expect(categories.get("oauth-client-registrations")).toEqual({
-      classification: "authentication",
-      count: 2,
-    });
+    expect(categories.get("oauth-client-registrations")).toEqual(category("authentication", 2));
     /* The Google refresh token, the Notion token, the HubSpot token. */
-    expect(categories.get("provider-tokens")).toEqual({
-      classification: "authentication",
-      count: 3,
-    });
+    expect(categories.get("provider-tokens")).toEqual(category("authentication", 3));
     /* The relay installation identifier and its secret. */
-    expect(categories.get("connection-credentials")).toEqual({
-      classification: "authentication",
-      count: 2,
-    });
+    expect(categories.get("connection-credentials")).toEqual(category("authentication", 2));
     /* When each connection was last verified, and whether Google has ever expired. */
-    expect(categories.get("connection-verification-state")).toEqual({
-      classification: "authentication",
-      count: 5,
-    });
+    expect(categories.get("connection-verification-state")).toEqual(category("authentication", 5));
   });
 
   it("classifies Runs, profiles, product stores, schedules and checkpoints as disposable", () => {
     const categories = inventory(previewWorkspaceMigration(completeWorkspace("disposable")));
 
-    expect(categories.get("runs-and-artifacts")).toEqual({
-      classification: "disposable-product-state",
-      count: 3,
-    });
-    expect(categories.get("person-profiles")).toEqual({
-      classification: "disposable-product-state",
-      count: 3,
-    });
-    expect(categories.get("content-state")).toEqual({
-      classification: "disposable-product-state",
-      count: 4,
-    });
-    expect(categories.get("research-state")).toEqual({
-      classification: "disposable-product-state",
-      count: 2,
-    });
+    expect(categories.get("runs-and-artifacts")).toEqual(category("disposable-product-state", 3));
+    expect(categories.get("person-profiles")).toEqual(category("disposable-product-state", 3));
+    expect(categories.get("content-state")).toEqual(category("disposable-product-state", 4));
+    expect(categories.get("research-state")).toEqual(category("disposable-product-state", 2));
     /* Transcript ingest checkpoints live in state.json, alongside the relay wake-up. */
-    expect(categories.get("module-state-and-checkpoints")).toEqual({
-      classification: "disposable-product-state",
-      count: 2,
-    });
-    expect(categories.get("intake-schedules")).toEqual({
-      classification: "disposable-product-state",
-      count: 1,
-    });
-    expect(categories.get("calendar-schedule-and-checkpoints")).toEqual({
-      classification: "disposable-product-state",
-      count: 1,
-    });
-    expect(categories.get("watch-channel-registrations")).toEqual({
-      classification: "disposable-product-state",
-      count: 1,
-    });
-    expect(categories.get("non-auth-workflow-configuration")).toEqual({
-      classification: "disposable-product-state",
-      count: 28,
-    });
-    expect(categories.get("mock-provider-state")).toEqual({
-      classification: "disposable-product-state",
-      count: 1,
-    });
+    expect(categories.get("module-state-and-checkpoints")).toEqual(
+      category("disposable-product-state", 2),
+    );
+    expect(categories.get("intake-schedules")).toEqual(category("disposable-product-state", 1));
+    expect(categories.get("calendar-schedule-and-checkpoints")).toEqual(
+      category("disposable-product-state", 1),
+    );
+    expect(categories.get("watch-channel-registrations")).toEqual(
+      category("disposable-product-state", 1),
+    );
+    /* 28 workflow settings plus the 11 local values that name a remote record. */
+    expect(categories.get("non-auth-workflow-configuration")).toEqual(
+      category("disposable-product-state", 39),
+    );
+    expect(categories.get("mock-provider-state")).toEqual(category("disposable-product-state", 1));
+    expect(categories.get("operating-system-metadata")).toEqual(
+      category("disposable-product-state", 1),
+    );
   });
 
-  it("names remote records without scheduling them for deletion", () => {
+  it("deletes the local value that names a remote record and leaves the record standing", () => {
     const preview = previewWorkspaceMigration(completeWorkspace("remote"));
-    const categories = inventory(preview);
 
-    /* Tasklist, Drive folder, two Sheets and their URLs, one YouTube channel,
-       the Notion database, data source and URL. */
-    expect(categories.get("remote-record-references")).toEqual({
-      classification: "remote-reference",
-      count: 11,
-    });
-    expect(named(preview, "disposable-product-state")).not.toContain("remote-record-references");
+    /* Every one of these is a destination setting, so the local value goes with
+       the rest of the non-auth workflow configuration — the reset must not
+       restore an old destination — while the record it names is provider-owned. */
+    expect(remoteRecords(preview)).toEqual([
+      disclosure("google-tasklists", 1),
+      disclosure("google-drive-folders", 2),
+      disclosure("google-sheets-spreadsheets", 4),
+      disclosure("youtube-channels", 1),
+      disclosure("notion-databases", 3),
+    ]);
+    const disclosed = remoteRecords(preview).reduce((total, record) => total + record.count, 0);
+    expect(disclosed).toBe(11);
+    /* Those same 11 values are on the delete side, inside the category every
+       disclosure names, so nothing is preserved by being disclosed. */
+    expect(inventory(preview).get("non-auth-workflow-configuration")).toEqual(
+      category("disposable-product-state", 39),
+    );
+    /* No category answers "deleted or kept" with a remote reference. */
+    expect(named(preview, "remote-reference")).toEqual([]);
+  });
+
+  it("keeps operating system metadata out of the fail-closed path", () => {
+    const root = workspace("os-metadata", { ".DS_Store": "\u0000\u0000\u0000\u0001Bud1" });
+
+    expect(inventory(previewWorkspaceMigration(root)).get("operating-system-metadata")).toEqual(
+      category("disposable-product-state", 1),
+    );
   });
 
   it("reports counts without any stored value", () => {

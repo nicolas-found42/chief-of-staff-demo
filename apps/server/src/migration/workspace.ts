@@ -15,6 +15,13 @@ import { join } from "node:path";
  * than preserved wholesale, and a key the table does not name fails the whole
  * preview closed: an unclassifiable key is exactly the ambiguity the reset must
  * never guess its way through.
+ *
+ * A remote reference is not a third answer to "does the reset delete this?". A
+ * spreadsheet id is non-auth workflow configuration: the local value goes with
+ * everything else, and the spreadsheet it names is provider-owned and survives
+ * untouched. The preview states both, because a reader who saw only the first
+ * would delete a spreadsheet and a reader who saw only the second would restore
+ * an old destination.
  */
 
 /** Where one piece of local persistence sits relative to the destructive boundary. */
@@ -22,13 +29,41 @@ export type WorkspaceMigrationClassification =
   "authentication" | "disposable-product-state" | "remote-reference" | "unsafe-mixed-state";
 
 /**
+ * The only two answers to "does the reset delete this?". `remote-reference` is
+ * not one of them — it describes what a local value points at, not whether that
+ * value survives — and `unsafe-mixed-state` ends the preview instead of joining it.
+ */
+export type WorkspaceMigrationDisposition = Extract<
+  WorkspaceMigrationClassification,
+  "authentication" | "disposable-product-state"
+>;
+
+/**
  * One inventoried category. `count` is the number of records it holds: files for
  * a directory- or file-backed category, stored values for a configuration one.
  */
 export interface WorkspaceMigrationCategory {
   name: string;
-  classification: Exclude<WorkspaceMigrationClassification, "unsafe-mixed-state">;
+  classification: WorkspaceMigrationDisposition;
   count: number;
+}
+
+/**
+ * A kind of provider-owned record that local values name — a Sheet, a Drive
+ * folder, a Notion database. Disclosed so the reset cannot mistake a pointer for
+ * the thing it points at: the local values are deleted, counted in
+ * `localCategory` like any other non-auth configuration, and the records
+ * themselves are left exactly as they are.
+ */
+export interface RemoteRecordDisclosure {
+  name: string;
+  classification: Extract<WorkspaceMigrationClassification, "remote-reference">;
+  /** How many local values name a record of this kind. */
+  count: number;
+  /** The category those local values are deleted with. */
+  localCategory: string;
+  /** Always false. No reset deletes provider-owned data. */
+  deletedByReset: false;
 }
 
 /** Why the boundary could not be drawn. Names structure — a file, a key — never a stored value. */
@@ -42,7 +77,11 @@ export interface UnsafeMixedStateFinding {
 }
 
 export type WorkspaceMigrationPreview =
-  | { outcome: "inventory"; categories: WorkspaceMigrationCategory[] }
+  | {
+      outcome: "inventory";
+      categories: WorkspaceMigrationCategory[];
+      remoteRecords: RemoteRecordDisclosure[];
+    }
   | { outcome: "unsafe-mixed-state"; findings: UnsafeMixedStateFinding[] };
 
 type CategoryName =
@@ -61,16 +100,22 @@ type CategoryName =
   | "watch-channel-registrations"
   | "non-auth-workflow-configuration"
   | "mock-provider-state"
-  | "remote-record-references";
+  | "operating-system-metadata";
+
+/** A kind of provider-owned record local values point at. */
+type RemoteRecordName =
+  | "google-tasklists"
+  | "google-drive-folders"
+  | "google-sheets-spreadsheets"
+  | "youtube-channels"
+  | "notion-databases";
 
 /**
  * Every category the preview reports, in the order it reports them. A category
  * with nothing in it is still reported, at zero, so the boundary reads the same
  * for an empty Workspace as for a full one.
  */
-const CATEGORIES: ReadonlyArray<
-  readonly [CategoryName, Exclude<WorkspaceMigrationClassification, "unsafe-mixed-state">]
-> = [
+const CATEGORIES: ReadonlyArray<readonly [CategoryName, WorkspaceMigrationDisposition]> = [
   ["provider-api-keys", "authentication"],
   ["oauth-client-registrations", "authentication"],
   ["provider-tokens", "authentication"],
@@ -86,7 +131,19 @@ const CATEGORIES: ReadonlyArray<
   ["watch-channel-registrations", "disposable-product-state"],
   ["non-auth-workflow-configuration", "disposable-product-state"],
   ["mock-provider-state", "disposable-product-state"],
-  ["remote-record-references", "remote-reference"],
+  ["operating-system-metadata", "disposable-product-state"],
+];
+
+/**
+ * Every kind of provider-owned record the preview discloses, in the order it
+ * discloses them. Like a category, one with nothing in it is still reported.
+ */
+const REMOTE_RECORDS: readonly RemoteRecordName[] = [
+  "google-tasklists",
+  "google-drive-folders",
+  "google-sheets-spreadsheets",
+  "youtube-channels",
+  "notion-databases",
 ];
 
 /** Directories whose every file belongs to one category. */
@@ -105,15 +162,29 @@ const WHOLE_FILES: Record<string, CategoryName> = {
   // The Calendar watch channel and sync checkpoint are re-established after a reset, never preserved.
   "meeting-brief-calendar.json": "calendar-schedule-and-checkpoints",
   "mock-result.json": "mock-provider-state",
+  /* Named rather than ignored: the Workspace of anyone who has opened it on a
+     Mac holds one of these, and OS metadata is not the ambiguity the fail-closed
+     path is for. Leaving it unnamed would block every real preview and invite
+     the next person to loosen the rule that matters. */
+  ".DS_Store": "operating-system-metadata",
+  "._.DS_Store": "operating-system-metadata",
+  "Thumbs.db": "operating-system-metadata",
+  "desktop.ini": "operating-system-metadata",
 };
 
-/** `config.json`, key by key. Mirrors `ConfigSchema`; an addition there must land here too. */
-const CONFIG_KEYS: Record<string, CategoryName> = {
+/**
+ * `config.json`, key by key. Mirrors `ConfigSchema`; an addition there must land
+ * here too. A `CategoryName` names the category the stored value is counted in.
+ * A `RemoteRecordName` says the value names a provider-owned record of that
+ * kind: it is counted as non-auth workflow configuration like any other
+ * destination setting, so the reset deletes it, and it is disclosed so the reset
+ * knows the record it named is not its to delete.
+ */
+const CONFIG_KEYS: Record<string, CategoryName | RemoteRecordName> = {
   provider: "non-auth-workflow-configuration",
   model: "non-auth-workflow-configuration",
   apiKey: "provider-api-keys",
-  // Names a Google Tasks list the reset must leave standing.
-  tasklistName: "remote-record-references",
+  tasklistName: "google-tasklists",
   "google.clientId": "oauth-client-registrations",
   "google.clientSecret": "oauth-client-registrations",
   "google.refreshToken": "provider-tokens",
@@ -122,15 +193,15 @@ const CONFIG_KEYS: Record<string, CategoryName> = {
   "notion.token": "provider-tokens",
   "notion.lastVerifiedAt": "connection-verification-state",
   "drive.enabled": "non-auth-workflow-configuration",
-  "drive.folderId": "remote-record-references",
-  "drive.folderName": "remote-record-references",
+  "drive.folderId": "google-drive-folders",
+  "drive.folderName": "google-drive-folders",
   "drive.pollIntervalMinutes": "non-auth-workflow-configuration",
   "ollama.baseUrl": "non-auth-workflow-configuration",
-  "modules.youtube-trends.channels": "remote-record-references",
-  "modules.youtube-trends.spreadsheetId": "remote-record-references",
-  "modules.youtube-trends.spreadsheetUrl": "remote-record-references",
-  "modules.idea-engine.spreadsheetId": "remote-record-references",
-  "modules.idea-engine.spreadsheetUrl": "remote-record-references",
+  "modules.youtube-trends.channels": "youtube-channels",
+  "modules.youtube-trends.spreadsheetId": "google-sheets-spreadsheets",
+  "modules.youtube-trends.spreadsheetUrl": "google-sheets-spreadsheets",
+  "modules.idea-engine.spreadsheetId": "google-sheets-spreadsheets",
+  "modules.idea-engine.spreadsheetUrl": "google-sheets-spreadsheets",
   "modules.idea-engine.prompts": "non-auth-workflow-configuration",
   "modules.content-scout.timeZone": "non-auth-workflow-configuration",
   "modules.content-scout.dailyTime": "non-auth-workflow-configuration",
@@ -139,9 +210,9 @@ const CONFIG_KEYS: Record<string, CategoryName> = {
   "modules.content-scout.shortlistSize": "non-auth-workflow-configuration",
   "modules.content-scout.canaryIntervalHours": "non-auth-workflow-configuration",
   "modules.content-scout.canaryDisabledAdapters": "non-auth-workflow-configuration",
-  "modules.content-scout.notion.databaseId": "remote-record-references",
-  "modules.content-scout.notion.dataSourceId": "remote-record-references",
-  "modules.content-scout.notion.databaseUrl": "remote-record-references",
+  "modules.content-scout.notion.databaseId": "notion-databases",
+  "modules.content-scout.notion.dataSourceId": "notion-databases",
+  "modules.content-scout.notion.databaseUrl": "notion-databases",
   "modules.content-scout.notion.mapping": "non-auth-workflow-configuration",
   "modules.content-research.timeZone": "non-auth-workflow-configuration",
   "modules.content-research.dailyTime": "non-auth-workflow-configuration",
@@ -168,10 +239,14 @@ const RELAY_KEYS: Record<string, CategoryName> = {
   lastWakeUpAt: "module-state-and-checkpoints",
 };
 
-const MIXED_FILES: Record<string, Record<string, CategoryName>> = {
+const MIXED_FILES: Record<string, Record<string, CategoryName | RemoteRecordName>> = {
   "config.json": CONFIG_KEYS,
   "relay.json": RELAY_KEYS,
 };
+
+function isRemoteRecord(name: CategoryName | RemoteRecordName): name is RemoteRecordName {
+  return (REMOTE_RECORDS as readonly string[]).includes(name);
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -196,8 +271,17 @@ function countFiles(directory: string): number {
 
 export function previewWorkspaceMigration(workspaceDir: string): WorkspaceMigrationPreview {
   const counts = new Map<CategoryName, number>();
+  const remoteCounts = new Map<RemoteRecordName, number>();
   const findings: UnsafeMixedStateFinding[] = [];
-  const add = (name: CategoryName, count: number): void => {
+  /* A remote reference is counted twice on purpose, once on each axis: the local
+     value is deleted with the non-auth workflow configuration, and the record it
+     names is disclosed as one the reset leaves standing. */
+  const add = (name: CategoryName | RemoteRecordName, count: number): void => {
+    if (isRemoteRecord(name)) {
+      remoteCounts.set(name, (remoteCounts.get(name) ?? 0) + count);
+      add("non-auth-workflow-configuration", count);
+      return;
+    }
     counts.set(name, (counts.get(name) ?? 0) + count);
   };
 
@@ -231,14 +315,21 @@ export function previewWorkspaceMigration(workspaceDir: string): WorkspaceMigrat
       classification,
       count: counts.get(name) ?? 0,
     })),
+    remoteRecords: REMOTE_RECORDS.map((name) => ({
+      name,
+      classification: "remote-reference",
+      count: remoteCounts.get(name) ?? 0,
+      localCategory: "non-auth-workflow-configuration",
+      deletedByReset: false,
+    })),
   };
 }
 
 function classifyMixedFile(
   path: string,
   entry: string,
-  table: Record<string, CategoryName>,
-  add: (name: CategoryName, count: number) => void,
+  table: Record<string, CategoryName | RemoteRecordName>,
+  add: (name: CategoryName | RemoteRecordName, count: number) => void,
   findings: UnsafeMixedStateFinding[],
 ): void {
   let parsed: unknown;
