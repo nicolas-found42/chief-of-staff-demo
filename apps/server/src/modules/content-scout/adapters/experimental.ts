@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { JSDOM } from "jsdom";
 import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "../ports.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../../workspace/public-research/source-adapter.js";
 import {
   canonicalUrl,
   publicHttpFetch,
@@ -9,7 +12,7 @@ import {
   retryAfterMilliseconds,
   type PublicHttpResponse,
   type PublicHttpFetch,
-} from "./http.js";
+} from "../../../workspace/public-research/http.js";
 
 type Platform = "instagram";
 

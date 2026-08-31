@@ -1,5 +1,5 @@
 import type { NamedPerson, SourceTarget } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter } from "../content-scout/ports.js";
+import type { SourceAdapter } from "../../workspace/public-research/source-adapter.js";
 
 /**
  * The Source Targets one Named Person is collected on for one adapter.

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { RedditSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/reddit";
-import type { PublicHttpResponse } from "../../../apps/server/src/modules/content-scout/adapters/http";
+import type { PublicHttpResponse } from "../../../apps/server/src/workspace/public-research/http";
 import type { SourceTarget } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");

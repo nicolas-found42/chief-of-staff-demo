@@ -5,20 +5,8 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import type { HubSpotApi } from "../modules/meeting-brief-generator/hubspot/client.js";
 import { matchPersonEvidence, type PersonProfileSource } from "./resolver.js";
-
-interface PublicSearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-}
-
-interface DiscoveredFeed {
-  url: string;
-  title: string | null;
-}
-
-type PublicSearch = (query: string) => Promise<PublicSearchResult[]>;
-type FeedDiscoverer = (siteUrl: string) => Promise<DiscoveredFeed[]>;
+import type { PublicSearch, PublicSearchResult } from "../workspace/public-research/search.js";
+import type { FeedDiscoverer } from "../workspace/public-research/feeds.js";
 
 function clean(value: string | undefined): string | null {
   const trimmed = value?.trim() ?? "";

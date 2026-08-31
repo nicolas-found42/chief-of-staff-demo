@@ -13,7 +13,7 @@ import {
   YouTubeSourceAdapter,
   type YouTubeSourceClient,
 } from "../../../apps/server/src/modules/content-scout/adapters/youtube";
-import type { PublicHttpResponse } from "../../../apps/server/src/modules/content-scout/adapters/http";
+import type { PublicHttpResponse } from "../../../apps/server/src/workspace/public-research/http";
 import type { SourceItem, SourceTarget } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");

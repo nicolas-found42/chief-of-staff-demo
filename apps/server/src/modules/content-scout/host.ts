@@ -31,12 +31,12 @@ import type {
   DraftGenerator,
   NotionPublisher,
   OpportunityRanker,
-  SourceAdapter,
   SourceDiscoverer,
   BrandProfileCrawler,
   BrandProfileProposer,
   RuntimeInspector,
 } from "./ports.js";
+import type { SourceAdapter } from "../../workspace/public-research/source-adapter.js";
 import { ContentScoutCanaryRunner, ContentScoutCanaryStore } from "./canary.js";
 import { ContentScoutStore } from "./store.js";
 import type { NotionCalendar, NotionConnection } from "./notion.js";

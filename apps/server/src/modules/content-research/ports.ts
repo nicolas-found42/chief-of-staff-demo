@@ -1,5 +1,5 @@
 import type { ResonanceHookShape, SourceItem } from "@chief-of-staff-demo/shared";
-import type { PublicSearchResult } from "./search.js";
+import type { PublicSearchResult } from "../../workspace/public-research/search.js";
 
 type ResonanceHookInput = {
   personName: string;

@@ -27,6 +27,7 @@ import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/brow
 import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { contentScoutProductionAdapters } from "./modules/content-scout/adapters/production.js";
+import { contentResearchProductionAdapters } from "./composition/content-research-portfolio.js";
 import { PublicRouteSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
   PublicBrandProfileCrawler,
@@ -42,10 +43,9 @@ import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 import { ContentResearchHost } from "./modules/content-research/host.js";
 import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
-import { contentResearchProductionAdapters } from "./modules/content-research/adapters/production.js";
 import { seedContentResearchV1 } from "./modules/content-research/seed.js";
-import { createPublicSearch } from "./modules/content-research/search.js";
-import { ContentScoutStore } from "./modules/content-scout/store.js";
+import { createPublicSearch } from "./workspace/public-research/search.js";
+import { WorkspaceBrandProfileStore } from "./workspace/brand-profile.js";
 import { buildGoogleAuth } from "./google/oauth.js";
 import {
   createSpreadsheet,
@@ -183,7 +183,7 @@ const refreshContentResearchOwner = async (): Promise<void> => {
   contentResearchOwnerEmail =
     status.state === "connected" && status.email ? status.email.toLowerCase() : null;
 };
-const contentResearchScoutStore = new ContentScoutStore(workspaceDir, () => new Date());
+const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir, () => new Date());
 const contentResearch = new ContentResearchHost({
   runs,
   workspaceDir,
@@ -246,7 +246,7 @@ const contentResearch = new ContentResearchHost({
     };
   },
   getOwnerEmail: () => contentResearchOwnerEmail,
-  getBrandProfile: () => contentResearchScoutStore.currentBrandProfile(),
+  getBrandProfile: () => brandProfiles.current(),
   configStore,
   log: (message) => console.log(`[content-research] ${message}`),
 });

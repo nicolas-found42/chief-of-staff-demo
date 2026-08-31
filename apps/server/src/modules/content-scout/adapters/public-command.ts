@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
-import type { SourceCollectionResult } from "../ports.js";
+import type { SourceCollectionResult } from "../../../workspace/public-research/source-adapter.js";
 
 const execFileAsync = promisify(execFile);
 

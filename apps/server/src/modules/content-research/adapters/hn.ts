@@ -6,13 +6,16 @@ import type {
   SourceItem,
 } from "@chief-of-staff-demo/shared";
 import { SOURCE_BACKFILL_WINDOWS_DAYS } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "../../content-scout/ports.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../../workspace/public-research/source-adapter.js";
 import {
   publicHttpFetch,
   responseHash,
   retryAfterMilliseconds,
   type PublicHttpFetch,
-} from "../../content-scout/adapters/http.js";
+} from "../../../workspace/public-research/http.js";
 
 interface AlgoliaHit {
   objectID?: string;

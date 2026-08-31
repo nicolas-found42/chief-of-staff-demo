@@ -7,13 +7,13 @@ import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout
 import { PublicRouteSourceDiscoverer } from "../../../apps/server/src/modules/content-scout/discoverer";
 import type {
   OpportunityRanker,
-  SourceAdapter,
   SourceDiscoverer,
 } from "../../../apps/server/src/modules/content-scout/ports";
+import type { SourceAdapter } from "../../../apps/server/src/workspace/public-research/source-adapter";
 import type {
   PublicHttpFetch,
   PublicHttpResponse,
-} from "../../../apps/server/src/modules/content-scout/adapters/http";
+} from "../../../apps/server/src/workspace/public-research/http";
 import { openRuns } from "../../../apps/server/src/runs";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");

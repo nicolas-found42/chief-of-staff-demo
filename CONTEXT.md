@@ -106,7 +106,7 @@ remain local and may later be restored.
 _Avoid_: Discovered source (it has not become a Source Target), recommendation (alone)
 
 **Source Adapter**:
-One platform- or protocol-specific collector behind Content Scout's shared source-item contract. Its
+One platform- or protocol-specific collector behind the Workspace's shared Source Item contract. Its
 state is Available, Experimental, or Coming later, and its diagnostics distinguish unavailable data
 from a failed retrieval. A platform is not a Source Adapter and one adapter's failure does not stop
 the others from running.

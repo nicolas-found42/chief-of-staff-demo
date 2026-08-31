@@ -15,6 +15,7 @@ import type {
   SourceSuggestion,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
+import { WorkspaceBrandProfileStore } from "../../workspace/brand-profile.js";
 
 interface ContentScoutState {
   brandProfiles: Omit<BrandProfileRevision, "markdown">[];
@@ -64,16 +65,16 @@ function identifier(prefix: string, now: Date): string {
 
 export class ContentScoutStore {
   private readonly root: string;
-  private readonly profilesDir: string;
   private readonly stateFile: string;
+  private readonly brandProfiles: WorkspaceBrandProfileStore;
 
   constructor(
     workspaceDir: string,
     private readonly now: () => Date,
   ) {
     this.root = join(workspaceDir, "content-scout");
-    this.profilesDir = join(this.root, "brand-profiles");
     this.stateFile = join(this.root, "state.json");
+    this.brandProfiles = new WorkspaceBrandProfileStore(workspaceDir, now);
   }
 
   acceptBrandProfile(input: {
@@ -82,32 +83,7 @@ export class ContentScoutStore {
     note?: string | null;
     siteBaselineMarkdown?: string;
   }): BrandProfileRevision {
-    const state = this.readState();
-    const previous = this.currentBrandProfile();
-    const id = identifier("brand", this.now());
-    const markdown = `${input.markdown.trimEnd()}\n`;
-    const revision: BrandProfileRevision = {
-      id,
-      createdAt: this.now().toISOString(),
-      markdown,
-      sourceScan: input.sourceScan,
-      note: input.note ?? null,
-      changedSections: changedSections(previous?.markdown ?? "", markdown),
-      siteBaselineMarkdown:
-        input.siteBaselineMarkdown ?? previous?.siteBaselineMarkdown ?? markdown,
-    };
-    mkdirSync(this.profilesDir, { recursive: true });
-    this.writeAtomic(join(this.profilesDir, `${id}.md`), markdown);
-    state.brandProfiles.push({
-      id: revision.id,
-      createdAt: revision.createdAt,
-      sourceScan: revision.sourceScan,
-      note: revision.note,
-      changedSections: revision.changedSections,
-      siteBaselineMarkdown: revision.siteBaselineMarkdown!,
-    });
-    this.writeState(state);
-    return revision;
+    return this.brandProfiles.accept(input);
   }
 
   saveBrandProfileProposal(proposal: BrandProfileProposal): void {
@@ -127,22 +103,11 @@ export class ContentScoutStore {
   }
 
   currentBrandProfile(): BrandProfileRevision | null {
-    const metadata = this.readState().brandProfiles.at(-1);
-    if (!metadata) {
-      return null;
-    }
-    const path = join(this.profilesDir, `${metadata.id}.md`);
-    if (!existsSync(path)) {
-      return null;
-    }
-    return { ...metadata, markdown: readFileSync(path, "utf8") };
+    return this.brandProfiles.current();
   }
 
   brandProfile(id: string): BrandProfileRevision | null {
-    const metadata = this.readState().brandProfiles.find((revision) => revision.id === id);
-    if (!metadata) return null;
-    const path = join(this.profilesDir, `${metadata.id}.md`);
-    return existsSync(path) ? { ...metadata, markdown: readFileSync(path, "utf8") } : null;
+    return this.brandProfiles.get(id);
   }
 
   addSourceTarget(input: { adapterId: string; label: string; url: string }): SourceTarget {
@@ -488,24 +453,4 @@ export class ContentScoutStore {
     writeFileSync(temporary, text, "utf8");
     renameSync(temporary, path);
   }
-}
-
-function sections(markdown: string): Map<string, string> {
-  const result = new Map<string, string>();
-  const headings = [...markdown.matchAll(/^##\s+(.+)$/gm)];
-  for (let index = 0; index < headings.length; index += 1) {
-    const match = headings[index]!;
-    const start = match.index + match[0].length;
-    const end = headings[index + 1]?.index ?? markdown.length;
-    result.set(match[1]!.trim(), markdown.slice(start, end).trim());
-  }
-  return result;
-}
-
-function changedSections(previous: string, next: string): string[] {
-  const before = sections(previous);
-  const after = sections(next);
-  return [...new Set([...before.keys(), ...after.keys()])].filter(
-    (section) => before.get(section) !== after.get(section),
-  );
 }

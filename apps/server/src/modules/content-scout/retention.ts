@@ -15,7 +15,10 @@ import type {
   ContentScoutCleanupReceipt,
   ContentScoutStorageUse,
 } from "@chief-of-staff-demo/shared";
-import { sanitizeDiagnosticBody, sanitizeDiagnosticContentType } from "./diagnostics.js";
+import {
+  sanitizeDiagnosticBody,
+  sanitizeDiagnosticContentType,
+} from "../../workspace/public-research/diagnostics.js";
 
 interface TemporaryRecord {
   id: string;

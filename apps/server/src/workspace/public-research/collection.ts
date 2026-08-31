@@ -4,7 +4,7 @@ import type {
   SourceDiagnosticClassification,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "./ports.js";
+import type { SourceAdapter, SourceCollectionResult } from "./source-adapter.js";
 
 /**
  * The crawling core both collecting Modules share (ADR-0039): how many fetches

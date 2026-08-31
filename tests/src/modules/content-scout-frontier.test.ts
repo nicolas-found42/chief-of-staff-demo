@@ -12,11 +12,11 @@ import type {
   SourceItem,
 } from "@chief-of-staff-demo/shared";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
+import type { OpportunityRanker } from "../../../apps/server/src/modules/content-scout/ports";
 import type {
-  OpportunityRanker,
   SourceAdapter,
   SourceCollectionResult,
-} from "../../../apps/server/src/modules/content-scout/ports";
+} from "../../../apps/server/src/workspace/public-research/source-adapter";
 import { openRuns } from "../../../apps/server/src/runs";
 import { ExternalRuntimeInspector } from "../../../apps/server/src/modules/content-scout/runtime";
 import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";

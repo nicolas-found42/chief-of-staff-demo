@@ -1,4 +1,4 @@
-import { publicHttpFetch, type PublicHttpFetch } from "../content-scout/adapters/http.js";
+import { publicHttpFetch, type PublicHttpFetch } from "./http.js";
 
 export interface DiscoveredFeed {
   url: string;
