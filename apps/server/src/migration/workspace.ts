@@ -16,7 +16,8 @@ import { join } from "node:path";
  * preview closed: an unclassifiable key is exactly the ambiguity the reset must
  * never guess its way through.
  *
- * Composite entries — a channel list, a prompt record, a destination mapping —
+ * Composite entries — a channel list, a prompt record, a destination mapping,
+ * a list of declined adapters —
  * are validated to the leaves their schema declares, so a credential nested
  * inside one fails closed exactly like an unknown key at the top.
  *
@@ -274,7 +275,10 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "modules.content-scout.weeklyDiscoveryTime": "non-auth-workflow-configuration",
   "modules.content-scout.shortlistSize": "non-auth-workflow-configuration",
   "modules.content-scout.canaryIntervalHours": "non-auth-workflow-configuration",
-  "modules.content-scout.canaryDisabledAdapters": "non-auth-workflow-configuration",
+  "modules.content-scout.canaryDisabledAdapters": composite("non-auth-workflow-configuration", {
+    kind: "array",
+    elements: SCALAR,
+  }),
   "modules.content-scout.notion.databaseId": "notion-databases",
   "modules.content-scout.notion.dataSourceId": "notion-databases",
   "modules.content-scout.notion.databaseUrl": "notion-databases",
@@ -292,7 +296,10 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "modules.content-research.dailyTime": "non-auth-workflow-configuration",
   "modules.content-research.weeklyDiscoveryDay": "non-auth-workflow-configuration",
   "modules.content-research.weeklyDiscoveryTime": "non-auth-workflow-configuration",
-  "modules.meeting-brief-generator.internalDomains": "non-auth-workflow-configuration",
+  "modules.meeting-brief-generator.internalDomains": composite("non-auth-workflow-configuration", {
+    kind: "array",
+    elements: SCALAR,
+  }),
   "modules.meeting-brief-generator.guestProfile.endpoint": "non-auth-workflow-configuration",
   "modules.meeting-brief-generator.guestProfile.apiKey": "provider-api-keys",
   "modules.meeting-brief-generator.guestProfile.lastVerifiedAt": "connection-verification-state",
@@ -428,7 +435,9 @@ function classifyMixedFile(
     return;
   }
   const walk = (node: unknown, key: string): void => {
-    const tableEntry = table[key];
+    /* Own-name lookup: a key like "toString" must not resolve through
+       Object.prototype to a truthy entry that skips validation. */
+    const tableEntry = Object.hasOwn(table, key) ? table[key] : undefined;
     if (tableEntry) {
       if (isCompositeEntry(tableEntry)) {
         add(tableEntry.category, recordCount(node));
@@ -462,6 +471,11 @@ function validateComposite(
 ): void {
   switch (shape.kind) {
     case "scalar":
+      /* A leaf must be a leaf. Null is one — the schema's nullable channel
+         fields store it — but an object or array parked where the schema
+         holds a scalar is structure the shape does not declare. */
+      if (isPlainObject(node) || Array.isArray(node))
+        findings.push({ entry, key, reason: "malformed" });
       return;
     case "object": {
       if (!isPlainObject(node)) {
@@ -470,7 +484,7 @@ function validateComposite(
       }
       for (const [child, value] of Object.entries(node)) {
         const childKey = `${key}.${child}`;
-        const childShape = shape.keys[child];
+        const childShape = Object.hasOwn(shape.keys, child) ? shape.keys[child] : undefined;
         if (childShape) validateComposite(value, childShape, childKey, entry, findings);
         else findings.push({ entry, key: childKey, reason: "unrecognized-key" });
       }

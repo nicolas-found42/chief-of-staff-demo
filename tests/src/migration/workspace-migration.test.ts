@@ -573,6 +573,62 @@ describe("Workspace migration preview", () => {
     ]);
   });
 
+  it("fails closed on a nested object where the schema holds a scalar", () => {
+    const config = completeConfig();
+    const root = workspace("nested-object-at-scalar", {
+      "config.json": {
+        ...config,
+        modules: {
+          ...config.modules,
+          "idea-engine": {
+            ...config.modules["idea-engine"],
+            /* A prompt record's values are strings; an object parked under a
+               prompt type is structure the shape does not declare. */
+            prompts: { article: { apiKey: "a prompt credential" } },
+          },
+        },
+      },
+    });
+
+    const preview = previewWorkspaceMigration(root);
+    expect(findings(preview)).toEqual([
+      { entry: "config.json", key: "modules.idea-engine.prompts.article", reason: "malformed" },
+    ]);
+    expect(JSON.stringify(preview)).not.toContain("a prompt credential");
+  });
+
+  it("fails closed on a nested key inherited from Object.prototype", () => {
+    const config = completeConfig();
+    const scout = config.modules["content-scout"];
+    const root = workspace("prototype-key", {
+      "config.json": {
+        ...config,
+        modules: {
+          ...config.modules,
+          "content-scout": {
+            ...scout,
+            notion: {
+              ...scout.notion,
+              /* "toString" must not resolve through Object.prototype to a
+                 truthy table entry that skips validation. */
+              mapping: { ...scout.notion.mapping, toString: { secret: "a mapping credential" } },
+            },
+          },
+        },
+      },
+    });
+
+    const preview = previewWorkspaceMigration(root);
+    expect(findings(preview)).toEqual([
+      {
+        entry: "config.json",
+        key: "modules.content-scout.notion.mapping.toString",
+        reason: "unrecognized-key",
+      },
+    ]);
+    expect(JSON.stringify(preview)).not.toContain("a mapping credential");
+  });
+
   it("fails closed on an unrecognized Workspace entry", () => {
     const root = workspace("unrecognized-entry", { "future-store/record.json": { a: 1 } });
 
