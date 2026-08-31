@@ -337,8 +337,33 @@ describe("Workspace migration preview", () => {
     expect(categories.get("provider-tokens")).toEqual(category("authentication", 3));
     /* The relay installation identifier and its secret. */
     expect(categories.get("connection-credentials")).toEqual(category("authentication", 2));
-    /* When each connection was last verified, and whether Google has ever expired. */
-    expect(categories.get("connection-verification-state")).toEqual(category("authentication", 5));
+  });
+
+  it("classifies connection verification metadata as disposable, not authentication", () => {
+    const root = workspace("verification-metadata", {
+      "config.json": {
+        google: { lastConnectedAt: TIMESTAMP, hasExpiredBefore: true },
+        notion: { lastVerifiedAt: TIMESTAMP },
+        modules: {
+          "meeting-brief-generator": {
+            guestProfile: { lastVerifiedAt: TIMESTAMP },
+            hubspot: { lastVerifiedAt: TIMESTAMP },
+          },
+        },
+      },
+    });
+
+    const preview = previewWorkspaceMigration(root);
+    expect(inventory(preview).get("connection-verification-state")).toEqual(
+      category("disposable-product-state", 5),
+    );
+    /* The fixture holds no credential, registration, token or identifier. */
+    expect(named(preview, "authentication")).toEqual([
+      "provider-api-keys",
+      "oauth-client-registrations",
+      "provider-tokens",
+      "connection-credentials",
+    ]);
   });
 
   it("classifies Runs, profiles, product stores, schedules and checkpoints as disposable", () => {
@@ -358,6 +383,11 @@ describe("Workspace migration preview", () => {
     );
     expect(categories.get("watch-channel-registrations")).toEqual(
       category("disposable-product-state", 1),
+    );
+    /* When each connection was last verified, and whether Google has ever
+       expired — operational metadata, not credentials. */
+    expect(categories.get("connection-verification-state")).toEqual(
+      category("disposable-product-state", 5),
     );
     /* 28 workflow settings plus the 11 local values that name a remote record. */
     expect(categories.get("non-auth-workflow-configuration")).toEqual(
@@ -428,6 +458,119 @@ describe("Workspace migration preview", () => {
       { entry: "config.json", key: "sendgrid.token", reason: "unrecognized-key" },
     ]);
     expect(JSON.stringify(preview)).not.toContain("an unclassified credential");
+  });
+
+  it("fails closed on an unknown key nested inside a composite configuration entry", () => {
+    const config = completeConfig();
+    const scout = config.modules["content-scout"];
+    const root = workspace("nested-mapping-key", {
+      "config.json": {
+        ...config,
+        modules: {
+          ...config.modules,
+          "content-scout": {
+            ...scout,
+            notion: {
+              ...scout.notion,
+              /* The assessment's example: a credential added under a
+                 destination mapping must fail the preview closed, never ride
+                 in as disposable product state inside a recognized entry. */
+              mapping: { ...scout.notion.mapping, apiKey: "a nested credential" },
+            },
+          },
+        },
+      },
+    });
+
+    const preview = previewWorkspaceMigration(root);
+    expect(findings(preview)).toEqual([
+      {
+        entry: "config.json",
+        key: "modules.content-scout.notion.mapping.apiKey",
+        reason: "unrecognized-key",
+      },
+    ]);
+    expect(JSON.stringify(preview)).not.toContain("a nested credential");
+  });
+
+  it("fails closed on an unknown key nested inside a stored watch channel", () => {
+    const config = completeConfig();
+    const root = workspace("nested-channel-key", {
+      "config.json": {
+        ...config,
+        modules: {
+          ...config.modules,
+          "youtube-trends": {
+            ...config.modules["youtube-trends"],
+            channels: [
+              {
+                id: "UCyoutube",
+                handle: "@found42",
+                title: "Found42",
+                uploadsPlaylistId: "UUyoutube",
+                addedAt: TIMESTAMP,
+                apiKey: "a channel credential",
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const preview = previewWorkspaceMigration(root);
+    expect(findings(preview)).toEqual([
+      {
+        entry: "config.json",
+        key: "modules.youtube-trends.channels.0.apiKey",
+        reason: "unrecognized-key",
+      },
+    ]);
+    expect(JSON.stringify(preview)).not.toContain("a channel credential");
+  });
+
+  it("fails closed on an unknown key nested inside a relay channel registration", () => {
+    const root = workspace("nested-relay-key", {
+      "relay.json": {
+        installationId: "relay-installation-id",
+        secret: "relay-installation-secret",
+        relayBaseUrl: "https://relay.test",
+        channels: [
+          {
+            channelId: "relay-channel-id",
+            token: "relay-channel-token",
+            resourceId: null,
+            expiration: null,
+            verification: "a relay channel credential",
+          },
+        ],
+      },
+    });
+
+    const preview = previewWorkspaceMigration(root);
+    expect(findings(preview)).toEqual([
+      { entry: "relay.json", key: "channels.0.verification", reason: "unrecognized-key" },
+    ]);
+    expect(JSON.stringify(preview)).not.toContain("a relay channel credential");
+  });
+
+  it("fails closed when a composite value does not match the schema it mirrors", () => {
+    const config = completeConfig();
+    const root = workspace("composite-malformed", {
+      "config.json": {
+        ...config,
+        modules: {
+          ...config.modules,
+          "youtube-trends": {
+            ...config.modules["youtube-trends"],
+            channels: { id: "UCyoutube" },
+          },
+        },
+      },
+    });
+
+    expect(findings(previewWorkspaceMigration(root))).toEqual([
+      { entry: "config.json", key: "modules.youtube-trends.channels", reason: "malformed" },
+    ]);
   });
 
   it("fails closed on an unrecognized Workspace entry", () => {
