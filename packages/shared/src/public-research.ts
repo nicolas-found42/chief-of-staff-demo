@@ -95,7 +95,6 @@ export interface SourceEngagement {
   commentCount?: number;
 }
 
-/** Normalized untrusted public evidence shared by every public-research consumer. */
 export interface SourceItem {
   id: string;
   externalId: string;

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-
 import { isIP } from "node:net";
 
 export interface PublicHttpResponse {

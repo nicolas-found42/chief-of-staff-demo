@@ -9,8 +9,11 @@ export interface PublicSearchResult {
 
 /**
  * Public search over an anonymous HTML route — the same posture the rest of the
- * app collects with: no login, no imported cookies, no key. It is bounded to a
- * handful of normalized results, and the caller decides what to ask.
+ * app collects with: no login, no imported cookies, no key. People Discovery
+ * uses it to find who is being named alongside the people already watched
+ * (spec #116 story 21); Meeting Brief Generator and Person Profiles ask it for
+ * public evidence about one person. The question asked is the caller's, never
+ * this seam's.
  */
 export type PublicSearch = (query: string) => Promise<PublicSearchResult[]>;
 

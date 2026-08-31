@@ -7,10 +7,8 @@ import { WorkspaceBrandProfileStore } from "../../../apps/server/src/workspace/b
 describe("Workspace Brand Profile", () => {
   it("reads an accepted revision without constructing a Content Scout store", () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "workspace-brand-profile-"));
-    const store = new WorkspaceBrandProfileStore(
-      workspaceDir,
-      () => new Date("2026-08-31T12:00:00.000Z"),
-    );
+    const now = () => new Date("2026-08-31T12:00:00.000Z");
+    const store = new WorkspaceBrandProfileStore(workspaceDir, now);
 
     const accepted = store.accept({
       markdown: "# Brand Profile\n\n## Voice\nDirect and practical.",
@@ -22,7 +20,7 @@ describe("Workspace Brand Profile", () => {
       note: "Approved by the workspace owner",
     });
 
-    expect(new WorkspaceBrandProfileStore(workspaceDir).current()).toEqual(accepted);
-    expect(new WorkspaceBrandProfileStore(workspaceDir).get(accepted.id)).toEqual(accepted);
+    expect(new WorkspaceBrandProfileStore(workspaceDir, now).current()).toEqual(accepted);
+    expect(new WorkspaceBrandProfileStore(workspaceDir, now).get(accepted.id)).toEqual(accepted);
   });
 });

@@ -24,16 +24,10 @@ import {
   registerMeetingBriefTestRoutes,
 } from "./modules/meeting-brief-generator/testRuntime.js";
 import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
-import {
-  YouTubeSourceAdapter,
-  youtubeSourceClient,
-} from "./modules/content-scout/adapters/youtube.js";
-import { RssSourceAdapter } from "./modules/content-scout/adapters/rss.js";
-import { WebsiteSourceAdapter } from "./modules/content-scout/adapters/website.js";
-import { RedditSourceAdapter } from "./modules/content-scout/adapters/reddit.js";
+import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
-import { ContentScoutRetention } from "./modules/content-scout/retention.js";
 import { contentScoutProductionAdapters } from "./modules/content-scout/adapters/production.js";
+import { contentResearchProductionAdapters } from "./composition/content-research-portfolio.js";
 import { PublicRouteSourceDiscoverer } from "./modules/content-scout/discoverer.js";
 import {
   PublicBrandProfileCrawler,
@@ -49,7 +43,6 @@ import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 import { ContentResearchHost } from "./modules/content-research/host.js";
 import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
-import { HnAlgoliaSourceAdapter } from "./modules/content-research/adapters/hn.js";
 import { seedContentResearchV1 } from "./modules/content-research/seed.js";
 import { createPublicSearch } from "./workspace/public-research/search.js";
 import { WorkspaceBrandProfileStore } from "./workspace/brand-profile.js";
@@ -190,36 +183,20 @@ const refreshContentResearchOwner = async (): Promise<void> => {
   contentResearchOwnerEmail =
     status.state === "connected" && status.email ? status.email.toLowerCase() : null;
 };
-const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
+const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir, () => new Date());
 const contentResearch = new ContentResearchHost({
   runs,
   workspaceDir,
-  /* Content Research's V1 portfolio (spec #116): RSS (Substack native feeds on
-     the shared RSS route), website enrichment, YouTube on the Shell Google
-     connection, polite anonymous Reddit, keyless HN Algolia, and Google News —
-     which publishes search results as an ordinary RSS feed, so the shared RSS
-     route collects it under its own platform id. No LinkedIn, no login, no
-     imported cookies, no new secret. */
-  adapters: [
-    new RssSourceAdapter(),
-    new RssSourceAdapter(undefined, () => new Date(), { id: "news" }),
-    new WebsiteSourceAdapter(undefined, () => new Date(), playwrightBrowserRenderer()),
-    new YouTubeSourceAdapter(
-      () => {
-        const access = googleConnection.auth();
-        return access.ok
-          ? { ok: true, client: youtubeSourceClient(access.auth) }
-          : { ok: false, state: access.state };
-      },
-      () => new Date(),
-      {
-        runtimeInspector: new ExternalRuntimeInspector(),
-        retention: new ContentScoutRetention(workspaceDir, () => new Date()),
-      },
-    ),
-    new RedditSourceAdapter(),
-    new HnAlgoliaSourceAdapter(),
-  ],
+  adapters: contentResearchProductionAdapters({
+    workspaceDir,
+    renderBrowser: playwrightBrowserRenderer(),
+    getYouTubeAccess: () => {
+      const access = googleConnection.auth();
+      return access.ok
+        ? { ok: true, client: youtubeSourceClient(access.auth) }
+        : { ok: false, state: access.state };
+    },
+  }),
   hookExtractor: { extract: createHookExtractor(contentResearchCompleteJson) },
   searchPublic: createPublicSearch(),
   discoverer: {

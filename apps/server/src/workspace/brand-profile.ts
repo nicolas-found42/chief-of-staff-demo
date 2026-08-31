@@ -14,6 +14,15 @@ type BrandProfileMetadata = Omit<BrandProfileRevision, "markdown">;
  * revision here rather than through the Content Scout feature store. The paths
  * are the existing persistence contract: the same `content-scout/state.json`
  * metadata list and `content-scout/brand-profiles/<id>.md` bodies, unchanged.
+ *
+ * Until the clean-slate cutover retires Content Scout's state file, this store
+ * and `ContentScoutStore` are two writers of that one file, through the same
+ * `state.json.tmp` staging path. That is safe only because every filesystem
+ * call in both is synchronous and neither holds state in memory: each mutation
+ * reads, changes and writes without yielding, so no read-modify-write can
+ * interleave with the other store's. Give either store an in-memory cache and
+ * the other's writes are lost silently — which is why this one re-reads the
+ * file on every call and spreads the keys it does not own back out untouched.
  */
 export class WorkspaceBrandProfileStore {
   private readonly root: string;
@@ -22,7 +31,7 @@ export class WorkspaceBrandProfileStore {
 
   constructor(
     workspaceDir: string,
-    private readonly now: () => Date = () => new Date(),
+    private readonly now: () => Date,
   ) {
     this.root = join(workspaceDir, "content-scout");
     this.profilesDir = join(this.root, "brand-profiles");
