@@ -16,6 +16,11 @@ import { join } from "node:path";
  * preview closed: an unclassifiable key is exactly the ambiguity the reset must
  * never guess its way through.
  *
+ * Composite entries — a channel list, a prompt record, a destination mapping,
+ * a list of declined adapters —
+ * are validated to the leaves their schema declares, so a credential nested
+ * inside one fails closed exactly like an unknown key at the top.
+ *
  * A remote reference is not a third answer to "does the reset delete this?". A
  * spreadsheet id is non-auth workflow configuration: the local value goes with
  * everything else, and the spreadsheet it names is provider-owned and survives
@@ -72,8 +77,11 @@ export interface UnsafeMixedStateFinding {
   entry: string;
   /** A dotted key path inside a recognized mixed file, or null. */
   key: string | null;
-  /** `unreadable`: not valid JSON, or not a JSON object. */
-  reason: "unreadable" | "unrecognized-key" | "unrecognized-entry";
+  /**
+   * `unreadable`: not valid JSON, or not a JSON object. `malformed`: a
+   * composite value whose structure does not match the schema it mirrors.
+   */
+  reason: "unreadable" | "malformed" | "unrecognized-key" | "unrecognized-entry";
 }
 
 export type WorkspaceMigrationPreview =
@@ -111,6 +119,34 @@ type RemoteRecordName =
   | "notion-databases";
 
 /**
+ * A table value whose flat key stops at a composite — an array or object. The
+ * whole value is counted into `category` like any other entry, but its interior
+ * is validated key by key against `shape` before it is, so a credential added
+ * under a composite fails closed instead of riding in as product state.
+ */
+interface CompositeEntry {
+  category: CategoryName | RemoteRecordName;
+  shape: CompositeShape;
+}
+
+/**
+ * The interior of a `CompositeEntry`, mirroring the schema that entry mirrors.
+ * An `object` declares every key it allows — one it does not fails closed. An
+ * `array` validates every element, indexed by position, which is structure. A
+ * `record` holds free keys by the schema's own definition, so a key there is
+ * recognized by construction and only its value is validated. A `scalar` is a
+ * leaf: nothing can be nested inside one.
+ */
+type CompositeShape =
+  | { kind: "object"; keys: Record<string, CompositeShape> }
+  | { kind: "array"; elements: CompositeShape }
+  | { kind: "record"; values: CompositeShape }
+  | { kind: "scalar" };
+
+/** One `config.json` or `relay.json` table value. */
+type TableEntry = CategoryName | RemoteRecordName | CompositeEntry;
+
+/**
  * Every category the preview reports, in the order it reports them. A category
  * with nothing in it is still reported, at zero, so the boundary reads the same
  * for an empty Workspace as for a full one.
@@ -120,7 +156,11 @@ const CATEGORIES: ReadonlyArray<readonly [CategoryName, WorkspaceMigrationDispos
   ["oauth-client-registrations", "authentication"],
   ["provider-tokens", "authentication"],
   ["connection-credentials", "authentication"],
-  ["connection-verification-state", "authentication"],
+  /* When each connection was last verified, and whether Google has ever seen a
+     grant expire — operational metadata, not a credential. The spec preserves
+     tokens, keys, client registrations, identifiers and secrets, never the
+     health check that watched them work. */
+  ["connection-verification-state", "disposable-product-state"],
   ["runs-and-artifacts", "disposable-product-state"],
   ["person-profiles", "disposable-product-state"],
   ["content-state", "disposable-product-state"],
@@ -178,9 +218,18 @@ const WHOLE_FILES: Record<string, CategoryName> = {
  * A `RemoteRecordName` says the value names a provider-owned record of that
  * kind: it is counted as non-auth workflow configuration like any other
  * destination setting, so the reset deletes it, and it is disclosed so the reset
- * knows the record it named is not its to delete.
+ * knows the record it named is not its to delete. A `CompositeEntry` marks a
+ * value the flat key stops at — a channel list, a prompt record, a destination
+ * mapping — counted whole, but validated to the leaves its schema declares.
  */
-const CONFIG_KEYS: Record<string, CategoryName | RemoteRecordName> = {
+const SCALAR: CompositeShape = { kind: "scalar" };
+
+const composite = (
+  category: CategoryName | RemoteRecordName,
+  shape: CompositeShape,
+): CompositeEntry => ({ category, shape });
+
+const CONFIG_KEYS: Record<string, TableEntry> = {
   provider: "non-auth-workflow-configuration",
   model: "non-auth-workflow-configuration",
   apiKey: "provider-api-keys",
@@ -197,28 +246,60 @@ const CONFIG_KEYS: Record<string, CategoryName | RemoteRecordName> = {
   "drive.folderName": "google-drive-folders",
   "drive.pollIntervalMinutes": "non-auth-workflow-configuration",
   "ollama.baseUrl": "non-auth-workflow-configuration",
-  "modules.youtube-trends.channels": "youtube-channels",
+  "modules.youtube-trends.channels": composite("youtube-channels", {
+    kind: "array",
+    elements: {
+      kind: "object",
+      keys: {
+        id: SCALAR,
+        handle: SCALAR,
+        title: SCALAR,
+        uploadsPlaylistId: SCALAR,
+        addedAt: SCALAR,
+      },
+    },
+  }),
   "modules.youtube-trends.spreadsheetId": "google-sheets-spreadsheets",
   "modules.youtube-trends.spreadsheetUrl": "google-sheets-spreadsheets",
   "modules.idea-engine.spreadsheetId": "google-sheets-spreadsheets",
   "modules.idea-engine.spreadsheetUrl": "google-sheets-spreadsheets",
-  "modules.idea-engine.prompts": "non-auth-workflow-configuration",
+  /* The schema keys a prompt record freely (an idea content type), so a key
+     here is recognized by construction; its value must still be a scalar. */
+  "modules.idea-engine.prompts": composite("non-auth-workflow-configuration", {
+    kind: "record",
+    values: SCALAR,
+  }),
   "modules.content-scout.timeZone": "non-auth-workflow-configuration",
   "modules.content-scout.dailyTime": "non-auth-workflow-configuration",
   "modules.content-scout.weeklyDiscoveryDay": "non-auth-workflow-configuration",
   "modules.content-scout.weeklyDiscoveryTime": "non-auth-workflow-configuration",
   "modules.content-scout.shortlistSize": "non-auth-workflow-configuration",
   "modules.content-scout.canaryIntervalHours": "non-auth-workflow-configuration",
-  "modules.content-scout.canaryDisabledAdapters": "non-auth-workflow-configuration",
+  "modules.content-scout.canaryDisabledAdapters": composite("non-auth-workflow-configuration", {
+    kind: "array",
+    elements: SCALAR,
+  }),
   "modules.content-scout.notion.databaseId": "notion-databases",
   "modules.content-scout.notion.dataSourceId": "notion-databases",
   "modules.content-scout.notion.databaseUrl": "notion-databases",
-  "modules.content-scout.notion.mapping": "non-auth-workflow-configuration",
+  "modules.content-scout.notion.mapping": composite("non-auth-workflow-configuration", {
+    kind: "object",
+    keys: {
+      name: SCALAR,
+      status: SCALAR,
+      platform: SCALAR,
+      format: SCALAR,
+      scheduledDate: SCALAR,
+    },
+  }),
   "modules.content-research.timeZone": "non-auth-workflow-configuration",
   "modules.content-research.dailyTime": "non-auth-workflow-configuration",
   "modules.content-research.weeklyDiscoveryDay": "non-auth-workflow-configuration",
   "modules.content-research.weeklyDiscoveryTime": "non-auth-workflow-configuration",
-  "modules.meeting-brief-generator.internalDomains": "non-auth-workflow-configuration",
+  "modules.meeting-brief-generator.internalDomains": composite("non-auth-workflow-configuration", {
+    kind: "array",
+    elements: SCALAR,
+  }),
   "modules.meeting-brief-generator.guestProfile.endpoint": "non-auth-workflow-configuration",
   "modules.meeting-brief-generator.guestProfile.apiKey": "provider-api-keys",
   "modules.meeting-brief-generator.guestProfile.lastVerifiedAt": "connection-verification-state",
@@ -231,21 +312,31 @@ const CONFIG_KEYS: Record<string, CategoryName | RemoteRecordName> = {
 };
 
 /** `relay.json`, key by key. The installation identity and its secret authenticate the relay. */
-const RELAY_KEYS: Record<string, CategoryName> = {
+const RELAY_KEYS: Record<string, TableEntry> = {
   installationId: "connection-credentials",
   secret: "connection-credentials",
   relayBaseUrl: "non-auth-workflow-configuration",
-  channels: "watch-channel-registrations",
+  channels: composite("watch-channel-registrations", {
+    kind: "array",
+    elements: {
+      kind: "object",
+      keys: { channelId: SCALAR, token: SCALAR, resourceId: SCALAR, expiration: SCALAR },
+    },
+  }),
   lastWakeUpAt: "module-state-and-checkpoints",
 };
 
-const MIXED_FILES: Record<string, Record<string, CategoryName | RemoteRecordName>> = {
+const MIXED_FILES: Record<string, Record<string, TableEntry>> = {
   "config.json": CONFIG_KEYS,
   "relay.json": RELAY_KEYS,
 };
 
 function isRemoteRecord(name: CategoryName | RemoteRecordName): name is RemoteRecordName {
   return (REMOTE_RECORDS as readonly string[]).includes(name);
+}
+
+function isCompositeEntry(entry: TableEntry): entry is CompositeEntry {
+  return typeof entry === "object";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -328,7 +419,7 @@ export function previewWorkspaceMigration(workspaceDir: string): WorkspaceMigrat
 function classifyMixedFile(
   path: string,
   entry: string,
-  table: Record<string, CategoryName | RemoteRecordName>,
+  table: Record<string, TableEntry>,
   add: (name: CategoryName | RemoteRecordName, count: number) => void,
   findings: UnsafeMixedStateFinding[],
 ): void {
@@ -344,9 +435,16 @@ function classifyMixedFile(
     return;
   }
   const walk = (node: unknown, key: string): void => {
-    const category = table[key];
-    if (category) {
-      add(category, recordCount(node));
+    /* Own-name lookup: a key like "toString" must not resolve through
+       Object.prototype to a truthy entry that skips validation. */
+    const tableEntry = Object.hasOwn(table, key) ? table[key] : undefined;
+    if (tableEntry) {
+      if (isCompositeEntry(tableEntry)) {
+        add(tableEntry.category, recordCount(node));
+        validateComposite(node, tableEntry.shape, key, entry, findings);
+        return;
+      }
+      add(tableEntry, recordCount(node));
       return;
     }
     if (isPlainObject(node)) {
@@ -357,4 +455,60 @@ function classifyMixedFile(
     findings.push({ entry, key, reason: "unrecognized-key" });
   };
   walk(parsed, "");
+}
+
+/**
+ * Validate a composite value against the shape its table entry declares, so a
+ * key nested below a recognized composite faces the same fail-closed rule as a
+ * key at the top: nothing is counted that was not deliberately parsed.
+ */
+function validateComposite(
+  node: unknown,
+  shape: CompositeShape,
+  key: string,
+  entry: string,
+  findings: UnsafeMixedStateFinding[],
+): void {
+  switch (shape.kind) {
+    case "scalar":
+      /* A leaf must be a leaf. Null is one — the schema's nullable channel
+         fields store it — but an object or array parked where the schema
+         holds a scalar is structure the shape does not declare. */
+      if (isPlainObject(node) || Array.isArray(node))
+        findings.push({ entry, key, reason: "malformed" });
+      return;
+    case "object": {
+      if (!isPlainObject(node)) {
+        findings.push({ entry, key, reason: "malformed" });
+        return;
+      }
+      for (const [child, value] of Object.entries(node)) {
+        const childKey = `${key}.${child}`;
+        const childShape = Object.hasOwn(shape.keys, child) ? shape.keys[child] : undefined;
+        if (childShape) validateComposite(value, childShape, childKey, entry, findings);
+        else findings.push({ entry, key: childKey, reason: "unrecognized-key" });
+      }
+      return;
+    }
+    case "array": {
+      if (!Array.isArray(node)) {
+        findings.push({ entry, key, reason: "malformed" });
+        return;
+      }
+      /* An element's index is structure, like a key — never a stored value. */
+      node.forEach((element, index) =>
+        validateComposite(element, shape.elements, `${key}.${index}`, entry, findings),
+      );
+      return;
+    }
+    case "record": {
+      if (!isPlainObject(node)) {
+        findings.push({ entry, key, reason: "malformed" });
+        return;
+      }
+      for (const [child, value] of Object.entries(node))
+        validateComposite(value, shape.values, `${key}.${child}`, entry, findings);
+      return;
+    }
+  }
 }
