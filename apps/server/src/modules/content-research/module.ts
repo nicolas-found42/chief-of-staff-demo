@@ -19,10 +19,7 @@ import type { Runs } from "../../runs.js";
 import type { ContentResearchStore } from "./store.js";
 import type { HookExtractor, PeopleDiscoverer, SheetsAccess, GmailAccess } from "./ports.js";
 import { coMentionQueries } from "./search.js";
-import type {
-  PublicSearch,
-  PublicSearchResult,
-} from "../../workspace/public-research/search.js";
+import type { PublicSearch, PublicSearchResult } from "../../workspace/public-research/search.js";
 import type { SourceAdapter } from "../../workspace/public-research/source-adapter.js";
 import { toScoredItem } from "./scoring.js";
 import { personSourceTargets } from "./targets.js";

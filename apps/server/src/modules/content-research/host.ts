@@ -18,10 +18,7 @@ import {
   createFeedDiscoverer,
   type FeedDiscoverer,
 } from "../../workspace/public-research/feeds.js";
-import {
-  createPublicSearch,
-  type PublicSearch,
-} from "../../workspace/public-research/search.js";
+import { createPublicSearch, type PublicSearch } from "../../workspace/public-research/search.js";
 import type { HookExtractor, PeopleDiscoverer, SheetsAccess, GmailAccess } from "./ports.js";
 import type { SourceAdapter } from "../../workspace/public-research/source-adapter.js";
 import {

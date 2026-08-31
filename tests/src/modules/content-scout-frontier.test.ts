@@ -12,9 +12,7 @@ import type {
   SourceItem,
 } from "@chief-of-staff-demo/shared";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
-import type {
-  OpportunityRanker,
-} from "../../../apps/server/src/modules/content-scout/ports";
+import type { OpportunityRanker } from "../../../apps/server/src/modules/content-scout/ports";
 import type {
   SourceAdapter,
   SourceCollectionResult,

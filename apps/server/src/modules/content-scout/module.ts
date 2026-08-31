@@ -20,11 +20,7 @@ import {
 import { StageFailure, type RetryPlan, type ShellModule } from "../../engine/module.js";
 import type { RunContext } from "../../engine/module.js";
 import type { RunOutcome } from "../../runs.js";
-import type {
-  DraftGenerator,
-  NotionPublisher,
-  OpportunityRanker,
-} from "./ports.js";
+import type { DraftGenerator, NotionPublisher, OpportunityRanker } from "./ports.js";
 import type {
   SourceAdapter,
   SourceCollectionResult,

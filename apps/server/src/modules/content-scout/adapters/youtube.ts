@@ -12,7 +12,10 @@ import {
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 import type { GoogleAuth } from "../../../google/oauth.js";
 import { parseChannelUrl, type ChannelRef } from "../../youtube/channels.js";
-import type { SourceAdapter, SourceCollectionResult } from "../../../workspace/public-research/source-adapter.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../../workspace/public-research/source-adapter.js";
 import { commandAdapterResults } from "./public-command.js";
 
 const execFileAsync = promisify(execFile);

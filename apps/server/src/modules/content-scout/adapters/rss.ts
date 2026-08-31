@@ -5,7 +5,10 @@ import {
   type AdapterDiagnostic,
   type SourceItem,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "../../../workspace/public-research/source-adapter.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../../workspace/public-research/source-adapter.js";
 import {
   canonicalUrl,
   publicHttpFetch,

@@ -7,7 +7,11 @@ export interface PublicSearchResult {
   snippet: string;
 }
 
-/** Public search over a bounded anonymous HTML route. */
+/**
+ * Public search over an anonymous HTML route — the same posture the rest of the
+ * app collects with: no login, no imported cookies, no key. It is bounded to a
+ * handful of normalized results, and the caller decides what to ask.
+ */
 export type PublicSearch = (query: string) => Promise<PublicSearchResult[]>;
 
 const MAX_RESULTS = 8;

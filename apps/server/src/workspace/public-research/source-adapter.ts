@@ -8,7 +8,7 @@ import type {
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
 
-export interface SourceCollectionRequest {
+interface SourceCollectionRequest {
   target: SourceTarget;
   since: string;
   until: string;
@@ -46,11 +46,18 @@ export interface SourceAdapter {
   readonly id: string;
   readonly state: SourceAdapterState;
   readonly version: string;
-  /** Genuine historical windows supported by this adapter. */
+  /**
+   * The user-requested backfill windows this Adapter honors with a genuine
+   * historical `since`, e.g. `[7, 30, 90]`. Absent or empty means the Adapter
+   * has no bounded historical route (a single current-page snapshot, for
+   * example), so a requested backfill fails as `unsupported_capability`
+   * instead of silently returning today's evidence as if it were history.
+   */
   readonly backfillWindowsDays?: readonly SourceBackfillWindowDays[];
   readonly canaryTargets?: readonly SourceAdapterCanaryTarget[];
   supports(target: SourceTarget): boolean;
   collect(request: SourceCollectionRequest): Promise<SourceCollectionResult>;
+  /** A bounded anonymous proof route when normal collection is intentionally unavailable. */
   collectCanary?(request: SourceCollectionRequest): Promise<SourceCollectionResult>;
   enrich?(items: SourceItem[]): Promise<SourceItem[]>;
 }

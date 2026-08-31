@@ -5,10 +5,7 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import type { HubSpotApi } from "../modules/meeting-brief-generator/hubspot/client.js";
 import { matchPersonEvidence, type PersonProfileSource } from "./resolver.js";
-import type {
-  PublicSearch,
-  PublicSearchResult,
-} from "../workspace/public-research/search.js";
+import type { PublicSearch, PublicSearchResult } from "../workspace/public-research/search.js";
 import type { FeedDiscoverer } from "../workspace/public-research/feeds.js";
 
 function clean(value: string | undefined): string | null {

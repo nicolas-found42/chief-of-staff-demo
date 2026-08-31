@@ -3,7 +3,10 @@ import type {
   SourceComment,
   SourceItem,
 } from "@chief-of-staff-demo/shared";
-import type { SourceAdapter, SourceCollectionResult } from "../../../workspace/public-research/source-adapter.js";
+import type {
+  SourceAdapter,
+  SourceCollectionResult,
+} from "../../../workspace/public-research/source-adapter.js";
 import { responseHash } from "../../../workspace/public-research/http.js";
 import {
   checkpointOf,

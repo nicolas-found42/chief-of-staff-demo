@@ -8,23 +8,14 @@ import type {
 
 type BrandProfileMetadata = Omit<BrandProfileRevision, "markdown">;
 
-export interface BrandProfiles {
-  accept(input: {
-    markdown: string;
-    sourceScan: BrandProfileSourceScan;
-    note?: string | null;
-    siteBaselineMarkdown?: string;
-  }): BrandProfileRevision;
-  current(): BrandProfileRevision | null;
-  get(id: string): BrandProfileRevision | null;
-}
-
 /**
- * Workspace-owned access to Brand Profile revisions (presented as Brand Voice
- * by Content Engine). The paths intentionally remain compatible with the
- * existing Content Scout persistence contract until the clean-slate cutover.
+ * Workspace-owned access to Brand Profile revisions — the resource Content
+ * Engine presents under the label Brand Voice. Any consumer reads the current
+ * revision here rather than through the Content Scout feature store. The paths
+ * are the existing persistence contract: the same `content-scout/state.json`
+ * metadata list and `content-scout/brand-profiles/<id>.md` bodies, unchanged.
  */
-export class WorkspaceBrandProfileStore implements BrandProfiles {
+export class WorkspaceBrandProfileStore {
   private readonly root: string;
   private readonly profilesDir: string;
   private readonly stateFile: string;

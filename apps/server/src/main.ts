@@ -194,16 +194,22 @@ const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
 const contentResearch = new ContentResearchHost({
   runs,
   workspaceDir,
+  /* Content Research's V1 portfolio (spec #116): RSS (Substack native feeds on
+     the shared RSS route), website enrichment, YouTube on the Shell Google
+     connection, polite anonymous Reddit, keyless HN Algolia, and Google News —
+     which publishes search results as an ordinary RSS feed, so the shared RSS
+     route collects it under its own platform id. No LinkedIn, no login, no
+     imported cookies, no new secret. */
   adapters: [
     new RssSourceAdapter(),
     new RssSourceAdapter(undefined, () => new Date(), { id: "news" }),
     new WebsiteSourceAdapter(undefined, () => new Date(), playwrightBrowserRenderer()),
     new YouTubeSourceAdapter(
       () => {
-      const access = googleConnection.auth();
-      return access.ok
-        ? { ok: true, client: youtubeSourceClient(access.auth) }
-        : { ok: false, state: access.state };
+        const access = googleConnection.auth();
+        return access.ok
+          ? { ok: true, client: youtubeSourceClient(access.auth) }
+          : { ok: false, state: access.state };
       },
       () => new Date(),
       {

@@ -1,7 +1,11 @@
 import { JSDOM } from "jsdom";
 import type { SourceItem } from "@chief-of-staff-demo/shared";
 import type { SourceAdapter } from "../../../workspace/public-research/source-adapter.js";
-import { canonicalUrl, publicHttpFetch, type PublicHttpFetch } from "../../../workspace/public-research/http.js";
+import {
+  canonicalUrl,
+  publicHttpFetch,
+  type PublicHttpFetch,
+} from "../../../workspace/public-research/http.js";
 
 /** Bounded per-item enrichment budget for one known Substack post. */
 const SUBSTACK_MEDIA_LIMIT = 12;
