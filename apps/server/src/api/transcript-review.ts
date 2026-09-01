@@ -5,6 +5,12 @@ import type { TranscriptRelevanceService } from "../transcript-catalog/relevance
 export interface TranscriptRelevanceApiContext {
   /** The semantic relevance service; routes stay thin over it (issue #127). */
   relevance: TranscriptRelevanceService;
+  /**
+   * Notified when relevance is confirmed, so consumers composed before the
+   * confirmation can offer regeneration (issue #138, AC 5). It returns the
+   * Runs it noticed; it never regenerates or delivers anything itself.
+   */
+  onRelevanceConfirmed?: (transcriptId: string) => string[];
 }
 
 const ACTIONS: readonly TranscriptRelevanceDecisionAction[] = ["confirm", "reject", "unresolved"];
@@ -120,7 +126,14 @@ export function registerTranscriptRelevanceApi(
         const item = relevance
           .reviewQueue()
           .find((entry) => entry.candidate.id === decision.candidateId);
-        return { item };
+        /* Confirming is the moment a consumer's evidence became stale. The
+           notice is an offer of regeneration, never a regeneration: the
+           owner asked to confirm a suggestion, not to reissue a Brief. */
+        const staleRuns =
+          decision.action === "confirm"
+            ? (ctx.onRelevanceConfirmed?.(decision.transcriptId) ?? [])
+            : [];
+        return { item, staleRuns };
       } catch (error: unknown) {
         reply.code(404);
         return {

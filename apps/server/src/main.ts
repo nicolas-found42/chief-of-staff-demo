@@ -471,7 +471,13 @@ await registerApi(app, {
   },
 });
 /* Semantic transcript relevance Review surface (issue #127). */
-registerTranscriptRelevanceApi(app, { relevance: transcriptRelevance });
+registerTranscriptRelevanceApi(app, {
+  relevance: transcriptRelevance,
+  /* Late transcript evidence (issue #138): a confirmed suggestion marks every
+     Brief composed without it as regenerable, and sends nothing. */
+  onRelevanceConfirmed: (transcriptId) =>
+    meetingBrief.noteConfirmedTranscriptEvidence(transcriptId),
+});
 /* Transcript deletion surface (issue #128): corpus listing, cascade
    deletion, tombstones, and restore-processing-permission. */
 registerTranscriptDeletionApi(app, {

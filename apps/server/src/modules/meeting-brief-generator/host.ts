@@ -373,6 +373,37 @@ export class MeetingBriefHost implements HostedModule {
     });
   }
 
+  /**
+   * Late transcript evidence (issue #138, AC 5). The owner confirmed a
+   * suggestion after a Brief was already composed from a corpus that did not
+   * include it. Every Run that held that Transcript as a pending suggestion
+   * gets a notice offering regeneration — and nothing else happens. No Run is
+   * started and nothing is delivered here, because a Brief the owner did not
+   * ask for is a surprise revision in their inbox. Returns the Runs noticed.
+   */
+  noteConfirmedTranscriptEvidence(transcriptId: string): string[] {
+    const noticed: string[] = [];
+    for (const summary of this.deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs) {
+      const handle = this.deps.runs.open(summary.id);
+      const raw = handle?.readArtifact("transcript-suggestions.json");
+      if (!raw) continue;
+      let suggestions: { transcriptId: string }[];
+      try {
+        suggestions =
+          (JSON.parse(raw) as { suggestions?: { transcriptId: string }[] }).suggestions ?? [];
+      } catch {
+        continue;
+      }
+      if (!suggestions.some((item) => item.transcriptId === transcriptId)) continue;
+      handle?.appendEvent("brief_evidence_confirmed_late", {
+        transcriptId,
+        action: "regenerate",
+      });
+      noticed.push(summary.id);
+    }
+    return noticed;
+  }
+
   listUpcoming(): MeetingBriefUpcoming[] {
     return this.clock
       .list(MEETING_BRIEF_MODULE_ID)
@@ -713,7 +744,15 @@ export class MeetingBriefHost implements HostedModule {
     const hasStaleConsumer = this.profileReadModel(result).consumers.some(
       ({ state }) => state?.refreshRequired === true,
     );
-    if (!hasStaleConsumer) throw new MeetingBriefRegenerationConflict(runId);
+    /* Late transcript evidence is the second thing that can make an immutable
+       Brief stale (issue #138, AC 6): the owner confirmed a suggestion the
+       composed Brief could not cite. Like a stale Profile it only ever
+       *offers* regeneration — reaching here still requires the owner's
+       explicit action. */
+    const hasLateEvidence = detail.events.some(
+      (event) => event.type === "brief_evidence_confirmed_late",
+    );
+    if (!hasStaleConsumer && !hasLateEvidence) throw new MeetingBriefRegenerationConflict(runId);
     const storedOccurrenceKey = (snapshot as unknown as { occurrenceKey?: unknown }).occurrenceKey;
     const occurrenceKey =
       typeof storedOccurrenceKey === "string"
