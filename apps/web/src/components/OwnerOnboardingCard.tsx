@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type {
   ConfirmedOwnerReference,
   OwnerOnboardingProposal,
@@ -95,7 +96,8 @@ export function OwnerOnboardingCard({ onChange }: { onChange?: () => void }) {
             </p>
           ) : (
             <p>
-              No existing Profile carries this email. Create one under People, or select the
+              No existing Profile carries this email.{" "}
+              <Link to="/people/new">Create one under Person Profiles</Link>, or select the
               corrected Profile below.
             </p>
           )}

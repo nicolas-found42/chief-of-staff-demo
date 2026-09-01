@@ -19,6 +19,7 @@ const PORT = 4317;
 let app: FastifyInstance;
 let configStore: ConfigStore;
 let workspaceDir: string;
+let configChangeCompleted: boolean;
 
 /** A workspace on disk, so the config the endpoints write is the one they read back. */
 beforeEach(async () => {
@@ -26,6 +27,7 @@ beforeEach(async () => {
   mkdirSync(join(workspaceDir, "runs"), { recursive: true });
   configStore = new ConfigStore(join(workspaceDir, "config.json"));
   configStore.load();
+  configChangeCompleted = false;
 
   app = fastify({ logger: false });
   const peopleProfiles = new WorkspacePersonProfiles({
@@ -47,7 +49,10 @@ beforeEach(async () => {
     }),
     people: peopleProfiles,
     onboarding: ownerOnboarding,
-    onConfigChanged: () => {},
+    onConfigChanged: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      configChangeCompleted = true;
+    },
   } as unknown as ApiContext);
   await app.ready();
 });
@@ -95,6 +100,7 @@ describe("POST /api/google/disconnect", () => {
     // The client credentials survive, so signing back in is one click.
     expect(storedConfig().google.clientId).toBe("id.apps");
     expect(storedConfig().google.clientSecret).toBe("secret");
+    expect(configChangeCompleted).toBe(true);
   });
 });
 

@@ -229,6 +229,37 @@ const ranker: OpportunityRanker = {
 };
 
 describe("ContentScoutHost", () => {
+  it("keeps content generation blocked until the owner Profile is confirmed", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-gate-"));
+    const runs = openRuns(workspaceDir);
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [rssAdapter()],
+      ranker,
+      isOwnerProfileConfirmed: () => false,
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Example Research",
+      url: "https://example.com/feed.xml",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+    const opportunityId = host.activeShortlist()!.opportunities[0].id;
+
+    await expect(host.select(runId, [opportunityId])).rejects.toThrow(/owner Profile/i);
+
+    expect(runs.detail(runId)?.status).toBe("blocked");
+    expect(host.activeShortlist()?.runId).toBe(runId);
+  });
+
   it("persists configured sources, produces a ranked shortlist, and durably blocks the Intake Run", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-scout-"));
     const runs = openRuns(workspaceDir);

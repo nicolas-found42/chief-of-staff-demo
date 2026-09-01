@@ -76,6 +76,9 @@ const googleConnection = openGoogleConnection(configStore, port);
 /* One owner for the run directory: every Module and the API read and write the
    same Runs, not one object per Module over one directory. */
 const runs = openRuns(workspaceDir);
+const peopleStore = new PersonProfileStore(workspaceDir);
+const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
+const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
 
 const transcript = new TranscriptHost({
   runs,
@@ -163,6 +166,7 @@ const contentScout = new ContentScoutHost({
   brandProfileProposer:
     testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
   runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
+  isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
   log: (message) => console.log(`[content-scout] ${message}`),
 });
 const contentResearchCompleteJson = () => {
@@ -180,13 +184,10 @@ const contentResearchCompleteJson = () => {
 /* The Person Profiles product area's Workspace-owned interface. The store is
    the same one Meeting Brief's resolver writes through: both are synchronous,
    uncached writers of the one Workspace directory. */
-const peopleStore = new PersonProfileStore(workspaceDir);
-const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
 /* Owner onboarding (issue #123): the connected Google identity is read once
    and held until the connection changes (ADR-0036), and owner-identity-
    dependent outward workflows get it only while a confirmed owner Profile
    reference stands — otherwise the typed owner-missing state. */
-const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
 const refreshOwnerIdentity = async (): Promise<void> => {
   const status = await googleConnection.state();
   ownerOnboarding.setConnectedIdentity(
@@ -291,9 +292,9 @@ const meetingBriefProduction = meetingBriefTest
       configStore,
       google: googleConnection,
       getCompleteJson: meetingBriefCompleteJson,
-      /* Owner onboarding (issue #123): Meeting Brief's owner eligibility and
-         delivery resolve through the confirmed owner reference too. */
-      gateOwnerEmail: () => ownerOnboarding.outwardOwnerEmail(),
+      /* Owner onboarding (issue #123): delivery's outward send waits for the
+         confirmed owner reference; eligibility keeps the raw identity. */
+      isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
@@ -324,17 +325,13 @@ await registerApi(app, {
   google: googleConnection,
   people: peopleProfiles,
   onboarding: ownerOnboarding,
-  onConfigChanged: () => {
+  onConfigChanged: async () => {
+    meetingBriefProduction?.invalidateGoogleIdentity();
+    await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
+    await refreshOwnerIdentity().catch(() => ownerOnboarding.setConnectedIdentity(null));
     for (const module of modules.filter((candidate) => candidate !== meetingBrief)) {
       module.start?.();
     }
-    meetingBriefProduction?.invalidateGoogleIdentity();
-    // Connecting a different Google account changes who the owner is, so read
-    // the new identity rather than leaving it null until the next restart.
-    void meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
-    // Same for owner onboarding: a changed identity voids a stale owner
-    // confirmation; Google being unreachable here leaves it null.
-    void refreshOwnerIdentity().catch(() => ownerOnboarding.setConnectedIdentity(null));
     meetingBrief.start();
   },
 });
@@ -376,6 +373,7 @@ if (process.env.ENABLE_TEST_SEED === "1") {
       return run.id;
     },
     personStore: peopleStore,
+    ownerOnboarding,
   });
 }
 

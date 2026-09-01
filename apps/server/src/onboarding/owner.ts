@@ -4,24 +4,21 @@ import type { ConfirmedOwnerReference, OwnerOnboardingProposal } from "@chief-of
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 
 /**
- * Owner onboarding (issue #123): the preserved connected-Google identity
- * proposes the Workspace owner's canonical Person Profile, and only an
- * explicit owner action confirms it. The proposal never creates, enriches,
- * or confirms anything; the confirmed reference pins both the Profile ID and
- * the exact revision (spec #117, Implementation Decisions 5), and it is held
- * for one Google identity only — a changed or disconnected connection
- * invalidates it (ADR-0036: the identity is read once and held until the
- * connection changes, and invalidation is load-bearing).
+ * Owner onboarding (issue #123): the connected Google identity proposes the
+ * Workspace owner's canonical Person Profile, and only an explicit owner
+ * action confirms it. The confirmed reference pins both the Profile ID and
+ * the exact revision (spec #117 Implementation Decisions 5), and it is held
+ * for one Google identity — a changed or disconnected connection voids it
+ * (ADR-0036: the identity is read once and held until the connection changes).
+ *
+ * Durability: the reference survives restarts in a small JSON state file
+ * under `<workspaceDir>/onboarding/`. No credential material is ever stored
+ * — the file carries the profile reference and the identity email only.
  */
 export class OwnerOnboarding {
   private readonly people: WorkspacePersonProfiles;
   private readonly stateFile: string;
   private readonly now: () => Date;
-  /**
-   * The connected Google identity, read once and held. The Shell refreshes it
-   * on connection change; a held confirmation never outlives the identity it
-   * was confirmed under.
-   */
   private connectedEmail: string | null = null;
 
   constructor(deps: { people: WorkspacePersonProfiles; workspaceDir: string; now?: () => Date }) {
@@ -32,37 +29,22 @@ export class OwnerOnboarding {
 
   /**
    * Shell-called: the connected Google account changed, so hold the new one.
-   * Any held confirmation confirmed for a different identity — including no
-   * identity at all, i.e. a disconnect — is voided here and stays voided
-   * across restarts: reconnecting the same account later still requires an
-   * explicit re-confirmation, so a stale reference can never outlive the
-   * connection event that made it stale (ADR-0036).
+   * A changed or dropped identity voids any confirmation that was pinned for
+   * the previous identity.
    */
   setConnectedIdentity(email: string | null): void {
     const next = email?.trim().toLowerCase() ?? null;
-    const changed = next !== this.connectedEmail;
     this.connectedEmail = next;
-    if (changed) {
-      const stored = this.read();
-      if (stored && stored.confirmedForGoogleEmail !== next) this.write(null);
+    const stored = this.read();
+    if (stored && stored.confirmedForGoogleEmail !== next) {
+      this.write(null);
     }
   }
 
   /**
-   * The email owner-identity-dependent outward workflows (Content Research's
-   * owner digest, Meeting Brief delivery) may act on: the held connected
-   * identity, and only while a confirmed owner Profile reference stands.
-   * Without confirmation this is null — the typed owner-missing state those
-   * workflows already treat as "cannot proceed", not an error.
-   */
-  outwardOwnerEmail(): string | null {
-    return this.confirmed() ? this.connectedEmail : null;
-  }
-
-  /**
    * What onboarding shows the owner: the connected identity and the one
-   * Profile whose stable identifier (exact email) already matches. A null
-   * match is the create-and-confirm path, not an error.
+   * Profile whose exact email already matches. A null match is the
+   * create-and-confirm path, not an error.
    */
   proposal(): OwnerOnboardingProposal | null {
     if (!this.connectedEmail) return null;
@@ -76,14 +58,17 @@ export class OwnerOnboarding {
     };
   }
 
-  /**
-   * The explicit owner action: select the proposed Profile, correct the
-   * proposal by naming a different one, or create a Profile first and confirm
-   * that. It pins the exact revision the Profile carries now; later Profile
-   * revisions supersede it without silently re-pinning (consumers re-confirm
-   * deliberately). Confirmation is only meaningful for the identity held at
-   * the moment, so it refuses to run without one.
-   */
+  confirmed(): ConfirmedOwnerReference | null {
+    const stored = this.read();
+    if (!stored) return null;
+    if (stored.confirmedForGoogleEmail !== this.connectedEmail) return null;
+    return stored;
+  }
+
+  outwardOwnerEmail(): string | null {
+    return this.confirmed() ? this.connectedEmail : null;
+  }
+
   confirm(profileId: string): ConfirmedOwnerReference {
     if (!this.connectedEmail) {
       throw new OwnerOnboardingError(
@@ -108,19 +93,24 @@ export class OwnerOnboarding {
     return reference;
   }
 
-  confirmed(): ConfirmedOwnerReference | null {
-    const stored = this.read();
-    if (!stored) return null;
-    if (stored.confirmedForGoogleEmail !== this.connectedEmail) return null;
-    return stored;
-  }
-
   private read(): ConfirmedOwnerReference | null {
     if (!existsSync(this.stateFile)) return null;
-    return JSON.parse(readFileSync(this.stateFile, "utf8")) as ConfirmedOwnerReference;
+    try {
+      const parsed = JSON.parse(readFileSync(this.stateFile, "utf8")) as ConfirmedOwnerReference;
+      if (
+        typeof parsed.profileId === "string" &&
+        typeof parsed.profileRevision === "number" &&
+        typeof parsed.confirmedAt === "string" &&
+        typeof parsed.confirmedForGoogleEmail === "string"
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
-  /** Null removes the file: a voided confirmation stays voided on disk. */
   private write(reference: ConfirmedOwnerReference | null): void {
     if (!reference) {
       if (existsSync(this.stateFile)) rmSync(this.stateFile);
@@ -131,7 +121,6 @@ export class OwnerOnboarding {
   }
 }
 
-/** Typed failure classification for onboarding actions, for API mapping. */
 export class OwnerOnboardingError extends Error {
   constructor(
     public readonly code: "no-connected-identity" | "unknown-profile",

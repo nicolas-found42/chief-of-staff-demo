@@ -18,12 +18,14 @@ import type {
  * is reachable from here.
  */
 let workspaceDir: string;
+let store: PersonProfileStore;
 let profiles: WorkspacePersonProfiles;
 let onboarding: OwnerOnboarding;
 
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-owner-onboarding-"));
-  profiles = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
+  store = new PersonProfileStore(workspaceDir);
+  profiles = new WorkspacePersonProfiles({ store });
   onboarding = new OwnerOnboarding({ people: profiles, workspaceDir });
 });
 
@@ -112,6 +114,19 @@ describe("confirm", () => {
     expect(() => onboarding.confirm(profile.id)).toThrowError(/connect a Google identity/i);
     expect(onboarding.confirmed()).toBeNull();
   });
+
+  it("keeps the confirmed reference pinned to the exact revision", () => {
+    onboarding.setConnectedIdentity("ada@example.com");
+    const profile = createProfile();
+    onboarding.confirm(profile.id);
+
+    store.save({ ...profile, revision: 2, role: "Analytical Engine programmer" });
+
+    expect(onboarding.confirmed()).toMatchObject({
+      profileId: profile.id,
+      profileRevision: 1,
+    });
+  });
 });
 
 describe("identity change", () => {
@@ -171,6 +186,18 @@ describe("durability across restart", () => {
 
     const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
     restarted.setConnectedIdentity("someoneelse@example.com");
+
+    expect(restarted.confirmed()).toBeNull();
+  });
+
+  it("invalidates a stored confirmation when restart observes a disconnected identity", () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    onboarding.confirm(profile.id);
+
+    const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+    restarted.setConnectedIdentity(null);
+    restarted.setConnectedIdentity("ada@example.com");
 
     expect(restarted.confirmed()).toBeNull();
   });

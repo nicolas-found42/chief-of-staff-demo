@@ -49,6 +49,7 @@ export interface DeliverBriefArgs {
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  isOwnerProfileConfirmed?: () => boolean;
 }
 
 export interface DeliverResult {
@@ -120,10 +121,18 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     gmailDeliveryProvider,
     getInternalDomains,
     getOwnerEmail,
+    isOwnerProfileConfirmed,
   } = args;
   const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
   const deliveryId = deliveryIdFor(occurrenceKey, brief.eventVersion);
+
+  if (isOwnerProfileConfirmed && !isOwnerProfileConfirmed()) {
+    const reason =
+      "owner_not_confirmed: confirm the workspace owner Profile before Meeting Brief delivery";
+    persistDeliveryFailure(ctx, deliveryId, deliveryAttempts(ctx), reason);
+    throw new StageFailure("deliver", reason);
+  }
 
   // ---- Current Calendar truth: fetched once, shared by the quiet gate and the pre-send recheck.
   // The quiet gate must consult this fresh state (not the snapshot-frozen start): a material

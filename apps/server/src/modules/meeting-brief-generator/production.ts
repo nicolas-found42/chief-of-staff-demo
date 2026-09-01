@@ -40,12 +40,10 @@ export interface MeetingBriefProductionRuntimeOptions {
   google: GoogleConnection;
   getCompleteJson: () => CompleteJson;
   /**
-   * Owner onboarding (issue #123): when given, the owner eligibility and
-   * delivery resolve through it instead of the raw held identity, so no
-   * owner-identity-dependent workflow proceeds without a confirmed owner
-   * Profile reference.
+   * Owner onboarding (issue #123): owner-only delivery is gated separately
+   * from Calendar eligibility, which keeps using the raw connected identity.
    */
-  gateOwnerEmail?: () => string | null;
+  isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
 }
 
@@ -154,7 +152,10 @@ export function createMeetingBriefProductionRuntime(
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
     },
-    getOwnerEmail: () => (options.gateOwnerEmail ? options.gateOwnerEmail() : ownerEmail),
+    getOwnerEmail: () => ownerEmail,
+    ...(options.isOwnerProfileConfirmed
+      ? { isOwnerProfileConfirmed: options.isOwnerProfileConfirmed }
+      : {}),
     gmailDeliveryProvider,
     ...(options.log ? { log: options.log } : {}),
   });
