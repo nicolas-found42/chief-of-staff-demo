@@ -112,3 +112,128 @@ export const NormalizedExtractionResultSchema = z.union([
   NormalizedWireExtractionSchema,
   ExtractionResultSchema,
 ]);
+
+/* ==========================================================================
+ * Transcript Catalog (ADR-0043, issue #125)
+ *
+ * Contracts for the Workspace-owned catalog that is the sole writer for
+ * private transcript registration and processing. The owner reviews a
+ * content-free folder inventory, grants one explicit folder-level consent,
+ * and the catalog then registers one immutable normalized Transcript record
+ * per source revision behind a checksummed, resumable ledger.
+ * ========================================================================== */
+
+/** The configured source folder the Catalog draws from. */
+export interface TranscriptFolderRef {
+  sourceSystem: "drive";
+  folderId: string;
+  folderName: string | null;
+}
+
+/** One folder file as the pre-consent inventory sees it: metadata only, never content. */
+export interface TranscriptInventoryFile {
+  externalFileId: string;
+  fileName: string;
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+  /** Meeting date recovered from the file name, when it carries one. */
+  meetingDate: string | null;
+}
+
+/** Policy facts the inventory must disclose before the owner consents. */
+export interface TranscriptProviderExposure {
+  sendsTranscriptTextToConfiguredModel: boolean;
+  provider: string;
+  model: string;
+}
+
+/**
+ * First-run inventory preview: folder identity, file count, date range,
+ * estimated scope, local retention, model/provider exposure and external-query
+ * behavior — without mining any file's content.
+ */
+export interface TranscriptFolderInventory {
+  folder: TranscriptFolderRef;
+  fileCount: number;
+  dateRange: { earliest: string | null; latest: string | null };
+  estimatedScope: { totalBytes: number };
+  localRetention: string;
+  providerExposure: TranscriptProviderExposure;
+  externalQueryBehavior: "none";
+  files: TranscriptInventoryFile[];
+}
+
+/** Standing, folder-level authorization. Processing refuses without it. */
+export interface TranscriptConsent {
+  folderId: string;
+  folderName: string | null;
+  consentedAt: string;
+}
+
+/** The source facts one immutable Transcript was registered from. */
+export interface TranscriptSourceRevision {
+  sourceSystem: "drive";
+  externalFileId: string;
+  fileName: string;
+  sourceUrl: string | null;
+  /** sha256 of the raw source bytes. */
+  checksum: string;
+  /** 1-based per external file; a changed checksum is a new deliberate revision. */
+  observedRevision: number;
+  modifiedAt: string | null;
+}
+
+/** Calendar association, recorded only when it is known. */
+export interface TranscriptOccurrence {
+  occurrenceKey: string;
+  calendarEventId: string | null;
+}
+
+/** One immutable normalized transcript per source revision. */
+export interface TranscriptRecord {
+  id: string;
+  source: TranscriptSourceRevision;
+  ingestedAt: string;
+  extractorVersion: number;
+  /** Immutable normalized UTF-8 text artifact. */
+  normalizedText: string;
+  meetingDate: string | null;
+  occurrence: TranscriptOccurrence | null;
+  /** Source-system speaker labels, in order of first appearance. */
+  speakers: string[];
+}
+
+export type TranscriptLedgerState = "pending" | "failed" | "skipped" | "processed";
+
+/** Processing ledger: one entry per source revision, the exactly-once record. */
+export interface TranscriptLedgerEntry {
+  sourceSystem: "drive";
+  externalFileId: string;
+  fileName: string;
+  observedRevision: number;
+  checksum: string | null;
+  state: TranscriptLedgerState;
+  attempts: number;
+  transcriptId: string | null;
+  reason: string | null;
+  updatedAt: string;
+}
+
+export interface TranscriptCatalogStatus {
+  consent: TranscriptConsent | null;
+  backfill: "idle" | "running" | "paused";
+  pending: number;
+  processed: number;
+  failed: number;
+  skipped: number;
+  transcriptCount: number;
+}
+
+export interface TranscriptProcessingPass {
+  /** Source revisions newly registered as immutable Transcript records. */
+  processed: number;
+  failed: number;
+  skipped: number;
+  /** Source revisions found already processed or deliberately skipped, untouched. */
+  unchanged: number;
+}
