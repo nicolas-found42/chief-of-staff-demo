@@ -32,7 +32,6 @@ export interface TranscriptIdentityDeps {
   store: TranscriptIdentityStore;
   people: WorkspacePersonProfiles;
   extractor: TranscriptIdentityExtractor;
-  profileUrlCanonicalizers?: TranscriptProfileUrlCanonicalizer[];
   now?: () => Date;
 }
 
@@ -45,12 +44,6 @@ export interface TranscriptIdentityExtractor {
   extract(
     record: TranscriptRecord,
   ): TranscriptIdentityExtractionResult | Promise<TranscriptIdentityExtractionResult>;
-}
-
-export interface TranscriptProfileUrlCanonicalizer {
-  /** Changes whenever this canonicalization policy can change. */
-  version: string;
-  canonicalize(value: string): string | null;
 }
 
 class UnknownMentionError extends Error {
@@ -95,14 +88,12 @@ export class TranscriptIdentityService {
   private readonly store: TranscriptIdentityStore;
   private readonly people: WorkspacePersonProfiles;
   private readonly extractor: TranscriptIdentityExtractor;
-  private readonly profileUrlCanonicalizers: TranscriptProfileUrlCanonicalizer[];
   private readonly now: () => Date;
 
   constructor(deps: TranscriptIdentityDeps) {
     this.store = deps.store;
     this.people = deps.people;
     this.extractor = deps.extractor;
-    this.profileUrlCanonicalizers = deps.profileUrlCanonicalizers ?? [];
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -152,9 +143,6 @@ export class TranscriptIdentityService {
           roster: record.roster,
           knownProfileUrls: this.knownProfileUrls(),
           extractorVersion: this.extractor.version,
-          canonicalizerVersions: this.profileUrlCanonicalizers.map(
-            (canonicalizer) => canonicalizer.version,
-          ),
         }),
       )
       .digest("hex");
@@ -180,7 +168,6 @@ export class TranscriptIdentityService {
       TranscriptIdentityExtractionResultSchema.parse(rawResult);
     const { mentions, organizations } = extractMentions(record, supplement, {
       knownProfileUrls: this.knownProfileUrls(),
-      profileUrlCanonicalizers: this.profileUrlCanonicalizers,
     });
     this.store.saveTranscriptMeta(record.id, {
       fileName: record.source.fileName,

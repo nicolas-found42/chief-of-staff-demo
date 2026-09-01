@@ -27,7 +27,6 @@ import {
 import {
   TranscriptIdentityService,
   type TranscriptIdentityExtractor,
-  type TranscriptProfileUrlCanonicalizer,
 } from "../../../apps/server/src/transcript-catalog/identity";
 
 const EMPTY_EXTRACTION: TranscriptIdentityExtractionResult = {
@@ -77,7 +76,6 @@ function makeHarness(
       return EMPTY_EXTRACTION;
     },
   },
-  profileUrlCanonicalizers: TranscriptProfileUrlCanonicalizer[] = [],
 ): Harness {
   const workspaceDir = mkdtempSync(join(tmpdir(), "transcript-identity-"));
   const people = new WorkspacePersonProfiles({
@@ -89,7 +87,6 @@ function makeHarness(
     store,
     people,
     extractor,
-    profileUrlCanonicalizers,
     now: NOW,
   });
   return { workspaceDir, service, people, store };
@@ -250,50 +247,6 @@ describe("Transcript Catalog identity processing", () => {
     });
     expect(restartedIdentity.reviewQueue().items[0]?.candidates).toContainEqual(
       expect.objectContaining({ profileId: grace.id }),
-    );
-  });
-
-  it("reprocesses an unchanged Transcript when a canonicalizer version becomes available", async () => {
-    const h = makeHarness();
-    const profile = h.people.create({ fullName: "Provider Profile" });
-    new PersonProfileStore(h.workspaceDir).save({
-      ...profile,
-      profileUrls: ["https://github.com/aturing"],
-    });
-    const body = "Provider: https://github.com/aturing/repositories";
-    const firstEra = catalogFor(h, body);
-    await firstEra.grantConsent();
-    await firstEra.whenIdle();
-    expect(h.service.reviewQueue().items.flatMap((item) => item.mention.profileUrls)).toEqual([]);
-
-    const restartedIdentity = new TranscriptIdentityService({
-      store: new TranscriptIdentityStore(h.workspaceDir),
-      people: h.people,
-      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
-      profileUrlCanonicalizers: [
-        {
-          version: "github-v1",
-          canonicalize(value) {
-            const url = new URL(value);
-            return url.hostname.toLowerCase() === "github.com" &&
-              url.pathname === "/aturing/repositories"
-              ? "https://github.com/aturing"
-              : null;
-          },
-        },
-      ],
-      now: NOW,
-    });
-    const secondEra = catalogFor({ ...h, service: restartedIdentity }, body);
-
-    expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
-    expect(restartedIdentity.reviewQueue().items).toContainEqual(
-      expect.objectContaining({
-        mention: expect.objectContaining({
-          profileUrls: ["https://github.com/aturing"],
-        }),
-        decision: expect.objectContaining({ profileId: profile.id, decidedBy: "policy" }),
-      }),
     );
   });
 
@@ -698,7 +651,6 @@ describe("Transcript Catalog identity processing", () => {
       store: new TranscriptIdentityStore(h.workspaceDir),
       people: h.people,
       extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
-      profileUrlCanonicalizers: [],
       now: NOW,
     });
     expect(restarted.organizationDecisions()).toEqual([decision]);
@@ -913,27 +865,15 @@ describe("candidate generation and auto-link policy", () => {
     expect(h.service.reviewQueue().items.every((item) => item.decision === null)).toBe(true);
   });
 
-  it("accepts an exact known Profile URL and a provider-canonicalized person URL", async () => {
-    const github: TranscriptProfileUrlCanonicalizer = {
-      version: "github-v1",
-      canonicalize(value) {
-        const url = new URL(value);
-        return url.hostname.toLowerCase() === "github.com" && url.pathname === "/aturing"
-          ? "https://github.com/aturing"
-          : null;
-      },
-    };
-    const h = makeHarness(undefined, [github]);
+  it("accepts an exact known Profile URL and rejects unknown person URLs", async () => {
+    const h = makeHarness();
     const known = h.people.create({ fullName: "Known Personal Site" });
-    const provider = h.people.create({ fullName: "Provider Profile" });
     const profiles = new PersonProfileStore(h.workspaceDir);
     profiles.save({ ...known, profileUrls: ["https://about.me/grace"] });
-    profiles.save({ ...provider, profileUrls: ["https://github.com/aturing"] });
     const catalog = catalogFor(
       h,
       [
         "Known: https://ABOUT.me/grace/?utm_source=meeting#bio",
-        "Provider: https://github.com/aturing?tab=repositories",
         "Rejected: https://github.com/orgs/openai/projects/1",
       ].join("\n"),
     );
@@ -944,11 +884,10 @@ describe("candidate generation and auto-link policy", () => {
     const urlItems = h.service
       .reviewQueue()
       .items.filter((item) => item.mention.profileUrls.length > 0);
-    expect(urlItems).toHaveLength(2);
-    expect(urlItems.map((item) => item.decision?.profileId).sort()).toEqual(
-      [known.id, provider.id].sort(),
-    );
-    expect(urlItems.flatMap((item) => item.mention.profileUrls)).not.toContain(
+    expect(urlItems).toHaveLength(1);
+    expect(urlItems[0]?.decision).toMatchObject({ profileId: known.id, decidedBy: "policy" });
+    expect(urlItems[0]?.mention.profileUrls).toEqual(["https://about.me/grace"]);
+    expect(h.service.reviewQueue().items.flatMap((item) => item.mention.profileUrls)).not.toContain(
       "https://github.com/orgs/openai/projects/1",
     );
   });

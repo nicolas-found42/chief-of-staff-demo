@@ -268,13 +268,8 @@ export function normalizeProfileUrl(value: string): string | null {
   }
 }
 
-interface ProfileUrlCanonicalizer {
-  canonicalize(value: string): string | null;
-}
-
 interface TranscriptExtractionOptions {
   knownProfileUrls: string[];
-  profileUrlCanonicalizers: ProfileUrlCanonicalizer[];
 }
 
 function canonicalPersonProfileUrl(
@@ -293,13 +288,7 @@ function canonicalPersonProfileUrl(
       .map(normalizeProfileUrl)
       .filter((candidate): candidate is string => candidate !== null),
   );
-  if (known.has(normalized)) return normalized;
-  for (const canonicalizer of options.profileUrlCanonicalizers) {
-    const canonical = canonicalizer.canonicalize(value);
-    if (canonical === null) continue;
-    return normalizeProfileUrl(canonical);
-  }
-  return null;
+  return known.has(normalized) ? normalized : null;
 }
 
 function normalizeHandle(value: string): string {
@@ -426,7 +415,6 @@ export function extractMentions(
   supplement: TranscriptIdentityExtractionResult,
   options: TranscriptExtractionOptions = {
     knownProfileUrls: [],
-    profileUrlCanonicalizers: [],
   },
 ): TranscriptExtraction {
   const text = record.normalizedText;
