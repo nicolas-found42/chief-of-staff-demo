@@ -55,14 +55,15 @@ export interface TranscriptCatalogDisclosure {
  * the shared Person Profiles Review queue; the Catalog only supplies each
  * newly registered immutable Transcript. */
 export interface TranscriptIdentityProcessor {
-  mine(record: TranscriptRecord): void;
+  process(record: TranscriptRecord): void;
+  backfill(records: TranscriptRecord[]): void;
 }
 
 export interface TranscriptCatalogDeps {
   workspaceDir: string;
   source: TranscriptCatalogSource;
   disclosure: TranscriptCatalogDisclosure;
-  identity?: TranscriptIdentityProcessor;
+  identity: TranscriptIdentityProcessor;
   now?: () => Date;
   log?: (message: string) => void;
 }
@@ -122,7 +123,7 @@ export class TranscriptCatalog {
   private readonly store: TranscriptCatalogStore;
   private readonly source: TranscriptCatalogSource;
   private readonly disclosure: TranscriptCatalogDisclosure;
-  private readonly identity: TranscriptIdentityProcessor | null;
+  private readonly identity: TranscriptIdentityProcessor;
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   /** The pass currently running, if any; a second caller awaits the same one. */
@@ -132,7 +133,7 @@ export class TranscriptCatalog {
     this.store = new TranscriptCatalogStore(deps.workspaceDir);
     this.source = deps.source;
     this.disclosure = deps.disclosure;
-    this.identity = deps.identity ?? null;
+    this.identity = deps.identity;
     this.now = deps.now ?? (() => new Date());
     this.log = deps.log ?? (() => {});
   }
@@ -276,6 +277,7 @@ export class TranscriptCatalog {
       unchanged: 0,
     };
     if (this.store.readPaused()) return result;
+    this.identity.backfill(this.store.listTranscripts());
     const listed = await this.source.listFiles();
     for (const file of listed) {
       if (this.store.readPaused()) break;
@@ -383,7 +385,7 @@ export class TranscriptCatalog {
         speakers: collectSpeakerLabels(normalizedText),
       };
       this.store.saveTranscript(record);
-      this.identity?.mine(record);
+      this.identity.process(record);
       this.recordEntry({ ...entry, state: "processed", transcriptId: record.id });
       return "processed";
     } catch (error: unknown) {

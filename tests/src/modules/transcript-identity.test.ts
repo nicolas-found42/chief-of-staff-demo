@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,15 +11,16 @@ import {
   TRANSCRIPT_CATALOG_EXTRACTOR_VERSION,
   TranscriptCatalog,
 } from "../../../apps/server/src/transcript-catalog/catalog";
+import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
 import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 
 const NOW = () => new Date("2026-08-31T12:00:00.000Z");
 
 import {
   IDENTITY_MINING_ALGORITHM_VERSION,
-  TranscriptIdentityService,
   extractMentions,
-} from "../../../apps/server/src/transcript-catalog/identity";
+} from "../../../apps/server/src/transcript-catalog/identity-analysis";
+import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
 
 function makeRecord(text: string, id = "drive_file1_r1"): TranscriptRecord {
   return {
@@ -105,6 +107,80 @@ describe("Transcript Catalog identity processing", () => {
     ).toBe(true);
     expect(h.people.search({ includeArchived: true })).toEqual([]);
   });
+
+  it("backfills an already registered unchanged Transcript once across restart", async () => {
+    const h = makeHarness();
+    const body = "Email grace@example.com before the review.";
+    const record = makeRecord(body);
+    const catalogStore = new TranscriptCatalogStore(h.workspaceDir);
+    catalogStore.writeConsent({
+      folderId: "folder-1",
+      folderName: "Transcripts",
+      consentedAt: NOW().toISOString(),
+    });
+    catalogStore.saveTranscript(record);
+    catalogStore.saveLedgerEntry({
+      sourceSystem: "drive",
+      externalFileId: "file1",
+      fileName: record.source.fileName,
+      observedRevision: 1,
+      checksum: createHash("sha256").update(body).digest("hex"),
+      state: "processed",
+      attempts: 1,
+      transcriptId: record.id,
+      reason: null,
+      updatedAt: NOW().toISOString(),
+    });
+    const source = {
+      async folder() {
+        return { folderId: "folder-1", folderName: "Transcripts" };
+      },
+      async listFiles() {
+        return [
+          {
+            externalFileId: "file1",
+            fileName: record.source.fileName,
+            sizeBytes: Buffer.byteLength(body),
+            modifiedAt: null,
+            sourceUrl: null,
+          },
+        ];
+      },
+      async fetch() {
+        return Buffer.from(body);
+      },
+    };
+    const firstEra = new TranscriptCatalog({
+      workspaceDir: h.workspaceDir,
+      source,
+      disclosure: { provider: "test-provider", model: "test-model" },
+      identity: h.service,
+      now: NOW,
+    });
+
+    expect(await firstEra.processAvailable()).toMatchObject({ unchanged: 1 });
+    expect(h.service.reviewQueue().items).toHaveLength(1);
+
+    h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
+    const restartedIdentity = new TranscriptIdentityService({
+      store: new TranscriptIdentityStore(h.workspaceDir),
+      people: h.people,
+      now: NOW,
+    });
+    const secondEra = new TranscriptCatalog({
+      workspaceDir: h.workspaceDir,
+      source,
+      disclosure: { provider: "test-provider", model: "test-model" },
+      identity: restartedIdentity,
+      now: NOW,
+    });
+
+    expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
+    expect(restartedIdentity.reviewQueue().items[0]).toMatchObject({
+      candidates: [],
+      decision: null,
+    });
+  });
 });
 
 describe("deterministic mention extraction", () => {
@@ -162,6 +238,19 @@ describe("deterministic mention extraction", () => {
     expect(mentions.some((mention) => mention.surfaceText === "OpenAI")).toBe(false);
   });
 
+  it("does not coerce a non-attendee person into an Organization after a preposition", () => {
+    const { mentions, organizations } = extractMentions(
+      makeRecord("[00:01] Sam: I met with Alan Turing."),
+    );
+
+    expect(mentions).toContainEqual(
+      expect.objectContaining({ surfaceText: "Alan Turing", kind: "person" }),
+    );
+    expect(organizations.some((organization) => organization.surfaceText === "Alan Turing")).toBe(
+      false,
+    );
+  });
+
   it("classifies product-cued names as products, never person candidates", () => {
     const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
     const atlas = mentions.find((m) => m.surfaceText === "Atlas");
@@ -209,7 +298,7 @@ describe("candidate generation and auto-link policy", () => {
   it("auto-links only a non-conflicting exact stable identifier, by policy", async () => {
     const h = makeHarness();
     h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
 
     const queue = h.service.reviewQueue();
     const emailMention = queue.items.find((i) => i.mention.emails.includes("grace@example.com"));
@@ -230,10 +319,123 @@ describe("candidate generation and auto-link policy", () => {
     expect(candidate.algorithmVersion).toBe(IDENTITY_MINING_ALGORITHM_VERSION);
   });
 
+  it("normalizes and auto-links an exact canonical Profile URL", () => {
+    const h = makeHarness();
+    const profile = h.people.create({ fullName: "Grace Hopper" });
+    new PersonProfileStore(h.workspaceDir).save({
+      ...profile,
+      profileUrls: ["https://linkedin.com/in/grace-hopper"],
+    });
+
+    h.service.process(
+      makeRecord(
+        "Profile: https://LINKEDIN.com/in/grace-hopper/?trk=meeting#biography",
+        "drive_url_r1",
+      ),
+    );
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.mention.profileUrls.length > 0)!;
+
+    expect(item.mention.profileUrls).toEqual(["https://linkedin.com/in/grace-hopper"]);
+    expect(item.candidates[0].signals).toContainEqual(
+      expect.objectContaining({ signal: "exact-profile-url", matched: true }),
+    );
+    expect(item.decision).toMatchObject({ profileId: profile.id, decidedBy: "policy" });
+  });
+
+  it("auto-links a source speaker through an exact Calendar email mapping", () => {
+    const h = makeHarness();
+    const profile = h.people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+    h.service.process({
+      ...makeRecord("[00:00] Grace Hopper: Ready.", "drive_calendar_r1"),
+      speakerIdentityMappings: [
+        {
+          speakerLabel: "Grace Hopper",
+          calendarEmail: "GRACE@example.com",
+          verifiedHandles: {},
+          externalContactIds: [],
+        },
+      ],
+    });
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.mention.surfaceText === "Grace Hopper")!;
+
+    expect(item.mention.speakerCalendarEmail).toBe("grace@example.com");
+    expect(item.candidates[0].signals).toContainEqual(
+      expect.objectContaining({ signal: "speaker-calendar-email", matched: true }),
+    );
+    expect(item.decision).toMatchObject({ profileId: profile.id, decidedBy: "policy" });
+  });
+
+  it("auto-links a source-verified handle but never treats it as name evidence", () => {
+    const h = makeHarness();
+    const profile = h.people.create({ fullName: "Admiral Hopper" });
+    new PersonProfileStore(h.workspaceDir).save({
+      ...profile,
+      handles: { github: ["ghopper"] },
+    });
+    h.service.process({
+      ...makeRecord("[00:00] Grace: Ready.", "drive_handle_r1"),
+      speakerIdentityMappings: [
+        {
+          speakerLabel: "Grace",
+          calendarEmail: null,
+          verifiedHandles: { GitHub: ["@GHopper"] },
+          externalContactIds: [],
+        },
+      ],
+    });
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.mention.surfaceText === "Grace")!;
+
+    expect(item.mention.verifiedHandles).toEqual({ github: ["ghopper"] });
+    expect(item.candidates[0].signals).toContainEqual(
+      expect.objectContaining({ signal: "verified-handle", matched: true }),
+    );
+    expect(item.decision).toMatchObject({ profileId: profile.id, decidedBy: "policy" });
+  });
+
+  it("auto-links an exact external contact identifier from verified speaker metadata", () => {
+    const h = makeHarness();
+    const profile = h.people.create({ fullName: "Admiral Hopper" });
+    new PersonProfileStore(h.workspaceDir).save({
+      ...profile,
+      externalContactIds: [{ system: "hubspot", externalId: "contact-42" }],
+    });
+    h.service.process({
+      ...makeRecord("[00:00] Grace: Ready.", "drive_contact_r1"),
+      speakerIdentityMappings: [
+        {
+          speakerLabel: "Grace",
+          calendarEmail: null,
+          verifiedHandles: {},
+          externalContactIds: [{ system: "HubSpot", externalId: "contact-42" }],
+        },
+      ],
+    });
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.mention.surfaceText === "Grace")!;
+
+    expect(item.mention.externalContactIds).toEqual([
+      { system: "hubspot", externalId: "contact-42" },
+    ]);
+    expect(item.candidates[0].signals).toContainEqual(
+      expect.objectContaining({ signal: "external-contact-id", matched: true }),
+    );
+    expect(item.decision).toMatchObject({ profileId: profile.id, decidedBy: "policy" });
+  });
+
   it("keeps name-only matches reviewable with a signal-by-signal explanation", async () => {
     const h = makeHarness();
     h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
 
     const queue = h.service.reviewQueue();
     const speaker = queue.items.find(
@@ -256,7 +458,7 @@ describe("candidate generation and auto-link policy", () => {
     const h = makeHarness();
     h.people.create({ fullName: "Grace Hopper" });
     h.people.create({ fullName: "Grace Hopper" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
 
     const speaker = h.service
       .reviewQueue()
@@ -276,7 +478,7 @@ describe("candidate generation and auto-link policy", () => {
     h.people.create({ fullName: "Grace Hopper" }); // same name, no email
     // The name and the email occur on one span, so one mention carries both
     // pieces of evidence and the email-less namesake becomes a hard conflict.
-    h.service.mine(makeRecord("Grace Hopper grace@example.com will brief.\n", "drive_file9_r1"));
+    h.service.process(makeRecord("Grace Hopper grace@example.com will brief.\n", "drive_file9_r1"));
     const named = h.service.reviewQueue().items.find((i) => i.transcriptId === "drive_file9_r1");
     const emailMention = named!;
     const withoutEmail = emailMention.candidates.find((c) => {
@@ -291,11 +493,41 @@ describe("candidate generation and auto-link policy", () => {
     expect(emailMention.candidates.some((c) => c.policyClass === "confirmed")).toBe(true);
   });
 
+  it("hard-conflicts every candidate when an exact stable identifier has duplicate owners", () => {
+    const h = makeHarness();
+    h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
+    const duplicate = h.people.create({
+      fullName: "Grace Namesake",
+      primaryEmail: "other@example.com",
+    });
+    new PersonProfileStore(h.workspaceDir).save({
+      ...duplicate,
+      primaryEmail: "grace@example.com",
+      emails: ["grace@example.com"],
+    });
+
+    h.service.process(makeRecord("Grace Hopper grace@example.com joined the review."));
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.mention.emails.includes("grace@example.com"))!;
+
+    expect(item.candidates).toHaveLength(2);
+    expect(
+      item.candidates.every((candidate) =>
+        candidate.conflicts.some(
+          (conflict) => conflict.kind === "duplicate-stable-id" && conflict.hard,
+        ),
+      ),
+    ).toBe(true);
+    expect(item.candidates.every((candidate) => candidate.policyClass === "ambiguous")).toBe(true);
+    expect(item.decision).toBeNull();
+  });
+
   it("scores employer context as a weaker signal with a persisted lead", () => {
     const h = makeHarness();
     h.people.create({ fullName: "Alan Turing", currentEmployer: "Acme Corp" });
     h.people.create({ fullName: "Alan Turing" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
 
     const alan = h.service.reviewQueue().items.find((i) => i.mention.surfaceText === "Alan Turing");
     const withEmployer = alan!.candidates.find(
@@ -310,7 +542,7 @@ describe("candidate generation and auto-link policy", () => {
 
   it("never creates a Profile from any mining path", () => {
     const h = makeHarness();
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     expect(h.people.search({ includeArchived: true })).toEqual([]);
   });
 });
@@ -318,14 +550,14 @@ describe("candidate generation and auto-link policy", () => {
 describe("review decisions", () => {
   function harnessedSync() {
     const h = makeHarness();
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     return h;
   }
 
   it("confirms a probable candidate and links the existing Profile", () => {
-    const h = harnessedSync();
+    const h = makeHarness();
     h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     const speaker = h.service
       .reviewQueue()
       .items.find(
@@ -386,7 +618,7 @@ describe("review decisions", () => {
     });
     const profile = h.people.get(archived.id)!;
     new PersonProfileStore(h.workspaceDir).save({ ...profile, archivedAt: NOW().toISOString() });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
 
     const emailMention = h.service
       .reviewQueue()
@@ -413,10 +645,10 @@ describe("review decisions", () => {
     expect(unresolved.profileId).toBeNull();
   });
 
-  it("fans one decision out to undecided mentions of the same form in the transcript", () => {
+  it("applies an ordinary review decision only to the named mention", () => {
     const h = makeHarness();
     h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     const formItems = h.service
       .reviewQueue()
       .items.filter((i) => i.mention.normalizedForms.includes("grace hopper"));
@@ -431,9 +663,34 @@ describe("review decisions", () => {
     const after = h.service
       .reviewQueue()
       .items.filter((i) => i.mention.normalizedForms.includes("grace hopper"));
-    // The email mention was policy-linked before; the rest are owner-linked now.
-    expect(after.every((i) => i.decision !== null)).toBe(true);
+    expect(after.find((item) => item.mention.id === undecided.mention.id)?.decision).not.toBeNull();
+    expect(after.find((item) => item.mention.id !== undecided.mention.id)?.decision).toBeNull();
   });
+
+  it.each(["alternate-profile", "create-profile", "not-a-person", "unresolved"] as const)(
+    "keeps %s decisions mention-local",
+    (action) => {
+      const h = harnessedSync();
+      const sameForm = h.service
+        .reviewQueue()
+        .items.filter((item) => item.mention.normalizedForms.includes("grace hopper"));
+      const target = sameForm[0];
+      if (action === "alternate-profile") {
+        const alternate = h.people.create({ fullName: "Grace Murray Hopper" });
+        h.service.decide({ mentionId: target.mention.id, action, profileId: alternate.id });
+      } else {
+        h.service.decide({ mentionId: target.mention.id, action });
+      }
+
+      const after = h.service
+        .reviewQueue()
+        .items.filter((item) => item.mention.normalizedForms.includes("grace hopper"));
+      expect(after.find((item) => item.mention.id === target.mention.id)?.decision?.action).toBe(
+        action,
+      );
+      expect(after.find((item) => item.mention.id !== target.mention.id)?.decision).toBeNull();
+    },
+  );
 
   it("refuses decisions that name an unknown mention or unknown Profile", () => {
     const h = harnessedSync();
@@ -451,7 +708,7 @@ describe("remembered mappings", () => {
   it("stores an opt-in, scoped, versioned mapping and replays it in scope only", () => {
     const h = makeHarness();
     const grace = h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     const speaker = h.service
       .reviewQueue()
       .items.find(
@@ -477,7 +734,7 @@ describe("remembered mappings", () => {
     });
 
     // A different transcript with the same name: out of this mapping's scope.
-    h.service.mine(makeRecord("Grace Hopper: solo note.\n", "drive_file2_r1"));
+    h.service.process(makeRecord("Grace Hopper: solo note.\n", "drive_file2_r1"));
     const otherItem = h.service
       .reviewQueue()
       .items.find(
@@ -487,20 +744,20 @@ describe("remembered mappings", () => {
     expect(otherItem.candidates.every((c) => c.policyClass !== "confirmed")).toBe(true);
     expect(otherItem.rememberedMapping).toBeNull();
 
-    // Within scope, mining replays the mapping as a policy-made link.
-    h.service.mine(makeRecord("[00:02] Sam: Grace Hopper checks in.\n", "drive_file1_r1"));
+    // Explicitly remembering the mapping applies it to other same-form
+    // mentions already present in this immutable Transcript.
     const replayed = h.service
       .reviewQueue()
       .items.find(
         (i) =>
           i.transcriptId === "drive_file1_r1" &&
-          i.mention.provenance.timestamp === "00:02" &&
-          i.mention.attendeeStatus === "third-person",
+          i.mention.id !== speaker.mention.id &&
+          i.mention.normalizedForms.includes("grace hopper"),
       )!;
     expect(replayed.decision).toMatchObject({
-      action: "confirm",
+      action: "remember-mapping",
       outcome: "linked",
-      decidedBy: "policy",
+      decidedBy: "owner",
       profileId: grace.id,
     });
   });
@@ -509,7 +766,7 @@ describe("remembered mappings", () => {
     const h = makeHarness();
     const grace = h.people.create({ fullName: "Grace Hopper" });
     const murray = h.people.create({ fullName: "Grace Murray Hopper" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     const speaker = h.service
       .reviewQueue()
       .items.find(
@@ -536,7 +793,7 @@ describe("remembered mappings", () => {
   it("reverses a mapping by revocation, after which mining stops replaying it", () => {
     const h = makeHarness();
     const grace = h.people.create({ fullName: "Grace Hopper" });
-    h.service.mine(makeRecord(SYNC_TEXT));
+    h.service.process(makeRecord(SYNC_TEXT));
     const speaker = h.service
       .reviewQueue()
       .items.find(
@@ -551,7 +808,7 @@ describe("remembered mappings", () => {
     h.service.revokeMapping(h.service.mappings()[0].id);
     expect(h.service.mappings()[0].revokedAt).not.toBeNull();
 
-    h.service.mine(makeRecord("[00:03] Grace Hopper: back again.\n", "drive_file3_r1"));
+    h.service.process(makeRecord("[00:03] Grace Hopper: back again.\n", "drive_file3_r1"));
     const replay = h.service.reviewQueue().items.find((i) => i.transcriptId === "drive_file3_r1")!;
     expect(replay.decision).toBeNull();
   });

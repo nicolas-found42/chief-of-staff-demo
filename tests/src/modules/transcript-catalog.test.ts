@@ -8,7 +8,11 @@ import {
   type TranscriptCatalogSource,
 } from "../../../apps/server/src/transcript-catalog/catalog";
 import { createDriveCatalogSource } from "../../../apps/server/src/transcript-catalog/drive-source";
+import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
+import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
 
 interface FakeFile {
@@ -54,10 +58,15 @@ function makeCatalog(
   source: TranscriptCatalogSource,
   workspaceDir: string = mkdtempSync(join(tmpdir(), "transcript-catalog-")),
 ): TranscriptCatalog {
+  const people = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
   return new TranscriptCatalog({
     workspaceDir,
     source,
     disclosure: { provider: "test-provider", model: "test-model" },
+    identity: new TranscriptIdentityService({
+      store: new TranscriptIdentityStore(workspaceDir),
+      people,
+    }),
     now: () => new Date("2026-08-31T12:00:00.000Z"),
     log: () => {},
   });

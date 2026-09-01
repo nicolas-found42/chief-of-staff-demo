@@ -1,9 +1,5 @@
 import { z } from "zod";
-import type {
-  IdentityDecisionAction,
-  IdentityDecisionOutcome,
-  RememberedMapping,
-} from "./person-profile.js";
+import type { ExternalContactId } from "./person-profile.js";
 
 /**
  * Extraction result — mirror of the routine's `routine/outbox-schema.json` v1,
@@ -194,6 +190,16 @@ export interface TranscriptOccurrence {
   calendarEventId: string | null;
 }
 
+/** Verified source metadata tying one diarized speaker label to stable
+ * identity signals. Raw transcript text alone never verifies a handle or an
+ * external contact identifier. */
+export interface TranscriptSpeakerIdentityMapping {
+  speakerLabel: string;
+  calendarEmail: string | null;
+  verifiedHandles: Record<string, string[]>;
+  externalContactIds: ExternalContactId[];
+}
+
 /** One immutable normalized transcript per source revision. */
 export interface TranscriptRecord {
   id: string;
@@ -206,6 +212,8 @@ export interface TranscriptRecord {
   occurrence: TranscriptOccurrence | null;
   /** Source-system speaker labels, in order of first appearance. */
   speakers: string[];
+  /** Verified provider/Calendar identity metadata, when available. */
+  speakerIdentityMappings?: TranscriptSpeakerIdentityMapping[];
 }
 
 export type TranscriptLedgerState = "pending" | "failed" | "skipped" | "processed";
@@ -254,6 +262,31 @@ export interface TranscriptProcessingPass {
  * decision does.
  * ========================================================================== */
 
+export type IdentityDecisionAction =
+  | "confirm"
+  | "alternate-profile"
+  | "create-profile"
+  | "not-a-person"
+  | "unresolved"
+  | "remember-mapping";
+
+export type IdentityDecisionOutcome = "linked" | "created" | "not-a-person" | "unresolved";
+
+export type RememberedMappingScope = "transcript" | "workspace";
+
+/** An explicit, scoped, versioned and reversible normalized-name mapping. */
+export interface RememberedMapping {
+  id: string;
+  scope: RememberedMappingScope;
+  scopeId: string | null;
+  normalizedForm: string;
+  surfaceText: string;
+  profileId: string;
+  mappingVersion: number;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 /** Entity classification for one preserved span. Never a guess at identity. */
 export type TranscriptMentionKind =
   "person" | "organization" | "ambiguous-name" | "product" | "unknown";
@@ -294,8 +327,16 @@ export interface TranscriptMention {
    * surface text.
    */
   normalizedForms: string[];
-  /** Exact stable identifiers observed on the span (emails in v1). */
+  /** Exact stable email identifiers observed on the span. */
   emails: string[];
+  /** Canonicalized exact Profile URLs observed on the span. */
+  profileUrls: string[];
+  /** Handles verified by source speaker metadata, keyed by platform. */
+  verifiedHandles: Record<string, string[]>;
+  /** Provider-owned stable identifiers verified by source metadata. */
+  externalContactIds: ExternalContactId[];
+  /** Exact Calendar email tied to this source speaker label, when verified. */
+  speakerCalendarEmail: string | null;
   /** Normalized organization name when the person was named in org context. */
   organizationContext: string | null;
   attendeeStatus: TranscriptAttendeeStatus;
@@ -334,6 +375,10 @@ export type TranscriptCandidatePolicyClass = "confirmed" | "probable" | "ambiguo
 export interface TranscriptCandidateSignal {
   signal:
     | "exact-email"
+    | "exact-profile-url"
+    | "verified-handle"
+    | "external-contact-id"
+    | "speaker-calendar-email"
     | "remembered-mapping"
     | "normalized-full-name"
     | "speaker-label"
@@ -346,7 +391,12 @@ export interface TranscriptCandidateSignal {
 
 /** A conflict that blocks or weakens a candidate. */
 export interface TranscriptCandidateConflict {
-  kind: "archived-profile" | "email-belongs-elsewhere" | "name-email-mismatch";
+  kind:
+    | "archived-profile"
+    | "duplicate-stable-id"
+    | "email-belongs-elsewhere"
+    | "stable-id-belongs-elsewhere"
+    | "name-email-mismatch";
   explanation: string;
   /** Hard conflicts prevent auto-linking (spec #117 policy classes). */
   hard: boolean;

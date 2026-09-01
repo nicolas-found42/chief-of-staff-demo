@@ -14,6 +14,12 @@ export interface TranscriptIdentityMeta {
   meetingDate: string | null;
 }
 
+interface TranscriptIdentityProcessingEntry {
+  transcriptId: string;
+  algorithmVersion: number;
+  processedAt: string;
+}
+
 /**
  * Durable state of transcript identity mining, one JSON collection per kind
  * under the Catalog's Workspace directory. Mentions, organizations and
@@ -44,17 +50,36 @@ export class TranscriptIdentityStore {
     this.write("transcripts.json", all);
   }
 
+  readProcessingLedger(): TranscriptIdentityProcessingEntry[] {
+    return this.readCollection<TranscriptIdentityProcessingEntry>("processing.json");
+  }
+
+  wasProcessed(transcriptId: string, algorithmVersion: number): boolean {
+    return this.readProcessingLedger().some(
+      (entry) => entry.transcriptId === transcriptId && entry.algorithmVersion === algorithmVersion,
+    );
+  }
+
+  markProcessed(entry: TranscriptIdentityProcessingEntry): void {
+    const all = this.readProcessingLedger().filter(
+      (existing) => existing.transcriptId !== entry.transcriptId,
+    );
+    all.push(entry);
+    all.sort((left, right) => left.transcriptId.localeCompare(right.transcriptId));
+    this.write("processing.json", all);
+  }
+
   readMentions(): TranscriptMention[] {
     return this.readCollection<TranscriptMention>("mentions.json");
   }
 
   replaceMentions(transcriptId: string, mentions: TranscriptMention[]): void {
-    this.replaceCollection<TranscriptMention>("mentions.json", (all) => ({
-      ...Object.fromEntries(
-        all.filter((m) => m.provenance.transcriptId !== transcriptId).map((m) => [m.id, m]),
-      ),
-      ...Object.fromEntries(mentions.map((m) => [m.id, m])),
-    }));
+    this.replaceTranscriptCollection(
+      "mentions.json",
+      transcriptId,
+      mentions,
+      (mention) => mention.provenance.transcriptId,
+    );
   }
 
   readOrganizations(): OrganizationMention[] {
@@ -62,12 +87,12 @@ export class TranscriptIdentityStore {
   }
 
   replaceOrganizations(transcriptId: string, organizations: OrganizationMention[]): void {
-    this.replaceCollection<OrganizationMention>("organizations.json", (all) => ({
-      ...Object.fromEntries(
-        all.filter((o) => o.provenance.transcriptId !== transcriptId).map((o) => [o.id, o]),
-      ),
-      ...Object.fromEntries(organizations.map((o) => [o.id, o])),
-    }));
+    this.replaceTranscriptCollection(
+      "organizations.json",
+      transcriptId,
+      organizations,
+      (organization) => organization.provenance.transcriptId,
+    );
   }
 
   readCandidates(): TranscriptMatchCandidate[] {
@@ -75,12 +100,12 @@ export class TranscriptIdentityStore {
   }
 
   replaceCandidates(transcriptId: string, candidates: TranscriptMatchCandidate[]): void {
-    this.replaceCollection<TranscriptMatchCandidate>("candidates.json", (all) => ({
-      ...Object.fromEntries(
-        all.filter((c) => c.transcriptId !== transcriptId).map((c) => [c.id, c]),
-      ),
-      ...Object.fromEntries(candidates.map((c) => [c.id, c])),
-    }));
+    this.replaceTranscriptCollection(
+      "candidates.json",
+      transcriptId,
+      candidates,
+      (candidate) => candidate.transcriptId,
+    );
   }
 
   /** Append-only: decisions are audit records and are never rewritten. */
@@ -116,13 +141,16 @@ export class TranscriptIdentityStore {
     return (this.read(join(this.root, file)) as T[] | null) ?? [];
   }
 
-  /** Replace one collection's entries for one transcript, keyed by record id. */
-  private replaceCollection<T extends { id: string }>(
+  private replaceTranscriptCollection<T extends { id: string }>(
     file: string,
-    merge: (all: T[]) => Record<string, T>,
+    transcriptId: string,
+    replacements: T[],
+    transcriptOf: (item: T) => string,
   ): void {
-    const merged = merge(this.readCollection<T>(file));
-    const next = Object.values(merged);
+    const next = [
+      ...this.readCollection<T>(file).filter((item) => transcriptOf(item) !== transcriptId),
+      ...replacements,
+    ];
     next.sort((left, right) => left.id.localeCompare(right.id));
     this.write(file, next);
   }
