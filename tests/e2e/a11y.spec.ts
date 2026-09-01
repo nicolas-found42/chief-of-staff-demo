@@ -311,10 +311,19 @@ test("drag-selecting a filename copies it instead of opening the run", async ({ 
   expect(await page.evaluate(() => window.getSelection()?.toString())).not.toBe("");
   expect(new URL(page.url()).pathname, "drag-select navigated away").toBe("/runs");
 
-  // The row is still a pointer target when there is nothing selected. (A click
-  // that lands inside the selection dismisses it first — Chrome holds the
-  // selection through mousedown so the text can be dragged — so it takes the
-  // second click to navigate, which is how every selection-guarded row behaves.)
+  // The row is still a pointer target when there is nothing selected, but a
+  // click that lands while a selection is alive dismisses it first — Chrome
+  // holds the selection through mousedown so the text can be dragged — so it
+  // takes the second click to navigate, which is how every selection-guarded
+  // row behaves. The clicks land on a cell that is not the link, so this is
+  // the row's own navigation being pinned.
+  await page.locator(".run-row td").last().click();
+  expect(new URL(page.url()).pathname, "selection-dismissing click navigated").toBe("/runs");
+  await page.locator(".run-row td").last().click();
+  await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
+
+  // The link inside the row keeps its own route for keyboard and
+  // screen-reader users either way.
   await page.goto("/runs");
   await page.locator(".run-link").first().click();
   await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });

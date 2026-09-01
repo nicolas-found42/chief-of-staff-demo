@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { RUNS_PAGE_SIZE, type RunSummary } from "@chief-of-staff-demo/shared";
 import { IntakeBadge, StatusPill } from "./StatusPill";
 import { formatTime, relativeTime, runTitle } from "../display";
@@ -31,6 +31,11 @@ export interface RunsListProps {
  */
 export function RunsList({ module, empty, onRefresh }: RunsListProps) {
   const showModule = module === undefined;
+  const navigate = useNavigate();
+  /* The press behind the row's click: where it started and whether a text
+     selection was alive at mousedown — read there because Chrome holds the
+     selection through mousedown and dismisses it at click. */
+  const press = useRef<{ x: number; y: number; hadSelection: boolean } | null>(null);
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -188,7 +193,33 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
               </thead>
               <tbody>
                 {runs.map((run) => (
-                  <tr key={run.id} className="run-row">
+                  <tr
+                    key={run.id}
+                    className="run-row"
+                    onMouseDown={(event) => {
+                      press.current = {
+                        x: event.clientX,
+                        y: event.clientY,
+                        hadSelection: !window.getSelection()?.isCollapsed,
+                      };
+                    }}
+                    onClick={(event) => {
+                      /* The link is the keyboard and screen-reader route; the
+                         row click is the pointer's convenience (the contract
+                         .run-link's styling has always promised). A press that
+                         moved was a drag-selection, a press that started inside
+                         a selection merely dismisses it, and a modified or
+                         on-link press is the link's own business — none of
+                         them may navigate the row. */
+                      const target = event.target as HTMLElement;
+                      if (target.closest("a")) return;
+                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                      const down = press.current;
+                      if (!down) return;
+                      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
+                      void navigate(`/runs/${run.id}`);
+                    }}
+                  >
                     {/* What happened leads: the title is derived at render so
                         legacy runs read the same way, and the raw filename is
                         demoted to metadata (D4). The link stays the keyboard and
