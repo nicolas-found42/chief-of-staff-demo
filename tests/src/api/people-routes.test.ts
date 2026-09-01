@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PersonProfile } from "@chief-of-staff-demo/shared";
+import type { PersonProfile, PersonProfileProjection } from "@chief-of-staff-demo/shared";
 import { registerPeopleApi } from "../../../apps/server/src/api/people";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -181,5 +181,261 @@ describe("GET /api/people/:profileId/projection", () => {
       url: "/api/people/person_unknown/projection?purpose=meeting",
     });
     expect(unknownProfile.statusCode).toBe(404);
+  });
+});
+describe("POST /api/people/:profileId/corrections", () => {
+  it("appends a correction revision and keeps the superseded snapshot readable", async () => {
+    const seeded = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: {
+        fullName: "Grace Hopper",
+        primaryEmail: "grace@example.com",
+        role: "Rear Admiral",
+      },
+    });
+    const created = seeded.json<PersonProfile>();
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { role: "Professor of Computer Science", note: "Teaching at Vassar." },
+    });
+    expect(response.statusCode).toBe(200);
+    const corrected = response.json<PersonProfile>();
+    expect(corrected).toMatchObject({ revision: 2, role: "Professor of Computer Science" });
+    expect(corrected.invalidations?.[0]).toMatchObject({
+      kind: "correction",
+      affectedRevision: 1,
+      detail: "Teaching at Vassar.",
+    });
+
+    const superseded = await app.inject({
+      url: `/api/people/${created.id}/revisions/1`,
+    });
+    expect(superseded.json<PersonProfile>()).toMatchObject({ revision: 1, role: "Rear Admiral" });
+  });
+
+  it("classifies failures: unknown Profile, empty correction, and taken email", async () => {
+    const created = await createGrace();
+
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/people/person_unknown/corrections",
+      payload: { role: "x" },
+    });
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json()).toMatchObject({ error: "profile-not-found" });
+
+    const empty = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { note: "no facts" },
+    });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json()).toMatchObject({ error: "nothing-to-correct" });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: { fullName: "Ada Lovelace", primaryEmail: "ada@example.com" },
+    });
+    const taken = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { primaryEmail: "ada@example.com" },
+    });
+    expect(taken.statusCode).toBe(400);
+    expect(taken.json()).toMatchObject({ error: "duplicate-profile" });
+  });
+
+  it("accepts explicit nulls to clear false nullable facts", async () => {
+    const seeded = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: {
+        fullName: "Grace Hopper",
+        role: "Rear Admiral",
+        currentEmployer: "US Navy",
+        background: "Incorrect background",
+      },
+    });
+    const created = seeded.json<PersonProfile>();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { role: null, currentEmployer: null, background: null },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<PersonProfile>()).toMatchObject({
+      revision: 2,
+      role: null,
+      currentEmployer: null,
+      background: null,
+    });
+  });
+
+  it("accepts an explicit null to clear a false primary email and its current signal", async () => {
+    const seeded = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: { fullName: "Grace Hopper", primaryEmail: "wrong@example.com" },
+    });
+    const created = seeded.json<PersonProfile>();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { primaryEmail: null, note: "Wrong person address." },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<PersonProfile>()).toMatchObject({
+      revision: 2,
+      primaryEmail: null,
+      emails: [],
+      invalidations: [
+        {
+          kind: "correction",
+          affectedRevision: 1,
+          affectedRevisions: [1],
+          detail: "Wrong person address.",
+        },
+      ],
+    });
+    const historical = await app.inject({ url: `/api/people/${created.id}/revisions/1` });
+    expect(historical.json<PersonProfile>()).toMatchObject({
+      primaryEmail: "wrong@example.com",
+      emails: ["wrong@example.com"],
+    });
+  });
+});
+
+describe("identity repair routes", () => {
+  async function createSecond(): Promise<PersonProfile> {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: { fullName: "Grace Hopper" },
+    });
+    return response.json<PersonProfile>();
+  }
+
+  it("POST /:profileId/merges merges a duplicate through an audited decision", async () => {
+    const survivor = await createGrace();
+    const duplicate = await createSecond();
+
+    const merged = await app.inject({
+      method: "POST",
+      url: `/api/people/${survivor.id}/merges`,
+      payload: { duplicateId: duplicate.id, note: "Duplicate shell; same person." },
+    });
+    expect(merged.statusCode).toBe(200);
+    const body = merged.json<PersonProfile>();
+    expect(body.revision).toBe(2);
+    expect(body.invalidations?.at(-1)).toMatchObject({
+      kind: "merge",
+      mergedFrom: duplicate.id,
+    });
+
+    // Consumer references to the merged-away id resolve to the redirect, and
+    // its superseded revision still discloses the merge.
+    const gone = await app.inject({ url: `/api/people/${duplicate.id}` });
+    expect(gone.json<PersonProfile>().mergedInto).toBe(survivor.id);
+    const pinned = await app.inject({
+      url: `/api/people/${duplicate.id}/projection?purpose=meeting&revision=1`,
+    });
+    expect(pinned.json<PersonProfileProjection>().invalidations?.at(-1)).toMatchObject({
+      kind: "merge",
+      mergedInto: survivor.id,
+      affectedRevision: 1,
+    });
+  });
+
+  it("POST /:profileId/merges classifies unresolved fact conflicts", async () => {
+    const survivor = await createGrace();
+    const duplicate = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: { fullName: "Grace Brewster Hopper", role: "Rear Admiral" },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${survivor.id}/merges`,
+      payload: { duplicateId: duplicate.json<PersonProfile>().id },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "merge-conflict" });
+  });
+
+  it("POST /:profileId/detachments splits wrongly attached evidence to the correct Profile", async () => {
+    const wrong = await createGrace();
+    const correct = await createSecond();
+    const wronglyAttributed = {
+      id: "ev_mention",
+      source: "public-web",
+      kind: "mention" as const,
+      title: "A news story",
+      summary: "Someone was profiled.",
+      url: "https://news.example.com/story",
+      identitySignals: {
+        emails: [],
+        fullNames: [],
+        handles: {},
+        profileUrls: [],
+        employerHints: [],
+      },
+      claims: {},
+      matchConfidence: "medium" as const,
+      matchedSignals: ["fullName:grace hopper"],
+      observedAt: "2026-08-30T08:00:00.000Z",
+    };
+    store.save({
+      ...store.get(wrong.id)!,
+      mentions: [wronglyAttributed],
+      evidence: [wronglyAttributed],
+    });
+
+    const split = await app.inject({
+      method: "POST",
+      url: `/api/people/${wrong.id}/detachments`,
+      payload: { evidenceId: "ev_mention", toProfileId: correct.id, note: "Wrong person." },
+    });
+    expect(split.statusCode).toBe(200);
+    const body = split.json<{ from: PersonProfile; to: PersonProfile }>();
+    expect(body.from.mentions).toEqual([]);
+    expect(body.from.evidence).toEqual([]);
+    expect(body.from.invalidations?.at(-1)).toMatchObject({
+      kind: "evidence-detached",
+      evidenceId: "ev_mention",
+      movedTo: correct.id,
+    });
+    expect(body.to.mentions[0]).toMatchObject({ id: "ev_mention", source: "public-web" });
+    expect(body.to.evidence[0]).toMatchObject({ id: "ev_mention", source: "public-web" });
+    expect(body.to.invalidations?.at(-1)).toMatchObject({
+      kind: "evidence-detached",
+      movedFrom: wrong.id,
+    });
+    // The old attribution survives only as disclosed history.
+    const superseded = await app.inject({ url: `/api/people/${wrong.id}/revisions/1` });
+    expect(superseded.json<PersonProfile>().mentions).toHaveLength(1);
+  });
+
+  it("GET /:profileId/invalidations exposes the append-only log for consumers", async () => {
+    const created = await createGrace();
+    await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { role: "Professor of Computer Science" },
+    });
+
+    const log = await app.inject({ url: `/api/people/${created.id}/invalidations` });
+    expect(log.statusCode).toBe(200);
+    expect(log.json()).toHaveLength(1);
+    expect(log.json()[0]).toMatchObject({ kind: "correction", affectedRevision: 1 });
+
+    const unknown = await app.inject({ url: "/api/people/person_unknown/invalidations" });
+    expect(unknown.statusCode).toBe(404);
   });
 });

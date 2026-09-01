@@ -88,6 +88,8 @@ export interface ContentScoutHostDeps {
   now?: () => Date;
   sleep?: (milliseconds: number) => Promise<void>;
   runtimeInspector?: RuntimeInspector;
+  /** Content generation requires the canonical owner Profile confirmation. */
+  isOwnerProfileConfirmed?: () => boolean;
   log: (message: string) => void;
 }
 
@@ -128,6 +130,9 @@ export class ContentScoutHost implements HostedModule {
         },
         shortlistSize: () =>
           deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].shortlistSize ?? 5,
+        ...(deps.isOwnerProfileConfirmed
+          ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
+          : {}),
         now,
         sleep:
           deps.sleep ??
@@ -284,6 +289,11 @@ export class ContentScoutHost implements HostedModule {
   }
 
   async select(runId: string, opportunityIds: string[]): Promise<RunMeta> {
+    if (this.deps.isOwnerProfileConfirmed && !this.deps.isOwnerProfileConfirmed()) {
+      throw new Error(
+        "owner_not_confirmed: confirm the workspace owner Profile before generating content",
+      );
+    }
     this.store.recordSelection(runId, opportunityIds);
     return await this.runner.resumeRun(runId);
   }

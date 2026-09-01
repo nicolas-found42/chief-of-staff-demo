@@ -6,12 +6,14 @@ import { FakeCalendarProvider, type CalendarEvent } from "./calendar.js";
 import { FakeGmailDeliveryProvider, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { MeetingBriefHost } from "./host.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
+import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingBriefTestRuntimeOptions {
   runs: Runs;
   workspaceDir: string;
   configStore: ConfigStore;
   initialNow: Date;
+  personProfiles?: WorkspacePersonProfiles;
 }
 
 export function fixtureGmailDeliveryProvider(
@@ -108,8 +110,23 @@ export function createMeetingBriefTestRuntime(
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",
     hubSpotConnection,
-    enrich: async (_input, ctx) => {
+    ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
+    enrich: async (input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });
+      const personProfileLinks = options.personProfiles
+        ? input.attendees.flatMap((attendee) => {
+            const profile = options.personProfiles!.search({ query: attendee.email })[0];
+            return profile
+              ? [
+                  {
+                    guestEmail: attendee.email,
+                    profileId: profile.id,
+                    profileRevision: profile.revision,
+                  },
+                ]
+              : [];
+          })
+        : [];
       return {
         sections: [
           {
@@ -121,6 +138,7 @@ export function createMeetingBriefTestRuntime(
           },
         ],
         evidence: ["https://example.com/alice", "https://example.com/acme"],
+        personProfileLinks,
       };
     },
     completeBrief: async (input): Promise<MeetingBrief> => ({

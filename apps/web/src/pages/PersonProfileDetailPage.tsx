@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { PersonProfile, PersonProfileMatchConfidence } from "@chief-of-staff-demo/shared";
+import type {
+  PersonProfile,
+  PersonProfileInvalidation,
+  PersonProfileMatchConfidence,
+  PersonProfileRepairFactKey,
+} from "@chief-of-staff-demo/shared";
+import {
+  PERSON_PROFILE_REPAIR_FACT_KEYS,
+  invalidationAffectsRevision,
+} from "@chief-of-staff-demo/shared";
 
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
@@ -11,6 +20,80 @@ const CONFIDENCE_LABELS: Record<PersonProfileMatchConfidence, string> = {
   medium: "Medium confidence",
   low: "Low confidence",
 };
+
+const REPAIR_LABELS: Record<PersonProfileInvalidation["kind"], string> = {
+  correction: "Correction",
+  merge: "Merge",
+  "evidence-detached": "Evidence detached",
+};
+
+const REPAIR_FACT_PRESENTATION: Record<
+  PersonProfileRepairFactKey,
+  { label: string; control: "text" | "email" | "textarea" }
+> = {
+  fullName: { label: "Full name", control: "text" },
+  primaryEmail: { label: "Primary email", control: "email" },
+  role: { label: "Role", control: "text" },
+  currentEmployer: { label: "Current employer", control: "text" },
+  background: { label: "Background", control: "textarea" },
+};
+const repairableFactFields = PERSON_PROFILE_REPAIR_FACT_KEYS.filter(
+  (key): key is Exclude<PersonProfileRepairFactKey, "fullName"> => key !== "fullName",
+).map((key) => ({ key, ...REPAIR_FACT_PRESENTATION[key] }));
+const mergeRepairFactFields = PERSON_PROFILE_REPAIR_FACT_KEYS.map((key) => ({
+  key,
+  ...REPAIR_FACT_PRESENTATION[key],
+}));
+
+function RepairFactControl({
+  id,
+  label,
+  control,
+  value,
+  onChange,
+  clear,
+}: {
+  id: string;
+  label: string;
+  control: "text" | "email" | "textarea";
+  value: string;
+  onChange: (value: string) => void;
+  clear?: { checked: boolean; label: string; onChange: (checked: boolean) => void };
+}) {
+  return (
+    <div className="field-row">
+      <label htmlFor={id}>{label}</label>
+      {control === "textarea" ? (
+        <textarea
+          id={id}
+          rows={3}
+          disabled={clear?.checked}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <input
+          id={id}
+          type={control}
+          autoComplete="off"
+          disabled={clear?.checked}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+      {clear ? (
+        <label>
+          <input
+            type="checkbox"
+            checked={clear.checked}
+            onChange={(event) => clear.onChange(event.target.checked)}
+          />{" "}
+          {clear.label}
+        </label>
+      ) : null}
+    </div>
+  );
+}
 
 function described(profile: PersonProfile): string {
   return [profile.fullName, profile.role, profile.currentEmployer]
@@ -83,6 +166,113 @@ export function PersonProfileDetailPage() {
     };
   }, [profileId, viewRevision]);
 
+  /* Identity repair (ticket #121): the owner's repair decisions. Every action
+     goes through the product API, appends a revision, and refreshes the
+     history; nothing here rewrites what was already recorded. */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [correction, setCorrection] = useState({
+    fullName: "",
+    primaryEmail: "",
+    role: "",
+    currentEmployer: "",
+    background: "",
+    note: "",
+  });
+  const [clearCorrection, setClearCorrection] = useState({
+    primaryEmail: false,
+    role: false,
+    currentEmployer: false,
+    background: false,
+  });
+  const [mergeForm, setMergeForm] = useState({
+    duplicateId: "",
+    fullName: "",
+    primaryEmail: "",
+    role: "",
+    currentEmployer: "",
+    background: "",
+    note: "",
+  });
+  const [detachForm, setDetachForm] = useState({ evidenceId: "", toProfileId: "", note: "" });
+
+  const runRepair = useCallback(
+    async (apply: () => Promise<PersonProfile>) => {
+      setBusy(true);
+      setActionError(null);
+      try {
+        setCurrent(await apply());
+        const history = await api.personProfileRevisions(profileId);
+        setRevisions(history.map((profile) => profile.revision));
+      } catch (err) {
+        setActionError(errorMessage(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [profileId],
+  );
+
+  const submitCorrection = (event: FormEvent) => {
+    event.preventDefault();
+    const stated = {
+      ...(correction.fullName.trim() === "" ? {} : { fullName: correction.fullName }),
+      ...(clearCorrection.primaryEmail
+        ? { primaryEmail: null }
+        : correction.primaryEmail.trim() === ""
+          ? {}
+          : { primaryEmail: correction.primaryEmail }),
+      ...(clearCorrection.role
+        ? { role: null }
+        : correction.role.trim() === ""
+          ? {}
+          : { role: correction.role }),
+      ...(clearCorrection.currentEmployer
+        ? { currentEmployer: null }
+        : correction.currentEmployer.trim() === ""
+          ? {}
+          : { currentEmployer: correction.currentEmployer }),
+      ...(clearCorrection.background
+        ? { background: null }
+        : correction.background.trim() === ""
+          ? {}
+          : { background: correction.background }),
+      ...(correction.note.trim() === "" ? {} : { note: correction.note }),
+    };
+    void runRepair(() => api.correctPersonProfile(profileId, stated));
+  };
+
+  const submitMerge = (event: FormEvent) => {
+    event.preventDefault();
+    void runRepair(() =>
+      api.mergePersonProfile(profileId, {
+        duplicateId: mergeForm.duplicateId.trim(),
+        resolutions: {
+          ...(mergeForm.fullName.trim() === "" ? {} : { fullName: mergeForm.fullName }),
+          ...(mergeForm.primaryEmail.trim() === "" ? {} : { primaryEmail: mergeForm.primaryEmail }),
+          ...(mergeForm.role.trim() === "" ? {} : { role: mergeForm.role }),
+          ...(mergeForm.currentEmployer.trim() === ""
+            ? {}
+            : { currentEmployer: mergeForm.currentEmployer }),
+          ...(mergeForm.background.trim() === "" ? {} : { background: mergeForm.background }),
+        },
+        ...(mergeForm.note.trim() === "" ? {} : { note: mergeForm.note }),
+      }),
+    );
+  };
+
+  const submitDetach = (event: FormEvent) => {
+    event.preventDefault();
+    void runRepair(async () => {
+      const split = await api.detachPersonEvidence(profileId, {
+        evidenceId: detachForm.evidenceId,
+        ...(detachForm.toProfileId.trim() === "" ? {} : { toProfileId: detachForm.toProfileId }),
+        ...(detachForm.note.trim() === "" ? {} : { note: detachForm.note }),
+      });
+      return split.from;
+    });
+  };
+
   const backToCurrent = useCallback(() => {
     setSearchParams({});
   }, [setSearchParams]);
@@ -105,6 +295,7 @@ export function PersonProfileDetailPage() {
 
   const profile = viewed ?? current;
   const isHistorical = viewed !== null && viewed.revision !== current.revision;
+  const detachableEvidence = [...current.publications, ...current.mentions, ...current.evidence];
   const signals: string[] = [
     ...profile.emails,
     ...Object.entries(profile.handles).flatMap(([platform, values]) =>
@@ -124,12 +315,33 @@ export function PersonProfileDetailPage() {
           Archived
         </p>
       )}
+      {current.mergedInto && (
+        <p className="banner-error" role="alert">
+          This Profile was merged into{" "}
+          <Link to={`/people/${current.mergedInto}`}>another Profile</Link>. It holds no current
+          identity of its own; its revisions remain readable below.
+        </p>
+      )}
+      {actionError && (
+        <p className="banner-error" role="alert">
+          {actionError}
+        </p>
+      )}
       {isHistorical && (
         <p className="banner-error" role="alert">
           Viewing revision {viewed.revision} exactly as it was recorded.{" "}
           <button type="button" className="linklike" onClick={backToCurrent}>
             Back to the current revision ({current.revision})
           </button>
+          {(current.invalidations ?? [])
+            .filter((record) => invalidationAffectsRevision(record, viewed.revision))
+            .map((record) => (
+              <span key={record.id}>
+                {" "}
+                This revision was later invalidated ({REPAIR_LABELS[record.kind].toLowerCase()}):
+                {record.detail}
+              </span>
+            ))}
         </p>
       )}
       <p className="muted">{described(profile) || "No resolved facts yet."}</p>
@@ -149,6 +361,165 @@ export function PersonProfileDetailPage() {
           <dd>{profile.background ?? "—"}</dd>
         </dl>
       </div>
+
+      {!current.mergedInto && (
+        <div className="card">
+          <h2>Correct facts</h2>
+          <p className="muted">
+            A correction appends a new revision; the superseded snapshot stays readable.
+          </p>
+          <form onSubmit={(event) => void submitCorrection(event)}>
+            <div className="field-row">
+              <label htmlFor="correct-full-name">Full name</label>
+              <input
+                id="correct-full-name"
+                autoComplete="off"
+                value={correction.fullName}
+                onChange={(event) => setCorrection({ ...correction, fullName: event.target.value })}
+              />
+            </div>
+            {repairableFactFields.map(({ key, label, control }) => {
+              const id = `correct-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+              return (
+                <RepairFactControl
+                  key={key}
+                  id={id}
+                  label={label}
+                  control={control}
+                  value={correction[key]}
+                  onChange={(value) => setCorrection({ ...correction, [key]: value })}
+                  clear={{
+                    checked: clearCorrection[key],
+                    label: `Clear ${label.toLowerCase()}`,
+                    onChange: (checked) =>
+                      setClearCorrection({ ...clearCorrection, [key]: checked }),
+                  }}
+                />
+              );
+            })}
+            <div className="field-row">
+              <label htmlFor="correct-note">What was wrong?</label>
+              <input
+                id="correct-note"
+                autoComplete="off"
+                value={correction.note}
+                onChange={(event) => setCorrection({ ...correction, note: event.target.value })}
+              />
+            </div>
+            <div className="field-row">
+              <button type="submit" className="primary" aria-disabled={busy}>
+                {busy ? "Working…" : "Append correction"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {!current.mergedInto && (
+        <div className="card">
+          <h2>Merge a duplicate</h2>
+          <p className="muted">
+            Merges another Profile into this one through an audited decision; conflicting facts must
+            be resolved explicitly and the duplicate stays readable as a redirect.
+          </p>
+          <form onSubmit={(event) => void submitMerge(event)}>
+            <div className="field-row">
+              <label htmlFor="merge-duplicate">Duplicate profile id</label>
+              <input
+                id="merge-duplicate"
+                autoComplete="off"
+                required
+                value={mergeForm.duplicateId}
+                onChange={(event) =>
+                  setMergeForm({ ...mergeForm, duplicateId: event.target.value })
+                }
+              />
+            </div>
+            {mergeRepairFactFields.map(({ key, label, control }) => {
+              const id = `merge-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+              return (
+                <RepairFactControl
+                  key={key}
+                  id={id}
+                  label={`Resolved ${label.toLowerCase()}`}
+                  control={control}
+                  value={mergeForm[key]}
+                  onChange={(value) => setMergeForm({ ...mergeForm, [key]: value })}
+                />
+              );
+            })}
+            <div className="field-row">
+              <label htmlFor="merge-note">Merge note</label>
+              <input
+                id="merge-note"
+                autoComplete="off"
+                value={mergeForm.note}
+                onChange={(event) => setMergeForm({ ...mergeForm, note: event.target.value })}
+              />
+            </div>
+            <div className="field-row">
+              <button type="submit" className="primary" aria-disabled={busy}>
+                {busy ? "Working…" : "Merge profile"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {!current.mergedInto && detachableEvidence.length > 0 && (
+        <div className="card">
+          <h2>Detach evidence</h2>
+          <p className="muted">
+            Removes one evidence record from this Profile and marks the old attribution invalid;
+            optionally re-attributes it to the correct Profile.
+          </p>
+          <form onSubmit={(event) => void submitDetach(event)}>
+            <div className="field-row">
+              <label htmlFor="detach-evidence">Evidence</label>
+              <select
+                id="detach-evidence"
+                required
+                value={detachForm.evidenceId}
+                onChange={(event) =>
+                  setDetachForm({ ...detachForm, evidenceId: event.target.value })
+                }
+              >
+                <option value="">Choose evidence…</option>
+                {detachableEvidence.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field-row">
+              <label htmlFor="detach-to">Move to profile id (optional)</label>
+              <input
+                id="detach-to"
+                autoComplete="off"
+                value={detachForm.toProfileId}
+                onChange={(event) =>
+                  setDetachForm({ ...detachForm, toProfileId: event.target.value })
+                }
+              />
+            </div>
+            <div className="field-row">
+              <label htmlFor="detach-note">Detach note</label>
+              <input
+                id="detach-note"
+                autoComplete="off"
+                value={detachForm.note}
+                onChange={(event) => setDetachForm({ ...detachForm, note: event.target.value })}
+              />
+            </div>
+            <div className="field-row">
+              <button type="submit" className="primary" aria-disabled={busy}>
+                {busy ? "Working…" : "Detach evidence"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div className="card">
         <h2>Identity signals</h2>
@@ -280,6 +651,50 @@ export function PersonProfileDetailPage() {
             {profile.sourceDiagnostics.map((diagnostic) => (
               <li key={`${diagnostic.source}-${diagnostic.status}`}>
                 {diagnostic.source}: {diagnostic.status} — {diagnostic.detail}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Identity repairs</h2>
+        {(current.invalidations ?? []).length === 0 ? (
+          <p className="muted">No corrections, merges, or detaches recorded.</p>
+        ) : (
+          <ul>
+            {(current.invalidations ?? []).map((record) => (
+              <li key={record.id}>
+                <strong>{REPAIR_LABELS[record.kind]}</strong> — revision {record.affectedRevision}{" "}
+                superseded · {record.detail}
+                {record.mergedInto && (
+                  <>
+                    {" "}
+                    · merged into{" "}
+                    <Link to={`/people/${record.mergedInto}`}>{record.mergedInto}</Link>
+                  </>
+                )}
+                {record.mergedFrom && (
+                  <>
+                    {" "}
+                    · merged from{" "}
+                    <Link to={`/people/${record.mergedFrom}`}>{record.mergedFrom}</Link>
+                  </>
+                )}
+                {record.movedTo && (
+                  <>
+                    {" "}
+                    · evidence moved to{" "}
+                    <Link to={`/people/${record.movedTo}`}>{record.movedTo}</Link>
+                  </>
+                )}
+                {record.movedFrom && (
+                  <>
+                    {" "}
+                    · evidence re-attributed from{" "}
+                    <Link to={`/people/${record.movedFrom}`}>{record.movedFrom}</Link>
+                  </>
+                )}
               </li>
             ))}
           </ul>

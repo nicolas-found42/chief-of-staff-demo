@@ -1,10 +1,20 @@
 import { identifier } from "./resolver.js";
 import type { PersonProfileStore } from "./store.js";
 import {
+  PERSON_PROFILE_CALENDAR_SOURCE,
   PERSON_PROFILE_MEETING_PROJECTION_VERSION,
   PERSON_PROFILE_PUBLIC_SAFE_PROJECTION_VERSION,
+  PERSON_PROFILE_REPAIR_FACT_KEYS,
+  invalidationAffectsRevision,
   type PersonProfile,
+  type PersonProfileCalendarAttendeeInput,
+  type PersonProfileCalendarAttendeeResult,
+  type PersonProfileCorrectionInput,
+  type PersonProfileConsumerState,
   type PersonProfileCreateInput,
+  type PersonProfileDetachInput,
+  type PersonProfileInvalidation,
+  type PersonProfileMergeInput,
   type PersonProfileProjection,
   type PersonProjectedEvidence,
 } from "@chief-of-staff-demo/shared";
@@ -13,9 +23,9 @@ import {
  * The Person Profiles deep interface (spec #117, Deep interfaces item 1): the
  * Workspace-owned operations over the canonical store — search, explicit
  * creation, current/exact-revision retrieval, and purpose-specific
- * projections. Matching indexes, revision writes, and deletion invalidation
- * stay behind it; merge/split/correction/archive and the Review queue are
- * later slices that extend this class.
+ * projections and identity repair. Matching indexes, revision writes,
+ * correction, merge, detach/split, and consumer invalidation stay behind it;
+ * archive/privacy deletion and the Review queue are separate slices.
  */
 export interface PersonProfileSearchOptions {
   /** Case-insensitive text over name, contact, employer, and site identity. */
@@ -26,7 +36,17 @@ export interface PersonProfileSearchOptions {
 
 export class PersonProfileValidationError extends Error {
   constructor(
-    public readonly code: "missing-identity-input" | "invalid-identity-input" | "duplicate-profile",
+    public readonly code:
+      | "missing-identity-input"
+      | "invalid-identity-input"
+      | "duplicate-profile"
+      | "conflicting-identity"
+      | "self-merge"
+      | "profile-not-found"
+      | "nothing-to-correct"
+      | "profile-merged"
+      | "merge-conflict"
+      | "evidence-not-found",
     message: string,
   ) {
     super(message);
@@ -158,6 +178,324 @@ export class WorkspacePersonProfiles {
     return candidate;
   }
 
+  /**
+   * Identity repair (ticket #121): an ordinary factual correction appends a
+   * new revision. The superseded snapshot stays exactly readable, and the
+   * correction files an invalidation so consumers of the old revision refresh.
+   */
+  correct(profileId: string, input: PersonProfileCorrectionInput): PersonProfile {
+    const current = this.repairable(profileId);
+    const next: PersonProfile = { ...current };
+
+    let stated = 0;
+    const fullName = trimmed(input.fullName);
+    if (fullName !== null) {
+      stated += 1;
+      next.fullName = fullName;
+    }
+    for (const field of ["role", "currentEmployer", "background"] as const) {
+      const value = input[field];
+      if (value === undefined) continue;
+      stated += 1;
+      next[field] = value === null ? null : trimmed(value);
+    }
+
+    if (input.primaryEmail !== undefined) {
+      const primaryEmail =
+        input.primaryEmail === null ? null : (trimmed(input.primaryEmail)?.toLowerCase() ?? null);
+      /* A blank form field still means "not stated"; JSON null is the explicit
+         repair decision that clears a false canonical address. */
+      if (input.primaryEmail === null || primaryEmail !== null) {
+        stated += 1;
+        if (primaryEmail !== null && !EMAIL_PATTERN.test(primaryEmail))
+          throw new PersonProfileValidationError(
+            "invalid-identity-input",
+            `Not an email address: ${primaryEmail}`,
+          );
+        if (primaryEmail !== null && primaryEmail !== current.primaryEmail)
+          this.ensureEmailAvailable(primaryEmail, [current.id]);
+        next.primaryEmail = primaryEmail;
+        /* A corrected-away primary address is no longer a current identity
+           signal. Its exact value remains readable only on old revisions. */
+        next.emails = next.emails.filter((email) => email !== current.primaryEmail);
+        if (primaryEmail !== null && !next.emails.includes(primaryEmail))
+          next.emails = [...next.emails, primaryEmail];
+      }
+    }
+
+    if (stated === 0)
+      throw new PersonProfileValidationError(
+        "nothing-to-correct",
+        "A correction states at least one fact to change.",
+      );
+
+    return this.appendRevision(next, {
+      kind: "correction",
+      affectedRevision: current.revision,
+      detail:
+        input.note?.trim() ||
+        `Revision ${current.revision} facts were corrected; treat that revision as superseded.`,
+    });
+  }
+
+  /** The current record of a Profile that still owns its identity. */
+  private repairable(profileId: string): PersonProfile {
+    const profile = this.store.get(profileId);
+    if (!profile)
+      throw new PersonProfileValidationError(
+        "profile-not-found",
+        "No Person Profile with that id.",
+      );
+    if (profile.mergedInto)
+      throw new PersonProfileValidationError(
+        "profile-merged",
+        `This Profile was merged into ${profile.mergedInto}; follow that id instead.`,
+      );
+    return profile;
+  }
+
+  /** Persists the next revision and marks every prior consumer pin for refresh. */
+  private appendRevision(
+    next: PersonProfile,
+    record: Omit<PersonProfileInvalidation, "id" | "occurredAt">,
+  ): PersonProfile {
+    const occurredAt = this.now().toISOString();
+    const invalidations = next.invalidations ?? [];
+    const affectedRevisions = this.store
+      .listRevisions(next.id)
+      .map((revision) => revision.revision);
+    const repaired: PersonProfile = {
+      ...next,
+      revision: next.revision + 1,
+      updatedAt: occurredAt,
+      invalidations: [
+        ...invalidations,
+        {
+          id: `inv_${invalidations.length + 1}`,
+          ...record,
+          affectedRevisions,
+          occurredAt,
+        },
+      ],
+    };
+    this.store.save(repaired);
+    return repaired;
+  }
+
+  /** Refuses a primary email another Profile already holds; `selfIds` are exempt. */
+  private ensureEmailAvailable(primaryEmail: string, selfIds: string[]): void {
+    const holder = this.store.findBySignals({
+      emails: [primaryEmail],
+      fullNames: [],
+      handles: {},
+      profileUrls: [],
+      employerHints: [],
+    });
+    if (holder && !selfIds.includes(holder.id) && holder.emails.includes(primaryEmail))
+      throw new PersonProfileValidationError(
+        "duplicate-profile",
+        "Another Person Profile already holds this email address.",
+      );
+  }
+
+  /**
+   * Identity repair (ticket #121): merge a duplicate Profile away into the
+   * surviving one through an audited decision. Evidence keeps its original
+   * provenance, identity signals union, conflicting facts must be resolved
+   * explicitly, and the merged-away Profile stays readable as an audit record
+   * that redirects consumers to the survivor.
+   */
+  merge(survivorId: string, input: PersonProfileMergeInput): PersonProfile {
+    const survivor = this.repairable(survivorId);
+    if (input.duplicateId === survivorId)
+      throw new PersonProfileValidationError(
+        "self-merge",
+        "A Profile cannot be merged into itself.",
+      );
+    const duplicate = this.store.get(input.duplicateId);
+    if (!duplicate)
+      throw new PersonProfileValidationError(
+        "profile-not-found",
+        "No Person Profile with that id.",
+      );
+    if (duplicate.mergedInto)
+      throw new PersonProfileValidationError(
+        "profile-merged",
+        `That Profile was already merged into ${duplicate.mergedInto}.`,
+      );
+
+    const resolutions = input.resolutions ?? {};
+    const conflicts = PERSON_PROFILE_REPAIR_FACT_KEYS.filter(
+      (field) =>
+        survivor[field] !== null &&
+        duplicate[field] !== null &&
+        survivor[field] !== duplicate[field],
+    );
+    const unresolved = conflicts.filter((field) => resolutions[field] === undefined);
+    if (unresolved.length > 0)
+      throw new PersonProfileValidationError(
+        "merge-conflict",
+        `Both Profiles state different ${unresolved.join(", ")}; resolve them explicitly.`,
+      );
+    const resolved = (
+      field: Exclude<(typeof PERSON_PROFILE_REPAIR_FACT_KEYS)[number], "primaryEmail">,
+    ): string | null => {
+      const choice = trimmed(resolutions[field]);
+      if (choice !== null) return choice;
+      return survivor[field] ?? duplicate[field];
+    };
+    const primaryEmail =
+      trimmed(resolutions.primaryEmail)?.toLowerCase() ??
+      survivor.primaryEmail ??
+      duplicate.primaryEmail;
+    if (primaryEmail !== null && !EMAIL_PATTERN.test(primaryEmail))
+      throw new PersonProfileValidationError(
+        "invalid-identity-input",
+        `Not an email address: ${primaryEmail}`,
+      );
+    if (primaryEmail !== null) this.ensureEmailAvailable(primaryEmail, [survivor.id, duplicate.id]);
+
+    const union = (left: string[], right: string[]): string[] => [...new Set([...left, ...right])];
+    const unionBy = <T>(left: T[], right: T[], key: (item: T) => string): T[] => {
+      const seen = new Set<string>();
+      const result: T[] = [];
+      for (const item of [...left, ...right]) {
+        const identity = key(item);
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        result.push(item);
+      }
+      return result;
+    };
+
+    const next: PersonProfile = {
+      ...survivor,
+      fullName: resolved("fullName"),
+      role: resolved("role"),
+      currentEmployer: resolved("currentEmployer"),
+      background: resolved("background"),
+      primaryEmail,
+      emails: union(union(survivor.emails, duplicate.emails), primaryEmail ? [primaryEmail] : []),
+      handles: Object.fromEntries(
+        [...new Set([...Object.keys(survivor.handles), ...Object.keys(duplicate.handles)])].map(
+          (platform) => [
+            platform,
+            union(survivor.handles[platform] ?? [], duplicate.handles[platform] ?? []),
+          ],
+        ),
+      ),
+      profileUrls: union(survivor.profileUrls, duplicate.profileUrls),
+      employerHints: union(survivor.employerHints, duplicate.employerHints),
+      socialProfiles: unionBy(survivor.socialProfiles, duplicate.socialProfiles, (s) => s.url),
+      websites: union(survivor.websites, duplicate.websites),
+      feeds: unionBy(survivor.feeds, duplicate.feeds, (feed) => feed.url),
+      publications: unionBy(survivor.publications, duplicate.publications, (item) => item.id),
+      mentions: unionBy(survivor.mentions, duplicate.mentions, (item) => item.id),
+      evidence: unionBy(survivor.evidence, duplicate.evidence, (item) => item.id),
+    };
+
+    const merged = this.appendRevision(next, {
+      kind: "merge",
+      affectedRevision: survivor.revision,
+      mergedFrom: duplicate.id,
+      detail:
+        input.note?.trim() ||
+        `Merged ${duplicate.id} into this Profile; its evidence and signals carry their original provenance.`,
+    });
+    this.appendRevision(
+      { ...duplicate, mergedInto: survivor.id },
+      {
+        kind: "merge",
+        affectedRevision: duplicate.revision,
+        mergedInto: survivor.id,
+        detail:
+          input.note?.trim() ||
+          `Merged into ${survivor.id}; this Profile remains readable as an audit record.`,
+      },
+    );
+    return merged;
+  }
+
+  /**
+   * Identity repair (ticket #121): detach one evidence record from the
+   * Profile it was attributed to, optionally splitting it onto the correct
+   * Profile. The old attribution stays readable in past revisions but is
+   * filed as invalid, so it is never presented as current fact.
+   */
+  detachEvidence(
+    profileId: string,
+    input: PersonProfileDetachInput,
+  ): { from: PersonProfile; to: PersonProfile | null } {
+    const source = this.repairable(profileId);
+    /* A bad target must refuse the whole decision durably, so the target is
+       resolved before anything is written. */
+    const target = input.toProfileId === undefined ? null : this.repairable(input.toProfileId);
+    if (target && target.id === source.id)
+      throw new PersonProfileValidationError(
+        "invalid-identity-input",
+        "Evidence cannot be detached to the Profile it is already attributed to.",
+      );
+
+    const evidenceLocations = ["publications", "mentions", "evidence"] as const;
+    const representations = evidenceLocations.flatMap((location) =>
+      source[location]
+        .filter((item) => item.id === input.evidenceId)
+        .map((item) => ({ location, item })),
+    );
+    if (representations.length === 0)
+      throw new PersonProfileValidationError(
+        "evidence-not-found",
+        "No such evidence record on that Profile.",
+      );
+
+    const from = this.appendRevision(
+      {
+        ...source,
+        publications: source.publications.filter((item) => item.id !== input.evidenceId),
+        mentions: source.mentions.filter((item) => item.id !== input.evidenceId),
+        evidence: source.evidence.filter((item) => item.id !== input.evidenceId),
+      },
+      {
+        kind: "evidence-detached",
+        affectedRevision: source.revision,
+        evidenceId: input.evidenceId,
+        ...(input.toProfileId === undefined ? {} : { movedTo: input.toProfileId }),
+        detail:
+          input.note?.trim() ||
+          `Evidence ${input.evidenceId} is no longer attributed to this Profile.`,
+      },
+    );
+
+    let to: PersonProfile | null = null;
+    if (target !== null) {
+      const movedTo = <T extends (typeof evidenceLocations)[number]>(location: T) => [
+        ...target[location],
+        ...representations
+          .filter((representation) => representation.location === location)
+          .map((representation) => representation.item)
+          .filter((item) => !target[location].some((existing) => existing.id === item.id)),
+      ];
+      to = this.appendRevision(
+        {
+          ...target,
+          publications: movedTo("publications"),
+          mentions: movedTo("mentions"),
+          evidence: movedTo("evidence"),
+        },
+        {
+          kind: "evidence-detached",
+          affectedRevision: target.revision,
+          evidenceId: input.evidenceId,
+          movedFrom: source.id,
+          detail:
+            input.note?.trim() ||
+            `Evidence ${input.evidenceId} was re-attributed from ${source.id}.`,
+        },
+      );
+    }
+    return { from, to };
+  }
+
   get(profileId: string): PersonProfile | null {
     return this.store.get(profileId);
   }
@@ -179,8 +517,18 @@ export class WorkspacePersonProfiles {
       options?.revision === undefined
         ? this.store.get(profileId)
         : this.store.getRevision(profileId, options.revision);
+    const currentRecord = this.store.get(profileId);
+    /* A merged-away Profile has no current identity of its own; consumers
+       follow mergedInto. Its exact revisions stay projected as history. */
+    if (currentRecord?.mergedInto !== undefined && options?.revision === undefined) return null;
     if (!profile) return null;
+    /* Immutable history discloses its own invalidation: a projection of an
+       older revision carries every repair record filed against it. */
+    const affecting = (currentRecord?.invalidations ?? []).filter((record) =>
+      invalidationAffectsRevision(record, profile.revision),
+    );
     const base = {
+      ...(affecting.length === 0 ? {} : { invalidations: affecting }),
       profileId: profile.id,
       profileRevision: profile.revision,
       fullName: profile.fullName,
@@ -212,10 +560,133 @@ export class WorkspacePersonProfiles {
     };
   }
 
+  /** The append-only invalidation log of a Profile; consumers poll it to refresh. */
+  invalidations(profileId: string): PersonProfileInvalidation[] {
+    return this.store.get(profileId)?.invalidations ?? [];
+  }
+
+  /** Derives whether an exact consumer pin needs refresh without editing its artifact. */
+  consumerState(profileId: string, profileRevision: number): PersonProfileConsumerState | null {
+    const pinned = this.store.getRevision(profileId, profileRevision);
+    const record = this.store.get(profileId);
+    if (!pinned || !record) return null;
+    const invalidations = (record.invalidations ?? []).filter((invalidation) =>
+      invalidationAffectsRevision(invalidation, profileRevision),
+    );
+    const current = record.mergedInto ? this.store.get(record.mergedInto) : record;
+    if (!current) return null;
+    return {
+      profileId,
+      profileRevision,
+      currentProfileId: current.id,
+      currentProfileRevision: current.revision,
+      refreshRequired: record.mergedInto !== undefined || invalidations.length > 0,
+      invalidations,
+    };
+  }
   /** Keeps the canonical id stable while letting a name-only second Profile exist. */
   private uniqueId(base: string): string {
     let id = base;
     for (let n = 2; this.store.get(id); n += 1) id = `${base}-${n}`;
     return id;
+  }
+
+  /**
+   * Calendar attendee identity (issue #124, spec #117 creation and matching
+   * policy): the exact Calendar email is an authoritative anchor, so a
+   * non-conflicting exact match reuses the existing Profile and an unknown
+   * attendee receives one idempotent minimal email-anchored shell with source
+   * provenance. Calendar never supplies inferred employer, title, biography,
+   * or public-search claims, so nothing else is recorded. Conflicting stable
+   * identifiers fail visibly — they are never merged or overwritten here.
+   */
+  ensureCalendarAttendeeProfile(
+    input: PersonProfileCalendarAttendeeInput,
+  ): PersonProfileCalendarAttendeeResult {
+    const email = trimmed(input.email)?.toLowerCase() ?? null;
+    if (!email)
+      throw new PersonProfileValidationError(
+        "missing-identity-input",
+        "A Calendar attendee shell needs the attendee's email address.",
+      );
+    if (!EMAIL_PATTERN.test(email))
+      throw new PersonProfileValidationError(
+        "invalid-identity-input",
+        `Not an email address: ${email}`,
+      );
+
+    /* An exact email is a stable identifier: every Profile holding it is a
+       reuse candidate, and more than one holder is a visible conflict, never
+       an automatic merge. */
+    const holders = this.store
+      .list()
+      .filter((profile) => profile.emails.some((value) => value.trim().toLowerCase() === email));
+    if (holders.length > 1)
+      throw new PersonProfileValidationError(
+        "conflicting-identity",
+        `Two or more Person Profiles already hold the Calendar attendee email ${email}; resolve the duplicate explicitly instead of merging automatically.`,
+      );
+    if (holders.length === 1) {
+      const holder = holders[0]!;
+      if (holder.archivedAt !== null)
+        throw new PersonProfileValidationError(
+          "conflicting-identity",
+          `An archived Person Profile holds the Calendar attendee email ${email}; restore or resolve it explicitly before Calendar reuses it.`,
+        );
+      return { profile: holder, created: false };
+    }
+
+    /* The canonical id derives from the email, which keeps the shell stable
+       across event revisions and sibling occurrences. If that id already
+       belongs to a Profile without this email, the stable identifiers
+       conflict — fail visibly rather than overwrite. */
+    const id = identifier({
+      emails: [email],
+      fullNames: [],
+      handles: {},
+      profileUrls: [],
+      employerHints: [],
+    });
+    const squatter = this.store.get(id);
+    if (squatter)
+      throw new PersonProfileValidationError(
+        "conflicting-identity",
+        `The canonical id derived from the Calendar attendee email ${email} already belongs to Person Profile ${squatter.id}; resolve the conflict explicitly instead of overwriting it.`,
+      );
+
+    const observedAt = this.now().toISOString();
+    const shell: PersonProfile = {
+      id,
+      revision: 1,
+      createdAt: observedAt,
+      updatedAt: observedAt,
+      fullName: null,
+      primaryEmail: email,
+      emails: [email],
+      handles: {},
+      profileUrls: [],
+      employerHints: [],
+      role: null,
+      background: null,
+      currentEmployer: null,
+      socialProfiles: [],
+      websites: [],
+      feeds: [],
+      publications: [],
+      mentions: [],
+      evidence: [],
+      sourceDiagnostics: [
+        {
+          source: PERSON_PROFILE_CALENDAR_SOURCE,
+          status: "completed",
+          detail: input.provenance
+            ? `Calendar attendee shell — ${input.provenance}`
+            : "Calendar attendee shell",
+        },
+      ],
+      archivedAt: null,
+    };
+    this.store.save(shell);
+    return { profile: shell, created: true };
   }
 }

@@ -24,14 +24,8 @@ import {
 } from "./google/calendar.js";
 import { DuckDuckGoPublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import { createEmployerProposer } from "./enrichment/employerProposer.js";
-import { PersonProfileResolver } from "../../person-profile/resolver.js";
+import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
-import {
-  createHubSpotPersonProfileSource,
-  createPublicWebPersonProfileSource,
-} from "../../person-profile/sources.js";
-import { createPublicSearch } from "../../source-adapters/search.js";
-import { createFeedDiscoverer } from "../../source-adapters/feeds.js";
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;
@@ -39,7 +33,13 @@ export interface MeetingBriefProductionRuntimeOptions {
   configStore: ConfigStore;
   google: GoogleConnection;
   getCompleteJson: () => CompleteJson;
+  /**
+   * Owner onboarding (issue #123): owner-only delivery is gated separately
+   * from Calendar eligibility, which keeps using the raw connected identity.
+   */
+  isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
+  personProfiles?: WorkspacePersonProfiles;
 }
 
 export interface MeetingBriefProductionRuntime {
@@ -122,16 +122,15 @@ export function createMeetingBriefProductionRuntime(
     workspaceCalendarRelayRegistry(relayStore),
   );
   const hubSpotConnection = new HubSpotConnection(options.configStore);
-  const personProfiles = new PersonProfileResolver({
-    store: new PersonProfileStore(options.workspaceDir),
-    sources: [
-      createHubSpotPersonProfileSource(() => hubSpotConnection.api()),
-      createPublicWebPersonProfileSource({
-        search: createPublicSearch(),
-        discoverFeeds: createFeedDiscoverer(),
-      }),
-    ],
-  });
+  /* Calendar attendee identity (issue #124) routes through the shared Person
+     Profiles interface, not the legacy broad resolver: attendees reuse an
+     existing Profile on a non-conflicting exact email match or receive one
+     minimal email-anchored shell. */
+  const personProfiles =
+    options.personProfiles ??
+    new WorkspacePersonProfiles({
+      store: new PersonProfileStore(options.workspaceDir),
+    });
   const host = new MeetingBriefHost({
     runs: options.runs,
     workspaceDir: options.workspaceDir,
@@ -143,13 +142,16 @@ export function createMeetingBriefProductionRuntime(
       gmailProvider,
       calendarHistoryProvider,
       driveProvider,
-      personProfiles,
+      attendeeProfiles: personProfiles,
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
     },
-    hubSpotConnection,
-    gmailDeliveryProvider,
     getOwnerEmail: () => ownerEmail,
+    ...(options.isOwnerProfileConfirmed
+      ? { isOwnerProfileConfirmed: options.isOwnerProfileConfirmed }
+      : {}),
+    gmailDeliveryProvider,
+    personProfiles,
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

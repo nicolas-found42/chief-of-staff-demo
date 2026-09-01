@@ -13,15 +13,24 @@ import type {
 import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 import type { PersonProfileStore } from "../person-profile/store.js";
+import type { Runs } from "../runs.js";
+import type {
+  MeetingBriefEvent,
+  MeetingBriefRunResult,
+  PersonEvidence,
+} from "@chief-of-staff-demo/shared";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
+import type { OwnerOnboarding } from "../onboarding/owner.js";
 
 export interface TestSeedContext {
   startRun: (spec: RunSourceSpec) => Promise<string>;
   createFailedRun: () => string;
-  /** The Workspace Person Profile store, so the journey can append a
-      revision that no product operation creates yet (correction is a later
-      slice) and the browser can step back to an exact historical one. */
+  /** The Workspace Person Profile store, so the journey can arrange sourced
+      evidence before exercising repair through the real product surface. */
   personStore: PersonProfileStore;
+  ownerOnboarding: OwnerOnboarding;
+  runs: Runs;
+  upsertMeetingBriefEvent?: (event: MeetingBriefEvent) => void;
 }
 
 /**
@@ -80,21 +89,147 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
     }
   });
 
-  app.post("/api/test/seed-person-revision", async (request, reply) => {
-    const { profileId, role } = request.body as { profileId?: string; role?: string };
+  app.post("/api/test/seed-person-evidence", async (request, reply) => {
+    const { profileId, evidenceId } = request.body as {
+      profileId?: string;
+      evidenceId?: string;
+    };
     const profile = profileId ? ctx.personStore.get(profileId) : null;
     if (!profile) {
       reply.code(404);
       return { error: "profile-not-found", message: "No Person Profile with that id." };
     }
+    const evidence: PersonEvidence = {
+      id: evidenceId ?? "ev_wrong_person",
+      source: "public-web",
+      kind: "identity",
+      title: "Wrong-person evidence",
+      summary: "A sourced claim that was attributed to the wrong person.",
+      url: "https://example.com/wrong-person",
+      identitySignals: {
+        emails: [],
+        fullNames: ["Katherine Johnson"],
+        handles: {},
+        profileUrls: [],
+        employerHints: [],
+      },
+      claims: { fullName: "Katherine Johnson" },
+      matchConfidence: "medium",
+      matchedSignals: ["fullName:katherine johnson"],
+      observedAt: "2026-08-31T12:00:00.000Z",
+    };
     const next = {
       ...profile,
       revision: profile.revision + 1,
-      ...(role === undefined ? {} : { role }),
+      evidence: [...profile.evidence, evidence],
     };
     ctx.personStore.save(next);
     reply.code(201);
-    return { revision: next.revision, role: next.role };
+    return { revision: next.revision, evidenceId: evidence.id };
+  });
+
+  app.post("/api/test/seed-person-profile-meeting-brief", async (request, reply) => {
+    const { profileId } = request.body as { profileId?: string };
+    const profile = profileId ? ctx.personStore.get(profileId) : null;
+    if (!profile) {
+      reply.code(404);
+      return { error: "profile-not-found", message: "No Person Profile with that id." };
+    }
+    const run = ctx.runs.create({
+      module: "meeting-brief-generator",
+      moduleVersion: 1,
+      intake: "calendar",
+      sourceUrl: null,
+      externalId: "evt_profile_repair::2026-08-31T15:00:00Z",
+    });
+    const snapshot: MeetingBriefEvent & { occurrenceKey: string } = {
+      calendarId: "primary",
+      eventId: "evt_profile_repair",
+      occurrenceId: "2026-08-31T15:00:00Z",
+      occurrenceKey: "evt_profile_repair::2026-08-31T15:00:00Z",
+      version: "v1",
+      summary: "Profile repair fixture",
+      startAt: "2026-08-31T15:00:00.000Z",
+      endAt: "2026-08-31T15:30:00.000Z",
+      attendees: [
+        {
+          email: "owner@example.com",
+          displayName: "Owner",
+          responseStatus: "accepted",
+          organizer: true,
+        },
+        {
+          email: profile.primaryEmail ?? "profile@example.com",
+          displayName: profile.fullName ?? "Profile guest",
+          responseStatus: "accepted",
+        },
+      ],
+      status: "confirmed",
+    };
+    ctx.upsertMeetingBriefEvent?.(snapshot);
+    const result: MeetingBriefRunResult = {
+      version: 1,
+      eventId: "evt_profile_repair",
+      occurrenceId: "2026-08-31T15:00:00Z",
+      eventVersion: "v1",
+      occurrenceKey: "evt_profile_repair::2026-08-31T15:00:00Z",
+      snapshotAt: "2026-08-31T12:00:00.000Z",
+      enrichAt: "2026-08-31T12:00:00.000Z",
+      composeAt: "2026-08-31T12:00:00.000Z",
+      meetingBrief: {
+        version: 1,
+        eventId: "evt_profile_repair",
+        occurrenceId: "2026-08-31T15:00:00Z",
+        eventVersion: "v1",
+        generatedAt: "2026-08-31T12:00:00.000Z",
+        logistics: {
+          title: "Profile repair fixture",
+          startAt: "2026-08-31T15:00:00.000Z",
+          endAt: "2026-08-31T15:30:00.000Z",
+          location: null,
+          conferenceLink: null,
+          organizer: null,
+        },
+        summary: "Brief derived from a pinned Person Profile revision.",
+        guests: [],
+        companies: [],
+        conversationStarters: [],
+        sourceReferences: [],
+        missingEvidence: [],
+        uncertainty: [],
+      },
+      delivery: {
+        status: "sent",
+        sentAt: "2026-08-31T12:05:00.000Z",
+        messageId: "fixture-profile-repair",
+        recipient: "owner@example.com",
+        attempts: 1,
+      },
+      personProfileLinks: [
+        {
+          guestEmail: profile.primaryEmail ?? "profile@example.com",
+          profileId: profile.id,
+          profileRevision: profile.revision,
+        },
+      ],
+      supersedes: null,
+    };
+    run.started("compose");
+    run.writeArtifact("snapshot.json", `${JSON.stringify(snapshot, null, 2)}\n`);
+    run.writeArtifact("result.json", `${JSON.stringify(result, null, 2)}\n`);
+    run.finished({ status: "done", summary: "Profile repair fixture" });
+    reply.code(201);
+    return { runId: run.id };
+  });
+
+  app.post("/api/test/owner-identity", async (request, reply) => {
+    const { email } = request.body as { email?: string | null };
+    if (email !== null && typeof email !== "string") {
+      reply.code(400);
+      return { error: "email-must-be-string-or-null" };
+    }
+    ctx.ownerOnboarding.setConnectedIdentity(email ?? null);
+    return { proposal: ctx.ownerOnboarding.proposal() };
   });
 }
 

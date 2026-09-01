@@ -4,6 +4,7 @@ import type {
   MeetingBriefDeliveryState,
   MeetingBriefRunResult,
   MeetingBriefEvent,
+  PersonProfileConsumerState,
 } from "@chief-of-staff-demo/shared";
 import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { StageFailure } from "../../engine/module.js";
@@ -14,13 +15,20 @@ import { renderMeetingBriefEmail } from "./output.js";
 import { materialFingerprint } from "./revision.js";
 
 /**
- * Stable idempotency key for a Run. Persisted before the outward Gmail write.
- * Occurrence + eventVersion is stable across retries of the same Run; runId would also work
- * but this key is deterministic even before the Run id is known in some paths.
+ * Stable idempotency key for one immutable Brief generation. A Profile refresh
+ * uses its new Run identity so it cannot reconcile the stale generation's Gmail
+ * message, while retries within that Run keep the same key.
  */
-export function deliveryIdFor(occurrenceKey: string, eventVersion: string): string {
+export function deliveryIdFor(
+  occurrenceKey: string,
+  eventVersion: string,
+  profileRefreshRunId?: string,
+): string {
   // Sanitize: occurrenceKey already `eventId::occurrenceId`, version is opaque string
-  return `mb-deliver-${occurrenceKey}-${eventVersion}`;
+  const generation = profileRefreshRunId
+    ? `${eventVersion}-profile-${profileRefreshRunId}`
+    : eventVersion;
+  return `mb-deliver-${occurrenceKey}-${generation}`;
 }
 
 export function deliveryState(
@@ -42,13 +50,22 @@ export function deliveryState(
 export interface DeliverBriefArgs {
   ctx: RunContext;
   brief: MeetingBrief;
-  input: MeetingBriefEvent & { occurrenceKey: string; supersedesRunId?: string | null };
+  input: MeetingBriefEvent & {
+    occurrenceKey: string;
+    supersedesRunId?: string | null;
+    profileRefreshOf?: string;
+  };
   occurrenceKey: string;
   now: () => Date;
   calendarProvider?: CalendarProvider | null;
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  isOwnerProfileConfirmed?: () => boolean;
+  personProfileConsumerState?: (
+    profileId: string,
+    profileRevision: number,
+  ) => PersonProfileConsumerState | null;
 }
 
 export interface DeliverResult {
@@ -120,10 +137,39 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     gmailDeliveryProvider,
     getInternalDomains,
     getOwnerEmail,
+    isOwnerProfileConfirmed,
+    personProfileConsumerState,
   } = args;
   const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
-  const deliveryId = deliveryIdFor(occurrenceKey, brief.eventVersion);
+  let isProfileRefresh = Boolean(input.profileRefreshOf);
+  if (!isProfileRefresh) {
+    const resultRaw = ctx.readFile("result.json");
+    if (resultRaw) {
+      try {
+        isProfileRefresh = Boolean(
+          (JSON.parse(resultRaw) as MeetingBriefRunResult).profileRefreshOf,
+        );
+      } catch {
+        // A malformed result remains a Run failure at its owning Stage.
+      }
+    }
+  }
+  const deliveryId = deliveryIdFor(
+    occurrenceKey,
+    brief.eventVersion,
+    isProfileRefresh ? ctx.runId : undefined,
+  );
+  const requireOwnerConfirmation = (attempts: number): void => {
+    if (isOwnerProfileConfirmed && !isOwnerProfileConfirmed()) {
+      const reason =
+        "owner_not_confirmed: confirm the workspace owner Profile before Meeting Brief delivery";
+      persistDeliveryFailure(ctx, deliveryId, attempts, reason);
+      throw new StageFailure("deliver", reason);
+    }
+  };
+
+  requireOwnerConfirmation(deliveryAttempts(ctx));
 
   // ---- Current Calendar truth: fetched once, shared by the quiet gate and the pre-send recheck.
   // The quiet gate must consult this fresh state (not the snapshot-frozen start): a material
@@ -170,7 +216,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   const startMs = Date.parse(gateStart);
   const nowMs = now().getTime();
   const timeUntilStart = Number.isNaN(startMs) ? 0 : startMs - nowMs;
-  const shouldWaitForQuiet = isRevision && timeUntilStart > 5 * 60 * 1000;
+  const shouldWaitForQuiet = isRevision && !isProfileRefresh && timeUntilStart > 5 * 60 * 1000;
   if (shouldWaitForQuiet) {
     const existingRaw = ctx.readFile("delivery.json");
     let alreadyWaited = false;
@@ -362,6 +408,43 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     }
   }
 
+  // ---- Person Profile truth immediately before the outward write ----
+  // Reconciliation above is read-only and may prove that a previous attempt
+  // already sent. Only a genuinely new Gmail write is blocked by a repair that
+  // landed after composition or during a quiet-period/retry continuation.
+  if (personProfileConsumerState) {
+    let links: MeetingBriefRunResult["personProfileLinks"] = [];
+    const resultRaw = ctx.readFile("result.json");
+    if (resultRaw) {
+      try {
+        links = (JSON.parse(resultRaw) as MeetingBriefRunResult).personProfileLinks ?? [];
+      } catch {
+        links = [];
+      }
+    }
+    const stale = links.flatMap((link) => {
+      const state = personProfileConsumerState(link.profileId, link.profileRevision);
+      return state === null || state.refreshRequired ? [{ link, state }] : [];
+    });
+    if (stale.length > 0) {
+      const reason = "Person Profile claims changed after this Brief was composed.";
+      persistDeliveryFailure(ctx, deliveryId, (existingDelivery?.attempts ?? 0) + 1, reason);
+      ctx.event("brief_delivery_blocked", {
+        reason: "person_profile_refresh_required",
+        profiles: stale.map(({ link, state }) => ({
+          profileId: link.profileId,
+          profileRevision: link.profileRevision,
+          currentProfileId: state?.currentProfileId ?? null,
+          currentProfileRevision: state?.currentProfileRevision ?? null,
+        })),
+      });
+      throw new StageFailure(
+        reason,
+        "Refresh or regenerate the Meeting Brief before delivering Profile-derived claims.",
+      );
+    }
+  }
+
   // ---- Render concise plain-text/HTML email ----
   const rendered = renderMeetingBriefEmail(brief, isRevision);
 
@@ -369,6 +452,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   let messageId: string;
   let recipient: string;
   const attemptsBefore = existingDelivery?.attempts ?? 0;
+  requireOwnerConfirmation(attemptsBefore + 1);
   try {
     if (gmailDeliveryProvider) {
       const sent = await gmailDeliveryProvider.send({
