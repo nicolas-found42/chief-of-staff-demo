@@ -1,16 +1,17 @@
-/** Meeting Debrief — Module-owned types (issue #139, spec #117, ADR-0037/0038). */
+/** Meeting Debrief — Module-owned types (issues #139/#140, spec #117, ADR-0037/0038). */
 
 import { z } from "zod";
 
 export const MEETING_DEBRIEF_MODULE_ID = "meeting-debrief" as const;
-export const MEETING_DEBRIEF_MODULE_VERSION = 1 as const;
+export const MEETING_DEBRIEF_MODULE_VERSION = 2 as const;
 
 /**
- * Fixed Stages for this slice. `review`, `draft` and `tasks` come later (the
- * review workflow and the approval-gated outward writes); nothing outward is
- * written before approval (ADR-0038), so this slice ends after extraction.
+ * Fixed Stages for this Module. `review` is the durable owner wait and
+ * `regenerate` the audited re-extraction Stage (issue #140, ADR-0037/0038);
+ * the approval-gated outward writes (`draft`, `tasks`) come in the next
+ * slice, so nothing outward is written before approval.
  */
-export const MEETING_DEBRIEF_STAGES = ["associate", "extract"] as const;
+export const MEETING_DEBRIEF_STAGES = ["associate", "extract", "review", "regenerate"] as const;
 export type MeetingDebriefStage = (typeof MEETING_DEBRIEF_STAGES)[number];
 
 /** The Intake every Debrief Run starts from: the Transcript Catalog's mining. */
@@ -21,6 +22,98 @@ export type MeetingDebriefRosterStatus = "prefilled" | "requires_confirmation";
 
 /** Whether the Debrief is ready for the owner's review. */
 export type MeetingDebriefReviewReadiness = "ready" | "needs_roster" | "no_extraction";
+
+/**
+ * Unreviewed Runs expire to `skipped` this many days after the review wait
+ * started (ADR-0038). A number of policy, fixed in version 1 of the review
+ * slice and unconfigured, like the four-hour Brief lead time.
+ */
+export const MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS = 30 as const;
+
+/** Why the Run ended when its review window elapsed. */
+export const MEETING_DEBRIEF_EXPIRED_REASON = "debrief_expired_unreviewed" as const;
+
+/** One whole field the review may regenerate (ADR-0037: regenerated, never edited). */
+export const MEETING_DEBRIEF_FIELDS = [
+  "summary",
+  "decisions",
+  "actionItems",
+  "openQuestions",
+  "effectivenessEvidence",
+  "coachingAdvice",
+] as const;
+export type MeetingDebriefField = (typeof MEETING_DEBRIEF_FIELDS)[number];
+
+/**
+ * One confirmed roster entry. The owner is resolved live against the
+ * confirmed owner identity, never stored — it can change between reviews.
+ */
+export interface MeetingDebriefRosterEntry {
+  email: string;
+  displayName: string | null;
+  /** The Profile this attendee was bound to at roster confirmation; null while unbound. */
+  profileId: string | null;
+  profileRevision: number | null;
+}
+
+/** One non-attendee recipient: an explicit confirmed Profile selection with a verified email. */
+export interface MeetingDebriefRecipient {
+  profileId: string;
+  profileRevision: number;
+  email: string;
+}
+
+/** Why the review surface cannot approve yet. Stable codes the UI renders. */
+export type MeetingDebriefApprovalBlocker =
+  "owner-identity-unconfirmed" | "roster-unconfirmed" | `attendee-unverified-email:${string}`;
+
+/**
+ * The Module-owned review state of one Debrief Run (issue #140), stored as
+ * the Run's `review.json`. The Run is the log; this record is the review's
+ * durable state, and approval locks every field of it.
+ */
+export interface MeetingDebriefReviewState {
+  version: 1;
+  runId: string;
+  roster: {
+    status: "unconfirmed" | "confirmed";
+    confirmedAt: string | null;
+    entries: MeetingDebriefRosterEntry[];
+  };
+  recipients: {
+    additional: MeetingDebriefRecipient[];
+  };
+  review: {
+    /** Action-item indexes the owner dropped. Regenerating action items clears them (ADR-0037). */
+    droppedActionItems: number[];
+  };
+  /** The pending owner action the Run resumes for; null while it simply waits. */
+  request: { kind: "regenerate"; field: MeetingDebriefField } | { kind: "approve" } | null;
+  /** Set once by approval; terminal for every review mutation afterwards. */
+  approval: { approvedAt: string } | null;
+}
+
+/** The review half of the Debrief detail journey's payload. */
+export interface MeetingDebriefReviewView {
+  state: "awaiting_review" | "approved" | "expired";
+  approvedAt: string | null;
+  roster: {
+    status: "unconfirmed" | "confirmed";
+    confirmedAt: string | null;
+    entries: MeetingDebriefRosterEntry[];
+  };
+  /** Derived: confirmed attendees other than the owner, each bound to a Profile. */
+  automaticRecipients: MeetingDebriefRecipient[];
+  /** Explicit non-attendee recipients, each an explicit confirmed Profile selection. */
+  additionalRecipients: MeetingDebriefRecipient[];
+  /** What the extraction suggested from follow-up context; each needs explicit confirmation. */
+  suggestedRecipients: Array<{ name: string; email: string | null }>;
+  droppedActionItems: number[];
+  /** Why approval is blocked right now; empty when ready. */
+  approvalBlockers: MeetingDebriefApprovalBlocker[];
+  /** Set when this Run re-extracts a transcript that already has an approved Debrief. */
+  duplicateWarning: { approvedRunId: string } | null;
+}
 
 /** One decision the meeting produced, with the transcript evidence for it. */
 export interface MeetingDebriefDecision {
@@ -63,6 +156,12 @@ export interface MeetingDebriefExtraction {
   effectivenessEvidence: string;
   /** Coaching advice for the workspace owner — stays in Meeting Wizard. */
   coachingAdvice: string;
+  /**
+   * Non-attendee people follow-up context implies should receive the
+   * retrospective. A suggestion is never a recipient: the review surface
+   * confirms each explicitly against a Profile with a verified email.
+   */
+  suggestedRecipients: Array<{ name: string; email: string | null }>;
 }
 
 /**
@@ -100,6 +199,13 @@ export const MeetingDebriefExtractionSchema = z.strictObject({
   ),
   effectivenessEvidence: z.string(),
   coachingAdvice: z.string(),
+  suggestedRecipients: z.array(
+    z.strictObject({
+      name: z.string().min(1),
+      /** Only an address stated in the transcript; never invented. */
+      email: z.string().min(1).nullable(),
+    }),
+  ),
 });
 
 /** What one finished Debrief Run holds in its `result.json`. */
@@ -135,6 +241,10 @@ export interface MeetingDebriefIndexEntry {
   rosterSize: number;
   identity: { resolvedCount: number; unresolvedCount: number; organizationCount: number };
   reviewReadiness: MeetingDebriefReviewReadiness;
+  /** The Run's review state; null before the review record exists. */
+  reviewState: "awaiting_review" | "approved" | "expired" | null;
+  rosterConfirmed: boolean;
+  recipientCount: number;
 }
 
 export interface MeetingDebriefIndex {
@@ -159,4 +269,6 @@ export interface MeetingDebriefDetail {
   identity: MeetingDebriefIdentitySummary;
   extraction: MeetingDebriefExtraction | null;
   reviewReadiness: MeetingDebriefReviewReadiness;
+  /** The review workflow's view; null before the Run holds a review record. */
+  review: MeetingDebriefReviewView | null;
 }

@@ -93,7 +93,26 @@ export interface PersonProfileProjectionOptions {
   revision?: number;
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Whether this exact email on this Profile is a verified address (spec #117
+ * approval policy, issue #140): the Profile holds the email and carries the
+ * completed Calendar attendee provenance that anchors it. Only Calendar may
+ * anchor stable emails in this Workspace, so a Profile email without that
+ * provenance is an identity signal, never a verified address a Debrief
+ * attendee draft could be addressed to.
+ */
+export function isCalendarVerifiedEmail(profile: PersonProfile, email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  return (
+    profile.emails.some((value) => value.trim().toLowerCase() === normalized) &&
+    profile.sourceDiagnostics.some(
+      (entry) => entry.source === PERSON_PROFILE_CALENDAR_SOURCE && entry.status === "completed",
+    )
+  );
+}
+
+/** The one email-shape rule; consumers validate addresses against it. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function trimmed(value: string | undefined): string | null {
   const text = value?.trim();

@@ -397,6 +397,7 @@ const meetingDebriefTest =
     ? createMeetingDebriefTestRuntime({
         runs,
         workspaceDir,
+        ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
         log: (message) => console.log(`[meeting-debrief] ${message}`),
       })
     : null;
@@ -405,6 +406,8 @@ const meetingDebrief: MeetingDebriefHost =
   createMeetingDebriefProductionRuntime({
     runs,
     workspaceDir,
+    people: peopleProfiles,
+    ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
     getCompleteJson: () => {
       const current = configStore.get();
       return makeCompleteJson(

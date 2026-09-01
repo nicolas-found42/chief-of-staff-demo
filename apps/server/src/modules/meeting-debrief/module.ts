@@ -1,13 +1,16 @@
 import type {
   MeetingDebriefExtraction,
   MeetingDebriefRunResult,
+  MeetingDebriefReviewState,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
+  MEETING_DEBRIEF_EXPIRED_REASON,
   MEETING_DEBRIEF_MODULE_ID,
   MEETING_DEBRIEF_MODULE_VERSION,
   MeetingDebriefExtractionSchema,
 } from "@chief-of-staff-demo/shared";
+import type { RunEvent } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { modelDiagnosticEventDetail, parseResultShape } from "../../llm/failure.js";
 import { errorMessage } from "../../engine/failure.js";
@@ -19,6 +22,16 @@ import type {
   DebriefIdentityReview,
   DebriefIdentityReviewReader,
 } from "./deps.js";
+import {
+  MEETING_DEBRIEF_REVIEW_EXPIRY_MS,
+  REVIEW_WAIT_REASON,
+  approvalBlockers,
+  initialReviewState,
+  mergeRegeneratedField,
+  parseReviewState,
+  serializeReviewState,
+  type DebriefApprovalGateDeps,
+} from "./review.js";
 import { buildDebriefMessages, resolveActionItemOwners } from "./extraction.js";
 
 export type {
@@ -29,9 +42,15 @@ export type {
 
 const MAX_EXTRACT_ATTEMPTS = 3;
 
-/** The Module's input: fresh from the Catalog's mining hand-off, or a resume. */
+/**
+ * The Module's input. `fresh` comes from the Catalog's mining hand-off,
+ * `resume` from a Stage retry, and `review` from the durable review wait —
+ * clock-driven when the window elapses (`expire`), owner-driven otherwise.
+ */
 export type DebriefInput =
-  { kind: "fresh"; transcriptId: string } | { kind: "resume"; fromStage: "associate" | "extract" };
+  | { kind: "fresh"; transcriptId: string }
+  | { kind: "resume"; fromStage: "associate" | "extract" }
+  | { kind: "review"; action: "owner" | "expire"; deadline?: string };
 
 export interface MeetingDebriefModuleDeps {
   now?: () => Date;
@@ -43,6 +62,12 @@ export interface MeetingDebriefModuleDeps {
   getCompleteJson?: () => CompleteJson;
   /** Provider/model recorded on extract_attempt events for diagnosis. */
   getLlmInfo?: () => { provider: string; model: string };
+  /**
+   * The approval gate's collaborators (spec #450). Absent — as in a minimal
+   * extraction-only harness — the gate stays closed: without a confirmed
+   * owner identity and a Profile directory, no Debrief can be approved.
+   */
+  gate?: DebriefApprovalGateDeps;
 }
 
 /** How the Run's association stands, read from the immutable record itself. */
@@ -50,18 +75,6 @@ function rosterStatusOf(record: TranscriptRecord): "prefilled" | "requires_confi
   return record.occurrence !== null && record.roster.length > 0
     ? "prefilled"
     : "requires_confirmation";
-}
-
-function debriefSummary(
-  debrief: MeetingDebriefExtraction,
-  rosterStatus: "prefilled" | "requires_confirmation",
-): string {
-  const counts = [
-    `${debrief.decisions.length} decision${debrief.decisions.length === 1 ? "" : "s"}`,
-    `${debrief.actionItems.length} action item${debrief.actionItems.length === 1 ? "" : "s"}`,
-    `${debrief.openQuestions.length} open question${debrief.openQuestions.length === 1 ? "" : "s"}`,
-  ].join(", ");
-  return `${counts} — ${rosterStatus === "prefilled" ? "ready for review" : "roster confirmation required"}`;
 }
 
 async function extractWithModel(
@@ -108,23 +121,204 @@ async function extractWithModel(
 }
 
 /**
- * Meeting Debrief v1 — two fixed Stages (issue #139). The review wait, the
- * approval-gated Gmail draft, and the owner Tasks are later slices: this
- * Module receives no outward-write capability at all, so a Debrief Run
- * structurally cannot write one.
+ * The most recent durable wait deadline on a Run's timeline — the original
+ * review window a crashed review turn must re-arm (issue #140 review round).
+ */
+function lastWaitDeadline(events: readonly RunEvent[]): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const detail = events[index]?.detail;
+    if (!detail) continue;
+    const timeout = detail.timeout;
+    if (
+      typeof timeout === "object" &&
+      timeout !== null &&
+      "kind" in timeout &&
+      "at" in timeout &&
+      timeout.kind === "at" &&
+      typeof timeout.at === "string"
+    ) {
+      return timeout.at;
+    }
+  }
+  return undefined;
+}
+
+/** The current stored debrief, for merging a regenerated field into. */
+function currentDebrief(ctx: RunContext): MeetingDebriefExtraction {
+  const raw = ctx.readFile("result.json");
+  if (!raw) throw new Error("Debrief Run has no stored result to regenerate from");
+  return (JSON.parse(raw) as MeetingDebriefRunResult).debrief;
+}
+
+/**
+ * Meeting Debrief v2 — extract, then wait for the owner (issues #139/#140).
+ * The review wait is a Shell-owned durable wait (ADR-0038): it resumes when
+ * the owner approves or regenerates, and expires to `skipped` after thirty
+ * days. Regeneration is a Stage of its own whose model call sees only the
+ * immutable input — the rejected value is structurally unreachable
+ * (ADR-0037). The Module receives no outward-write capability at all, so a
+ * Debrief Run structurally cannot write one.
  */
 export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModule<DebriefInput> {
   const now = deps.now ?? (() => new Date());
+  /* A harness without a gate stays closed: no confirmed owner identity and no
+     Profile directory can only ever mean "blocked", never "approved". */
+  const gate: DebriefApprovalGateDeps = deps.gate ?? {
+    ownerEmail: () => null,
+    verifiedForEmail: () => null,
+  };
 
   const extract = async (
     ctx: RunContext,
     record: TranscriptRecord,
   ): Promise<MeetingDebriefExtraction> => {
     const identity = deps.identity.reviewFor(record.id);
-    if (deps.extract) {
-      return deps.extract({ record, identity });
+    const debrief = deps.extract
+      ? await deps.extract({ record, identity })
+      : await extractWithModel(ctx, record, identity, deps);
+    return resolveActionItemOwners(debrief, deps.identity.reviewFor(record.id));
+  };
+
+  /** Store the result of a finished extraction or regeneration on the Run. */
+  const storeResult = (
+    ctx: RunContext,
+    debrief: MeetingDebriefExtraction,
+    transcriptId: string,
+  ): void => {
+    const result: MeetingDebriefRunResult = {
+      version: 1,
+      transcriptId,
+      extractedAt: now().toISOString(),
+      debrief,
+    };
+    ctx.writeFile("result.json", JSON.stringify(result, null, 2) + "\n");
+  };
+
+  /**
+   * The review wait (ADR-0020's durable wait, ADR-0038's shape): ensure the
+   * review record, then stop the Run inside the open Stage. Never returns —
+   * `ctx.wait` unrolls the Run into `blocked`.
+   */
+  const wait = (ctx: RunContext, deadline?: string): never => {
+    ctx.wait({
+      reason: REVIEW_WAIT_REASON,
+      timeout: {
+        kind: "at",
+        at: deadline ?? new Date(now().getTime() + MEETING_DEBRIEF_REVIEW_EXPIRY_MS).toISOString(),
+      },
+    });
+  };
+
+  const ensureReviewState = (
+    ctx: RunContext,
+    record: TranscriptRecord,
+  ): MeetingDebriefReviewState => {
+    const existing = parseReviewState(ctx.readFile("review.json"));
+    if (existing) return existing;
+    const state = initialReviewState(ctx.runId, record);
+    ctx.writeFile("review.json", serializeReviewState(state));
+    return state;
+  };
+
+  /**
+   * One review Turn: the Run has resumed out of its wait for a clock or an
+   * owner reason. Runs the pending owner action, then either ends the Run
+   * (approval, expiry) or returns it to the wait.
+   */
+  const reviewTurn = async (
+    ctx: RunContext,
+    action: "owner" | "expire",
+    deadline: string | undefined,
+  ): Promise<RunOutcome> => {
+    if (action === "expire") {
+      return ctx.stage("review", async () => {
+        ctx.event("debrief_expired", { reason: MEETING_DEBRIEF_EXPIRED_REASON });
+        return { status: "skipped", reason: MEETING_DEBRIEF_EXPIRED_REASON };
+      });
     }
-    return extractWithModel(ctx, record, identity, deps);
+    const transcriptId = ctx.meta().externalId ?? null;
+    if (!transcriptId) {
+      throw new Error("Debrief Run has no transcript identity");
+    }
+    const record = deps.catalog.getTranscript(transcriptId);
+    /* The Catalog lost the record mid-review: the Debrief's source is gone,
+       so the Run ends skipped the same way an associate-stage loss does. */
+    if (!record) {
+      return { status: "skipped", reason: "transcript_not_in_catalog" };
+    }
+    const state = await ctx.stage("review", async () => ensureReviewState(ctx, record));
+    if (state.approval) {
+      throw new Error("Debrief Run was already approved");
+    }
+
+    const request = state.request;
+    if (request?.kind === "regenerate") {
+      // ADR-0037: the regeneration is one audited Stage, and its model call
+      // sees exactly what every other generation saw — the immutable record
+      // and the Catalog's review state. The replaced value is not an input.
+      await ctx.stage("regenerate", async () => {
+        const debrief = await extract(ctx, record);
+        const merged = mergeRegeneratedField(currentDebrief(ctx), request.field, debrief);
+        storeResult(ctx, merged, transcriptId);
+        const next: MeetingDebriefReviewState = {
+          ...state,
+          review: request.field === "actionItems" ? { droppedActionItems: [] } : state.review,
+          request: null,
+        };
+        ctx.writeFile("review.json", serializeReviewState(next));
+        ctx.event("debrief_regenerated", { field: request.field });
+        return merged;
+      });
+      // Back to the wait. Any owner touch — approval request, regeneration —
+      // restarts the unreviewed window the thirty-day clock measures.
+      await ctx.stage("review", async () => {
+        wait(ctx);
+      });
+    }
+
+    if (request?.kind === "approve") {
+      return ctx.stage("review", async () => {
+        const blockers = approvalBlockers(state, gate);
+        if (blockers.length > 0) {
+          /* The Run keeps waiting: an approval refused here must not end a
+             Debrief the owner still has on screen. The host route already
+             refuses synchronously with the same blockers; this is the
+             durable authority re-asserting against races. The pending
+             request is cleared, so every review seam answers again and the
+             owner can fix the blockers and retry. */
+          const unlocked: MeetingDebriefReviewState = { ...state, request: null };
+          ctx.writeFile("review.json", serializeReviewState(unlocked));
+          ctx.event("debrief_approval_refused", { blockers });
+          wait(ctx, deadline);
+        }
+        const approvedAt = now().toISOString();
+        const locked: MeetingDebriefReviewState = {
+          ...state,
+          request: null,
+          approval: { approvedAt },
+        };
+        ctx.writeFile("review.json", serializeReviewState(locked));
+        const owner = gate.ownerEmail();
+        const recipientCount =
+          locked.roster.entries.filter((entry) => entry.email !== owner).length +
+          locked.recipients.additional.length;
+        ctx.event("debrief_approved", { approvedAt, recipientCount });
+        return {
+          status: "done",
+          summary: `Approved with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
+          detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
+        };
+      });
+    }
+
+    // No pending action: recovery or a stray resume — return to the wait on
+    // the deadline the durable wait record already carried, never a fresh
+    // thirty days; a restart must not re-arm a window the clock already ran.
+    await ctx.stage("review", async () => {
+      wait(ctx, deadline);
+    });
+    /* `wait` never returns; this line only satisfies the type checker. */
+    throw new Error("unreachable");
   };
 
   return {
@@ -133,40 +327,93 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
 
     failureHint(stage: string, reason: string): string {
       if (stage === "associate") return "The Transcript Catalog has no record for this Debrief.";
-      if (stage === "extract") {
+      if (stage === "extract" || stage === "regenerate") {
         return reason === "extraction failed after 3 attempts"
           ? "Extraction failed after 3 attempts."
           : "Extraction failed. Retry to re-run it.";
       }
+      if (stage === "review") return "Review could not complete. Retry to resume it.";
       return reason;
     },
 
     planRetry(meta) {
       if (meta.status !== "failed" || !meta.failedStage) return null;
-      if (meta.failedStage !== "associate" && meta.failedStage !== "extract") return null;
-      return {
-        fromStage: meta.failedStage,
-        reason: "failed_stage_is_safe_to_repeat",
-        input: { kind: "resume", fromStage: meta.failedStage },
-        ...(meta.failedStage === "extract"
-          ? { resetAttempts: true, discard: ["result.json"] }
-          : {}),
-      };
+      if (meta.failedStage === "associate") {
+        return {
+          fromStage: meta.failedStage,
+          reason: "failed_stage_is_safe_to_repeat",
+          input: { kind: "resume", fromStage: meta.failedStage },
+        };
+      }
+      if (meta.failedStage === "extract") {
+        return {
+          fromStage: "extract",
+          reason: "failed_stage_is_safe_to_repeat",
+          input: { kind: "resume", fromStage: "extract" },
+          resetAttempts: true,
+          discard: ["result.json"],
+        };
+      }
+      if (meta.failedStage === "regenerate" || meta.failedStage === "review") {
+        return {
+          fromStage: "review",
+          reason: "failed_stage_is_safe_to_repeat",
+          input: { kind: "review", action: "owner" },
+        };
+      }
+      return null;
     },
 
     planRecovery(state) {
       if (state.status !== "pending" && state.status !== "running") return null;
-      const fromStage = state.files.includes("result.json") ? "extract" : "associate";
+      if (state.files.includes("review.json") || state.files.includes("result.json")) {
+        /* The wait record was cleared when the Run resumed, so the original
+           deadline survives only on the Run's timeline: re-arm that one,
+           never a fresh thirty days. */
+        const deadline = lastWaitDeadline(state.events);
+        return {
+          fromStage: "review",
+          reason: state.files.includes("review.json")
+            ? "debrief_review_survived_restart"
+            : "debrief_result_survived_restart",
+          input: { kind: "review", action: "owner", ...(deadline ? { deadline } : {}) },
+        };
+      }
       return {
-        fromStage,
-        reason: state.files.includes("result.json")
-          ? "debrief_result_survived_restart"
-          : "debrief_survived_restart",
-        input: { kind: "resume", fromStage },
+        fromStage: "associate",
+        reason: "debrief_survived_restart",
+        input: { kind: "resume", fromStage: "associate" },
+      };
+    },
+
+    /** What continuing one of this Module's blocked review Runs means (ADR-0020). */
+    planResume(meta) {
+      if (meta.status !== "blocked" || !meta.wait) return null;
+      const due =
+        meta.wait.timeout.kind === "at" && Date.parse(meta.wait.timeout.at) <= now().getTime();
+      if (due) {
+        return {
+          fromStage: meta.wait.stage,
+          reason: "review_window_elapsed",
+          input: { kind: "review", action: "expire" },
+        };
+      }
+      return {
+        fromStage: meta.wait.stage,
+        reason: "owner_review_action",
+        input: {
+          kind: "review",
+          action: "owner",
+          ...(meta.wait.timeout.kind === "at" ? { deadline: meta.wait.timeout.at } : {}),
+        },
       };
     },
 
     async run(ctx: RunContext, input: DebriefInput): Promise<RunOutcome> {
+      if (input.kind === "review") {
+        return reviewTurn(ctx, input.action, input.deadline);
+      }
+
       const transcriptId =
         input.kind === "fresh" ? input.transcriptId : (ctx.meta().externalId ?? null);
       if (!transcriptId) {
@@ -193,30 +440,30 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       }
 
       // extract — the structured retrospective, from the stored artifact.
-      const resolved = await ctx.stage("extract", async () => {
+      await ctx.stage("extract", async () => {
         const debrief = await extract(ctx, record);
-        const withOwners = resolveActionItemOwners(debrief, deps.identity.reviewFor(transcriptId));
-        const result: MeetingDebriefRunResult = {
-          version: 1,
-          transcriptId,
-          extractedAt: now().toISOString(),
-          debrief: withOwners,
-        };
-        ctx.writeFile("result.json", JSON.stringify(result, null, 2) + "\n");
+        storeResult(ctx, debrief, transcriptId);
         ctx.event("debrief_extracted", {
-          decisions: withOwners.decisions.length,
-          actionItems: withOwners.actionItems.length,
-          openQuestions: withOwners.openQuestions.length,
+          decisions: debrief.decisions.length,
+          actionItems: debrief.actionItems.length,
+          openQuestions: debrief.openQuestions.length,
         });
-        return withOwners;
+        return debrief;
       });
-      const rosterStatus = rosterStatusOf(record);
 
-      return {
-        status: "done",
-        summary: debriefSummary(resolved, rosterStatus),
-        detail: { transcriptId, rosterStatus },
-      };
+      // review — the durable owner wait (ADR-0038). The Run blocks against a
+      // 30-day wait record; approval or regeneration resumes it, the clock
+      // expires it. The summary the list will keep showing across the wait
+      // is the Module's own line about what it extracted.
+      await ctx.stage("review", async () => {
+        ensureReviewState(ctx, record);
+        ctx.event("debrief_review_started", {
+          rosterStatus: rosterStatusOf(record),
+        });
+        wait(ctx);
+      });
+      /* `wait` never returns; this line only satisfies the type checker. */
+      throw new Error("unreachable");
     },
   };
 }

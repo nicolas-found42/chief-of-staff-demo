@@ -136,6 +136,7 @@ function fakeExtraction(input: DebriefExtractInput): Promise<MeetingDebriefExtra
     openQuestions: [{ question: "Is the rollout on track?", raisedBy: "Alice" }],
     effectivenessEvidence: "Decisions were made crisply.",
     coachingAdvice: "Close open questions before the next sync.",
+    suggestedRecipients: [],
   };
   return Promise.resolve(extraction);
 }
@@ -200,16 +201,16 @@ describe("Meeting Debrief Run creation (#139)", () => {
     expect(page.runs).toHaveLength(2);
   });
 
-  it("completes the Run and reports what was extracted", async () => {
+  it("extracts and then blocks for the owner's review", async () => {
     const record = makeRecord();
     h.catalog.set(record.id, record);
     await h.host.process(record);
     await h.host.idle();
 
     const run = h.runs.detail(h.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id);
-    expect(run?.status).toBe("done");
-    expect(run?.summary).toContain("1 decision");
-    expect(run?.summary).toContain("1 action item");
+    expect(run?.status).toBe("blocked");
+    expect(run?.wait?.stage).toBe("review");
+    expect(run?.wait?.reason).toContain("review");
   });
 
   it("skips with a visible reason when the Catalog no longer holds the Transcript", async () => {
@@ -308,6 +309,7 @@ describe("Meeting Debrief extraction and review state (#139)", () => {
         openQuestions: [],
         effectivenessEvidence: "n/a",
         coachingAdvice: "n/a",
+        suggestedRecipients: [],
       }),
       log: () => {},
     });
@@ -433,7 +435,7 @@ describe("Meeting Debrief extraction and review state (#139)", () => {
 
 describe("Meeting Debrief fixed Stages (#139)", () => {
   it("pins the Stage names the Module owns", () => {
-    expect([...MEETING_DEBRIEF_STAGES]).toEqual(["associate", "extract"]);
+    expect([...MEETING_DEBRIEF_STAGES]).toEqual(["associate", "extract", "review", "regenerate"]);
   });
 });
 
@@ -458,7 +460,7 @@ describe("Meeting Debrief writes nothing outward (#139)", () => {
           "version",
         ]);
       }
-      expect(detail?.files).toEqual(["result.json"]);
+      expect(detail?.files).toEqual(["result.json", "review.json"]);
     }
   });
 });
@@ -495,7 +497,7 @@ describe("Meeting Debrief retry and recovery (#139)", () => {
     await failingHost.retryRun(runId);
     await failingHost.idle();
 
-    expect(h.runs.detail(runId)?.status).toBe("done");
+    expect(h.runs.detail(runId)?.status).toBe("blocked");
     expect(attempts).toBe(attemptsAfterFailure + 1);
   });
 
@@ -512,7 +514,7 @@ describe("Meeting Debrief retry and recovery (#139)", () => {
     });
 
     h.host.start();
-    await vi.waitFor(() => expect(h.runs.detail(orphan.id)?.status).toBe("done"));
+    await vi.waitFor(() => expect(h.runs.detail(orphan.id)?.status).toBe("blocked"));
 
     const page = h.runs.list({ module: MEETING_DEBRIEF_MODULE_ID });
     expect(page.runs).toHaveLength(1);

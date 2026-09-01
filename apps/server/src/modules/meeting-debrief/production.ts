@@ -2,7 +2,9 @@ import type { CompleteJson } from "../../llm/providers.js";
 import type { Runs } from "../../runs.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
+import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { MeetingDebriefHost } from "./host.js";
+import { workspaceProfileDirectory } from "./profiles.js";
 
 export interface MeetingDebriefProductionRuntimeOptions {
   runs: Runs;
@@ -10,6 +12,10 @@ export interface MeetingDebriefProductionRuntimeOptions {
   getCompleteJson: () => CompleteJson;
   /** Provider/model recorded on extract_attempt events for diagnosis. */
   getLlmInfo: () => { provider: string; model: string };
+  /** The Workspace Person Profiles interface the review binds identities through. */
+  people: WorkspacePersonProfiles;
+  /** The confirmed owner identity's email, as the Shell holds it (ADR-0036). */
+  ownerEmail: () => string | null;
   log?: (message: string) => void;
 }
 
@@ -18,10 +24,13 @@ export interface MeetingDebriefProductionRuntime {
 }
 
 /**
- * Production composition root for the Meeting Debrief (issue #139). Both
- * consumers read the one Workspace directory the Transcript Catalog owns: the
- * immutable Transcript records and the identity-mining review state. There is
- * no Drive access and no conversion here — the Catalog is the sole source.
+ * Production composition root for the Meeting Debrief (issues #139/#140).
+ * Every consumer reads the one Workspace directory the Transcript Catalog
+ * owns: the immutable Transcript records and the identity-mining review
+ * state. There is no Drive access and no conversion here — the Catalog is the
+ * sole source. The review's Profile surface is the Workspace's Person
+ * Profiles interface at the narrow directory seam; the owner identity is the
+ * Shell's confirmed reference, read live on every gate decision.
  */
 export function createMeetingDebriefProductionRuntime(
   options: MeetingDebriefProductionRuntimeOptions,
@@ -46,6 +55,8 @@ export function createMeetingDebriefProductionRuntime(
           .filter((organization) => organization.provenance.transcriptId === transcriptId),
       }),
     },
+    profiles: workspaceProfileDirectory(options.people),
+    ownerEmail: options.ownerEmail,
     getCompleteJson: options.getCompleteJson,
     getLlmInfo: options.getLlmInfo,
     ...(options.log ? { log: options.log } : {}),
