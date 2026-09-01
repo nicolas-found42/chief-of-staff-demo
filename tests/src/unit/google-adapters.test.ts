@@ -15,13 +15,7 @@ import {
   type GoogleAuth,
 } from "../../../apps/server/src/google/oauth";
 import { googleOutputs } from "../../../apps/server/src/google/outputs";
-import {
-  appendRows,
-  appendRowsWithUserEntered,
-  createSpreadsheet,
-  ensureTab,
-  ensureTabWithMigration,
-} from "../../../apps/server/src/google/sheets";
+import { appendRows, createSpreadsheet, ensureTab } from "../../../apps/server/src/google/sheets";
 import { createGoogleTask, findOrCreateTasklist } from "../../../apps/server/src/google/tasks";
 
 const sdk = vi.hoisted(() => {
@@ -237,63 +231,8 @@ describe("Sheets Output Adapter", () => {
     expect(sdk.sheets.spreadsheets.values.append).not.toHaveBeenCalled();
   });
 
-  it("creates a missing Idea Engine tab with user-entered values", async () => {
-    await ensureTabWithMigration(auth, "sheet-1", "Ideas", ["Title", "ContentType"]);
-
-    expect(sdk.sheets.spreadsheets.batchUpdate).toHaveBeenCalledOnce();
-    expect(sdk.sheets.spreadsheets.values.append).toHaveBeenCalledWith(
-      expect.objectContaining({
-        range: "'Ideas'!A:K",
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [["Title", "ContentType"]] },
-      }),
-    );
-  });
-
-  it("migrates a legacy Idea Engine header exactly once", async () => {
-    sdk.sheets.spreadsheets.get.mockResolvedValue({
-      data: { sheets: [{ properties: { title: "Ideas" } }] },
-    });
-    sdk.sheets.spreadsheets.values.get.mockResolvedValue({
-      data: { values: [["Title", "Format"]] },
-    });
-
-    await ensureTabWithMigration(auth, "sheet-1", "Ideas", ["Title", "Format", "ContentType"]);
-
-    expect(sdk.sheets.spreadsheets.values.update).toHaveBeenCalledWith({
-      spreadsheetId: "sheet-1",
-      range: "'Ideas'!1:1",
-      valueInputOption: "RAW",
-      requestBody: { values: [["Title", "Format", "ContentType"]] },
-    });
-
-    sdk.sheets.spreadsheets.values.get.mockResolvedValue({
-      data: { values: [["Title", "Format", "ContentType"]] },
-    });
-    await ensureTabWithMigration(auth, "sheet-1", "Ideas", ["Title", "Format", "ContentType"]);
-    expect(sdk.sheets.spreadsheets.values.update).toHaveBeenCalledOnce();
-  });
-
-  it("leaves the header unchanged when its inspection fails", async () => {
-    sdk.sheets.spreadsheets.get.mockResolvedValue({
-      data: { sheets: [{ properties: { title: "Ideas" } }] },
-    });
-    sdk.sheets.spreadsheets.values.get.mockRejectedValue(new Error("read denied"));
-
-    await expect(
-      ensureTabWithMigration(auth, "sheet-1", "Ideas", ["Title", "ContentType"]),
-    ).resolves.toBeUndefined();
-    expect(sdk.sheets.spreadsheets.values.update).not.toHaveBeenCalled();
-  });
-
   it("does not call Sheets for an empty raw append", async () => {
     await appendRows(auth, "sheet-1", "Found42", []);
-
-    expect(sdk.sheetsFactory).not.toHaveBeenCalled();
-  });
-
-  it("does not call Sheets for an empty user-entered append", async () => {
-    await appendRowsWithUserEntered(auth, "sheet-1", "Ideas", []);
 
     expect(sdk.sheetsFactory).not.toHaveBeenCalled();
   });

@@ -352,11 +352,11 @@ const meetingBriefProduction = meetingBriefTest
       google: googleConnection,
       getCompleteJson: meetingBriefCompleteJson,
       /* Owner onboarding (issue #123): delivery's outward send waits for the
-         confirmed owner reference; eligibility keeps the raw identity. */
+       confirmed owner reference; eligibility keeps the raw identity. */
       isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
       personProfiles: peopleProfiles,
       /* Confirmed transcript evidence (issue #138): the Brief reads the
-         Catalog's confirmed links and its reviewed relevance decisions. */
+       Catalog's confirmed links and its reviewed relevance decisions. */
       transcriptRelevance,
       log: meetingBriefLog,
     });
@@ -459,6 +459,8 @@ await registerApi(app, {
     for (const module of modules.filter((candidate) => candidate !== meetingBrief)) {
       module.start?.();
     }
+    transcriptCatalogRuntime.stop();
+    transcriptCatalogRuntime.start();
     meetingBrief.start();
   },
 });

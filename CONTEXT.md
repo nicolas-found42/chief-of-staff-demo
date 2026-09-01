@@ -257,13 +257,13 @@ local models. Not yet accessible.
 _Avoid_: Edgecale, edge scale, the box, the cube (alone)
 
 **Idea Engine**:
-A live Module that reads a meeting transcript from the Transcripts Drive folder and extracts
+A Module that reads a meeting transcript from the Transcripts Drive folder and extracts
 Content Ideas attributed to the workspace owner. One Intake file creates one Run; that Run
 makes 12 Stages (one per content type) in batches of 4, writes the ideas to the Google Sheet
 `All RA Content Ideas` via an Output Adapter, creates a Gmail draft digest, and posts a Home
 notification. Its tab shows a Cross-Run index over all Runs, primary by transcript file,
 filterable by content type.
-_Status_: live (spec #31 binding, 2026-08-24)
+_Status_: retired by issue #142 (ADR-0045); the Transcript Catalog and Meeting Debrief supersede it for private transcripts
 _Avoid_: Idea Generator, Ideas Module
 
 **Meeting Brief Generator**:

@@ -231,7 +231,7 @@ wait_health() {
   printf '\n'
 }
 
-TOTAL_STAGES=14
+TOTAL_STAGES=12
 
 banner "Chief of Staff — full setup"
 
@@ -461,48 +461,7 @@ else
   fi
 fi
 
-# ── 9 · Idea Engine spreadsheet ───────────────────────────────────────────
-stage "Idea Engine spreadsheet"
-warn "The Idea Engine has NO in-app or API way to set its spreadsheet (verified in source); this"
-warn "stage edits workspace/config.json directly, which needs the app stopped for a moment."
-CUR_SHEET_ID="$(jq -r '.modules["idea-engine"].spreadsheetId // empty' workspace/config.json 2>/dev/null || echo)"
-if [[ -n "$CUR_SHEET_ID" ]] && ! confirm "Replace the existing Idea Engine spreadsheet ($CUR_SHEET_ID)?"; then
-  say "Keeping the existing spreadsheet."
-else
-  open_url "https://sheets.new"
-  step "Name the spreadsheet 'All RA Content Ideas' and copy its URL from the address bar."
-  ask IDEA_SHEET_URL "Paste the spreadsheet URL:"
-  if [[ "$IDEA_SHEET_URL" =~ spreadsheets/d/([a-zA-Z0-9_-]+) ]]; then
-    SHEET_ID="${BASH_REMATCH[1]}"
-    if confirm "Stop the app container briefly to write the config safely?"; then
-      docker compose stop app
-      tmp=$(mktemp)
-      if jq --arg id "$SHEET_ID" --arg url "$IDEA_SHEET_URL" \
-        '.modules["idea-engine"].spreadsheetId = $id | .modules["idea-engine"].spreadsheetUrl = $url' \
-        workspace/config.json > "$tmp" && jq empty "$tmp"; then
-        mv "$tmp" workspace/config.json
-        say "config.json updated."
-      else
-        rm -f "$tmp"
-        warn "config edit failed — config.json left untouched."
-      fi
-      docker compose start app
-      say "Waiting for the app to come back"
-      wait_health 120 || true
-      api GET /api/idea-engine/ideas
-      [[ "$(api_jq '.spreadsheet.url // empty')" != "" ]] \
-        && say "Idea Engine spreadsheet linked." \
-        || warn "link not visible yet — check workspace/config.json."
-    else
-      SKIPPED+=("Idea Engine spreadsheet (app not stopped; nothing written)")
-    fi
-  else
-    warn "that URL does not look like a Google Sheets URL."
-    SKIPPED+=("Idea Engine spreadsheet")
-  fi
-fi
-
-# ── 10 · Content Scout schedule ───────────────────────────────────────────
+# ── 9 · Content Scout schedule ───────────────────────────────────────────
 stage "Content Scout schedule"
 api GET /api/content-scout
 say "Current: $(printf '%s' "$_API_BODY" | jq -c '.settings // empty')"
@@ -535,7 +494,7 @@ else
   fi
 fi
 
-# ── 12 · Content Scout sources ────────────────────────────────────────────
+# ── 10 · Content Scout sources ───────────────────────────────────────────
 stage "Content Scout sources"
 say "Recurring public sources the daily scout reads (rss feeds work best)."
 while true; do
@@ -553,7 +512,7 @@ while true; do
   fi
 done
 
-# ── 13 · Meeting Brief Generator ──────────────────────────────────────────
+# ── 11 · Meeting Brief Generator ──────────────────────────────────────────
 stage "Meeting Brief Generator"
 warn "Heads-up: as shipped, this Module cannot RUN — no calendar provider is wired in, and"
 warn "external-guest enrichment needs six providers the server does not have. This stage"
@@ -592,7 +551,7 @@ else
   SKIPPED+=("Meeting Brief Generator settings")
 fi
 
-# ── 14 · Final check ──────────────────────────────────────────────────────
+# ── 12 · Final check ──────────────────────────────────────────────────────
 stage "Final check"
 api GET /api/health
 say "App: $( [[ "$_API_CODE" == "200" ]] && printf 'healthy' || printf 'UNHEALTHY' ) at $APP"
@@ -604,8 +563,6 @@ api GET /api/google/status
 say "Google connection: $(api_jq '.state // "unknown"')"
 api GET /api/youtube/trends
 say "YouTube Trends sheet: $(api_jq '.spreadsheet.url // "none"')"
-api GET /api/idea-engine/ideas
-say "Idea Engine sheet: $(api_jq '.spreadsheet.url // "none"')"
 api GET /api/content-scout
 say "Content Scout: $(printf '%s' "$_API_BODY" | jq -r '.sourceTargets | length') source target(s)"
 api GET /api/meeting-brief/config

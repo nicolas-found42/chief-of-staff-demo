@@ -1,6 +1,6 @@
 # chief-of-staff-demo — Found42 — Chief of Staff
 
-A local web app that hosts Found42's meeting and content workflows as tabs in one app. Two Modules are live: **Transcript → Tasks**, which turns meeting transcripts into Google Tasks and Gmail drafts, and **YouTube Trends**, which counts every video on a channel once a day and keeps the trend. It reproduces the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine) workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you run on your own machine.
+A local web app that hosts Found42's meeting and content workflows as tabs in one app. Five Modules are live: **YouTube Trends** — presented under Content Research — counts every video on a channel once a day and keeps the trend; **Content Scout** watches public sources and turns a selected opportunity into a Content Project; **Content Research** reports what is resonating for named people; **Meeting Brief Generator** prepares briefings for upcoming meetings; and **Meeting Debrief** turns meeting transcripts into retrospective drafts awaiting review. It reproduces the pipeline of the [`nicolas-found42/transcript-routine`](https://github.com/nicolas-found42/transcript-routine) workflow (Drive folders + Apps Script + Claude routine) as a single Node server + browser UI you run on your own machine.
 
 > **Note:** This repo was `transcript-found42`. The GitHub slug now 301s to `chief-of-staff-demo`. Package scope is now `@chief-of-staff-demo/*`.
 

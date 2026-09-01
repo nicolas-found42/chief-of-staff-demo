@@ -6,7 +6,11 @@ import type {
 import { buildDriveClient } from "../intake/drive.js";
 import type { GoogleConnection } from "../google/connection.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
-import { TranscriptCatalog, type TranscriptDebriefProcessor } from "./catalog.js";
+import {
+  ConsentRequiredError,
+  TranscriptCatalog,
+  type TranscriptDebriefProcessor,
+} from "./catalog.js";
 import { createDriveCatalogSource } from "./drive-source.js";
 import { TranscriptIdentityService } from "./identity.js";
 import { TranscriptIdentityStore } from "./identity-store.js";
@@ -103,14 +107,20 @@ export function createTranscriptCatalogRuntime(
    * Google account all mean "there is nothing to read yet", not an error to
    * surface on a timer — the Catalog itself refuses without consent, and the
    * operator sees the reason on the intake surface rather than in a log loop.
+   * A guarded skip is not an attempt: neither lastPassAt nor lastPassOutcome
+   * moves, so the /runs liveness line cannot claim a failed check that never
+   * ran.
    */
   const pass = async (): Promise<void> => {
     const current = options.getConfig();
     if (!current.drive.enabled || !current.drive.folderId) return;
+    const status = await options.google.state();
+    if (status.state !== "connected") return;
     try {
       await catalog.processAvailable();
       lastPassOutcome = "ok";
     } catch (error) {
+      if (error instanceof ConsentRequiredError) return;
       lastPassOutcome = "failed";
       log(
         `transcript catalog pass failed: ${error instanceof Error ? error.message : String(error)}`,
