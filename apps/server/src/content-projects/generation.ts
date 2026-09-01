@@ -10,9 +10,9 @@ import {
 import type { CompleteJson } from "../llm/providers.js";
 import { parseResultShape } from "../llm/failure.js";
 
-/** The catalog contract one target's generation adapter is bound to. */
+/** The catalog entry one target's generation adapter is bound to. */
 function targetContract(target: ContentProjectTarget) {
-  return CONTENT_TARGET_CATALOG.find((entry) => entry.target === target)!.contract;
+  return CONTENT_TARGET_CATALOG.find((entry) => entry.target === target)!;
 }
 
 /**
@@ -156,8 +156,9 @@ export function createModelOutlineProvider(
         schema: OutlineWireSchema,
         system: `Draft the structure of one ${target} Platform Outline from an approved immutable Outline Brief.
 
-Target contract: platform ${contract.platform}, format ${contract.format}. The outline plan is the
-${contract.outlineResult}; its optional Draft is the ${contract.draftResult}.
+Target contract v${contract.contractVersion}: platform ${contract.contract.platform}, format
+${contract.contract.format}. The outline plan is the ${contract.contract.outlineResult}; its
+optional Draft is the ${contract.contract.draftResult}.
 
 The outline is a plan, not publishable copy. Return JSON with title, hookDirection, targetLength,
 beats, warnings, and productionNotes. Each beat has direction, evidence (claim plus the Brief

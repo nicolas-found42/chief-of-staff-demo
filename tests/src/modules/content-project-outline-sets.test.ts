@@ -1,9 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
-import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
 import {
   CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY,
   CONTENT_PROJECT_TARGETS,
@@ -16,6 +14,7 @@ import {
   type OutlineBrief,
   type OutlineSetOutcome,
 } from "@chief-of-staff-demo/shared";
+import { DIAGNOSTIC, NOW, SOURCE_ITEM, SOURCE_ITEM_2 } from "./content-project-fixtures";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import type {
   ContentEngineDraftProvider,
@@ -32,42 +31,6 @@ import {
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
-
-const NOW = new Date("2026-08-31T18:00:00.000Z");
-
-const SOURCE_ITEM: SourceItem = fromPartial<SourceItem>({
-  id: "source_1",
-  externalId: "article-1",
-  targetId: "target_1",
-  canonicalUrl: "https://evidence.example/article",
-  author: "Researcher",
-  title: "Evidence-backed content",
-  body: "Reviewed public evidence.",
-  publishedAt: "2026-08-30T12:00:00.000Z",
-  discoveredAt: "2026-08-31T17:00:00.000Z",
-});
-const SOURCE_ITEM_2: SourceItem = fromPartial<SourceItem>({
-  ...SOURCE_ITEM,
-  id: "source_2",
-  externalId: "article-2",
-  canonicalUrl: "https://evidence.example/article-2",
-  title: "Additional frozen evidence",
-});
-
-const DIAGNOSTIC: AdapterDiagnostic = fromPartial<AdapterDiagnostic>({
-  classification: "items_found",
-  route: "https://evidence.example/article",
-  status: 200,
-  contentType: "text/html",
-  parserStage: "readability",
-  responseHash: "response-hash",
-  adapterVersion: "1",
-  startedAt: "2026-08-31T17:00:00.000Z",
-  finishedAt: "2026-08-31T17:00:01.000Z",
-  retries: 0,
-  affectedCapabilities: ["body"],
-  causeChain: [],
-});
 
 const BASE_RESULT: PlatformOutlineProviderResult = {
   title: "A grounded case for immutable inputs",

@@ -569,11 +569,7 @@ export class WorkspaceContentProjects {
     return this.runVersionedGeneration({
       projectId,
       plan: (revision) => this.plannedOutlineGeneration(revision, target),
-      noEvidence: new ContentProjectError(
-        "outline-generation-blocked",
-        "Platform Outline generation needs frozen evidence.",
-        ["evidence-review"],
-      ),
+      noEvidence: frozenEvidenceRequired(),
       call: (planned, evidence) =>
         planned.provider.generate({
           brief: clone(planned.brief),
@@ -620,13 +616,7 @@ export class WorkspaceContentProjects {
     const project = requireProject(state, projectId);
     const planned = this.plannedOutlineSet(currentRevision(project));
     const evidence = this.promptEvidence(projectId);
-    if (!evidence) {
-      throw new ContentProjectError(
-        "outline-generation-blocked",
-        "Platform Outline generation needs frozen evidence.",
-        ["evidence-review"],
-      );
-    }
+    if (!evidence) throw frozenEvidenceRequired();
     const settled = await runBounded(planned.pending, concurrency, async (target) => {
       const provider = planned.providers.get(target)!;
       return provider.generate({
@@ -652,9 +642,9 @@ export class WorkspaceContentProjects {
     const generated: PlatformOutline[] = [];
     const failures: OutlineSetFailure[] = [];
     for (const [index, target] of planned.pending.entries()) {
-      const result = settled[index];
-      if (!result || result.status === "rejected") {
-        failures.push(outlineSetFailure(target, result?.reason));
+      const result = settled[index]!;
+      if (result.status === "rejected") {
+        failures.push(outlineSetFailure(target, result.reason));
         continue;
       }
       try {
@@ -805,15 +795,11 @@ export class WorkspaceContentProjects {
     return clone(record);
   }
 
-  private plannedOutlineGeneration(
-    revision: ContentProjectRevision,
-    target: ContentProjectTarget,
-  ): {
-    brief: OutlineBrief;
-    provider: PlatformOutlineProvider;
-    version: number;
-    approvedEvidenceIds: Set<string>;
-  } {
+  /**
+   * The gates and the approved Brief every Platform Outline generation — one
+   * target or the whole set — is planned from.
+   */
+  private plannedBrief(revision: ContentProjectRevision): OutlineBrief {
     const missing = this.missingGates(revision);
     if (missing.length > 0) {
       throw new ContentProjectError(
@@ -829,12 +815,10 @@ export class WorkspaceContentProjects {
         "Only an approved immutable Outline Brief can start Platform Outline generation.",
       );
     }
-    if (!revision.targets.includes(target)) {
-      throw new ContentProjectError(
-        "outline-not-supported",
-        `The Project revision does not select the ${target} target.`,
-      );
-    }
+    return brief;
+  }
+
+  private outlineProviderFor(target: ContentProjectTarget): PlatformOutlineProvider {
     const provider = this.deps.outlineProviders.find((candidate) => candidate.target === target);
     if (!provider) {
       throw new ContentProjectError(
@@ -842,9 +826,28 @@ export class WorkspaceContentProjects {
         `No Platform Outline provider is configured for the ${target} target.`,
       );
     }
+    return provider;
+  }
+
+  private plannedOutlineGeneration(
+    revision: ContentProjectRevision,
+    target: ContentProjectTarget,
+  ): {
+    brief: OutlineBrief;
+    provider: PlatformOutlineProvider;
+    version: number;
+    approvedEvidenceIds: Set<string>;
+  } {
+    const brief = this.plannedBrief(revision);
+    if (!revision.targets.includes(target)) {
+      throw new ContentProjectError(
+        "outline-not-supported",
+        `The Project revision does not select the ${target} target.`,
+      );
+    }
     return {
       brief,
-      provider,
+      provider: this.outlineProviderFor(target),
       version: revision.platformOutlines.filter((outline) => outline.target === target).length + 1,
       approvedEvidenceIds: new Set(brief.evidenceMap.flatMap((entry) => entry.sourceItemIds)),
     };
@@ -861,31 +864,10 @@ export class WorkspaceContentProjects {
     providers: Map<ContentProjectTarget, PlatformOutlineProvider>;
     pending: ContentProjectTarget[];
   } {
-    const missing = this.missingGates(revision);
-    if (missing.length > 0) {
-      throw new ContentProjectError(
-        "outline-generation-blocked",
-        `Platform Outline generation needs these gates first: ${missing.join(", ")}.`,
-        missing,
-      );
-    }
-    const brief = latestApprovedOutlineBrief(revision);
-    if (!brief) {
-      throw new ContentProjectError(
-        "outline-generation-blocked",
-        "Only an approved immutable Outline Brief can start Platform Outline generation.",
-      );
-    }
+    const brief = this.plannedBrief(revision);
     const providers = new Map<ContentProjectTarget, PlatformOutlineProvider>();
     for (const target of brief.targets) {
-      const provider = this.deps.outlineProviders.find((candidate) => candidate.target === target);
-      if (!provider) {
-        throw new ContentProjectError(
-          "outline-not-supported",
-          `No Platform Outline provider is configured for the ${target} target.`,
-        );
-      }
-      providers.set(target, provider);
+      providers.set(target, this.outlineProviderFor(target));
     }
     const pending = brief.targets.filter(
       (target) =>
@@ -1181,6 +1163,18 @@ function currentRevision(project: ContentProject): ContentProjectRevision {
   return revision;
 }
 
+/**
+ * The one refusal both Outline generation paths share when a Project has no
+ * frozen evidence to prompt with.
+ */
+function frozenEvidenceRequired(): ContentProjectError {
+  return new ContentProjectError(
+    "outline-generation-blocked",
+    "Platform Outline generation needs frozen evidence.",
+    ["evidence-review"],
+  );
+}
+
 function latestApproved<T>(
   items: readonly T[],
   approvedIds: ReadonlySet<string>,
@@ -1244,33 +1238,39 @@ async function runBounded<T, R>(
   bound: number,
   worker: (item: T) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
-  const results = Array.from<unknown, PromiseSettledResult<R>>({ length: items.length }, () => ({
-    status: "rejected",
-    reason: new Error("unsettled"),
-  }));
+  /* Each lane claims one index at a time and always settles the one it
+     claimed, so every index is written exactly once before this resolves. */
+  const settled = new Map<number, PromiseSettledResult<R>>();
   let next = 0;
   const lanes = Array.from({ length: Math.min(bound, items.length) }, async () => {
     while (next < items.length) {
       const index = next++;
       try {
-        results[index] = { status: "fulfilled", value: await worker(items[index]!) };
+        const value = await worker(items[index]!);
+        settled.set(index, { status: "fulfilled", value });
       } catch (error) {
-        results[index] = { status: "rejected", reason: error };
+        settled.set(index, { status: "rejected", reason: error });
       }
     }
   });
   await Promise.all(lanes);
-  return results;
+  return items.map((_, index) => settled.get(index)!);
 }
 
+/**
+ * A set path failure is either a provider that never answered in the
+ * Outline's Result Shape, or an answer the Content Project refused as a
+ * provider-contract violation. Any other Content Project code a provider
+ * adapter might raise is not a result-shape fact, so it reports as
+ * `provider-failed` with its message intact.
+ */
 function outlineSetFailure(target: ContentProjectTarget, error: unknown): OutlineSetFailure {
-  return error instanceof ContentProjectError
-    ? { target, code: error.code, message: error.message }
-    : {
-        target,
-        code: "provider-failed",
-        message: error instanceof Error ? error.message : String(error),
-      };
+  const code =
+    error instanceof ContentProjectError && error.code === "invalid-provider-result"
+      ? "invalid-provider-result"
+      : "provider-failed";
+  const message = error instanceof Error ? error.message : String(error);
+  return { target, code, message };
 }
 
 function providerText(value: string, label: string): string {

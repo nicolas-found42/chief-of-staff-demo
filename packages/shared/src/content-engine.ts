@@ -6,12 +6,10 @@ import type { AdapterDiagnostic, SourceItem } from "./source-items.js";
  * The versioned catalog of approved publication targets (spec #117 "Target
  * catalog"). Each entry is one platform/format contract: what its structured
  * Platform Outline plan contains and what its optional Content Engine Draft
- * produces. Changing the catalog changes the Outline Set contract, so the
- * whole catalog is versioned together and `CONTENT_PROJECT_TARGETS` is
- * derived from it — the target union and the catalog cannot drift apart.
+ * produces. Changing the catalog changes the Outline Set contract, so every
+ * entry carries its own contractVersion and `CONTENT_PROJECT_TARGETS` is
+ * derived from the catalog — the target union and the catalog cannot drift.
  */
-export const CONTENT_TARGET_CATALOG_VERSION = 1;
-
 export const CONTENT_TARGET_CATALOG = [
   {
     target: "linkedin-standard-post",
@@ -467,10 +465,17 @@ export interface ContentEngineDraft {
 // Outline Sets (issue #132; spec #117 generation and revision rules 4-5)
 // ---------------------------------------------------------------------------
 
-/** Why one selected target produced no Platform Outline in one set generation. */
+/**
+ * Why one selected target produced no Platform Outline in one set generation.
+ * The set path emits exactly these: a provider that never answered in the
+ * Outline's Result Shape (`provider-failed`), or an answer the Content
+ * Project refused as a provider-contract violation (`invalid-provider-result`).
+ */
+export type OutlineSetFailureCode = "provider-failed" | "invalid-provider-result";
+
 export interface OutlineSetFailure {
   target: ContentProjectTarget;
-  code: string;
+  code: OutlineSetFailureCode;
   message: string;
 }
 
