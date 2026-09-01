@@ -11,7 +11,7 @@ import type { CompleteJson } from "../llm/providers.js";
 import { parseResultShape } from "../llm/failure.js";
 
 /** The catalog entry one target's generation adapter is bound to. */
-function targetContract(target: ContentProjectTarget) {
+function targetCatalogEntry(target: ContentProjectTarget) {
   return CONTENT_TARGET_CATALOG.find((entry) => entry.target === target)!;
 }
 
@@ -148,7 +148,7 @@ export function createModelOutlineProvider(
   getCompleteJson: () => CompleteJson,
   target: ContentProjectTarget,
 ): PlatformOutlineProvider {
-  const contract = targetContract(target);
+  const contract = targetCatalogEntry(target);
   return {
     target,
     async generate(request) {
