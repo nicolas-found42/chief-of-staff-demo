@@ -429,9 +429,24 @@ test("Content Scout goes from bounded Brand Profile scan to a started Content Pr
   await page.getByRole("button", { name: "Approve source" }).click();
   await expect(page.getByRole("cell", { name: "Example Research", exact: false })).toBeVisible();
 
-  await page.getByRole("button", { name: "Scout now" }).click();
-  await expect(page.getByText("The ranked shortlist is ready for your decision.")).toBeVisible();
-  await page.getByRole("button", { name: "Shortlist" }).click();
+  /* The Run this journey creates is asserted by id: earlier journeys leave
+     content-scout state behind, so global shortlist/run patterns do not hold. */
+  const scoutStarted = await page.request.post("/api/content-scout/run");
+  expect(scoutStarted.ok()).toBe(true);
+  const { runId } = (await scoutStarted.json()) as { runId: string };
+  await expect
+    .poll(async () => {
+      const state = (await (await page.request.get("/api/content-scout")).json()) as {
+        shortlist: { runId: string; opportunities: { state: string }[] } | null;
+      };
+      return (
+        state.shortlist?.runId === runId &&
+        state.shortlist.opportunities.some((opportunity) => opportunity.state === "ready")
+      );
+    })
+    .toBe(true);
+  /* Shortlist is the default view on /content-scout. */
+  await page.goto("/content-scout");
   await expect(page.getByText("Explain what the verified change means in practice")).toBeVisible();
   await page.getByRole("checkbox", { name: /Explain what the verified change/ }).check();
   /* Selecting an Opportunity starts one governed Content Project — with the
@@ -448,17 +463,27 @@ test("Content Scout goes from bounded Brand Profile scan to a started Content Pr
   ).toBeVisible();
   const projectCard = page.getByRole("heading", { name: "Projects started" });
   await expect(projectCard).toBeVisible();
-  await expect(page.locator("code", { hasText: /^project_/ })).toBeVisible();
+  const projectBadge = page.locator("code", { hasText: /^project_/ });
+  await expect(projectBadge).toBeVisible();
+  const projectId = await projectBadge.textContent();
+  expect(projectId).toMatch(/^project_/);
 
-  const runs = await page.request.get("/api/runs?module=content-scout");
-  expect(runs.ok()).toBe(true);
-  const body = (await runs.json()) as { runs: { intake: string; status: string }[] };
-  expect(body.runs).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ intake: "brand-profile-scan", status: "done" }),
-      expect.objectContaining({ intake: "daily-intake", status: "blocked" }),
-    ]),
-  );
+  /* Contract, asserted on this journey's own Run by id: the selection started
+     exactly one governed Content Project carrying the Opportunity, and the Run
+     holds no pack or Notion residue. The Run itself ends done when no Ready
+     opportunity remains and blocked otherwise — either is contract-true. */
+  const detail = (await await page.request.get(`/api/runs/${runId}`).then((r) => r.json())) as {
+    status: string;
+    result: {
+      projects: { opportunityId: string; projectId: string; created: boolean }[];
+    } | null;
+    files: string[];
+  };
+  expect(["done", "blocked"]).toContain(detail.status);
+  expect(detail.result?.projects).toEqual([
+    { opportunityId: expect.any(String), projectId, created: true },
+  ]);
+  expect(detail.files.filter((file) => /notion|^draft-/i.test(file))).toEqual([]);
 });
 
 test("Content Research presents YouTube Trends, and the trends page refuses a bad paste while you are looking at it", async ({
