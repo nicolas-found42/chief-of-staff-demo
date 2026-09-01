@@ -244,10 +244,6 @@ export const api = {
     request<{ spreadsheet: { id: string; url: string } }>("/api/youtube/spreadsheet", {
       method: "POST",
     }),
-  ideaEngineIdeas: () =>
-    request<import("@chief-of-staff-demo/shared").IdeaEngineIndex>("/api/idea-engine/ideas"),
-  ideaEngineBackfill: () =>
-    request<{ created: number; skipped: number }>("/api/idea-engine/backfill", { method: "POST" }),
   contentScout: () => request<ContentScoutState>("/api/content-scout"),
   saveBrandProfile: (input: {
     markdown: string;

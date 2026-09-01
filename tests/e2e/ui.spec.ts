@@ -254,7 +254,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
-  await expect(tiles).toHaveCount(7);
+  await expect(tiles).toHaveCount(6);
   await expect(tiles.filter({ hasText: "Content Scout" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Meeting Brief Generator" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Meeting Debrief" })).not.toContainText("Planned");
@@ -263,7 +263,6 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   for (const [label, path] of [
     ["Transcript → Tasks", "/transcript"],
     ["YouTube Trends", "/content-research/trends"],
-    ["Idea Engine", "/idea-engine"],
     ["Content Scout", "/content-scout"],
     ["Meeting Brief Generator", "/meetings/brief"],
     ["Content Research", "/content-research"],
@@ -277,7 +276,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   const tabs = page.locator('.app-header nav[aria-label="Modules"] a');
   // Meeting Debrief is its own Module tab (#139); YouTube Trends is not a
   // tab — Content Research's page carries it (#135).
-  await expect(tabs).toHaveCount(6);
+  await expect(tabs).toHaveCount(5);
   await expect(tabs.filter({ hasText: "YouTube Trends" })).toHaveCount(0);
   await expect(tabs.filter({ hasText: "Content Research" })).toHaveCount(1);
 

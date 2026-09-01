@@ -67,13 +67,6 @@ const MODULES: ModuleDescriptor[] = [
        a permanent "we will design this later". */
   },
   {
-    id: "idea-engine",
-    path: "/idea-engine",
-    label: "Idea Engine",
-    description: "Meeting transcripts become Content Ideas for publishing.",
-    status: "live",
-  },
-  {
     id: "content-scout",
     path: "/content-scout",
     label: "Content Scout",

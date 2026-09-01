@@ -80,6 +80,12 @@ export const ConfigSchema = z.strictObject({
           spreadsheetUrl: z.string().default(""),
         })
         .default({ channels: [], spreadsheetId: "", spreadsheetUrl: "" }),
+      /* Idea Engine is retired (issue #142): no route, Run, poller or Sheet
+         path reads this any more. The key itself stays until the one-time
+         migration (#144) deletes it — `modules` is a strict object, so
+         removing it here would make every pre-cutover config.json
+         unparseable, and the migration's own inventory classifies these
+         exact paths in order to delete them. */
       "idea-engine": z
         .strictObject({
           /** The existing All RA Content Ideas spreadsheet; "" until configured. */

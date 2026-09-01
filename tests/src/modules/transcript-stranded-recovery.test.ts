@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import {
-  hasSeenForModule,
-  rememberSeenForModule,
+  hasSeenDriveFile,
+  rememberSeenDriveFile,
   reclaimStrandedDriveRun,
 } from "../../../apps/server/src/state";
 import { TRANSCRIPT_MODULE_ID } from "../../../apps/server/src/modules/transcript/module";
@@ -37,8 +37,8 @@ describe("a Drive Run stranded before convert must not lose the transcript", () 
       externalId,
       sourceUrl: "https://drive.google.com/file/d/drive-file-1/view",
     });
-    rememberSeenForModule(stateFile, TRANSCRIPT_MODULE_ID, externalId);
-    expect(hasSeenForModule(stateFile, TRANSCRIPT_MODULE_ID, externalId)).toBe(true);
+    rememberSeenDriveFile(stateFile, externalId);
+    expect(hasSeenDriveFile(stateFile, externalId)).toBe(true);
     expect(run.read().status).toBe("pending");
 
     const reclaimed = reclaimStrandedDriveRun({
@@ -50,7 +50,7 @@ describe("a Drive Run stranded before convert must not lose the transcript", () 
 
     expect(reclaimed).toBe(1);
     // The file is forgotten, so the next poll re-queues it and nothing is lost.
-    expect(hasSeenForModule(stateFile, TRANSCRIPT_MODULE_ID, externalId)).toBe(false);
+    expect(hasSeenDriveFile(stateFile, externalId)).toBe(false);
     // And the dead Run is visibly failed rather than pending forever.
     expect(runs.open(run.id)!.read().status).toBe("failed");
   });
@@ -66,7 +66,7 @@ describe("a Drive Run stranded before convert must not lose the transcript", () 
       sourceUrl: "https://drive.google.com/file/d/drive-file-2/view",
     });
     run.writeArtifact("transcript.txt", "already converted\n");
-    rememberSeenForModule(stateFile, TRANSCRIPT_MODULE_ID, externalId);
+    rememberSeenDriveFile(stateFile, externalId);
 
     const reclaimed = reclaimStrandedDriveRun({
       runs,
@@ -76,7 +76,7 @@ describe("a Drive Run stranded before convert must not lose the transcript", () 
     });
 
     expect(reclaimed).toBe(0);
-    expect(hasSeenForModule(stateFile, TRANSCRIPT_MODULE_ID, externalId)).toBe(true);
+    expect(hasSeenDriveFile(stateFile, externalId)).toBe(true);
     expect(runs.open(run.id)!.read().status).toBe("pending");
   });
 });

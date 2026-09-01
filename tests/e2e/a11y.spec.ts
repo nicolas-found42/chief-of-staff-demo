@@ -10,7 +10,6 @@ const ROUTES = [
   "/transcript",
   "/runs",
   "/content-research/trends",
-  "/idea-engine",
   "/content-scout",
   "/meetings",
   "/meetings/brief",
@@ -456,7 +455,6 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
   for (const name of [
     "Found42 — Chief of Staff",
     "Transcript → Tasks",
-    "Idea Engine",
     "Content Scout",
     "Meeting Brief Generator",
     "Meeting Debrief",

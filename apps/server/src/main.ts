@@ -20,7 +20,6 @@ import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
 import { TranscriptHost } from "./modules/transcript/host.js";
 import { YoutubeHost } from "./modules/youtube/host.js";
-import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
 import { MeetingBriefHost } from "./modules/meeting-brief-generator/host.js";
 import { createMeetingBriefProductionRuntime } from "./modules/meeting-brief-generator/production.js";
@@ -187,15 +186,6 @@ const youtube = new YoutubeHost({
   port,
   google: googleConnection,
   log: (message) => console.log(`[youtube-trends] ${message}`),
-});
-
-const ideaEngine = new IdeaEngineHost({
-  runs,
-  configStore,
-  workspaceDir,
-  port,
-  google: googleConnection,
-  log: (message) => console.log(`[idea-engine] ${message}`),
 });
 
 const contentScoutCompleteJson = () => {
@@ -437,7 +427,6 @@ const meetingDebrief: MeetingDebriefHost =
 const modules: HostedModule[] = [
   transcript,
   youtube,
-  ideaEngine,
   contentScout,
   contentResearch,
   meetingBrief,

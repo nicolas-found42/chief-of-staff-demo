@@ -2,7 +2,6 @@ export * from "./schemas.js";
 export * from "./conversion.js";
 export * from "./transcript.js";
 export * from "./youtube.js";
-export * from "./idea-engine.js";
 export * from "./source-items.js";
 export * from "./content-scout.js";
 export * from "./meeting-brief.js";

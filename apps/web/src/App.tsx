@@ -4,7 +4,6 @@ import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
 import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
-import { IdeaEnginePage } from "./pages/IdeaEnginePage";
 import { MeetingsOverviewPage } from "./pages/MeetingsOverviewPage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
 import { MeetingDebriefDetailPage } from "./pages/MeetingDebriefDetailPage";
@@ -89,7 +88,6 @@ export function App() {
           {/* YouTube Trends is presented under Content Research (spec:
               /content-research/trends); the legacy top-level route is gone. */}
           <Route path="/content-research/trends" element={<YoutubePage />} />
-          <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
           1:{" "}
           {/* Meeting Wizard (ADR-0043): Overview plus the sibling Brief
