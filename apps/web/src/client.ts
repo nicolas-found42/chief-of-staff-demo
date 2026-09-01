@@ -24,7 +24,11 @@ import type {
   SourceCanaryHealth,
   SourceCanaryReceipt,
   PersonProfile,
+  PersonProfileCorrectionInput,
   PersonProfileCreateInput,
+  PersonProfileDetachInput,
+  PersonProfileInvalidation,
+  PersonProfileMergeInput,
   PersonProfileProjection,
   PersonProfileProjectionPurpose,
   SourceCapability,
@@ -547,7 +551,34 @@ export const api = {
       `/api/people/${encodeURIComponent(profileId)}/projection?${params.toString()}`,
     );
   },
+  // --- Identity repair (ticket #121): correction, merge, detach, invalidations.
+  correctPersonProfile: (profileId: string, input: PersonProfileCorrectionInput) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/corrections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  mergePersonProfile: (profileId: string, input: PersonProfileMergeInput) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/merges`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  detachPersonEvidence: (profileId: string, input: PersonProfileDetachInput) =>
+    request<{ from: PersonProfile; to: PersonProfile | null }>(
+      `/api/people/${encodeURIComponent(profileId)}/detachments`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  personProfileInvalidations: (profileId: string) =>
+    request<PersonProfileInvalidation[]>(
+      `/api/people/${encodeURIComponent(profileId)}/invalidations`,
+    ),
 };
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

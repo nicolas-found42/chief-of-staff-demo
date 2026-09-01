@@ -1,6 +1,9 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
+  PersonProfileCorrectionInput,
   PersonProfileCreateInput,
+  PersonProfileDetachInput,
+  PersonProfileMergeInput,
   PersonProfileProjectionPurpose,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -125,4 +128,67 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
     }
     return projection;
   });
+
+  /**
+   * Identity repair (ticket #121): an ordinary factual correction appends a
+   * revision; the superseded snapshot stays readable and the correction is
+   * filed as an audited invalidation of the revision it superseded.
+   */
+  app.post("/api/people/:profileId/corrections", async (request: FastifyRequest, reply) => {
+    try {
+      const input = (request.body ?? {}) as PersonProfileCorrectionInput;
+      const { profileId } = request.params as { profileId: string };
+      return people.correct(profileId, input);
+    } catch (error) {
+      return repairFailure(reply, error);
+    }
+  });
+  /** Identity repair (ticket #121): merge a duplicate Profile away into this
+      one through an audited decision; conflicting facts must be resolved. */
+  app.post("/api/people/:profileId/merges", async (request: FastifyRequest, reply) => {
+    try {
+      const input = (request.body ?? {}) as PersonProfileMergeInput;
+      const { profileId } = request.params as { profileId: string };
+      return people.merge(profileId, input);
+    } catch (error) {
+      return repairFailure(reply, error);
+    }
+  });
+
+  /** Identity repair (ticket #121): detach one evidence record, optionally
+      splitting it onto the correct Profile. */
+  app.post("/api/people/:profileId/detachments", async (request: FastifyRequest, reply) => {
+    try {
+      const input = (request.body ?? {}) as PersonProfileDetachInput;
+      const { profileId } = request.params as { profileId: string };
+      return people.detachEvidence(profileId, input);
+    } catch (error) {
+      return repairFailure(reply, error);
+    }
+  });
+
+  /** The Profile's append-only invalidation log: consumers poll it to know
+      when the projections and derived claims they hold need explicit refresh. */
+  app.get("/api/people/:profileId/invalidations", async (request: FastifyRequest, reply) => {
+    const { profileId } = request.params as { profileId: string };
+    if (!people.get(profileId)) {
+      reply.code(404);
+      return { error: "profile-not-found", message: "No Person Profile with that id." };
+    }
+    return people.invalidations(profileId);
+  });
+}
+
+/** Typed failure classification for identity repair routes: 404 for unknown
+    resources, 400 for a named decision problem. */
+function repairFailure(reply: FastifyReply, error: unknown): void {
+  if (error instanceof PersonProfileValidationError) {
+    reply.code(
+      error.code === "profile-not-found" || error.code === "evidence-not-found" ? 404 : 400,
+    );
+    reply.header("content-type", "application/json; charset=utf-8");
+    reply.send({ error: error.code, message: error.message });
+    return;
+  }
+  throw error;
 }
