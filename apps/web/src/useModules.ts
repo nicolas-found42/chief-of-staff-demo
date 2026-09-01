@@ -83,6 +83,14 @@ const MODULES: ModuleDescriptor[] = [
     resultView: MeetingBriefResultView,
   },
   {
+    id: "meeting-debrief",
+    path: "/meeting-debrief",
+    label: "Meeting Debrief",
+    description:
+      "Every mined transcript gets a retrospective — decisions, action items, open questions, and coaching — waiting for review.",
+    status: "live",
+  },
+  {
     id: "content-research",
     path: "/content-research",
     label: "Content Research",
