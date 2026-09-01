@@ -709,7 +709,19 @@ export function extractMentions(
     };
   });
 
-  applyModelSupplement(record, lines, mentions, organizations, supplement);
+  const idRewrites = applyModelSupplement(record, lines, mentions, organizations, supplement);
+  /* A supplement reclassification of an existing span rewrites its mention id;
+     the organization links captured before that pass must follow the rewrite
+     (or die with the old id) so they never reference a nonexistent mention. */
+  if (idRewrites.size > 0) {
+    const liveIds = new Set(mentions.map((mention) => mention.id));
+    for (const organization of organizations) {
+      organization.relatedMentionIds = organization.relatedMentionIds.flatMap((id) => {
+        const mapped = idRewrites.get(id) ?? id;
+        return liveIds.has(mapped) ? [mapped] : [];
+      });
+    }
+  }
   linkAssertedOrganizationContext(mentions, organizations);
   for (const mention of mentions) {
     const forms = new Set(
@@ -796,14 +808,16 @@ function contextFor(
 
 /** Merge strict model classifications into deterministic recognition. The
  * deterministic spans remain the floor; a valid model span may supplement or
- * add evidence, but never invent text outside the immutable artifact. */
+ * add evidence, but never invent text outside the immutable artifact. Returns
+ * every mention id the supplement rewrote, so dependent references can follow. */
 function applyModelSupplement(
   record: TranscriptRecord,
   lines: ExtractedLine[],
   mentions: TranscriptMention[],
   organizations: OrganizationMention[],
   supplement: TranscriptIdentityExtractionResult,
-): void {
+): Map<string, string> {
+  const idRewrites = new Map<string, string>();
   for (const extracted of supplement.mentions) {
     const surfaceText = checkedSurface(record, extracted.spanStart, extracted.spanEnd);
     const existing = mentions.find(
@@ -820,12 +834,14 @@ function applyModelSupplement(
       relationshipAssertions: assertionsOf(extracted.relationshipAssertions),
     };
     if (existing) {
-      existing.id = mentionId(
+      const rewritten = mentionId(
         record.id,
         extracted.spanStart,
         existing.normalizedForms[0] ?? normalizedForms[0] ?? "",
         extracted.kind,
       );
+      if (rewritten !== existing.id) idRewrites.set(existing.id, rewritten);
+      existing.id = rewritten;
       existing.kind = extracted.kind;
       existing.confidence = extracted.confidence;
       Object.assign(existing, evidence);
@@ -905,4 +921,5 @@ function applyModelSupplement(
       algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
     });
   }
+  return idRewrites;
 }

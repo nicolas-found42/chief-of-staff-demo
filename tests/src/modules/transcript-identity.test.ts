@@ -739,6 +739,44 @@ describe("deterministic mention extraction", () => {
     expect(acme!.relatedMentionIds).toContain(alan.id);
   });
 
+  it("remaps organization links when the strict model reclassifies a related span", async () => {
+    const body = "Alan Turing from Acme Corp joined the review.";
+    const alanStart = body.indexOf("Alan Turing");
+    const supplement: TranscriptIdentityExtractionResult = {
+      version: 1,
+      mentions: [
+        {
+          spanStart: alanStart,
+          spanEnd: alanStart + "Alan Turing".length,
+          kind: "unknown",
+          confidence: "high",
+          titles: [],
+          roles: [],
+          aliases: [],
+          relationshipAssertions: [],
+        },
+      ],
+      organizations: [],
+    };
+    const { mentions, organizations } = extractMentionsWithModel(
+      makeRecord(body, "drive_reclass_r1"),
+      supplement,
+    );
+    const acme = organizations.find((o) => o.normalizedName === "acme corp")!;
+    expect(acme).toBeDefined();
+    // The supplement reclassified "Alan Turing" from person to unknown, which
+    // gives the span a new mention id; the organization must never reference
+    // a nonexistent mention.
+    const mentionIds = new Set(mentions.map((mention) => mention.id));
+    expect(acme.relatedMentionIds.length).toBeGreaterThan(0);
+    expect(acme.relatedMentionIds.every((id) => mentionIds.has(id))).toBe(true);
+    const reclassified = mentions.find(
+      (m) => m.provenance.spanStart === alanStart && m.kind === "unknown",
+    );
+    expect(reclassified).toBeDefined();
+    expect(acme.relatedMentionIds).toContain(reclassified!.id);
+  });
+
   it("retains organizations named without a related person", async () => {
     const { mentions, organizations } = extractMentions(
       makeRecord("[00:01] Sam: We reviewed the proposal with OpenAI."),
