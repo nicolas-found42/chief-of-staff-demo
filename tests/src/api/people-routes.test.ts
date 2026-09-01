@@ -169,10 +169,22 @@ describe("/api/people/:profileId lifecycle", () => {
     });
     expect(archived.statusCode).toBe(200);
     expect(archived.json()).toMatchObject({ archivedAt: "2026-08-31T16:00:00.000Z" });
-    const unavailable = await app.inject({
-      url: `/api/people/${created.id}/projection?purpose=public-safe`,
+    for (const purpose of ["public-safe", "meeting"] as const) {
+      const unavailable = await app.inject({
+        url: `/api/people/${created.id}/projection?purpose=${purpose}`,
+      });
+      expect(unavailable.statusCode).toBe(404);
+    }
+    const archivedPreview = await app.inject({ url: `/api/people/${created.id}/lifecycle` });
+    expect(archivedPreview.statusCode).toBe(200);
+    expect(archivedPreview.json()).toMatchObject({
+      profileId: created.id,
+      archivedAt: "2026-08-31T16:00:00.000Z",
     });
-    expect(unavailable.statusCode).toBe(404);
+    const hidden = await app.inject({ url: "/api/people" });
+    expect(hidden.json<PersonProfile[]>()).toEqual([]);
+    const disclosed = await app.inject({ url: "/api/people?includeArchived=true" });
+    expect(disclosed.json<PersonProfile[]>()).toHaveLength(1);
 
     const restored = await app.inject({
       method: "POST",
@@ -180,6 +192,14 @@ describe("/api/people/:profileId lifecycle", () => {
     });
     expect(restored.statusCode).toBe(200);
     expect(restored.json()).toMatchObject({ archivedAt: null });
+    const availableAgain = await app.inject({
+      url: `/api/people/${created.id}/projection?purpose=public-safe`,
+    });
+    expect(availableAgain.statusCode).toBe(200);
+    expect(availableAgain.json()).toMatchObject({ profileRevision: created.revision });
+
+    const listedAgain = await app.inject({ url: "/api/people" });
+    expect(listedAgain.json<PersonProfile[]>()).toHaveLength(1);
   });
 
   it("refuses archive and privacy deletion while a dependent configuration is active, naming its actions", async () => {
@@ -260,6 +280,33 @@ describe("/api/people/:profileId lifecycle", () => {
     });
     /* The tombstone keeps the reference resolvable; it names nobody. */
     expect(JSON.stringify(gone.json().tombstone)).not.toContain("Grace");
+  });
+
+  it("performs no remote provider operation while archiving or privacy-deleting", async () => {
+    const created = await createGrace();
+    const realFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      calls.push(input instanceof Request ? input.url : input.toString());
+      return Promise.reject(new Error("no remote provider is reachable from a Profile operation"));
+    };
+    try {
+      const archived = await app.inject({
+        method: "POST",
+        url: `/api/people/${created.id}/archive`,
+      });
+      expect(archived.statusCode).toBe(200);
+      const deleted = await app.inject({
+        method: "POST",
+        url: `/api/people/${created.id}/privacy-delete`,
+        payload: { confirmation: "DELETE PROFILE" },
+      });
+      expect(deleted.statusCode).toBe(200);
+      expect(deleted.json()).toMatchObject({ remoteProviderOperations: 0 });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(calls).toEqual([]);
   });
 });
 
