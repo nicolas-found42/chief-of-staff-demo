@@ -292,17 +292,18 @@ describe("identity repair routes", () => {
 
   it("POST /:profileId/merges classifies unresolved fact conflicts", async () => {
     const survivor = await createGrace();
-    await app.inject({
+    const duplicate = await app.inject({
       method: "POST",
       url: "/api/people",
-      payload: { fullName: "Grace Hopper", role: "Rear Admiral" },
+      payload: { fullName: "Grace Brewster Hopper", role: "Rear Admiral" },
     });
     const response = await app.inject({
       method: "POST",
       url: `/api/people/${survivor.id}/merges`,
-      payload: { duplicateId: "person_unknown" },
+      payload: { duplicateId: duplicate.json<PersonProfile>().id },
     });
-    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "merge-conflict" });
   });
 
   it("POST /:profileId/detachments splits wrongly attached evidence to the correct Profile", async () => {

@@ -50,17 +50,16 @@ test("person profiles journey — nav → search → create → detail → revis
   await expect(page.getByText("Pioneered compilers.")).toBeVisible();
   await expect(page.getByText("No enrichment diagnostics recorded.")).toBeVisible();
 
-  // The test seam appends a second revision — a factual correction is a later
-  // slice — so the journey can step back to a genuinely historical one.
   const profileId = new URL(page.url()).pathname.split("/").pop()!;
-  const seeded = await page.request.post("/api/test/seed-person-revision", {
-    data: { profileId, role: "Professor of Computer Science" },
-  });
-  expect(seeded.ok()).toBe(true);
-  await page.reload();
+  await page.getByLabel("Role", { exact: true }).last().fill("Professor of Computer Science");
+  await page.getByLabel("What was wrong?").fill("Teaching at Vassar, not serving.");
+  await page.getByRole("button", { name: "Append correction" }).click();
   await expect(
     page.getByRole("definition").filter({ hasText: "Professor of Computer Science" }),
   ).toBeVisible();
+  await expect(page.getByText(/Correction — revision 1 superseded/)).toContainText(
+    "Teaching at Vassar, not serving.",
+  );
   // A direct load of the same URL is the same Profile: the route is the resource.
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Grace Hopper" })).toBeVisible();
@@ -90,7 +89,53 @@ test("person profiles journey — nav → search → create → detail → revis
     page.getByRole("definition").filter({ hasText: "Professor of Computer Science" }),
   ).toBeVisible();
 
-  // 6. The routes the page-wide scans do not walk yet are still axe-clean.
+  // 6. A conflicting duplicate cannot merge until the owner resolves the
+  // named fact; the successful decision preserves a readable redirect.
+  const conflictingResponse = await page.request.post("/api/people", {
+    data: { fullName: "Grace Hopper", role: "Software pioneer" },
+  });
+  expect(conflictingResponse.ok()).toBe(true);
+  const conflictingId = (await conflictingResponse.json()).id as string;
+  await page.getByLabel("Duplicate profile id").fill(conflictingId);
+  await page.getByRole("button", { name: "Merge profile" }).click();
+  await expect(page.getByRole("alert")).toContainText("different role");
+  await page.getByLabel("Resolved role").fill("Professor of Computer Science");
+  await page.getByLabel("Merge note").fill("Duplicate shell for the same person.");
+  await page.getByRole("button", { name: "Merge profile" }).click();
+  await expect(page.getByText(/Merge — revision 2 superseded/)).toContainText(
+    "Duplicate shell for the same person.",
+  );
+  await page.goto(`/people/${conflictingId}`);
+  await expect(page.getByRole("alert")).toContainText("was merged into");
+  await expect(page.getByRole("link", { name: "another Profile" })).toHaveAttribute(
+    "href",
+    `/people/${profileId}`,
+  );
+
+  // 7. Wrong-person evidence can be split to the correct Profile. The old
+  // attribution leaves current fact, remains in history, and is disclosed.
+  const correctResponse = await page.request.post("/api/people", {
+    data: { fullName: "Katherine Johnson" },
+  });
+  expect(correctResponse.ok()).toBe(true);
+  const correctId = (await correctResponse.json()).id as string;
+  const evidenceResponse = await page.request.post("/api/test/seed-person-evidence", {
+    data: { profileId, evidenceId: "ev_wrong_person" },
+  });
+  expect(evidenceResponse.ok()).toBe(true);
+  await page.goto(`/people/${profileId}`);
+  await page.getByLabel("Evidence").selectOption("ev_wrong_person");
+  await page.getByLabel("Move to profile id (optional)").fill(correctId);
+  await page.getByLabel("Detach note").fill("This source describes Katherine, not Grace.");
+  await page.getByRole("button", { name: "Detach evidence" }).click();
+  await expect(page.getByText(/Evidence detached — revision 4 superseded/)).toContainText(
+    "This source describes Katherine, not Grace.",
+  );
+  await expect(page.getByText("Wrong-person evidence")).toHaveCount(0);
+  await page.getByRole("link", { name: correctId }).click();
+  await expect(page.getByRole("cell", { name: "Wrong-person evidence" })).toBeVisible();
+
+  // 8. The routes the page-wide scans do not walk yet are still axe-clean.
   await page.goto("/people/new");
   await scanForViolations(page);
   await page.goto(`/people/${profileId}`);

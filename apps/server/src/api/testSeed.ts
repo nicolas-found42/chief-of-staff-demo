@@ -13,14 +13,14 @@ import type {
 import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 import type { PersonProfileStore } from "../person-profile/store.js";
+import type { PersonEvidence } from "@chief-of-staff-demo/shared";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 
 export interface TestSeedContext {
   startRun: (spec: RunSourceSpec) => Promise<string>;
   createFailedRun: () => string;
-  /** The Workspace Person Profile store, so the journey can append a
-      revision that no product operation creates yet (correction is a later
-      slice) and the browser can step back to an exact historical one. */
+  /** The Workspace Person Profile store, so the journey can arrange sourced
+      evidence before exercising repair through the real product surface. */
   personStore: PersonProfileStore;
 }
 
@@ -80,21 +80,43 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
     }
   });
 
-  app.post("/api/test/seed-person-revision", async (request, reply) => {
-    const { profileId, role } = request.body as { profileId?: string; role?: string };
+  app.post("/api/test/seed-person-evidence", async (request, reply) => {
+    const { profileId, evidenceId } = request.body as {
+      profileId?: string;
+      evidenceId?: string;
+    };
     const profile = profileId ? ctx.personStore.get(profileId) : null;
     if (!profile) {
       reply.code(404);
       return { error: "profile-not-found", message: "No Person Profile with that id." };
     }
+    const evidence: PersonEvidence = {
+      id: evidenceId ?? "ev_wrong_person",
+      source: "public-web",
+      kind: "identity",
+      title: "Wrong-person evidence",
+      summary: "A sourced claim that was attributed to the wrong person.",
+      url: "https://example.com/wrong-person",
+      identitySignals: {
+        emails: [],
+        fullNames: ["Katherine Johnson"],
+        handles: {},
+        profileUrls: [],
+        employerHints: [],
+      },
+      claims: { fullName: "Katherine Johnson" },
+      matchConfidence: "medium",
+      matchedSignals: ["fullName:katherine johnson"],
+      observedAt: "2026-08-31T12:00:00.000Z",
+    };
     const next = {
       ...profile,
       revision: profile.revision + 1,
-      ...(role === undefined ? {} : { role }),
+      evidence: [...profile.evidence, evidence],
     };
     ctx.personStore.save(next);
     reply.code(201);
-    return { revision: next.revision, role: next.role };
+    return { revision: next.revision, evidenceId: evidence.id };
   });
 }
 

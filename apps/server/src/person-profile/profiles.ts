@@ -327,9 +327,10 @@ export class WorkspacePersonProfiles {
       if (choice !== null) return choice;
       return survivor[field] ?? duplicate[field];
     };
-    const primaryEmail = (trimmed(resolutions.primaryEmail)?.toLowerCase() ??
+    const primaryEmail =
+      trimmed(resolutions.primaryEmail)?.toLowerCase() ??
       survivor.primaryEmail ??
-      duplicate.primaryEmail);
+      duplicate.primaryEmail;
     if (primaryEmail !== null && !EMAIL_PATTERN.test(primaryEmail))
       throw new PersonProfileValidationError(
         "invalid-identity-input",
