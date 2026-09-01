@@ -54,6 +54,23 @@ function quoted(value: string): string {
 }
 
 /**
+ * Keep the first entry for every distinct key: a finite plan never carries a
+ * duplicate forward.
+ */
+export function uniqueBy<T>(items: readonly T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const entry = key(item);
+    if (seen.has(entry)) return false;
+    seen.add(entry);
+    return true;
+  });
+}
+
+/** The per-identifier-type cap that keeps the query plan bounded and proportionate. */
+const MAX_QUERIES_PER_IDENTIFIER_TYPE = 2;
+
+/**
  * Every identifier the Workspace holds for the researched person is fair game
  * for an anonymous public query — email included (spec #117). Only the class of
  * each identifier leaves this function; the values go to the providers and are
@@ -64,7 +81,7 @@ function personQueries(profile: PersonProfile, question: string): AttributedQuer
   const emails = [profile.primaryEmail, ...profile.emails].filter(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
-  for (const email of [...new Set(emails)].slice(0, 2)) {
+  for (const email of [...new Set(emails)].slice(0, MAX_QUERIES_PER_IDENTIFIER_TYPE)) {
     queries.push({
       query: quoted(email),
       identifierClass: "email",
@@ -78,21 +95,23 @@ function personQueries(profile: PersonProfile, question: string): AttributedQuer
       purpose: "person-identification",
     });
   }
-  for (const handle of Object.values(profile.handles).flat().slice(0, 2)) {
+  for (const handle of Object.values(profile.handles)
+    .flat()
+    .slice(0, MAX_QUERIES_PER_IDENTIFIER_TYPE)) {
     queries.push({
       query: quoted(handle.replace(/^@/, "")),
       identifierClass: "handle",
       purpose: "person-identification",
     });
   }
-  for (const url of profile.profileUrls.slice(0, 2)) {
+  for (const url of profile.profileUrls.slice(0, MAX_QUERIES_PER_IDENTIFIER_TYPE)) {
     queries.push({
       query: quoted(url),
       identifierClass: "profile-url",
       purpose: "person-identification",
     });
   }
-  for (const employer of profile.employerHints.slice(0, 2)) {
+  for (const employer of profile.employerHints.slice(0, MAX_QUERIES_PER_IDENTIFIER_TYPE)) {
     queries.push({
       query: profile.fullName
         ? `${quoted(profile.fullName)} ${quoted(employer)}`
@@ -126,34 +145,26 @@ function plannedQueries(
     })),
     ...(subjectProfile ? personQueries(subjectProfile, scope.question) : []),
   ];
-  const seen = new Set<string>();
-  return planned
-    .filter((entry) => {
-      if (seen.has(entry.query)) return false;
-      seen.add(entry.query);
-      return true;
-    })
-    .slice(0, limits.maxQueriesPerProvider);
+  return uniqueBy(planned, (entry) => entry.query).slice(0, limits.maxQueriesPerProvider);
 }
-
 function identifierUses(
   queries: AttributedQuery[],
   providerId: string,
   usedAt: string,
 ): ResearchIdentifierUse[] {
-  const uses = new Map<string, ResearchIdentifierUse>();
-  for (const entry of queries) {
-    if (!entry.identifierClass) continue;
-    uses.set(`${entry.identifierClass}\n${entry.purpose}`, {
-      identifierClass: entry.identifierClass,
-      providerId,
-      usedAt,
-      purpose: entry.purpose,
-    });
-  }
-  return [...uses.values()];
+  return uniqueBy(
+    queries.filter(
+      (entry): entry is AttributedQuery & { identifierClass: ResearchIdentifierClass } =>
+        entry.identifierClass !== null,
+    ),
+    (entry) => `${entry.identifierClass}\n${entry.purpose}`,
+  ).map((entry) => ({
+    identifierClass: entry.identifierClass,
+    providerId,
+    usedAt,
+    purpose: entry.purpose,
+  }));
 }
-
 function internalFailureDiagnostic(input: {
   startedAt: string;
   finishedAt: string;
@@ -161,7 +172,7 @@ function internalFailureDiagnostic(input: {
 }): AdapterDiagnostic {
   return {
     classification: "internal_failure",
-    route: PUBLIC_SEARCH_ROUTE,
+    route: "/",
     status: null,
     contentType: null,
     parserStage: "adapter_boundary",
@@ -242,9 +253,10 @@ export async function runFiniteResearch(input: {
   );
 
   const providerOutcomes = collected.map((entry) => entry.outcome);
-  const sourceItems = [
-    ...new Map(collected.flatMap((entry) => entry.items).map((item) => [item.id, item])).values(),
-  ].slice(0, input.limits.maxSourceItems);
+  const sourceItems = uniqueBy(
+    collected.flatMap((entry) => entry.items),
+    (item) => item.id,
+  ).slice(0, input.limits.maxSourceItems);
   const everyProviderSucceeded = providerOutcomes.every((outcome) =>
     isSuccessfulSourceDiagnostic(outcome.diagnostic.classification),
   );
@@ -274,7 +286,7 @@ function itemIdFor(url: string): string {
  */
 export function createPublicSearchResearchProvider(
   search: PublicSearch,
-  now: () => Date = () => new Date(),
+  now: () => Date,
 ): ResearchProvider {
   return {
     id: PUBLIC_WEB_RESEARCH_PROVIDER_ID,
@@ -285,13 +297,10 @@ export function createPublicSearchResearchProvider(
         request.queries.map(async (query) => await search(query)),
       );
       const failures = settled.filter((result) => result.status === "rejected").length;
-      const results = [
-        ...new Map(
-          settled
-            .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-            .map((result) => [result.url, result]),
-        ).values(),
-      ].slice(0, request.maxItems);
+      const results = uniqueBy(
+        settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+        (result) => result.url,
+      ).slice(0, request.maxItems);
       const discoveredAt = now().toISOString();
       const items: SourceItem[] = results.map((result) => ({
         id: itemIdFor(result.url),

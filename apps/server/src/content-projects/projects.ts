@@ -29,7 +29,7 @@ import {
 import type { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
-import { runFiniteResearch, type ResearchProvider } from "./research.js";
+import { runFiniteResearch, uniqueBy, type ResearchProvider } from "./research.js";
 
 interface ContentProjectState {
   projects: ContentProject[];
@@ -367,9 +367,20 @@ export class WorkspaceContentProjects {
     const state = this.readState();
     const project = requireProject(state, projectId);
     let revision = currentRevision(project);
+    /* The owner may have revised the Project while the providers were in
+       flight: the revision this request would land on is re-validated here. */
+    if (revision.researchMode !== "fresh-bounded-research") {
+      throw new ContentProjectError(
+        "research-request-blocked",
+        "Only a fresh-bounded-research Project revision may start a Research Request.",
+        ["research-mode"],
+      );
+    }
+    const carriedReview = revision.evidenceReview;
     if (
       revision.researchRequest !== null ||
       revision.frozenEvidence !== null ||
+      revision.evidenceReview !== null ||
       revision.outlineBriefs.length > 0 ||
       revision.outlineBriefApprovals.length > 0
     ) {
@@ -386,10 +397,18 @@ export class WorkspaceContentProjects {
       ...result,
     };
     revision.researchRequest = clone(request);
+    /* Evidence the owner attached before the request runs stays in the review,
+       now alongside the research results the owner must vet. */
     revision.evidenceReview = {
       attachedAt: this.now().toISOString(),
-      sourceItems: clone(request.sourceItems),
-      diagnostics: request.providerOutcomes.map((outcome) => clone(outcome.diagnostic)),
+      sourceItems: uniqueBy(
+        [...(carriedReview?.sourceItems ?? []), ...clone(request.sourceItems)],
+        (item) => item.id,
+      ),
+      diagnostics: [
+        ...(carriedReview?.diagnostics ?? []),
+        ...request.providerOutcomes.map((outcome) => clone(outcome.diagnostic)),
+      ],
     };
     this.touch(project);
     this.writeState(state);

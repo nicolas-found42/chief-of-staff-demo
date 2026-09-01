@@ -57,7 +57,9 @@ function diagnostic(patch: Partial<AdapterDiagnostic>): AdapterDiagnostic {
 /** A finite research provider that records every bounded request it was given. */
 function recordingProvider(
   id: string,
-  respond: (request: ResearchProviderRequest) => ResearchProviderResult,
+  respond: (
+    request: ResearchProviderRequest,
+  ) => ResearchProviderResult | Promise<ResearchProviderResult>,
 ): ResearchProvider & { requests: ResearchProviderRequest[] } {
   const requests: ResearchProviderRequest[] = [];
   return {
@@ -334,16 +336,16 @@ describe("Content Project Research Requests", () => {
   });
 
   it("turns a thrown provider into a classified failure instead of evidence", async () => {
-    const web = recordingProvider("public-web", () => {
+    const archive = recordingProvider("press-archive", () => {
       throw new Error("the provider exploded");
     });
-    const { projects } = setup([web]);
+    const { projects } = setup([archive]);
     const project = topicProject(projects);
 
     const request = await projects.runResearchRequest(project.id, {
       question: "bounded research policy",
       terms: [],
-      bundle: { providerIds: ["public-web"], completeness: "all-providers" },
+      bundle: { providerIds: ["press-archive"], completeness: "all-providers" },
       limits: { maxQueriesPerProvider: 3, maxSourceItems: 10 },
     });
 
@@ -354,6 +356,11 @@ describe("Content Project Research Requests", () => {
       classification: "internal_failure",
       parserStage: "adapter_boundary",
     });
+    // An unknown origin stays unknown: an internal failure never claims the
+    // public search seam's route for a provider that never used it.
+    expect(request.providerOutcomes[0]?.diagnostic.route).toMatch(
+      /^\[redacted-route;sha256:[0-9a-f]{64}\]$/,
+    );
   });
 
   it("lets the owner include or exclude the actual returned evidence before freezing it", async () => {
@@ -591,5 +598,81 @@ describe("Content Project Research Requests", () => {
       ],
       completeness: { title: "available", description: "available", body: "unsupported" },
     });
+  });
+
+  it("keeps owner-attached evidence when a Research Request runs on the same revision", async () => {
+    const web = recordingProvider("public-web", () => ({
+      items: [publicItem("web_1")],
+      diagnostic: diagnostic({}),
+    }));
+    const { projects } = setup([web]);
+    const project = topicProject(projects);
+    projects.attachEvidence(project.id, {
+      sourceItems: [publicItem("owner_1")],
+      diagnostics: [diagnostic({ route: "https://workspace.example/source" })],
+    });
+
+    const request = await projects.runResearchRequest(project.id, {
+      question: "bounded research policy",
+      terms: [],
+      bundle: { providerIds: ["public-web"], completeness: "best-effort" },
+      limits: { maxQueriesPerProvider: 3, maxSourceItems: 10 },
+    });
+
+    // The Research Request lands on a new revision; the owner's attachment is
+    // left exactly as it was.
+    expect(request.projectRevision).toBe(2);
+    const revisions = projects.get(project.id)!.revisions;
+    expect(revisions[0]?.evidenceReview?.sourceItems.map((item) => item.id)).toEqual(["owner_1"]);
+    // The fresh revision reviews the attached Source Items alongside the
+    // research results, so the owner can freeze both together.
+    expect(revisions[1]?.researchRequest?.id).toBe(request.id);
+    expect(revisions[1]?.evidenceReview?.sourceItems.map((item) => item.id)).toEqual([
+      "owner_1",
+      "web_1",
+    ]);
+    expect(revisions[1]?.evidenceReview?.diagnostics).toHaveLength(2);
+    const frozen = projects.freezeEvidence(project.id, {
+      includedSourceItemIds: ["owner_1", "web_1"],
+      noExternalResearchAcknowledged: false,
+    });
+    expect(frozen.sourceItems.map((item) => item.id)).toEqual(["owner_1", "web_1"]);
+  });
+
+  it("refuses the Research Request when the revision leaves fresh bounded research mid-flight", async () => {
+    let resumeProvider: () => void = () => {};
+    const providerGate = new Promise<void>((resolve) => {
+      resumeProvider = resolve;
+    });
+    const web = recordingProvider("public-web", async () => {
+      await providerGate;
+      return { items: [publicItem("web_1")], diagnostic: diagnostic({}) };
+    });
+    const { projects } = setup([web]);
+    const project = topicProject(projects);
+
+    const pending = projects
+      .runResearchRequest(project.id, {
+        question: "bounded research policy",
+        terms: [],
+        bundle: { providerIds: ["public-web"], completeness: "best-effort" },
+        limits: { maxQueriesPerProvider: 3, maxSourceItems: 10 },
+      })
+      .catch((error: unknown) => error);
+    // The owner revises the Project away from external research while the
+    // providers are still in flight.
+    projects.reviseIntent(project.id, { researchMode: "no-external-research" });
+    resumeProvider();
+
+    const outcome = await pending;
+    expect(outcome).toBeInstanceOf(ContentProjectError);
+    expect(outcome).toMatchObject({
+      code: "research-request-blocked",
+      missingGates: ["research-mode"],
+    });
+    const revision = projects.get(project.id)!.revisions.at(-1)!;
+    expect(revision.researchMode).toBe("no-external-research");
+    expect(revision.researchRequest).toBe(null);
+    expect(revision.evidenceReview).toBe(null);
   });
 });
