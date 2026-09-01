@@ -125,18 +125,6 @@ const config: AppConfig = {
       shortlistSize: 5,
       canaryIntervalHours: 12,
       canaryDisabledAdapters: [],
-      notion: {
-        databaseId: "",
-        dataSourceId: "",
-        databaseUrl: "",
-        mapping: {
-          name: "Name",
-          status: "Status",
-          platform: "Platform",
-          format: "Format",
-          scheduledDate: "Scheduled date",
-        },
-      },
     },
     "content-research": {
       timeZone: "UTC",

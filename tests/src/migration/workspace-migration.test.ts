@@ -98,18 +98,6 @@ function completeConfig() {
         shortlistSize: 5,
         canaryIntervalHours: 12,
         canaryDisabledAdapters: ["reddit"],
-        notion: {
-          databaseId: "notion-database-id",
-          dataSourceId: "notion-data-source-id",
-          databaseUrl: "https://notion.test/db",
-          mapping: {
-            name: "Name",
-            status: "Status",
-            platform: "Platform",
-            format: "Format",
-            scheduledDate: "Scheduled date",
-          },
-        },
       },
       "content-research": {
         timeZone: "Europe/Paris",
@@ -131,6 +119,29 @@ function completeConfig() {
       },
     },
   });
+}
+
+/** A legacy pre-cutover config.json carrying the retired Notion calendar
+    mapping — exactly the shape the reset must keep classifying fail-closed. */
+function legacyConfigWithNestedCredential(extraMapping: Record<string, unknown> | null = null) {
+  const config = completeConfig() as Record<string, unknown>;
+  const modules = config.modules as Record<string, Record<string, unknown>>;
+  const scout = structuredClone(modules["content-scout"]);
+  scout["notion"] = {
+    databaseId: "",
+    dataSourceId: "",
+    databaseUrl: "",
+    mapping: {
+      name: "Name",
+      status: "Status",
+      platform: "Platform",
+      format: "Format",
+      scheduledDate: "Scheduled date",
+      ...(extraMapping ?? { apiKey: "a nested credential" }),
+    },
+  };
+  modules["content-scout"] = scout;
+  return { ...config, modules };
 }
 
 function workspace(label: string, files: Record<string, unknown> = {}): string {
@@ -389,9 +400,11 @@ describe("Workspace migration preview", () => {
     expect(categories.get("connection-verification-state")).toEqual(
       category("disposable-product-state", 5),
     );
-    /* 28 workflow settings plus the 11 local values that name a remote record. */
+    /* Post-cutover workflow settings plus the 8 local values that name a
+       remote record. The retired Notion calendar keys stay classified in the
+       inventory for legacy Workspaces, but a clean config carries none. */
     expect(categories.get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 39),
+      category("disposable-product-state", 31),
     );
     expect(categories.get("mock-provider-state")).toEqual(category("disposable-product-state", 1));
     expect(categories.get("operating-system-metadata")).toEqual(
@@ -410,14 +423,14 @@ describe("Workspace migration preview", () => {
       disclosure("google-drive-folders", 2),
       disclosure("google-sheets-spreadsheets", 4),
       disclosure("youtube-channels", 1),
-      disclosure("notion-databases", 3),
+      disclosure("notion-databases", 0),
     ]);
     const disclosed = remoteRecords(preview).reduce((total, record) => total + record.count, 0);
-    expect(disclosed).toBe(11);
-    /* Those same 11 values are on the delete side, inside the category every
+    expect(disclosed).toBe(8);
+    /* Those same 8 values are on the delete side, inside the category every
        disclosure names, so nothing is preserved by being disclosed. */
     expect(inventory(preview).get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 39),
+      category("disposable-product-state", 31),
     );
     /* No category answers "deleted or kept" with a remote reference. */
     expect(named(preview, "remote-reference")).toEqual([]);
@@ -461,25 +474,13 @@ describe("Workspace migration preview", () => {
   });
 
   it("fails closed on an unknown key nested inside a composite configuration entry", () => {
-    const config = completeConfig();
-    const scout = config.modules["content-scout"];
     const root = workspace("nested-mapping-key", {
-      "config.json": {
-        ...config,
-        modules: {
-          ...config.modules,
-          "content-scout": {
-            ...scout,
-            notion: {
-              ...scout.notion,
-              /* The assessment's example: a credential added under a
-                 destination mapping must fail the preview closed, never ride
-                 in as disposable product state inside a recognized entry. */
-              mapping: { ...scout.notion.mapping, apiKey: "a nested credential" },
-            },
-          },
-        },
-      },
+      /* A legacy pre-cutover config.json: the Notion calendar mapping no
+         longer exists in the schema, but the reset still classifies these
+         keys fail-closed, and a nested credential under a recognized entry
+         must fail the preview closed, never ride in as disposable product
+         state inside a recognized entry. */
+      "config.json": legacyConfigWithNestedCredential(),
     });
 
     const preview = previewWorkspaceMigration(root);
@@ -598,24 +599,12 @@ describe("Workspace migration preview", () => {
   });
 
   it("fails closed on a nested key inherited from Object.prototype", () => {
-    const config = completeConfig();
-    const scout = config.modules["content-scout"];
     const root = workspace("prototype-key", {
-      "config.json": {
-        ...config,
-        modules: {
-          ...config.modules,
-          "content-scout": {
-            ...scout,
-            notion: {
-              ...scout.notion,
-              /* "toString" must not resolve through Object.prototype to a
-                 truthy table entry that skips validation. */
-              mapping: { ...scout.notion.mapping, toString: { secret: "a mapping credential" } },
-            },
-          },
-        },
-      },
+      /* "toString" must not resolve through Object.prototype to a truthy
+         table entry that skips validation. */
+      "config.json": legacyConfigWithNestedCredential({
+        toString: { secret: "a mapping credential" },
+      }),
     });
 
     const preview = previewWorkspaceMigration(root);
