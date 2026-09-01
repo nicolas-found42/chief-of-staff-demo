@@ -30,6 +30,11 @@ interface ContentProjectState {
   contentVoices: ContentVoiceRevision[];
 }
 
+type ContentProjectRevisionSeed = Omit<
+  ContentProjectRevision,
+  "frozenEvidence" | "outlineBriefs" | "outlineBriefApprovals"
+>;
+
 export class ContentProjectError extends Error {
   constructor(
     public readonly code:
@@ -107,21 +112,7 @@ export class WorkspaceContentProjects {
   }
 
   create(input: ContentProjectCreateInput): ContentProject {
-    const owner = this.deps.ownerOnboarding.confirmed();
-    const authorProfileId = input.authorProfileId ?? owner?.profileId;
-    if (!authorProfileId) {
-      throw new ContentProjectError(
-        "owner-not-confirmed",
-        "Confirm the canonical owner Profile before using the default author.",
-      );
-    }
-    const author = this.authorReference(authorProfileId);
-    if (authorProfileId !== owner?.profileId && !this.hasApprovedAuthor(authorProfileId)) {
-      throw new ContentProjectError(
-        "author-forbidden",
-        "Another Person Profile is selectable only after author authorization and Content Voice approval.",
-      );
-    }
+    const author = this.selectAuthor(input.authorProfileId);
     const revision = this.initialRevision(input, author);
     const timestamp = this.now().toISOString();
     const project: ContentProject = {
@@ -145,31 +136,15 @@ export class WorkspaceContentProjects {
     const state = this.readState();
     const project = requireProject(state, projectId);
     const previous = currentRevision(project);
-    let author = clone(previous.author);
-    if (patch.authorProfileId !== undefined) {
-      author = this.authorReference(patch.authorProfileId);
-      const owner = this.deps.ownerOnboarding.confirmed();
-      if (author.profileId !== owner?.profileId && !this.hasApprovedAuthor(author.profileId)) {
-        throw new ContentProjectError(
-          "author-forbidden",
-          "Another Person Profile is selectable only after author authorization and Content Voice approval.",
-        );
-      }
-    }
-    const targets =
-      patch.targets === undefined ? clone(previous.targets) : [...new Set(patch.targets)];
-    if (targets.some((target) => !CONTENT_PROJECT_TARGETS.includes(target))) {
-      throw new ContentProjectError(
-        "invalid-project-input",
-        "The Project contains an unknown target.",
-      );
-    }
-    const revision: ContentProjectRevision = {
+    const revision = buildRevision({
       revision: previous.revision + 1,
       createdAt: this.now().toISOString(),
       subject:
         patch.subject === undefined ? clone(previous.subject) : this.resolveSubject(patch.subject),
-      author,
+      author: this.selectAuthor(
+        patch.authorProfileId ?? previous.author.profileId,
+        patch.authorProfileId === undefined ? previous.author.profileRevision : undefined,
+      ),
       objective:
         patch.objective === undefined
           ? previous.objective
@@ -180,17 +155,14 @@ export class WorkspaceContentProjects {
         patch.constraints === undefined
           ? clone(previous.constraints)
           : cleanList(patch.constraints),
-      targets,
+      targets: patch.targets === undefined ? previous.targets : patch.targets,
       researchMode: "researchMode" in patch ? (patch.researchMode ?? null) : previous.researchMode,
       seedMaterial:
         patch.seedMaterial === undefined
           ? clone(previous.seedMaterial)
           : cleanList(patch.seedMaterial),
       evidenceReview: null,
-      frozenEvidence: null,
-      outlineBriefs: [],
-      outlineBriefApprovals: [],
-    };
+    });
     project.revisions.push(revision);
     this.touch(project);
     this.writeState(state);
@@ -238,8 +210,7 @@ export class WorkspaceContentProjects {
     let revision = currentRevision(project);
     if (revision.frozenEvidence !== null) {
       const previous = revision;
-      revision = nextRevision(previous, this.now().toISOString());
-      revision.evidenceReview = clone(previous.evidenceReview);
+      revision = nextRevision(previous, this.now().toISOString(), previous.evidenceReview);
       project.revisions.push(revision);
     }
     const missing = this.missingFreezeGates(revision);
@@ -262,6 +233,13 @@ export class WorkspaceContentProjects {
     }
     const review = revision.evidenceReview;
     const selectedIds = [...new Set(selection.includedSourceItemIds)];
+    if (revision.researchMode !== "no-external-research" && selectedIds.length === 0) {
+      throw new ContentProjectError(
+        "evidence-freeze-blocked",
+        "External research requires at least one included reviewed Source Item; choose no external research and acknowledge it when no source is selected.",
+        ["evidence-review"],
+      );
+    }
     if (
       revision.researchMode === "no-external-research" &&
       (selectedIds.length > 0 ||
@@ -412,13 +390,7 @@ export class WorkspaceContentProjects {
     const objective = requiredText(input.objective, "objective");
     const audience = requiredText(input.audience, "audience");
     const subject = this.resolveSubject(input.subject);
-    if (input.targets.some((target) => !CONTENT_PROJECT_TARGETS.includes(target))) {
-      throw new ContentProjectError(
-        "invalid-project-input",
-        "The Project contains an unknown target.",
-      );
-    }
-    return {
+    return buildRevision({
       revision: 1,
       createdAt: this.now().toISOString(),
       subject,
@@ -426,14 +398,11 @@ export class WorkspaceContentProjects {
       objective,
       audience,
       constraints: cleanList(input.constraints),
-      targets: [...new Set(input.targets)],
+      targets: input.targets,
       researchMode: input.researchMode,
       seedMaterial: cleanList(input.seedMaterial),
       evidenceReview: null,
-      frozenEvidence: null,
-      outlineBriefs: [],
-      outlineBriefApprovals: [],
-    };
+    });
   }
 
   private resolveSubject(input: ContentProjectCreateInput["subject"]): ContentProjectSubject {
@@ -444,9 +413,51 @@ export class WorkspaceContentProjects {
     return { kind: "person-profile", profileId: profile.id, profileRevision: profile.revision };
   }
 
-  private authorReference(profileId: string): ContentProjectAuthorReference {
-    const profile = this.requireSelectableProfile(profileId);
-    return { profileId: profile.id, profileRevision: profile.revision };
+  private selectAuthor(
+    profileId?: string,
+    pinnedProfileRevision?: number,
+  ): ContentProjectAuthorReference {
+    const owner = this.deps.ownerOnboarding.confirmed();
+    const selectedProfileId = profileId ?? owner?.profileId;
+    if (!selectedProfileId) {
+      throw new ContentProjectError(
+        "owner-not-confirmed",
+        "Confirm the canonical owner Profile before using the default author.",
+      );
+    }
+    if (owner?.profileId === selectedProfileId) {
+      const confirmedRevision = this.deps.people.getRevision(
+        owner.profileId,
+        owner.profileRevision,
+      );
+      if (!confirmedRevision) {
+        throw new ContentProjectError(
+          "profile-not-found",
+          "The onboarding-confirmed owner Profile revision is unavailable.",
+        );
+      }
+      return { profileId: owner.profileId, profileRevision: owner.profileRevision };
+    }
+    const profile = this.requireSelectableProfile(selectedProfileId);
+    if (!this.hasApprovedAuthor(profile.id)) {
+      throw new ContentProjectError(
+        "author-forbidden",
+        "Another Person Profile is selectable only after author authorization and Content Voice approval.",
+      );
+    }
+    if (
+      pinnedProfileRevision !== undefined &&
+      !this.deps.people.getRevision(profile.id, pinnedProfileRevision)
+    ) {
+      throw new ContentProjectError(
+        "profile-not-found",
+        "The pinned author Person Profile revision is unavailable.",
+      );
+    }
+    return {
+      profileId: profile.id,
+      profileRevision: pinnedProfileRevision ?? profile.revision,
+    };
   }
 
   private requireSelectableProfile(profileId: string) {
@@ -484,7 +495,7 @@ export class WorkspaceContentProjects {
       missing.push("research-mode");
     } else if (
       revision.researchMode !== "no-external-research" &&
-      revision.evidenceReview === null
+      (revision.evidenceReview === null || revision.evidenceReview.sourceItems.length === 0)
     ) {
       missing.push("evidence-review");
     }
@@ -573,23 +584,39 @@ function currentRevision(project: ContentProject): ContentProjectRevision {
   return revision;
 }
 
-function nextRevision(previous: ContentProjectRevision, createdAt: string): ContentProjectRevision {
+function buildRevision(seed: ContentProjectRevisionSeed): ContentProjectRevision {
   return {
-    revision: previous.revision + 1,
-    createdAt,
-    subject: clone(previous.subject),
-    author: clone(previous.author),
-    objective: previous.objective,
-    audience: previous.audience,
-    constraints: clone(previous.constraints),
-    targets: clone(previous.targets),
-    researchMode: previous.researchMode,
-    seedMaterial: clone(previous.seedMaterial),
-    evidenceReview: null,
+    ...seed,
+    subject: clone(seed.subject),
+    author: clone(seed.author),
+    constraints: cleanList(seed.constraints),
+    targets: validatedTargets(seed.targets),
+    seedMaterial: cleanList(seed.seedMaterial),
+    evidenceReview: clone(seed.evidenceReview),
     frozenEvidence: null,
     outlineBriefs: [],
     outlineBriefApprovals: [],
   };
+}
+
+function nextRevision(
+  previous: ContentProjectRevision,
+  createdAt: string,
+  evidenceReview: ContentProjectRevision["evidenceReview"] = null,
+): ContentProjectRevision {
+  return buildRevision({
+    revision: previous.revision + 1,
+    createdAt,
+    subject: previous.subject,
+    author: previous.author,
+    objective: previous.objective,
+    audience: previous.audience,
+    constraints: previous.constraints,
+    targets: previous.targets,
+    researchMode: previous.researchMode,
+    seedMaterial: previous.seedMaterial,
+    evidenceReview,
+  });
 }
 
 function requiredText(value: string, label: string): string {
@@ -600,6 +627,18 @@ function requiredText(value: string, label: string): string {
 
 function cleanList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
+}
+
+function validatedTargets(
+  values: ContentProjectRevision["targets"],
+): ContentProjectRevision["targets"] {
+  if (values.some((target) => !CONTENT_PROJECT_TARGETS.includes(target))) {
+    throw new ContentProjectError(
+      "invalid-project-input",
+      "The Project contains an unknown target.",
+    );
+  }
+  return [...new Set(values)];
 }
 
 function identifier(prefix: string, now: Date): string {

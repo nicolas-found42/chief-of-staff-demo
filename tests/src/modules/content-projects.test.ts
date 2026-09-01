@@ -59,8 +59,9 @@ const DIAGNOSTIC: AdapterDiagnostic = {
 
 function setup() {
   const workspaceDir = mkdtempSync(join(tmpdir(), "content-projects-"));
+  const personStore = new PersonProfileStore(workspaceDir);
   const people = new WorkspacePersonProfiles({
-    store: new PersonProfileStore(workspaceDir),
+    store: personStore,
     now: () => NOW,
   });
   const owner = people.create({ fullName: "Workspace Owner", primaryEmail: "owner@example.com" });
@@ -75,7 +76,15 @@ function setup() {
     brandProfiles,
     now: () => NOW,
   });
-  return { workspaceDir, people, owner, ownerOnboarding, brandProfiles, projects };
+  return {
+    workspaceDir,
+    personStore,
+    people,
+    owner,
+    ownerOnboarding,
+    brandProfiles,
+    projects,
+  };
 }
 
 describe("WorkspaceContentProjects creation and author policy", () => {
@@ -166,6 +175,53 @@ describe("WorkspaceContentProjects creation and author policy", () => {
       profileRevision: 1,
     });
   });
+
+  it("pins the owner's exact onboarding-confirmed revision even when the current Profile is newer", () => {
+    const { personStore, owner, projects, brandProfiles } = setup();
+    personStore.save({
+      ...owner,
+      revision: 2,
+      role: "New role after confirmation",
+      updatedAt: "2026-08-31T18:30:00.000Z",
+    });
+    projects.approveContentVoice(owner.id, "Approved owner voice.");
+    brandProfiles.accept({
+      markdown: "# Brand Profile\n\n## Voice\nApproved Brand Voice.",
+      sourceScan: {
+        websiteUrl: "https://brand.example/",
+        includedUrls: ["https://brand.example/"],
+        excludedUrls: [],
+      },
+    });
+
+    const project = projects.create({
+      subject: { kind: "topic", topic: "Pinned owner authority" },
+      objective: "educate",
+      audience: "Operators",
+      constraints: [],
+      targets: ["linkedin-standard-post"],
+      researchMode: "no-external-research",
+      seedMaterial: [],
+    });
+    expect(project.revisions[0]?.author).toEqual({
+      profileId: owner.id,
+      profileRevision: 1,
+    });
+    const frozen = projects.freezeEvidence(project.id, {
+      includedSourceItemIds: [],
+      noExternalResearchAcknowledged: true,
+    });
+    const authorProjection = frozen.profileProjections.find(
+      (snapshot) => snapshot.role === "author",
+    );
+    expect(authorProjection?.projection).toMatchObject({ profileRevision: 1, role: null });
+
+    const revised = projects.reviseIntent(project.id, {
+      authorProfileId: owner.id,
+      audience: "Technical operators",
+    });
+    expect(revised.author).toEqual({ profileId: owner.id, profileRevision: 1 });
+  });
 });
 
 describe("WorkspaceContentProjects Outline Brief gate", () => {
@@ -245,6 +301,80 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
     expect(approval).toMatchObject({ outlineBriefId: proposal.id, approvedAt: NOW.toISOString() });
     expect(projects.readiness(project.id)).toEqual({ ready: true, missingGates: [] });
   });
+
+  it.each(["existing-workspace-evidence", "fresh-bounded-research"] as const)(
+    "requires at least one included reviewed Source Item for %s",
+    (researchMode) => {
+      const { projects, owner, brandProfiles } = setup();
+      projects.approveContentVoice(owner.id, "Approved Content Voice.");
+      brandProfiles.accept({
+        markdown: "# Brand Profile\n\n## Voice\nApproved Brand Voice.",
+        sourceScan: {
+          websiteUrl: "https://brand.example/",
+          includedUrls: ["https://brand.example/"],
+          excludedUrls: [],
+        },
+      });
+      const project = projects.create({
+        subject: { kind: "topic", topic: "External evidence needs a selected source" },
+        objective: "educate",
+        audience: "Operators",
+        constraints: [],
+        targets: ["linkedin-standard-post"],
+        researchMode,
+        seedMaterial: [],
+      });
+      projects.attachEvidence(project.id, { sourceItems: [], diagnostics: [] });
+
+      expect(() =>
+        projects.freezeEvidence(project.id, {
+          includedSourceItemIds: [],
+          noExternalResearchAcknowledged: false,
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<ContentProjectError>>({
+          code: "evidence-freeze-blocked",
+          missingGates: ["evidence-review"],
+        }),
+      );
+      projects.attachEvidence(project.id, {
+        sourceItems: [SOURCE_ITEM],
+        diagnostics: [DIAGNOSTIC],
+      });
+      expect(() =>
+        projects.freezeEvidence(project.id, {
+          includedSourceItemIds: [],
+          noExternalResearchAcknowledged: false,
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<ContentProjectError>>({
+          code: "evidence-freeze-blocked",
+          missingGates: ["evidence-review"],
+        }),
+      );
+      expect(() =>
+        projects.proposeOutlineBrief(project.id, {
+          thesis: "Empty research cannot support a Brief.",
+          angle: "Select evidence or explicitly choose no research.",
+          claims: [],
+          evidenceMap: [],
+          ctaIntent: null,
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<ContentProjectError>>({
+          code: "outline-brief-blocked",
+          missingGates: ["evidence-review"],
+        }),
+      );
+      projects.reviseIntent(project.id, { researchMode: "no-external-research" });
+      expect(
+        projects.freezeEvidence(project.id, {
+          includedSourceItemIds: [],
+          noExternalResearchAcknowledged: true,
+        }).noExternalResearchAcknowledged,
+      ).toBe(true);
+    },
+  );
 
   it("classifies every missing prerequisite and requires the no-research acknowledgement", () => {
     const { projects, owner, ownerOnboarding, brandProfiles } = setup();
