@@ -98,7 +98,15 @@ export function PeoplePage() {
                   <td>{profile.role ?? "—"}</td>
                   <td>{profile.currentEmployer ?? "—"}</td>
                   <td>{profile.revision}</td>
-                  <td>{profile.archivedAt ? "Archived" : "Active"}</td>
+                  <td>
+                    {/* Archive state is a classified state, not a word in a
+                        cell: an archived Profile reads as one at a glance. */}
+                    <span
+                      className={`status-badge ${profile.archivedAt ? "status-skipped" : "status-active"}`}
+                    >
+                      {profile.archivedAt ? "Archived" : "Active"}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

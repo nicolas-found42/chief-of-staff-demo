@@ -3,7 +3,9 @@ import type {
   PersonProfileCorrectionInput,
   PersonProfileCreateInput,
   PersonProfileDetachInput,
+  PersonProfileLifecycleRefusal,
   PersonProfileMergeInput,
+  PersonProfilePrivacyDeleted,
   PersonProfileProjectionPurpose,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -68,12 +70,13 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       const tombstone = people.tombstone(profileId);
       if (tombstone) {
         reply.code(410);
-        return {
+        const deleted: PersonProfilePrivacyDeleted = {
           error: "profile-privacy-deleted",
           message: "This Person Profile was privacy-deleted from the local Workspace.",
           tombstone,
           receipt: people.deletionReceipt(profileId),
         };
+        return deleted;
       }
       reply.code(404);
       return { error: "profile-not-found", message: "No Person Profile with that id." };
@@ -103,11 +106,12 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       (error.code === "active-dependencies" || error.code === "privacy-confirmation-required")
     ) {
       reply.code(error.code === "active-dependencies" ? 409 : 400);
-      return {
+      const refusal: PersonProfileLifecycleRefusal = {
         error: error.code,
         message: error.message,
         lifecycle: people.lifecycle(profileId),
       };
+      return refusal;
     }
     return repairFailure(reply, error);
   }

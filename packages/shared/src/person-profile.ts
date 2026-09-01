@@ -155,6 +155,18 @@ export interface PersonProfileTombstone {
   deletedAt: string;
 }
 
+/**
+ * The body of a refused lifecycle operation. A refusal is a disclosure: it
+ * carries the same lifecycle state the confirmation surface reads, so the
+ * operator can see what still points here and what would outlive the Profile
+ * without having to go and ask a second endpoint.
+ */
+export interface PersonProfileLifecycleRefusal {
+  error: "active-dependencies" | "privacy-confirmation-required";
+  message: string;
+  lifecycle: PersonProfileLifecycleState;
+}
+
 /** Audited local result; `remoteProviderOperations` is always zero. */
 export interface PersonProfileDeletionReceipt {
   receiptId: string;
@@ -164,6 +176,18 @@ export interface PersonProfileDeletionReceipt {
   tombstone: PersonProfileTombstone;
   residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
   remoteProviderOperations: 0;
+}
+
+/**
+ * What a privacy-deleted Profile's route answers with. The tombstone keeps the
+ * reference resolvable and the receipt says what the deletion accounted for;
+ * neither names the person.
+ */
+export interface PersonProfilePrivacyDeleted {
+  error: "profile-privacy-deleted";
+  message: string;
+  tombstone: PersonProfileTombstone;
+  receipt: PersonProfileDeletionReceipt | null;
 }
 
 /**

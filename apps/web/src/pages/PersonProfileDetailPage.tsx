@@ -2,16 +2,22 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
   PersonProfile,
+  PersonProfileDeletionReceipt,
   PersonProfileInvalidation,
+  PersonProfileLifecycleRefusal,
+  PersonProfileLifecycleState,
   PersonProfileMatchConfidence,
+  PersonProfilePrivacyDeleted,
   PersonProfileRepairFactKey,
+  PersonProfileResidualSourceArtifact,
 } from "@chief-of-staff-demo/shared";
 import {
+  PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION,
   PERSON_PROFILE_REPAIR_FACT_KEYS,
   invalidationAffectsRevision,
 } from "@chief-of-staff-demo/shared";
 
-import { api, errorMessage } from "../client";
+import { ApiError, api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -95,6 +101,118 @@ function RepairFactControl({
   );
 }
 
+const RESIDUAL_KIND_LABELS: Record<PersonProfileResidualSourceArtifact["kind"], string> = {
+  transcript: "Transcript",
+  "public-source": "Public source",
+};
+
+/** The refusal body a lifecycle route answers with, when there is one. */
+function lifecycleRefusal(error: unknown): PersonProfileLifecycleRefusal | null {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.body;
+  if (body === null || typeof body !== "object") return null;
+  return "lifecycle" in body ? (body as PersonProfileLifecycleRefusal) : null;
+}
+
+/** The tombstone and receipt a privacy-deleted Profile's route answers with. */
+function privacyDeleted(error: unknown): PersonProfilePrivacyDeleted | null {
+  if (!(error instanceof ApiError) || error.status !== 410) return null;
+  const body = error.body;
+  if (body === null || typeof body !== "object") return null;
+  return "tombstone" in body ? (body as PersonProfilePrivacyDeleted) : null;
+}
+
+/**
+ * The immutable documents a privacy deletion deliberately does not rewrite.
+ * Listed as references — which document, of what kind, separately deletable or
+ * not — never by title, because the disclosure outlives the identity the
+ * document may still name.
+ */
+function ResidualSourceDisclosure({
+  artifacts,
+}: {
+  artifacts: PersonProfileResidualSourceArtifact[];
+}) {
+  if (artifacts.length === 0) {
+    return (
+      <p className="muted">
+        No immutable transcript or public-source document references this Profile. Nothing would
+        remain after deletion.
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="banner-warn" role="status">
+        These source documents are immutable and are <strong>not</strong> deleted with the Profile.
+        They remain until each is separately deleted.
+      </p>
+      <ul>
+        {artifacts.map((artifact) => (
+          <li key={artifact.artifactId}>
+            <span className="status-badge status-source">
+              {RESIDUAL_KIND_LABELS[artifact.kind]}
+            </span>{" "}
+            <code>{artifact.artifactId}</code> —{" "}
+            {artifact.separateDeleteSupported
+              ? "separate source deletion is supported"
+              : "no separate source deletion is available"}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * Consumers still pointed at this Profile. Archive and privacy deletion both
+ * refuse while one is active, so the operator resolves each explicitly by
+ * pausing or re-pointing it rather than leaving it orphaned.
+ */
+function DependentConfigurationDisclosure({
+  lifecycle,
+}: {
+  lifecycle: PersonProfileLifecycleState;
+}) {
+  const active = lifecycle.dependentConfigurations.filter((one) => one.state === "active");
+  if (lifecycle.dependentConfigurations.length === 0) {
+    return <p className="muted">No configuration depends on this Profile.</p>;
+  }
+  return (
+    <>
+      {active.length > 0 && (
+        <p className="banner-warn" role="status">
+          {active.length === 1
+            ? "One active configuration still points at this Profile."
+            : `${active.length} active configurations still point at this Profile.`}{" "}
+          Pause or re-point each one before archiving or deleting.
+        </p>
+      )}
+      <ul>
+        {lifecycle.dependentConfigurations.map((dependency) => (
+          <li key={dependency.id}>
+            <span
+              className={`status-badge ${dependency.state === "active" ? "status-active" : "status-skipped"}`}
+            >
+              {dependency.state === "active" ? "Active" : "Paused"}
+            </span>{" "}
+            {dependency.label} <span className="muted">({dependency.consumer})</span>
+            {dependency.availableActions.length > 0 && (
+              <>
+                {" "}
+                — resolve by:{" "}
+                {dependency.availableActions
+                  .map((action) => (action === "pause" ? "pause" : "re-point"))
+                  .join(" or ")}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function described(profile: PersonProfile): string {
   return [profile.fullName, profile.role, profile.currentEmployer]
     .filter((value) => value !== null)
@@ -122,6 +240,23 @@ export function PersonProfileDetailPage() {
 
   useTitle(viewed?.fullName ?? current?.fullName ?? "Person Profile");
 
+  /* Profile lifecycle (ticket #122): archive is reversible state; privacy
+     deletion is the audited exception, behind its own confirmation. */
+  const [lifecycle, setLifecycle] = useState<PersonProfileLifecycleState | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [receipt, setReceipt] = useState<PersonProfileDeletionReceipt | null>(null);
+  const [deleted, setDeleted] = useState<PersonProfilePrivacyDeleted | null>(null);
+
+  const loadLifecycle = useCallback(async () => {
+    try {
+      setLifecycle(await api.personProfileLifecycle(profileId));
+    } catch {
+      /* The lifecycle preview is a disclosure, not a precondition for reading
+         the Profile: a failure to load it must not blank the detail page. */
+    }
+  }, [profileId]);
+
   useEffect(() => {
     let cancelled = false;
     /* Each .then body is its own closure, so every check reads the flag fresh
@@ -139,12 +274,16 @@ export function PersonProfileDetailPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        /* A privacy-deleted Profile is gone on purpose, not broken: its route
+           answers 410 with the tombstone that keeps the reference resolvable. */
+        setDeleted(privacyDeleted(err));
         setError(errorMessage(err));
       });
+    void loadLifecycle();
     return () => {
       cancelled = true;
     };
-  }, [profileId]);
+  }, [profileId, loadLifecycle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,6 +352,47 @@ export function PersonProfileDetailPage() {
     [profileId],
   );
 
+  /**
+   * One lifecycle action. A refusal is rendered as the disclosure it carries —
+   * the configurations still pointing here, or the residual source documents —
+   * rather than as an opaque failure.
+   */
+  const runLifecycle = useCallback(
+    async (apply: () => Promise<PersonProfile>) => {
+      setBusy(true);
+      setActionError(null);
+      try {
+        setCurrent(await apply());
+      } catch (err) {
+        const refusal = lifecycleRefusal(err);
+        if (refusal) setLifecycle(refusal.lifecycle);
+        setActionError(errorMessage(err));
+      } finally {
+        setBusy(false);
+        await loadLifecycle();
+      }
+    },
+    [loadLifecycle],
+  );
+
+  const submitPrivacyDelete = (event: FormEvent) => {
+    event.preventDefault();
+    void (async () => {
+      setBusy(true);
+      setActionError(null);
+      try {
+        setReceipt(await api.privacyDeletePersonProfile(profileId, confirmation));
+        setCurrent(null);
+      } catch (err) {
+        const refusal = lifecycleRefusal(err);
+        if (refusal) setLifecycle(refusal.lifecycle);
+        setActionError(errorMessage(err));
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+
   const submitCorrection = (event: FormEvent) => {
     event.preventDefault();
     const stated = {
@@ -277,6 +457,58 @@ export function PersonProfileDetailPage() {
     setSearchParams({});
   }, [setSearchParams]);
 
+  /* The receipt for a deletion this surface just performed, and the tombstone
+     for one performed earlier, are the same fact seen at two moments. */
+  if (receipt !== null || deleted !== null) {
+    const shown = receipt ?? deleted!.receipt;
+    const tombstone = receipt?.tombstone ?? deleted!.tombstone;
+    return (
+      <>
+        <h1 ref={focusRef} tabIndex={-1}>
+          Profile privacy-deleted
+        </h1>
+        <p className="banner-ok" role="status">
+          This Person Profile and its local identity records were deleted on{" "}
+          {tombstone.deletedAt.slice(0, 10)}. A content-free tombstone keeps existing references
+          resolvable; it names nobody.
+        </p>
+        {shown && (
+          <div className="card">
+            <h2>What the deletion accounted for</h2>
+            <dl>
+              <dt>Canonical Profile records</dt>
+              <dd>{shown.removed.canonicalProfileRecords}</dd>
+              <dt>Revisions</dt>
+              <dd>{shown.removed.revisions}</dd>
+              <dt>Evidence records</dt>
+              <dd>{shown.removed.evidence}</dd>
+              <dt>Aliases</dt>
+              <dd>{shown.removed.aliases}</dd>
+              <dt>Candidates</dt>
+              <dd>{shown.removed.candidates}</dd>
+              <dt>Learned mappings</dt>
+              <dd>{shown.removed.mappings}</dd>
+              <dt>Structured identity decisions</dt>
+              <dd>{shown.removed.decisions}</dd>
+              <dt>Active consumer links</dt>
+              <dd>{shown.removed.activeLinks}</dd>
+              <dt>Person-specific derived snapshots</dt>
+              <dd>{shown.removed.personSnapshots}</dd>
+              <dt>Remote provider operations</dt>
+              <dd>{shown.remoteProviderOperations} — no remote provider data was deleted</dd>
+            </dl>
+          </div>
+        )}
+        <div className="card">
+          <h2>Source documents that remain</h2>
+          <ResidualSourceDisclosure artifacts={shown?.residualSourceArtifacts ?? []} />
+        </div>
+        <p>
+          <Link to="/people">Back to the list</Link>.
+        </p>
+      </>
+    );
+  }
   if (error) {
     return (
       <>
@@ -719,6 +951,86 @@ export function PersonProfileDetailPage() {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="card">
+        <h2>Lifecycle</h2>
+        <p className="muted">
+          {current.archivedAt
+            ? "This Profile is archived: no consumer can newly select it. Restoring makes the same canonical identity available again."
+            : "Archiving stops new selection and consumption without destroying history. It is reversible."}
+        </p>
+        <div className="field-row">
+          <button
+            type="button"
+            className="primary"
+            aria-disabled={busy}
+            onClick={() =>
+              void runLifecycle(() =>
+                current.archivedAt
+                  ? api.restorePersonProfile(profileId)
+                  : api.archivePersonProfile(profileId),
+              )
+            }
+          >
+            {busy ? "Working…" : current.archivedAt ? "Restore profile" : "Archive profile"}
+          </button>
+        </div>
+
+        <h3>Dependent configuration</h3>
+        {lifecycle === null ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <DependentConfigurationDisclosure lifecycle={lifecycle} />
+        )}
+
+        <h3>Privacy delete</h3>
+        <p className="muted">
+          Privacy deletion is the explicit, audited exception to otherwise immutable local history.
+          It removes the canonical Profile, its revisions, evidence, aliases, candidates, learned
+          mappings, structured identity decisions, active consumer links, and person-specific
+          derived snapshots. It cannot be undone, and it never deletes remote provider data.
+        </p>
+        {!deleteOpen ? (
+          <div className="field-row">
+            <button type="button" onClick={() => setDeleteOpen(true)}>
+              Privacy delete this profile…
+            </button>
+          </div>
+        ) : (
+          /* Spec #117: the confirmation surface lists the residual source
+             artifacts before anything is deleted, and says where a separate
+             source deletion exists. */
+          <form onSubmit={submitPrivacyDelete}>
+            <h4>Source documents that will remain</h4>
+            <ResidualSourceDisclosure artifacts={lifecycle?.residualSourceArtifacts ?? []} />
+            <div className="field-row">
+              <label htmlFor="privacy-delete-confirmation">
+                Type {PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION} to confirm
+              </label>
+              <input
+                id="privacy-delete-confirmation"
+                autoComplete="off"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+              />
+            </div>
+            <div className="field-row">
+              <button type="submit" className="primary" aria-disabled={busy}>
+                {busy ? "Working…" : "Permanently delete this profile"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteOpen(false);
+                  setConfirmation("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </>
   );
