@@ -69,7 +69,8 @@ const MODULES: ModuleDescriptor[] = [
     id: "content-scout",
     path: "/content-scout",
     label: "Content Scout",
-    description: "Public sources become a ranked shortlist and complete, editable Content Packs.",
+    description:
+      "Public sources become a ranked shortlist; selecting an Opportunity starts one governed Content Project.",
     status: "live",
     resultView: ContentScoutResultView,
   },

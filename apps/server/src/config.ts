@@ -110,8 +110,15 @@ export class ConfigStore {
     }
     const merged = deepMerge(defaultConfig(), stored) as Record<string, unknown>;
     // Old configs had fireflies/watch — strictObject would reject them; drop before parse.
+    // The consolidation (#133) retired the content-scout Notion calendar block the same way.
     delete merged.fireflies;
     delete merged.watch;
+    if (merged.modules && typeof merged.modules === "object") {
+      const scout = (merged.modules as Record<string, unknown>)["content-scout"];
+      if (scout && typeof scout === "object") {
+        delete (scout as Record<string, unknown>).notion;
+      }
+    }
     const parsed = ConfigSchema.parse(merged);
     this.config = normalize(parsed);
     this.persist();
