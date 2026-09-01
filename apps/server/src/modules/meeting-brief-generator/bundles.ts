@@ -26,6 +26,18 @@ export type MeetingBriefBundleProvider =
   | "employer-proposal"
   | "public-intelligence";
 
+/** Every provider id the bundles may select — the policy action route's vocabulary. */
+export const MEETING_BRIEF_BUNDLE_PROVIDERS: readonly MeetingBriefBundleProvider[] = [
+  "person-profile",
+  "gmail-relationship",
+  "gmail-company-domain",
+  "calendar-history",
+  "drive-workspace",
+  "crm",
+  "employer-proposal",
+  "public-intelligence",
+];
+
 export interface MeetingBriefAttendeeBundle {
   kind: AttendeeBundleKind;
   version: number;

@@ -9,12 +9,17 @@ import {
   type MeetingBriefIndex,
   type MeetingBriefIndexEntry,
   type MeetingBriefPersonProfileReadModel,
+  type MeetingBriefProviderOutcomes,
+  MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION,
   type MeetingBriefRunResult,
   type MeetingBriefUpcoming,
   meetingBriefOccurrenceIdentity,
   normalizeInternalDomains,
   parseMeetingBriefOccurrenceKey,
+  type ModuleConfigs,
 } from "@chief-of-staff-demo/shared";
+import type { MeetingBriefBundleProvider } from "./bundles.js";
+import { MEETING_BRIEF_BUNDLE_PROVIDERS } from "./bundles.js";
 import type { HostedModule } from "../../engine/host.js";
 import { Runner, RunNotRetryableError } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
@@ -40,9 +45,12 @@ import {
   reconcileCalendar,
 } from "./intake.js";
 import { materialFingerprint } from "./revision.js";
+
 import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
+/** The versioned explicit provider policy actions recorded in module config (#137). */
+type MeetingBriefProviderPolicy = ModuleConfigs["meeting-brief-generator"]["providerPolicy"];
 
 export interface MeetingBriefHostDeps {
   runs: Runs;
@@ -83,6 +91,23 @@ function parseSnapshot(raw: string | null | undefined): StoredSnapshot | null {
   if (!raw) return null;
   try {
     return JSON.parse(raw) as StoredSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+/** The one place provider-outcomes.json is turned into a value (#137). */
+function parseProviderOutcomes(
+  raw: string | null | undefined,
+): MeetingBriefProviderOutcomes | null {
+  /* Number-typed alias: the version check narrows an unvalidated JSON parse. */
+  const LEDGER_VERSION_NUMBER: number = MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as MeetingBriefProviderOutcomes;
+    return parsed.version === LEDGER_VERSION_NUMBER && Array.isArray(parsed.outcomes)
+      ? parsed
+      : null;
   } catch {
     return null;
   }
@@ -169,6 +194,8 @@ export class MeetingBriefHost implements HostedModule {
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   private readonly profileRegenerations = new Map<string, Promise<string>>();
+  /** Explicit policy actions when no ConfigStore backs this host (tests). */
+  private providerPolicyInMemory: MeetingBriefProviderPolicy = {};
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
     this.clock = new DurableClock(deps.workspaceDir, this.now);
@@ -203,6 +230,7 @@ export class MeetingBriefHost implements HostedModule {
       enrichmentProviders,
       getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
+      getDisabledProviders: () => this.getDisabledProviders(),
       ...(deps.isOwnerProfileConfirmed
         ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
         : {}),
@@ -284,6 +312,48 @@ export class MeetingBriefHost implements HostedModule {
   }
 
   // -------------------------------------------------------------------------
+  // Explicit provider policy actions (#137) — the only way a provider leaves
+  // the required set; policy never relaxes silently.
+  // -------------------------------------------------------------------------
+
+  /** The recorded policy, preferring ConfigStore over the in-memory fallback. */
+  getProviderPolicy(): MeetingBriefProviderPolicy {
+    if (this.deps.configStore) {
+      try {
+        return this.deps.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID).providerPolicy;
+      } catch {
+        // config not loaded yet — the in-memory record still answers
+      }
+    }
+    return this.providerPolicyInMemory;
+  }
+
+  /** Providers currently excluded from the required set by explicit action. */
+  getDisabledProviders(): string[] {
+    return Object.entries(this.getProviderPolicy())
+      .filter(([, entry]) => entry.disabled)
+      .map(([provider]) => provider);
+  }
+
+  /** Record one explicit disable/enable policy action. */
+  setProviderPolicy(provider: MeetingBriefBundleProvider, disabled: boolean, reason: string): void {
+    const entry = { disabled, changedAt: this.now().toISOString(), reason };
+    if (this.deps.configStore) {
+      try {
+        const current = this.deps.configStore.getModuleConfig(MEETING_BRIEF_MODULE_ID);
+        this.deps.configStore.setModuleConfig(MEETING_BRIEF_MODULE_ID, {
+          ...current,
+          providerPolicy: { ...current.providerPolicy, [provider]: entry },
+        });
+        return;
+      } catch {
+        // config not loaded yet — record in memory so the action is never lost
+      }
+    }
+    this.providerPolicyInMemory = { ...this.providerPolicyInMemory, [provider]: entry };
+  }
+
+  // -------------------------------------------------------------------------
   // Durable Intake schedule API (occurrences + Calendar reconciliation)
   // -------------------------------------------------------------------------
 
@@ -326,6 +396,7 @@ export class MeetingBriefHost implements HostedModule {
       const result = detail.result as MeetingBriefRunResult | null;
       const handle = this.deps.runs.open(summary.id);
       const snapshot = parseSnapshot(handle?.readArtifact("snapshot.json"));
+      const ledger = parseProviderOutcomes(handle?.readArtifact("provider-outcomes.json"));
       const meta = handle?.read();
       const externalKey = meta?.externalId ?? null;
       const occurrenceKey = result?.occurrenceKey ?? snapshot?.occurrenceKey ?? externalKey;
@@ -349,6 +420,7 @@ export class MeetingBriefHost implements HostedModule {
         meetingBrief: result?.meetingBrief ?? null,
         delivery: result?.delivery ?? null,
         supersedes: result?.supersedes ?? snapshot?.supersedesRunId ?? null,
+        providerOutcomes: ledger?.outcomes ?? null,
       });
       if (
         result?.deliverySkippedReason === "cancelled" ||
@@ -811,6 +883,64 @@ export class MeetingBriefHost implements HostedModule {
         // ignore reconciliation failure — config still persisted
       }
       return { internalDomains: normalized };
+    });
+
+    // POST /api/meeting-brief/runs/:id/provider-policy — an explicit repair,
+    // disable, or re-enable action recorded on the Run (#137). Disabling or
+    // re-enabling persists the versioned provider policy; every action stops
+    // the Run's automatic retries so the person's explicit retry is what
+    // continues the work.
+    app.post("/api/meeting-brief/runs/:id/provider-policy", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const detail = this.deps.runs.detail(id);
+      if (detail?.module !== MEETING_BRIEF_MODULE_ID) {
+        reply.code(404);
+        return { error: "meeting-brief-run-not-found" };
+      }
+      const body = request.body as
+        { provider?: unknown; action?: unknown; reason?: unknown } | undefined;
+      const provider = typeof body?.provider === "string" ? body.provider : "";
+      const action = body?.action;
+      const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+      if (!MEETING_BRIEF_BUNDLE_PROVIDERS.includes(provider as MeetingBriefBundleProvider)) {
+        reply.code(400);
+        return { error: "unknown-provider", providers: [...MEETING_BRIEF_BUNDLE_PROVIDERS] };
+      }
+      if (action !== "disable" && action !== "enable" && action !== "repair") {
+        reply.code(400);
+        return { error: "action must be disable, enable, or repair" };
+      }
+      const handle = this.deps.runs.open(id);
+      if (!handle) {
+        reply.code(404);
+        return { error: "meeting-brief-run-not-found" };
+      }
+      handle.appendEvent("provider_policy_action", {
+        provider,
+        action,
+        reason: reason || null,
+        at: this.now().toISOString(),
+      });
+      if (action === "disable" || action === "enable") {
+        this.setProviderPolicy(
+          provider as MeetingBriefBundleProvider,
+          action === "disable",
+          reason ||
+            (action === "disable"
+              ? "provider disabled by explicit action"
+              : "provider re-enabled by explicit action"),
+        );
+      }
+      const meta = handle.read();
+      if (meta.status === "blocked" && meta.wait?.reason === "provider_retry_backoff") {
+        handle.appendEvent("automatic_retry_stopped", { provider, action });
+        handle.failed(
+          "enrich",
+          `provider_policy_action: ${provider} ${action} stopped automatic retries`,
+          `Provider "${provider}" was ${action}d by explicit policy action. Retry the Run explicitly to continue with the updated policy.`,
+        );
+      }
+      return { runId: id, provider, action, status: handle.read().status };
     });
 
     // POST /api/meeting-brief/reconcile — manual trigger (for Settings "Check calendar" or tests)

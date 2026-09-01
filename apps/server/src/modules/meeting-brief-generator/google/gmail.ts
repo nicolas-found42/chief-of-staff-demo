@@ -170,13 +170,17 @@ export async function enrichGmailExact(
   eventVersion: string,
   guestEmail: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
-): Promise<{ artifact: GoogleEnrichmentArtifact; section: MeetingBriefEnrichmentSection }> {
+): Promise<{
+  artifact: GoogleEnrichmentArtifact;
+  section: MeetingBriefEnrichmentSection;
+  filename: string;
+}> {
   const normalized = guestEmail.toLowerCase();
   const key = googleEnrichmentKey(eventVersion, normalized, "gmail-exact");
   const stableRef = key;
   const maxResults = GOOGLE_ENRICHMENT_MAX_GMAIL_EXACT;
   const filename = `gmail-exact-${normalized.replace(/[^a-z0-9]/g, "_")}-${sanitizeArtifactVersion(eventVersion)}.json`;
-  return runArtifactLifecycle({
+  const settled = await runArtifactLifecycle({
     ctx,
     filename,
     eventVersion,
@@ -283,6 +287,7 @@ export async function enrichGmailExact(
       }
     },
   });
+  return { ...settled, filename };
 }
 
 export async function enrichGmailCompanyDomain(
@@ -291,7 +296,11 @@ export async function enrichGmailCompanyDomain(
   guestEmail: string,
   companyDomain: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
-): Promise<{ artifact: GoogleEnrichmentArtifact; section: MeetingBriefEnrichmentSection }> {
+): Promise<{
+  artifact: GoogleEnrichmentArtifact;
+  section: MeetingBriefEnrichmentSection;
+  filename: string;
+}> {
   const normalizedGuest = guestEmail.toLowerCase();
   const normalizedDomain = companyDomain.toLowerCase();
   const key = googleEnrichmentKey(
@@ -306,7 +315,7 @@ export async function enrichGmailCompanyDomain(
   const sanitizedGuest = normalizedGuest.replace(/[^a-z0-9]/g, "_");
   const sanitizedDomain = normalizedDomain.replace(/[^a-z0-9]/g, "_");
   const filename = `gmail-company-${sanitizedGuest}-${sanitizedDomain}-${sanitizeArtifactVersion(eventVersion)}.json`;
-  return runArtifactLifecycle({
+  const settled = await runArtifactLifecycle({
     ctx,
     filename,
     eventVersion,
@@ -415,4 +424,5 @@ export async function enrichGmailCompanyDomain(
       }
     },
   });
+  return { ...settled, filename };
 }

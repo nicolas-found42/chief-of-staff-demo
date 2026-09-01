@@ -158,7 +158,7 @@ function deduplicateByOrgAndSnippet(results: PublicSearchResult[]): PublicSearch
   return deduped;
 }
 
-function fileNameFor(
+export function fileNameFor(
   source: PublicIntelligenceSource,
   guestEmail: string,
   companyName: string | null | undefined,

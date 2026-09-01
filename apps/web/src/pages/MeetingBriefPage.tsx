@@ -209,6 +209,17 @@ export function MeetingBriefPage() {
                       {deliveryPresentation(entry.delivery.status).explanation}
                     </p>
                   ) : null}
+                  {entry.providerOutcomes && entry.providerOutcomes.length > 0 ? (
+                    <p className="muted">
+                      Provider outcomes:{" "}
+                      {entry.providerOutcomes
+                        .map(
+                          (outcome) =>
+                            `${outcome.provider} ${outcome.attendee} — ${outcome.outcome}`,
+                        )
+                        .join("; ")}
+                    </p>
+                  ) : null}
                   {brief ? (
                     <>
                       <p>{brief.summary}</p>

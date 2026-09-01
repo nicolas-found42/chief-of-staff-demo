@@ -81,6 +81,7 @@ function defaultConfig(): AppConfig {
       "meeting-brief-generator": {
         internalDomains: [],
         hubspot: { token: "", lastVerifiedAt: null },
+        providerPolicy: {},
       },
     },
   };

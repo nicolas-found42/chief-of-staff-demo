@@ -123,7 +123,11 @@ export async function enrichDriveDocs(
   guestEmail: string,
   companyDomain: string | null,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
-): Promise<{ artifact: GoogleEnrichmentArtifact; section: MeetingBriefEnrichmentSection }> {
+): Promise<{
+  artifact: GoogleEnrichmentArtifact;
+  section: MeetingBriefEnrichmentSection;
+  filename: string;
+}> {
   const normalizedGuest = guestEmail.toLowerCase();
   const normalizedDomain = companyDomain ? companyDomain.toLowerCase() : null;
   // Drive artifact keyed by guest + company presence; if companyDomain present, include it
@@ -146,7 +150,7 @@ export async function enrichDriveDocs(
   }
   const query = queryParts.join(" or ");
 
-  return runArtifactLifecycle({
+  const settled = await runArtifactLifecycle({
     ctx,
     filename,
     eventVersion,
@@ -240,4 +244,5 @@ export async function enrichDriveDocs(
       }
     },
   });
+  return { ...settled, filename };
 }

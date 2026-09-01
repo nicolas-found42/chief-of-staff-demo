@@ -148,14 +148,18 @@ export async function enrichCalendarHistory(
   guestEmail: string,
   before: string,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
-): Promise<{ artifact: GoogleEnrichmentArtifact; section: MeetingBriefEnrichmentSection }> {
+): Promise<{
+  artifact: GoogleEnrichmentArtifact;
+  section: MeetingBriefEnrichmentSection;
+  filename: string;
+}> {
   const normalized = guestEmail.toLowerCase();
   const key = googleEnrichmentKey(eventVersion, normalized, "calendar-history");
   const stableRef = key;
   const maxResults = GOOGLE_ENRICHMENT_MAX_CALENDAR_HISTORY;
   const filename = `calendar-history-${normalized.replace(/[^a-z0-9]/g, "_")}-${sanitizeArtifactVersion(eventVersion)}.json`;
 
-  return runArtifactLifecycle({
+  const settled = await runArtifactLifecycle({
     ctx,
     filename,
     eventVersion,
@@ -248,4 +252,5 @@ export async function enrichCalendarHistory(
       }
     },
   });
+  return { ...settled, filename };
 }
