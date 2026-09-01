@@ -65,7 +65,10 @@ function makeCatalog(
     },
   },
 ): TranscriptCatalog {
-  const people = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(workspaceDir),
+    lifecycle: [],
+  });
   return new TranscriptCatalog({
     workspaceDir,
     source,

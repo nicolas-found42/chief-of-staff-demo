@@ -63,6 +63,7 @@ function setup() {
   const people = new WorkspacePersonProfiles({
     store: personStore,
     now: () => NOW,
+    lifecycle: [],
   });
   const owner = people.create({ fullName: "Workspace Owner", primaryEmail: "owner@example.com" });
   const ownerOnboarding = new OwnerOnboarding({ people, workspaceDir, now: () => NOW });
