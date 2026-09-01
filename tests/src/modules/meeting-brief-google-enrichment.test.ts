@@ -14,10 +14,19 @@ import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief
 import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
 import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
 import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
-import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
 import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
 import { enrichUnified } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/enrich";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+
+function makeAttendeeProfiles(): WorkspacePersonProfiles {
+  return new WorkspacePersonProfiles({
+    store: new PersonProfileStore(mkdtempSync(join(tmpdir(), "mb-attendee-profiles-"))),
+    now: () => new Date("2026-08-28T10:00:00.000Z"),
+    lifecycle: [],
+  });
+}
 
 function stubHubSpotApi(): HubSpotApi {
   return {
@@ -135,7 +144,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => hubSpotApi,
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -197,7 +206,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => apiWithPartialFailure,
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -282,7 +291,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: gmail,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -411,7 +420,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: failingGmail,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -486,7 +495,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: gmail,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -518,7 +527,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -564,7 +573,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: gmailUnavail,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -593,7 +602,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: gmail2,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -636,7 +645,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: gmail3,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -700,7 +709,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
         gmailProvider: gmail,
         calendarHistoryProvider: calendar,
         driveProvider: drive,
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },

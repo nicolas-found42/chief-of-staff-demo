@@ -81,52 +81,47 @@ export function isExternalGuest(attendee: CalendarAttendee, internalDomains: str
 }
 
 /**
- * Eligible Meeting definition (issue://80 + #83, ADR-0032/33):
- * - timed (not all-day)
+ * Eligible Meeting definition (issue://80 + #83, expanded by #136 per ADR-0043;
+ * ADR-0032/33):
+ * - timed (not all-day, start and end present)
  * - non-cancelled (status !== "cancelled")
- * - not declined by owner (owner's responseStatus !== "declined")
- * - at least one non-declined External Guest (accepted/tentative/needsAction count; declined excluded)
- * - rooms/resources ignored, all-day excluded, Internal Domains case-insensitive normalized,
- *   Consumer Domains remain external without employer inference, recurring occurrences independent per occurrence identity.
+ * - the workspace owner has not declined; the owner is never counted as the
+ *   "other attendee" (issue://136). When the owner identity is not yet known
+ *   (ADR-0036), the owner rules drop — the Shell reads the owner before the
+ *   first Run, so this is a race guard, not a policy hole.
+ * - at least one other attendee who has not declined — internal or external
+ *   alike; preparation is no longer limited to External Guests (issue://136)
+ * - rooms/resources ignored, Internal Domains case-insensitively normalized,
+ *   Consumer Domains stay external for classification, recurring occurrences
+ *   independent per occurrence identity.
  */
 export function isEligibleMeeting(
   event: CalendarEvent,
-  internalDomains: string[],
+  _internalDomains: string[],
   ownerEmail: string | null,
 ): boolean {
-  return eligibilityReason(event, internalDomains, ownerEmail) === "eligible";
+  return eligibilityReason(event, _internalDomains, ownerEmail) === "eligible";
 }
 
 /** Helper for tests: classify a meeting with diagnostic reason when ineligible. */
 export function eligibilityReason(
   event: CalendarEvent,
-  internalDomains: string[],
+  _internalDomains: string[],
   ownerEmail: string | null,
 ): string {
   if (event.isAllDay === true) return "all_day_excluded";
   if (!event.startAt || !event.endAt) return "missing_time";
   if (event.status === "cancelled") return "cancelled";
-  if (ownerEmail) {
-    const normalizedOwner = ownerEmail.trim().toLowerCase();
-    for (const attendee of event.attendees) {
-      if (isResourceAttendee(attendee)) continue;
-      if (
-        attendee.email.trim().toLowerCase() === normalizedOwner &&
-        attendee.responseStatus === "declined"
-      ) {
-        return "owner_declined";
-      }
+  const normalizedOwner = ownerEmail?.trim().toLowerCase() ?? null;
+  let hasOtherAttendee = false;
+  for (const attendee of event.attendees) {
+    if (isResourceAttendee(attendee)) continue;
+    if (normalizedOwner && attendee.email.trim().toLowerCase() === normalizedOwner) {
+      if (attendee.responseStatus === "declined") return "owner_declined";
+      continue;
     }
+    if (attendee.responseStatus !== "declined") hasOtherAttendee = true;
   }
-  let hasExternal = false;
-  for (const a of event.attendees) {
-    if (isResourceAttendee(a)) continue;
-    if (!isExternalGuest(a, internalDomains)) continue;
-    if (a.responseStatus !== "declined") {
-      hasExternal = true;
-      break;
-    }
-  }
-  if (!hasExternal) return "no_external_guest";
+  if (!hasOtherAttendee) return "no_other_attendee";
   return "eligible";
 }

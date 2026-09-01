@@ -5,6 +5,7 @@ import { HomePage } from "./pages/HomePage";
 import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { IdeaEnginePage } from "./pages/IdeaEnginePage";
+import { MeetingsOverviewPage } from "./pages/MeetingsOverviewPage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
 import { NewPersonProfilePage } from "./pages/NewPersonProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -61,6 +62,7 @@ export function App() {
             product surface, not a Module, so it gets its own nav. */}
         <nav aria-label="Products">
           <NavLink to="/people">Person Profiles</NavLink>
+          <NavLink to="/meetings">Meeting Wizard</NavLink>
         </nav>
         <nav aria-label="Settings">
           <NavLink to="/settings">Settings</NavLink>
@@ -82,7 +84,12 @@ export function App() {
           <Route path="/youtube" element={<YoutubePage />} />
           <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
-          <Route path="/meeting-brief" element={<MeetingBriefPage />} />
+          {/* Meeting Wizard (ADR-0043): Overview plus the sibling Brief
+              journey; Brief and Debrief lifecycle state stays separate. The
+              legacy /meeting-brief product route is gone — not-found. */}
+          <Route path="/meetings" element={<MeetingsOverviewPage />} />
+          <Route path="/meetings/brief" element={<MeetingBriefPage />} />
+          <Route path="/meetings/brief/:occurrenceKey" element={<MeetingBriefPage />} />
           <Route path="/content-research" element={<ContentResearchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/people" element={<PeoplePage />} />

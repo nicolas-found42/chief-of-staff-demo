@@ -7,8 +7,6 @@ import type {
   ContentShortlist,
   DriveIntakeStatus,
   GoogleStatus,
-  GuestProfileCheckResult,
-  GuestProfileStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
   MeetingBriefIndex,
@@ -461,17 +459,7 @@ export const api = {
     request<HubSpotStatus>("/api/meeting-brief/hubspot/disconnect", { method: "POST" }),
   hubspotCheck: () =>
     request<HubSpotSetupCheck>("/api/meeting-brief/hubspot/check", { method: "POST" }),
-  guestProfileStatus: () => request<GuestProfileStatus>("/api/meeting-brief/guest-profile/status"),
-  guestProfileConnect: (endpoint: string, apiKey: string) =>
-    request<GuestProfileStatus>("/api/meeting-brief/guest-profile/connect", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ endpoint, apiKey }),
-    }),
-  guestProfileDisconnect: () =>
-    request<GuestProfileStatus>("/api/meeting-brief/guest-profile/disconnect", { method: "POST" }),
-  guestProfileCheck: () =>
-    request<GuestProfileCheckResult>("/api/meeting-brief/guest-profile/check", { method: "POST" }),
+  meetingsOverview: () => request<MeetingBriefIndex>("/api/meetings/overview"),
   meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
   saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
     request<{ internalDomains: string[] }>("/api/meeting-brief/config", {

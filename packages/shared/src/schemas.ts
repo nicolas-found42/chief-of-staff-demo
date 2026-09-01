@@ -176,23 +176,6 @@ export const ConfigSchema = z.strictObject({
             .array(z.string())
             .default([])
             .transform((arr) => normalizeInternalDomains(arr)),
-          guestProfile: z
-            .strictObject({
-              endpoint: z.string().default(""),
-              apiKey: z.string().default(""),
-              lastVerifiedAt: z.string().nullable().default(null),
-              lastCheckAt: z.string().nullable().default(null),
-              lastCheckState: z.string().nullable().default(null),
-              lastCheckDetail: z.string().nullable().default(null),
-            })
-            .default({
-              endpoint: "",
-              apiKey: "",
-              lastVerifiedAt: null,
-              lastCheckAt: null,
-              lastCheckState: null,
-              lastCheckDetail: null,
-            }),
           hubspot: z
             .strictObject({
               token: z.string().default(""),
@@ -202,14 +185,6 @@ export const ConfigSchema = z.strictObject({
         })
         .default({
           internalDomains: [],
-          guestProfile: {
-            endpoint: "",
-            apiKey: "",
-            lastVerifiedAt: null,
-            lastCheckAt: null,
-            lastCheckState: null,
-            lastCheckDetail: null,
-          },
           hubspot: { token: "", lastVerifiedAt: null },
         }),
     })
@@ -245,14 +220,6 @@ export const ConfigSchema = z.strictObject({
       },
       "meeting-brief-generator": {
         internalDomains: [],
-        guestProfile: {
-          endpoint: "",
-          apiKey: "",
-          lastVerifiedAt: null,
-          lastCheckAt: null,
-          lastCheckState: null,
-          lastCheckDetail: null,
-        },
         hubspot: { token: "", lastVerifiedAt: null },
       },
     }),

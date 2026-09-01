@@ -75,10 +75,10 @@ const MODULES: ModuleDescriptor[] = [
   },
   {
     id: "meeting-brief-generator",
-    path: "/meeting-brief",
+    path: "/meetings/brief",
     label: "Meeting Brief Generator",
     description:
-      "Prepare concise briefings for upcoming meetings with external guests — history, company, intelligence, and profile.",
+      "Prepare concise briefings for upcoming internal and external meetings — history, company, intelligence, and Person Profiles.",
     status: "live",
     resultView: MeetingBriefResultView,
   },

@@ -459,4 +459,25 @@ describe("Meeting Brief enrich routes Calendar attendee identity through Person 
     expect(store.get("person_clash_b")).toEqual(clashB);
     expect(files.has("attendee-profiles.json")).toBe(false);
   });
+
+  it("an archived Profile is never newly selected as an attendee (issue://136)", async () => {
+    const holder = profiles.create({
+      fullName: "Alice Archived",
+      primaryEmail: "alice@external.co",
+    });
+    profiles.archive(holder.id);
+    const deps = makeEnrichDeps();
+    const { files, ctx } = makeEnrichCtx();
+
+    const error = await enrichUnified(attendeeEvent(), ctx, deps).then(
+      () => null,
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(StageFailure);
+    expect((error as StageFailure).hint).toContain("archived_profile:");
+    expect((error as StageFailure).hint).toContain(holder.id);
+    // No shell was created over the archived identity and nothing was pinned.
+    expect(files.has("attendee-profiles.json")).toBe(false);
+    expect(profiles.get(holder.id)?.archivedAt).not.toBeNull();
+  });
 });

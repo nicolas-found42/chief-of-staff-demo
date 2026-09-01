@@ -211,54 +211,6 @@ export interface MeetingBriefIndexEntry {
   delivery: MeetingBriefDeliveryState | null;
   supersedes: string | null;
 }
-export const GUEST_PROFILE_PROVIDER_ID = "guest-profile" as const;
-export const GUEST_PROFILE_PROVIDER_NAME = "Guest Profile" as const;
-
-export type GuestProfileOutcome = "completed" | "empty" | "failed";
-export type GuestProfileConfidence = "high" | "medium" | "low";
-export type GuestProfileConnectionState =
-  "unconfigured" | "connected" | "unverified" | "rejected" | "missing_authority" | "unavailable";
-
-export interface GuestProfileArtifact {
-  guestEmail: string;
-  occurrenceKey: string;
-  eventVersion: string;
-  source: typeof GUEST_PROFILE_PROVIDER_ID;
-  outcome: GuestProfileOutcome;
-  identityConfidence: GuestProfileConfidence | null;
-  role: string | null;
-  background: string | null;
-  currentEmployer: { name: string; domain: string | null; evidence: string[] } | null;
-  references: string[];
-  diagnostics: {
-    provider: typeof GUEST_PROFILE_PROVIDER_NAME;
-    endpoint: string;
-    statusCode?: number;
-    error?: string;
-    attemptedAt: string;
-    durationMs?: number;
-  };
-}
-
-export interface GuestProfileStatus {
-  provider: typeof GUEST_PROFILE_PROVIDER_NAME;
-  endpoint: string | null;
-  apiKeyHint: string;
-  state: GuestProfileConnectionState;
-  lastVerifiedAt: string | null;
-  lastCheck?: { at: string; state: GuestProfileConnectionState; detail: string } | null;
-}
-
-export interface GuestProfileCheckResult {
-  state: GuestProfileConnectionState;
-  detail: string;
-  checkedAt: string;
-}
-
-export function isGuestProfileEmployerMatch(artifact: GuestProfileArtifact): boolean {
-  return artifact.outcome === "completed" && artifact.currentEmployer !== null;
-}
-
 // ---------------------------------------------------------------------------
 // HubSpot CRM — per-user private-app token, read-only contact/company/deal
 // (issue://86, Spec #80). Shell stores secret + classifies state, Module owns

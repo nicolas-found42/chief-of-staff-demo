@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- enrichment helpers deliberately handle nullable provider errors */
 import type {
-  GuestProfileArtifact,
   HubSpotCompany,
   HubSpotContact,
   HubSpotDeal,
@@ -10,20 +9,16 @@ import type {
   PersonProfileMeetingProjection,
   MeetingBriefPersonProfileLink,
 } from "@chief-of-staff-demo/shared";
-import {
-  GUEST_PROFILE_PROVIDER_ID,
-  PERSON_PROFILE_SOURCE_ID,
-  isGuestProfileEmployerMatch,
-} from "@chief-of-staff-demo/shared";
+import { PERSON_PROFILE_SOURCE_ID } from "@chief-of-staff-demo/shared";
 import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
-import { extractDomain, isConsumerDomain, isExternalGuest } from "../eligibility.js";
+import { extractDomain, isConsumerDomain } from "../eligibility.js";
+import { attendeeBundleFor, type MeetingBriefBundleProvider } from "../bundles.js";
 import type { GmailProvider } from "../google/gmail.js";
 import { enrichGmailExact, enrichGmailCompanyDomain } from "../google/gmail.js";
 import type { CalendarHistoryProvider } from "../google/calendarHistory.js";
 import { enrichCalendarHistory } from "../google/calendarHistory.js";
 import type { DriveProvider } from "../google/drive.js";
 import { enrichDriveDocs } from "../google/drive.js";
-import type { GuestProfileProvider } from "../profile/provider.js";
 import { WorkspacePersonProfiles } from "../../../person-profile/profiles.js";
 import type { HubSpotApi } from "../hubspot/client.js";
 import { enrichGuestWithHubSpot } from "../hubspot/enrichment.js";
@@ -53,8 +48,6 @@ export interface MeetingBriefEnrichmentProviders {
    *  resolved and pinned through it (issue #124), never through the legacy
    *  broad resolver. */
   attendeeProfiles?: WorkspacePersonProfiles | null;
-  /** @deprecated Legacy single-endpoint adapter retained while stored config and old Runs migrate. */
-  profileProvider?: GuestProfileProvider | null;
   getHubSpotApi?: (() => HubSpotApi | null) | null;
   publicIntelligenceProvider?: PublicIntelligenceProvider | null;
   proposeEmployer?:
@@ -70,24 +63,6 @@ export interface UnifiedEnrichDeps {
   providers: MeetingBriefEnrichmentProviders;
   internalDomains: string[];
   occurrenceKey?: string;
-}
-
-function profileSection(
-  artifact: GuestProfileArtifact,
-  guestEmail: string,
-): MeetingBriefEnrichmentSection {
-  return {
-    source: GUEST_PROFILE_PROVIDER_ID,
-    guest: guestEmail.toLowerCase(),
-    status: artifact.outcome,
-    evidence:
-      artifact.outcome === "completed"
-        ? [artifact.role, artifact.background, artifact.currentEmployer?.name]
-            .filter((value): value is string => Boolean(value))
-            .map(sanitizeEvidence)
-        : [],
-    references: artifact.references,
-  };
 }
 
 function personProfileSection(
@@ -145,6 +120,21 @@ function pinAttendeeProfiles(
     if (attendee.resource) continue;
     const email = attendee.email.toLowerCase();
     if (byEmail.has(email)) continue;
+    // Archived Profiles are lifecycle state, not selectable attendees
+    // (issue://136): Calendar never reuses one and never shells over it. The
+    // Run fails visibly with a classified reason so a person can restore or
+    // resolve the Profile explicitly instead of the Brief guessing.
+    const archivedHolder = profiles
+      .search({ query: email, includeArchived: true })
+      .find(
+        (candidate) =>
+          candidate.archivedAt !== null &&
+          candidate.emails.some((value) => value.trim().toLowerCase() === email),
+      );
+    if (archivedHolder)
+      throw new Error(
+        `archived_profile: An archived Person Profile (${archivedHolder.id}) holds the Calendar attendee email ${email}; restore or resolve it explicitly before it attends a meeting.`,
+      );
     const { profile, created } = profiles.ensureCalendarAttendeeProfile({
       email,
       provenance,
@@ -182,92 +172,6 @@ function pinnedPersonProfile(
     `${JSON.stringify(projection, null, 2)}\n`,
   );
   return { projection, section: personProfileSection(projection) };
-}
-
-// Preservation helpers for hubspot/profile
-
-async function enrichProfileWithRetry(
-  provider: GuestProfileProvider,
-  guestEmail: string,
-  occKey: string,
-  eventVersion: string,
-  endpoint: string,
-  apiKey: string,
-  ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
-): Promise<{ artifact: GuestProfileArtifact; section: MeetingBriefEnrichmentSection }> {
-  const sanitized = guestEmail.replace(/[^a-zA-Z0-9]/g, "_");
-  const filename = `profile-${sanitized}-${sanitizeArtifactVersion(eventVersion)}.json`;
-
-  const existingRaw = ctx.readFile(filename);
-  if (existingRaw) {
-    try {
-      const existing = JSON.parse(existingRaw) as GuestProfileArtifact;
-      if (
-        existing.eventVersion === eventVersion &&
-        (existing.outcome === "completed" || existing.outcome === "empty")
-      ) {
-        return { artifact: existing, section: profileSection(existing, guestEmail) };
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  const outcome = await withBoundedRetry({
-    attempt: () =>
-      provider.lookup({
-        guestEmail,
-        endpoint,
-        apiKey,
-        occurrenceKey: occKey,
-        eventVersion,
-      }),
-    onRetry: (_error, attempt) =>
-      ctx.event("guest_profile_retry", { guest: guestEmail.toLowerCase(), attempt }),
-  });
-  if (!outcome.ok) {
-    // After bounded retry, keep an explicit per-guest failed artifact; only provider-wide
-    // failures throw (issue #80 US67/US68).
-    const error = outcome.error;
-    const attemptedAt = new Date().toISOString();
-    const failedArtifact: GuestProfileArtifact = {
-      guestEmail: guestEmail.toLowerCase(),
-      occurrenceKey: occKey,
-      eventVersion,
-      source: GUEST_PROFILE_PROVIDER_ID,
-      outcome: "failed",
-      identityConfidence: null,
-      role: null,
-      background: null,
-      currentEmployer: null,
-      references: [],
-      diagnostics: {
-        provider: "Guest Profile",
-        endpoint,
-        attemptedAt,
-        error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
-        ...(readErrorStatus(error) ? { statusCode: readErrorStatus(error)! } : {}),
-      },
-    };
-    ctx.writeFile(filename, JSON.stringify(failedArtifact, null, 2) + "\n");
-    const section: MeetingBriefEnrichmentSection = {
-      source: GUEST_PROFILE_PROVIDER_ID,
-      guest: guestEmail.toLowerCase(),
-      status: "failed",
-      evidence: [],
-      references: [],
-    };
-    return { artifact: failedArtifact, section };
-  }
-  const artifact = outcome.value;
-  ctx.writeFile(filename, JSON.stringify(artifact, null, 2) + "\n");
-  const section = profileSection(artifact, guestEmail);
-  ctx.event("guest_profile_enriched", {
-    guest: guestEmail.toLowerCase(),
-    outcome: artifact.outcome,
-    employerMatch: isGuestProfileEmployerMatch(artifact),
-  });
-  return { artifact, section };
 }
 
 async function enrichHubSpotWithRetry(
@@ -445,9 +349,6 @@ export async function enrichUnified(
   const providers = deps.providers;
   const hubSpotApi = providers.getHubSpotApi?.() ?? null;
   const internalDomains = deps.internalDomains ?? [];
-  const externalAttendees = event.attendees.filter(
-    (a) => !a.resource && isExternalGuest(a, internalDomains),
-  );
   const allSections: MeetingBriefEnrichmentSection[] = [];
   const personProfileLinks: MeetingBriefPersonProfileLink[] = [];
   const occurrenceKey =
@@ -456,6 +357,17 @@ export async function enrichUnified(
   const eventVersion = event.version;
   const eventStartAt = event.startAt;
 
+  // Bundle selection (issue://136, spec Implementation Decision 18): every
+  // non-resource attendee is classified against the configured Internal
+  // Domains and enriched from its approved versioned bundle — internal
+  // attendees from Workspace-owned evidence, external attendees from the
+  // full collection.
+  const classified = event.attendees
+    .filter((attendee) => !attendee.resource)
+    .map((attendee) => ({
+      attendee,
+      bundle: attendeeBundleFor(attendee.email, internalDomains),
+    }));
   // Calendar attendee identity (issue #124): route every non-resource
   // attendee through the shared Person Profiles interface and pin the exact
   // Profile id + revision this Run consumes. A conflicting stable identifier
@@ -465,43 +377,63 @@ export async function enrichUnified(
     try {
       attendeePins = pinAttendeeProfiles(providers.attendeeProfiles, event, occurrenceKey, ctx);
     } catch (error) {
-      // A conflicting stable identifier (issue #124) is a classified, visible
-      // enrich failure — never a silent merge or overwrite.
-      throw new StageFailure(
-        "enrich",
-        `conflicting_identity: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      // An archived Profile holding an attendee email is its own classified
+      // failure (issue://136); any other stable-identifier conflict is a
+      // conflicting_identity — both are visible, never merged or overwritten.
+      if (message.startsWith("archived_profile:")) throw new StageFailure("enrich", message);
+      throw new StageFailure("enrich", `conflicting_identity: ${message}`);
     }
   }
-
-  // Spec A: fail when required enrichment class wholly unavailable (rejected/missing_configuration/provider-wide outage)
-  if (externalAttendees.length > 0) {
-    const missing: string[] = [];
-    if (!providers.gmailProvider) missing.push("gmail");
-    if (!providers.calendarHistoryProvider) missing.push("calendarHistory");
-    if (!providers.driveProvider) missing.push("drive");
-    if (!providers.attendeeProfiles && !providers.profileProvider) missing.push("personProfile");
-    if (!hubSpotApi) missing.push("hubSpot");
-    if (!providers.publicIntelligenceProvider) missing.push("publicIntelligence");
-    if (missing.length > 0) {
-      throw new StageFailure(
-        "enrich",
-        `missing_configuration: required providers unavailable: ${missing.join(", ")}`,
-      );
-    }
+  // Spec A: fail when a bundle-selected provider class is wholly unavailable
+  // (rejected/missing_configuration/provider-wide outage). The requirement
+  // follows the bundles of the attendees actually present: an internal-only
+  // Brief never demands CRM or public search (issue://136).
+  const selected = new Set(classified.flatMap(({ bundle }) => [...bundle.providers]));
+  const missing: string[] = [];
+  if (selected.has("person-profile") && !providers.attendeeProfiles) {
+    missing.push("personProfile");
+  }
+  if (
+    (selected.has("gmail-relationship") || selected.has("gmail-company-domain")) &&
+    !providers.gmailProvider
+  ) {
+    missing.push("gmail");
+  }
+  if (selected.has("calendar-history") && !providers.calendarHistoryProvider) {
+    missing.push("calendarHistory");
+  }
+  if (selected.has("drive-workspace") && !providers.driveProvider) {
+    missing.push("drive");
+  }
+  if (selected.has("crm") && !hubSpotApi) {
+    missing.push("hubSpot");
+  }
+  if (
+    (selected.has("public-intelligence") || selected.has("employer-proposal")) &&
+    !providers.publicIntelligenceProvider
+  ) {
+    missing.push("publicIntelligence");
+  }
+  if (missing.length > 0) {
+    throw new StageFailure(
+      "enrich",
+      `missing_configuration: required providers unavailable: ${missing.join(", ")}`,
+    );
   }
 
-  // For each external guest, process all sources
-  for (const attendee of externalAttendees) {
+  for (const { attendee, bundle } of classified) {
     const guestEmail = attendee.email;
     const guestName = attendee.displayName ?? null;
     const domain = extractDomain(guestEmail) ?? "";
     const lowerDomain = domain.toLowerCase();
     const isConsumer = isConsumerDomain(lowerDomain);
-    const isInternal = internalDomains.map((d) => d.toLowerCase()).includes(lowerDomain);
+    const isExternal = bundle.kind === "external";
+    const selects = (provider: MeetingBriefBundleProvider): boolean =>
+      bundle.providers.includes(provider);
 
-    // 1. Gmail exact
-    if (providers.gmailProvider) {
+    // 1. Gmail relationship evidence
+    if (selects("gmail-relationship") && providers.gmailProvider) {
       const { section } = await enrichGmailExact(
         providers.gmailProvider,
         eventVersion,
@@ -511,8 +443,14 @@ export async function enrichUnified(
       allSections.push(section);
     }
 
-    // 2. Gmail company-domain for non-Consumer non-Internal
-    if (providers.gmailProvider && domain && !isConsumer && !isInternal) {
+    // 2. Gmail company-domain for external non-Consumer non-Internal guests
+    if (
+      isExternal &&
+      selects("gmail-company-domain") &&
+      providers.gmailProvider &&
+      domain &&
+      !isConsumer
+    ) {
       const { section } = await enrichGmailCompanyDomain(
         providers.gmailProvider,
         eventVersion,
@@ -524,7 +462,7 @@ export async function enrichUnified(
     }
 
     // 3. Calendar history
-    if (providers.calendarHistoryProvider) {
+    if (selects("calendar-history") && providers.calendarHistoryProvider) {
       const { section } = await enrichCalendarHistory(
         providers.calendarHistoryProvider,
         eventVersion,
@@ -535,9 +473,10 @@ export async function enrichUnified(
       allSections.push(section);
     }
 
-    // 4. Drive docs
-    if (providers.driveProvider) {
-      const companyForDrive = !isConsumer && !isInternal && domain ? lowerDomain : null;
+    // 4. Drive docs — company-scoped for external guests, plain workspace
+    // evidence for internal attendees.
+    if (selects("drive-workspace") && providers.driveProvider) {
+      const companyForDrive = isExternal && !isConsumer && domain ? lowerDomain : null;
       const { section } = await enrichDriveDocs(
         providers.driveProvider,
         eventVersion,
@@ -548,13 +487,10 @@ export async function enrichUnified(
       allSections.push(section);
     }
 
-    // 5. Person Profile. New Runs consume the attendee's pinned Person
-    // Profile revision through the shared interface (issue #124); the legacy
-    // single-endpoint provider remains readable for old tests/config during
-    // migration.
-    let profileArtifact: GuestProfileArtifact | null = null;
+    // 5. Person Profile — every attendee consumes its pinned Profile revision
+    // through the shared interface (issue #124, #136).
     let profileEmployerMatch: { name: string; domain: string | null } | null = null;
-    if (providers.attendeeProfiles && attendeePins) {
+    if (selects("person-profile") && providers.attendeeProfiles && attendeePins) {
       const pin = attendeePins.find((item) => item.email === guestEmail.toLowerCase());
       if (!pin)
         throw new StageFailure(
@@ -576,29 +512,13 @@ export async function enrichUnified(
         profileRevision: pin.profileRevision,
       });
       allSections.push(section);
-    } else if (providers.profileProvider) {
-      const { artifact, section } = await enrichProfileWithRetry(
-        providers.profileProvider,
-        guestEmail,
-        occurrenceKey,
-        eventVersion,
-        "",
-        "",
-        ctx,
-      );
-      profileArtifact = artifact;
-      if (isGuestProfileEmployerMatch(artifact) && artifact.currentEmployer) {
-        profileEmployerMatch = {
-          name: artifact.currentEmployer.name,
-          domain: artifact.currentEmployer.domain,
-        };
-      }
-      allSections.push(section);
     }
+
+    if (!isExternal) continue;
 
     // 6. HubSpot
     let hubspotCompany: HubSpotCompany | null = null;
-    if (hubSpotApi) {
+    if (selects("crm") && hubSpotApi) {
       const { sections, employerMatch } = await enrichHubSpotWithRetry(
         hubSpotApi,
         eventVersion,
@@ -634,11 +554,13 @@ export async function enrichUnified(
         (section) =>
           section.source === PERSON_PROFILE_SOURCE_ID && section.guest === guestEmail.toLowerCase(),
       );
-      employerMatchEvidence =
-        profileArtifact?.currentEmployer?.evidence ?? personProfileSection?.evidence ?? [];
-      employerMatchReferences =
-        profileArtifact?.references ?? personProfileSection?.references ?? [];
-    } else if (providers.proposeEmployer && providers.publicIntelligenceProvider) {
+      employerMatchEvidence = personProfileSection?.evidence ?? [];
+      employerMatchReferences = personProfileSection?.references ?? [];
+    } else if (
+      selects("employer-proposal") &&
+      providers.proposeEmployer &&
+      providers.publicIntelligenceProvider
+    ) {
       // Model proposes candidate to drive research
       const candidate = await providers.proposeEmployer(guestEmail, guestName, eventVersion);
       if (candidate) {
@@ -693,7 +615,7 @@ export async function enrichUnified(
     }
 
     // Accepted matches unlock bounded company and industry intelligence.
-    if (employerMatch && providers.publicIntelligenceProvider) {
+    if (selects("public-intelligence") && employerMatch && providers.publicIntelligenceProvider) {
       const companyName = employerMatch.name;
       const companyDomain = employerMatch.domain;
 
@@ -718,20 +640,6 @@ export async function enrichUnified(
         ctx,
       );
       allSections.push(industryNews);
-    }
-  }
-
-  // Internal attendees have no enrichment bundle loop, but their attendee
-  // identity is still pinned (issue #124): give each one a person-profile
-  // section from the exact Profile revision this Run consumes.
-  if (providers.attendeeProfiles && attendeePins) {
-    const enrichedGuests = new Set(
-      externalAttendees.map((attendee) => attendee.email.toLowerCase()),
-    );
-    for (const pin of attendeePins) {
-      if (enrichedGuests.has(pin.email)) continue;
-      const { section } = pinnedPersonProfile(providers.attendeeProfiles, pin, eventVersion, ctx);
-      allSections.push(section);
     }
   }
 

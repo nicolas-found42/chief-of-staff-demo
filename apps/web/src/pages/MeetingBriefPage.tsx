@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type {
   MeetingBriefCancellation,
   MeetingBriefIndexEntry,
@@ -47,8 +47,9 @@ function DeliveryBadge({ delivery }: { delivery: MeetingBriefIndexEntry["deliver
 }
 
 export function MeetingBriefPage() {
-  useTitle("Meeting Brief Generator");
+  const { occurrenceKey } = useParams();
   const headingRef = usePageFocus<HTMLHeadingElement>();
+  useTitle("Meeting Brief");
   const [index, setIndex] = useState<IndexState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -97,23 +98,27 @@ export function MeetingBriefPage() {
     if (!index) return new Map<string, MeetingBriefIndexEntry[]>();
     return groupByOccurrence(index.briefs);
   }, [index]);
+  const visibleGroups = useMemo(
+    () => (occurrenceKey ? new Map([...groups].filter(([key]) => key === occurrenceKey)) : groups),
+    [groups, occurrenceKey],
+  );
 
   const currentByOccurrence = useMemo(() => {
     const map = new Map<string, MeetingBriefIndexEntry>();
     const cancelled = new Set(index?.cancellations.map((item) => item.occurrenceKey) ?? []);
-    for (const [key, list] of groups) {
+    for (const [key, list] of visibleGroups) {
       if (cancelled.has(key)) continue;
       const latestRevision = list[0];
       if (latestRevision) map.set(key, latestRevision);
     }
     return map;
-  }, [groups, index]);
+  }, [visibleGroups, index]);
 
   if (!index) {
     return (
       <div className="page">
         <h1 ref={headingRef} tabIndex={-1}>
-          Meeting Brief Generator
+          Meeting Brief
         </h1>
         {error ? (
           <div className="banner banner-error" role="alert">
@@ -128,14 +133,24 @@ export function MeetingBriefPage() {
     );
   }
 
-  const upcoming = index.upcoming;
-  const briefs = index.briefs;
+  const upcoming = occurrenceKey
+    ? index.upcoming.filter((item) => item.occurrenceKey === occurrenceKey)
+    : index.upcoming;
+  const briefs = occurrenceKey
+    ? index.briefs.filter((entry) => entry.occurrenceKey === occurrenceKey)
+    : index.briefs;
 
   return (
     <div className="page">
       <h1 ref={headingRef} tabIndex={-1}>
-        Meeting Brief Generator
+        Meeting Brief
       </h1>
+      {occurrenceKey ? (
+        <p>
+          <Link to="/meetings">← Meeting Wizard overview</Link> · occurrence{" "}
+          <code>{occurrenceKey}</code>
+        </p>
+      ) : null}
       <p className="muted">
         Upcoming Eligible Meetings from Intake schedules; current briefs are latest per occurrence.
         History preserves revision chain and cancellation state. Briefs are derived from Runs — no
