@@ -1,4 +1,9 @@
 import { z } from "zod";
+import type {
+  IdentityDecisionAction,
+  IdentityDecisionOutcome,
+  RememberedMapping,
+} from "./person-profile.js";
 
 /**
  * Extraction result — mirror of the routine's `routine/outbox-schema.json` v1,
@@ -236,4 +241,187 @@ export interface TranscriptProcessingPass {
   skipped: number;
   /** Source revisions found already processed or deliberately skipped, untouched. */
   unchanged: number;
+}
+
+/* ==========================================================================
+ * Transcript identity mining (ADR-0043, issue #126)
+ *
+ * Mentions, Organization Mentions, match candidates, Identity Decisions and
+ * remembered mappings are Catalog-owned records: their persistence lives
+ * outside Person Profiles (spec #117, Implementation Decision 7). A Mention
+ * is evidence that a string occurred in context — never proof of identity —
+ * and no mining path creates a Person Profile; only an explicit owner
+ * decision does.
+ * ========================================================================== */
+
+/** Entity classification for one preserved span. Never a guess at identity. */
+export type TranscriptMentionKind =
+  "person" | "organization" | "ambiguous-name" | "product" | "unknown";
+
+export type TranscriptMentionConfidence = "high" | "medium" | "low";
+
+/**
+ * How the mentioned person relates to the meeting as observed: a source
+ * speaker label, a name spoken inside another speaker's utterance
+ * (attendee or not — the roster is not assumed), or a span with no speaker
+ * context on its line.
+ */
+export type TranscriptAttendeeStatus = "speaker" | "third-person" | "unknown";
+
+/** Where in which immutable Transcript the span was preserved from. */
+export interface TranscriptMentionProvenance {
+  transcriptId: string;
+  /** Character offsets of the span inside the normalized transcript text. */
+  spanStart: number;
+  spanEnd: number;
+  /** The span exactly as it occurs in the normalized text. */
+  quote: string;
+  /** Line timestamp, when the source line carried one. */
+  timestamp: string | null;
+  /** Speaker label of the line the span occurs on, when any. */
+  speakerLabel: string | null;
+  meetingDate: string | null;
+}
+
+export interface TranscriptMention {
+  id: string;
+  kind: TranscriptMentionKind;
+  surfaceText: string;
+  /**
+   * Comparison forms derived per spec #117 (Extraction and normalization):
+   * whitespace-, punctuation-, honorific- and credential-normalized
+   * lowercase variants. Candidate matching compares these, never the raw
+   * surface text.
+   */
+  normalizedForms: string[];
+  /** Exact stable identifiers observed on the span (emails in v1). */
+  emails: string[];
+  /** Normalized organization name when the person was named in org context. */
+  organizationContext: string | null;
+  attendeeStatus: TranscriptAttendeeStatus;
+  confidence: TranscriptMentionConfidence;
+  provenance: TranscriptMentionProvenance;
+  minedAt: string;
+  algorithmVersion: number;
+}
+
+/**
+ * One preserved organization span and its normalized identifiers (spec #117).
+ * It is shared evidence, not a Profile employer string and not a new
+ * top-level resource — there is no Organization Profile in v1.
+ */
+export interface OrganizationMention {
+  id: string;
+  surfaceText: string;
+  normalizedName: string;
+  aliases: string[];
+  /** Email domains observed for the organization in the transcript. */
+  domains: string[];
+  externalCompanyIds: { system: string; externalId: string }[];
+  /** Person-mention ids seen in organization context with this mention. */
+  relatedMentionIds: string[];
+  confidence: TranscriptMentionConfidence;
+  provenance: TranscriptMentionProvenance;
+  minedAt: string;
+  algorithmVersion: number;
+}
+
+/** Spec #117 policy classes, minus "rejected": a non-person is a decision,
+ *  not a Profile candidate, so no candidate record exists for one. */
+export type TranscriptCandidatePolicyClass = "confirmed" | "probable" | "ambiguous";
+
+/** One scored signal inside a candidate's explanation. */
+export interface TranscriptCandidateSignal {
+  signal:
+    | "exact-email"
+    | "remembered-mapping"
+    | "normalized-full-name"
+    | "speaker-label"
+    | "employer-hint";
+  /** What was compared to what, in review-readable words. */
+  explanation: string;
+  matched: boolean;
+  weight: number;
+}
+
+/** A conflict that blocks or weakens a candidate. */
+export interface TranscriptCandidateConflict {
+  kind: "archived-profile" | "email-belongs-elsewhere" | "name-email-mismatch";
+  explanation: string;
+  /** Hard conflicts prevent auto-linking (spec #117 policy classes). */
+  hard: boolean;
+}
+
+export interface TranscriptCandidateEvidence {
+  quote: string;
+  spanStart: number;
+  spanEnd: number;
+  timestamp: string | null;
+  speakerLabel: string | null;
+}
+
+/**
+ * One explainable Profile candidate: every signal that was considered (with
+ * its outcome and weight), every conflict, the resulting score, the lead
+ * over the next-best candidate, the evidence spans, and the algorithm
+ * version that produced the judgment.
+ */
+export interface TranscriptMatchCandidate {
+  id: string;
+  mentionId: string;
+  transcriptId: string;
+  profileId: string;
+  policyClass: TranscriptCandidatePolicyClass;
+  score: number;
+  /** This candidate's lead over the next-best; null when it is the only one. */
+  leadOverNext: number | null;
+  signals: TranscriptCandidateSignal[];
+  conflicts: TranscriptCandidateConflict[];
+  evidence: TranscriptCandidateEvidence[];
+  algorithmVersion: number;
+  generatedAt: string;
+}
+
+/**
+ * The durable, auditable resolution of a Transcript Mention to a Profile, a
+ * rejection, or an unresolved state (spec #117 vocabulary). Policy-made
+ * decisions are auto-links from non-conflicting stable identifiers or
+ * replays of remembered mappings; owner decisions come from the Review queue.
+ */
+export interface IdentityDecision {
+  id: string;
+  mentionId: string;
+  transcriptId: string;
+  action: IdentityDecisionAction;
+  outcome: IdentityDecisionOutcome;
+  profileId: string | null;
+  profileRevision: number | null;
+  decidedBy: "policy" | "owner";
+  decidedAt: string;
+  note: string | null;
+}
+
+/** One Review-queue row: a mention, its explainable candidates, its decision. */
+export interface TranscriptReviewItem {
+  transcriptId: string;
+  transcriptFileName: string | null;
+  meetingDate: string | null;
+  mention: TranscriptMention;
+  candidates: TranscriptMatchCandidate[];
+  decision: IdentityDecision | null;
+  /** A remembered mapping that produced or may replay this mention's link. */
+  rememberedMapping: RememberedMapping | null;
+}
+
+/** Organization review stays scoped to identity review and meeting evidence. */
+export interface OrganizationReviewItem {
+  transcriptId: string;
+  transcriptFileName: string | null;
+  organization: OrganizationMention;
+  relatedPeople: { mentionId: string; surfaceText: string }[];
+}
+
+export interface TranscriptReviewQueue {
+  items: TranscriptReviewItem[];
+  organizations: OrganizationReviewItem[];
 }

@@ -147,3 +147,49 @@ export interface PersonProfileMeetingProjection extends PersonProfileProjectionB
 
 export type PersonProfileProjection =
   PersonProfilePublicSafeProjection | PersonProfileMeetingProjection;
+
+/* ==========================================================================
+ * Person Profiles Review queue decision vocabulary (issue #126)
+ *
+ * The Review queue surface itself is the Transcript Catalog's (spec #117
+ * "Required surface"; Implementation Decision 7 keeps mention/decision
+ * persistence outside Profiles). These are the owner-facing decision types
+ * that surface acts with; the catalog's transcript.ts section imports them.
+ * ========================================================================== */
+
+export type IdentityDecisionAction =
+  | "confirm"
+  | "alternate-profile"
+  | "create-profile"
+  | "not-a-person"
+  | "unresolved"
+  | "remember-mapping";
+
+export type IdentityDecisionOutcome = "linked" | "created" | "not-a-person" | "unresolved";
+
+/**
+ * The scope a remembered mapping is limited to (spec #117: a review
+ * confirmation applies to one mention unless the owner explicitly stores a
+ * scoped reusable mapping — never a silent global rule).
+ */
+export type RememberedMappingScope = "transcript" | "workspace";
+
+/**
+ * An opt-in, versioned, reversible name→Profile mapping the owner stored
+ * from an explicit review decision. Mining replays it only inside its
+ * declared scope; revocation sets `revokedAt` and stops every future replay.
+ */
+export interface RememberedMapping {
+  id: string;
+  scope: RememberedMappingScope;
+  /** Transcript id for "transcript" scope; null only for "workspace". */
+  scopeId: string | null;
+  /** The normalized name form the mapping was stored for. */
+  normalizedForm: string;
+  surfaceText: string;
+  profileId: string;
+  /** Bumped when the owner re-points the same scoped name at another Profile. */
+  mappingVersion: number;
+  createdAt: string;
+  revokedAt: string | null;
+}

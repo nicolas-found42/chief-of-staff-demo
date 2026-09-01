@@ -51,10 +51,18 @@ export interface TranscriptCatalogDisclosure {
   model: string;
 }
 
+/** The identity-mining part of Transcript processing. Its implementation owns
+ * the shared Person Profiles Review queue; the Catalog only supplies each
+ * newly registered immutable Transcript. */
+export interface TranscriptIdentityProcessor {
+  mine(record: TranscriptRecord): void;
+}
+
 export interface TranscriptCatalogDeps {
   workspaceDir: string;
   source: TranscriptCatalogSource;
   disclosure: TranscriptCatalogDisclosure;
+  identity?: TranscriptIdentityProcessor;
   now?: () => Date;
   log?: (message: string) => void;
 }
@@ -114,6 +122,7 @@ export class TranscriptCatalog {
   private readonly store: TranscriptCatalogStore;
   private readonly source: TranscriptCatalogSource;
   private readonly disclosure: TranscriptCatalogDisclosure;
+  private readonly identity: TranscriptIdentityProcessor | null;
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   /** The pass currently running, if any; a second caller awaits the same one. */
@@ -123,6 +132,7 @@ export class TranscriptCatalog {
     this.store = new TranscriptCatalogStore(deps.workspaceDir);
     this.source = deps.source;
     this.disclosure = deps.disclosure;
+    this.identity = deps.identity ?? null;
     this.now = deps.now ?? (() => new Date());
     this.log = deps.log ?? (() => {});
   }
@@ -373,6 +383,7 @@ export class TranscriptCatalog {
         speakers: collectSpeakerLabels(normalizedText),
       };
       this.store.saveTranscript(record);
+      this.identity?.mine(record);
       this.recordEntry({ ...entry, state: "processed", transcriptId: record.id });
       return "processed";
     } catch (error: unknown) {
