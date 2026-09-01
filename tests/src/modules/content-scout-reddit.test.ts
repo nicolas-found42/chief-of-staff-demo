@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RedditSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/reddit";
+import { RedditSourceAdapter } from "../../../apps/server/src/source-adapters/reddit";
 import type { PublicHttpResponse } from "../../../apps/server/src/source-adapters/http";
 import type { SourceTarget } from "@chief-of-staff-demo/shared";
 

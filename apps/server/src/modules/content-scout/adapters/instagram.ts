@@ -17,7 +17,7 @@ import {
   publicCommandRunner,
   stringValue,
   type PublicCommandRunner,
-} from "./public-command.js";
+} from "../../../source-adapters/public-command.js";
 
 const INSTALOADER_TIMEOUT_MS = 180_000;
 const YT_DLP_TIMEOUT_MS = 90_000;

@@ -5,7 +5,7 @@ import {
   YouTubeSourceAdapter,
   YOUTUBE_TRANSCRIPT_VERSIONS,
   type YouTubeSourceClient,
-} from "../../../apps/server/src/modules/content-scout/adapters/youtube";
+} from "../../../apps/server/src/source-adapters/youtube";
 import type { SourceItem, SourceTarget, SourceFieldState } from "@chief-of-staff-demo/shared";
 import { determineEligibility } from "../../../apps/server/src/modules/content-scout/eligibility";
 

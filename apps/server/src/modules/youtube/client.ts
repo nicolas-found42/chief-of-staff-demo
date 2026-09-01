@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import type { YoutubeVideoCount } from "@chief-of-staff-demo/shared";
 import type { GoogleAuth } from "../../google/oauth.js";
-import type { ChannelRef } from "./channels.js";
+import type { ChannelRef } from "../../source-adapters/youtube-channels.js";
 
 /**
  * The three calls this Module makes, and nothing else. Narrow on purpose: it is

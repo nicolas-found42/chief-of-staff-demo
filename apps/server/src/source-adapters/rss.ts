@@ -5,17 +5,14 @@ import {
   type AdapterDiagnostic,
   type SourceItem,
 } from "@chief-of-staff-demo/shared";
-import type {
-  SourceAdapter,
-  SourceCollectionResult,
-} from "../../../source-adapters/source-adapter.js";
+import type { SourceAdapter, SourceCollectionResult } from "./source-adapter.js";
 import {
   canonicalUrl,
   publicHttpFetch,
   responseHash,
   retryAfterMilliseconds,
   type PublicHttpFetch,
-} from "../../../source-adapters/http.js";
+} from "./http.js";
 
 type FeedItem = {
   guid?: string;

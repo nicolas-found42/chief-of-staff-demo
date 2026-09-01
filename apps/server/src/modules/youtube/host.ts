@@ -17,7 +17,7 @@ import {
   isSpreadsheetMissing,
 } from "../../google/sheets.js";
 import type { GoogleAuth } from "../../google/oauth.js";
-import { ChannelUrlError, parseChannelUrl } from "./channels.js";
+import { ChannelUrlError, parseChannelUrl } from "../../source-adapters/youtube-channels.js";
 import { youtubeClient, type YouTubeClient } from "./client.js";
 import {
   SPREADSHEET_HEADER,

@@ -9,7 +9,7 @@ import type {
   SourceCollectionResult,
 } from "../../../source-adapters/source-adapter.js";
 import { JSDOM } from "jsdom";
-import type { BrowserRenderer } from "./browser.js";
+import type { BrowserRenderer } from "../../../source-adapters/browser.js";
 import { responseHash } from "../../../source-adapters/http.js";
 
 /**
@@ -233,7 +233,7 @@ export function evaluateLinkedInEvidenceGate(
  * Any future collection route for this adapter MUST use a clean public
  * browser (`playwrightBrowserRenderer`) with no login, imported cookies,
  * shared identity, CAPTCHA bypass, or proxy evasion — exactly the
- * `apps/server/src/modules/content-scout/adapters/browser.ts` contract.
+ * `apps/server/src/source-adapters/browser.ts` contract.
  */
 export class LinkedInComingLaterAdapter implements SourceAdapter {
   readonly id = LINKEDIN_ADAPTER_ID;

@@ -1,5 +1,5 @@
 import { chromium } from "playwright-core";
-import { assertPublicHttpUrl } from "../../../source-adapters/http.js";
+import { assertPublicHttpUrl } from "./http.js";
 
 export interface BrowserRenderResult {
   url: string;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyPublicCommandFailure,
   publicCommandRunner,
-} from "../../../apps/server/src/modules/content-scout/adapters/public-command";
+} from "../../../apps/server/src/source-adapters/public-command";
 
 describe("public command boundary", () => {
   it("preserves real execFile timeout metadata for adapter classification", async () => {

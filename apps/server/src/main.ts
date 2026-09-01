@@ -39,8 +39,8 @@ import {
   createMeetingBriefTestRuntime,
   registerMeetingBriefTestRoutes,
 } from "./modules/meeting-brief-generator/testRuntime.js";
-import { playwrightBrowserRenderer } from "./modules/content-scout/adapters/browser.js";
-import { youtubeSourceClient } from "./modules/content-scout/adapters/youtube.js";
+import { playwrightBrowserRenderer } from "./source-adapters/browser.js";
+import { youtubeSourceClient } from "./source-adapters/youtube.js";
 import { ExternalRuntimeInspector } from "./modules/content-scout/runtime.js";
 import { contentScoutProductionAdapters } from "./modules/content-scout/adapters/production.js";
 import { contentResearchProductionAdapters } from "./composition/content-research-portfolio.js";

@@ -1,29 +1,30 @@
 import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import { ContentScoutRetention } from "../modules/content-scout/retention.js";
 import { ExternalRuntimeInspector } from "../modules/content-scout/runtime.js";
-import type { BrowserRenderer } from "../modules/content-scout/adapters/browser.js";
-import { RssSourceAdapter } from "../modules/content-scout/adapters/rss.js";
-import { WebsiteSourceAdapter } from "../modules/content-scout/adapters/website.js";
-import {
-  YouTubeSourceAdapter,
-  type YouTubeSourceAccess,
-} from "../modules/content-scout/adapters/youtube.js";
-import { RedditSourceAdapter } from "../modules/content-scout/adapters/reddit.js";
+import type { BrowserRenderer } from "../source-adapters/browser.js";
+import { RssSourceAdapter } from "../source-adapters/rss.js";
+import { WebsiteSourceAdapter } from "../source-adapters/website.js";
+import { YouTubeSourceAdapter, type YouTubeSourceAccess } from "../source-adapters/youtube.js";
+import { RedditSourceAdapter } from "../source-adapters/reddit.js";
 import { HnAlgoliaSourceAdapter } from "../modules/content-research/adapters/hn.js";
 
 /*
  * Why this portfolio lives here and Content Scout's lives with Content Scout.
  *
- * Content Scout owns the adapter implementations, so the factory that arranges
- * them into its own portfolio is its own business and stays in the feature.
- * Content Research borrows six of those implementations. Assembling them inside
- * Content Research would be the reverse feature dependency issue #118 removes;
- * assembling them inside `source-adapters/` would be worse, because nothing in
- * the shared layer may reach into a feature. So the wiring belongs to neither and
- * sits in the composition layer, above both, with the bootstrap that calls it.
+ * The collectors both Modules use — RSS, website, YouTube, Reddit, and the
+ * browser and command seams under them — are Workspace-owned and live in
+ * `source-adapters/`, so neither Module owns what the other borrows (issue
+ * #118). Content Scout keeps the adapters only it has: Instagram, TikTok,
+ * Substack, LinkedIn, and its experimental lane.
  *
- * The asymmetry is the point: it marks which Module owns its collectors and
- * which one borrows them.
+ * What remains feature-specific is the *arrangement*. A portfolio is a policy
+ * decision — which platforms this Module watches, on which routes, under whose
+ * credentials — and the two Modules answer it differently: Content Research
+ * takes six shared collectors and no login, Content Scout takes those plus its
+ * own. Content Scout's factory therefore stays with Content Scout, and this one
+ * sits in the composition layer with the bootstrap that calls it, because a
+ * portfolio assembled inside `source-adapters/` would put a policy decision in
+ * the shared layer, where the next Module would inherit it by accident.
  */
 
 /**

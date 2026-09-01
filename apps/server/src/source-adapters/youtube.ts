@@ -10,12 +10,9 @@ import {
   type SourceFieldState,
 } from "@chief-of-staff-demo/shared";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
-import type { GoogleAuth } from "../../../google/oauth.js";
-import { parseChannelUrl, type ChannelRef } from "../../youtube/channels.js";
-import type {
-  SourceAdapter,
-  SourceCollectionResult,
-} from "../../../source-adapters/source-adapter.js";
+import type { GoogleAuth } from "../google/oauth.js";
+import { parseChannelUrl, type ChannelRef } from "./youtube-channels.js";
+import type { SourceAdapter, SourceCollectionResult } from "./source-adapter.js";
 import { commandAdapterResults } from "./public-command.js";
 
 const execFileAsync = promisify(execFile);

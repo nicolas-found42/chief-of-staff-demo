@@ -19,7 +19,7 @@ import type {
 } from "../../../apps/server/src/source-adapters/source-adapter";
 import { openRuns } from "../../../apps/server/src/runs";
 import { ExternalRuntimeInspector } from "../../../apps/server/src/modules/content-scout/runtime";
-import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";
+import { RssSourceAdapter } from "../../../apps/server/src/source-adapters/rss";
 
 const START = Date.parse("2026-08-25T12:00:00.000Z");
 

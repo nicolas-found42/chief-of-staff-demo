@@ -1,15 +1,18 @@
 import type { SourceAdapter } from "../../../source-adapters/source-adapter.js";
 import { ContentScoutRetention } from "../retention.js";
 import { ExternalRuntimeInspector } from "../runtime.js";
-import type { BrowserRenderer } from "./browser.js";
+import type { BrowserRenderer } from "../../../source-adapters/browser.js";
 import { InstagramInstaloaderAdapter } from "./instagram.js";
 import { LinkedInComingLaterAdapter } from "./linkedin.js";
-import { RedditSourceAdapter } from "./reddit.js";
-import { RssSourceAdapter } from "./rss.js";
+import { RedditSourceAdapter } from "../../../source-adapters/reddit.js";
+import { RssSourceAdapter } from "../../../source-adapters/rss.js";
 import { SubstackEnrichmentAdapter } from "./substack.js";
 import { TikTokYtDlpAdapter } from "./tiktok.js";
-import { WebsiteSourceAdapter } from "./website.js";
-import { YouTubeSourceAdapter, type YouTubeSourceAccess } from "./youtube.js";
+import { WebsiteSourceAdapter } from "../../../source-adapters/website.js";
+import {
+  YouTubeSourceAdapter,
+  type YouTubeSourceAccess,
+} from "../../../source-adapters/youtube.js";
 
 export function contentScoutProductionAdapters(input: {
   workspaceDir: string;

@@ -2,17 +2,17 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";
+import { RssSourceAdapter } from "../../../apps/server/src/source-adapters/rss";
 import { SubstackEnrichmentAdapter } from "../../../apps/server/src/modules/content-scout/adapters/substack";
-import { WebsiteSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/website";
-import { RedditSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/reddit";
+import { WebsiteSourceAdapter } from "../../../apps/server/src/source-adapters/website";
+import { RedditSourceAdapter } from "../../../apps/server/src/source-adapters/reddit";
 import { InstagramInstaloaderAdapter } from "../../../apps/server/src/modules/content-scout/adapters/instagram";
 import { TikTokYtDlpAdapter } from "../../../apps/server/src/modules/content-scout/adapters/tiktok";
 import { ExperimentalPublicPageAdapter } from "../../../apps/server/src/modules/content-scout/adapters/experimental";
 import {
   YouTubeSourceAdapter,
   type YouTubeSourceClient,
-} from "../../../apps/server/src/modules/content-scout/adapters/youtube";
+} from "../../../apps/server/src/source-adapters/youtube";
 import type { PublicHttpResponse } from "../../../apps/server/src/source-adapters/http";
 import type { SourceItem, SourceTarget } from "@chief-of-staff-demo/shared";
 

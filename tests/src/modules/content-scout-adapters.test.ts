@@ -1,16 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RssSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/rss";
+import { RssSourceAdapter } from "../../../apps/server/src/source-adapters/rss";
 import { SubstackEnrichmentAdapter } from "../../../apps/server/src/modules/content-scout/adapters/substack";
 import type { PublicHttpResponse } from "../../../apps/server/src/source-adapters/http";
-import { WebsiteSourceAdapter } from "../../../apps/server/src/modules/content-scout/adapters/website";
+import { WebsiteSourceAdapter } from "../../../apps/server/src/source-adapters/website";
 import { ExperimentalPublicPageAdapter } from "../../../apps/server/src/modules/content-scout/adapters/experimental";
 import { TikTokYtDlpAdapter } from "../../../apps/server/src/modules/content-scout/adapters/tiktok";
 import {
   YouTubeSourceAdapter,
   type YouTubeSourceClient,
-} from "../../../apps/server/src/modules/content-scout/adapters/youtube";
+} from "../../../apps/server/src/source-adapters/youtube";
 import type { SourceItem, SourceTarget } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");

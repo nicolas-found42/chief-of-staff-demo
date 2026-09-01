@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ChannelUrlError,
   parseChannelUrl,
-} from "../../../apps/server/src/modules/youtube/channels";
+} from "../../../apps/server/src/source-adapters/youtube-channels";
 
 /**
  * The paste is checked while the operator is still looking at it, so what this
