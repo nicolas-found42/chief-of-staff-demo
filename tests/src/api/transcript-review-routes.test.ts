@@ -114,6 +114,23 @@ describe("POST /api/transcripts/review/relevance/search", () => {
     expect(String(item.candidate.explanation)).toContain("export");
   });
 
+  it("refuses a malformed meeting shape with a typed 400, not a 500", async () => {
+    for (const meeting of [
+      { title: 42 },
+      { attendees: "Dana Okonkwo" },
+      { topics: ["support", 7] },
+      "not an object",
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/transcripts/review/relevance/search",
+        payload: { text: "export button timing out", meeting },
+      });
+      expect(response.statusCode, `meeting ${JSON.stringify(meeting)}`).toBe(400);
+      expect(response.json().error).toBe("invalid-query");
+    }
+  });
+
   it("refuses an empty query", async () => {
     const response = await app.inject({
       method: "POST",

@@ -9,10 +9,33 @@ export interface TranscriptRelevanceApiContext {
 
 const ACTIONS: readonly TranscriptRelevanceDecisionAction[] = ["confirm", "reject", "unresolved"];
 
-function parseLimit(value: unknown): number | "invalid" {
-  if (value === undefined) return 0;
+function parseLimit(value: unknown): number | "invalid" | undefined {
+  if (value === undefined) return undefined;
   const limit = Number(value);
   return Number.isInteger(limit) && limit > 0 && limit <= 50 ? limit : "invalid";
+}
+
+/** The meeting context is advisory search signal: strings and string lists only. */
+function isStringList(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+  );
+}
+
+function isValidMeeting(meeting: unknown): boolean {
+  if (typeof meeting !== "object" || meeting === null || Array.isArray(meeting)) return false;
+  const context = meeting as Record<string, unknown>;
+  const isText = (value: unknown) =>
+    value === undefined || value === null || typeof value === "string";
+  return (
+    isText(context.title) &&
+    isText(context.purpose) &&
+    isStringList(context.attendees) &&
+    isStringList(context.organizations) &&
+    isStringList(context.topics)
+  );
 }
 
 /**
@@ -53,12 +76,20 @@ export function registerTranscriptRelevanceApi(
         reply.code(400);
         return { error: "invalid-limit", message: "A result limit is an integer from 1 to 50." };
       }
+      if (body.meeting !== undefined && !isValidMeeting(body.meeting)) {
+        reply.code(400);
+        return {
+          error: "invalid-query",
+          message:
+            "A meeting context is an object with optional string title and purpose and optional string lists attendees, organizations, and topics.",
+        };
+      }
       await relevance.search(
         {
           text,
           ...(body.meeting !== undefined ? { meeting: body.meeting } : {}),
         },
-        ...(limit > 0 ? [{ limit }] : []),
+        limit === undefined ? undefined : { limit },
       );
       return { items: relevance.reviewQueue() };
     },

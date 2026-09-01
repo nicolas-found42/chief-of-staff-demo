@@ -44,6 +44,7 @@ import type {
   SourceTarget,
   YoutubeChannel,
   YoutubeTrends,
+  TranscriptRelevanceQuery,
   TranscriptRelevanceReviewItem,
 } from "@chief-of-staff-demo/shared";
 
@@ -534,10 +535,7 @@ export const api = {
     request<{ runId: string }>("/api/content-research/discover", { method: "POST" }),
   transcriptRelevanceQueue: () =>
     request<{ items: TranscriptRelevanceReviewItem[] }>("/api/transcripts/review/relevance"),
-  searchTranscriptRelevance: (query: {
-    text: string;
-    meeting?: { title?: string; topics?: string[] };
-  }) =>
+  searchTranscriptRelevance: (query: TranscriptRelevanceQuery) =>
     request<{ items: TranscriptRelevanceReviewItem[] }>(
       "/api/transcripts/review/relevance/search",
       {
