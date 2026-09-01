@@ -87,7 +87,6 @@ export function App() {
               /content-research/trends); the legacy top-level route is gone. */}
           <Route path="/content-research/trends" element={<YoutubePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
-          1:{" "}
           {/* Meeting Wizard (ADR-0043): Overview plus the sibling Brief
       journey; Brief and Debrief lifecycle state stays separate. The
       legacy /meeting-brief product route is gone — not-found. */}
