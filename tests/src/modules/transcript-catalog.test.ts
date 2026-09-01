@@ -9,6 +9,7 @@ import {
 } from "../../../apps/server/src/transcript-catalog/catalog";
 import { createDriveCatalogSource } from "../../../apps/server/src/transcript-catalog/drive-source";
 import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
+import type { TranscriptIdentityExtractor } from "../../../apps/server/src/transcript-catalog/identity";
 import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
@@ -57,6 +58,11 @@ function fakeSource(files: Record<string, FakeFile>): TranscriptCatalogSource & 
 function makeCatalog(
   source: TranscriptCatalogSource,
   workspaceDir: string = mkdtempSync(join(tmpdir(), "transcript-catalog-")),
+  extractor: TranscriptIdentityExtractor = {
+    extract() {
+      return { version: 1, mentions: [], organizations: [] };
+    },
+  },
 ): TranscriptCatalog {
   const people = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
   return new TranscriptCatalog({
@@ -66,6 +72,7 @@ function makeCatalog(
     identity: new TranscriptIdentityService({
       store: new TranscriptIdentityStore(workspaceDir),
       people,
+      extractor,
     }),
     now: () => new Date("2026-08-31T12:00:00.000Z"),
     log: () => {},
@@ -372,9 +379,12 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
     await catalog.grantConsent();
     await catalog.whenIdle();
 
-    const associated = catalog.associateOccurrence("drive_fileA_r1", {
-      occurrenceKey: "2026-08-17T1300",
-      calendarEventId: "evt_42",
+    const associated = await catalog.associateOccurrence("drive_fileA_r1", {
+      occurrence: {
+        occurrenceKey: "2026-08-17T1300",
+        calendarEventId: "evt_42",
+      },
+      speakerIdentityMappings: [],
     });
     expect(associated.occurrence).toEqual({
       occurrenceKey: "2026-08-17T1300",
@@ -384,12 +394,12 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
       catalog.getTranscript("drive_fileA_r1")?.source.checksum,
     );
     expect(associated.normalizedText).toBe(catalog.getTranscript("drive_fileA_r1")?.normalizedText);
-    expect(() =>
+    await expect(
       catalog.associateOccurrence("drive_missing_r1", {
-        occurrenceKey: "x",
-        calendarEventId: null,
+        occurrence: { occurrenceKey: "x", calendarEventId: null },
+        speakerIdentityMappings: [],
       }),
-    ).toThrow(/unknown/i);
+    ).rejects.toThrow(/unknown/i);
   });
 
   it("retries an unsupported file after a rename makes it supported", async () => {
@@ -434,6 +444,7 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
       meetingDate: null,
       occurrence: null,
       speakers: ["Dana"],
+      speakerIdentityMappings: [],
     };
     store.saveTranscript(record);
 

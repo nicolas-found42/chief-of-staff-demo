@@ -4,7 +4,7 @@ import {
   type TranscriptFolderInventory,
   type TranscriptInventoryFile,
   type TranscriptLedgerEntry,
-  type TranscriptOccurrence,
+  type TranscriptOccurrenceAssociation,
   type TranscriptProcessingPass,
   type TranscriptRecord,
   type TranscriptSourceRevision,
@@ -55,8 +55,8 @@ export interface TranscriptCatalogDisclosure {
  * the shared Person Profiles Review queue; the Catalog only supplies each
  * newly registered immutable Transcript. */
 export interface TranscriptIdentityProcessor {
-  process(record: TranscriptRecord): void;
-  backfill(records: TranscriptRecord[]): void;
+  process(record: TranscriptRecord): void | Promise<void>;
+  backfill(records: TranscriptRecord[]): Promise<void>;
 }
 
 export interface TranscriptCatalogDeps {
@@ -80,7 +80,7 @@ const LOCAL_RETENTION =
   "an explicit transcript deletion; nothing is stored remotely by the Catalog.";
 
 const SPEAKER_LABEL = /^\s*([^:\n]{1,80})\s*:\s*.+/;
-const PERSON_LIKE_LABEL = /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$/;
+const PERSON_LIKE_LABEL = /^\p{Lu}[\p{L}\p{M}]*(?:\s\p{Lu}[\p{L}\p{M}]*){0,2}$/u;
 
 /**
  * Source-system speaker labels, in order of first appearance. This is
@@ -250,13 +250,21 @@ export class TranscriptCatalog {
   }
 
   /** Associate a Calendar occurrence with a Transcript, when it becomes known. */
-  associateOccurrence(id: string, occurrence: TranscriptOccurrence): TranscriptRecord {
+  async associateOccurrence(
+    id: string,
+    association: TranscriptOccurrenceAssociation,
+  ): Promise<TranscriptRecord> {
     const record = this.store.readTranscript(id);
     if (!record) {
       throw new Error(`Unknown transcript: ${id}`);
     }
-    const updated: TranscriptRecord = { ...record, occurrence };
+    const updated: TranscriptRecord = {
+      ...record,
+      occurrence: association.occurrence,
+      speakerIdentityMappings: association.speakerIdentityMappings,
+    };
     this.store.updateTranscript(updated);
+    await this.identity.process(updated);
     return updated;
   }
 
@@ -277,7 +285,7 @@ export class TranscriptCatalog {
       unchanged: 0,
     };
     if (this.store.readPaused()) return result;
-    this.identity.backfill(this.store.listTranscripts());
+    await this.identity.backfill(this.store.listTranscripts());
     const listed = await this.source.listFiles();
     for (const file of listed) {
       if (this.store.readPaused()) break;
@@ -383,9 +391,10 @@ export class TranscriptCatalog {
         meetingDate: meetingDateFromFileName(file.fileName),
         occurrence: null,
         speakers: collectSpeakerLabels(normalizedText),
+        speakerIdentityMappings: [],
       };
       this.store.saveTranscript(record);
-      this.identity.process(record);
+      await this.identity.process(record);
       this.recordEntry({ ...entry, state: "processed", transcriptId: record.id });
       return "processed";
     } catch (error: unknown) {

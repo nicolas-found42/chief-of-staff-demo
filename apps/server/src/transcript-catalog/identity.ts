@@ -2,30 +2,40 @@ import { createHash } from "node:crypto";
 import type {
   IdentityDecision,
   RememberedMapping,
-  TranscriptCandidateConflict,
+  TranscriptIdentityExtractionResult,
   TranscriptMatchCandidate,
-  TranscriptMention,
   TranscriptRecord,
   TranscriptReviewQueue,
 } from "@chief-of-staff-demo/shared";
-import type { PersonProfile } from "@chief-of-staff-demo/shared";
+import { TranscriptIdentityExtractionResultSchema } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import {
+  extractMentions,
+  IDENTITY_MINING_ALGORITHM_VERSION,
+  normalizeName,
+} from "./identity-extraction.js";
 import {
   activeMappingFor,
   candidateSignals,
-  extractMentions,
-  IDENTITY_MINING_ALGORITHM_VERSION,
-  mentionStableIdentifiers,
-  normalizeName,
+  conflictsFor,
   policyClassOf,
-  profileStableIdentifiers,
-} from "./identity-analysis.js";
+} from "./identity-matching.js";
 import { type TranscriptIdentityMeta, TranscriptIdentityStore } from "./identity-store.js";
 
 export interface TranscriptIdentityDeps {
   store: TranscriptIdentityStore;
   people: WorkspacePersonProfiles;
+  extractor: TranscriptIdentityExtractor;
   now?: () => Date;
+}
+
+/** True-external model seam. Implementations may resolve asynchronously; the
+ * service still validates the value against the strict shared Result Shape at
+ * the trust boundary before using it. */
+export interface TranscriptIdentityExtractor {
+  extract(
+    record: TranscriptRecord,
+  ): TranscriptIdentityExtractionResult | Promise<TranscriptIdentityExtractionResult>;
 }
 
 class UnknownMentionError extends Error {
@@ -53,31 +63,46 @@ export interface DecideInput {
 }
 
 /**
- * Identity mining over the Transcript Catalog (issue #126). Mining is
- * deterministic and provider-free; it persists mentions, Organization
- * Mentions, and explainable candidates, and it may auto-link a mention to an
- * EXISTING Profile only through a non-conflicting exact stable identifier or
- * an in-scope remembered mapping. Neither `mine` nor any code path it drives
- * creates a Person Profile; explicit owner decisions do.
+ * Identity mining over the Transcript Catalog (issue #126). Deterministic
+ * recognition is supplemented by one validated strict extraction Result
+ * Shape; the service persists mentions, Organization Mentions, and explainable
+ * candidates. Only a non-conflicting exact stable identifier may auto-link to
+ * an EXISTING Profile. Remembered mappings apply as explicit owner authority,
+ * and no processing path creates a Person Profile; explicit review does.
  */
 export class TranscriptIdentityService {
   private readonly store: TranscriptIdentityStore;
   private readonly people: WorkspacePersonProfiles;
+  private readonly extractor: TranscriptIdentityExtractor;
   private readonly now: () => Date;
 
   constructor(deps: TranscriptIdentityDeps) {
     this.store = deps.store;
     this.people = deps.people;
+    this.extractor = deps.extractor;
     this.now = deps.now ?? (() => new Date());
   }
 
-  backfill(records: TranscriptRecord[]): void {
-    for (const record of records) this.process(record);
+  async backfill(records: TranscriptRecord[]): Promise<void> {
+    for (const record of records) await this.process(record);
   }
 
-  process(record: TranscriptRecord): void {
-    if (this.store.wasProcessed(record.id, IDENTITY_MINING_ALGORITHM_VERSION)) return;
-    const { mentions, organizations } = extractMentions(record);
+  process(record: TranscriptRecord): void | Promise<void> {
+    const inputVersion = identityInputVersion(record);
+    if (this.store.wasProcessed(record.id, IDENTITY_MINING_ALGORITHM_VERSION, inputVersion)) {
+      return;
+    }
+    const extracted = this.extractor.extract(record);
+    if (extracted instanceof Promise) {
+      return extracted.then((result) => this.finishProcess(record, inputVersion, result));
+    }
+    this.finishProcess(record, inputVersion, extracted);
+  }
+
+  private finishProcess(record: TranscriptRecord, inputVersion: string, rawResult: unknown): void {
+    const supplement: TranscriptIdentityExtractionResult =
+      TranscriptIdentityExtractionResultSchema.parse(rawResult);
+    const { mentions, organizations } = extractMentions(record, supplement);
     const mappings = this.store.readMappings();
     const candidates: TranscriptMatchCandidate[] = [];
     const generatedAt = this.now().toISOString();
@@ -94,7 +119,7 @@ export class TranscriptIdentityService {
             profile,
             signals,
             score,
-            conflicts: this.conflictsFor(mention, profile, profiles),
+            conflicts: conflictsFor(mention, profile, profiles),
           };
         })
         .filter((entry) => entry.score > 0)
@@ -145,8 +170,7 @@ export class TranscriptIdentityService {
     this.store.replaceOrganizations(record.id, organizations);
     this.store.replaceCandidates(record.id, candidates);
 
-    /* Auto-link policy: only a non-conflicting exact stable identifier (or an
-       in-scope remembered mapping, itself an explicit owner decision) may
+    /* Auto-link policy: only a non-conflicting exact stable identifier may
        produce a policy-made "confirmed" link — and only to an existing
        Profile. Nothing here creates one. */
     for (const mention of mentions) {
@@ -157,7 +181,6 @@ export class TranscriptIdentityService {
       const top = own[0];
       if (!top || top.policyClass !== "confirmed") continue;
       if (own.length > 1 && (top.leadOverNext === null || top.leadOverNext <= 0)) continue;
-      const mapping = activeMappingFor(mappings, record.id, mention.normalizedForms);
       this.store.appendDecision({
         id: `id_${createHash("sha1").update(`${mention.id}|auto`).digest("hex").slice(0, 12)}`,
         mentionId: mention.id,
@@ -168,75 +191,36 @@ export class TranscriptIdentityService {
         profileRevision: this.people.get(top.profileId)?.revision ?? null,
         decidedBy: "policy",
         decidedAt: generatedAt,
-        note:
-          mapping !== null && mapping.profileId === top.profileId
-            ? `Replayed remembered mapping v${mapping.mappingVersion} (${mapping.scope} scope).`
-            : "Auto-linked on a non-conflicting exact stable identifier.",
+        note: "Auto-linked on a non-conflicting exact stable identifier.",
+      });
+    }
+
+    /* A remembered mapping is standing owner authority, not stable identity
+       evidence. Applying it records an owner decision and never upgrades the
+       candidate's policy class to confirmed. */
+    for (const mention of mentions) {
+      if (this.store.latestDecision(mention.id) !== null) continue;
+      const mapping = activeMappingFor(mappings, record.id, mention.normalizedForms);
+      if (mapping === null || this.people.get(mapping.profileId) === null) continue;
+      this.store.appendDecision({
+        id: `id_${createHash("sha1").update(`${mention.id}|mapping|${mapping.id}|${mapping.mappingVersion}`).digest("hex").slice(0, 12)}`,
+        mentionId: mention.id,
+        transcriptId: record.id,
+        action: "remember-mapping",
+        outcome: "linked",
+        profileId: mapping.profileId,
+        profileRevision: this.people.get(mapping.profileId)?.revision ?? null,
+        decidedBy: "owner",
+        decidedAt: generatedAt,
+        note: `Applied remembered mapping ${mapping.id} v${mapping.mappingVersion} (${mapping.scope} scope).`,
       });
     }
     this.store.markProcessed({
       transcriptId: record.id,
       algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
+      inputVersion,
       processedAt: generatedAt,
     });
-  }
-
-  private conflictsFor(
-    mention: TranscriptMention,
-    profile: PersonProfile,
-    allProfiles: PersonProfile[],
-  ): TranscriptCandidateConflict[] {
-    const conflicts: TranscriptCandidateConflict[] = [];
-    if (profile.archivedAt !== null) {
-      conflicts.push({
-        kind: "archived-profile",
-        explanation: "The Profile is archived; archived Profiles are never auto-linked.",
-        hard: true,
-      });
-    }
-    const profileStableKeys = new Set(profileStableIdentifiers(profile).map((item) => item.key));
-    for (const identifier of mentionStableIdentifiers(mention)) {
-      const owners = allProfiles.filter((candidate) =>
-        profileStableIdentifiers(candidate).some((item) => item.key === identifier.key),
-      );
-      if (profileStableKeys.has(identifier.key) && owners.length > 1) {
-        conflicts.push({
-          kind: "duplicate-stable-id",
-          explanation: `The exact ${identifier.kind} ${identifier.display} is owned by ${owners.length} Profiles.`,
-          hard: true,
-        });
-      } else if (!profileStableKeys.has(identifier.key) && owners.length > 0) {
-        conflicts.push({
-          kind:
-            identifier.kind === "email" ? "email-belongs-elsewhere" : "stable-id-belongs-elsewhere",
-          explanation: `The exact ${identifier.kind} ${identifier.display} belongs to Profile ${owners[0]?.id}, not this one.`,
-          hard: true,
-        });
-      }
-    }
-    if (mention.emails.length > 0) {
-      const profileEmails = new Set(
-        [...profile.emails, ...(profile.primaryEmail === null ? [] : [profile.primaryEmail])].map(
-          (email) => email.toLowerCase(),
-        ),
-      );
-      const intersects = mention.emails.some((email) => profileEmails.has(email));
-      const identifierHasOwner = mentionStableIdentifiers(mention).some(
-        (identifier) =>
-          identifier.kind === "email" &&
-          allProfiles.some((candidate) =>
-            profileStableIdentifiers(candidate).some((item) => item.key === identifier.key),
-          ),
-      );
-      if (!intersects && !identifierHasOwner && profile.primaryEmail !== null) {
-        conflicts.push({
-          kind: "name-email-mismatch",
-          explanation: `The mention carries email ${mention.emails[0]} but this Profile's primary email is ${profile.primaryEmail}.`,
-          hard: false,
-        });
-      }
-    }
-    return conflicts;
   }
 
   /** The shared Person Profiles Review queue: everything weaker than an
@@ -412,12 +396,40 @@ export class TranscriptIdentityService {
     return this.store.readMappings();
   }
 
-  /** Reversible by design: revocation sets a timestamp; mining stops replaying. */
+  /** Reversible by design: revocation prevents future application and appends
+   * unresolved decisions that invalidate every currently mapping-derived
+   * link inside this mapping's declared scope. */
   revokeMapping(mappingId: string): RememberedMapping {
     const mapping = this.store.readMappings().find((m) => m.id === mappingId);
     if (!mapping) throw new InvalidDecisionError(`Unknown remembered mapping: ${mappingId}`);
-    const revoked: RememberedMapping = { ...mapping, revokedAt: this.now().toISOString() };
+    const revokedAt = this.now().toISOString();
+    const revoked: RememberedMapping = { ...mapping, revokedAt };
     this.store.saveMapping(revoked);
+    for (const mention of this.store.readMentions()) {
+      const inScope =
+        mapping.scope === "workspace" || mapping.scopeId === mention.provenance.transcriptId;
+      if (!inScope || !mention.normalizedForms.includes(mapping.normalizedForm)) continue;
+      const latest = this.store.latestDecision(mention.id);
+      if (
+        latest?.action !== "remember-mapping" ||
+        latest.outcome !== "linked" ||
+        latest.profileId !== mapping.profileId
+      ) {
+        continue;
+      }
+      this.store.appendDecision({
+        id: `id_${createHash("sha1").update(`${mention.id}|revoke|${mapping.id}|${revokedAt}`).digest("hex").slice(0, 12)}`,
+        mentionId: mention.id,
+        transcriptId: mention.provenance.transcriptId,
+        action: "unresolved",
+        outcome: "unresolved",
+        profileId: null,
+        profileRevision: null,
+        decidedBy: "owner",
+        decidedAt: revokedAt,
+        note: `Invalidated link from revoked remembered mapping ${mapping.id} v${mapping.mappingVersion}.`,
+      });
+    }
     return revoked;
   }
 
@@ -428,4 +440,18 @@ export class TranscriptIdentityService {
       .sort((left, right) => right.score - left.score);
     return own.find((candidate) => !candidate.conflicts.some((conflict) => conflict.hard)) ?? null;
   }
+}
+
+/** Derived-input version for the durable processing ledger. Calendar/provider
+ * speaker identity enrichment can change while the transcript artifact stays
+ * immutable, and must trigger a fresh identity pass. */
+function identityInputVersion(record: TranscriptRecord): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        checksum: record.source.checksum,
+        speakerIdentityMappings: record.speakerIdentityMappings,
+      }),
+    )
+    .digest("hex");
 }

@@ -200,6 +200,13 @@ export interface TranscriptSpeakerIdentityMapping {
   externalContactIds: ExternalContactId[];
 }
 
+/** Calendar association plus the verified identity facts Calendar/provider
+ * metadata supplies for source speaker labels. */
+export interface TranscriptOccurrenceAssociation {
+  occurrence: TranscriptOccurrence;
+  speakerIdentityMappings: TranscriptSpeakerIdentityMapping[];
+}
+
 /** One immutable normalized transcript per source revision. */
 export interface TranscriptRecord {
   id: string;
@@ -213,7 +220,7 @@ export interface TranscriptRecord {
   /** Source-system speaker labels, in order of first appearance. */
   speakers: string[];
   /** Verified provider/Calendar identity metadata, when available. */
-  speakerIdentityMappings?: TranscriptSpeakerIdentityMapping[];
+  speakerIdentityMappings: TranscriptSpeakerIdentityMapping[];
 }
 
 export type TranscriptLedgerState = "pending" | "failed" | "skipped" | "processed";
@@ -301,6 +308,51 @@ export type TranscriptMentionConfidence = "high" | "medium" | "low";
  */
 export type TranscriptAttendeeStatus = "speaker" | "third-person" | "unknown";
 
+/** A model-observed relationship kept as reviewable transcript evidence. */
+export const TranscriptRelationshipAssertionSchema = z.strictObject({
+  subject: z.string().min(1),
+  relationship: z.string().min(1),
+  object: z.string().min(1),
+});
+
+export type TranscriptRelationshipAssertion = z.infer<typeof TranscriptRelationshipAssertionSchema>;
+
+const TranscriptExtractedSpanSchema = z.strictObject({
+  spanStart: z.number().int().nonnegative(),
+  spanEnd: z.number().int().positive(),
+  confidence: z.enum(["high", "medium", "low"]),
+});
+
+/** Strict model Result Shape. Deterministic recognition supplements this
+ * output, and the service validates every adapter response before persisting
+ * any classification. */
+export const TranscriptIdentityExtractionResultSchema = z.strictObject({
+  version: z.literal(1),
+  mentions: z.array(
+    TranscriptExtractedSpanSchema.extend({
+      kind: z.enum(["person", "organization", "ambiguous-name", "product", "unknown"]),
+      titles: z.array(z.string().min(1)),
+      roles: z.array(z.string().min(1)),
+      aliases: z.array(z.string().min(1)),
+      relationshipAssertions: z.array(TranscriptRelationshipAssertionSchema),
+    }).strict(),
+  ),
+  organizations: z.array(
+    TranscriptExtractedSpanSchema.extend({
+      aliases: z.array(z.string().min(1)),
+      domains: z.array(z.string().min(1)),
+      externalCompanyIds: z.array(
+        z.strictObject({ system: z.string().min(1), externalId: z.string().min(1) }),
+      ),
+      relationshipAssertions: z.array(TranscriptRelationshipAssertionSchema),
+    }).strict(),
+  ),
+});
+
+export type TranscriptIdentityExtractionResult = z.infer<
+  typeof TranscriptIdentityExtractionResultSchema
+>;
+
 /** Where in which immutable Transcript the span was preserved from. */
 export interface TranscriptMentionProvenance {
   transcriptId: string;
@@ -337,6 +389,14 @@ export interface TranscriptMention {
   externalContactIds: ExternalContactId[];
   /** Exact Calendar email tied to this source speaker label, when verified. */
   speakerCalendarEmail: string | null;
+  /** Model-observed honorific/job titles retained as evidence, never copied
+   * into a Profile without review. */
+  titles: string[];
+  /** Model-observed meeting/context roles retained as evidence. */
+  roles: string[];
+  /** Alternate names observed for this span. */
+  aliases: string[];
+  relationshipAssertions: TranscriptRelationshipAssertion[];
   /** Normalized organization name when the person was named in org context. */
   organizationContext: string | null;
   attendeeStatus: TranscriptAttendeeStatus;
@@ -359,6 +419,7 @@ export interface OrganizationMention {
   /** Email domains observed for the organization in the transcript. */
   domains: string[];
   externalCompanyIds: { system: string; externalId: string }[];
+  relationshipAssertions: TranscriptRelationshipAssertion[];
   /** Person-mention ids seen in organization context with this mention. */
   relatedMentionIds: string[];
   confidence: TranscriptMentionConfidence;

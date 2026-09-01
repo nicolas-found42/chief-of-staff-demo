@@ -1,43 +1,22 @@
 import { createHash } from "node:crypto";
 import type {
   OrganizationMention,
-  RememberedMapping,
-  TranscriptCandidateConflict,
-  TranscriptCandidatePolicyClass,
-  TranscriptCandidateSignal,
   TranscriptMention,
   TranscriptMentionConfidence,
   TranscriptMentionProvenance,
+  TranscriptIdentityExtractionResult,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
-import type { PersonProfile } from "@chief-of-staff-demo/shared";
 
 /** Bumped whenever extraction, scoring, or link policy changes meaning. */
-export const IDENTITY_MINING_ALGORITHM_VERSION = 2;
-
-/* Policy data (spec #117: exact numeric thresholds are implementation-tunable;
-   tests assert classifications and hard conflicts, not these numbers). */
-const WEIGHT_EXACT_EMAIL = 5;
-const WEIGHT_EXACT_PROFILE_URL = 5;
-const WEIGHT_VERIFIED_HANDLE = 5;
-const WEIGHT_EXTERNAL_CONTACT_ID = 5;
-const WEIGHT_SPEAKER_CALENDAR_EMAIL = 5;
-const WEIGHT_REMEMBERED_MAPPING = 5;
-const WEIGHT_FULL_NAME = 2;
-const WEIGHT_SPEAKER_LABEL = 1;
-const WEIGHT_EMPLOYER_HINT = 1;
-/** A name-based match needs at least this score to be probable (reviewable). */
-const PROBABLE_MIN_SCORE = WEIGHT_FULL_NAME;
-/** …and at least this much lead over the second candidate to be probable
- *  rather than ambiguous; a sole candidate needs no lead. */
-const PROBABLE_MIN_LEAD = 2;
+export const IDENTITY_MINING_ALGORITHM_VERSION = 3;
 
 const LINE_TIMESTAMP = /^\s*\[?(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[APap][Mm])?)\]?\s*/;
 const SPEAKER_COLON = /^([^\s:][^:\n]{0,79}):\s+/;
-const PERSON_LIKE_LABEL = /^[A-Z][a-z]+(?:'[A-Za-z]+)?(?:\s[A-Z][a-z]+){0,2}$/;
+const PERSON_LIKE_LABEL = /^\p{Lu}[\p{L}\p{M}]*(?:'[\p{L}\p{M}]+)?(?:\s\p{Lu}[\p{L}\p{M}]*){0,2}$/u;
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PROFILE_URL = /https?:\/\/[^\s<>()]+/gi;
-const CAPITALIZED_RUN = /[A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*)*/g;
+const CAPITALIZED_RUN = /\p{Lu}[\p{L}\p{M}\p{N}&.'-]*(?:\s+\p{Lu}[\p{L}\p{M}\p{N}&.'-]*)*/gu;
 const PRODUCT_CUE =
   /\b(?:our|the|my)\s+(?:new\s+|next\s+|flagship\s+|beta\s+)?([A-Z][A-Za-z0-9]+)\b/g;
 /** Words that precede an organization the speaker names in context. */
@@ -259,6 +238,7 @@ interface OrgDraft {
 
 export function normalizeName(value: string): string {
   const base = value
+    .normalize("NFKC")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
     .replace(/\s+/g, " ")
@@ -273,9 +253,19 @@ export function normalizeName(value: string): string {
   return stripped.length > 0 ? stripped : base;
 }
 
-function normalizeProfileUrl(value: string): string | null {
+export function normalizeProfileUrl(value: string): string | null {
   try {
-    const url = new URL(value.replace(/[.,;!?]+$/, ""));
+    const url = new URL(value.normalize("NFKC").replace(/[.,;!?]+$/, ""));
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const parts = url.pathname.split("/").filter(Boolean);
+    /* An arbitrary HTTP URL is not a stable person identifier. v1 accepts
+       only a source whose URL shape unambiguously denotes a person Profile. */
+    if (host !== "linkedin.com" || parts.length !== 2 || parts[0]?.toLowerCase() !== "in") {
+      return null;
+    }
+    url.protocol = "https:";
+    url.hostname = "linkedin.com";
+    url.pathname = `/in/${parts[1]}`;
     url.hash = "";
     url.search = "";
     return url.toString().replace(/\/$/, "");
@@ -285,30 +275,33 @@ function normalizeProfileUrl(value: string): string | null {
 }
 
 function normalizeHandle(value: string): string {
-  return value.trim().toLowerCase().replace(/^@/, "");
+  return value.normalize("NFKC").trim().toLowerCase().replace(/^@/, "");
 }
 
-function normalizeHandles(input: Record<string, string[]>): Record<string, string[]> {
+export function normalizeHandles(input: Record<string, string[]>): Record<string, string[]> {
   return Object.fromEntries(
     Object.entries(input)
       .map(
         ([platform, handles]) =>
-          [platform.trim().toLowerCase(), unique(handles.map(normalizeHandle))] as const,
+          [
+            platform.normalize("NFKC").trim().toLowerCase(),
+            unique(handles.map(normalizeHandle)),
+          ] as const,
       )
       .filter(([, handles]) => handles.length > 0),
   );
 }
 
-function normalizeExternalContactIds(
+export function normalizeExternalContactIds(
   input: TranscriptMention["externalContactIds"],
 ): TranscriptMention["externalContactIds"] {
   return input.map((item) => ({
-    system: item.system.trim().toLowerCase(),
-    externalId: item.externalId.trim(),
+    system: item.system.normalize("NFKC").trim().toLowerCase(),
+    externalId: item.externalId.normalize("NFKC").trim(),
   }));
 }
 
-function unique(values: string[]): string[] {
+export function unique(values: string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
 
@@ -400,7 +393,10 @@ export interface TranscriptExtraction {
   organizations: OrganizationMention[];
 }
 
-export function extractMentions(record: TranscriptRecord): TranscriptExtraction {
+export function extractMentions(
+  record: TranscriptRecord,
+  supplement: TranscriptIdentityExtractionResult,
+): TranscriptExtraction {
   const text = record.normalizedText;
   const lines = parseLines(text);
   const speakerLabels = new Set(
@@ -423,7 +419,7 @@ export function extractMentions(record: TranscriptRecord): TranscriptExtraction 
        mention per distinct label, at its first written occurrence. */
     if (line.speakerLabel !== null) {
       const labelForm = normalizeName(line.speakerLabel);
-      const identityMapping = record.speakerIdentityMappings?.find(
+      const identityMapping = record.speakerIdentityMappings.find(
         (mapping) => normalizeName(mapping.speakerLabel) === labelForm,
       );
       const start = line.utteranceStart - (line.speakerLabel.length + 2);
@@ -442,7 +438,8 @@ export function extractMentions(record: TranscriptRecord): TranscriptExtraction 
           externalContactIds: normalizeExternalContactIds(
             identityMapping?.externalContactIds ?? [],
           ),
-          speakerCalendarEmail: identityMapping?.calendarEmail?.toLowerCase() ?? null,
+          speakerCalendarEmail:
+            identityMapping?.calendarEmail?.normalize("NFKC").toLowerCase() ?? null,
           confidence: "high",
           spanStart: start,
           spanEnd: start + line.speakerLabel.length,
@@ -554,7 +551,7 @@ export function extractMentions(record: TranscriptRecord): TranscriptExtraction 
        mention; a standalone email is its own person mention. */
     const emailMatches = [...line.utterance.matchAll(EMAIL)];
     for (const match of emailMatches) {
-      const email = match[0].toLowerCase();
+      const email = match[0].normalize("NFKC").toLowerCase();
       const matchIndex = match.index;
       const start = line.utteranceStart + matchIndex;
       const attached = classifiedRuns.find(
@@ -627,6 +624,10 @@ export function extractMentions(record: TranscriptRecord): TranscriptExtraction 
       verifiedHandles: span.verifiedHandles,
       externalContactIds: span.externalContactIds,
       speakerCalendarEmail: span.speakerCalendarEmail,
+      titles: [],
+      roles: [],
+      aliases: [],
+      relationshipAssertions: [],
       organizationContext: null,
       attendeeStatus: line === undefined ? "unknown" : statusFor(line, span.surfaceText),
       confidence: span.confidence,
@@ -662,6 +663,7 @@ export function extractMentions(record: TranscriptRecord): TranscriptExtraction 
       aliases: [],
       domains: domains.filter((domain) => domain.split(".")[0] === stem),
       externalCompanyIds: [],
+      relationshipAssertions: [],
       relatedMentionIds: mentions
         .filter((mention) => mention.organizationContext === org.normalizedName)
         .map((mention) => mention.id),
@@ -680,300 +682,155 @@ export function extractMentions(record: TranscriptRecord): TranscriptExtraction 
     };
   });
 
+  applyModelSupplement(record, lines, mentions, organizations, supplement);
   mentions.sort((left, right) => left.provenance.spanStart - right.provenance.spanStart);
   organizations.sort((left, right) => left.provenance.spanStart - right.provenance.spanStart);
   return { mentions, organizations };
 }
 
-/* ==========================================================================
- * Candidate generation and policy (spec #117, "Candidate generation and
- * policy"): retrieval over exact identifiers, speaker mapping, normalized
- * names, organizations, and remembered mappings; every candidate persists a
- * signal-by-signal explanation, conflicts, score, lead, evidence, and the
- * algorithm version.
- * ========================================================================== */
-
-function profileNameForms(profile: PersonProfile): string[] {
-  return unique(
-    [profile.fullName].filter((value): value is string => value !== null).map(normalizeName),
-  );
+function evidenceText(value: string): string {
+  return value.normalize("NFC").trim();
 }
 
-interface StableIdentifier {
-  kind: "email" | "profile-url" | "handle" | "external-contact-id";
-  key: string;
-  display: string;
+function assertionsOf(
+  assertions: TranscriptIdentityExtractionResult["mentions"][number]["relationshipAssertions"],
+): TranscriptMention["relationshipAssertions"] {
+  return assertions.map((assertion) => ({
+    subject: evidenceText(assertion.subject),
+    relationship: evidenceText(assertion.relationship),
+    object: evidenceText(assertion.object),
+  }));
 }
 
-function uniqueStableIdentifiers(items: StableIdentifier[]): StableIdentifier[] {
-  return [...new Map(items.map((item) => [item.key, item])).values()];
+function checkedSurface(record: TranscriptRecord, spanStart: number, spanEnd: number): string {
+  if (spanEnd <= spanStart || spanEnd > record.normalizedText.length) {
+    throw new Error(`Identity extraction returned invalid span ${spanStart}:${spanEnd}`);
+  }
+  const surface = record.normalizedText.slice(spanStart, spanEnd);
+  if (surface.length === 0) throw new Error("Identity extraction returned an empty span");
+  return surface;
 }
 
-export function mentionStableIdentifiers(mention: TranscriptMention): StableIdentifier[] {
-  return uniqueStableIdentifiers([
-    ...mention.emails.map((email) => ({
-      kind: "email" as const,
-      key: `email:${email}`,
-      display: email,
-    })),
-    ...(mention.speakerCalendarEmail === null
-      ? []
-      : [
-          {
-            kind: "email" as const,
-            key: `email:${mention.speakerCalendarEmail}`,
-            display: mention.speakerCalendarEmail,
-          },
-        ]),
-    ...mention.profileUrls.map((url) => ({
-      kind: "profile-url" as const,
-      key: `profile-url:${url}`,
-      display: url,
-    })),
-    ...Object.entries(mention.verifiedHandles).flatMap(([platform, handles]) =>
-      handles.map((handle) => ({
-        kind: "handle" as const,
-        key: `handle:${platform}:${handle}`,
-        display: `${platform}:${handle}`,
-      })),
-    ),
-    ...mention.externalContactIds.map((item) => ({
-      kind: "external-contact-id" as const,
-      key: `external-contact-id:${item.system}:${item.externalId}`,
-      display: `${item.system}:${item.externalId}`,
-    })),
-  ]);
+function contextFor(
+  lines: ExtractedLine[],
+  spanStart: number,
+): { timestamp: string | null; speakerLabel: string | null } {
+  const line = lines.find(
+    (candidate) =>
+      spanStart >= candidate.utteranceStart - 200 &&
+      spanStart <= candidate.utteranceStart + candidate.utterance.length,
+  );
+  return { timestamp: line?.timestamp ?? null, speakerLabel: line?.speakerLabel ?? null };
 }
 
-export function profileStableIdentifiers(profile: PersonProfile): StableIdentifier[] {
-  return uniqueStableIdentifiers([
-    ...unique([
-      ...profile.emails,
-      ...(profile.primaryEmail === null ? [] : [profile.primaryEmail]),
-    ]).map((email) => ({
-      kind: "email" as const,
-      key: `email:${email.toLowerCase()}`,
-      display: email.toLowerCase(),
-    })),
-    ...profile.profileUrls.flatMap((value) => {
-      const url = normalizeProfileUrl(value);
-      return url === null
-        ? []
-        : [{ kind: "profile-url" as const, key: `profile-url:${url}`, display: url }];
-    }),
-    ...Object.entries(normalizeHandles(profile.handles)).flatMap(([platform, handles]) =>
-      handles.map((handle) => ({
-        kind: "handle" as const,
-        key: `handle:${platform}:${handle}`,
-        display: `${platform}:${handle}`,
-      })),
-    ),
-    ...normalizeExternalContactIds(profile.externalContactIds ?? []).map((item) => ({
-      kind: "external-contact-id" as const,
-      key: `external-contact-id:${item.system}:${item.externalId}`,
-      display: `${item.system}:${item.externalId}`,
-    })),
-  ]);
-}
+/** Merge strict model classifications into deterministic recognition. The
+ * deterministic spans remain the floor; a valid model span may supplement or
+ * add evidence, but never invent text outside the immutable artifact. */
+function applyModelSupplement(
+  record: TranscriptRecord,
+  lines: ExtractedLine[],
+  mentions: TranscriptMention[],
+  organizations: OrganizationMention[],
+  supplement: TranscriptIdentityExtractionResult,
+): void {
+  for (const extracted of supplement.mentions) {
+    const surfaceText = checkedSurface(record, extracted.spanStart, extracted.spanEnd);
+    const existing = mentions.find(
+      (mention) =>
+        mention.provenance.spanStart === extracted.spanStart &&
+        mention.provenance.spanEnd === extracted.spanEnd,
+    );
+    const normalizedForms = unique([normalizeName(surfaceText)]);
+    const context = contextFor(lines, extracted.spanStart);
+    const evidence = {
+      titles: unique(extracted.titles.map(evidenceText)),
+      roles: unique(extracted.roles.map(evidenceText)),
+      aliases: unique(extracted.aliases.map(evidenceText)),
+      relationshipAssertions: assertionsOf(extracted.relationshipAssertions),
+    };
+    if (existing) {
+      existing.id = mentionId(
+        record.id,
+        extracted.spanStart,
+        existing.normalizedForms[0] ?? normalizedForms[0] ?? "",
+        extracted.kind,
+      );
+      existing.kind = extracted.kind;
+      existing.confidence = extracted.confidence;
+      Object.assign(existing, evidence);
+      continue;
+    }
+    mentions.push({
+      id: mentionId(record.id, extracted.spanStart, normalizedForms[0] ?? "", extracted.kind),
+      kind: extracted.kind,
+      surfaceText,
+      normalizedForms,
+      emails: [],
+      profileUrls: [],
+      verifiedHandles: {},
+      externalContactIds: [],
+      speakerCalendarEmail: null,
+      ...evidence,
+      organizationContext: null,
+      attendeeStatus: context.speakerLabel === null ? "unknown" : "third-person",
+      confidence: extracted.confidence,
+      provenance: {
+        transcriptId: record.id,
+        spanStart: extracted.spanStart,
+        spanEnd: extracted.spanEnd,
+        quote: surfaceText,
+        timestamp: context.timestamp,
+        speakerLabel: context.speakerLabel,
+        meetingDate: record.meetingDate,
+      },
+      minedAt: record.ingestedAt,
+      algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
+    });
+  }
 
-export function activeMappingFor(
-  mappings: RememberedMapping[],
-  transcriptId: string,
-  forms: string[],
-): RememberedMapping | null {
-  return (
-    mappings.find(
-      (mapping) =>
-        mapping.revokedAt === null &&
-        forms.includes(mapping.normalizedForm) &&
-        (mapping.scope === "workspace" || mapping.scopeId === transcriptId),
-    ) ?? null
-  );
-}
-
-export function candidateSignals(
-  mention: TranscriptMention,
-  profile: PersonProfile,
-  mapping: RememberedMapping | null,
-): TranscriptCandidateSignal[] {
-  const profileForms = profileNameForms(profile);
-  const mentionName = mention.normalizedForms[0] ?? "";
-  const profileName = profile.fullName === null ? null : normalizeName(profile.fullName);
-  const nameMatched =
-    profileName !== null &&
-    (mention.normalizedForms.includes(profileName) ||
-      /* An ambiguous single name matches a Profile whose first or last name
-         it equals — deliberately weak evidence, capped at "ambiguous". */
-      (mentionName.split(" ").length === 1 &&
-        profileForms.some((form) => {
-          const tokens = form.split(" ");
-          return tokens[0] === mentionName || tokens[tokens.length - 1] === mentionName;
-        })));
-  const profileEmails = unique(
-    [...profile.emails, ...(profile.primaryEmail === null ? [] : [profile.primaryEmail])].map(
-      (email) => email.toLowerCase(),
-    ),
-  );
-  const emailMatched = profileEmails.some((email) => mention.emails.includes(email));
-  const profileUrls = unique(
-    profile.profileUrls.map(normalizeProfileUrl).filter((value): value is string => value !== null),
-  );
-  const profileUrlMatched = profileUrls.some((url) => mention.profileUrls.includes(url));
-  const profileHandles = normalizeHandles(profile.handles);
-  const verifiedHandleMatched = Object.entries(mention.verifiedHandles).some(
-    ([platform, handles]) =>
-      handles.some((handle) => (profileHandles[platform] ?? []).includes(handle)),
-  );
-  const profileExternalIds = new Set(
-    normalizeExternalContactIds(profile.externalContactIds ?? []).map(
-      (item) => `${item.system}:${item.externalId}`,
-    ),
-  );
-  const externalContactMatched = mention.externalContactIds.some((item) =>
-    profileExternalIds.has(`${item.system}:${item.externalId}`),
-  );
-  const speakerCalendarEmailMatched =
-    mention.speakerCalendarEmail !== null && profileEmails.includes(mention.speakerCalendarEmail);
-  const employers = unique(
-    [profile.currentEmployer, ...profile.employerHints].filter(
-      (value): value is string => value !== null,
-    ),
-  );
-  const employerMatched =
-    mention.organizationContext !== null &&
-    employers.some((value) => normalizeName(value).includes(mention.organizationContext!));
-  return [
-    {
-      signal: "exact-email",
-      explanation:
-        mention.emails.length === 0
-          ? "The mention carries no email address."
-          : emailMatched
-            ? `The mention's email ${mention.emails[0]} exactly matches this Profile's email.`
-            : `The mention's email ${mention.emails[0]} does not match this Profile's emails.`,
-      matched: emailMatched,
-      weight: WEIGHT_EXACT_EMAIL,
-    },
-    {
-      signal: "exact-profile-url",
-      explanation:
-        mention.profileUrls.length === 0
-          ? "The mention carries no canonical Profile URL."
-          : profileUrlMatched
-            ? `The canonical Profile URL ${mention.profileUrls[0]} exactly matches this Profile.`
-            : `The canonical Profile URL ${mention.profileUrls[0]} does not match this Profile.`,
-      matched: profileUrlMatched,
-      weight: WEIGHT_EXACT_PROFILE_URL,
-    },
-    {
-      signal: "verified-handle",
-      explanation:
-        Object.keys(mention.verifiedHandles).length === 0
-          ? "The mention carries no source-verified handle."
-          : verifiedHandleMatched
-            ? "A source-verified handle exactly matches this Profile."
-            : "The source-verified handles do not match this Profile.",
-      matched: verifiedHandleMatched,
-      weight: WEIGHT_VERIFIED_HANDLE,
-    },
-    {
-      signal: "external-contact-id",
-      explanation:
-        mention.externalContactIds.length === 0
-          ? "The mention carries no external contact identifier."
-          : externalContactMatched
-            ? "A provider-owned external contact identifier exactly matches this Profile."
-            : "The external contact identifiers do not match this Profile.",
-      matched: externalContactMatched,
-      weight: WEIGHT_EXTERNAL_CONTACT_ID,
-    },
-    {
-      signal: "speaker-calendar-email",
-      explanation:
-        mention.speakerCalendarEmail === null
-          ? "The source speaker has no verified Calendar email mapping."
-          : speakerCalendarEmailMatched
-            ? `The source speaker maps to Calendar email ${mention.speakerCalendarEmail}, which exactly matches this Profile.`
-            : `The source speaker's Calendar email ${mention.speakerCalendarEmail} does not match this Profile.`,
-      matched: speakerCalendarEmailMatched,
-      weight: WEIGHT_SPEAKER_CALENDAR_EMAIL,
-    },
-    {
-      signal: "remembered-mapping",
-      explanation:
-        mapping === null
-          ? "No remembered mapping applies to this mention inside its scope."
-          : mapping.profileId === profile.id
-            ? `Remembered mapping v${mapping.mappingVersion} ties this name to the Profile inside its ${mapping.scope} scope.`
-            : `A remembered mapping applies to this name, but it points at a different Profile.`,
-      matched: mapping !== null && mapping.profileId === profile.id,
-      weight: WEIGHT_REMEMBERED_MAPPING,
-    },
-    {
-      signal: "normalized-full-name",
-      explanation:
-        profileName === null
-          ? "The Profile has no full name to compare."
-          : nameMatched
-            ? `The normalized mention name "${mentionName}" matches the Profile name "${profileName}".`
-            : `The normalized mention name "${mentionName}" does not match the Profile name.`,
-      matched: nameMatched,
-      weight: WEIGHT_FULL_NAME,
-    },
-    {
-      signal: "speaker-label",
-      explanation:
-        mention.attendeeStatus !== "speaker"
-          ? "The mention is not a source speaker label."
-          : nameMatched
-            ? "The mention is a source speaker label and the Profile carries the same name."
-            : "The mention is a source speaker label, but the Profile carries a different name.",
-      matched: mention.attendeeStatus === "speaker" && nameMatched,
-      weight: WEIGHT_SPEAKER_LABEL,
-    },
-    {
-      signal: "employer-hint",
-      explanation:
-        mention.organizationContext === null
-          ? "The mention names no organization context."
-          : employerMatched
-            ? `The organization context "${mention.organizationContext}" matches this Profile's employer evidence.`
-            : `The organization context "${mention.organizationContext}" does not match this Profile's employer evidence.`,
-      matched: employerMatched,
-      weight: WEIGHT_EMPLOYER_HINT,
-    },
-  ];
-}
-
-export function policyClassOf(
-  mention: TranscriptMention,
-  signals: TranscriptCandidateSignal[],
-  conflicts: TranscriptCandidateConflict[],
-  leadOverNext: number | null,
-  isTop: boolean,
-): TranscriptCandidatePolicyClass {
-  const hasHardConflict = conflicts.some((conflict) => conflict.hard);
-  const stableIdentifierMatched = signals.some(
-    (signal) =>
-      [
-        "exact-email",
-        "exact-profile-url",
-        "verified-handle",
-        "external-contact-id",
-        "speaker-calendar-email",
-      ].includes(signal.signal) && signal.matched,
-  );
-  const mappingMatched = signals.find((s) => s.signal === "remembered-mapping")!.matched;
-  /* Confirmed: a non-conflicting stable identifier or an in-scope remembered
-     mapping (itself an explicit owner decision) — nothing weaker. */
-  if (!hasHardConflict && (stableIdentifierMatched || mappingMatched)) return "confirmed";
-  /* An ambiguous single name never rises above "ambiguous": one token is not
-     identity evidence, however well it scores (spec #117). */
-  if (mention.kind === "ambiguous-name") return "ambiguous";
-  if (hasHardConflict) return "ambiguous";
-  const score = signals.filter((s) => s.matched).reduce((total, s) => total + s.weight, 0);
-  /* Probable: the top candidate, decisively ahead — or running unopposed. */
-  const decisive = leadOverNext === null || leadOverNext >= PROBABLE_MIN_LEAD;
-  if (isTop && score >= PROBABLE_MIN_SCORE && decisive) return "probable";
-  return "ambiguous";
+  for (const extracted of supplement.organizations) {
+    const surfaceText = checkedSurface(record, extracted.spanStart, extracted.spanEnd);
+    const normalizedName = normalizeName(surfaceText);
+    const context = contextFor(lines, extracted.spanStart);
+    const evidence = {
+      aliases: unique(extracted.aliases.map(evidenceText)),
+      domains: unique(
+        extracted.domains.map((domain) => domain.normalize("NFKC").trim().toLowerCase()),
+      ),
+      externalCompanyIds: normalizeExternalContactIds(extracted.externalCompanyIds),
+      relationshipAssertions: assertionsOf(extracted.relationshipAssertions),
+    };
+    const existing = organizations.find(
+      (organization) =>
+        organization.provenance.spanStart === extracted.spanStart &&
+        organization.provenance.spanEnd === extracted.spanEnd,
+    );
+    if (existing) {
+      existing.confidence = extracted.confidence;
+      existing.aliases = unique([...existing.aliases, ...evidence.aliases]);
+      existing.domains = unique([...existing.domains, ...evidence.domains]);
+      existing.externalCompanyIds = evidence.externalCompanyIds;
+      existing.relationshipAssertions = evidence.relationshipAssertions;
+      continue;
+    }
+    organizations.push({
+      id: organizationId(record.id, extracted.spanStart, normalizedName),
+      surfaceText,
+      normalizedName,
+      ...evidence,
+      relatedMentionIds: [],
+      confidence: extracted.confidence,
+      provenance: {
+        transcriptId: record.id,
+        spanStart: extracted.spanStart,
+        spanEnd: extracted.spanEnd,
+        quote: surfaceText,
+        timestamp: context.timestamp,
+        speakerLabel: context.speakerLabel,
+        meetingDate: record.meetingDate,
+      },
+      minedAt: record.ingestedAt,
+      algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
+    });
+  }
 }
