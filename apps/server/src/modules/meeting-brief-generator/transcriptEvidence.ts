@@ -19,6 +19,9 @@ interface ConfirmedTranscriptLink {
   transcriptId: string;
   via: TranscriptEvidenceVia;
   excerpt: string;
+  /** How relevant this excerpt is to the meeting being briefed. */
+  relevance: number;
+  meetingDate: string | null;
 }
 
 /** A Transcript reached by similarity, carrying the Catalog's review state. */
@@ -26,6 +29,7 @@ interface SemanticTranscriptCandidate {
   transcriptId: string;
   excerpt: string;
   score: number;
+  meetingDate: string | null;
   reviewState: TranscriptRelevanceReviewState;
 }
 
@@ -34,6 +38,7 @@ interface TranscriptEvidenceItem {
   transcriptId: string;
   via: TranscriptEvidenceVia | "confirmed-relevance";
   excerpt: string;
+  meetingDate: string | null;
 }
 
 /** One unconfirmed similarity result, shown for review and never composed. */
@@ -54,26 +59,66 @@ export interface TranscriptEvidenceInput {
 }
 
 /**
+ * How many cited excerpts composition may receive. The set is bounded so a
+ * large corpus cannot flood a Brief; the ranking below decides which survive.
+ */
+const DEFAULT_TRANSCRIPT_EVIDENCE_LIMIT = 6;
+
+/**
+ * Relationship strength, the first ranking key. A direct person link is the
+ * strongest claim the Workspace holds, then the organization, then the
+ * standing meeting series. Owner-confirmed similarity is citable but is the
+ * weakest of the citable lanes: it was admitted by a review decision rather
+ * than by a link the Workspace already knew about.
+ */
+const RELATIONSHIP_STRENGTH: Record<TranscriptEvidenceItem["via"], number> = {
+  person: 3,
+  organization: 2,
+  "meeting-series": 1,
+  "confirmed-relevance": 0,
+};
+
+/** One citable excerpt with the two ranking keys that outrank neither lane. */
+interface RankedEvidence {
+  item: TranscriptEvidenceItem;
+  relevance: number;
+}
+
+/**
  * Split the two lanes into what may be cited and what may only be reviewed.
  * Only a semantic candidate the owner explicitly confirmed crosses over;
  * pending, rejected, and unresolved states never do, so an unreviewed
  * suggestion cannot block or enter a scheduled Brief.
+ *
+ * Citable evidence is then ranked by relationship strength, then meeting
+ * relevance, then recency, and cut to `limit`. The keys are applied in
+ * priority order rather than blended into one score, so a strong relationship
+ * is never outbid by a high similarity number.
  */
 export function selectTranscriptEvidence(
   input: TranscriptEvidenceInput,
+  options?: { limit?: number },
 ): TranscriptEvidenceSelection {
-  const evidence: TranscriptEvidenceItem[] = input.links.map((link) => ({
-    transcriptId: link.transcriptId,
-    via: link.via,
-    excerpt: link.excerpt,
+  const ranked: RankedEvidence[] = input.links.map((link) => ({
+    item: {
+      transcriptId: link.transcriptId,
+      via: link.via,
+      excerpt: link.excerpt,
+      meetingDate: link.meetingDate,
+    },
+    relevance: link.relevance,
   }));
   const suggestions: TranscriptEvidenceSuggestion[] = [];
   for (const candidate of input.semantic) {
     if (candidate.reviewState === "confirmed") {
-      evidence.push({
-        transcriptId: candidate.transcriptId,
-        via: "confirmed-relevance",
-        excerpt: candidate.excerpt,
+      ranked.push({
+        item: {
+          transcriptId: candidate.transcriptId,
+          via: "confirmed-relevance",
+          excerpt: candidate.excerpt,
+          meetingDate: candidate.meetingDate,
+        },
+        relevance: candidate.score,
       });
       continue;
     }
@@ -85,5 +130,18 @@ export function selectTranscriptEvidence(
       });
     }
   }
-  return { evidence, suggestions };
+
+  /* A missing meeting date sorts last rather than first: an undated
+     Transcript is not evidence that something happened recently. The
+     transcriptId tiebreak keeps the set stable across runs. */
+  ranked.sort(
+    (left, right) =>
+      RELATIONSHIP_STRENGTH[right.item.via] - RELATIONSHIP_STRENGTH[left.item.via] ||
+      right.relevance - left.relevance ||
+      (right.item.meetingDate ?? "").localeCompare(left.item.meetingDate ?? "") ||
+      left.item.transcriptId.localeCompare(right.item.transcriptId),
+  );
+
+  const limit = options?.limit ?? DEFAULT_TRANSCRIPT_EVIDENCE_LIMIT;
+  return { evidence: ranked.slice(0, limit).map((entry) => entry.item), suggestions };
 }
