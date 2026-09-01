@@ -20,7 +20,7 @@ export interface PersonProfileSource {
   collect(signals: PersonIdentitySignals): Promise<PersonProfileSourceResult>;
 }
 
-export interface PersonProfiles {
+interface PersonProfiles {
   resolve(signals: PersonIdentitySignals): Promise<PersonProfile>;
   get(profileId: string): PersonProfile | null;
 }

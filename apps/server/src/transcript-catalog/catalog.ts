@@ -15,7 +15,7 @@ import { meetingDateFromFileName } from "../pipeline/run.js";
 import { TranscriptCatalogStore } from "./store.js";
 
 /** Bumped whenever the normalization/registration behavior changes meaning. */
-export const TRANSCRIPT_CATALOG_EXTRACTOR_VERSION = 1;
+const TRANSCRIPT_CATALOG_EXTRACTOR_VERSION = 1;
 
 /**
  * What the Catalog needs from its source folder. The production source is the
@@ -59,7 +59,7 @@ export interface TranscriptCatalogDeps {
   log?: (message: string) => void;
 }
 
-export class ConsentRequiredError extends Error {
+class ConsentRequiredError extends Error {
   constructor() {
     super("Transcript Catalog processing requires explicit folder consent");
     this.name = "ConsentRequiredError";

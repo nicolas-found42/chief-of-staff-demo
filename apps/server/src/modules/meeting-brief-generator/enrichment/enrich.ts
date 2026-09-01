@@ -116,7 +116,7 @@ function personProfileSection(
 /** One pinned attendee identity: the exact email, the Profile it resolved to,
  *  and the exact revision the consumer used (spec #117 Implementation
  *  Decision 5). */
-export interface AttendeeProfilePin {
+interface AttendeeProfilePin {
   email: string;
   profileId: string;
   profileRevision: number;
