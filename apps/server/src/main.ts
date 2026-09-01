@@ -384,6 +384,9 @@ const meetingBriefProduction = meetingBriefTest
          confirmed owner reference; eligibility keeps the raw identity. */
       isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
       personProfiles: peopleProfiles,
+      /* Confirmed transcript evidence (issue #138): the Brief reads the
+         Catalog's confirmed links and its reviewed relevance decisions. */
+      transcriptRelevance,
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;

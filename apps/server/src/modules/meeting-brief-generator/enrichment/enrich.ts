@@ -782,7 +782,14 @@ export async function enrichUnified(
       try {
         const collected = await providers.transcriptEvidence.collect({
           occurrenceKey,
+          calendarEventId: event.eventId,
+          title: event.summary ?? "",
           attendees: classified.map(({ attendee }) => attendee.email.toLowerCase()),
+          organizations: deduplicateEvidence(
+            classified
+              .map(({ attendee }) => extractDomain(attendee.email)?.toLowerCase() ?? "")
+              .filter(Boolean),
+          ),
         });
         const selection = selectTranscriptEvidence(collected);
         allSections.push({

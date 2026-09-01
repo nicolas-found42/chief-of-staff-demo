@@ -12,7 +12,7 @@ import type { TranscriptRelevanceReviewState } from "@chief-of-staff-demo/shared
  */
 
 /** Why a Transcript is already evidence rather than a suggestion. */
-type TranscriptEvidenceVia = "person" | "organization" | "meeting-series";
+export type TranscriptEvidenceVia = "person" | "organization" | "meeting-series";
 
 /** A Transcript reached through a confirmed link the Workspace already holds. */
 interface ConfirmedTranscriptLink {
@@ -66,11 +66,18 @@ export const TRANSCRIPT_EVIDENCE_SOURCE_ID = "confirmed-transcripts";
  * attendee-level: the organization and meeting-series lanes are properties of
  * the occurrence rather than of any one guest, so the Brief asks once.
  */
+export interface MeetingTranscriptEvidenceRequest {
+  occurrenceKey: string;
+  /** The series identity: recurring occurrences share one Calendar event id. */
+  calendarEventId: string;
+  title: string;
+  attendees: string[];
+  /** Attendee domains, the organization lane's key. */
+  organizations: string[];
+}
+
 export interface MeetingTranscriptEvidenceProvider {
-  collect(request: {
-    occurrenceKey: string;
-    attendees: string[];
-  }): Promise<TranscriptEvidenceInput>;
+  collect(request: MeetingTranscriptEvidenceRequest): Promise<TranscriptEvidenceInput>;
 }
 
 /**

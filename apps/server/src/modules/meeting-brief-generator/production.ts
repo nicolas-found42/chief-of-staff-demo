@@ -28,6 +28,8 @@ import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "../../person-profile/references.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
+import type { TranscriptRelevanceService } from "../../transcript-catalog/relevance.js";
+import { catalogTranscriptEvidence } from "./catalogTranscriptEvidence.js";
 import { ContentResearchStore } from "../content-research/store.js";
 import type { ConfirmedOwnerReference } from "@chief-of-staff-demo/shared";
 
@@ -44,6 +46,10 @@ export interface MeetingBriefProductionRuntimeOptions {
   isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
   personProfiles?: WorkspacePersonProfiles;
+  /** The Catalog's relevance service, backing the confirmed-transcript lane
+   *  (issue #138). Absent — a Workspace with no Transcript consent — the lane
+   *  does not run and the Brief is unaffected. */
+  transcriptRelevance?: TranscriptRelevanceService;
   /** The confirmed owner reference, when this root also composes owner
       onboarding. The main root always passes a shared `personProfiles` that
       already carries it, so this stays unset there. */
@@ -166,6 +172,15 @@ export function createMeetingBriefProductionRuntime(
       attendeeProfiles: personProfiles,
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
+      ...(options.transcriptRelevance
+        ? {
+            transcriptEvidence: catalogTranscriptEvidence({
+              listTranscripts: () =>
+                new TranscriptCatalogStore(options.workspaceDir).listTranscripts(),
+              relevance: options.transcriptRelevance,
+            }),
+          }
+        : {}),
     },
     getOwnerEmail: () => ownerEmail,
     ...(options.isOwnerProfileConfirmed
