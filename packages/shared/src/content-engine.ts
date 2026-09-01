@@ -2,19 +2,127 @@ import type { BrandProfileRevision } from "./content-scout.js";
 import type { PersonProfilePublicSafeProjection } from "./person-profile.js";
 import type { AdapterDiagnostic, SourceItem } from "./source-items.js";
 
-export const CONTENT_PROJECT_TARGETS = [
-  "linkedin-standard-post",
-  "linkedin-carousel",
-  "linkedin-long-article",
-  "website-blog-article",
-  "email-newsletter",
-  "youtube-short",
-  "youtube-long-video",
-  "instagram-reel",
-  "tiktok-video",
+/**
+ * The versioned catalog of approved publication targets (spec #117 "Target
+ * catalog"). Each entry is one platform/format contract: what its structured
+ * Platform Outline plan contains and what its optional Content Engine Draft
+ * produces. Changing the catalog changes the Outline Set contract, so every
+ * entry carries its own contractVersion and `CONTENT_PROJECT_TARGETS` is
+ * derived from the catalog — the target union and the catalog cannot drift.
+ */
+export const CONTENT_TARGET_CATALOG = [
+  {
+    target: "linkedin-standard-post",
+    contractVersion: 1,
+    contract: {
+      platform: "LinkedIn",
+      format: "Standard Post",
+      outlineResult: "hook/argument/evidence/CTA plan",
+      draftResult: "finished post copy",
+    },
+  },
+  {
+    target: "linkedin-carousel",
+    contractVersion: 1,
+    contract: {
+      platform: "LinkedIn",
+      format: "Carousel",
+      outlineResult: "cover and slide-beat plan",
+      draftResult: "finished slide copy",
+    },
+  },
+  {
+    target: "linkedin-long-article",
+    contractVersion: 1,
+    contract: {
+      platform: "LinkedIn",
+      format: "Long-form Article",
+      outlineResult: "section/evidence plan",
+      draftResult: "finished article copy",
+    },
+  },
+  {
+    target: "website-blog-article",
+    contractVersion: 1,
+    contract: {
+      platform: "Website",
+      format: "Blog Article",
+      outlineResult: "headline/section/SEO evidence plan",
+      draftResult: "finished article copy",
+    },
+  },
+  {
+    target: "email-newsletter",
+    contractVersion: 1,
+    contract: {
+      platform: "Email",
+      format: "Newsletter",
+      outlineResult: "subject/opening/section/CTA plan",
+      draftResult: "finished newsletter copy",
+    },
+  },
+  {
+    target: "youtube-short",
+    contractVersion: 1,
+    contract: {
+      platform: "YouTube",
+      format: "Short",
+      outlineResult: "hook/visual beats/payoff plan",
+      draftResult: "record-ready short script",
+    },
+  },
+  {
+    target: "youtube-long-video",
+    contractVersion: 1,
+    contract: {
+      platform: "YouTube",
+      format: "Long-form Video",
+      outlineResult: "cold open/chapter/visual plan",
+      draftResult: "record-ready long script",
+    },
+  },
+  {
+    target: "instagram-reel",
+    contractVersion: 1,
+    contract: {
+      platform: "Instagram",
+      format: "Reel",
+      outlineResult: "pattern interrupt/visual beats/payoff plan",
+      draftResult: "record-ready Reel script",
+    },
+  },
+  {
+    target: "tiktok-video",
+    contractVersion: 1,
+    contract: {
+      platform: "TikTok",
+      format: "Video",
+      outlineResult: "immediate hook/rapid proof/payoff plan",
+      draftResult: "record-ready TikTok script",
+    },
+  },
 ] as const;
 
-export type ContentProjectTarget = (typeof CONTENT_PROJECT_TARGETS)[number];
+export type ContentProjectTarget = (typeof CONTENT_TARGET_CATALOG)[number]["target"];
+
+export const CONTENT_PROJECT_TARGETS: readonly ContentProjectTarget[] = CONTENT_TARGET_CATALOG.map(
+  (entry) => entry.target,
+);
+
+export interface ContentTargetContract {
+  platform: string;
+  format: string;
+  /** What the structured Platform Outline plan contains for this target. */
+  outlineResult: string;
+  /** What the optional Content Engine Draft produces for this target. */
+  draftResult: string;
+}
+
+export interface ContentTargetCatalogEntry {
+  target: ContentProjectTarget;
+  contractVersion: number;
+  contract: ContentTargetContract;
+}
 
 export type ContentProjectResearchMode =
   "no-external-research" | "existing-workspace-evidence" | "fresh-bounded-research";
@@ -351,4 +459,114 @@ export interface ContentEngineDraft {
   claims: ContentEngineDraftClaim[];
   unsupportedClaimPolicy: typeof CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY;
   productionNotes: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Outline Sets (issue #132; spec #117 generation and revision rules 4-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why one selected target produced no Platform Outline in one set generation.
+ * The set path emits exactly these: a provider that never answered in the
+ * Outline's Result Shape (`provider-failed`), or an answer the Content
+ * Project refused as a provider-contract violation (`invalid-provider-result`).
+ */
+export type OutlineSetFailureCode = "provider-failed" | "invalid-provider-result";
+
+export interface OutlineSetFailure {
+  target: ContentProjectTarget;
+  code: OutlineSetFailureCode;
+  message: string;
+}
+
+/**
+ * What one Outline Set generation did: the approved Brief it ran from, the
+ * Platform Outlines that landed, and the targets that failed. Successful
+ * siblings persist immediately; `failures` names exactly what a retry of the
+ * same call will regenerate.
+ */
+export interface OutlineSetOutcome {
+  outlineBriefId: string;
+  outlineBriefVersion: number;
+  generated: PlatformOutline[];
+  failures: OutlineSetFailure[];
+}
+
+// ---------------------------------------------------------------------------
+// User exports (issue #132; spec #117 generation rule 10)
+// ---------------------------------------------------------------------------
+
+function markdownBullets(values: readonly string[]): string[] {
+  return values.map((value) => `- ${value}`);
+}
+
+function evidenceSourceLabel(sourceItemIds: readonly string[]): string {
+  return sourceItemIds.length > 0
+    ? `Source Items: ${sourceItemIds.join(", ")}`
+    : "thesis beat, no frozen source";
+}
+
+/**
+ * The Markdown download for one Platform Outline: a deterministic rendering of
+ * the structured record. The structured JSON remains the product interface;
+ * this is only what a person downloads.
+ */
+export function platformOutlineMarkdown(outline: PlatformOutline): string {
+  const lines = [
+    `# ${outline.title}`,
+    "",
+    `- Target: ${outline.target} (version ${outline.version})`,
+    `- Thesis: ${outline.thesis}`,
+    `- Hook: ${outline.hookDirection}`,
+    `- Target length: ${outline.targetLength}`,
+  ];
+  if (outline.ctaIntent) lines.push(`- CTA intent: ${outline.ctaIntent}`);
+  lines.push("", "## Beats", "");
+  for (const beat of outline.beats) {
+    lines.push(
+      `### ${beat.position}. ${beat.direction}`,
+      "",
+      `- Evidence: ${beat.evidence.claim} (${evidenceSourceLabel(beat.evidence.sourceItemIds)})`,
+    );
+    if (beat.examples.length > 0) lines.push(`- Examples: ${beat.examples.join("; ")}`);
+    lines.push("");
+  }
+  if (outline.warnings.length > 0) {
+    lines.push("## Warnings", "", ...markdownBullets(outline.warnings), "");
+  }
+  if (outline.productionNotes.length > 0) {
+    lines.push("## Production notes", "", ...markdownBullets(outline.productionNotes), "");
+  }
+  if (outline.constraints.length > 0) {
+    lines.push("## Constraints", "", ...markdownBullets(outline.constraints));
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+/**
+ * The Markdown download for one Content Engine Draft. The copy export is the
+ * draft's own `copy` field verbatim; this rendering adds the claim support
+ * the unsupported-claim policy requires a person to see.
+ */
+export function contentEngineDraftMarkdown(draft: ContentEngineDraft): string {
+  const lines = [
+    `# ${draft.target} draft (version ${draft.version})`,
+    "",
+    draft.copy,
+    "",
+    `Thesis: ${draft.thesis}`,
+    "",
+    "## Claims",
+    "",
+  ];
+  for (const claim of draft.claims) {
+    const support = claim.supported
+      ? `Supported (${evidenceSourceLabel(claim.sourceItemIds)})`
+      : `Unsupported (${CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY})`;
+    lines.push(`- ${claim.text} — ${support}`);
+  }
+  if (draft.productionNotes.length > 0) {
+    lines.push("", "## Production notes", "", ...markdownBullets(draft.productionNotes));
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
 }
