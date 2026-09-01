@@ -27,6 +27,9 @@ import { createEmployerProposer } from "./enrichment/employerProposer.js";
 import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "../../person-profile/references.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
+import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
+import { ContentResearchStore } from "../content-research/store.js";
+import type { ConfirmedOwnerReference } from "@chief-of-staff-demo/shared";
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;
@@ -41,6 +44,10 @@ export interface MeetingBriefProductionRuntimeOptions {
   isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
   personProfiles?: WorkspacePersonProfiles;
+  /** The confirmed owner reference, when this root also composes owner
+      onboarding. The main root always passes a shared `personProfiles` that
+      already carries it, so this stays unset there. */
+  ownerReference?: () => ConfirmedOwnerReference | null;
 }
 
 export interface MeetingBriefProductionRuntime {
@@ -127,11 +134,22 @@ export function createMeetingBriefProductionRuntime(
      Profiles interface, not the legacy broad resolver: attendees reuse an
      existing Profile on a non-conflicting exact email match or receive one
      minimal email-anchored shell. */
+  /* A root that composes its own Person Profiles still states the registry
+     with the real Workspace stores behind the disclosure; the owner
+     reference arrives through the option when this root owns onboarding. */
+  const transcriptCatalog = new TranscriptCatalogStore(options.workspaceDir);
+  const contentResearchItems = new ContentResearchStore(options.workspaceDir, () => new Date());
   const personProfiles =
     options.personProfiles ??
     new WorkspacePersonProfiles({
       store: new PersonProfileStore(options.workspaceDir),
-      lifecycle: [new WorkspacePersonProfileReferences(options.runs)],
+      lifecycle: [
+        new WorkspacePersonProfileReferences(options.runs, {
+          ownerReference: options.ownerReference ?? (() => null),
+          transcripts: () => transcriptCatalog.listTranscripts(),
+          publicItems: () => contentResearchItems.listAllItems(),
+        }),
+      ],
     });
   const host = new MeetingBriefHost({
     runs: options.runs,

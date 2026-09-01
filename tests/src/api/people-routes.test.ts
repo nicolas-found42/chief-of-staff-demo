@@ -5,14 +5,22 @@ import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
 import type {
+  ConfirmedOwnerReference,
   PersonProfile,
   PersonProfileDependentConfiguration,
+  PersonProfileLifecycleState,
   PersonProfileProjection,
   PersonProfileResidualSourceArtifact,
+  SourceItem,
+  TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import { registerPeopleApi } from "../../../apps/server/src/api/people";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfileReferences } from "../../../apps/server/src/person-profile/references";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+import { openRuns } from "../../../apps/server/src/runs";
+import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
+import { ContentResearchStore } from "../../../apps/server/src/modules/content-research/store";
 
 /**
  * The product namespace `/api/people/*` (spec #117): the same observable
@@ -634,5 +642,217 @@ describe("identity repair routes", () => {
 
     const unknown = await app.inject({ url: "/api/people/person_unknown/invalidations" });
     expect(unknown.statusCode).toBe(404);
+  });
+});
+
+/**
+ * The same lifecycle routes over the PRODUCTION reference registry — the real
+ * `WorkspacePersonProfileReferences` wired to the real stores it reads at the
+ * composition roots (Runs, the Transcript Catalog, Content Research items,
+ * and the confirmed owner reference). A refusal or receipt here can only be
+ * satisfied by disclosures the registry actually derives from Workspace
+ * state, not by test doubles.
+ */
+describe("/api/people/:profileId lifecycle over the production registry", () => {
+  let registryApp: FastifyInstance;
+  let registryStore: PersonProfileStore;
+  let registryProfiles: WorkspacePersonProfiles;
+  let catalog: TranscriptCatalogStore;
+  let research: ContentResearchStore;
+  /** The confirmed owner reference; the registry reads it through its port. */
+  let confirmedOwner: ConfirmedOwnerReference | null;
+
+  beforeEach(() => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "cos-people-routes-real-"));
+    registryStore = new PersonProfileStore(workspaceDir);
+    catalog = new TranscriptCatalogStore(workspaceDir);
+    research = new ContentResearchStore(workspaceDir, () => new Date("2026-08-31T16:00:00.000Z"));
+    confirmedOwner = null;
+    const registry = new WorkspacePersonProfileReferences(openRuns(workspaceDir), {
+      ownerReference: () => confirmedOwner,
+      transcripts: () => catalog.listTranscripts(),
+      publicItems: () => research.listAllItems(),
+    });
+    registryProfiles = new WorkspacePersonProfiles({
+      store: registryStore,
+      now: () => new Date("2026-08-31T16:00:00.000Z"),
+      lifecycle: [registry],
+    });
+    registryApp = fastify();
+    registerPeopleApi(registryApp, { people: registryProfiles });
+    return registryApp.ready();
+  });
+
+  afterEach(async () => {
+    await registryApp.close();
+  });
+
+  async function createAda(): Promise<PersonProfile> {
+    const response = await registryApp.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: { fullName: "Ada Lovelace", primaryEmail: "ada@example.com" },
+    });
+    expect(response.statusCode).toBe(201);
+    return response.json<PersonProfile>();
+  }
+
+  function seedTranscript(id: string, text: string): void {
+    const record: TranscriptRecord = {
+      id,
+      source: {
+        sourceSystem: "drive",
+        externalFileId: id,
+        fileName: `${id}.md`,
+        sourceUrl: null,
+        checksum: "a".repeat(64),
+        observedRevision: 1,
+        modifiedAt: null,
+      },
+      ingestedAt: "2026-08-31T12:00:00.000Z",
+      extractorVersion: 1,
+      normalizedText: text,
+      meetingDate: null,
+      occurrence: null,
+      speakers: [],
+    };
+    catalog.saveTranscript(record);
+  }
+
+  function seedItem(id: string, title: string, body: string, canonicalUrl: string): void {
+    const item: SourceItem = {
+      id,
+      externalId: id,
+      targetId: "target_1",
+      adapterId: "rss",
+      canonicalUrl,
+      author: null,
+      title,
+      body,
+      description: null,
+      publishedAt: "2026-08-30T10:00:00.000Z",
+      discoveredAt: "2026-08-30T12:00:00.000Z",
+      media: [],
+      transcript: null,
+      comments: [],
+      evidence: [{ route: canonicalUrl, retrievedAt: "2026-08-30T12:00:00.000Z" }],
+      completeness: {
+        title: "available",
+        body: "available",
+        description: "unavailable",
+        transcript: "unsupported",
+        comments: "unsupported",
+        media: "unavailable",
+      },
+    };
+    research.storeItems([{ canonicalUrl: item.canonicalUrl, payload: JSON.stringify(item) }]);
+  }
+
+  it("refuses archive and privacy deletion while the confirmed owner reference pins the Profile, naming it", async () => {
+    const created = await createAda();
+    confirmedOwner = {
+      profileId: created.id,
+      profileRevision: created.revision,
+      confirmedAt: "2026-08-31T15:00:00.000Z",
+      confirmedForGoogleEmail: "ada@example.com",
+    };
+
+    for (const url of [
+      `/api/people/${created.id}/archive`,
+      `/api/people/${created.id}/privacy-delete`,
+    ]) {
+      const refused = await registryApp.inject({
+        method: "POST",
+        url,
+        payload: { confirmation: "DELETE PROFILE" },
+      });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toMatchObject({
+        error: "active-dependencies",
+        lifecycle: {
+          dependentConfigurations: [
+            {
+              consumer: "owner-onboarding",
+              state: "active",
+              availableActions: ["repoint"],
+              profileId: created.id,
+            },
+          ],
+        },
+      });
+    }
+
+    /* Re-pointing the owner reference resolves the refusal explicitly. */
+    confirmedOwner = null;
+    const archived = await registryApp.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/archive`,
+    });
+    expect(archived.statusCode).toBe(200);
+  });
+
+  it("derives residual source artifacts from catalogued transcripts and public items naming the person", async () => {
+    const created = await createAda();
+    seedTranscript("transcript_ada_1", "Ada Lovelace: the engine is ready for the demonstration.");
+    seedTranscript("transcript_other", "Unrelated: nothing here names her email.");
+    seedItem(
+      "item_ada_1",
+      "Ada Lovelace publishes notes on the engine",
+      "Wide-ranging commentary.",
+      "https://notes.example/ada-engine-notes",
+    );
+    seedItem(
+      "item_other",
+      "Quarterly results",
+      "No person of interest appears here.",
+      "https://quarterly.example/results",
+    );
+
+    const preview = await registryApp.inject({ url: `/api/people/${created.id}/lifecycle` });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({
+      dependentConfigurations: [],
+      residualSourceArtifacts: expect.arrayContaining([
+        { artifactId: "transcript_ada_1", kind: "transcript", separateDeleteSupported: false },
+        { artifactId: "item_ada_1", kind: "public-source", separateDeleteSupported: false },
+      ]),
+    });
+    const artifacts = preview.json<PersonProfileLifecycleState>().residualSourceArtifacts;
+    expect(artifacts.map((a) => a.artifactId)).not.toContain("transcript_other");
+    expect(artifacts.map((a) => a.artifactId)).not.toContain("item_other");
+
+    /* The confirmation refusal and the receipt disclose the same documents. */
+    const refused = await registryApp.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/privacy-delete`,
+      payload: { confirmation: "archive" },
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toMatchObject({
+      lifecycle: {
+        residualSourceArtifacts: expect.arrayContaining([
+          {
+            artifactId: "transcript_ada_1",
+            kind: "transcript",
+            separateDeleteSupported: false,
+          },
+          { artifactId: "item_ada_1", kind: "public-source", separateDeleteSupported: false },
+        ]),
+      },
+    });
+
+    const deleted = await registryApp.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/privacy-delete`,
+      payload: { confirmation: "DELETE PROFILE" },
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({
+      residualSourceArtifacts: [
+        { artifactId: "transcript_ada_1", kind: "transcript", separateDeleteSupported: false },
+        { artifactId: "item_ada_1", kind: "public-source", separateDeleteSupported: false },
+      ],
+      remoteProviderOperations: 0,
+    });
   });
 });

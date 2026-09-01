@@ -73,7 +73,9 @@ test("person profile lifecycle journey — archive badge → archive → restore
   await page.getByRole("button", { name: "Privacy delete this profile…" }).click();
   await expect(page.getByText("Source documents that will remain")).toBeVisible();
   await expect(
-    page.getByText("No immutable transcript or public-source document references this Profile."),
+    page.getByText(
+      /Immutable transcript and public-source documents are never deleted with the Profile/,
+    ),
   ).toBeVisible();
   await page.getByLabel("Type DELETE PROFILE to confirm").fill("archive");
   await page.getByRole("button", { name: "Permanently delete this profile" }).click();

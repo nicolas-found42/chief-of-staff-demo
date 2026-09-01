@@ -135,9 +135,10 @@ function ResidualSourceDisclosure({
 }) {
   if (artifacts.length === 0) {
     return (
-      <p className="muted">
-        No immutable transcript or public-source document references this Profile. Nothing would
-        remain after deletion.
+      <p className="banner-warn" role="status">
+        Immutable transcript and public-source documents are <strong>never</strong> deleted with the
+        Profile. None in this Workspace references it today; any that name it remain until each is
+        separately deleted.
       </p>
     );
   }

@@ -14,7 +14,13 @@ describe("Workspace-owned Person Profile reference registry", () => {
     const store = new PersonProfileStore(workspaceDir);
     const profiles = new WorkspacePersonProfiles({
       store,
-      lifecycle: [new WorkspacePersonProfileReferences(runs)],
+      lifecycle: [
+        new WorkspacePersonProfileReferences(runs, {
+          ownerReference: () => null,
+          transcripts: () => [],
+          publicItems: () => [],
+        }),
+      ],
       now: () => new Date("2026-08-31T16:00:00.000Z"),
     });
     const profile = profiles.create({

@@ -101,11 +101,21 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
    * source documents would outlive the Profile.
    */
   function lifecycleFailure(reply: FastifyReply, profileId: string, error: unknown): unknown {
+    if (error instanceof PersonProfileValidationError && error.code === "active-dependencies") {
+      if (!error.lifecycle) throw error;
+      reply.code(409);
+      const refusal: PersonProfileLifecycleRefusal = {
+        error: error.code,
+        message: error.message,
+        lifecycle: error.lifecycle,
+      };
+      return refusal;
+    }
     if (
       error instanceof PersonProfileValidationError &&
-      (error.code === "active-dependencies" || error.code === "privacy-confirmation-required")
+      error.code === "privacy-confirmation-required"
     ) {
-      reply.code(error.code === "active-dependencies" ? 409 : 400);
+      reply.code(400);
       const refusal: PersonProfileLifecycleRefusal = {
         error: error.code,
         message: error.message,

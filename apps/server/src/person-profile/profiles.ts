@@ -57,6 +57,9 @@ export class PersonProfileValidationError extends Error {
       | "active-dependencies"
       | "privacy-confirmation-required",
     message: string,
+    /* A refused lifecycle operation carries the preview it refused with, so
+       the route answers with the disclosure without recomputing it. */
+    public readonly lifecycle?: PersonProfileLifecycleState,
   ) {
     super(message);
     this.name = "PersonProfileValidationError";
@@ -69,16 +72,19 @@ export type PersonProfileRegistryDeletionCounts = Pick<
   "aliases" | "candidates" | "mappings" | "decisions" | "activeLinks" | "personSnapshots"
 >;
 
+/** What one registry discloses about a Profile, derived only from local stores. */
+export interface PersonProfileLifecycleInspection {
+  dependentConfigurations: PersonProfileDependentConfiguration[];
+  residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+}
+
 /**
  * One local Workspace holder of Profile references outside the canonical store.
- * Meeting Brief Runs, #126's identity-review store and #134's Named Person
- * watches each register one; no external provider belongs behind this port.
+ * Meeting Brief Runs and the confirmed owner reference each register one; no
+ * external provider belongs behind this port.
  */
 export interface PersonProfileLifecycleRegistry {
-  inspect(profileId: string): {
-    dependentConfigurations: PersonProfileDependentConfiguration[];
-    residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
-  };
+  inspect(profile: PersonProfile): PersonProfileLifecycleInspection;
   privacyDelete(profileId: string): PersonProfileRegistryDeletionCounts;
 }
 
@@ -153,7 +159,8 @@ export class WorkspacePersonProfiles {
   archive(profileId: string): PersonProfile {
     const profile = this.repairable(profileId);
     if (profile.archivedAt !== null) return profile;
-    this.requireNoActiveDependencies(profileId, "archiving");
+    const preview = this.lifecycleOf(profile);
+    this.requireNoActiveDependencies("archiving", preview);
     const archived = { ...profile, archivedAt: this.now().toISOString() };
     this.store.saveCurrent(archived);
     return archived;
@@ -176,9 +183,14 @@ export class WorkspacePersonProfiles {
         "profile-not-found",
         "No Person Profile with that id.",
       );
-    const inspected = this.registries.map((registry) => registry.inspect(profileId));
+    return this.lifecycleOf(profile);
+  }
+
+  /** The preview for one already-loaded Profile record: one registry walk. */
+  private lifecycleOf(profile: PersonProfile): PersonProfileLifecycleState {
+    const inspected = this.registries.map((registry) => registry.inspect(profile));
     return {
-      profileId,
+      profileId: profile.id,
       profileRevision: profile.revision,
       archivedAt: profile.archivedAt,
       dependentConfigurations: inspected.flatMap((one) => one.dependentConfigurations),
@@ -204,8 +216,10 @@ export class WorkspacePersonProfiles {
         "profile-not-found",
         "No Person Profile with that id.",
       );
-    this.requireNoActiveDependencies(profileId, "privacy-deleting");
-    const preview = this.lifecycle(profileId);
+    /* One preview serves the refusal (an active dependent configuration),
+       the receipt's residual disclosure, and the confirmation surface. */
+    const preview = this.lifecycleOf(profile);
+    this.requireNoActiveDependencies("privacy-deleting", preview);
     const registryRemoved = this.purgeRegistries(profileId);
     const deletedAt = this.now().toISOString();
     const canonicalRemoved = this.store.privacyDelete(profile, deletedAt);
@@ -362,20 +376,25 @@ export class WorkspacePersonProfiles {
     });
   }
 
-  /** The current record of a Profile that still owns its identity. */
   /**
    * Neither archive nor privacy deletion may quietly strand a consumer that is
    * still pointed at this Profile: the operator resolves each active
-   * configuration explicitly, by pausing or re-pointing it, and retries.
+   * configuration explicitly, by pausing or re-pointing it, and retries. The
+   * thrown error carries the preview it refused with, so the route answers
+   * with the disclosure instead of recomputing it.
    */
-  private requireNoActiveDependencies(profileId: string, operation: string): void {
-    const active = this.lifecycle(profileId).dependentConfigurations.filter(
+  private requireNoActiveDependencies(
+    operation: string,
+    preview: PersonProfileLifecycleState,
+  ): void {
+    const active = preview.dependentConfigurations.filter(
       (dependency) => dependency.state === "active",
     );
     if (active.length === 0) return;
     throw new PersonProfileValidationError(
       "active-dependencies",
       `Pause or re-point every active dependent configuration before ${operation} this Profile.`,
+      preview,
     );
   }
 
@@ -396,6 +415,7 @@ export class WorkspacePersonProfiles {
     return total;
   }
 
+  /** The current record of a Profile that still owns its identity. */
   private repairable(profileId: string): PersonProfile {
     const profile = this.store.get(profileId);
     if (!profile)
