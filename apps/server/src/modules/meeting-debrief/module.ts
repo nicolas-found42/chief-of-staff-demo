@@ -21,6 +21,7 @@ import type {
   DebriefExtractInput,
   DebriefIdentityReview,
   DebriefIdentityReviewReader,
+  DebriefOutputsDeps,
 } from "./deps.js";
 import {
   MEETING_DEBRIEF_REVIEW_EXPIRY_MS,
@@ -68,6 +69,42 @@ export interface MeetingDebriefModuleDeps {
    * owner identity and a Profile directory, no Debrief can be approved.
    */
   gate?: DebriefApprovalGateDeps;
+  /**
+   * The outward-write surface (issue #141). Absent, approval writes nothing
+   * outward — the Module has no other way to reach Gmail or Tasks.
+   */
+  outputs?: DebriefOutputsDeps;
+}
+
+/**
+ * The one outward write terminal approval performs (issue #141). Recipients are
+ * every confirmed attendee other than the owner, plus the recipients the owner
+ * confirmed explicitly. With no outward surface wired the approval still
+ * completes and nothing leaves the app, which is how #139's "no outward write"
+ * property survives as structure rather than as a promise.
+ */
+async function createApprovalDraft(
+  ctx: RunContext,
+  deps: MeetingDebriefModuleDeps,
+  record: TranscriptRecord,
+  state: MeetingDebriefReviewState,
+  ownerEmail: string | null,
+): Promise<void> {
+  const outputs = deps.outputs;
+  if (outputs === undefined) return;
+  const to = [
+    ...state.roster.entries
+      .filter((entry) => entry.email !== ownerEmail)
+      .map((entry) => entry.email),
+    ...state.recipients.additional.map((recipient) => recipient.email),
+  ];
+  const draftId = await outputs.createDraft({
+    to,
+    subject: `Meeting debrief — ${record.source.fileName}`,
+    body: currentDebrief(ctx).summary,
+  });
+  ctx.writeFile("draft.json", `${JSON.stringify({ version: 1, draftId, to }, null, 2)}\n`);
+  ctx.event("debrief_draft_created", { draftId, recipientCount: to.length });
 }
 
 /** How the Run's association stands, read from the immutable record itself. */
@@ -303,6 +340,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           locked.roster.entries.filter((entry) => entry.email !== owner).length +
           locked.recipients.additional.length;
         ctx.event("debrief_approved", { approvedAt, recipientCount });
+        await createApprovalDraft(ctx, deps, record, locked, owner);
         return {
           status: "done",
           summary: `Approved with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,

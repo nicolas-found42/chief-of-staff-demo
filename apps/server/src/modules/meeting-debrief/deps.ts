@@ -37,3 +37,26 @@ export interface DebriefExtractInput {
   record: TranscriptRecord;
   identity: DebriefIdentityReview;
 }
+
+/**
+ * One outward-facing Gmail draft, as the Debrief hands it over. The addresses
+ * are already decided by the approval — the outward surface receives
+ * recipients, never a roster to interpret.
+ */
+export interface DebriefDraft {
+  to: string[];
+  subject: string;
+  body: string;
+}
+
+/**
+ * The Debrief's only outward-write capability (issue #141). Terminal approval
+ * is the sole transition that reaches it. Left absent — as in the
+ * extraction-only harness #139 shipped — approval still completes and no
+ * outward write is structurally possible, so that property stays a wiring
+ * decision rather than a promise in prose.
+ */
+export interface DebriefOutputsDeps {
+  /** Creates exactly one draft and returns the provider's id for the receipt. */
+  createDraft(draft: DebriefDraft): Promise<string>;
+}
