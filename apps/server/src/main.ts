@@ -61,7 +61,6 @@ import {
   isSpreadsheetMissing,
 } from "./google/sheets.js";
 import { createGmailDraft } from "./google/gmail.js";
-import { TranscriptCatalogStore } from "./transcript-catalog/store.js";
 import { TranscriptRelevanceService } from "./transcript-catalog/relevance.js";
 import { TranscriptRelevanceStore } from "./transcript-catalog/relevance-store.js";
 import { createLexicalTranscriptRelevanceIndex } from "./transcript-catalog/relevance-index.js";

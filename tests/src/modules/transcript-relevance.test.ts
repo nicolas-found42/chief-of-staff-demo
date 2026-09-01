@@ -113,6 +113,7 @@ function makeHarness(
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
     now: NOW,
+    lifecycle: [],
   });
   const service = new TranscriptRelevanceService({
     corpus: { listTranscripts: () => corpus },

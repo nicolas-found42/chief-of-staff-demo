@@ -272,7 +272,7 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
      Catalog's exactly-once ledger and changes nothing. */
   app.post("/api/test/seed-transcript-corpus", async (_request, reply) => {
     try {
-      const people = new WorkspacePersonProfiles({ store: ctx.personStore });
+      const people = new WorkspacePersonProfiles({ store: ctx.personStore, lifecycle: [] });
       const identity = new TranscriptIdentityService({
         store: new TranscriptIdentityStore(ctx.workspaceDir),
         people,
