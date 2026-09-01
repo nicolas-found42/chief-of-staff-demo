@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 import type {
   TranscriptIdentityExtractionResult,
@@ -1663,5 +1664,155 @@ describe("remembered mappings", () => {
       .reviewQueue()
       .items.find((item) => item.transcriptId === "drive_file4_r1")!;
     expect(future.decision).toBeNull();
+  });
+});
+
+describe("rematching against changed Profiles and authority", () => {
+  const EMAIL_LINE = "Email questions to grace@example.com before Friday.";
+
+  function emailItem(h: Harness) {
+    return h.service
+      .reviewQueue()
+      .items.find((item) => item.mention.emails.includes("grace@example.com"))!;
+  }
+
+  it("follows a merged-away Profile to its survivor instead of holding the stale link", async () => {
+    const h = makeHarness();
+    const survivor = h.people.create({ fullName: "Grace Hopper" });
+    const duplicate = h.people.create({
+      fullName: "Grace M Hopper",
+      primaryEmail: "grace@example.com",
+    });
+    await h.service.process(makeRecord(EMAIL_LINE));
+    expect(emailItem(h).decision).toMatchObject({
+      profileId: duplicate.id,
+      decidedBy: "policy",
+    });
+
+    h.people.merge(survivor.id, {
+      duplicateId: duplicate.id,
+      resolutions: { fullName: "Grace Hopper" },
+    });
+    h.service.rematch();
+
+    expect(emailItem(h).decision).toMatchObject({
+      action: "confirm",
+      outcome: "linked",
+      profileId: survivor.id,
+      decidedBy: "policy",
+    });
+    expect(emailItem(h).candidates.map((candidate) => candidate.profileId)).toEqual([survivor.id]);
+  });
+
+  it("withdraws an auto-link once the Profile it linked is archived", async () => {
+    const h = makeHarness();
+    const grace = h.people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+    await h.service.process(makeRecord(EMAIL_LINE));
+    expect(emailItem(h).decision).toMatchObject({ profileId: grace.id, decidedBy: "policy" });
+
+    new PersonProfileStore(h.workspaceDir).save(
+      fromPartial({ ...h.people.get(grace.id)!, archivedAt: NOW().toISOString() }),
+    );
+    h.service.rematch();
+
+    expect(emailItem(h).decision).toMatchObject({
+      action: "unresolved",
+      outcome: "unresolved",
+      profileId: null,
+      decidedBy: "policy",
+    });
+    expect(emailItem(h).candidates[0]).toMatchObject({ policyClass: "ambiguous" });
+  });
+
+  it("re-pins an owner confirmation to the revision that superseded the invalidated one", async () => {
+    const h = makeHarness();
+    const grace = h.people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+    await h.service.process(makeRecord(SYNC_TEXT));
+    const speaker = h.service
+      .reviewQueue()
+      .items.find(
+        (i) => i.mention.surfaceText === "Grace Hopper" && i.mention.attendeeStatus === "speaker",
+      )!;
+    const confirmed = h.service.decide({
+      mentionId: speaker.mention.id,
+      action: "confirm",
+      profileId: grace.id,
+    });
+    expect(confirmed).toMatchObject({ profileRevision: 1, decidedBy: "owner" });
+
+    h.people.correct(grace.id, { role: "Rear Admiral" });
+    h.service.rematch();
+
+    const repaired = h.service
+      .reviewQueue()
+      .items.find((item) => item.mention.id === speaker.mention.id)!;
+    expect(repaired.decision).toMatchObject({
+      action: "confirm",
+      outcome: "linked",
+      profileId: grace.id,
+      profileRevision: 2,
+      decidedBy: "owner",
+    });
+  });
+
+  it("falls back to the broader active mapping when the narrower one is revoked", async () => {
+    const h = makeHarness();
+    const workspaceProfile = h.people.create({ fullName: "Grace Hopper" });
+    const transcriptProfile = h.people.create({ fullName: "Grace Murray Hopper" });
+    await h.service.process(makeRecord("Grace Hopper: ready.", "drive_fallback_r1"));
+    const named = h.service
+      .reviewQueue()
+      .items.find((item) => item.transcriptId === "drive_fallback_r1")!;
+
+    h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: workspaceProfile.id,
+      scope: "workspace",
+    });
+    h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: transcriptProfile.id,
+      scope: "transcript",
+    });
+    const narrower = h.service.mappings().find((mapping) => mapping.scope === "transcript")!;
+    expect(
+      h.service.reviewQueue().items.find((item) => item.mention.id === named.mention.id)?.decision,
+    ).toMatchObject({ profileId: transcriptProfile.id });
+
+    h.service.revokeMapping(narrower.id);
+
+    expect(
+      h.service.reviewQueue().items.find((item) => item.mention.id === named.mention.id)?.decision,
+    ).toMatchObject({
+      action: "remember-mapping",
+      outcome: "linked",
+      profileId: workspaceProfile.id,
+    });
+  });
+
+  it("rematches the corpus when a review action creates a Profile", async () => {
+    const h = makeHarness();
+    await h.service.process(makeRecord(SYNC_TEXT));
+    await h.service.process(makeRecord("Reach grace@example.com for notes.", "drive_other_r1"));
+    const seed = emailItem(h);
+
+    h.service.decide({ mentionId: seed.mention.id, action: "create-profile" });
+
+    const elsewhere = h.service
+      .reviewQueue()
+      .items.find(
+        (item) =>
+          item.transcriptId === "drive_other_r1" &&
+          item.mention.emails.includes("grace@example.com"),
+      )!;
+    expect(elsewhere.decision).toMatchObject({ outcome: "linked", decidedBy: "policy" });
   });
 });

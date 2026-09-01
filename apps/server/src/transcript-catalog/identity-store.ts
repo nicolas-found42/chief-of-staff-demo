@@ -18,7 +18,7 @@ export interface TranscriptIdentityMeta {
 interface TranscriptIdentityProcessingEntry {
   transcriptId: string;
   algorithmVersion: number;
-  inputVersion: string;
+  extractionVersion: string;
   processedAt: string;
 }
 
@@ -56,12 +56,12 @@ export class TranscriptIdentityStore {
     return this.readCollection<TranscriptIdentityProcessingEntry>("processing.json");
   }
 
-  wasProcessed(transcriptId: string, algorithmVersion: number, inputVersion: string): boolean {
+  wasProcessed(transcriptId: string, algorithmVersion: number, extractionVersion: string): boolean {
     return this.readProcessingLedger().some(
       (entry) =>
         entry.transcriptId === transcriptId &&
         entry.algorithmVersion === algorithmVersion &&
-        entry.inputVersion === inputVersion,
+        entry.extractionVersion === extractionVersion,
     );
   }
 

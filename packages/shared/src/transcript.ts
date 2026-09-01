@@ -534,12 +534,31 @@ export interface IdentityDecision {
   decidedBy: "policy" | "owner";
   decidedAt: string;
   note: string | null;
-  /** Exact remembered-mapping authority for mapping-derived decisions. */
-  mappingAuthority: {
-    lineageId: string;
-    mappingId: string;
-    mappingVersion: number;
-  } | null;
+  /**
+   * The exact remembered mapping this decision stands on, or null when no
+   * mapping is involved. It is the single place a mapping's authority is
+   * stated: present means the decision is the mapping's application (or its
+   * withdrawal), absent means the decision stands on its own.
+   */
+  mappingAuthority: RememberedMappingAuthority | null;
+}
+
+/** The exact immutable mapping version a decision was derived from. */
+export interface RememberedMappingAuthority {
+  lineageId: string;
+  mappingId: string;
+  mappingVersion: number;
+}
+
+/**
+ * Whether the decision is derived rather than owner review authority. A policy
+ * auto-link and a remembered-mapping application are both re-derivable from
+ * current Profiles, conflicts and mapping authority, so identity rematching
+ * recomputes them. An owner review decision carries neither mark and is never
+ * recomputed — only repaired to follow a Profile merge or invalidation.
+ */
+export function isDerivedIdentityDecision(decision: IdentityDecision): boolean {
+  return decision.decidedBy === "policy" || decision.mappingAuthority !== null;
 }
 
 export interface OrganizationMergeDecision {
