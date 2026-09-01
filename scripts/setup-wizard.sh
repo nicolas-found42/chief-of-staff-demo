@@ -535,49 +535,6 @@ else
   fi
 fi
 
-# ── 11 · Notion connection + content calendar ─────────────────────────────
-stage "Notion"
-load_config
-if [[ "$(api_jq '.config.notion.token.set')" == "true" ]] && ! confirm "Replace the existing Notion connection?"; then
-  say "Keeping the existing Notion connection."
-else
-  open_url "https://www.notion.so/profile/integrations"
-  step "Create → New integration → name it 'Chief of Staff Content Scout' → Internal → Submit."
-  step "Open the integration → reveal and copy the Internal Integration Secret (starts ntn_)."
-  step "In Notion, open your Notes database → ••• menu → Connections → connect 'Chief of Staff Content Scout'."
-  note "Without that last step the app can see nothing — Notion grants per-database."
-  ask_secret NOTION_TOKEN "Paste the Notion internal integration secret:"
-  api POST /api/content-scout/notion/connect "$(jq -n --arg t "$NOTION_TOKEN" '{token: $t}')"
-  [[ "$_API_CODE" == "200" ]] && say "Notion connected." || warn "connect failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
-fi
-EXISTING_CAL="$(jq -r '.modules["content-scout"].notion.databaseId // empty' workspace/config.json 2>/dev/null || echo)"
-if [[ -n "$EXISTING_CAL" ]] && ! confirm "A Content Calendar is already mapped ($EXISTING_CAL). Create a new one anyway?"; then
-  say "Content Calendar mapping kept."
-else
-  if confirm "Create the Content Calendar database in Notion now? (writes a real page to your workspace)"; then
-    say "It needs a parent PAGE the integration can access (a database cannot parent it)."
-    ask NOTION_PARENT_URL "Paste the parent page's Notion URL:"
-    NOTION_PARENT_HEX="$(printf '%s' "$NOTION_PARENT_URL" | sed -E 's/([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})/\1\2\3\4\5/g')"
-    if [[ "$NOTION_PARENT_HEX" =~ ([0-9a-fA-F]{32}) ]]; then
-      PARENT_ID="${BASH_REMATCH[1]}"
-      api POST /api/content-scout/notion/calendar "$(jq -n --arg p "$PARENT_ID" '{mode: "create", parentPageId: $p}')"
-      if [[ "$_API_CODE" == "200" ]]; then
-        CAL_URL="$(api_jq '.notion.url // empty')"
-        say "Content Calendar created: $CAL_URL"
-        [[ -n "$CAL_URL" ]] && open_url "$CAL_URL"
-      else
-        warn "creation failed (HTTP $_API_CODE): $(api_jq '.error // empty')"
-        SKIPPED+=("Content Calendar database")
-      fi
-    else
-      warn "that URL does not contain a Notion page id."
-      SKIPPED+=("Content Calendar database")
-    fi
-  else
-    SKIPPED+=("Content Calendar database")
-  fi
-fi
-
 # ── 12 · Content Scout sources ────────────────────────────────────────────
 stage "Content Scout sources"
 say "Recurring public sources the daily scout reads (rss feeds work best)."
@@ -641,7 +598,7 @@ api GET /api/health
 say "App: $( [[ "$_API_CODE" == "200" ]] && printf 'healthy' || printf 'UNHEALTHY' ) at $APP"
 load_config
 say "Provider: $(api_jq '.config.provider') / $(api_jq '.config.model') · key set: $(api_jq '.config.apiKey.set')"
-say "Google client: $(api_jq '.config.google.clientSecret.set' | sed 's/true/set/; s/false/unset/') · Notion token: $(api_jq '.config.notion.token.set' | sed 's/true/set/; s/false/unset/')"
+say "Google client: $(api_jq '.config.google.clientSecret.set' | sed 's/true/set/; s/false/unset/')"
 say "Drive folder: $(api_jq '.config.drive.folderName // "none"') (polling $(api_jq '.config.drive.enabled' | sed 's/true/on/; s/false/off/'))"
 api GET /api/google/status
 say "Google connection: $(api_jq '.state // "unknown"')"
@@ -650,7 +607,7 @@ say "YouTube Trends sheet: $(api_jq '.spreadsheet.url // "none"')"
 api GET /api/idea-engine/ideas
 say "Idea Engine sheet: $(api_jq '.spreadsheet.url // "none"')"
 api GET /api/content-scout
-say "Content Scout: $(printf '%s' "$_API_BODY" | jq -r '.sourceTargets | length') source target(s), Notion $(printf '%s' "$_API_BODY" | jq -r '.notion.state // "unknown"')"
+say "Content Scout: $(printf '%s' "$_API_BODY" | jq -r '.sourceTargets | length') source target(s)"
 api GET /api/meeting-brief/config
 say "Meeting Brief: $(printf '%s' "$_API_BODY" | jq -c '{internalDomains: (.internalDomains | length), hubspot: .hubspot.state}')"
 say ""

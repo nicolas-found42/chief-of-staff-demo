@@ -59,18 +59,6 @@ function defaultConfig(): AppConfig {
         shortlistSize: 5,
         canaryIntervalHours: 12,
         canaryDisabledAdapters: [],
-        notion: {
-          databaseId: "",
-          dataSourceId: "",
-          databaseUrl: "",
-          mapping: {
-            name: "Name",
-            status: "Status",
-            platform: "Platform",
-            format: "Format",
-            scheduledDate: "Scheduled date",
-          },
-        },
       },
       "content-research": {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -177,12 +165,6 @@ export class ConfigStore {
         lastConnectedAt: token ? new Date().toISOString() : current.google.lastConnectedAt,
       },
     };
-    this.persist();
-  }
-
-  setNotionToken(token: string, verifiedAt: string | null): void {
-    const current = this.get();
-    this.config = { ...current, notion: { token, lastVerifiedAt: verifiedAt } };
     this.persist();
   }
 

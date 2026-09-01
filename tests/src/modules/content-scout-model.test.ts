@@ -1,16 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONTENT_SCOUT_DRAFT_TARGETS_V1,
   type BrandProfileRevision,
-  type OpportunityBrief,
   type RankedOpportunity,
   type SourceItem,
 } from "@chief-of-staff-demo/shared";
 import { ModelBoundaryError } from "../../../apps/server/src/llm/failure";
-import {
-  modelDraftGenerator,
-  modelOpportunityRanker,
-} from "../../../apps/server/src/modules/content-scout/model";
+import { modelOpportunityRanker } from "../../../apps/server/src/modules/content-scout/model";
 
 function capacityFailure(): ModelBoundaryError {
   return new ModelBoundaryError({
@@ -124,35 +119,5 @@ describe("Content Scout model adapters", () => {
     });
 
     expect(ranked).toEqual([]);
-  });
-
-  it("retries capacity while generating a Content Draft", async () => {
-    let attempts = 0;
-    const generator = modelDraftGenerator(() => async () => {
-      attempts += 1;
-      if (attempts === 1) throw capacityFailure();
-      return { copy: "Copy-ready draft.", productionNotes: [], reviewNotes: [] };
-    });
-    const brief = {
-      id: "brief-1",
-      runId: "run_20260825-120000_aaaaaaaa",
-      contentPackId: "pack-1",
-      createdAt: "2026-08-25T12:00:00.000Z",
-      opportunity: { ...opportunity, id: "opportunity-1" },
-      sourceItems: [sourceItem],
-      supportingSourceItemCount: 1,
-      claims: [],
-      brandProfileRevisionId: profile.id,
-      brandProfileMarkdown: profile.markdown,
-    } satisfies OpportunityBrief;
-
-    await expect(
-      generator.generate({
-        idempotencyKey: "draft-1",
-        brief,
-        target: CONTENT_SCOUT_DRAFT_TARGETS_V1[0],
-      }),
-    ).resolves.toMatchObject({ copy: "Copy-ready draft." });
-    expect(attempts).toBe(2);
   });
 });
