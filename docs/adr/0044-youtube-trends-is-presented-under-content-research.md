@@ -24,11 +24,14 @@ Trends' independent measurement Run and spreadsheet output).
   holds no function; a presented-under Module leaves it because its function is promised by
   its parent's tab. Neither is announced by a second tab, and Home stays the surface where
   what exists is enumerated.
-- **`/youtube` is gone, not deprecated.** The spec says the legacy route "is not required
-  by the new product journey" — nothing else links to it, no tests assert it, and a
-  deprecated route that 200s forever is exactly the second entrance to the same surface the
-  spec's IA work removes. `/youtube` now answers with the Shell's own not-found page, which
-  the accessibility suite already walks.
+- **`/youtube` is gone, not deprecated.** This ticket's acceptance criteria record the
+  legacy top-level route as not required by the new product journey, and the spec backs
+  that from two directions: backward-compatible legacy product routes are out of scope
+  (spec § Out of Scope), and the migration contract states "There is no old-route
+  compatibility" (spec § Migration and Cutover). Nothing else links to `/youtube`, no
+  tests assert it, and a deprecated route that 200s forever is exactly the second
+  entrance to the same surface the spec's IA work removes. `/youtube` now answers with
+  the Shell's own not-found page, which the accessibility suite already walks.
 
 ## What did not change
 
@@ -41,13 +44,13 @@ Trends' independent measurement Run and spreadsheet output).
   spreadsheet id it is ever asked to touch.
 
 ## Considered Options
-
 - **A second tab at `/content-research/trends`.** Rejected: a top-level tab would present
   Trends as a sibling of Content Research rather than a part of its product, and the spec's
   product areas describe one Content Research surface.
-- **Keep `/youtube` alongside the new route.** Rejected: the spec names it not required, so
-  keeping it leaves two entrances where the spec wants one, and route-not-found tests
-  already cover the Shell's behavior for unknown addresses.
+- **Keep `/youtube` alongside the new route.** Rejected: the ticket's acceptance criteria
+  mark the legacy route not required and the spec puts backward-compatible legacy product
+  routes out of scope, so keeping it leaves two entrances where the product wants one, and
+  route-not-found tests already cover the Shell's behavior for unknown addresses.
 - **Serve the Trends page inside ContentResearchPage's route.** Rejected: the two pages
   have unrelated state and the Shell's route-not-found, focus-on-navigation, and
   aria-current contracts are per-route; nesting the components would couple them for no
