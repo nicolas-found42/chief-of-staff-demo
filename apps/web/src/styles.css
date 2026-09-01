@@ -676,6 +676,7 @@ tr:last-child td {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
 /* The filename cell holds the link, and the link carries 0.7rem of padding to
    reach a 44px target. Against the shared `vertical-align: top` that left it
    sitting a line lower than every other cell in its own row. */
@@ -686,6 +687,7 @@ tr:last-child td {
 .ok {
   color: var(--ok);
 }
+
 .bad {
   color: var(--bad);
 }
@@ -1603,7 +1605,8 @@ code {
 
 /* Marked by more than a colour, like the header nav's current page: the border
    and the weight survive forced-colors mode (WCAG 1.4.1). */
-.sub-tab[aria-current="true"] {
+.sub-tab[aria-current="true"],
+.sub-tab[aria-current="page"] {
   border-color: var(--line);
   background: var(--surface);
   color: var(--ink);

@@ -35,6 +35,13 @@ export interface ModuleDescriptor {
    * later" shipped to somebody who cannot read it.
    */
   resultView?: ComponentType<{ detail: RunDetail }>;
+  /**
+   * The Module whose product surface presents this one, when the Shell does
+   * not present it as its own tab. The tab bar renders top-level Modules only;
+   * a presented-under Module is announced on Home and entered from its
+   * parent's page (spec: YouTube Trends at /content-research/trends).
+   */
+  parent?: string;
 }
 
 /* Array order is display order, in the nav and on Home alike. */
@@ -49,8 +56,9 @@ const MODULES: ModuleDescriptor[] = [
   },
   {
     id: "youtube-trends",
-    path: "/youtube",
+    path: "/content-research/trends",
     label: "YouTube Trends",
+    parent: "content-research",
     description: "Every video on a channel, counted once a day, into a trend.",
     status: "live",
     /* No result view in phase 1, which is a real answer rather than a gap: the

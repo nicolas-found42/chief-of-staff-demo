@@ -10,6 +10,7 @@ import {
   type ResonanceScoredItem,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
+import { ContentResearchSubNav } from "../components/ContentResearchSubNav";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -224,6 +225,7 @@ export function ContentResearchPage() {
           </p>
         </div>
       </div>
+      <ContentResearchSubNav />
 
       <div aria-live="polite" aria-atomic="true">
         {error && (

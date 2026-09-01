@@ -35,7 +35,14 @@ copyFileSync(join(root, "tests/fixtures/mock-result.json"), join(workspace, "moc
 
 const child = spawn(process.execPath, [join(root, "apps/server/dist/main.js")], {
   cwd: root,
-  env: { ...process.env, PORT: "4319", WORKSPACE_DIR: workspace, ENABLE_TEST_SEED: "1" },
+  /* PORT is settable so a scoped run on another port cannot collide with the
+     gate's server on the default 4319. */
+  env: {
+    ...process.env,
+    PORT: process.env.PORT ?? "4319",
+    WORKSPACE_DIR: workspace,
+    ENABLE_TEST_SEED: "1",
+  },
   stdio: ["ignore", "inherit", "inherit"],
 });
 

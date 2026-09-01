@@ -3,12 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
-/** Every static route the page-wide scans walk. Each Module's tab is in here. */
+/** Every static route the page-wide scans walk. Each Module's tab is in here,
+    and YouTube Trends is walked where Content Research presents it. */
 const ROUTES = [
   "/",
   "/transcript",
   "/runs",
-  "/youtube",
+  "/content-research/trends",
   "/idea-engine",
   "/content-scout",
   "/meeting-brief",
@@ -454,7 +455,6 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
   for (const name of [
     "Found42 — Chief of Staff",
     "Transcript → Tasks",
-    "YouTube Trends",
     "Idea Engine",
     "Content Scout",
     "Meeting Brief Generator",
@@ -538,7 +538,7 @@ test("the current page is marked by more than a background colour", async ({ pag
 });
 
 test("interactive controls meet a 44px target size", async ({ page }) => {
-  for (const path of ["/settings", "/youtube"]) {
+  for (const path of ["/settings", "/content-research/trends"]) {
     await page.goto(path);
     const undersized = await page.evaluate(() => {
       const out: string[] = [];

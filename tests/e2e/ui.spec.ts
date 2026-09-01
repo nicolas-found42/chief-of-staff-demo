@@ -261,7 +261,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   const home = page.locator("main#main");
   for (const [label, path] of [
     ["Transcript → Tasks", "/transcript"],
-    ["YouTube Trends", "/youtube"],
+    ["YouTube Trends", "/content-research/trends"],
     ["Idea Engine", "/idea-engine"],
     ["Content Scout", "/content-scout"],
     ["Meeting Brief Generator", "/meeting-brief"],
@@ -269,6 +269,14 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   ] as const) {
     await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }
+
+  // Trends is presented under Content Research (spec: /content-research/trends),
+  // so it leaves the tab bar — the tab bar carries the Module whose product
+  // surface presents it, and Content Research's own page carries the way in.
+  const tabs = page.locator('.app-header nav[aria-label="Modules"] a');
+  await expect(tabs).toHaveCount(5);
+  await expect(tabs.filter({ hasText: "YouTube Trends" })).toHaveCount(0);
+  await expect(tabs.filter({ hasText: "Content Research" })).toHaveCount(1);
 
   await home.getByRole("link", { name: "Transcript → Tasks" }).click();
   await expect(page).toHaveURL(/\/transcript$/);
@@ -454,10 +462,13 @@ test("Content Scout goes from bounded Brand Profile scan to a complete copied dr
   );
 });
 
-test("YouTube Trends holds a tab, and refuses a bad paste while you are looking at it", async ({
+test("Content Research presents YouTube Trends, and the trends page refuses a bad paste while you are looking at it", async ({
   page,
 }) => {
-  await page.goto("/youtube");
+  // The journey starts where the product puts it: under Content Research.
+  await page.goto("/content-research");
+  await page.getByRole("link", { name: "YouTube Trends" }).click();
+  await expect(page).toHaveURL(/\/content-research\/trends$/);
   await expect(page.getByRole("heading", { level: 1, name: "YouTube Trends" })).toBeVisible();
   // Before there is any data the tab says what will happen, rather than showing
   // an empty screen with no explanation.

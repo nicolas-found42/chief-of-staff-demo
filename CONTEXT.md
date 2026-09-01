@@ -20,8 +20,8 @@ _Avoid_: Dashboard, landing page
 One workflow. A Module contributes what is specific to its workflow and relies on the Shell for
 everything generic. It is **planned** until its Runs, Intakes and Output Adapters exist and
 **live** once they do; independently of that, it either has something for a person to look at,
-and is presented as a tab, or it is **headless**. A planned Module is announced on Home and
-holds no tab.
+and is presented as a tab or under another Module's product surface, or it is **headless**. A
+planned Module is announced on Home and holds no tab.
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
 
 **Headless Module**:
@@ -172,9 +172,10 @@ _Avoid_: Template, format (alone), channel (alone)
 **YouTube Trends**:
 A live Module that watches whole YouTube channels and records a daily trend. Once a day it
 enumerates every video on each channel it tracks, reads its view count, and records the day;
-its tab shows one sub-tab per channel, and its spreadsheet keeps the same numbers outside the
-app. The Relay original it replaces keeps its own name, Weekly YouTube View Count.
-_Status_: live
+its page shows one sub-tab per channel, and its spreadsheet keeps the same numbers outside
+the app. The Relay original it replaces keeps its own name, Weekly YouTube View Count.
+_Status_: live, presented under Content Research at `/content-research/trends` (ADR-0044);
+it keeps its own Module identity, Runs, checkpoints, retry receipts and spreadsheet output
 _Avoid_: YouTube Module, Weekly YouTube View Count (that is the Relay original). "YouTube
 view counts" names the Google surface (ADR-0016), never this Module.
 
