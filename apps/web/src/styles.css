@@ -1753,3 +1753,19 @@ code {
 .research-suggestion-actions {
   margin-top: 0.35rem;
 }
+
+.relevance-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.relevance-list blockquote {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-alt);
+  border-radius: 4px;
+}

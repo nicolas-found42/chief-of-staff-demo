@@ -10,6 +10,7 @@ import { NewPersonProfilePage } from "./pages/NewPersonProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { PersonProfileDetailPage } from "./pages/PersonProfileDetailPage";
+import { TranscriptReviewPage } from "./pages/TranscriptReviewPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -88,6 +89,7 @@ export function App() {
           <Route path="/people" element={<PeoplePage />} />
           <Route path="/people/new" element={<NewPersonProfilePage />} />
           <Route path="/people/:profileId" element={<PersonProfileDetailPage />} />
+          <Route path="/people/review" element={<TranscriptReviewPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>

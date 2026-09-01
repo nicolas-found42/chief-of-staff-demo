@@ -21,8 +21,15 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
+import { TranscriptCatalog } from "../transcript-catalog/catalog.js";
+import { TranscriptIdentityService } from "../transcript-catalog/identity.js";
+import { TranscriptIdentityStore } from "../transcript-catalog/identity-store.js";
+import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import type { TranscriptIdentityExtractionResult } from "@chief-of-staff-demo/shared";
 
 export interface TestSeedContext {
+  /** The Workspace directory, so seeded product areas write the same store. */
+  workspaceDir: string;
   startRun: (spec: RunSourceSpec) => Promise<string>;
   createFailedRun: () => string;
   /** The Workspace Person Profile store, so the journey can arrange sourced
@@ -32,6 +39,32 @@ export interface TestSeedContext {
   runs: Runs;
   upsertMeetingBriefEvent?: (event: MeetingBriefEvent) => void;
 }
+
+const SEED_CORPUS = [
+  {
+    externalFileId: "seed-sync",
+    fileName: "Weekly Product Sync — 2026-08-17T13-00-00.000Z.md",
+    body: `[00:00] Dana: Morning everyone. Three things today — the Acme renewal, the onboarding redesign, and the support queue.
+[00:12] Sam: Ticket volume was down about fifteen percent, but we got six separate reports of the export button timing out on large accounts.
+[00:30] Priya: That's the synchronous export path. It needs to move to a background job.
+[00:52] Marcus: Second round of the onboarding flow is done. I cut the plan-selection step entirely.
+[01:14] Dana: For the Acme renewal we are holding at the current tier, no additional discount.
+`,
+  },
+  {
+    externalFileId: "seed-board",
+    fileName: "Board Prep — 2026-08-19T10-00-00.000Z.md",
+    body: `[00:00] Jordan: Board prep — the investor update draft is due Thursday.
+[00:20] Riley: I'll pull the churn numbers and the hiring plan before the meeting.
+`,
+  },
+  {
+    externalFileId: "seed-offsite",
+    fileName: "Design Offsite — 2026-08-21T09-00-00.000Z.md",
+    body: `[00:00] Casey: Offsite retro — the venue worked well and the workshop format stays.
+`,
+  },
+];
 
 /**
  * Hermetic e2e seam: create a Drive-type Run from the sample transcript
@@ -230,6 +263,59 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
     }
     ctx.ownerOnboarding.setConnectedIdentity(email ?? null);
     return { proposal: ctx.ownerOnboarding.proposal() };
+  });
+  /* Semantic transcript relevance (issue #127): register a small, real
+     Transcript corpus through the real Catalog so the Review surface journey
+     exercises discovery, citations, and decisions over produced records. The
+     identity extractor is a deterministic empty supplement — the corpus is
+     the point, not the mined mentions. Idempotent: a second call re-runs the
+     Catalog's exactly-once ledger and changes nothing. */
+  app.post("/api/test/seed-transcript-corpus", async (_request, reply) => {
+    try {
+      const people = new WorkspacePersonProfiles({ store: ctx.personStore });
+      const identity = new TranscriptIdentityService({
+        store: new TranscriptIdentityStore(ctx.workspaceDir),
+        people,
+        extractor: {
+          version: "seed-empty-v1",
+          extract(): TranscriptIdentityExtractionResult {
+            return { version: 1, mentions: [], organizations: [] };
+          },
+        },
+      });
+      const catalog = new TranscriptCatalog({
+        workspaceDir: ctx.workspaceDir,
+        source: {
+          async folder() {
+            return { folderId: "seed-folder", folderName: "Seeded Transcripts" };
+          },
+          async listFiles() {
+            return SEED_CORPUS.map((entry) => ({
+              externalFileId: entry.externalFileId,
+              fileName: entry.fileName,
+              sizeBytes: Buffer.byteLength(entry.body),
+              modifiedAt: null,
+              sourceUrl: null,
+            }));
+          },
+          async fetch(externalFileId: string) {
+            const entry = SEED_CORPUS.find(
+              (candidate) => candidate.externalFileId === externalFileId,
+            );
+            return entry ? Buffer.from(entry.body) : null;
+          },
+        },
+        disclosure: { provider: "seed", model: "seed" },
+        identity,
+      });
+      await catalog.grantConsent();
+      await catalog.whenIdle();
+      reply.code(201);
+      return { transcriptCount: catalog.listTranscripts().length };
+    } catch (error) {
+      reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
   });
 }
 

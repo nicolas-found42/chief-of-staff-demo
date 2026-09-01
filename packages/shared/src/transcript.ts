@@ -603,3 +603,98 @@ export interface TranscriptReviewQueue {
   items: TranscriptReviewItem[];
   organizations: OrganizationReviewItem[];
 }
+
+/* ==========================================================================
+ * Semantic transcript relevance (ADR-0043, issue #127)
+ *
+ * Full-corpus discovery is a reviewable evidence lane. Similarity is a
+ * suggestion with a citation, never a fact: unconfirmed results stay out of
+ * every factual consumer (Profile facts, Meeting Brief evidence, attendee
+ * identity, recipient authority). Only an explicit owner confirmation makes
+ * relevance auditable, as its own decision kind — never an identity decision,
+ * and never a Profile write.
+ * ========================================================================== */
+
+/**
+ * The meeting context a discovery query may carry (spec #117: meeting title,
+ * purpose, attendees, organizations, and topics). Fields are advisory search
+ * signals; whatever the query carried is recorded verbatim on each result.
+ */
+export interface RelevanceMeetingContext {
+  title?: string | null;
+  purpose?: string | null;
+  attendees?: string[] | null;
+  organizations?: string[] | null;
+  topics?: string[] | null;
+}
+
+/** What was asked of the Transcript corpus. */
+export interface TranscriptRelevanceQuery {
+  text: string;
+  meeting?: RelevanceMeetingContext | null;
+}
+
+/**
+ * Review state of one semantic candidate: pending until an explicit owner
+ * decision moves it. Rejected and unresolved stay non-factual, exactly like
+ * pending.
+ */
+export type TranscriptRelevanceReviewState = "pending" | "confirmed" | "rejected" | "unresolved";
+
+export type TranscriptRelevanceDecisionAction = "confirm" | "reject" | "unresolved";
+
+/** One cited excerpt, located exactly inside the retained normalized text. */
+export interface TranscriptRelevanceExcerpt {
+  text: string;
+  spanStart: number;
+  spanEnd: number;
+}
+
+/**
+ * One unlinked semantic result. Its id is deterministic over the query
+ * context, the cited Transcript revision, and the excerpt span, so an index
+ * rebuild re-derives the same candidate instead of duplicating review work.
+ */
+export interface TranscriptRelevanceCandidate {
+  id: string;
+  query: TranscriptRelevanceQuery;
+  transcriptId: string;
+  excerpt: TranscriptRelevanceExcerpt;
+  score: number;
+  explanation: string;
+  /** The model or index version that produced this similarity judgment. */
+  relevanceVersion: string;
+  createdAt: string;
+  /** Where this result was cited from, snapshotted at discovery. */
+  sourceContext: TranscriptRelevanceSourceContext;
+}
+
+/**
+ * The durable, auditable resolution of a semantic candidate. Stored apart
+ * from IdentityDecision: relevance confirmation is its own decision kind and
+ * never writes a Profile.
+ */
+export interface TranscriptRelevanceDecision {
+  id: string;
+  candidateId: string;
+  transcriptId: string;
+  action: TranscriptRelevanceDecisionAction;
+  outcome: Exclude<TranscriptRelevanceReviewState, "pending">;
+  decidedBy: "owner";
+  decidedAt: string;
+  note: string | null;
+}
+
+/** Source context one result was cited from, snapshotted at discovery. */
+export interface TranscriptRelevanceSourceContext {
+  fileName: string;
+  meetingDate: string | null;
+  sourceUrl: string | null;
+}
+
+/** One Review-surface row: the candidate, its current review state, its decision. */
+export interface TranscriptRelevanceReviewItem {
+  candidate: TranscriptRelevanceCandidate;
+  decision: TranscriptRelevanceDecision | null;
+  reviewState: TranscriptRelevanceReviewState;
+}

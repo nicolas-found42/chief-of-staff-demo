@@ -61,6 +61,11 @@ import {
   isSpreadsheetMissing,
 } from "./google/sheets.js";
 import { createGmailDraft } from "./google/gmail.js";
+import { TranscriptCatalogStore } from "./transcript-catalog/store.js";
+import { TranscriptRelevanceService } from "./transcript-catalog/relevance.js";
+import { TranscriptRelevanceStore } from "./transcript-catalog/relevance-store.js";
+import { createLexicalTranscriptRelevanceIndex } from "./transcript-catalog/relevance-index.js";
+import { registerTranscriptRelevanceApi } from "./api/transcript-review.js";
 
 const port = Number(process.env.PORT ?? 4317);
 /* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
@@ -95,6 +100,18 @@ const peopleProfiles: WorkspacePersonProfiles = new WorkspacePersonProfiles({
   ],
 });
 const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
+
+/* Semantic transcript relevance (issue #127): the reviewable discovery lane
+   over the Transcript Catalog's retained corpus. Like the Catalog itself it
+   is a Workspace resource behind a library seam; the Drive ingestion
+   composition remains with the integrating ticket (#126 hand-forward). The
+   local lexical index keeps every judgment in-process (ADR-0001); a model- or
+   embedding-backed searcher replaces it at the same seam. */
+const transcriptRelevance = new TranscriptRelevanceService({
+  corpus: new TranscriptCatalogStore(workspaceDir),
+  store: new TranscriptRelevanceStore(workspaceDir),
+  searcher: createLexicalTranscriptRelevanceIndex(),
+});
 
 const transcript = new TranscriptHost({
   runs,
@@ -350,6 +367,8 @@ await registerApi(app, {
     meetingBrief.start();
   },
 });
+/* Semantic transcript relevance Review surface (issue #127). */
+registerTranscriptRelevanceApi(app, { relevance: transcriptRelevance });
 // A fresh Workspace adopts the relay address the deployment declares, so the
 // bundled relay is reachable before anyone opens Settings. A stored address
 // wins, so this never overrides an operator's own choice (issue #109).
@@ -373,6 +392,7 @@ if (meetingBriefTest) {
 
 if (process.env.ENABLE_TEST_SEED === "1") {
   await registerTestSeed(app, {
+    workspaceDir,
     startRun: (spec) => transcript.startRun(spec),
     createFailedRun: () => {
       const run = runs.create({
