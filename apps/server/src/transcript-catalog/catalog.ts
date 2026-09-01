@@ -4,7 +4,7 @@ import {
   type TranscriptFolderInventory,
   type TranscriptInventoryFile,
   type TranscriptLedgerEntry,
-  type TranscriptOccurrence,
+  type TranscriptOccurrenceAssociation,
   type TranscriptProcessingPass,
   type TranscriptRecord,
   type TranscriptSourceRevision,
@@ -15,7 +15,7 @@ import { meetingDateFromFileName } from "../pipeline/run.js";
 import { TranscriptCatalogStore } from "./store.js";
 
 /** Bumped whenever the normalization/registration behavior changes meaning. */
-const TRANSCRIPT_CATALOG_EXTRACTOR_VERSION = 1;
+export const TRANSCRIPT_CATALOG_EXTRACTOR_VERSION = 1;
 
 /**
  * What the Catalog needs from its source folder. The production source is the
@@ -51,15 +51,24 @@ export interface TranscriptCatalogDisclosure {
   model: string;
 }
 
+/** The identity-mining part of Transcript processing. Its implementation owns
+ * the shared Person Profiles Review queue; the Catalog only supplies each
+ * newly registered immutable Transcript. */
+export interface TranscriptIdentityProcessor {
+  process(record: TranscriptRecord): Promise<void>;
+  backfill(records: TranscriptRecord[]): Promise<void>;
+}
+
 export interface TranscriptCatalogDeps {
   workspaceDir: string;
   source: TranscriptCatalogSource;
   disclosure: TranscriptCatalogDisclosure;
+  identity: TranscriptIdentityProcessor;
   now?: () => Date;
   log?: (message: string) => void;
 }
 
-class ConsentRequiredError extends Error {
+export class ConsentRequiredError extends Error {
   constructor() {
     super("Transcript Catalog processing requires explicit folder consent");
     this.name = "ConsentRequiredError";
@@ -114,6 +123,7 @@ export class TranscriptCatalog {
   private readonly store: TranscriptCatalogStore;
   private readonly source: TranscriptCatalogSource;
   private readonly disclosure: TranscriptCatalogDisclosure;
+  private readonly identity: TranscriptIdentityProcessor;
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   /** The pass currently running, if any; a second caller awaits the same one. */
@@ -123,6 +133,7 @@ export class TranscriptCatalog {
     this.store = new TranscriptCatalogStore(deps.workspaceDir);
     this.source = deps.source;
     this.disclosure = deps.disclosure;
+    this.identity = deps.identity;
     this.now = deps.now ?? (() => new Date());
     this.log = deps.log ?? (() => {});
   }
@@ -239,13 +250,22 @@ export class TranscriptCatalog {
   }
 
   /** Associate a Calendar occurrence with a Transcript, when it becomes known. */
-  associateOccurrence(id: string, occurrence: TranscriptOccurrence): TranscriptRecord {
+  async associateOccurrence(
+    id: string,
+    association: TranscriptOccurrenceAssociation,
+  ): Promise<TranscriptRecord> {
     const record = this.store.readTranscript(id);
     if (!record) {
       throw new Error(`Unknown transcript: ${id}`);
     }
-    const updated: TranscriptRecord = { ...record, occurrence };
+    const updated: TranscriptRecord = {
+      ...record,
+      occurrence: association.occurrence,
+      speakerIdentityMappings: association.speakerIdentityMappings,
+      roster: association.roster,
+    };
     this.store.updateTranscript(updated);
+    await this.identity.process(updated);
     return updated;
   }
 
@@ -266,6 +286,7 @@ export class TranscriptCatalog {
       unchanged: 0,
     };
     if (this.store.readPaused()) return result;
+    await this.identity.backfill(this.store.listTranscripts());
     const listed = await this.source.listFiles();
     for (const file of listed) {
       if (this.store.readPaused()) break;
@@ -371,8 +392,11 @@ export class TranscriptCatalog {
         meetingDate: meetingDateFromFileName(file.fileName),
         occurrence: null,
         speakers: collectSpeakerLabels(normalizedText),
+        speakerIdentityMappings: [],
+        roster: [],
       };
       this.store.saveTranscript(record);
+      await this.identity.process(record);
       this.recordEntry({ ...entry, state: "processed", transcriptId: record.id });
       return "processed";
     } catch (error: unknown) {
