@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppConfig, GoogleStatus } from "@chief-of-staff-demo/shared";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { ConfigStore } from "../../../apps/server/src/config";
 import {
@@ -18,6 +19,7 @@ const PORT = 4317;
 let app: FastifyInstance;
 let configStore: ConfigStore;
 let workspaceDir: string;
+let configChangeCompleted: boolean;
 
 /** A workspace on disk, so the config the endpoints write is the one they read back. */
 beforeEach(async () => {
@@ -25,8 +27,13 @@ beforeEach(async () => {
   mkdirSync(join(workspaceDir, "runs"), { recursive: true });
   configStore = new ConfigStore(join(workspaceDir, "config.json"));
   configStore.load();
+  configChangeCompleted = false;
 
   app = fastify({ logger: false });
+  const peopleProfiles = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(workspaceDir),
+  });
+  const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
   await registerApi(app, {
     workspaceDir,
     port: PORT,
@@ -40,8 +47,12 @@ beforeEach(async () => {
         throw new Error("no test reaches Google");
       },
     }),
-    people: new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) }),
-    onConfigChanged: () => {},
+    people: peopleProfiles,
+    onboarding: ownerOnboarding,
+    onConfigChanged: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      configChangeCompleted = true;
+    },
   } as unknown as ApiContext);
   await app.ready();
 });
@@ -89,6 +100,7 @@ describe("POST /api/google/disconnect", () => {
     // The client credentials survive, so signing back in is one click.
     expect(storedConfig().google.clientId).toBe("id.apps");
     expect(storedConfig().google.clientSecret).toBe("secret");
+    expect(configChangeCompleted).toBe(true);
   });
 });
 

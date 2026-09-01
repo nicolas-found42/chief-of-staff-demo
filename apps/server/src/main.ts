@@ -12,6 +12,7 @@ import { registerMeetingBriefHubSpotRoutes } from "./modules/meeting-brief-gener
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
 import { PersonProfileStore } from "./person-profile/store.js";
 import { WorkspacePersonProfiles } from "./person-profile/profiles.js";
+import { OwnerOnboarding } from "./onboarding/owner.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
@@ -75,6 +76,9 @@ const googleConnection = openGoogleConnection(configStore, port);
 /* One owner for the run directory: every Module and the API read and write the
    same Runs, not one object per Module over one directory. */
 const runs = openRuns(workspaceDir);
+const peopleStore = new PersonProfileStore(workspaceDir);
+const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
+const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
 
 const transcript = new TranscriptHost({
   runs,
@@ -162,6 +166,7 @@ const contentScout = new ContentScoutHost({
   brandProfileProposer:
     testContentScout?.brandProfileProposer ?? modelBrandProfileProposer(contentScoutCompleteJson),
   runtimeInspector: testContentScout?.runtimeInspector ?? new ExternalRuntimeInspector(),
+  isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
   log: (message) => console.log(`[content-scout] ${message}`),
 });
 const contentResearchCompleteJson = () => {
@@ -176,14 +181,15 @@ const contentResearchCompleteJson = () => {
     layout.mockResultFile,
   );
 };
-/* Owner identity, read once and held until the connection changes (ADR-0036):
-   the digest is a draft to the owner only, so the address must be the
-   connected account's, never something a Run discovered. */
-let contentResearchOwnerEmail: string | null = null;
-const refreshContentResearchOwner = async (): Promise<void> => {
-  const status = await googleConnection.state();
-  contentResearchOwnerEmail =
-    status.state === "connected" && status.email ? status.email.toLowerCase() : null;
+/* The Person Profiles product area's Workspace-owned interface. The store is
+   the same one Meeting Brief's resolver writes through: both are synchronous,
+   uncached writers of the one Workspace directory. */
+/* Owner onboarding (issue #123): the connected Google identity is read once
+   and held until the connection changes (ADR-0036), and owner-identity-
+   dependent outward workflows get it only while a confirmed owner Profile
+   reference stands — otherwise the typed owner-missing state. */
+const refreshOwnerIdentity = async (): Promise<void> => {
+  await ownerOnboarding.refreshConnectedIdentity(() => googleConnection.state());
 };
 const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
 const contentResearch = new ContentResearchHost({
@@ -247,7 +253,7 @@ const contentResearch = new ContentResearchHost({
       },
     };
   },
-  getOwnerEmail: () => contentResearchOwnerEmail,
+  getOwnerEmail: () => ownerOnboarding.outwardOwnerEmail(),
   getBrandProfile: () => brandProfiles.current(),
   configStore,
   log: (message) => console.log(`[content-research] ${message}`),
@@ -283,14 +289,12 @@ const meetingBriefProduction = meetingBriefTest
       configStore,
       google: googleConnection,
       getCompleteJson: meetingBriefCompleteJson,
+      /* Owner onboarding (issue #123): delivery's outward send waits for the
+         confirmed owner reference; eligibility keeps the raw identity. */
+      isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
-/* The Person Profiles product area's Workspace-owned interface. The store is
-   the same one Meeting Brief's resolver writes through: both are synchronous,
-   uncached writers of the one Workspace directory. */
-const peopleStore = new PersonProfileStore(workspaceDir);
-const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [
@@ -317,14 +321,14 @@ await registerApi(app, {
   modules,
   google: googleConnection,
   people: peopleProfiles,
-  onConfigChanged: () => {
+  onboarding: ownerOnboarding,
+  onConfigChanged: async () => {
+    meetingBriefProduction?.invalidateGoogleIdentity();
+    await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
+    await refreshOwnerIdentity();
     for (const module of modules.filter((candidate) => candidate !== meetingBrief)) {
       module.start?.();
     }
-    meetingBriefProduction?.invalidateGoogleIdentity();
-    // Connecting a different Google account changes who the owner is, so read
-    // the new identity rather than leaving it null until the next restart.
-    void meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
     meetingBrief.start();
   },
 });
@@ -366,6 +370,7 @@ if (process.env.ENABLE_TEST_SEED === "1") {
       return run.id;
     },
     personStore: peopleStore,
+    ownerOnboarding,
   });
 }
 
@@ -386,11 +391,10 @@ await meetingBriefProduction?.refreshOwnerIdentity().catch((error: unknown) => {
   return null;
 });
 
-/* Same rule for the Content Research digest: the owner is known before the
-   first Run, and Google being unreachable at boot is not fatal. */
-await refreshContentResearchOwner().catch(() => {
-  contentResearchOwnerEmail = null;
-});
+/* Same rule for owner onboarding and the workflows gated behind it: the
+   identity is held before the first Run, and Google being unreachable at
+   boot is not fatal — it preserves the last determinate owner identity. */
+await refreshOwnerIdentity();
 for (const module of modules) {
   module.start?.();
 }

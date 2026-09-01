@@ -70,6 +70,7 @@ export interface MeetingBriefHostDeps {
   configStore?: ConfigStore;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  isOwnerProfileConfirmed?: () => boolean;
   guestProfileConnection?: GuestProfileConnection;
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
@@ -227,6 +228,9 @@ export class MeetingBriefHost implements HostedModule {
       enrichmentProviders,
       getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
+      ...(deps.isOwnerProfileConfirmed
+        ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
+        : {}),
       ...(deps.calendarProvider && deps.calendarUse
         ? { calendarProvider: this.calendarProvider }
         : {}),

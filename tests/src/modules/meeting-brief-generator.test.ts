@@ -195,6 +195,79 @@ describe("durable Intake schedule via host (Shell durable clock)", () => {
 });
 
 describe("fixture event → one Run at due time via real Runner/Runs/Workspace (no blocked future Run)", () => {
+  it("does not write the owner-only Gmail output until the owner Profile is confirmed", async () => {
+    let confirmed = false;
+    let sends = 0;
+    const gatedHost = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(now),
+      enrich: async () => ({ sections: [], evidence: [] }),
+      completeBrief: completeFixtureBrief,
+      getOwnerEmail: () => "owner@example.com",
+      isOwnerProfileConfirmed: () => confirmed,
+      gmailDeliveryProvider: {
+        findByDeliveryId: async () => null,
+        send: async () => {
+          sends += 1;
+          return { messageId: "gated-message", recipient: "owner@example.com" };
+        },
+      },
+    });
+    gatedHost.scheduleOccurrence(fixtureEvent(), new Date(now));
+
+    const [runId] = await gatedHost.processDueSchedules(new Date(now));
+    await gatedHost.idle();
+
+    expect(runs.detail(runId)?.failedStage).toBe("deliver");
+    expect(sends).toBe(0);
+
+    confirmed = true;
+    await gatedHost.retryRun(runId);
+    await gatedHost.idle();
+
+    expect(runs.detail(runId)?.status).toBe("done");
+    expect(sends).toBe(1);
+  });
+
+  it("does not send when owner confirmation is invalidated during the pre-send reconciliation", async () => {
+    let confirmed = true;
+    let sends = 0;
+    const reconciliationStarted = Promise.withResolvers<void>();
+    const releaseReconciliation = Promise.withResolvers<void>();
+    const gatedHost = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date(now),
+      enrich: async () => ({ sections: [], evidence: [] }),
+      completeBrief: completeFixtureBrief,
+      getOwnerEmail: () => "owner@example.com",
+      isOwnerProfileConfirmed: () => confirmed,
+      gmailDeliveryProvider: {
+        async findByDeliveryId() {
+          reconciliationStarted.resolve();
+          await releaseReconciliation.promise;
+          return null;
+        },
+        async send() {
+          sends += 1;
+          return { messageId: "must-not-send", recipient: "owner@example.com" };
+        },
+      },
+    });
+    gatedHost.scheduleOccurrence(fixtureEvent(), new Date(now));
+
+    const [runId] = await gatedHost.processDueSchedules(new Date(now));
+    await reconciliationStarted.promise;
+    confirmed = false;
+    releaseReconciliation.resolve();
+    await gatedHost.idle();
+
+    expect(sends).toBe(0);
+    expect(runs.detail(runId)?.failedStage).toBe("deliver");
+    expect(runs.open(runId)?.readArtifact("delivery.json")).toContain("owner_not_confirmed");
+  });
+
   it("retries enrich from the frozen snapshot without fabricating Calendar input", async () => {
     const retryWorkspace = mkdtempSync(join(tmpdir(), "mbf-retry-"));
     const retryRuns = openRuns(retryWorkspace);

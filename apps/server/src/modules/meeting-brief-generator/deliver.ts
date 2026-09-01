@@ -49,6 +49,7 @@ export interface DeliverBriefArgs {
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  isOwnerProfileConfirmed?: () => boolean;
 }
 
 export interface DeliverResult {
@@ -120,10 +121,21 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     gmailDeliveryProvider,
     getInternalDomains,
     getOwnerEmail,
+    isOwnerProfileConfirmed,
   } = args;
   const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
   const deliveryId = deliveryIdFor(occurrenceKey, brief.eventVersion);
+  const requireOwnerConfirmation = (attempts: number): void => {
+    if (isOwnerProfileConfirmed && !isOwnerProfileConfirmed()) {
+      const reason =
+        "owner_not_confirmed: confirm the workspace owner Profile before Meeting Brief delivery";
+      persistDeliveryFailure(ctx, deliveryId, attempts, reason);
+      throw new StageFailure("deliver", reason);
+    }
+  };
+
+  requireOwnerConfirmation(deliveryAttempts(ctx));
 
   // ---- Current Calendar truth: fetched once, shared by the quiet gate and the pre-send recheck.
   // The quiet gate must consult this fresh state (not the snapshot-frozen start): a material
@@ -369,6 +381,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   let messageId: string;
   let recipient: string;
   const attemptsBefore = existingDelivery?.attempts ?? 0;
+  requireOwnerConfirmation(attemptsBefore + 1);
   try {
     if (gmailDeliveryProvider) {
       const sent = await gmailDeliveryProvider.send({

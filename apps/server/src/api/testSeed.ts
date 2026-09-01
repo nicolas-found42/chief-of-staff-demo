@@ -14,6 +14,7 @@ import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 import type { PersonProfileStore } from "../person-profile/store.js";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
+import type { OwnerOnboarding } from "../onboarding/owner.js";
 
 export interface TestSeedContext {
   startRun: (spec: RunSourceSpec) => Promise<string>;
@@ -22,6 +23,7 @@ export interface TestSeedContext {
       revision that no product operation creates yet (correction is a later
       slice) and the browser can step back to an exact historical one. */
   personStore: PersonProfileStore;
+  ownerOnboarding: OwnerOnboarding;
 }
 
 /**
@@ -95,6 +97,16 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
     ctx.personStore.save(next);
     reply.code(201);
     return { revision: next.revision, role: next.role };
+  });
+
+  app.post("/api/test/owner-identity", async (request, reply) => {
+    const { email } = request.body as { email?: string | null };
+    if (email !== null && typeof email !== "string") {
+      reply.code(400);
+      return { error: "email-must-be-string-or-null" };
+    }
+    ctx.ownerOnboarding.setConnectedIdentity(email ?? null);
+    return { proposal: ctx.ownerOnboarding.proposal() };
   });
 }
 

@@ -383,6 +383,23 @@ test("Content Scout goes from bounded Brand Profile scan to a complete copied dr
   context,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.request.post("/api/test/owner-identity", {
+    data: { email: "owner-onboarding@example.com" },
+  });
+  const peopleResponse = await page.request.get("/api/people");
+  const people = (await peopleResponse.json()) as { id: string; emails: string[] }[];
+  let owner = people.find((profile) => profile.emails.includes("owner-onboarding@example.com"));
+  if (!owner) {
+    const created = await page.request.post("/api/people", {
+      data: { fullName: "Workspace Owner", primaryEmail: "owner-onboarding@example.com" },
+    });
+    expect(created.ok()).toBe(true);
+    owner = (await created.json()) as { id: string; emails: string[] };
+  }
+  const confirmation = await page.request.post("/api/onboarding/owner/confirm", {
+    data: { profileId: owner.id },
+  });
+  expect(confirmation.ok()).toBe(true);
   await page.goto("/content-scout");
   await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeVisible();
 

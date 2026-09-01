@@ -33,6 +33,11 @@ export interface MeetingBriefProductionRuntimeOptions {
   configStore: ConfigStore;
   google: GoogleConnection;
   getCompleteJson: () => CompleteJson;
+  /**
+   * Owner onboarding (issue #123): owner-only delivery is gated separately
+   * from Calendar eligibility, which keeps using the raw connected identity.
+   */
+  isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
 }
 
@@ -138,9 +143,11 @@ export function createMeetingBriefProductionRuntime(
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
     },
-    hubSpotConnection,
-    gmailDeliveryProvider,
     getOwnerEmail: () => ownerEmail,
+    ...(options.isOwnerProfileConfirmed
+      ? { isOwnerProfileConfirmed: options.isOwnerProfileConfirmed }
+      : {}),
+    gmailDeliveryProvider,
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
+import { OwnerOnboardingCard } from "../components/OwnerOnboardingCard";
 import { MeetingBriefSettings } from "../components/MeetingBriefSettings";
 import { SpreadsheetCard } from "../modules/youtube/SpreadsheetCard";
 import { pickDriveFolder } from "../googlePicker";
@@ -599,6 +600,8 @@ export function SettingsPage() {
             )}
           </div>
 
+          {/* Owner onboarding (issue #123): identity proposal and confirmation. */}
+          <OwnerOnboardingCard googleConnectionState={googleStatus?.state ?? null} />
           <div className="card" role="group" aria-labelledby="group-provider">
             <h3 id="group-provider">Extraction provider</h3>
             {providerSettled ? (

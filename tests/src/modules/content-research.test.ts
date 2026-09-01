@@ -244,6 +244,7 @@ interface HarnessOptions {
   gmail?: ReturnType<typeof makeGmail>;
   discoverFeeds?: FeedDiscoverer;
   searchPublic?: (query: string) => Promise<{ title: string; url: string; snippet: string }[]>;
+  ownerEmail?: string | null;
 }
 
 function makeHarness(options: HarnessOptions) {
@@ -262,7 +263,8 @@ function makeHarness(options: HarnessOptions) {
     searchPublic: options.searchPublic ?? (async () => []),
     sheetsFactory: sheets.factory,
     gmailFactory: gmail.factory,
-    getOwnerEmail: () => "owner@example.com",
+    getOwnerEmail: () =>
+      options.ownerEmail === undefined ? "owner@example.com" : options.ownerEmail,
     now,
     log: () => {},
     sleep: () => Promise.resolve(),
@@ -354,6 +356,33 @@ describe("Content Research", () => {
     // One owner-only draft digest was created.
     expect(gmail.drafts).toHaveLength(1);
     expect(gmail.drafts[0]?.to).toBe("owner@example.com");
+  });
+
+  it("does not create the owner-only Gmail draft without a confirmed owner identity", async () => {
+    const perPerson = new Map<string, SourceItem[]>();
+    const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
+    const { runs, host, gmail } = makeHarness({ adapters: [rss], ownerEmail: null });
+    const ben = host.addPerson({
+      name: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    perPerson.set(ben.id, [
+      makeItem({
+        url: "https://ben.example/post",
+        title: "Ben's post",
+        adapterId: "rss",
+        counts: { views: 10 },
+      }),
+    ]);
+
+    const runId = await host.researchNow();
+    await host.idle();
+
+    expect(runs.detail(runId)?.status).toBe("done");
+    expect(gmail.drafts).toEqual([]);
+    expect(runs.detail(runId)?.events).toContainEqual(
+      expect.objectContaining({ type: "gmail_skipped", detail: { reason: "owner_missing" } }),
+    );
   });
 
   it("daily run: the next Run asks conditionally with what the last one was told", async () => {

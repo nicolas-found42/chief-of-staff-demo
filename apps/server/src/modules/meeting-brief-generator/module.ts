@@ -38,6 +38,7 @@ export interface MeetingBriefModuleDeps {
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  isOwnerProfileConfirmed?: () => boolean;
   calendarProvider?: CalendarProvider;
   calendarSnapshotRequired?: boolean;
 }
@@ -398,6 +399,9 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           gmailDeliveryProvider: gmailDeliveryProvider ?? null,
           getInternalDomains: () => resolveDomains(),
           getOwnerEmail: () => resolveOwner(),
+          ...(deps.isOwnerProfileConfirmed
+            ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
+            : {}),
         };
         return executeDeliver(deliverArgs);
       });
