@@ -223,14 +223,11 @@ export interface ContentScoutRunResult {
   }[];
   shortlist: { opportunityCount: number; omittedCount: number };
   warnings: number;
-  packs?: {
-    id: string;
+  /** Present on a selection Run: the Content Projects each selected Opportunity started (#133). */
+  projects?: {
     opportunityId: string;
-    generated: number;
-    published: number;
-    total: number;
-    missingDraftTargets: string[];
-    missingNotionPages: string[];
+    projectId: string;
+    created: boolean;
   }[];
 }
 

@@ -4,14 +4,16 @@ import type {
   BrandProfileProposal,
   BrandProfileSourceScan,
   ContentShortlist,
-  ContentPack,
-  ContentDraft,
   ContentScoutRunResult,
   RunMeta,
   SourceBackfillWindowDays,
   SourceCapability,
   SourceDiagnosticClassification,
   SourceTarget,
+} from "@chief-of-staff-demo/shared";
+import {
+  CONTENT_PROJECT_TARGETS,
+  CONTENT_PROJECT_RESEARCH_MODES,
 } from "@chief-of-staff-demo/shared";
 import {
   CONTENT_SCOUT_MODULE_ID,
@@ -28,18 +30,19 @@ import { DateTime } from "luxon";
 import type { Runs } from "../../runs.js";
 import { CONTENT_SCOUT_INTAKE, contentScoutModule, type ContentScoutInput } from "./module.js";
 import type {
-  DraftGenerator,
-  NotionPublisher,
   OpportunityRanker,
   SourceDiscoverer,
   BrandProfileCrawler,
   BrandProfileProposer,
   RuntimeInspector,
 } from "./ports.js";
+import type {
+  OpportunityProjectInput,
+  OpportunityProjects,
+} from "../../content-projects/opportunity-projects.js";
 import type { SourceAdapter } from "../../source-adapters/source-adapter.js";
 import { ContentScoutCanaryRunner, ContentScoutCanaryStore } from "./canary.js";
 import { ContentScoutStore } from "./store.js";
-import type { NotionCalendar, NotionConnection } from "./notion.js";
 import {
   CONTENT_SCOUT_DISCOVERY_INTAKE,
   contentScoutDiscoveryModule,
@@ -77,11 +80,9 @@ export interface ContentScoutHostDeps {
   workspaceDir: string;
   adapters: SourceAdapter[];
   ranker: OpportunityRanker;
-  draftGenerator?: DraftGenerator;
-  notionPublisher?: NotionPublisher;
+  /** Selecting a shortlisted Opportunity starts exactly one governed Content Project (#133). */
+  opportunityProjects?: OpportunityProjects;
   configStore?: ConfigStore;
-  notionConnection?: NotionConnection;
-  notionCalendar?: NotionCalendar;
   discoverer?: SourceDiscoverer;
   brandProfileCrawler?: BrandProfileCrawler;
   brandProfileProposer?: BrandProfileProposer;
@@ -122,8 +123,7 @@ export class ContentScoutHost implements HostedModule {
         store: this.store,
         adapters: deps.adapters,
         ranker: deps.ranker,
-        ...(deps.draftGenerator ? { draftGenerator: deps.draftGenerator } : {}),
-        ...(deps.notionPublisher ? { notionPublisher: deps.notionPublisher } : {}),
+        ...(deps.opportunityProjects ? { opportunityProjects: deps.opportunityProjects } : {}),
         supersede: (oldRunId, newRunId) => this.supersede(oldRunId, newRunId),
         intakeCompleted: (period) => {
           if (period) this.store.recordSuccessfulPeriod("intake", period);
@@ -137,8 +137,6 @@ export class ContentScoutHost implements HostedModule {
         sleep:
           deps.sleep ??
           ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))),
-        retainEvidenceTranscript: (id, text) =>
-          this.retention.retainEvidenceTranscript({ id, text }),
         recordSanitizedDiagnostic: (id, contentType, body) =>
           this.retention.recordSanitizedDiagnostic({ id, contentType, body }),
       }),
@@ -242,10 +240,6 @@ export class ContentScoutHost implements HostedModule {
     return this.store.activeShortlist();
   }
 
-  listContentPacks(): ContentPack[] {
-    return this.store.listContentPacks();
-  }
-
   listSourceSuggestions() {
     return this.store.listSourceSuggestions();
   }
@@ -288,14 +282,45 @@ export class ContentScoutHost implements HostedModule {
     return this.store.decideSourceSuggestion(id, decision, reason);
   }
 
-  async select(runId: string, opportunityIds: string[]): Promise<RunMeta> {
+  async select(
+    runId: string,
+    opportunityIds: string[],
+    project: OpportunityProjectInput,
+  ): Promise<RunMeta> {
     if (this.deps.isOwnerProfileConfirmed && !this.deps.isOwnerProfileConfirmed()) {
       throw new Error(
-        "owner_not_confirmed: confirm the workspace owner Profile before generating content",
+        "owner_not_confirmed: confirm the workspace owner Profile before starting a Content Project",
       );
     }
-    this.store.recordSelection(runId, opportunityIds);
+    this.validateProjectInput(project);
+    this.store.recordSelection(runId, opportunityIds, project);
     return await this.runner.resumeRun(runId);
+  }
+
+  /** Fail fast on governed Project inputs before a Run consumes them (#133). */
+  private validateProjectInput(project: OpportunityProjectInput): void {
+    if (!project.objective.trim()) {
+      throw new Error("invalid_project_input: an objective is required for the Content Project.");
+    }
+    if (!project.audience.trim()) {
+      throw new Error("invalid_project_input: an audience is required for the Content Project.");
+    }
+    if (
+      project.targets.length === 0 ||
+      project.targets.some((target) => !CONTENT_PROJECT_TARGETS.includes(target))
+    ) {
+      throw new Error(
+        "invalid_project_input: select at least one known publication target for the Content Project.",
+      );
+    }
+    if (
+      project.researchMode !== null &&
+      !CONTENT_PROJECT_RESEARCH_MODES.includes(project.researchMode)
+    ) {
+      throw new Error(
+        "invalid_project_input: choose a known research mode for the Content Project.",
+      );
+    }
   }
 
   async skip(runId: string): Promise<RunMeta> {
@@ -310,27 +335,6 @@ export class ContentScoutHost implements HostedModule {
   ) {
     this.store.decideOpportunity(runId, opportunityId, decision);
     return this.activeShortlist();
-  }
-
-  draft(
-    contentPackId: string,
-    targetId: string,
-  ): {
-    draft: ContentDraft;
-    notionPage: { id: string; url: string } | null;
-  } | null {
-    const pack = this.store.listContentPacks().find((candidate) => candidate.id === contentPackId);
-    if (!pack) return null;
-    const run = this.deps.runs.open(pack.runId);
-    const raw = run?.readArtifact(`draft-${contentPackId}-${targetId}.json`) ?? null;
-    if (!raw) return null;
-    try {
-      const draft = JSON.parse(raw) as ContentDraft;
-      const page = pack.notionPages.find((candidate) => candidate.draftId === draft.id) ?? null;
-      return { draft, notionPage: page ? { id: page.id, url: page.url } : null };
-    } catch {
-      return null;
-    }
   }
 
   scoutNow(
@@ -690,7 +694,6 @@ export class ContentScoutHost implements HostedModule {
         brandProfileProposal: this.brandProfileProposal(),
         sourceTargets: this.listSourceTargets(),
         shortlist: this.activeShortlist(),
-        contentPacks: this.listContentPacks(),
         sourceSuggestions: this.listSourceSuggestions(),
         schedule: this.scheduleState(),
         health: {
@@ -717,11 +720,6 @@ export class ContentScoutHost implements HostedModule {
           ),
         })),
         runtimeCapabilities,
-        notion: this.deps.notionConnection?.status() ?? {
-          state: "unconfigured",
-          tokenHint: "",
-          lastVerifiedAt: null,
-        },
         settings: this.deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID] ?? null,
         storage: this.storageUse(),
         linkedinEvidenceGate,
@@ -981,7 +979,10 @@ export class ContentScoutHost implements HostedModule {
 
     app.post("/api/content-scout/shortlists/:runId/select", async (request, reply) => {
       const { runId } = request.params as { runId: string };
-      const body = request.body as { opportunityIds?: unknown };
+      const body = request.body as {
+        opportunityIds?: unknown;
+        project?: Partial<OpportunityProjectInput>;
+      };
       if (
         !Array.isArray(body.opportunityIds) ||
         body.opportunityIds.some((id) => typeof id !== "string")
@@ -989,9 +990,39 @@ export class ContentScoutHost implements HostedModule {
         reply.code(400).send({ error: "opportunityIds must be an array of one to three ids." });
         return;
       }
+      const project = body.project;
+      if (
+        !project ||
+        typeof project.objective !== "string" ||
+        typeof project.audience !== "string" ||
+        !Array.isArray(project.targets) ||
+        !("researchMode" in project)
+      ) {
+        reply.code(400).send({
+          error:
+            "The Content Project inputs (objective, audience, targets, researchMode) are required.",
+        });
+        return;
+      }
       try {
-        const meta = await this.select(runId, body.opportunityIds as string[]);
-        return { status: meta.status };
+        const meta = await this.select(runId, body.opportunityIds as string[], {
+          objective: project.objective,
+          audience: project.audience,
+          constraints: project.constraints ?? [],
+          targets: project.targets,
+          researchMode: project.researchMode ?? null,
+          seedMaterial: project.seedMaterial ?? [],
+          ...(project.authorProfileId ? { authorProfileId: project.authorProfileId } : {}),
+        });
+        const shortlist = this.activeShortlist();
+        const selected = shortlist?.opportunities.filter((opportunity) =>
+          (body.opportunityIds as string[]).includes(opportunity.id),
+        );
+        return {
+          status: meta.status,
+          opportunityIds: body.opportunityIds,
+          projects: selected ?? [],
+        };
       } catch (error) {
         reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
         return;
@@ -1032,62 +1063,6 @@ export class ContentScoutHost implements HostedModule {
         }
       },
     );
-
-    app.get("/api/content-scout/packs/:packId/drafts/:targetId", async (request, reply) => {
-      const { packId, targetId } = request.params as { packId: string; targetId: string };
-      const found = this.draft(packId, targetId);
-      if (!found) {
-        reply.code(404).send({ error: "Content Draft not found." });
-        return;
-      }
-      return found;
-    });
-
-    if (this.deps.notionConnection && this.deps.notionCalendar) {
-      app.post("/api/content-scout/notion/connect", async (request, reply) => {
-        const token = (request.body as { token?: string }).token;
-        if (!token) {
-          reply.code(400).send({ error: "A Notion internal-integration token is required." });
-          return;
-        }
-        try {
-          return await this.deps.notionConnection!.connect(token);
-        } catch (error) {
-          reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-      });
-      app.post("/api/content-scout/notion/disconnect", async () =>
-        this.deps.notionConnection!.disconnect(),
-      );
-      app.post("/api/content-scout/notion/calendar", async (request, reply) => {
-        const body = request.body as
-          | { mode: "create"; parentPageId: string }
-          | {
-              mode: "existing";
-              databaseId: string;
-              dataSourceId: string;
-              databaseUrl: string;
-              mapping: {
-                name: string;
-                status: string;
-                platform: string;
-                format: string;
-                scheduledDate: string;
-              };
-            };
-        try {
-          const notion =
-            body.mode === "create"
-              ? await this.deps.notionCalendar!.createStandard(body.parentPageId)
-              : await this.deps.notionCalendar!.mapExisting(body);
-          return { notion };
-        } catch (error) {
-          reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-      });
-    }
   }
 
   private supersede(oldRunId: string, newRunId: string): void {

@@ -126,6 +126,12 @@ export interface ContentTargetCatalogEntry {
 
 export type ContentProjectResearchMode =
   "no-external-research" | "existing-workspace-evidence" | "fresh-bounded-research";
+
+export const CONTENT_PROJECT_RESEARCH_MODES: readonly ContentProjectResearchMode[] = [
+  "no-external-research",
+  "existing-workspace-evidence",
+  "fresh-bounded-research",
+];
 export type ContentProjectSubjectInput =
   { kind: "topic"; topic: string } | { kind: "person-profile"; profileId: string };
 

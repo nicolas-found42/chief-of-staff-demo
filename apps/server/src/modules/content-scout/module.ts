@@ -1,26 +1,18 @@
 import type {
   AdapterDiagnostic,
-  ContentDraft,
-  ContentPack,
   ContentScoutRunResult,
   ContentShortlist,
-  OpportunityBrief,
-  RankedOpportunity,
   RunMeta,
-  SourceAdapterState,
   SourceItem,
   SourceCollectionAttemptReceipt,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
-import {
-  CONTENT_SCOUT_DRAFT_TARGETS_V1,
-  CONTENT_SCOUT_MODULE_ID,
-  CONTENT_SCOUT_MODULE_VERSION,
-} from "@chief-of-staff-demo/shared";
+import { CONTENT_SCOUT_MODULE_ID, CONTENT_SCOUT_MODULE_VERSION } from "@chief-of-staff-demo/shared";
 import { StageFailure, type RetryPlan, type ShellModule } from "../../engine/module.js";
 import type { RunContext } from "../../engine/module.js";
 import type { RunOutcome } from "../../runs.js";
-import type { DraftGenerator, NotionPublisher, OpportunityRanker } from "./ports.js";
+import type { OpportunityRanker } from "./ports.js";
+import type { OpportunityProjects } from "../../content-projects/opportunity-projects.js";
 import type {
   SourceAdapter,
   SourceCollectionResult,
@@ -46,12 +38,11 @@ export interface ContentScoutModuleDeps {
   store: ContentScoutStore;
   adapters: SourceAdapter[];
   ranker: OpportunityRanker;
-  draftGenerator?: DraftGenerator;
-  notionPublisher?: NotionPublisher;
+  /** Selecting a shortlisted Opportunity starts exactly one governed Content Project (#133). */
+  opportunityProjects?: OpportunityProjects;
   supersede?: (oldRunId: string, newRunId: string) => void;
   now: () => Date;
   sleep: (milliseconds: number) => Promise<void>;
-  retainEvidenceTranscript?: (id: string, text: string) => void;
   recordSanitizedDiagnostic?: (id: string, contentType: string, body: string) => void;
   intakeCompleted?: (period: string | null) => void;
   shortlistSize?: () => number;
@@ -182,34 +173,6 @@ function safePart(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, "-");
 }
 
-function packId(runId: string, opportunityId: string): string {
-  return `${runId}--${safePart(opportunityId)}`;
-}
-
-function briefArtifact(id: string): string {
-  return `brief-${safePart(id)}.json`;
-}
-
-function draftArtifact(pack: string, targetId: string): string {
-  return `draft-${safePart(pack)}-${safePart(targetId)}.json`;
-}
-
-async function mapLimit<T>(
-  items: readonly T[],
-  limit: number,
-  work: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      await work(items[index]!);
-    }
-  });
-  await Promise.all(workers);
-}
-
 function readRunResult(ctx: RunContext): ContentScoutRunResult {
   return (
     parseArtifact<ContentScoutRunResult>(ctx, "result.json") ?? {
@@ -220,247 +183,10 @@ function readRunResult(ctx: RunContext): ContentScoutRunResult {
   );
 }
 
-function packProgress(pack: ContentPack, missingDraftTargets: string[], missingPages: string[]) {
-  return {
-    id: pack.id,
-    opportunityId: pack.opportunityId,
-    generated: pack.draftIds.length,
-    published: pack.notionPages.length,
-    total: CONTENT_SCOUT_DRAFT_TARGETS_V1.length,
-    missingDraftTargets,
-    missingNotionPages: missingPages,
-  };
-}
-
-const MAX_TRANSCRIPT_CHARS = 12_000;
-
-function evidenceStrength(
-  item: SourceItem,
-  adapterState: SourceAdapterState | undefined,
-  now: Date,
-): number {
-  let score = 0;
-  if (item.completeness.title === "available") score += 3;
-  else if (item.completeness.title === "failed") score -= 1;
-  if (item.completeness.body === "available") score += 3;
-  else if (item.completeness.body === "failed") score -= 1;
-  if (item.completeness.description === "available") score += 1;
-  if (item.completeness.transcript === "available") score += 2;
-  else if (item.completeness.transcript === "failed") score -= 1;
-  if (item.completeness.comments === "available") score += 1;
-  else if (item.completeness.comments === "failed") score -= 1;
-  if (item.evidence.length > 0) score += 1;
-  if (item.body && item.body.length > 1000) score += 2;
-  else if (item.body && item.body.length > 500) score += 1;
-  if (adapterState === "available") score += 2;
-  const published = Date.parse(item.publishedAt ?? item.discoveredAt);
-  if (Number.isFinite(published)) {
-    const ageHours = (now.getTime() - published) / 3_600_000;
-    if (ageHours <= 24) score += 3;
-    else if (ageHours <= 48) score += 2;
-    else if (ageHours <= 7 * 24) score += 1;
-  }
-  if (item.claims?.some((claim) => claim.state === "supported")) score += 1;
-  return score;
-}
-
-function isQualifyingSourceItem(item: SourceItem): boolean {
-  try {
-    const url = new URL(item.canonicalUrl);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  } catch {
-    return false;
-  }
-  const hasAvailableText = (["title", "body", "description", "transcript"] as const).some(
-    (field) => item.completeness[field] === "available",
-  );
-  const text = [item.title, item.body, item.description, item.transcript]
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-  return hasAvailableText && text.length >= 20 && item.evidence.length > 0;
-}
-
-function boundSourceItem(item: SourceItem): SourceItem {
-  let transcript = item.transcript;
-  if (typeof transcript === "string" && transcript.length > MAX_TRANSCRIPT_CHARS) {
-    transcript = transcript.slice(0, MAX_TRANSCRIPT_CHARS);
-  }
-  let comments = item.comments;
-  if (comments.length > CONTENT_SCOUT_MAX_COMMENTS) {
-    comments = selectDiverseComments(comments, CONTENT_SCOUT_MAX_COMMENTS);
-  }
-  if (transcript === item.transcript && comments === item.comments) return item;
-  return { ...item, transcript, comments };
-}
-
-function selectStrongestEvidence(input: {
-  qualifying: SourceItem[];
-  adapterStates: Map<string, SourceAdapterState>;
-  now: Date;
-}): SourceItem[] {
-  const scored = input.qualifying
-    .map((item) => ({
-      item,
-      score: evidenceStrength(item, input.adapterStates.get(item.adapterId), input.now),
-    }))
-    .sort((left, right) => {
-      if (right.score !== left.score) return right.score - left.score;
-      const leftTime = Date.parse(left.item.publishedAt ?? left.item.discoveredAt);
-      const rightTime = Date.parse(right.item.publishedAt ?? right.item.discoveredAt);
-      if (Number.isFinite(rightTime) && Number.isFinite(leftTime) && rightTime !== leftTime) {
-        return rightTime - leftTime;
-      }
-      return left.item.id.localeCompare(right.item.id);
-    })
-    .map((entry) => boundSourceItem(entry.item));
-  return scored.slice(0, 8);
-}
-
-function extractGroundedClaims(evidence: SourceItem[]): { claim: string; sourceUrls: string[] }[] {
-  const claimMap = new Map<string, Set<string>>();
-  for (const item of evidence) {
-    if (item.claims?.length) {
-      let usedSupported = false;
-      for (const entry of item.claims) {
-        if (entry.state !== "supported") continue;
-        const text = entry.text.trim();
-        if (!text) continue;
-        if (text === item.title?.trim()) continue;
-        const urls = entry.sourceUrls.length ? entry.sourceUrls : [item.canonicalUrl];
-        if (!claimMap.has(text)) claimMap.set(text, new Set());
-        for (const url of urls) claimMap.get(text)!.add(url);
-        claimMap.get(text)!.add(item.canonicalUrl);
-        usedSupported = true;
-      }
-      if (usedSupported) continue;
-    }
-    const sourceText = item.body ?? item.description ?? "";
-    const sentences = sourceText
-      .split(/[.!?]\s+/)
-      .map((sentence) => sentence.trim())
-      .filter((sentence) => sentence.length >= 20);
-    let claimed = 0;
-    for (const sentence of sentences) {
-      if (sentence === item.title?.trim()) continue;
-      if (!claimMap.has(sentence)) claimMap.set(sentence, new Set());
-      claimMap.get(sentence)!.add(item.canonicalUrl);
-      claimed += 1;
-      if (claimed >= 2) break;
-    }
-    if (claimed === 0) {
-      const fallback = (item.body ?? item.description ?? item.title ?? "").trim();
-      if (fallback.length >= 20 && fallback !== item.title?.trim()) {
-        if (!claimMap.has(fallback)) claimMap.set(fallback, new Set());
-        claimMap.get(fallback)!.add(item.canonicalUrl);
-      } else if (fallback.length >= 20) {
-        if (!claimMap.has(fallback)) claimMap.set(fallback, new Set());
-        claimMap.get(fallback)!.add(item.canonicalUrl);
-      }
-    }
-  }
-  if (claimMap.size === 0) {
-    for (const item of evidence) {
-      const fallback = (item.title ?? item.description ?? "Source evidence").trim();
-      if (!fallback) continue;
-      if (!claimMap.has(fallback)) claimMap.set(fallback, new Set());
-      claimMap.get(fallback)!.add(item.canonicalUrl);
-      break;
-    }
-  }
-  return [...claimMap.entries()].map(([claim, urls]) => ({ claim, sourceUrls: [...urls] }));
-}
-
 /** Content Scout orchestration behind the ContentScoutHost interface. */
 export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<ContentScoutInput> {
-  const writeProgress = (
-    ctx: RunContext,
-    packs: ContentPack[],
-    missingDrafts: Map<string, string[]>,
-    missingPages: Map<string, string[]>,
-  ): void => {
-    const result = readRunResult(ctx);
-    result.packs = packs.map((pack) =>
-      packProgress(pack, missingDrafts.get(pack.id) ?? [], missingPages.get(pack.id) ?? []),
-    );
-    ctx.writeFile("result.json", `${JSON.stringify(result, null, 2)}\n`);
-  };
-
-  const freezeBrief = (
-    ctx: RunContext,
-    opportunity: RankedOpportunity,
-    shortlist: ContentShortlist,
-    items: SourceItem[],
-  ): OpportunityBrief => {
-    const contentPackId = packId(ctx.runId, opportunity.id);
-    const id = `brief-${contentPackId}`;
-    const artifact = briefArtifact(id);
-    const existing = parseArtifact<OpportunityBrief>(ctx, artifact);
-    if (existing) return existing;
-    const profile = deps.store.brandProfile(shortlist.brandProfileRevisionId);
-    if (!profile) {
-      throw new StageFailure(
-        "brand_profile_revision_missing",
-        "The Brand Profile revision used for this shortlist is missing; the draft cannot be reproduced safely.",
-      );
-    }
-    const mapped = opportunity.sourceItemIds
-      .map((sourceId) => items.find((item) => item.id === sourceId))
-      .filter((item): item is SourceItem => item !== undefined);
-    const qualifying = mapped.filter(isQualifyingSourceItem);
-    const adapterStates = new Map(deps.adapters.map((adapter) => [adapter.id, adapter.state]));
-    const evidence = selectStrongestEvidence({ qualifying, adapterStates, now: deps.now() });
-    if (evidence.length < 1) {
-      throw new StageFailure(
-        "insufficient_evidence",
-        "The selected Content Opportunity has no qualifying supporting Source Items.",
-      );
-    }
-    const claims = extractGroundedClaims(evidence);
-    const allowedUrls = new Set(evidence.map((item) => item.canonicalUrl));
-    const groundedClaims = claims.filter((entry) =>
-      entry.sourceUrls.every((url) => allowedUrls.has(url)),
-    );
-    if (groundedClaims.length === 0) {
-      throw new StageFailure(
-        "insufficient_evidence",
-        "No factual claim could be grounded to the qualifying evidence; the brief cannot be created.",
-      );
-    }
-    const frozenOpportunity: RankedOpportunity = structuredClone(opportunity);
-    frozenOpportunity.experimentalEvidence = evidence.some(
-      (item) => adapterStates.get(item.adapterId) === "experimental",
-    );
-    const brief: OpportunityBrief = {
-      id,
-      runId: ctx.runId,
-      contentPackId,
-      createdAt: deps.now().toISOString(),
-      opportunity: frozenOpportunity,
-      sourceItems: evidence,
-      supportingSourceItemCount: evidence.length,
-      claims: groundedClaims,
-      brandProfileRevisionId: profile.id,
-      brandProfileMarkdown: profile.markdown,
-    };
-    for (const item of evidence) {
-      if (item.transcript) {
-        deps.retainEvidenceTranscript?.(`${safePart(id)}-${safePart(item.id)}`, item.transcript);
-      }
-    }
-    ctx.writeFile(artifact, `${JSON.stringify(brief, null, 2)}\n`);
-    return brief;
-  };
-
   const selectedRun = async (ctx: RunContext, opportunityIds: string[]): Promise<RunOutcome> => {
     const shortlist = parseArtifact<ContentShortlist>(ctx, "shortlist.json");
-    const sourceItems = parseArtifact<SourceItem[]>(ctx, "source-items.json") ?? [];
-    const enrichedItems = parseArtifact<SourceItem[]>(ctx, "enriched-source-items.json") ?? [];
-    const enrichedById = new Map(enrichedItems.map((item) => [item.id, item]));
-    const items =
-      sourceItems.length > 0
-        ? sourceItems.map((item) => enrichedById.get(item.id) ?? item)
-        : enrichedItems;
     if (!shortlist) {
       throw new StageFailure(
         "shortlist_missing",
@@ -472,164 +198,59 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       if (!found) throw new Error(`Opportunity is absent from the shortlist: ${id}`);
       return found;
     });
-    const packs = deps.store.listContentPacks().filter((pack) => pack.runId === ctx.runId);
-    const packById = new Map(packs.map((pack) => [pack.id, pack]));
-    const missingDrafts = new Map<string, string[]>();
-    const missingPages = new Map<string, string[]>();
+    const pending = deps.store.pendingAction(ctx.runId);
+    const projectInput = pending?.kind === "selection" ? pending.project : null;
     const requireOwnerConfirmation = () => {
       if (deps.isOwnerProfileConfirmed && !deps.isOwnerProfileConfirmed()) {
         throw new StageFailure(
           "owner_not_confirmed",
-          "Confirm the workspace owner Profile before generating content.",
+          "Confirm the workspace owner Profile before starting a Content Project.",
         );
       }
     };
 
-    await ctx.stage("draft", async () => {
+    await ctx.stage("projects", async () => {
       requireOwnerConfirmation();
-      if (!deps.draftGenerator) {
+      if (!deps.opportunityProjects) {
         throw new StageFailure(
-          "draft_generator_unconfigured",
-          "Choose a model provider before drafting a Content Pack.",
+          "project_seam_unconfigured",
+          "The Content Project seam is not configured; a selection cannot start a Project.",
         );
       }
+      if (!projectInput) {
+        throw new StageFailure(
+          "project_input_missing",
+          "The selection's Project inputs are missing; select the Opportunity again.",
+        );
+      }
+      const started: NonNullable<ContentScoutRunResult["projects"]> = [];
       for (const opportunity of selected) {
-        const brief = freezeBrief(ctx, opportunity, shortlist, items);
-        const existing =
-          packById.get(brief.contentPackId) ??
-          ({
-            id: brief.contentPackId,
-            runId: ctx.runId,
-            opportunityId: opportunity.id,
-            opportunityTitle: opportunity.title,
-            briefId: brief.id,
-            supportingSourceItemCount: brief.supportingSourceItemCount,
-            createdAt: deps.now().toISOString(),
-            draftIds: [],
-            notionPageKeys: [],
-            notionPages: [],
-            status: "partial",
-          } satisfies ContentPack);
-        packById.set(existing.id, existing);
-        const failed: string[] = [];
-        await mapLimit(CONTENT_SCOUT_DRAFT_TARGETS_V1, 4, async (target) => {
-          const draftId = `${existing.id}:${target.id}:v${target.version}`;
-          const artifact = draftArtifact(existing.id, target.id);
-          if (parseArtifact<ContentDraft>(ctx, artifact)) {
-            if (!existing.draftIds.includes(draftId)) existing.draftIds.push(draftId);
-            return;
-          }
-          requireOwnerConfirmation();
-          let generated: Awaited<ReturnType<DraftGenerator["generate"]>>;
-          try {
-            generated = await deps.draftGenerator!.generate({
-              idempotencyKey: draftId,
-              brief,
-              target,
-            });
-          } catch (error) {
-            failed.push(target.id);
-            ctx.event("content_draft_failed", {
-              contentPackId: existing.id,
-              draftTarget: target.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return;
-          }
-          requireOwnerConfirmation();
-          const draft: ContentDraft = {
-            id: draftId,
-            contentPackId: existing.id,
-            target,
-            createdAt: deps.now().toISOString(),
-            copy: generated.copy,
-            productionNotes: generated.productionNotes,
-            reviewNotes: generated.reviewNotes,
-          };
-          ctx.writeFile(artifact, `${JSON.stringify(draft, null, 2)}\n`);
-          existing.draftIds.push(draftId);
-          ctx.event("content_draft_generated", {
-            contentPackId: existing.id,
-            draftTarget: target.id,
-          });
+        requireOwnerConfirmation();
+        const result = await deps.opportunityProjects.start({
+          runId: ctx.runId,
+          opportunityId: opportunity.id,
+          title: opportunity.title,
+          angle: opportunity.angle,
+          angleDescription: opportunity.angleDescription,
+          urgency: opportunity.urgency,
+          sourceUrls: opportunity.sourceItemReferences.map((reference) => reference.canonicalUrl),
+          brandProfileRevisionId: shortlist.brandProfileRevisionId,
+          project: projectInput,
         });
-        missingDrafts.set(existing.id, failed);
-        deps.store.saveContentPack(existing);
-      }
-      const current = [...packById.values()];
-      writeProgress(ctx, current, missingDrafts, missingPages);
-      const allMissing = [...missingDrafts.values()].flat();
-      if (allMissing.length > 0) {
-        throw new StageFailure(
-          `missing_draft_targets:${allMissing.join(",")}`,
-          `${allMissing.length} Draft Target${allMissing.length === 1 ? " is" : "s are"} missing. Retry creates only the missing drafts.`,
-        );
-      }
-    });
-
-    await ctx.stage("publish", async () => {
-      if (!deps.notionPublisher) {
-        throw new StageFailure(
-          "notion_unconfigured",
-          "Connect your Notion integration and choose a content calendar before publication.",
-        );
-      }
-      for (const opportunity of selected) {
-        const id = packId(ctx.runId, opportunity.id);
-        const pack = packById.get(id)!;
-        const brief = parseArtifact<OpportunityBrief>(ctx, briefArtifact(pack.briefId))!;
-        const failed: string[] = [];
-        await mapLimit(CONTENT_SCOUT_DRAFT_TARGETS_V1, 4, async (target) => {
-          const key = `${pack.id}:${target.id}:v${target.version}`;
-          if (pack.notionPageKeys.includes(key)) return;
-          const draft = parseArtifact<ContentDraft>(ctx, draftArtifact(pack.id, target.id));
-          if (!draft) {
-            failed.push(target.id);
-            return;
-          }
-          try {
-            const page =
-              (await deps.notionPublisher!.findDraftPage(key, draft)) ??
-              (await deps.notionPublisher!.createDraftPage({
-                idempotencyKey: key,
-                draft,
-                brief,
-              }));
-            pack.notionPageKeys.push(key);
-            pack.notionPages.push({ key, draftId: draft.id, ...page });
-            deps.store.saveContentPack(pack);
-            ctx.event("notion_page_published", {
-              contentPackId: pack.id,
-              draftTarget: target.id,
-              pageId: page.id,
-            });
-          } catch (error) {
-            failed.push(target.id);
-            ctx.event("notion_page_failed", {
-              contentPackId: pack.id,
-              draftTarget: target.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+        started.push({
+          opportunityId: opportunity.id,
+          projectId: result.projectId,
+          created: result.created,
         });
-        missingPages.set(pack.id, failed);
-        pack.status =
-          pack.draftIds.length === CONTENT_SCOUT_DRAFT_TARGETS_V1.length &&
-          pack.notionPageKeys.length === CONTENT_SCOUT_DRAFT_TARGETS_V1.length
-            ? "complete"
-            : "partial";
-        deps.store.saveContentPack(pack);
+        ctx.event("content_project_started", {
+          opportunityId: opportunity.id,
+          projectId: result.projectId,
+          created: result.created,
+        });
       }
-      const current = [...packById.values()];
-      writeProgress(ctx, current, missingDrafts, missingPages);
-      const allMissing = [...missingPages.values()].flat();
-      if (allMissing.length > 0) {
-        throw new StageFailure(
-          `missing_notion_pages:${allMissing.join(",")}`,
-          `${allMissing.length} Notion page${allMissing.length === 1 ? " is" : "s are"} missing. Retry creates only the missing pages.`,
-        );
-      }
-      deps.store.clearPendingAction(ctx.runId);
+      const runResult = readRunResult(ctx);
+      runResult.projects = started;
+      ctx.writeFile("result.json", `${JSON.stringify(runResult, null, 2)}\n`);
     });
 
     const active = deps.store.activeShortlist();
@@ -647,8 +268,8 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
 
     return {
       status: "done",
-      summary: `${selected.length} complete Content Pack${selected.length === 1 ? "" : "s"}`,
-      detail: { contentPacks: selected.length },
+      summary: `${selected.length} Content Project${selected.length === 1 ? "" : "s"} started`,
+      detail: { contentProjects: selected.length },
     };
   };
 
@@ -663,11 +284,8 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
       if (stage === "rank") {
         return "The collected evidence could not be ranked into a shortlist. Retry the Run.";
       }
-      if (stage === "draft") {
-        return "Some Content Drafts are missing. Successful immutable drafts were preserved; retry creates only missing targets.";
-      }
-      if (stage === "publish") {
-        return "Some Notion pages are missing. Local drafts and existing pages were preserved; retry creates only missing pages.";
+      if (stage === "projects") {
+        return "A Content Project could not be started from a selected Opportunity. The selection is durable; retry starts only what is missing.";
       }
       return "Content Scout could not finish this Run.";
     },
