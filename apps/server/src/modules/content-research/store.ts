@@ -12,6 +12,7 @@ import type {
   ContentResearchBaseline,
   ContentResearchScheduleState,
   NamedPerson,
+  PersonProfileDependentConfiguration,
   PersonSuggestion,
   SourceItem,
 } from "@chief-of-staff-demo/shared";
@@ -93,7 +94,16 @@ export class ContentResearchStore {
       const raw = readFileSync(this.stateFile, "utf8");
       const parsed = JSON.parse(raw) as Partial<ContentResearchState>;
       return {
-        people: Array.isArray(parsed.people) ? parsed.people : [],
+        /* Rows persisted before #134 carry neither profileId nor pausedAt;
+           normalizing on read keeps an upgraded Workspace watching. */
+        people: (Array.isArray(parsed.people) ? parsed.people : []).map((person) => {
+          const record = person as Partial<NamedPerson>;
+          return {
+            ...person,
+            profileId: record.profileId ?? "",
+            pausedAt: record.pausedAt ?? null,
+          };
+        }),
         suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
         baselines: Array.isArray(parsed.baselines) ? parsed.baselines : [],
         collection: Array.isArray(parsed.collection) ? parsed.collection : [],
@@ -122,18 +132,24 @@ export class ContentResearchStore {
   // Named People
 
   addPerson(input: {
+    profileId: string;
     name: string;
     handleHints?: NamedPerson["handleHints"];
     discoveredSourceTargets?: NamedPerson["discoveredSourceTargets"];
   }): NamedPerson {
+    if (!input.profileId) throw new Error("A Named Person requires the profileId it is backed by.");
     const state = this.readState();
+    /* The confirmed Profile identity is the watch's key: watching the same
+       Profile twice returns the existing watch. */
     const existing = state.people.find(
-      (p) => p.name.toLowerCase() === input.name.toLowerCase() && p.archivedAt === null,
+      (p) => p.profileId === input.profileId && p.archivedAt === null,
     );
     if (existing) return existing;
     const person: NamedPerson = {
       id: identifier("person", this.now()),
+      profileId: input.profileId,
       name: input.name,
+      pausedAt: null,
       handleHints: {
         ...input.handleHints,
         blogRssHints: input.handleHints?.blogRssHints ?? [],
@@ -147,8 +163,10 @@ export class ContentResearchStore {
     return person;
   }
 
+  /** The watchlist: neither archived nor paused. Paused is lifecycle state —
+      the configuration stays and the watch simply collects nothing. */
   listPeople(): NamedPerson[] {
-    return this.readState().people.filter((p) => p.archivedAt === null);
+    return this.readState().people.filter((p) => p.archivedAt === null && p.pausedAt === null);
   }
 
   listAllPeople(): NamedPerson[] {
@@ -185,6 +203,43 @@ export class ContentResearchStore {
 
   getPerson(id: string): NamedPerson | null {
     return this.readState().people.find((p) => p.id === id) ?? null;
+  }
+
+  /** A paused watch keeps its Profile reference and configuration; the Profile
+      lifecycle surfaces it as a paused dependent configuration (#134). */
+  pausePerson(id: string): NamedPerson {
+    const state = this.readState();
+    const person = state.people.find((p) => p.id === id);
+    if (!person) throw new Error(`Named Person not found: ${id}`);
+    if (person.pausedAt === null) person.pausedAt = this.now().toISOString();
+    this.writeState(state);
+    return person;
+  }
+
+  resumePerson(id: string): NamedPerson {
+    const state = this.readState();
+    const person = state.people.find((p) => p.id === id);
+    if (!person) throw new Error(`Named Person not found: ${id}`);
+    if (person.archivedAt !== null)
+      throw new Error(`Named Person ${id} is archived and cannot be resumed.`);
+    person.pausedAt = null;
+    this.writeState(state);
+    return person;
+  }
+
+  /** The re-point action a paused watch discloses (#134): the watch attaches
+      to a different confirmed Profile and stays paused until resumed. */
+  repointPerson(id: string, profileId: string): NamedPerson {
+    const state = this.readState();
+    const person = state.people.find((p) => p.id === id);
+    if (!person) throw new Error(`Named Person not found: ${id}`);
+    if (person.archivedAt !== null)
+      throw new Error(`Named Person ${id} is archived and cannot be re-pointed.`);
+    if (person.pausedAt === null)
+      throw new Error(`Named Person ${id} is active — pause it before re-pointing.`);
+    person.profileId = profileId;
+    this.writeState(state);
+    return person;
   }
 
   archivePerson(id: string): NamedPerson {
@@ -251,24 +306,28 @@ export class ContentResearchStore {
     id: string,
     decision: "approved" | "dismissed" | "pending",
     reason: string | null,
+    /** Required when approving: the confirmed Profile the watch will be
+        backed by. A name-only approval creates nothing (#134). */
+    profileId?: string,
   ): PersonSuggestion {
     const state = this.readState();
     const suggestion = state.suggestions.find((s) => s.id === id);
     if (!suggestion) throw new Error(`Person Suggestion not found: ${id}`);
-    suggestion.state = decision;
-    suggestion.decidedAt = this.now().toISOString();
-    suggestion.decisionReason = reason;
     if (decision === "approved") {
-      const exists = state.people.find(
-        (p) => p.name.toLowerCase() === suggestion.name.toLowerCase(),
-      );
+      if (!profileId)
+        throw new Error(
+          "Approving a Person Suggestion requires a confirmed profileId before the watch is created.",
+        );
+      const exists = state.people.find((p) => p.profileId === profileId && p.archivedAt === null);
       if (!exists) {
         /* The sites behind the supporting URLs are what the suggestion actually
            evidenced, so the approved person starts watched on them. Their feeds
            are resolved separately, by fetching each site (spec #116 story 24). */
         const person: NamedPerson = {
           id: identifier("person", this.now()),
+          profileId,
           name: suggestion.name,
+          pausedAt: null,
           handleHints: { blogRssHints: [] },
           discoveredSourceTargets: originsOf(suggestion.supportingUrls).map((url) => ({
             adapterId: "website",
@@ -280,7 +339,14 @@ export class ContentResearchStore {
         };
         state.people.push(person);
       }
+      /* The operator's own reason stands when given; the default records the
+         Profile the watch was created on. */
+      suggestion.decisionReason = reason ?? `Watch created on Person Profile ${profileId}.`;
+    } else {
+      suggestion.decisionReason = reason;
     }
+    suggestion.state = decision;
+    suggestion.decidedAt = this.now().toISOString();
     this.writeState(state);
     return suggestion;
   }
@@ -296,6 +362,44 @@ export class ContentResearchStore {
     suggestion.decisionReason = null;
     this.writeState(state);
     return suggestion;
+  }
+
+  /**
+   * This Module's share of the Profile lifecycle registry (#134): every watch
+   * that points at a Profile is a dependent configuration the operator must
+   * resolve before archiving or privacy-deleting that Profile. A live watch is
+   * active and can be paused; a paused one is resolved by re-pointing it at a
+   * different Profile.
+   */
+  watchReferences(): PersonProfileDependentConfiguration[] {
+    return this.readState()
+      .people.filter((p) => p.archivedAt === null && p.profileId)
+      .map((person) => ({
+        id: `content-research-watch:${person.id}`,
+        consumer: "content-research",
+        label: `Content Research watch — ${person.name}`,
+        profileId: person.profileId,
+        state: person.pausedAt === null ? "active" : "paused",
+        availableActions: person.pausedAt === null ? (["pause"] as const) : (["repoint"] as const),
+      }));
+  }
+
+  /**
+   * Privacy deletion's purge of this Module's share: a watch cannot exist
+   * without the Profile it is backed by, so the reference is removed by
+   * archiving the watch. The watch's name came from the public-safe
+   * projection and stays as the archive's audit record.
+   */
+  removeProfileReferences(profileId: string): number {
+    const state = this.readState();
+    let removed = 0;
+    for (const person of state.people) {
+      if (person.profileId !== profileId || person.archivedAt !== null) continue;
+      person.archivedAt = this.now().toISOString();
+      removed += 1;
+    }
+    if (removed > 0) this.writeState(state);
+    return removed;
   }
 
   // Baselines

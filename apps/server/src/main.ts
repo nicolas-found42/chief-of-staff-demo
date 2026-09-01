@@ -47,6 +47,8 @@ import {
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 import { ContentResearchHost } from "./modules/content-research/host.js";
+import { ContentResearchStore } from "./modules/content-research/store.js";
+import { ContentResearchWatchRegistry } from "./modules/content-research/profile-registry.js";
 import { createHookExtractor, createPeopleDiscoverer } from "./modules/content-research/model.js";
 import { seedContentResearchV1 } from "./modules/content-research/seed.js";
 import { createPublicSearch } from "./source-adapters/search.js";
@@ -83,6 +85,12 @@ const googleConnection = openGoogleConnection(configStore, port);
    same Runs, not one object per Module over one directory. */
 const runs = openRuns(workspaceDir);
 const peopleStore = new PersonProfileStore(workspaceDir);
+/* Content Research owns its watches, so its Profile references are disclosed
+   by a registry over the same store the Module runs on (spec #134, ADR-0042):
+   archive and privacy deletion refuse while a watch is active, and privacy
+   deletion purges the watch's reference. The store is created here so the
+   registry and the Module share the one Workspace state. */
+const contentResearchStore = new ContentResearchStore(workspaceDir, () => new Date());
 /* Lifecycle disclosures come from the real Workspace stores: the confirmed
    owner reference is the active dependent configuration, and the residual
    disclosure scans the catalogued transcripts and collected public source
@@ -96,6 +104,7 @@ const peopleProfiles: WorkspacePersonProfiles = new WorkspacePersonProfiles({
       transcripts: () => transcriptCatalogStore.listTranscripts(),
       publicItems: () => contentResearch.listSourceItems(),
     }),
+    new ContentResearchWatchRegistry(contentResearchStore),
   ],
 });
 const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
@@ -227,6 +236,10 @@ const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
 const contentResearch = new ContentResearchHost({
   runs,
   workspaceDir,
+  store: contentResearchStore,
+  /* Watches resolve and pin their Profile through the public-safe projection
+     seam (spec #134): publications and public surfaces only. */
+  profileProjection: (profileId) => peopleProfiles.project("public-safe", profileId),
   adapters: contentResearchProductionAdapters({
     workspaceDir,
     renderBrowser: playwrightBrowserRenderer(),
@@ -290,7 +303,7 @@ const contentResearch = new ContentResearchHost({
   configStore,
   log: (message) => console.log(`[content-research] ${message}`),
 });
-seedContentResearchV1(contentResearch);
+seedContentResearchV1(contentResearch, peopleProfiles);
 const meetingBriefCompleteJson = () => {
   const current = configStore.get();
   return makeCompleteJson(

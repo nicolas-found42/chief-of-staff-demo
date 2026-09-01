@@ -5,6 +5,7 @@ import {
   type ContentResearchIndex,
   type ContentResearchPlatform,
   type NamedPerson,
+  type PersonProfile,
   type PersonSuggestion,
   type ResonanceScoredItem,
 } from "@chief-of-staff-demo/shared";
@@ -78,7 +79,10 @@ export function ContentResearchPage() {
   const [showGated, setShowGated] = useState(false);
   const [expandedReports, setExpandedReports] = useState<Set<string>>(new Set());
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [newName, setNewName] = useState("");
+  const [profiles, setProfiles] = useState<PersonProfile[] | null>(null);
+  const [allPeople, setAllPeople] = useState<NamedPerson[] | null>(null);
+  const [newProfileId, setNewProfileId] = useState("");
+  const [suggestionProfiles, setSuggestionProfiles] = useState<Record<string, string>>({});
   const [newSite, setNewSite] = useState("");
   const [newYoutube, setNewYoutube] = useState("");
   const [newHn, setNewHn] = useState("");
@@ -86,14 +90,18 @@ export function ContentResearchPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [idx, ppl, sug] = await Promise.all([
+      const [idx, ppl, all, sug, prf] = await Promise.all([
         api.contentResearchIndex(),
         api.contentResearchPeople(),
+        api.contentResearchAllPeople(),
         api.contentResearchSuggestions(),
+        api.people(),
       ]);
       setIndex(idx);
       setPeople(ppl);
+      setAllPeople(all);
       setSuggestions(sug);
+      setProfiles(prf);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -117,6 +125,11 @@ export function ContentResearchPage() {
 
   const gatedRuns = (index?.runs ?? []).filter((run) => run.status !== "done");
 
+  /* Archived watches are gone from this surface; pausing or resuming them is
+     not offered (#134 review): an archived watch's configuration is already
+     resolved by its removal. */
+  const watchRows = (allPeople ?? []).filter((person) => person.archivedAt === null);
+
   const act = async (action: () => Promise<unknown>, message: string) => {
     setBusy(true);
     setError(null);
@@ -134,9 +147,9 @@ export function ContentResearchPage() {
 
   const handleAddPerson = async (event: React.FormEvent) => {
     event.preventDefault();
-    const name = newName.trim();
-    if (!name) {
-      setAddError("Enter a name.");
+    const profileId = newProfileId.trim();
+    if (!profileId) {
+      setAddError("Select a confirmed Person Profile — or create one under Person Profiles first.");
       return;
     }
     const site = newSite.trim();
@@ -156,11 +169,12 @@ export function ContentResearchPage() {
       ...(hnUsername ? { hnUsername } : {}),
     };
     const hasHint = site || youtubeChannelId || hnUsername;
+    const profile = profiles?.find((candidate) => candidate.id === profileId);
     await act(
-      () => api.addContentResearchPerson(name, hasHint ? handleHints : undefined),
-      `Watching ${name}.`,
+      () => api.addContentResearchPerson(profileId, hasHint ? handleHints : undefined),
+      `Watching ${profile?.fullName ?? profileId}.`,
     );
-    setNewName("");
+    setNewProfileId("");
     setNewSite("");
     setNewYoutube("");
     setNewHn("");
@@ -295,17 +309,47 @@ export function ContentResearchPage() {
       {/* Watchlist */}
       <section className="card" aria-labelledby="watchlist-heading">
         <h2 id="watchlist-heading">Watchlist — named people</h2>
-        {people.length === 0 ? (
-          <p className="muted">No one watched yet. Add a name below.</p>
+        {watchRows.length === 0 ? (
+          <p className="muted">No one watched yet. Add a Person Profile below.</p>
         ) : (
           <ul>
-            {people.map((person) => (
+            {watchRows.map((person) => (
               <li key={person.id} className="research-person-row">
                 <strong>{person.name}</strong>{" "}
+                {person.pausedAt && <span className="status-badge">paused</span>}{" "}
                 <span className="muted">· {formatHandleHints(person)}</span>{" "}
                 <span className="muted">
                   · added {new Date(person.createdAt).toLocaleDateString()}
                 </span>{" "}
+                {person.pausedAt ? (
+                  <button
+                    type="button"
+                    aria-disabled={busy}
+                    onClick={() => {
+                      if (busy) return;
+                      void act(
+                        () => api.resumeContentResearchPerson(person.id),
+                        `Resumed watching ${person.name}.`,
+                      );
+                    }}
+                  >
+                    Resume
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-disabled={busy}
+                    onClick={() => {
+                      if (busy) return;
+                      void act(
+                        () => api.pauseContentResearchPerson(person.id),
+                        `Paused watching ${person.name}.`,
+                      );
+                    }}
+                  >
+                    Pause
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-disabled={busy}
@@ -325,12 +369,21 @@ export function ContentResearchPage() {
         )}
         <form onSubmit={(event) => void handleAddPerson(event)} className="research-add-form">
           <div className="field-row">
-            <input
-              aria-label="Person name"
-              placeholder="Add person — e.g. Ada Lovelace"
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-            />
+            <select
+              aria-label="Person Profile"
+              value={newProfileId}
+              onChange={(event) => setNewProfileId(event.target.value)}
+            >
+              <option value="">Select a Person Profile…</option>
+              {(profiles ?? []).map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.fullName ?? profile.primaryEmail ?? profile.id}
+                </option>
+              ))}
+            </select>
+            <Link to="/people/new" className="field-hint muted">
+              Create a Person Profile
+            </Link>
             <input
               aria-label="Site or feed address"
               placeholder="Site or feed — e.g. https://example.com"
@@ -672,6 +725,26 @@ export function ContentResearchPage() {
                 <div className="toolbar research-suggestion-actions">
                   {suggestion.state === "pending" && (
                     <>
+                      <select
+                        aria-label={`Profile for ${suggestion.name}`}
+                        value={suggestionProfiles[suggestion.id] ?? ""}
+                        onChange={(event) =>
+                          setSuggestionProfiles((prev) => ({
+                            ...prev,
+                            [suggestion.id]: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">Select or create a Profile…</option>
+                        {(profiles ?? []).map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.fullName ?? profile.primaryEmail ?? profile.id}
+                          </option>
+                        ))}
+                      </select>
+                      <Link to="/people/new" className="field-hint muted">
+                        Create a Person Profile
+                      </Link>
                       <button
                         type="button"
                         className="primary"
@@ -679,7 +752,12 @@ export function ContentResearchPage() {
                         onClick={() => {
                           if (busy) return;
                           void act(
-                            () => api.decideContentResearchSuggestion(suggestion.id, "approved"),
+                            () =>
+                              api.decideContentResearchSuggestion(
+                                suggestion.id,
+                                "approved",
+                                suggestionProfiles[suggestion.id] || undefined,
+                              ),
                             `Approved ${suggestion.name}.`,
                           );
                         }}

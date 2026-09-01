@@ -4,6 +4,7 @@ import type {
   SourceDiagnosticClassification,
   SourceFieldState,
 } from "./source-items.js";
+import type { PersonProfilePublicSafeProjection } from "./person-profile.js";
 
 export const CONTENT_RESEARCH_MODULE_ID = "content-research" as const;
 export const CONTENT_RESEARCH_MODULE_VERSION = 1 as const;
@@ -20,6 +21,10 @@ export type NamedPersonHandleHints = z.infer<typeof NAMED_PERSON_HANDLE_HINTS_SC
 export interface NamedPerson {
   id: string;
   name: string;
+  /** The confirmed Person Profile this watch is backed by (spec #134). */
+  profileId: string;
+  /** Lifecycle state: a paused watch collects nothing but keeps its configuration. */
+  pausedAt: string | null;
   handleHints: NamedPersonHandleHints;
   discoveredSourceTargets: { adapterId: string; url: string; label: string }[];
   createdAt: string;
@@ -118,6 +123,14 @@ export interface ResonanceReport {
   topEvidence: { canonicalUrl: string; title: string | null }[];
 }
 
+export interface ContentResearchProfilePin {
+  personId: string;
+  profileId: string;
+  profileRevision: number;
+  /** The exact public-safe projection this Run collected against. */
+  projection: PersonProfilePublicSafeProjection;
+}
+
 export interface ContentResearchRunResult {
   reports: ResonanceReport[];
   adapters: {
@@ -128,6 +141,9 @@ export interface ContentResearchRunResult {
     errorClassifications: SourceDiagnosticClassification[];
   }[];
   ledgerRows: ContentResearchLedgerRow[];
+  /** One pin per watched person: the exact Profile revision and public-safe
+      projection this Run used (spec #134). */
+  profilePins: ContentResearchProfilePin[];
 }
 
 export interface ContentResearchLedgerRow {

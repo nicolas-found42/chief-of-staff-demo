@@ -513,11 +513,21 @@ export const api = {
     }>("/api/meeting-brief/calendar/status"),
   contentResearchIndex: () => request<ContentResearchIndex>("/api/content-research/index"),
   contentResearchPeople: () => request<NamedPerson[]>("/api/content-research/people"),
-  addContentResearchPerson: (name: string, handleHints?: NamedPerson["handleHints"]) =>
+  contentResearchAllPeople: () => request<NamedPerson[]>("/api/content-research/people/all"),
+  /* A watch is created only against a confirmed Person Profile (spec #134). */
+  addContentResearchPerson: (profileId: string, handleHints?: NamedPerson["handleHints"]) =>
     request<NamedPerson>("/api/content-research/people", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(handleHints ? { name, handleHints } : { name }),
+      body: JSON.stringify({ profileId, ...(handleHints ? { handleHints } : {}) }),
+    }),
+  pauseContentResearchPerson: (id: string) =>
+    request<NamedPerson>(`/api/content-research/people/${encodeURIComponent(id)}/pause`, {
+      method: "POST",
+    }),
+  resumeContentResearchPerson: (id: string) =>
+    request<NamedPerson>(`/api/content-research/people/${encodeURIComponent(id)}/resume`, {
+      method: "POST",
     }),
   stopWatchingContentResearchPerson: (id: string) =>
     request<NamedPerson>(`/api/content-research/people/${encodeURIComponent(id)}`, {
@@ -525,12 +535,21 @@ export const api = {
     }),
   contentResearchSuggestions: () =>
     request<PersonSuggestion[]>("/api/content-research/discovery/suggestions"),
-  decideContentResearchSuggestion: (id: string, action: "approved" | "dismissed" | "restore") => {
+  /* Approving requires the confirmed Profile the watch will be backed by. */
+  decideContentResearchSuggestion: (
+    id: string,
+    action: "approved" | "dismissed" | "restore",
+    profileId?: string,
+  ) => {
     const path =
       action === "restore"
         ? `/api/content-research/discovery/${encodeURIComponent(id)}/restore`
         : `/api/content-research/discovery/${encodeURIComponent(id)}/${action}`;
-    return request<{ suggestion: PersonSuggestion } | PersonSuggestion>(path, { method: "POST" });
+    return request<{ suggestion: PersonSuggestion } | PersonSuggestion>(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(action === "approved" && profileId ? { profileId } : {}),
+    });
   },
   runContentResearch: () =>
     request<{ runId: string }>("/api/content-research/run", { method: "POST" }),
