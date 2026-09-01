@@ -18,6 +18,7 @@ import {
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
+import { latestDecisionsByMention } from "./extraction.js";
 import {
   meetingDebriefModule,
   type DebriefInput,
@@ -27,6 +28,7 @@ import {
   type MeetingDebriefModuleDeps,
 } from "./module.js";
 
+import type { DebriefIdentityReview } from "./deps.js";
 export type { DebriefIdentityReview } from "./deps.js";
 
 export interface MeetingDebriefHostDeps {
@@ -54,24 +56,10 @@ function parseRunResult(raw: string | null): MeetingDebriefRunResult | null {
 }
 
 /** The Catalog's review state, summarized for the Debrief surfaces. */
-function identitySummary(review: {
-  mentions: { id: string; surfaceText: string }[];
-  decisions: { mentionId: string; outcome: string; profileId: string | null; decidedAt: string }[];
-  organizations: { id: string; surfaceText: string }[];
-}): MeetingDebriefIdentitySummary {
+function identitySummary(review: DebriefIdentityReview): MeetingDebriefIdentitySummary {
   const latestDecision = new Map<string, { outcome: string; profileId: string | null }>();
-  for (const decision of review.decisions) {
-    const current = latestDecision.get(decision.mentionId);
-    if (
-      !current ||
-      decision.decidedAt >=
-        review.decisions.find((d) => d.mentionId === decision.mentionId)!.decidedAt
-    ) {
-      latestDecision.set(decision.mentionId, {
-        outcome: decision.outcome,
-        profileId: decision.profileId,
-      });
-    }
+  for (const [mentionId, decision] of latestDecisionsByMention(review.decisions)) {
+    latestDecision.set(mentionId, { outcome: decision.outcome, profileId: decision.profileId });
   }
   const resolved: MeetingDebriefIdentitySummary["resolved"] = [];
   const unresolved: MeetingDebriefIdentitySummary["unresolved"] = [];

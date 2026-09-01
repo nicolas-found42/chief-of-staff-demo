@@ -5,6 +5,7 @@ import fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MEETING_DEBRIEF_MODULE_ID,
+  MEETING_DEBRIEF_STAGES,
   type IdentityDecision,
   type MeetingDebriefExtraction,
   type MeetingDebriefRunResult,
@@ -293,7 +294,14 @@ describe("Meeting Debrief extraction and review state (#139)", () => {
             title: "Ghost owner",
             owner: "Ghost",
             ownerMentionId: "ghost",
-            ownerProfileId: null,
+            ownerProfileId: "profile_supplied_unknown",
+            dueDate: null,
+          },
+          {
+            title: "No mention id",
+            owner: "Anonymous",
+            ownerMentionId: null,
+            ownerProfileId: "profile_supplied_guess",
             dueDate: null,
           },
         ],
@@ -313,7 +321,10 @@ describe("Meeting Debrief extraction and review state (#139)", () => {
     const items = result.debrief.actionItems;
     expect(items[0]?.ownerProfileId).toBe("profile_alice");
     expect(items[1]?.ownerProfileId).toBeNull();
+    // A model-supplied profile id never survives: an unknown mention id or no
+    // mention id at all resolves to null, never to the model's guess.
     expect(items[2]?.ownerProfileId).toBeNull();
+    expect(items[3]?.ownerProfileId).toBeNull();
   });
 
   it("prefills occurrence and roster for Calendar-linked records", async () => {
@@ -391,6 +402,38 @@ describe("Meeting Debrief extraction and review state (#139)", () => {
 
     const missing = await h.app.inject({ method: "GET", url: "/api/meeting-debrief/run_nope" });
     expect(missing.statusCode).toBe(404);
+  });
+
+  it("reflects the LATEST Catalog decision per mention, not the first or an out-of-order earlier one", async () => {
+    const record = makeRecord();
+    h.catalog.set(record.id, record);
+    h.identity.set(record.id, {
+      mentions: [makeMention("m1", "Alice")],
+      decisions: [
+        { ...makeDecision("m1", "linked", "profile_first"), decidedAt: "2026-08-31T10:00:00.000Z" },
+        { ...makeDecision("m1", "unresolved", null), decidedAt: "2026-08-31T12:00:00.000Z" },
+        {
+          ...makeDecision("m1", "linked", "profile_out_of_order"),
+          decidedAt: "2026-08-31T11:00:00.000Z",
+        },
+      ],
+      organizations: [],
+    });
+    await h.host.process(record);
+    await h.host.idle();
+
+    const runId = h.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id;
+    const detail = await (
+      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
+    ).json();
+    expect(detail.identity.resolved).toEqual([]);
+    expect(detail.identity.unresolved).toEqual([{ mentionId: "m1", surfaceText: "Alice" }]);
+  });
+});
+
+describe("Meeting Debrief fixed Stages (#139)", () => {
+  it("pins the Stage names the Module owns", () => {
+    expect([...MEETING_DEBRIEF_STAGES]).toEqual(["associate", "extract"]);
   });
 });
 

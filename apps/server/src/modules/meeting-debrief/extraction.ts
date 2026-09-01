@@ -113,24 +113,39 @@ interface DebriefMessages {
  * links the mention the extraction named. An unknown mention id, an unresolved
  * mention, or a guess in either direction resolves to null.
  */
+/**
+ * The one latest-decision rule for the whole Module: the Catalog appends
+ * decision records, and the current one per mention is the latest by
+ * decidedAt. Every consumer of review state uses this helper, so the sites
+ * cannot diverge.
+ */
+export function latestDecisionsByMention(
+  decisions: IdentityDecision[],
+): Map<string, IdentityDecision> {
+  const latest = new Map<string, IdentityDecision>();
+  for (const decision of decisions) {
+    const current = latest.get(decision.mentionId);
+    if (!current || decision.decidedAt >= current.decidedAt) {
+      latest.set(decision.mentionId, decision);
+    }
+  }
+  return latest;
+}
+
 export function resolveActionItemOwners(
   extraction: MeetingDebriefExtraction,
   identity: DebriefIdentityReview,
 ): MeetingDebriefExtraction {
   const mentionById = new Map(identity.mentions.map((mention) => [mention.id, mention]));
-  const latestDecisionByMention = new Map<string, IdentityDecision>();
-  for (const decision of identity.decisions) {
-    const current = latestDecisionByMention.get(decision.mentionId);
-    if (!current || decision.decidedAt >= current.decidedAt) {
-      latestDecisionByMention.set(decision.mentionId, decision);
-    }
-  }
+  const latestDecisionByMention = latestDecisionsByMention(identity.decisions);
   return {
     ...extraction,
     actionItems: extraction.actionItems.map((item): MeetingDebriefActionItem => {
-      if (!item.ownerMentionId) return item;
+      // A model-supplied ownerProfileId is a guess and never survives: only
+      // the Catalog's own review state may name a Profile here.
+      if (!item.ownerMentionId) return { ...item, ownerProfileId: null };
       const mention = mentionById.get(item.ownerMentionId);
-      if (!mention) return item;
+      if (!mention) return { ...item, ownerProfileId: null };
       const decision = latestDecisionByMention.get(item.ownerMentionId);
       const resolvedProfile =
         decision && (decision.outcome === "linked" || decision.outcome === "created")
