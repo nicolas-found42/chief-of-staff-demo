@@ -1798,6 +1798,20 @@ describe("rematching against changed Profiles and authority", () => {
     });
   });
 
+  it("appends nothing when rematching leaves every outcome unchanged", async () => {
+    const h = makeHarness();
+    h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
+    await h.service.process(makeRecord(SYNC_TEXT));
+    const settled = h.store.readDecisions().length;
+    expect(settled).toBeGreaterThan(0);
+
+    h.service.rematch();
+    h.service.rematch();
+    await h.service.process(makeRecord(SYNC_TEXT));
+
+    expect(h.store.readDecisions()).toHaveLength(settled);
+  });
+
   it("rematches the corpus when a review action creates a Profile", async () => {
     const h = makeHarness();
     await h.service.process(makeRecord(SYNC_TEXT));
