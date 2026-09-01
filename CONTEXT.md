@@ -392,9 +392,7 @@ _Status_: live (spec #116, 2026-08-30)
 _Avoid_: Content Scout, LinkedIn Content Researcher, Post Analyzer
 
 **Named Person**:
-A person Content Research is configured to watch. They are identified by name and optional handle hints (for example Bluesky DID, YouTube channel, HN username) and resolve to one or more Source Target-equivalent feeds or channels. The set is curated by the workspace owner.
-They may reference a Person Profile, but the watch-list decision and the reusable identity record are
-different concepts.
+A person Content Research is configured to watch. Every watch is backed by a confirmed Person Profile (identified by its `profileId`); the watch's name comes from that Profile's public-safe projection, and optional handle hints (for example Bluesky DID, YouTube channel, HN username) plus Profile-derived sites resolve the Source Targets collected each Run. The set is curated by the workspace owner; creating or reactivating a watch requires selecting or creating and confirming a Profile first. A watch may be **paused**: lifecycle state in which the configuration is kept and nothing is collected, and which is the decision surface archive and privacy deletion require while the watch still points at its Profile. The watch-list decision and the reusable identity record remain different concepts.
 _Avoid_: profile, handle (alone), lead
 
 **Person Suggestion**:

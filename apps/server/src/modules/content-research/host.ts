@@ -206,6 +206,24 @@ export class ContentResearchHost implements HostedModule {
     return this.store.resumePerson(personId);
   }
 
+  /** The re-point action the lifecycle disclosure offers a paused watch
+      (#134): it resolves through the same public-safe seam as creation. */
+  repointWatch(personId: string, profileId?: string): NamedPerson {
+    const target = profileId?.trim() ?? "";
+    if (!target)
+      throw new ContentResearchProfileRefusal(
+        "profile-required",
+        "Re-pointing a watch needs the confirmed Profile it will watch.",
+      );
+    const projection = this.deps.profileProjection(target);
+    if (projection?.purpose !== "public-safe")
+      throw new ContentResearchProfileRefusal(
+        "profile-not-found",
+        "No active Person Profile with that id — confirm one before re-pointing.",
+      );
+    return this.store.repointPerson(personId, target);
+  }
+
   /**
    * Resolve the feeds a Named Person's known sites declare about themselves and
    * record them as `rss` Source Targets, so adding or approving a person is one
@@ -560,6 +578,16 @@ export class ContentResearchHost implements HostedModule {
       const { id } = request.params as { id: string };
       try {
         return this.pauseWatch(id);
+      } catch (error) {
+        return sendProfileOrUnknownError(reply, error);
+      }
+    });
+
+    app.post("/api/content-research/people/:id/repoint", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { profileId?: unknown };
+      try {
+        return this.repointWatch(id, typeof body.profileId === "string" ? body.profileId : "");
       } catch (error) {
         return sendProfileOrUnknownError(reply, error);
       }

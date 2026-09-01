@@ -125,6 +125,11 @@ export function ContentResearchPage() {
 
   const gatedRuns = (index?.runs ?? []).filter((run) => run.status !== "done");
 
+  /* Archived watches are gone from this surface; pausing or resuming them is
+     not offered (#134 review): an archived watch's configuration is already
+     resolved by its removal. */
+  const watchRows = (allPeople ?? []).filter((person) => person.archivedAt === null);
+
   const act = async (action: () => Promise<unknown>, message: string) => {
     setBusy(true);
     setError(null);
@@ -304,11 +309,11 @@ export function ContentResearchPage() {
       {/* Watchlist */}
       <section className="card" aria-labelledby="watchlist-heading">
         <h2 id="watchlist-heading">Watchlist — named people</h2>
-        {(allPeople ?? []).length === 0 ? (
+        {watchRows.length === 0 ? (
           <p className="muted">No one watched yet. Add a Person Profile below.</p>
         ) : (
           <ul>
-            {(allPeople ?? []).map((person) => (
+            {watchRows.map((person) => (
               <li key={person.id} className="research-person-row">
                 <strong>{person.name}</strong>{" "}
                 {person.pausedAt && <span className="status-badge">paused</span>}{" "}

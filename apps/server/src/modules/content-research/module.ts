@@ -302,6 +302,17 @@ function rememberCollectionState(
   }
 }
 
+/** Write the empty Run result — with whatever Profile pins were resolved. */
+function writeEmptyResult(ctx: RunContext, profilePins: ContentResearchProfilePin[]): void {
+  const emptyResult: ContentResearchRunResult = {
+    reports: [],
+    adapters: [],
+    ledgerRows: [],
+    profilePins,
+  };
+  ctx.writeFile("result.json", `${JSON.stringify(emptyResult, null, 2)}\n`);
+}
+
 /**
  * Resolve every watch's Profile through the public-safe projection seam before
  * anything is collected (spec #134): the Run pins the exact revision and
@@ -510,13 +521,7 @@ export function contentResearchModule(
       if (watched.length === 0) {
         await ctx.stage("collect", async () => {
           ctx.event("no_people", {});
-          const emptyResult: ContentResearchRunResult = {
-            reports: [],
-            adapters: [],
-            ledgerRows: [],
-            profilePins: [],
-          };
-          ctx.writeFile("result.json", `${JSON.stringify(emptyResult, null, 2)}\n`);
+          writeEmptyResult(ctx, []);
         });
         return { status: "done", summary: "No Named People — nothing to research" };
       }
@@ -538,13 +543,7 @@ export function contentResearchModule(
         people = pinned.people;
         profilePins = pinned.pins;
         if (people.length === 0) {
-          const emptyResult: ContentResearchRunResult = {
-            reports: [],
-            adapters: [],
-            ledgerRows: [],
-            profilePins,
-          };
-          ctx.writeFile("result.json", `${JSON.stringify(emptyResult, null, 2)}\n`);
+          writeEmptyResult(ctx, profilePins);
           return;
         }
         const personsTargets = people.map((person) => ({
@@ -708,10 +707,7 @@ export function contentResearchBackfillModule(
       let profilePins: ContentResearchProfilePin[] = [];
       if (watched.length === 0) {
         await ctx.stage("collect", async () => {
-          ctx.writeFile(
-            "result.json",
-            JSON.stringify({ reports: [], adapters: [], ledgerRows: [], profilePins: [] }, null, 2),
-          );
+          writeEmptyResult(ctx, []);
         });
         return { status: "done", summary: "No Named People — nothing to backfill" };
       }
@@ -728,10 +724,7 @@ export function contentResearchBackfillModule(
         people = pinned.people;
         profilePins = pinned.pins;
         if (people.length === 0) {
-          ctx.writeFile(
-            "result.json",
-            JSON.stringify({ reports: [], adapters: [], ledgerRows: [], profilePins }, null, 2),
-          );
+          writeEmptyResult(ctx, profilePins);
           return;
         }
         /* Per-target isolation, not a Run-fatal pre-check: adapters that honor

@@ -533,8 +533,6 @@ export const api = {
     }),
   contentResearchSuggestions: () =>
     request<PersonSuggestion[]>("/api/content-research/discovery/suggestions"),
-  runContentResearch: () =>
-    request<{ runId: string }>("/api/content-research/run", { method: "POST" }),
   /* Approving requires the confirmed Profile the watch will be backed by. */
   decideContentResearchSuggestion: (
     id: string,
@@ -551,6 +549,8 @@ export const api = {
       body: JSON.stringify(action === "approved" && profileId ? { profileId } : {}),
     });
   },
+  runContentResearch: () =>
+    request<{ runId: string }>("/api/content-research/run", { method: "POST" }),
   backfillContentResearch: (windowDays: 7 | 30 | 90) =>
     request<{ runId: string }>("/api/content-research/backfill", {
       method: "POST",

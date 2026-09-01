@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
@@ -1325,5 +1325,88 @@ describe("Profile-backed watches (#134)", () => {
     expect(sheets.createdCount()).toBe(2);
     /* The new Sheet was populated from this Run; nothing was written twice. */
     expect(sheets.appended.at(-1)).toHaveLength(1);
+  });
+
+  it("a pre-#134 watch row without pausedAt/profileId keys is still an active watch", async () => {
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const { runs, host, people, workspaceDir } = makeHarness({ adapters: [rss] });
+    /* A people.json row persisted before #134 carries neither profileId nor
+       pausedAt; the upgrade must not silently un-watch it (#134 review P1). */
+    mkdirSync(join(workspaceDir, "content-research"), { recursive: true });
+    writeFileSync(
+      join(workspaceDir, "content-research", "people.json"),
+      `${JSON.stringify(
+        {
+          people: [
+            {
+              id: "person_legacy",
+              name: "Legacy Watch",
+              handleHints: { blogRssHints: [] },
+              discoveredSourceTargets: [],
+              createdAt: "2026-08-01T00:00:00.000Z",
+              archivedAt: null,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    expect(host.listPeople().map((p) => p.name)).toContain("Legacy Watch");
+    const repointTarget = people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+
+    /* The Run completes and surfaces the missing Profile as a decision, not a
+       silent skip of the whole watchlist. */
+    const runId = await host.researchNow();
+    await host.idle();
+    expect(runs.open(runId)?.read().status).toBe("done");
+    expect(runs.detail(runId)!.events.map((event) => event.type)).toContain(
+      "profile_projection_unavailable",
+    );
+
+    /* Pausing works. Resuming through the host is refused — resuming is
+       re-activation, and activation requires a confirmed Profile (#134 AC1);
+       the typed refusal says to re-point or archive. The row itself remains
+       resumable at the store seam once a Profile is selected. */
+    host.pauseWatch("person_legacy");
+    expect(host.listPeople()).toEqual([]);
+    expect(() => host.resumeWatch("person_legacy")).toThrow(ContentResearchProfileRefusal);
+    host.repointWatch("person_legacy", repointTarget.id);
+    host.resumeWatch("person_legacy");
+    expect(host.listPeople().map((p) => p.name)).toContain("Legacy Watch");
+  });
+
+  it("a paused watch can be re-pointed at a different confirmed Profile (#134 review P3)", async () => {
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const { host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, { fullName: "Ben" });
+    const graceProfile = people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+
+    host.pauseWatch(ben.id);
+
+    /* Re-pointing is the resolution action a paused watch discloses; it
+       requires a confirmed target Profile and a paused watch. */
+    expect(() => host.repointWatch(ben.id, "person_does_not_exist")).toThrow(
+      ContentResearchProfileRefusal,
+    );
+    const repointed = host.repointWatch(ben.id, graceProfile.id);
+    expect(repointed.profileId).toBe(graceProfile.id);
+    expect(repointed.pausedAt).not.toBeNull();
+
+    /* Resume then resolves through the new Profile. */
+    host.resumeWatch(ben.id);
+    const resumed = host.listPeople().find((p) => p.id === ben.id)!;
+    expect(resumed.profileId).toBe(graceProfile.id);
+
+    /* An active watch cannot be re-pointed: pause it first. */
+    const adaProfile = people.create({ fullName: "Ada Lovelace", primaryEmail: "ada@example.com" });
+    expect(() => host.repointWatch(ben.id, adaProfile.id)).toThrow(/pause it before re-pointing/);
   });
 });

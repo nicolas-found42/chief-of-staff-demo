@@ -235,6 +235,7 @@ const contentResearch = new ContentResearchHost({
     },
   }),
   hookExtractor: { extract: createHookExtractor(contentResearchCompleteJson) },
+  searchPublic: createPublicSearch(),
   discoverer: {
     discover: async (input) => {
       const shape = await createPeopleDiscoverer(contentResearchCompleteJson)(input);
@@ -245,7 +246,6 @@ const contentResearch = new ContentResearchHost({
       }));
     },
   },
-  searchPublic: createPublicSearch(),
   sheetsFactory: () => {
     const access = googleConnection.auth();
     if (!access.ok) return { ok: false, state: access.state };

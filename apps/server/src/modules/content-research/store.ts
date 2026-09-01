@@ -94,7 +94,16 @@ export class ContentResearchStore {
       const raw = readFileSync(this.stateFile, "utf8");
       const parsed = JSON.parse(raw) as Partial<ContentResearchState>;
       return {
-        people: Array.isArray(parsed.people) ? parsed.people : [],
+        /* Rows persisted before #134 carry neither profileId nor pausedAt;
+           normalizing on read keeps an upgraded Workspace watching. */
+        people: (Array.isArray(parsed.people) ? parsed.people : []).map((person) => {
+          const record = person as Partial<NamedPerson>;
+          return {
+            ...person,
+            profileId: record.profileId ?? "",
+            pausedAt: record.pausedAt ?? null,
+          };
+        }),
         suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
         baselines: Array.isArray(parsed.baselines) ? parsed.baselines : [],
         collection: Array.isArray(parsed.collection) ? parsed.collection : [],
@@ -218,6 +227,21 @@ export class ContentResearchStore {
     return person;
   }
 
+  /** The re-point action a paused watch discloses (#134): the watch attaches
+      to a different confirmed Profile and stays paused until resumed. */
+  repointPerson(id: string, profileId: string): NamedPerson {
+    const state = this.readState();
+    const person = state.people.find((p) => p.id === id);
+    if (!person) throw new Error(`Named Person not found: ${id}`);
+    if (person.archivedAt !== null)
+      throw new Error(`Named Person ${id} is archived and cannot be re-pointed.`);
+    if (person.pausedAt === null)
+      throw new Error(`Named Person ${id} is active — pause it before re-pointing.`);
+    person.profileId = profileId;
+    this.writeState(state);
+    return person;
+  }
+
   archivePerson(id: string): NamedPerson {
     const state = this.readState();
     const person = state.people.find((p) => p.id === id);
@@ -315,7 +339,9 @@ export class ContentResearchStore {
         };
         state.people.push(person);
       }
-      suggestion.decisionReason = `Watch created on Person Profile ${profileId}.`;
+      /* The operator's own reason stands when given; the default records the
+         Profile the watch was created on. */
+      suggestion.decisionReason = reason ?? `Watch created on Person Profile ${profileId}.`;
     } else {
       suggestion.decisionReason = reason;
     }
