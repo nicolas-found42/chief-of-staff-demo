@@ -153,6 +153,9 @@ export interface ContentProjectRevision {
   frozenEvidence: ContentProjectEvidenceFreeze | null;
   outlineBriefs: OutlineBrief[];
   outlineBriefApprovals: OutlineBriefApproval[];
+  platformOutlines: PlatformOutline[];
+  platformOutlineApprovals: PlatformOutlineApproval[];
+  drafts: ContentEngineDraft[];
 }
 
 export interface ContentProject {
@@ -273,4 +276,79 @@ export interface OutlineBrief extends OutlineBriefProposalInput {
 export interface OutlineBriefApproval {
   outlineBriefId: string;
   approvedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Platform Outlines and Content Engine Drafts (issue #131; spec #117
+// generation and revision rules)
+// ---------------------------------------------------------------------------
+
+export interface PlatformOutlineBeat {
+  position: number;
+  direction: string;
+  evidence: OutlineBriefEvidenceMapEntry;
+  examples: string[];
+}
+
+export interface PlatformOutline {
+  id: string;
+  projectId: string;
+  projectRevision: number;
+  target: ContentProjectTarget;
+  outlineBriefId: string;
+  outlineBriefVersion: number;
+  version: number;
+  generatedAt: string;
+  /** The bounded regeneration instruction that produced this version, if any. */
+  instruction: string | null;
+  title: string;
+  hookDirection: string;
+  /** Pinned from the approved Outline Brief; regeneration cannot alter it. */
+  thesis: string;
+  beats: PlatformOutlineBeat[];
+  ctaIntent: string | null;
+  targetLength: string;
+  constraints: string[];
+  warnings: string[];
+  productionNotes: string[];
+}
+
+/** Approval is a separate immutable decision so the Outline never changes in place. */
+export interface PlatformOutlineApproval {
+  platformOutlineId: string;
+  target: ContentProjectTarget;
+  approvedAt: string;
+}
+
+export const CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY = "mark-unsupported" as const;
+
+export interface ContentEngineDraftClaim {
+  text: string;
+  sourceItemIds: string[];
+  /**
+   * Computed by the Content Project against the approved Brief's evidence map;
+   * a provider or regeneration instruction can never set it.
+   */
+  supported: boolean;
+}
+
+export interface ContentEngineDraft {
+  id: string;
+  projectId: string;
+  projectRevision: number;
+  target: ContentProjectTarget;
+  platformOutlineId: string;
+  outlineVersion: number;
+  version: number;
+  generatedAt: string;
+  /** The bounded regeneration instruction that produced this version, if any. */
+  instruction: string | null;
+  copy: string;
+  /** Pinned from the approved Outline Brief; regeneration cannot alter it. */
+  thesis: string;
+  /** Pinned from the approved Outline Brief; regeneration cannot alter it. */
+  evidence: OutlineBriefEvidenceMapEntry[];
+  claims: ContentEngineDraftClaim[];
+  unsupportedClaimPolicy: typeof CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY;
+  productionNotes: string[];
 }

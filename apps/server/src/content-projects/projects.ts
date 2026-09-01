@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import {
   CONTENT_PROJECT_TARGETS,
+  CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY,
   type AuthorizedAuthorPolicy,
   type ContentProject,
   type ContentProjectAuthorReference,
   type ContentProjectCreateInput,
+  type ContentEngineDraft,
   type ContentProjectEvidenceAttachment,
   type ContentProjectEvidenceFreeze,
   type ContentProjectEvidenceSelection,
@@ -16,10 +18,13 @@ import {
   type ContentProjectReadiness,
   type ContentProjectRevision,
   type ContentProjectSubject,
+  type ContentProjectTarget,
   type ContentVoiceRevision,
   type OutlineBrief,
   type OutlineBriefApproval,
   type OutlineBriefProposalInput,
+  type PlatformOutline,
+  type PlatformOutlineApproval,
   type ResearchProviderBundle,
   type ResearchRequest,
   type ResearchRequestInput,
@@ -28,8 +33,15 @@ import {
 } from "@chief-of-staff-demo/shared";
 import type { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
-import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import { runFiniteResearch, uniqueBy, type ResearchProvider } from "./research.js";
+import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import {
+  MAX_GENERATION_INSTRUCTION_LENGTH,
+  type ContentEngineDraftProvider,
+  type ContentEngineDraftProviderResult,
+  type PlatformOutlineProvider,
+  type PlatformOutlineProviderResult,
+} from "./generation.js";
 
 interface ContentProjectState {
   projects: ContentProject[];
@@ -39,7 +51,13 @@ interface ContentProjectState {
 
 type ContentProjectRevisionSeed = Omit<
   ContentProjectRevision,
-  "researchRequest" | "frozenEvidence" | "outlineBriefs" | "outlineBriefApprovals"
+  | "researchRequest"
+  | "frozenEvidence"
+  | "outlineBriefs"
+  | "outlineBriefApprovals"
+  | "platformOutlines"
+  | "platformOutlineApprovals"
+  | "drafts"
 >;
 
 export class ContentProjectError extends Error {
@@ -54,6 +72,12 @@ export class ContentProjectError extends Error {
       | "invalid-evidence-selection"
       | "outline-brief-blocked"
       | "outline-brief-not-found"
+      | "outline-generation-blocked"
+      | "outline-not-found"
+      | "outline-not-supported"
+      | "draft-generation-blocked"
+      | "draft-not-supported"
+      | "invalid-provider-result"
       | "invalid-research-request"
       | "research-request-blocked",
     message: string,
@@ -81,6 +105,10 @@ export class WorkspaceContentProjects {
       brandProfiles: WorkspaceBrandProfileStore;
       /** The public-research providers a Research Request bundle may be configured from. */
       researchProviders: ResearchProvider[];
+      /** The platform Outline generation adapters, one per supported target. */
+      outlineProviders: PlatformOutlineProvider[];
+      /** The platform Draft generation adapters, one per supported target. */
+      draftProviders: ContentEngineDraftProvider[];
       now?: () => Date;
     },
   ) {
@@ -517,6 +545,258 @@ export class WorkspaceContentProjects {
     return clone(approval);
   }
 
+  /**
+   * Generate one immutable Platform Outline version for one target from the
+   * current revision's latest approved Outline Brief. Only an explicitly
+   * approved Brief can start generation, and a regeneration instruction is
+   * bounded prose that appends a version rather than editing a prior one.
+   */
+  async generateOutline(
+    projectId: string,
+    target: ContentProjectTarget,
+    input: { instruction?: string } = {},
+  ): Promise<PlatformOutline> {
+    const instruction = validatedInstruction(input.instruction ?? null);
+    const state = this.readState();
+    const project = requireProject(state, projectId);
+    const planned = this.plannedOutlineGeneration(currentRevision(project), target);
+    const evidence = this.promptEvidence(projectId);
+    if (!evidence) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        "Platform Outline generation needs frozen evidence.",
+        ["evidence-review"],
+      );
+    }
+    const result = await planned.provider.generate({
+      projectId,
+      brief: clone(planned.brief),
+      evidence: clone(evidence),
+      instruction,
+      version: planned.version,
+    });
+
+    /* Re-read after awaiting the provider: this is a method that yields, so it
+       must not write back a project it read before the pause. If the owner
+       revised the Project while the provider ran, the approval sequence
+       restarted and the approved Brief no longer exists, so the generation is
+       refused rather than landed on the new revision. */
+    const landedState = this.readState();
+    const landedProject = requireProject(landedState, projectId);
+    const landed = this.plannedOutlineGeneration(currentRevision(landedProject), target);
+    if (landed.brief.id !== planned.brief.id) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        "The Project changed while the Outline was generated; approve the Brief on the current revision and generate again.",
+      );
+    }
+    const outline = buildOutline({
+      projectId,
+      brief: landed.brief,
+      target,
+      version: landed.version,
+      instruction,
+      result,
+      frozenSourceItemIds: landed.frozenSourceItemIds,
+      now: this.now(),
+    });
+    currentRevision(landedProject).platformOutlines.push(outline);
+    this.touch(landedProject);
+    this.writeState(landedState);
+    return clone(outline);
+  }
+
+  /** Approve the latest Platform Outline version for one target as the Draft source. */
+  approveOutline(projectId: string, target: ContentProjectTarget): PlatformOutlineApproval {
+    const state = this.readState();
+    const project = requireProject(state, projectId);
+    const revision = currentRevision(project);
+    const outline = [...revision.platformOutlines]
+      .reverse()
+      .find((candidate) => candidate.target === target);
+    if (!outline) {
+      throw new ContentProjectError(
+        "outline-not-found",
+        `No Platform Outline for the ${target} target exists on the current Project revision.`,
+      );
+    }
+    const existing = revision.platformOutlineApprovals.find(
+      (approval) => approval.platformOutlineId === outline.id,
+    );
+    if (existing) return clone(existing);
+    const approval = {
+      platformOutlineId: outline.id,
+      target,
+      approvedAt: this.now().toISOString(),
+    };
+    revision.platformOutlineApprovals.push(approval);
+    this.touch(project);
+    this.writeState(state);
+    return clone(approval);
+  }
+
+  /**
+   * Generate one immutable Content Engine Draft version for one target from
+   * the current revision's latest approved Platform Outline version. The
+   * approved thesis, evidence, and unsupported-claim policy are recomputed
+   * here on every call, so a provider answer or a bounded regeneration
+   * instruction can never drift them.
+   */
+  async generateDraft(
+    projectId: string,
+    target: ContentProjectTarget,
+    input: { instruction?: string } = {},
+  ): Promise<ContentEngineDraft> {
+    const instruction = validatedInstruction(input.instruction ?? null);
+    const state = this.readState();
+    const project = requireProject(state, projectId);
+    const planned = this.plannedDraftGeneration(currentRevision(project), target);
+    const evidence = this.promptEvidence(projectId);
+    if (!evidence) {
+      throw new ContentProjectError(
+        "draft-generation-blocked",
+        "Draft generation needs frozen evidence.",
+        ["evidence-review"],
+      );
+    }
+    const result = await planned.provider.generate({
+      projectId,
+      brief: clone(planned.brief),
+      outline: clone(planned.outline),
+      evidence: clone(evidence),
+      instruction,
+      version: planned.version,
+    });
+
+    /* Re-read after awaiting the provider: the approval this Draft hangs from
+       must still exist on the current revision. */
+    const landedState = this.readState();
+    const landedProject = requireProject(landedState, projectId);
+    const landed = this.plannedDraftGeneration(currentRevision(landedProject), target);
+    if (landed.outline.id !== planned.outline.id) {
+      throw new ContentProjectError(
+        "draft-generation-blocked",
+        "The Project changed while the Draft was generated; approve the Outline on the current revision and generate again.",
+      );
+    }
+    const draft = buildDraft({
+      projectId,
+      brief: landed.brief,
+      outline: landed.outline,
+      target,
+      version: landed.version,
+      instruction,
+      result,
+      approvedEvidenceIds: landed.approvedEvidenceIds,
+      now: this.now(),
+    });
+    currentRevision(landedProject).drafts.push(draft);
+    this.touch(landedProject);
+    this.writeState(landedState);
+    return clone(draft);
+  }
+
+  private plannedOutlineGeneration(
+    revision: ContentProjectRevision,
+    target: ContentProjectTarget,
+  ): {
+    brief: OutlineBrief;
+    provider: PlatformOutlineProvider;
+    version: number;
+    frozenSourceItemIds: Set<string>;
+  } {
+    const missing = this.missingGates(revision);
+    if (missing.length > 0) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        `Platform Outline generation needs these gates first: ${missing.join(", ")}.`,
+        missing,
+      );
+    }
+    const brief = latestApprovedOutlineBrief(revision);
+    if (!brief) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        "Only an approved immutable Outline Brief can start Platform Outline generation.",
+      );
+    }
+    if (!revision.targets.includes(target)) {
+      throw new ContentProjectError(
+        "outline-not-supported",
+        `The Project revision does not select the ${target} target.`,
+      );
+    }
+    const provider = this.deps.outlineProviders.find((candidate) => candidate.target === target);
+    if (!provider) {
+      throw new ContentProjectError(
+        "outline-not-supported",
+        `No Platform Outline provider is configured for the ${target} target.`,
+      );
+    }
+    return {
+      brief,
+      provider,
+      version: revision.platformOutlines.filter((outline) => outline.target === target).length + 1,
+      frozenSourceItemIds: new Set(revision.frozenEvidence!.sourceItems.map((item) => item.id)),
+    };
+  }
+
+  private plannedDraftGeneration(
+    revision: ContentProjectRevision,
+    target: ContentProjectTarget,
+  ): {
+    brief: OutlineBrief;
+    outline: PlatformOutline;
+    provider: ContentEngineDraftProvider;
+    version: number;
+    approvedEvidenceIds: Set<string>;
+  } {
+    const missing = this.missingGates(revision);
+    if (missing.length > 0) {
+      throw new ContentProjectError(
+        "draft-generation-blocked",
+        `Draft generation needs these gates first: ${missing.join(", ")}.`,
+        missing,
+      );
+    }
+    const outline = latestApprovedPlatformOutline(revision, target);
+    if (!outline) {
+      throw new ContentProjectError(
+        "draft-generation-blocked",
+        "Only an approved Platform Outline version can generate a Draft.",
+      );
+    }
+    if (!revision.targets.includes(target)) {
+      throw new ContentProjectError(
+        "draft-not-supported",
+        `The Project revision does not select the ${target} target.`,
+      );
+    }
+    const provider = this.deps.draftProviders.find((candidate) => candidate.target === target);
+    if (!provider) {
+      throw new ContentProjectError(
+        "draft-not-supported",
+        `No Draft provider is configured for the ${target} target.`,
+      );
+    }
+    const brief = revision.outlineBriefs.find(
+      (candidate) => candidate.id === outline.outlineBriefId,
+    );
+    if (!brief) {
+      throw new ContentProjectError(
+        "draft-generation-blocked",
+        "The approved Platform Outline no longer names its Outline Brief.",
+      );
+    }
+    return {
+      brief,
+      outline,
+      provider,
+      version: revision.drafts.filter((draft) => draft.target === target).length + 1,
+      approvedEvidenceIds: new Set(brief.evidenceMap.flatMap((entry) => entry.sourceItemIds)),
+    };
+  }
+
   private initialRevision(
     input: ContentProjectCreateInput,
     author: ContentProjectAuthorReference,
@@ -746,6 +1026,141 @@ function currentRevision(project: ContentProject): ContentProjectRevision {
   return revision;
 }
 
+function latestApprovedOutlineBrief(revision: ContentProjectRevision): OutlineBrief | null {
+  const approvedIds = new Set(
+    revision.outlineBriefApprovals.map((approval) => approval.outlineBriefId),
+  );
+  return [...revision.outlineBriefs].reverse().find((brief) => approvedIds.has(brief.id)) ?? null;
+}
+
+function latestApprovedPlatformOutline(
+  revision: ContentProjectRevision,
+  target: ContentProjectTarget,
+): PlatformOutline | null {
+  const approvedIds = new Set(
+    revision.platformOutlineApprovals.map((approval) => approval.platformOutlineId),
+  );
+  return (
+    [...revision.platformOutlines]
+      .reverse()
+      .find((outline) => outline.target === target && approvedIds.has(outline.id)) ?? null
+  );
+}
+
+function validatedInstruction(instruction: string | null): string | null {
+  if (instruction === null) return null;
+  const text = requiredText(instruction, "regeneration instruction");
+  if (text.length > MAX_GENERATION_INSTRUCTION_LENGTH) {
+    throw new ContentProjectError(
+      "invalid-project-input",
+      `A generation instruction is bounded to ${MAX_GENERATION_INSTRUCTION_LENGTH} characters.`,
+    );
+  }
+  return text;
+}
+
+function providerText(value: string, label: string): string {
+  const text = value.trim();
+  if (!text) {
+    throw new ContentProjectError("invalid-provider-result", `${label} is required.`);
+  }
+  return text;
+}
+
+function buildOutline(input: {
+  projectId: string;
+  brief: OutlineBrief;
+  target: ContentProjectTarget;
+  version: number;
+  instruction: string | null;
+  result: PlatformOutlineProviderResult;
+  frozenSourceItemIds: Set<string>;
+  now: Date;
+}): PlatformOutline {
+  if (input.result.beats.length === 0) {
+    throw new ContentProjectError(
+      "invalid-provider-result",
+      "A Platform Outline needs at least one beat.",
+    );
+  }
+  const beats = input.result.beats.map((beat, index) => {
+    if (beat.evidence.sourceItemIds.some((id) => !input.frozenSourceItemIds.has(id))) {
+      throw new ContentProjectError(
+        "invalid-provider-result",
+        "The Platform Outline may cite only Source Items in the frozen evidence selection.",
+      );
+    }
+    return {
+      position: index + 1,
+      direction: providerText(beat.direction, "Beat direction"),
+      evidence: {
+        claim: providerText(beat.evidence.claim, "Beat evidence claim"),
+        sourceItemIds: [...beat.evidence.sourceItemIds],
+      },
+      examples: cleanList(beat.examples),
+    };
+  });
+  return {
+    id: identifier("outline", input.now),
+    projectId: input.projectId,
+    projectRevision: input.brief.projectRevision,
+    target: input.target,
+    outlineBriefId: input.brief.id,
+    outlineBriefVersion: input.brief.version,
+    version: input.version,
+    generatedAt: input.now.toISOString(),
+    instruction: input.instruction,
+    title: providerText(input.result.title, "Outline title"),
+    hookDirection: providerText(input.result.hookDirection, "Outline hook direction"),
+    thesis: input.brief.thesis,
+    beats,
+    ctaIntent: input.brief.ctaIntent,
+    targetLength: providerText(input.result.targetLength, "Outline target length"),
+    constraints: clone(input.brief.constraints),
+    warnings: cleanList(input.result.warnings),
+    productionNotes: cleanList(input.result.productionNotes),
+  };
+}
+
+function buildDraft(input: {
+  projectId: string;
+  brief: OutlineBrief;
+  outline: PlatformOutline;
+  target: ContentProjectTarget;
+  version: number;
+  instruction: string | null;
+  result: ContentEngineDraftProviderResult;
+  approvedEvidenceIds: Set<string>;
+  now: Date;
+}): ContentEngineDraft {
+  return {
+    id: identifier("draft", input.now),
+    projectId: input.projectId,
+    projectRevision: input.outline.projectRevision,
+    target: input.target,
+    platformOutlineId: input.outline.id,
+    outlineVersion: input.outline.version,
+    version: input.version,
+    generatedAt: input.now.toISOString(),
+    instruction: input.instruction,
+    copy: providerText(input.result.copy, "Draft copy"),
+    thesis: input.brief.thesis,
+    evidence: clone(input.brief.evidenceMap),
+    claims: input.result.claims.map((claim) => {
+      const sourceItemIds = [...claim.sourceItemIds];
+      return {
+        text: providerText(claim.text, "Draft claim text"),
+        sourceItemIds,
+        supported:
+          sourceItemIds.length > 0 &&
+          sourceItemIds.every((id) => input.approvedEvidenceIds.has(id)),
+      };
+    }),
+    unsupportedClaimPolicy: CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY,
+    productionNotes: cleanList(input.result.productionNotes),
+  };
+}
+
 function buildRevision(seed: ContentProjectRevisionSeed): ContentProjectRevision {
   return {
     ...seed,
@@ -759,6 +1174,9 @@ function buildRevision(seed: ContentProjectRevisionSeed): ContentProjectRevision
     frozenEvidence: null,
     outlineBriefs: [],
     outlineBriefApprovals: [],
+    platformOutlines: [],
+    platformOutlineApprovals: [],
+    drafts: [],
   };
 }
 
