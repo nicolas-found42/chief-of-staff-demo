@@ -676,7 +676,6 @@ tr:last-child td {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
 /* The filename cell holds the link, and the link carries 0.7rem of padding to
    reach a 44px target. Against the shared `vertical-align: top` that left it
    sitting a line lower than every other cell in its own row. */
@@ -687,7 +686,6 @@ tr:last-child td {
 .ok {
   color: var(--ok);
 }
-
 .bad {
   color: var(--bad);
 }

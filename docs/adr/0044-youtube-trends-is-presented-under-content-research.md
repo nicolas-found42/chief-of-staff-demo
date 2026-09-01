@@ -1,13 +1,13 @@
 # YouTube Trends is presented under Content Research
 
-The consolidation spec places YouTube Trends' product surface at
-`/content-research/trends` (spec § Content Research: "YouTube Trends is presented at
-`/content-research/trends` and keeps an independent measurement Run and spreadsheet output")
-and records "the legacy top-level YouTube route is not required by the new product journey".
-We moved the surface and removed `/youtube`; we did **not** merge the Module into Content
-Research's own Module (ADR-0039 keeps that one watching Named People, with its own Runs,
-result shape, checkpoints and retry receipts, and this spec keeps Trends' independent
-measurement Run and spreadsheet output).
+The consolidation spec presents YouTube Trends under Content Research — its § Content
+Research reads, verbatim: "YouTube Trends is presented at `/content-research/trends` and
+keeps an independent measurement Run and spreadsheet output" — and this ticket's acceptance
+criteria record the legacy top-level YouTube route as not required by the new product
+journey. We moved the surface and removed `/youtube`; we did **not** merge the Module into
+Content Research's own Module (ADR-0039 keeps that one watching Named People, with its own
+Runs, result shape, checkpoints and retry receipts, and the spec line just quoted keeps
+Trends' independent measurement Run and spreadsheet output).
 
 ## What changed
 
