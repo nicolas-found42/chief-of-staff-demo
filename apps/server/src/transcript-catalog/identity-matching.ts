@@ -46,40 +46,53 @@ function uniqueStableIdentifiers(items: StableIdentifier[]): StableIdentifier[] 
   return [...new Map(items.map((item) => [item.key, item])).values()];
 }
 
+/* Shared per-kind key builders: mention and profile identifiers must derive
+   identical keys or exact stable-identifier matching silently breaks. */
+function emailIdentifier(email: string, display: string): StableIdentifier {
+  return {
+    kind: "email",
+    key: `email:${email.normalize("NFKC").toLowerCase()}`,
+    display,
+  };
+}
+
+function profileUrlIdentifier(value: string): StableIdentifier | null {
+  const url = normalizeProfileUrl(value);
+  return url === null ? null : { kind: "profile-url", key: `profile-url:${url}`, display: url };
+}
+
+function handleIdentifiers(handles: Record<string, string[]>): StableIdentifier[] {
+  return Object.entries(handles).flatMap(([platform, handlesForPlatform]) =>
+    handlesForPlatform.map((handle) => ({
+      kind: "handle" as const,
+      key: `handle:${platform}:${handle}`,
+      display: `${platform}:${handle}`,
+    })),
+  );
+}
+
+function externalContactIdentifiers(
+  ids: TranscriptMention["externalContactIds"],
+): StableIdentifier[] {
+  return normalizeExternalContactIds(ids).map((item) => ({
+    kind: "external-contact-id" as const,
+    key: `external-contact-id:${item.system}:${item.externalId}`,
+    display: `${item.system}:${item.externalId}`,
+  }));
+}
+
 function mentionStableIdentifiers(mention: TranscriptMention): StableIdentifier[] {
   return uniqueStableIdentifiers([
-    ...mention.emails.map((email) => ({
-      kind: "email" as const,
-      key: `email:${email.normalize("NFKC").toLowerCase()}`,
-      display: email,
-    })),
+    ...mention.emails.map((email) => emailIdentifier(email, email)),
     ...(mention.speakerCalendarEmail === null
       ? []
-      : [
-          {
-            kind: "email" as const,
-            key: `email:${mention.speakerCalendarEmail.normalize("NFKC").toLowerCase()}`,
-            display: mention.speakerCalendarEmail,
-          },
-        ]),
+      : [emailIdentifier(mention.speakerCalendarEmail, mention.speakerCalendarEmail)]),
     ...mention.profileUrls.flatMap((value) => {
-      const url = normalizeProfileUrl(value);
-      return url === null
-        ? []
-        : [{ kind: "profile-url" as const, key: `profile-url:${url}`, display: url }];
+      const identifier = profileUrlIdentifier(value);
+      return identifier === null ? [] : [identifier];
     }),
-    ...Object.entries(normalizeHandles(mention.verifiedHandles)).flatMap(([platform, handles]) =>
-      handles.map((handle) => ({
-        kind: "handle" as const,
-        key: `handle:${platform}:${handle}`,
-        display: `${platform}:${handle}`,
-      })),
-    ),
-    ...normalizeExternalContactIds(mention.externalContactIds).map((item) => ({
-      kind: "external-contact-id" as const,
-      key: `external-contact-id:${item.system}:${item.externalId}`,
-      display: `${item.system}:${item.externalId}`,
-    })),
+    ...handleIdentifiers(normalizeHandles(mention.verifiedHandles)),
+    ...externalContactIdentifiers(mention.externalContactIds),
   ]);
 }
 
@@ -88,30 +101,20 @@ function profileStableIdentifiers(profile: PersonProfile): StableIdentifier[] {
     ...unique([
       ...profile.emails,
       ...(profile.primaryEmail === null ? [] : [profile.primaryEmail]),
-    ]).map((email) => ({
-      kind: "email" as const,
-      key: `email:${email.normalize("NFKC").toLowerCase()}`,
-      display: email.normalize("NFC").toLowerCase(),
-    })),
+    ]).map((email) => emailIdentifier(email, email.normalize("NFC").toLowerCase())),
     ...profile.profileUrls.flatMap((value) => {
-      const url = normalizeProfileUrl(value);
-      return url === null
-        ? []
-        : [{ kind: "profile-url" as const, key: `profile-url:${url}`, display: url }];
+      const identifier = profileUrlIdentifier(value);
+      return identifier === null ? [] : [identifier];
     }),
-    ...Object.entries(normalizeHandles(profile.handles)).flatMap(([platform, handles]) =>
-      handles.map((handle) => ({
-        kind: "handle" as const,
-        key: `handle:${platform}:${handle}`,
-        display: `${platform}:${handle}`,
-      })),
-    ),
-    ...normalizeExternalContactIds(profile.externalContactIds ?? []).map((item) => ({
-      kind: "external-contact-id" as const,
-      key: `external-contact-id:${item.system}:${item.externalId}`,
-      display: `${item.system}:${item.externalId}`,
-    })),
+    ...handleIdentifiers(normalizeHandles(profile.handles)),
+    ...externalContactIdentifiers(profile.externalContactIds ?? []),
   ]);
+}
+
+/** Per-pass index of each Profile's stable identifiers: conflictsFor re-derives
+   them per candidate, so a rematch pass builds this once and shares it. */
+export function profileIdentifiersOf(profiles: PersonProfile[]): Map<string, StableIdentifier[]> {
+  return new Map(profiles.map((profile) => [profile.id, profileStableIdentifiers(profile)]));
 }
 
 export interface MappingResolution {
@@ -374,7 +377,10 @@ export function conflictsFor(
   mention: TranscriptMention,
   profile: PersonProfile,
   allProfiles: PersonProfile[],
+  profileIdentifiers?: ReadonlyMap<string, StableIdentifier[]>,
 ): TranscriptCandidateConflict[] {
+  const identifiersOf = (candidate: PersonProfile): StableIdentifier[] =>
+    profileIdentifiers?.get(candidate.id) ?? profileStableIdentifiers(candidate);
   const conflicts: TranscriptCandidateConflict[] = [];
   if (profile.archivedAt !== null) {
     conflicts.push({
@@ -383,10 +389,11 @@ export function conflictsFor(
       hard: true,
     });
   }
-  const profileStableKeys = new Set(profileStableIdentifiers(profile).map((item) => item.key));
-  for (const identifier of mentionStableIdentifiers(mention)) {
+  const profileStableKeys = new Set(identifiersOf(profile).map((item) => item.key));
+  const mentionIdentifiers = mentionStableIdentifiers(mention);
+  for (const identifier of mentionIdentifiers) {
     const owners = allProfiles.filter((candidate) =>
-      profileStableIdentifiers(candidate).some((item) => item.key === identifier.key),
+      identifiersOf(candidate).some((item) => item.key === identifier.key),
     );
     if (profileStableKeys.has(identifier.key) && owners.length > 1) {
       conflicts.push({
@@ -406,7 +413,7 @@ export function conflictsFor(
   for (const rosterPerson of mention.rosterContext) {
     const rosterEmail = rosterPerson.email.normalize("NFKC").toLowerCase();
     const owners = allProfiles.filter((candidate) =>
-      profileStableIdentifiers(candidate).some((item) => item.key === `email:${rosterEmail}`),
+      identifiersOf(candidate).some((item) => item.key === `email:${rosterEmail}`),
     );
     if (owners.length > 0 && !owners.some((owner) => owner.id === profile.id)) {
       conflicts.push({
@@ -425,11 +432,11 @@ export function conflictsFor(
     const intersects = mention.emails.some((email) =>
       profileEmails.has(email.normalize("NFKC").toLowerCase()),
     );
-    const identifierHasOwner = mentionStableIdentifiers(mention).some(
+    const identifierHasOwner = mentionIdentifiers.some(
       (identifier) =>
         identifier.kind === "email" &&
         allProfiles.some((candidate) =>
-          profileStableIdentifiers(candidate).some((item) => item.key === identifier.key),
+          identifiersOf(candidate).some((item) => item.key === identifier.key),
         ),
     );
     if (!intersects && !identifierHasOwner && profile.primaryEmail !== null) {

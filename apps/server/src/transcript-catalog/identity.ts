@@ -25,6 +25,7 @@ import {
   conflictsFor,
   mappingResolutionFor,
   policyClassOf,
+  profileIdentifiersOf,
 } from "./identity-matching.js";
 import { type TranscriptIdentityMeta, TranscriptIdentityStore } from "./identity-store.js";
 
@@ -192,6 +193,7 @@ export class TranscriptIdentityService {
     const mappings = this.store.readMappings();
     const generatedAt = this.now().toISOString();
     const candidates: TranscriptMatchCandidate[] = [];
+    const profileIdentifiers = profileIdentifiersOf(profiles);
 
     for (const mention of mentions) {
       if (mention.kind !== "person" && mention.kind !== "ambiguous-name") continue;
@@ -204,7 +206,7 @@ export class TranscriptIdentityService {
             profile,
             signals,
             score,
-            conflicts: conflictsFor(mention, profile, profiles),
+            conflicts: conflictsFor(mention, profile, profiles, profileIdentifiers),
           };
         })
         .filter((entry) => entry.score > 0)
