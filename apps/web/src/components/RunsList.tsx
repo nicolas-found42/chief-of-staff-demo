@@ -32,10 +32,9 @@ export interface RunsListProps {
 export function RunsList({ module, empty, onRefresh }: RunsListProps) {
   const showModule = module === undefined;
   const navigate = useNavigate();
-  /* The press behind the row's click: where it started and whether a text
-     selection was alive at mousedown — read there because Chrome holds the
-     selection through mousedown and dismisses it at click. */
-  const press = useRef<{ x: number; y: number; hadSelection: boolean } | null>(null);
+  /* Where the row's press started, so the click can tell a tap from a drag
+     that was selecting text. */
+  const press = useRef<{ x: number; y: number } | null>(null);
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -197,20 +196,15 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                     key={run.id}
                     className="run-row"
                     onMouseDown={(event) => {
-                      press.current = {
-                        x: event.clientX,
-                        y: event.clientY,
-                        hadSelection: !window.getSelection()?.isCollapsed,
-                      };
+                      press.current = { x: event.clientX, y: event.clientY };
                     }}
                     onClick={(event) => {
                       /* The link is the keyboard and screen-reader route; the
                          row click is the pointer's convenience (the contract
                          .run-link's styling has always promised). A press that
-                         moved was a drag-selection, a press that started inside
-                         a selection merely dismisses it, and a modified or
-                         on-link press is the link's own business — none of
-                         them may navigate the row. */
+                         moved was a drag-selection and must keep the page —
+                         the move-away-to-abort escape (WCAG 2.5.2) — and a
+                         modified or on-link press is the link's own business. */
                       const target = event.target as HTMLElement;
                       if (target.closest("a")) return;
                       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
