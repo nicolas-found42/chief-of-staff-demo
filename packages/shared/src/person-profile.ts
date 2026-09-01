@@ -147,3 +147,34 @@ export interface PersonProfileMeetingProjection extends PersonProfileProjectionB
 
 export type PersonProfileProjection =
   PersonProfilePublicSafeProjection | PersonProfileMeetingProjection;
+
+// ---------------------------------------------------------------------------
+// Calendar attendee shells (issue #124; spec #117 creation and matching policy)
+// ---------------------------------------------------------------------------
+
+/**
+ * The only source id Calendar may claim on a Profile: the provenance entry that
+ * marks a shell as created from an exact Calendar attendee email.
+ */
+export const PERSON_PROFILE_CALENDAR_SOURCE = "calendar" as const;
+
+/**
+ * What the Calendar attendee path may pass to the shared interface. The exact
+ * Calendar email is the authoritative anchor: it may reuse a non-conflicting
+ * Profile or create one minimal email-anchored shell, but Calendar never
+ * supplies inferred employer, title, biography, or public-search claims, so
+ * nothing else is recorded.
+ */
+export interface PersonProfileCalendarAttendeeInput {
+  /** Exact attendee email from Calendar; matched and anchored case-insensitively. */
+  email: string;
+  /** Stable Calendar context (occurrence/event identity) recorded as the shell's source provenance. */
+  provenance?: string;
+}
+
+/** Reuse-or-create result: consumers pin `profile.id` and `profile.revision`. */
+export interface PersonProfileCalendarAttendeeResult {
+  profile: PersonProfile;
+  /** False when an existing Profile was reused instead of created. */
+  created: boolean;
+}
