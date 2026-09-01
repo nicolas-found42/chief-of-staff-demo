@@ -312,9 +312,12 @@ describe("ContentScoutHost", () => {
     releaseBatch();
     await host.idle();
 
+    const detail = runs.detail(runId)!;
     expect(generationCalls).toHaveLength(4);
-    expect(runs.detail(runId)?.failedStage).toBe("draft");
-    expect(runs.detail(runId)?.events.at(-1)).toMatchObject({
+    expect(detail.files.filter((file) => file.startsWith("draft-"))).toEqual([]);
+    expect(detail.events.filter((event) => event.type === "content_draft_generated")).toEqual([]);
+    expect(detail.failedStage).toBe("draft");
+    expect(detail.events.at(-1)).toMatchObject({
       type: "run_failed",
       detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
     });

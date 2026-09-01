@@ -520,26 +520,12 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
             return;
           }
           requireOwnerConfirmation();
+          let generated: Awaited<ReturnType<DraftGenerator["generate"]>>;
           try {
-            const generated = await deps.draftGenerator!.generate({
+            generated = await deps.draftGenerator!.generate({
               idempotencyKey: draftId,
               brief,
               target,
-            });
-            const draft: ContentDraft = {
-              id: draftId,
-              contentPackId: existing.id,
-              target,
-              createdAt: deps.now().toISOString(),
-              copy: generated.copy,
-              productionNotes: generated.productionNotes,
-              reviewNotes: generated.reviewNotes,
-            };
-            ctx.writeFile(artifact, `${JSON.stringify(draft, null, 2)}\n`);
-            existing.draftIds.push(draftId);
-            ctx.event("content_draft_generated", {
-              contentPackId: existing.id,
-              draftTarget: target.id,
             });
           } catch (error) {
             failed.push(target.id);
@@ -548,7 +534,24 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
               draftTarget: target.id,
               error: error instanceof Error ? error.message : String(error),
             });
+            return;
           }
+          requireOwnerConfirmation();
+          const draft: ContentDraft = {
+            id: draftId,
+            contentPackId: existing.id,
+            target,
+            createdAt: deps.now().toISOString(),
+            copy: generated.copy,
+            productionNotes: generated.productionNotes,
+            reviewNotes: generated.reviewNotes,
+          };
+          ctx.writeFile(artifact, `${JSON.stringify(draft, null, 2)}\n`);
+          existing.draftIds.push(draftId);
+          ctx.event("content_draft_generated", {
+            contentPackId: existing.id,
+            draftTarget: target.id,
+          });
         });
         missingDrafts.set(existing.id, failed);
         deps.store.saveContentPack(existing);

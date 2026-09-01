@@ -378,6 +378,12 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   let messageId: string;
   let recipient: string;
   const attemptsBefore = existingDelivery?.attempts ?? 0;
+  if (isOwnerProfileConfirmed && !isOwnerProfileConfirmed()) {
+    const reason =
+      "owner_not_confirmed: confirm the workspace owner Profile before Meeting Brief delivery";
+    persistDeliveryFailure(ctx, deliveryId, attemptsBefore + 1, reason);
+    throw new StageFailure("deliver", reason);
+  }
   try {
     if (gmailDeliveryProvider) {
       const sent = await gmailDeliveryProvider.send({
