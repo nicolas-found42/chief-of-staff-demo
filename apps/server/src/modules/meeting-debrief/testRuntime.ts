@@ -11,10 +11,15 @@ import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
 import { MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
 import { MeetingDebriefHost } from "./host.js";
+import { workspaceProfileDirectory } from "./profiles.js";
+import { PersonProfileStore } from "../../person-profile/store.js";
+import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingDebriefTestRuntimeOptions {
   runs: Runs;
   workspaceDir: string;
+  /** The confirmed owner identity's email, as the Shell holds it. */
+  ownerEmail?: () => string | null;
   log?: (message: string) => void;
 }
 
@@ -25,10 +30,19 @@ interface SeedIdentityState {
   organizations?: OrganizationMention[];
 }
 
+/** Calendar-anchored Profiles the hermetic journey can seed before review. */
+interface SeedProfile {
+  fullName: string;
+  email: string;
+}
+
 interface MeetingDebriefSeedPayload {
   /** The immutable record exactly as the Catalog would have registered it. */
   transcript: TranscriptRecord;
   identity?: SeedIdentityState;
+  profiles?: SeedProfile[];
+  /** Seed as an already-approved Run, to exercise the duplicate-warning path. */
+  approved?: boolean;
 }
 
 export interface MeetingDebriefTestRuntime {
@@ -36,13 +50,17 @@ export interface MeetingDebriefTestRuntime {
   /** Writes the immutable artifact + identity state, then hands the record to
    *  the host at the exact seam the Catalog calls on mining completion. */
   seed(payload: MeetingDebriefSeedPayload): Promise<string>;
+  setNow(value: Date): void;
+  advance(ms: number): Date;
 }
 
 /**
  * Deterministic extraction for the hermetic journey: it derives the structured
  * debrief from the record's own lines and resolves owners against the Catalog
  * review state the same way the model-backed path must — by naming the mention
- * whose surface text the owner matches.
+ * whose surface text the owner matches. A follow-up line addressed to a
+ * non-roster person ("I will send you the summary, Carol") produces the
+ * suggested recipient the review surface then confirms explicitly.
  */
 function deterministicDebriefExtraction(
   record: TranscriptRecord,
@@ -78,6 +96,16 @@ function deterministicDebriefExtraction(
   const decisionSpeaker = speakerOf(decisionLine);
   const questionSpeaker = speakerOf(questionLine);
 
+  const rosterEmails = new Set(record.roster.map((person) => person.email.toLowerCase()));
+  const suggestedRecipients: Array<{ name: string; email: string | null }> = [];
+  for (const line of lines) {
+    const match = /(?:send|share|forward)[^.]*\bto\s+([A-Z][a-z]+)/.exec(line);
+    const name = match?.[1];
+    if (!name || rosterEmails.has(name.toLowerCase())) continue;
+    if (suggestedRecipients.some((suggestion) => suggestion.name === name)) continue;
+    suggestedRecipients.push({ name, email: null });
+  }
+
   return {
     version: 1,
     summary: `Retrospective of ${record.source.fileName}: ${decisionLine || "no decision line found"}`,
@@ -105,20 +133,27 @@ function deterministicDebriefExtraction(
       decisionSpeaker ?? "an unidentified speaker"
     }.`,
     coachingAdvice: "Close open questions in the next session and confirm the roster.",
+    suggestedRecipients,
   };
 }
 
 /**
  * Hermetic runtime for the browser journey (ENABLE_TEST_SEED=1). Everything
- * the production runtime reads is real — the Workspace Catalog store and the
- * identity store — only the extraction is deterministic, so the journey can
- * never depend on a live model.
+ * the production runtime reads is real — the Workspace Catalog store, the
+ * identity store, and the Person Profiles store — only the extraction is
+ * deterministic and the clock is settable, so the journey can never depend on
+ * a live model or on the real passage of thirty days.
  */
 export function createMeetingDebriefTestRuntime(
   options: MeetingDebriefTestRuntimeOptions,
 ): MeetingDebriefTestRuntime {
   const catalogStore = new TranscriptCatalogStore(options.workspaceDir);
   const identityStore = new TranscriptIdentityStore(options.workspaceDir);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(options.workspaceDir),
+    lifecycle: [],
+  });
+  let nowMs = Date.now();
   const host = new MeetingDebriefHost({
     runs: options.runs,
     catalog: {
@@ -139,13 +174,39 @@ export function createMeetingDebriefTestRuntime(
     },
     extract: async ({ record, identity }) =>
       deterministicDebriefExtraction(record, { mentions: identity.mentions }),
+    now: () => new Date(nowMs),
+    profiles: workspaceProfileDirectory(people),
+    ...(options.ownerEmail ? { ownerEmail: options.ownerEmail } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
 
+  const seedProfile = (profile: SeedProfile): void => {
+    const email = profile.email.trim().toLowerCase();
+    /* Only Calendar may anchor a stable email shell (spec #117); the journey's
+       seed stands in for that exact provenance, then corrects the name on. */
+    const { profile: shell } = people.ensureCalendarAttendeeProfile({
+      email,
+      provenance: "meeting-debrief hermetic journey",
+    });
+    if (profile.fullName) {
+      people.correct(shell.id, { fullName: profile.fullName });
+    }
+  };
+
   return {
     host,
+    setNow(value: Date) {
+      nowMs = value.getTime();
+    },
+    advance(ms: number) {
+      nowMs += ms;
+      return new Date(nowMs);
+    },
     async seed(payload: MeetingDebriefSeedPayload): Promise<string> {
       const record = payload.transcript;
+      for (const profile of payload.profiles ?? []) {
+        seedProfile(profile);
+      }
       if (payload.identity?.mentions) {
         identityStore.replaceMentions(record.id, payload.identity.mentions);
       }
@@ -159,6 +220,7 @@ export function createMeetingDebriefTestRuntime(
       }
       catalogStore.saveTranscript(record);
       await host.process(record);
+      await host.idle();
       const summary = options.runs
         .list({ module: MEETING_DEBRIEF_MODULE_ID })
         .runs.find((entry) => {
@@ -185,5 +247,16 @@ export function registerMeetingDebriefTestRoutes(
     }
     const runId = await runtime.seed(payload);
     return { runId };
+  });
+  app.post("/api/test/meeting-debrief/advance", async (request) => {
+    const body = request.body as { ms?: number; now?: string };
+    if (body.now) {
+      runtime.setNow(new Date(body.now));
+    } else if (typeof body.ms === "number") {
+      runtime.advance(body.ms);
+    }
+    const recovered = await runtime.host.recover();
+    await runtime.host.idle();
+    return { recovered };
   });
 }

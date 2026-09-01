@@ -14,7 +14,9 @@ import type {
   MeetingBriefIndex,
   MeetingBriefPersonProfileReadModel,
   MeetingDebriefDetail,
+  MeetingDebriefField,
   MeetingDebriefIndex,
+  MeetingDebriefRecipient,
   NamedPerson,
   PersonSuggestion,
   RedactedConfig,
@@ -487,6 +489,51 @@ export const api = {
   meetingDebriefIndex: () => request<MeetingDebriefIndex>("/api/meeting-debrief/index"),
   meetingDebriefDetail: (runId: string) =>
     request<MeetingDebriefDetail>(`/api/meeting-debrief/${encodeURIComponent(runId)}`),
+  meetingDebriefRegenerate: (runId: string, field: MeetingDebriefField) =>
+    request<{ resumed: boolean }>(`/api/meeting-debrief/${encodeURIComponent(runId)}/regenerate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ field }),
+    }),
+  meetingDebriefDropActionItem: (runId: string, index: number) =>
+    request<{ dropped: number[] }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/drop`,
+      { method: "POST" },
+    ),
+  meetingDebriefConfirmRoster: (
+    runId: string,
+    entries: Array<{ email: string; displayName?: string | null }>,
+  ) =>
+    request<{ roster: { status: string } }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/roster`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entries }),
+      },
+    ),
+  meetingDebriefAddRecipient: (runId: string, input: { profileId: string; email: string }) =>
+    request<{ recipients: MeetingDebriefRecipient[] }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/recipients`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  meetingDebriefRemoveRecipient: (runId: string, profileId: string) =>
+    request<{ recipients: MeetingDebriefRecipient[] }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/recipients/${encodeURIComponent(profileId)}`,
+      { method: "DELETE" },
+    ),
+  meetingDebriefApprove: (runId: string) =>
+    request<{ resumed: boolean }>(`/api/meeting-debrief/${encodeURIComponent(runId)}/approve`, {
+      method: "POST",
+    }),
+  meetingDebriefRedo: (runId: string) =>
+    request<{ runId: string }>(`/api/meeting-debrief/${encodeURIComponent(runId)}/redo`, {
+      method: "POST",
+    }),
   reconcileMeetingBrief: (forceFullSync = false) =>
     request<{
       scheduled: number;

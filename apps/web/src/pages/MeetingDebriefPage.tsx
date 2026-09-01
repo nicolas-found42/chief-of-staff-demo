@@ -34,6 +34,28 @@ function IdentityBadge({ entry }: { entry: MeetingDebriefIndexEntry }) {
   return <span className="muted">{parts.length > 0 ? parts.join(", ") : "No identity state"}</span>;
 }
 
+const REVIEW_STATE_LABELS: Record<string, string> = {
+  awaiting_review: "Awaiting review",
+  approved: "Approved",
+  expired: "Expired",
+};
+
+function ReviewStateBadge({ entry }: { entry: MeetingDebriefIndexEntry }) {
+  if (entry.reviewState === null) return <ReadinessBadge entry={entry} />;
+  const label = REVIEW_STATE_LABELS[entry.reviewState] ?? entry.reviewState;
+  const className =
+    entry.reviewState === "approved"
+      ? "status-badge status-ok"
+      : entry.reviewState === "expired"
+        ? "status-badge status-attention"
+        : "status-badge";
+  return (
+    <span className={className} role="status">
+      {label}
+    </span>
+  );
+}
+
 function ReadinessBadge({ entry }: { entry: MeetingDebriefIndexEntry }) {
   const label =
     entry.reviewReadiness === "ready"
@@ -86,8 +108,9 @@ export function MeetingDebriefPage() {
       </h1>
       <p className="muted">
         Every mined transcript gets a retrospective: decisions, action items, open questions, and
-        coaching — extracted from the Transcript Catalog and waiting for your review. Nothing is
-        written outward in this step.
+        coaching — extracted from the Transcript Catalog and waiting for your review. Approve it to
+        lock it, regenerate any field, drop an action item, or let it expire after 30 days
+        unreviewed. Nothing is written outward before your approval.
       </p>
       {error && (
         <p className="banner-error" role="alert">
@@ -111,6 +134,7 @@ export function MeetingDebriefPage() {
                 <th scope="col">Calendar</th>
                 <th scope="col">Roster</th>
                 <th scope="col">Identity</th>
+                <th scope="col">Recipients</th>
                 <th scope="col">Review</th>
               </tr>
             </thead>
@@ -130,8 +154,9 @@ export function MeetingDebriefPage() {
                   <td>
                     <IdentityBadge entry={entry} />
                   </td>
+                  <td>{entry.recipientCount}</td>
                   <td>
-                    <ReadinessBadge entry={entry} />
+                    <ReviewStateBadge entry={entry} />
                   </td>
                 </tr>
               ))}

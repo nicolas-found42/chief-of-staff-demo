@@ -97,7 +97,11 @@ async function seed(
   return (await response.json()) as { runId: string };
 }
 
-async function waitForDone(request: APIRequestContext, runId: string): Promise<void> {
+async function waitForStatus(
+  request: APIRequestContext,
+  runId: string,
+  status: "blocked" | "done" | "skipped",
+): Promise<void> {
   await expect
     .poll(async () => {
       const detail = (await (
@@ -105,8 +109,10 @@ async function waitForDone(request: APIRequestContext, runId: string): Promise<v
       ).json()) as { status: string };
       return detail.status;
     })
-    .toBe("done");
+    .toBe(status);
 }
+
+const REVIEW_WAIT_MS = 31 * 24 * 60 * 60 * 1000;
 
 test("meeting debrief hermetic journey — seed → list → detail → unlinked → idempotent → no outward writes", async ({
   page,
@@ -118,7 +124,7 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     transcript: linkedTranscript,
     identity: identityState("drive_journey_link_r1", "profile_alice"),
   });
-  await waitForDone(request, seeded.runId);
+  await waitForStatus(request, seeded.runId, "blocked");
 
   // 2. The Debrief list shows the row with prefill and readiness.
   await page.goto("/meeting-debrief");
@@ -128,7 +134,7 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
   await expect(row.getByText("Linked", { exact: true })).toBeVisible();
   await expect(row.getByText("Roster prefilled from Calendar")).toBeVisible();
   await expect(row.getByText(/1 resolved/)).toBeVisible();
-  await expect(row.getByText("Ready for review")).toBeVisible();
+  await expect(row.getByText("Awaiting review")).toBeVisible();
 
   // 3. The detail journey shows extraction, roster, identity, and readiness.
   await page.getByRole("link", { name: LINKED_RUN_FILE }).click();
@@ -140,16 +146,22 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
   await expect(
     page.getByText("We decided to ship the billing fix on Friday").first(),
   ).toBeVisible();
-  await expect(page.getByText("billing fix follow-up")).toBeVisible();
+  await expect(page.getByText("billing fix follow-up").first()).toBeVisible();
   await expect(page.getByText("(confirmed Profile)").first()).toBeVisible();
   await expect(page.getByText(/due 2026-08-17/)).toBeVisible();
   await expect(page.getByText("Is the rollout on track?")).toBeVisible();
-  await expect(page.getByText("Effectiveness evidence")).toBeVisible();
-  await expect(page.getByText("Coaching advice")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Effectiveness evidence" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Coaching advice" })).toBeVisible();
   await expect(
     page.getByText("Calendar-linked: occurrence evt1::2026-08-17T13:00:00Z"),
   ).toBeVisible();
-  await expect(page.getByText("Roster prefilled from the Calendar association.")).toBeVisible();
+  await expect(
+    page.getByText("Roster confirmation required before review can complete."),
+  ).toBeVisible();
+  await expect(page.getByText("Awaiting your review").first()).toBeVisible();
+  await expect(
+    page.getByText("The workspace owner's Google identity is not confirmed in Settings."),
+  ).toBeVisible();
   await expect(page.getByText("Alice — confirmed Profile")).toBeVisible();
   await expect(page.getByText("Bob — awaiting review")).toBeVisible();
 
@@ -174,14 +186,14 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     }),
     identity: identityState("drive_journey_unlink_r1", "profile_alice"),
   });
-  await waitForDone(request, unlinked.runId);
+  await waitForStatus(request, unlinked.runId, "blocked");
 
   await page.goto("/meeting-debrief");
   const unlinkedRow = page.getByRole("row", { name: /Unlinked notes/ });
   await expect(unlinkedRow).toBeVisible();
   await expect(unlinkedRow.getByText("Not linked", { exact: true })).toBeVisible();
   await expect(unlinkedRow.getByText("Roster confirmation required")).toBeVisible();
-  await expect(unlinkedRow.getByText("Waiting for roster confirmation")).toBeVisible();
+  await expect(unlinkedRow.getByText("Awaiting review")).toBeVisible();
 
   // 5. Re-mining the same transcripts never duplicates Debrief Runs.
   const reseeded = await seed(request, {
@@ -201,7 +213,7 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
       files: string[];
     };
     expect(run.events.filter((event) => /draft|task|gmail|send/i.test(event.type))).toEqual([]);
-    expect(run.files).toEqual(["result.json"]);
+    expect(run.files.sort()).toEqual(["result.json", "review.json"]);
     const raw = await (
       await request.get(`/api/runs/${encodeURIComponent(runId)}/artifacts/result.json`)
     ).text();
@@ -213,4 +225,209 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
       "version",
     ]);
   }
+});
+
+const OWNER_EMAIL = "owner@example.com";
+
+async function confirmOwner(request: APIRequestContext): Promise<void> {
+  const identity = await request.post("/api/test/owner-identity", { data: { email: OWNER_EMAIL } });
+  expect(identity.ok()).toBe(true);
+  const created = await request.post("/api/people", {
+    data: { fullName: "Workspace Owner", primaryEmail: OWNER_EMAIL },
+  });
+  // The owner Profile may already exist from a previous journey pass.
+  if (created.ok()) {
+    const profile = (await created.json()) as { id: string };
+    const confirmed = await request.post("/api/onboarding/owner/confirm", {
+      data: { profileId: profile.id },
+    });
+    expect(confirmed.ok()).toBe(true);
+  } else {
+    const existing = (await (
+      await request.get("/api/people?query=" + encodeURIComponent(OWNER_EMAIL))
+    ).json()) as Array<{ id: string }>;
+    const holder = existing[0];
+    expect(holder).toBeTruthy();
+    const confirmed = await request.post("/api/onboarding/owner/confirm", {
+      data: { profileId: holder.id },
+    });
+    expect(confirmed.ok()).toBe(true);
+  }
+}
+
+test("meeting debrief review journey — regenerate, drop, roster, recipients, approval lock, redo", async ({
+  page,
+  request,
+}) => {
+  await confirmOwner(request);
+
+  const transcript = transcriptRecord({
+    normalizedText: [
+      "Alice: We decided to ship the billing fix on Friday.",
+      "Bob: I will own the billing fix follow-up.",
+      "Bob: Is the rollout on track?",
+      "Alice: I will send you the summary, Carol.",
+    ].join("\n"),
+  });
+  const seeded = await seed(request, {
+    transcript,
+    identity: identityState("drive_journey_link_r1", "profile_alice"),
+    profiles: [{ fullName: "Carol", email: "carol@example.com" }],
+  });
+  await waitForStatus(request, seeded.runId, "blocked");
+
+  await page.goto(`/meeting-debrief/${encodeURIComponent(seeded.runId)}`);
+  await expect(page.getByText("Awaiting your review").first()).toBeVisible();
+
+  // 1. Whole-field regeneration: the rejected value is invisible to the model,
+  //    and the audited regenerate Stage lands on the Run's timeline.
+  await page.getByRole("button", { name: "Regenerate summary" }).click();
+  await expect(page.getByText("Working…")).toBeHidden();
+  await expect(page.getByText("Awaiting your review").first()).toBeVisible();
+  const run = (await (
+    await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
+  ).json()) as { review: { state: string } };
+  expect(run.review.state).toBe("awaiting_review");
+  const regenerated = (await (
+    await request.get(`/api/runs/${encodeURIComponent(seeded.runId)}`)
+  ).json()) as { events: Array<{ type: string }> };
+  expect(regenerated.events.filter((event) => event.type === "debrief_regenerated")).toHaveLength(
+    1,
+  );
+
+  // 2. Drop the action item; it is marked on the surface.
+  await page.getByRole("button", { name: /Drop “I will own/ }).click();
+  await expect(page.getByText("Dropped").first()).toBeVisible();
+
+  // 3. Confirm the roster through the Calendar seam; the owner is excluded.
+  await page
+    .getByLabel("Roster — one attendee per comma, as “Name <email>” or “email”")
+    .fill(`Alice <alice@example.com>, Bob <bob@example.com>, Owner <${OWNER_EMAIL}>`);
+  await page.getByRole("button", { name: "Confirm roster" }).click();
+  await expect(page.getByText("Roster confirmed")).toBeVisible();
+  await expect(
+    page.getByText("alice@example.com — automatic (confirmed attendee)").first(),
+  ).toBeVisible();
+
+  // 4. A linked roster binds Calendar shells, so the gate opens: the
+  //    approval section shows the Approve button and no blockers.
+  await expect(page.getByRole("heading", { name: "Approval" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve Debrief" })).toBeVisible();
+  await expect(page.getByText("Approval is blocked until:")).toBeHidden();
+
+  // 5. Add a suggested non-attendee recipient through an explicit,
+  //    verified Profile selection.
+  await page.getByLabel("Search Person Profiles to add a recipient").fill("Carol");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: /Add as recipient/ }).click();
+  await expect(
+    page.getByText("carol@example.com — added (confirmed Profile with verified email)"),
+  ).toBeVisible();
+
+  // 6. Approve: the Run locks, and every mutation seam refuses.
+  await page.getByRole("button", { name: "Approve Debrief" }).click();
+  await expect(page.getByText("Approved — locked").first()).toBeVisible();
+  await expect(page.getByText(/Approved and locked/)).toBeVisible();
+  const approvedDetail = (await (
+    await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
+  ).json()) as {
+    status: string;
+    review: { state: string; automaticRecipients: Array<{ email: string }> };
+  };
+  expect(approvedDetail.status).toBe("done");
+  expect(approvedDetail.review.state).toBe("approved");
+  expect(approvedDetail.review.automaticRecipients.map((r) => r.email)).toEqual([
+    "alice@example.com",
+    "bob@example.com",
+  ]);
+  const lockedTry = await request.post(
+    `/api/meeting-debrief/${encodeURIComponent(seeded.runId)}/regenerate`,
+    { data: { field: "summary" } },
+  );
+  expect(lockedTry.status()).toBe(409);
+
+  // 7. Redo after approval: a distinct Run with a duplicate-output warning.
+  await page.getByRole("button", { name: /Redo \(start a new Debrief Run\)/ }).click();
+  await expect(page.getByText(/Approved and locked/)).toBeVisible();
+  const index = (await (await request.get("/api/meeting-debrief/index")).json()) as {
+    entries: Array<{ runId: string }>;
+  };
+  expect(index.entries.length).toBeGreaterThanOrEqual(2);
+  const redoRunId = index.entries
+    .map((entry) => entry.runId)
+    .find((candidate) => candidate !== seeded.runId);
+  expect(redoRunId).toBeTruthy();
+  // The detail surface renders once; wait for the redo Run to hold its
+  // review record before reading the warning from it.
+  await waitForStatus(request, redoRunId!, "blocked");
+  await page.goto(`/meeting-debrief/${encodeURIComponent(redoRunId!)}`);
+  await expect(page.getByText(/Duplicate output warning/)).toBeVisible();
+  await expect(page.getByText(new RegExp(seeded.runId))).toBeVisible();
+  const redoRun = (await (
+    await request.get(`/api/runs/${encodeURIComponent(redoRunId!)}`)
+  ).json()) as { events: Array<{ type: string }> };
+  expect(redoRun.events.some((event) => event.type === "debrief_redo")).toBe(true);
+});
+
+test("meeting debrief expiry journey — an unreviewed Run skips after 30 days", async ({
+  page,
+  request,
+}) => {
+  const unlinked = await seed(request, {
+    transcript: transcriptRecord({
+      id: "drive_journey_expiry_r1",
+      source: {
+        sourceSystem: "drive",
+        externalFileId: "journey-expiry",
+        fileName: "Expiry notes - 2026-07-01T09-00-00.000Z.md",
+        sourceUrl: null,
+        checksum: "journey-checksum-3",
+        observedRevision: 1,
+        modifiedAt: null,
+      },
+      normalizedText: "Carol: We agreed to revisit the pricing page next week.",
+      meetingDate: "2026-07-01",
+      occurrence: null,
+      speakers: ["Carol"],
+      roster: [],
+    }),
+  });
+  await waitForStatus(request, unlinked.runId, "blocked");
+
+  // Confirming a typed roster with no verified Profile shows the blocker
+  // the approval gate refuses on.
+  await page.goto(`/meeting-debrief/${encodeURIComponent(unlinked.runId)}`);
+  await page
+    .getByLabel("Roster — one attendee per comma, as “Name <email>” or “email”")
+    .fill("Dana <dana@example.com>");
+  await page.getByRole("button", { name: "Confirm roster" }).click();
+  await expect(
+    page.getByText(
+      "dana@example.com has no Person Profile with a verified (Calendar-anchored) email.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve Debrief" })).toBeHidden();
+
+  const advanced = await request.post("/api/test/meeting-debrief/advance", {
+    data: { ms: REVIEW_WAIT_MS },
+  });
+  expect(advanced.ok()).toBe(true);
+  await waitForStatus(request, unlinked.runId, "skipped");
+
+  await page.goto("/meeting-debrief");
+  const row = page.getByRole("row", { name: /Expiry notes/ });
+  await expect(row.getByText("Expired")).toBeVisible();
+
+  await page.getByRole("link", { name: /Expiry notes/ }).click();
+  await expect(page.getByText("Expired — skipped after 30 days unreviewed").first()).toBeVisible();
+  await expect(
+    page.getByText("The Debrief expired unreviewed; no draft or Task was written."),
+  ).toBeVisible();
+
+  // Expired, not destroyed: the extraction stays readable, nothing outward.
+  const run = (await (
+    await request.get(`/api/runs/${encodeURIComponent(unlinked.runId)}`)
+  ).json()) as { events: Array<{ type: string }>; files: string[] };
+  expect(run.events.filter((event) => /draft|task|gmail|send/i.test(event.type))).toEqual([]);
+  expect(run.files.sort()).toEqual(["result.json", "review.json"]);
 });
