@@ -53,6 +53,90 @@ export interface ContentProjectAuthorReference {
   profileRevision: number;
 }
 
+// ---------------------------------------------------------------------------
+// Research Requests (issue #130; spec #117 "fresh bounded research")
+// ---------------------------------------------------------------------------
+
+/**
+ * The class of a Workspace-held identifier that an anonymous public query was
+ * built from. Only the class is ever recorded: the identifier value itself
+ * stays inside the Person Profiles interface.
+ */
+export type ResearchIdentifierClass =
+  "email" | "full-name" | "handle" | "profile-url" | "employer-hint";
+
+/** Why an identifier was sent: to locate the person, or to pair them with the Project subject. */
+export type ResearchIdentifierPurpose = "person-identification" | "topic-evidence";
+
+/** One audited use of one identifier class by one provider at one moment. */
+export interface ResearchIdentifierUse {
+  identifierClass: ResearchIdentifierClass;
+  providerId: string;
+  usedAt: string;
+  purpose: ResearchIdentifierPurpose;
+}
+
+/**
+ * The providers a Research Request is explicitly configured with. An
+ * `all-providers` bundle is the strict selection of spec #117: it reports
+ * incomplete until every provider in it succeeds. A `best-effort` bundle keeps
+ * whatever succeeded, because Source Adapters stay independent (ADR-0028).
+ */
+export interface ResearchProviderBundle {
+  providerIds: string[];
+  completeness: "best-effort" | "all-providers";
+}
+
+/** What makes a Research Request finite: it asks a bounded number of bounded questions. */
+export interface ResearchRequestLimits {
+  maxQueriesPerProvider: number;
+  maxSourceItems: number;
+}
+
+/** The explicit scope one Research Request was allowed to ask about. */
+export interface ResearchRequestScope {
+  question: string;
+  terms: string[];
+  subject: ContentProjectSubject;
+}
+
+export interface ResearchRequestInput {
+  question: string;
+  terms: string[];
+  bundle: ResearchProviderBundle;
+  limits: ResearchRequestLimits;
+}
+
+/** What one configured provider did during one Research Request. */
+export interface ResearchProviderOutcome {
+  providerId: string;
+  queries: number;
+  itemsFound: number;
+  diagnostic: AdapterDiagnostic;
+}
+
+/**
+ * One finite, Project-owned piece of fresh public research. It terminates: it
+ * carries a `finishedAt` and holds no checkpoint, conditional validator,
+ * baseline, schedule or watch state, so nothing about it recurs and nothing
+ * about it belongs to Content Research.
+ */
+export interface ResearchRequest {
+  id: string;
+  projectId: string;
+  projectRevision: number;
+  scope: ResearchRequestScope;
+  bundle: ResearchProviderBundle;
+  limits: ResearchRequestLimits;
+  startedAt: string;
+  finishedAt: string;
+  completeness: "complete" | "incomplete";
+  providerOutcomes: ResearchProviderOutcome[];
+  identifierUses: ResearchIdentifierUse[];
+  /** Exactly the evidence the providers returned, before the owner reviews it. */
+  sourceItems: SourceItem[];
+}
+
 export interface ContentProjectRevision {
   revision: number;
   createdAt: string;
@@ -64,6 +148,7 @@ export interface ContentProjectRevision {
   targets: ContentProjectTarget[];
   researchMode: ContentProjectResearchMode | null;
   seedMaterial: string[];
+  researchRequest: ResearchRequest | null;
   evidenceReview: ContentProjectEvidenceReview | null;
   frozenEvidence: ContentProjectEvidenceFreeze | null;
   outlineBriefs: OutlineBrief[];
@@ -110,6 +195,23 @@ export interface ContentProjectEvidenceFreeze {
   profileProjections: ContentProjectProfileSnapshot[];
   userMaterial: string[];
   noExternalResearchAcknowledged: boolean;
+}
+
+/**
+ * What a Content Engine generator may put in a prompt: the frozen public
+ * evidence and the approved voice, and nothing else. Search diagnostics and the
+ * Research Request's identifier bookkeeping are structurally absent here, so an
+ * operational failure or a private identifier class can never be handed to a
+ * model as a factual content claim.
+ */
+export interface ContentProjectPromptEvidence {
+  projectId: string;
+  projectRevision: number;
+  sourceItems: SourceItem[];
+  brandVoice: BrandProfileRevision;
+  contentVoice: ContentVoiceRevision;
+  profileProjections: ContentProjectProfileSnapshot[];
+  userMaterial: string[];
 }
 
 export interface ContentProjectEvidenceAttachment {

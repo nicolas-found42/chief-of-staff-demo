@@ -74,6 +74,7 @@ function setup() {
     people,
     ownerOnboarding,
     brandProfiles,
+    researchProviders: [],
     now: () => NOW,
   });
   return {
@@ -660,6 +661,7 @@ describe("WorkspaceContentProjects revisions", () => {
       people,
       ownerOnboarding,
       brandProfiles,
+      researchProviders: [],
       now: () => NOW,
     });
     expect(restarted.get(project.id)).toEqual(reread);
