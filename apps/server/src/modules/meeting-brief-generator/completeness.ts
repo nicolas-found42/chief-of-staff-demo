@@ -20,11 +20,11 @@ import { MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION } from "@chief-of-staff-demo/sh
  */
 
 /** The cutoff: 30 minutes before the occurrence start (spec Decision 19). */
-export const MEETING_BRIEF_RETRY_CUTOFF_MS = 30 * 60 * 1000;
+const MEETING_BRIEF_RETRY_CUTOFF_MS = 30 * 60 * 1000;
 
 /** Bounded backoff between automatic attempts — implementation policy values. */
-export const MEETING_BRIEF_RETRY_BASE_MS = 60 * 1000;
-export const MEETING_BRIEF_RETRY_MAX_MS = 10 * 60 * 1000;
+const MEETING_BRIEF_RETRY_BASE_MS = 60 * 1000;
+const MEETING_BRIEF_RETRY_MAX_MS = 10 * 60 * 1000;
 
 /** Epoch ms of the enrich cutoff for one occurrence, or null when unparseable. */
 export function briefCutoffAt(startAt: string): number | null {
