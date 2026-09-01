@@ -1,8 +1,8 @@
 import type {
   BrandProfileRevision,
   BrandProfileProposal,
-  ContentDraft,
-  ContentPack,
+  ContentProjectResearchMode,
+  ContentProjectTarget,
   ContentResearchIndex,
   ContentShortlist,
   DriveIntakeStatus,
@@ -113,7 +113,6 @@ export interface ContentScoutState {
   brandProfileProposal: BrandProfileProposal | null;
   sourceTargets: SourceTarget[];
   shortlist: ContentShortlist | null;
-  contentPacks: ContentPack[];
   adapters: {
     id: string;
     state: SourceAdapterState;
@@ -124,7 +123,6 @@ export interface ContentScoutState {
   }[];
   runtimeCapabilities: ContentScoutRuntimeCapability[];
   storage: ContentScoutStorageUse;
-  notion: { state: string; tokenHint: string; lastVerifiedAt: string | null };
   settings: {
     timeZone: string;
     dailyTime: string;
@@ -133,18 +131,6 @@ export interface ContentScoutState {
     shortlistSize: number;
     canaryIntervalHours: number;
     canaryDisabledAdapters: string[];
-    notion: {
-      databaseId: string;
-      dataSourceId: string;
-      databaseUrl: string;
-      mapping: {
-        name: string;
-        status: string;
-        platform: string;
-        format: string;
-        scheduledDate: string;
-      };
-    };
   } | null;
   sourceSuggestions: SourceSuggestion[];
   schedule: ContentScoutScheduleState;
@@ -311,15 +297,26 @@ export const api = {
       body: JSON.stringify({ windowDays }),
     }),
   runContentScout: () => request<{ runId: string }>("/api/content-scout/run", { method: "POST" }),
-  selectContentScout: (runId: string, opportunityIds: string[]) =>
-    request<{ status: string }>(
-      `/api/content-scout/shortlists/${encodeURIComponent(runId)}/select`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ opportunityIds }),
-      },
-    ),
+  selectContentScout: (
+    runId: string,
+    opportunityIds: string[],
+    project: {
+      objective: string;
+      audience: string;
+      constraints?: string[];
+      targets: ContentProjectTarget[];
+      researchMode: ContentProjectResearchMode | null;
+      seedMaterial?: string[];
+    },
+  ) =>
+    request<{
+      status: string;
+      projects: { opportunityId: string; projectId: string; created: boolean }[];
+    }>(`/api/content-scout/shortlists/${encodeURIComponent(runId)}/select`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ opportunityIds, project }),
+    }),
   skipContentScout: (runId: string) =>
     request<{ status: string }>(`/api/content-scout/shortlists/${encodeURIComponent(runId)}/skip`, {
       method: "POST",
@@ -335,49 +332,6 @@ export const api = {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ decision }),
-      },
-    ),
-  contentDraft: (packId: string, targetId: string) =>
-    request<{ draft: ContentDraft; notionPage: { id: string; url: string } | null }>(
-      `/api/content-scout/packs/${encodeURIComponent(packId)}/drafts/${encodeURIComponent(targetId)}`,
-    ),
-  connectNotion: (token: string) =>
-    request<{ state: string; tokenHint: string; lastVerifiedAt: string | null }>(
-      "/api/content-scout/notion/connect",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token }),
-      },
-    ),
-  disconnectNotion: () =>
-    request<{ state: string; tokenHint: string; lastVerifiedAt: string | null }>(
-      "/api/content-scout/notion/disconnect",
-      { method: "POST" },
-    ),
-  configureNotionCalendar: (
-    input:
-      | { mode: "create"; parentPageId: string }
-      | {
-          mode: "existing";
-          databaseId: string;
-          dataSourceId: string;
-          databaseUrl: string;
-          mapping: {
-            name: string;
-            status: string;
-            platform: string;
-            format: string;
-            scheduledDate: string;
-          };
-        },
-  ) =>
-    request<{ notion: NonNullable<ContentScoutState["settings"]>["notion"] }>(
-      "/api/content-scout/notion/calendar",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
       },
     ),
   runSourceDiscovery: () =>

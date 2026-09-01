@@ -1014,15 +1014,15 @@ export class ContentScoutHost implements HostedModule {
           seedMaterial: project.seedMaterial ?? [],
           ...(project.authorProfileId ? { authorProfileId: project.authorProfileId } : {}),
         });
-        const shortlist = this.activeShortlist();
-        const selected = shortlist?.opportunities.filter((opportunity) =>
-          (body.opportunityIds as string[]).includes(opportunity.id),
-        );
-        return {
-          status: meta.status,
-          opportunityIds: body.opportunityIds,
-          projects: selected ?? [],
-        };
+        const detail = this.deps.runs.detail(runId);
+        const result = detail?.result as Partial<ContentScoutRunResult> | null;
+        if (meta.status === "failed") {
+          reply.code(409).send({
+            error: detail?.failureHint ?? "The selected Opportunities could not start a Project.",
+          });
+          return;
+        }
+        return { status: meta.status, projects: result?.projects ?? [] };
       } catch (error) {
         reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
         return;

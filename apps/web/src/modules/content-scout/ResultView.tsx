@@ -116,17 +116,12 @@ export function ContentScoutResultView({ detail }: { detail: RunDetail }) {
         {result.shortlist.opportunityCount} shortlist opportunities ·{" "}
         {result.shortlist.omittedCount} omitted · {result.warnings} warnings
       </p>
-      {result.packs?.map((pack) => (
-        <div className="card" key={pack.id}>
+      {result.projects?.map((entry) => (
+        <div className="card" key={entry.opportunityId}>
           <strong>
-            {pack.generated}/{pack.total} local drafts · {pack.published}/{pack.total} Notion pages
+            {entry.created ? "Started" : "Already started"} Content Project{" "}
+            <code>{entry.projectId}</code>
           </strong>
-          {pack.missingDraftTargets.length > 0 && (
-            <p className="field-error">Missing drafts: {pack.missingDraftTargets.join(", ")}</p>
-          )}
-          {pack.missingNotionPages.length > 0 && (
-            <p className="field-error">Missing pages: {pack.missingNotionPages.join(", ")}</p>
-          )}
         </div>
       ))}
     </section>

@@ -244,54 +244,16 @@ body {
   margin: 1rem 0;
 }
 
-.pack-heading {
+.card-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.pack-heading h3,
-.pack-heading p {
+.card-heading h3,
+.card-heading p {
   margin: 0 0 0.35rem;
-}
-
-.draft-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.draft-grid button {
-  min-height: 4.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-}
-
-.draft-grid button span {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.draft-reader {
-  position: sticky;
-  bottom: 1rem;
-  z-index: 2;
-  box-shadow: 0 8px 28px rgba(26, 34, 51, 0.18);
-}
-
-.draft-reader pre {
-  max-height: 24rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding: 1rem;
-  background: var(--surface-alt);
-  border: 1px solid var(--line);
-  border-radius: 6px;
 }
 
 .health-grid {
