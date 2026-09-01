@@ -1,6 +1,8 @@
 import type {
+  ContentResearchProfilePin,
   ContentResearchRunResult,
   NamedPerson,
+  PersonProfileProjection,
   ResonanceReport,
   SourceItem,
 } from "@chief-of-staff-demo/shared";
@@ -32,10 +34,12 @@ export const CONTENT_RESEARCH_BACKFILL_INTAKE = "content-research-backfill";
 export const CONTENT_RESEARCH_DISCOVERY_INTAKE = "people-discovery";
 
 export type ContentResearchInput = { kind: "intake"; invocation: "manual" | "scheduled" };
-
 export interface ContentResearchModuleDeps {
   store: ContentResearchStore;
   adapters: SourceAdapter[];
+  /** The public-safe Profile projection seam (spec #134): every Run resolves
+      the watch's Profile through it and pins what it used. */
+  profileProjection: (profileId: string) => PersonProfileProjection | null;
   hookExtractor: HookExtractor;
   sheets: () => SheetsAccess;
   gmail: () => GmailAccess;
@@ -49,6 +53,7 @@ export interface ContentResearchModuleDeps {
 export interface ContentResearchBackfillDeps {
   store: ContentResearchStore;
   adapters: SourceAdapter[];
+  profileProjection: (profileId: string) => PersonProfileProjection | null;
   hookExtractor: HookExtractor;
   sheets: () => SheetsAccess;
   gmail: () => GmailAccess;
@@ -174,11 +179,12 @@ async function publishReports(
   reports: ResonanceReport[],
   adapters: ContentResearchRunResult["adapters"],
   subject: string,
+  profilePins: ContentResearchProfilePin[],
 ): Promise<ContentResearchRunResult> {
   const ledgerRows = reports.flatMap((report) =>
     report.items.map((item) => ledgerRowFor(report, item)),
   );
-  const result: ContentResearchRunResult = { reports, adapters, ledgerRows };
+  const result: ContentResearchRunResult = { reports, adapters, ledgerRows, profilePins };
 
   ctx.writeFile("result.json", `${JSON.stringify(result, null, 2)}\n`);
   ctx.event("local_persisted", { reports: reports.length, ledgerRows: ledgerRows.length });
@@ -294,6 +300,40 @@ function rememberCollectionState(
       entry.result.conditional ?? null,
     );
   }
+}
+
+/**
+ * Resolve every watch's Profile through the public-safe projection seam before
+ * anything is collected (spec #134): the Run pins the exact revision and
+ * projection it used, and a person whose Profile is no longer projectable —
+ * archived, merged away, privacy-deleted — is skipped for this Run rather than
+ * collected against a guess. One unavailable Profile never fails the Run.
+ */
+function pinProfilesFor(
+  people: NamedPerson[],
+  profileProjection: (profileId: string) => PersonProfileProjection | null,
+  ctx: RunContext,
+): { people: NamedPerson[]; pins: ContentResearchProfilePin[] } {
+  const runnable: NamedPerson[] = [];
+  const pins: ContentResearchProfilePin[] = [];
+  for (const person of people) {
+    const projection = person.profileId ? profileProjection(person.profileId) : null;
+    if (projection?.purpose !== "public-safe") {
+      ctx.event("profile_projection_unavailable", {
+        personId: person.id,
+        profileId: person.profileId,
+      });
+      continue;
+    }
+    runnable.push(person);
+    pins.push({
+      personId: person.id,
+      profileId: projection.profileId,
+      profileRevision: projection.profileRevision,
+      projection,
+    });
+  }
+  return { people: runnable, pins };
 }
 
 function attributeItemsPerPerson(
@@ -464,13 +504,20 @@ export function contentResearchModule(
       };
     },
     async run(ctx: RunContext): Promise<RunOutcome> {
-      const people = deps.store.listPeople();
-      if (people.length === 0) {
+      const watched = deps.store.listPeople();
+      let people: NamedPerson[] = watched;
+      let profilePins: ContentResearchProfilePin[] = [];
+      if (watched.length === 0) {
         await ctx.stage("collect", async () => {
           ctx.event("no_people", {});
+          const emptyResult: ContentResearchRunResult = {
+            reports: [],
+            adapters: [],
+            ledgerRows: [],
+            profilePins: [],
+          };
+          ctx.writeFile("result.json", `${JSON.stringify(emptyResult, null, 2)}\n`);
         });
-        const emptyResult: ContentResearchRunResult = { reports: [], adapters: [], ledgerRows: [] };
-        ctx.writeFile("result.json", `${JSON.stringify(emptyResult, null, 2)}\n`);
         return { status: "done", summary: "No Named People — nothing to research" };
       }
 
@@ -485,6 +532,21 @@ export function contentResearchModule(
       let collected: Awaited<ReturnType<typeof collectContentResearch>> = [];
       const adapterSummaries: ContentResearchRunResult["adapters"] = [];
       await ctx.stage("collect", async () => {
+        /* Pin every watch's Profile before anything is collected (spec #134);
+           a person whose Profile is no longer projectable is skipped here. */
+        const pinned = pinProfilesFor(watched, deps.profileProjection, ctx);
+        people = pinned.people;
+        profilePins = pinned.pins;
+        if (people.length === 0) {
+          const emptyResult: ContentResearchRunResult = {
+            reports: [],
+            adapters: [],
+            ledgerRows: [],
+            profilePins,
+          };
+          ctx.writeFile("result.json", `${JSON.stringify(emptyResult, null, 2)}\n`);
+          return;
+        }
         const personsTargets = people.map((person) => ({
           id: person.id,
           name: person.name,
@@ -524,6 +586,9 @@ export function contentResearchModule(
         rememberCollectionState(collected, deps.store);
         ctx.event("collect_done", { collected: collected.length });
       });
+      if (people.length === 0) {
+        return { status: "done", summary: "No watchable Profiles — nothing to research" };
+      }
 
       let perPersonItems: PersonItems = new Map();
       await ctx.stage("normalize", async () => {
@@ -574,6 +639,7 @@ export function contentResearchModule(
           reports,
           adapterSummaries,
           `Content Research — ${now().toISOString().slice(0, 10)} — ${reports.length} people resonating`,
+          profilePins,
         );
 
         if (reports.some((r) => r.items.length > 0)) {
@@ -637,12 +703,16 @@ export function contentResearchBackfillModule(
       };
     },
     async run(ctx: RunContext, input: { windowDays: 7 | 30 | 90 }): Promise<RunOutcome> {
-      const people = deps.store.listPeople();
-      if (people.length === 0) {
-        ctx.writeFile(
-          "result.json",
-          JSON.stringify({ reports: [], adapters: [], ledgerRows: [] }, null, 2),
-        );
+      const watched = deps.store.listPeople();
+      let people: NamedPerson[] = watched;
+      let profilePins: ContentResearchProfilePin[] = [];
+      if (watched.length === 0) {
+        await ctx.stage("collect", async () => {
+          ctx.writeFile(
+            "result.json",
+            JSON.stringify({ reports: [], adapters: [], ledgerRows: [], profilePins: [] }, null, 2),
+          );
+        });
         return { status: "done", summary: "No Named People — nothing to backfill" };
       }
       const windowDays = input.windowDays;
@@ -652,6 +722,18 @@ export function contentResearchBackfillModule(
 
       let collected: Awaited<ReturnType<typeof collectContentResearch>> = [];
       await ctx.stage("collect", async () => {
+        /* Pin every watch's Profile before anything is collected (spec #134);
+           a person whose Profile is no longer projectable is skipped here. */
+        const pinned = pinProfilesFor(watched, deps.profileProjection, ctx);
+        people = pinned.people;
+        profilePins = pinned.pins;
+        if (people.length === 0) {
+          ctx.writeFile(
+            "result.json",
+            JSON.stringify({ reports: [], adapters: [], ledgerRows: [], profilePins }, null, 2),
+          );
+          return;
+        }
         /* Per-target isolation, not a Run-fatal pre-check: adapters that honor
            the window collect, and collection.ts records each target an adapter
            cannot honestly backfill as unsupported_capability. */
@@ -690,6 +772,9 @@ export function contentResearchBackfillModule(
           unsupported: unsupportedCount,
         });
       });
+      if (people.length === 0) {
+        return { status: "done", summary: "No watchable Profiles — nothing to backfill" };
+      }
 
       /* The backfill runs the same Stages the daily Run does, over the same
          helpers: attributing globally-deduped items per Person, scoring each
@@ -738,6 +823,7 @@ export function contentResearchBackfillModule(
             errorClassifications: entry.result.kind === "failed" ? [entry.result.outcome] : [],
           })),
           `Content Research backfill ${windowDays}d — ${reports.length} people`,
+          profilePins,
         );
       });
 

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import {
   CONTENT_RESEARCH_MODULE_ID,
@@ -6,6 +6,7 @@ import {
   type ContentResearchIndex,
   type ContentResearchRunResult,
   type NamedPerson,
+  type PersonProfileProjection,
   type PersonSuggestion,
   type RunMeta,
   type SourceItem,
@@ -31,10 +32,30 @@ import {
 import { DateTime } from "luxon";
 import { errorMessage } from "../../engine/failure.js";
 
+/**
+ * Why a watch creation or activation was refused (spec #134): a Named Person
+ * is always backed by a confirmed Person Profile, never by a bare name.
+ */
+export class ContentResearchProfileRefusal extends Error {
+  constructor(
+    public readonly code: "profile-required" | "profile-not-found",
+    message: string,
+  ) {
+    super(message);
+    this.name = "ContentResearchProfileRefusal";
+  }
+}
+
 export interface ContentResearchHostDeps {
   runs: Runs;
   workspaceDir: string;
   adapters: SourceAdapter[];
+  /** The public-safe Profile projection seam (spec #134). Watches are created
+      and re-activated only through it — never against a bare name. */
+  profileProjection: (profileId: string) => PersonProfileProjection | null;
+  /** Injected so the Profile lifecycle registry can be composed over the same
+      store; defaults to a private store when nobody else holds one. */
+  store?: ContentResearchStore;
   hookExtractor: HookExtractor;
   discoverer?: PeopleDiscoverer;
   sheetsFactory?: () => SheetsAccess;
@@ -68,7 +89,7 @@ export class ContentResearchHost implements HostedModule {
     const log = deps.log ?? (() => {});
     const sleep =
       deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-    this.store = new ContentResearchStore(deps.workspaceDir, now);
+    this.store = deps.store ?? new ContentResearchStore(deps.workspaceDir, now);
     this.discoverFeeds = deps.discoverFeeds ?? createFeedDiscoverer();
 
     const hookExtractor = deps.hookExtractor;
@@ -81,6 +102,7 @@ export class ContentResearchHost implements HostedModule {
       module: contentResearchModule({
         store: this.store,
         adapters: deps.adapters,
+        profileProjection: deps.profileProjection,
         hookExtractor,
         sheets,
         gmail,
@@ -99,6 +121,7 @@ export class ContentResearchHost implements HostedModule {
       module: contentResearchBackfillModule({
         store: this.store,
         adapters: deps.adapters,
+        profileProjection: deps.profileProjection,
         hookExtractor,
         sheets,
         gmail,
@@ -129,12 +152,58 @@ export class ContentResearchHost implements HostedModule {
     });
   }
 
+  /**
+   * The watch-creation seam (spec #134): a Named Person is created only against
+   * a confirmed Profile. The projection is resolved first, so the watch's name
+   * is the public-safe projection's own name and an unknown, archived, merged,
+   * or privacy-deleted Profile never becomes a watch.
+   */
   addPerson(input: {
-    name: string;
+    /** Optional at the type level so an absent id answers the typed refusal
+        instead of a TypeError; the route coerces a missing field to "". */
+    profileId?: string;
     handleHints?: NamedPerson["handleHints"];
     discoveredSourceTargets?: NamedPerson["discoveredSourceTargets"];
   }): NamedPerson {
-    return this.store.addPerson(input);
+    const profileId = input.profileId?.trim() ?? "";
+    if (!profileId)
+      throw new ContentResearchProfileRefusal(
+        "profile-required",
+        "A watch needs a confirmed Profile id.",
+      );
+    const projection = this.deps.profileProjection(profileId);
+    if (projection?.purpose !== "public-safe")
+      throw new ContentResearchProfileRefusal(
+        "profile-not-found",
+        "No active Person Profile with that id — create and confirm one before watching.",
+      );
+    return this.store.addPerson({
+      profileId,
+      name: projection.fullName ?? profileId,
+      ...(input.handleHints ? { handleHints: input.handleHints } : {}),
+      ...(input.discoveredSourceTargets
+        ? { discoveredSourceTargets: input.discoveredSourceTargets }
+        : {}),
+    });
+  }
+
+  /** A paused watch stays configured — it is lifecycle state, not deletion. */
+  pauseWatch(personId: string): NamedPerson {
+    return this.store.pausePerson(personId);
+  }
+
+  /** Resuming re-resolves the Profile: a watch never reactivates against a
+      Profile that is archived, merged away, or privacy-deleted. */
+  resumeWatch(personId: string): NamedPerson {
+    const person = this.store.getPerson(personId);
+    if (!person) throw new Error(`Named Person not found: ${personId}`);
+    const projection = this.deps.profileProjection(person.profileId);
+    if (projection?.purpose !== "public-safe")
+      throw new ContentResearchProfileRefusal(
+        "profile-not-found",
+        "The Profile this watch points at is no longer active — re-point or archive the watch.",
+      );
+    return this.store.resumePerson(personId);
   }
 
   /**
@@ -214,12 +283,32 @@ export class ContentResearchHost implements HostedModule {
     return this.store.listSuggestions();
   }
 
+  /**
+   * Suggestion acceptance (spec #134): the operator must select an existing
+   * Profile — or create and confirm one — before the watch is created. The
+   * Profile is resolved here, at the same seam watch creation uses; the store
+   * refuses a name-only approval outright.
+   */
   decideSuggestion(
     id: string,
     decision: "approved" | "dismissed",
     reason: string | null,
+    profileId?: string,
   ): PersonSuggestion {
-    return this.store.decideSuggestion(id, decision, reason);
+    if (decision === "approved") {
+      if (!profileId)
+        throw new ContentResearchProfileRefusal(
+          "profile-required",
+          "Select or confirm a Profile for this suggestion before approving it.",
+        );
+      const projection = this.deps.profileProjection(profileId);
+      if (projection?.purpose !== "public-safe")
+        throw new ContentResearchProfileRefusal(
+          "profile-not-found",
+          "No active Person Profile with that id — create and confirm one before approving.",
+        );
+    }
+    return this.store.decideSuggestion(id, decision, reason, profileId);
   }
 
   restoreSuggestion(id: string): PersonSuggestion {
@@ -410,21 +499,24 @@ export class ContentResearchHost implements HostedModule {
   }
   routes(app: FastifyInstance): void {
     app.get("/api/content-research/people", async () => this.listPeople());
+    app.get("/api/content-research/people/all", async () => this.listAllPeople());
 
     app.post("/api/content-research/people", async (request, reply) => {
-      const body = (request.body ?? {}) as { name?: unknown; handleHints?: unknown };
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      if (!name) {
-        reply.code(400).send({ error: "name is required" });
-        return;
-      }
+      const body = (request.body ?? {}) as { profileId?: unknown; handleHints?: unknown };
       const handleHints = (body.handleHints as NamedPerson["handleHints"] | undefined) ?? {
         blogRssHints: [],
       };
-      const person = this.addPerson({ name, handleHints });
-      /* Adding a person is one click: their sites are asked what feeds they
-         publish before the answer comes back (spec #116 story 2). */
-      return this.resolveSourceTargets(person.id);
+      try {
+        const person = this.addPerson({
+          profileId: typeof body.profileId === "string" ? body.profileId : "",
+          handleHints,
+        });
+        /* Adding a person is one click: their sites are asked what feeds they
+           publish before the answer comes back (spec #116 story 2). */
+        return this.resolveSourceTargets(person.id);
+      } catch (error) {
+        return sendProfileOrUnknownError(reply, error);
+      }
     });
 
     /* Archived, not deleted: the Runs that already scored this person keep
@@ -443,16 +535,42 @@ export class ContentResearchHost implements HostedModule {
 
     app.post("/api/content-research/discovery/:id/approve", async (request, reply) => {
       const params = request.params as { id: string };
+      const body = (request.body ?? {}) as { profileId?: unknown };
       try {
-        const suggestion = this.decideSuggestion(params.id, "approved", null);
+        const suggestion = this.decideSuggestion(
+          params.id,
+          "approved",
+          null,
+          typeof body.profileId === "string" ? body.profileId : undefined,
+        );
         const person = this.listPeople().find(
           (candidate) => candidate.name.toLowerCase() === suggestion.name.toLowerCase(),
         );
         if (person) await this.resolveSourceTargets(person.id);
         return suggestion;
       } catch (error) {
-        reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
-        return;
+        return sendProfileOrUnknownError(reply, error);
+      }
+    });
+
+    /* Watch lifecycle (spec #134): pausing keeps the configuration while the
+       operator resolves the Profile-side decision; resuming re-resolves the
+       Profile through the projection seam. */
+    app.post("/api/content-research/people/:id/pause", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        return this.pauseWatch(id);
+      } catch (error) {
+        return sendProfileOrUnknownError(reply, error);
+      }
+    });
+
+    app.post("/api/content-research/people/:id/resume", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        return this.resumeWatch(id);
+      } catch (error) {
+        return sendProfileOrUnknownError(reply, error);
       }
     });
 
@@ -536,4 +654,19 @@ function parseLocalTime(value: string): [number, number] {
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   return hour <= 23 && minute <= 59 ? [hour, minute] : [0, 0];
+}
+
+/**
+ * Route mapping for the watch seams (spec #134): a Profile refusal answers with
+ * its typed code and message — 400 when no Profile id was stated, 404 when the
+ * stated one is not an active Profile — and anything else stays the plain
+ * unknown-entity answer the other watchlist routes use.
+ */
+function sendProfileOrUnknownError(reply: FastifyReply, error: unknown): unknown {
+  if (error instanceof ContentResearchProfileRefusal) {
+    reply.code(error.code === "profile-required" ? 400 : 404);
+    return { error: error.code, message: error.message };
+  }
+  reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+  return reply;
 }

@@ -27,7 +27,11 @@ test("person profiles journey — nav → search → create → detail → revis
     .click();
   await expect(page).toHaveURL(/\/people$/);
   await expect(page.getByRole("heading", { level: 1, name: "Person Profiles" })).toBeFocused();
-  await expect(page.getByText("No Profiles yet — create the first one.")).toBeVisible();
+  // The hermetic Workspace seeds the V1 Content Research watchlist, and every
+  // watch requires a confirmed Person Profile (#134) — so the list opens with
+  // those Profiles already present rather than empty.
+  await expect(page.getByRole("cell", { name: "Lenny Rachitsky" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Pieter Levels" })).toBeVisible();
 
   // 2. Manual creation is explicit and validates identity inputs.
   await page.getByRole("link", { name: "New profile" }).click();

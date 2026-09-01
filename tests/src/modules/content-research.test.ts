@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 import { ContentResearchHost } from "../../../apps/server/src/modules/content-research/host";
+import { ContentResearchProfileRefusal } from "../../../apps/server/src/modules/content-research/host";
 import { ContentResearchStore } from "../../../apps/server/src/modules/content-research/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import {
   CONTENT_RESEARCH_BACKFILL_INTAKE,
   CONTENT_RESEARCH_DISCOVERY_INTAKE,
@@ -26,7 +29,7 @@ import type {
   SourceAdapter,
   SourceCollectionResult,
 } from "../../../apps/server/src/source-adapters/source-adapter";
-import type { SourceItem } from "@chief-of-staff-demo/shared";
+import type { NamedPerson, PersonProfileProjection, SourceItem } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-30T08:00:00.000Z");
 
@@ -245,6 +248,35 @@ interface HarnessOptions {
   discoverFeeds?: FeedDiscoverer;
   searchPublic?: (query: string) => Promise<{ title: string; url: string; snippet: string }[]>;
   ownerEmail?: string | null;
+  profileProjection?: (profileId: string) => PersonProfileProjection | null;
+}
+
+/**
+ * Creates the confirmed Profile a watch is backed by, then the watch itself.
+ * The seam under test (#134) takes a Profile id, never a bare name.
+ */
+function watchProfile(
+  host: ContentResearchHost,
+  people: WorkspacePersonProfiles,
+  input: {
+    fullName: string;
+    email?: string;
+    handleHints?: NamedPerson["handleHints"];
+    discoveredSourceTargets?: NamedPerson["discoveredSourceTargets"];
+  },
+): NamedPerson {
+  const profile = people.create({
+    fullName: input.fullName,
+    primaryEmail:
+      input.email ?? `${input.fullName.toLowerCase().replace(/[^a-z]+/g, ".")}@example.com`,
+  });
+  return host.addPerson({
+    profileId: profile.id,
+    ...(input.handleHints ? { handleHints: input.handleHints } : {}),
+    ...(input.discoveredSourceTargets
+      ? { discoveredSourceTargets: input.discoveredSourceTargets }
+      : {}),
+  });
 }
 
 function makeHarness(options: HarnessOptions) {
@@ -253,6 +285,15 @@ function makeHarness(options: HarnessOptions) {
   const hookExtractor = options.hookExtractor ?? makeHookExtractor();
   const sheets = options.sheets ?? makeSheets();
   const gmail = options.gmail ?? makeGmail();
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(workspaceDir),
+    /* An empty registry list is the explicit claim that this test Workspace
+       holds no other Profile references; the lifecycle tests compose theirs. */
+    lifecycle: [],
+    now,
+  });
+  const profileProjection =
+    options.profileProjection ?? ((profileId: string) => people.project("public-safe", profileId));
   const host = new ContentResearchHost({
     runs,
     workspaceDir,
@@ -266,10 +307,11 @@ function makeHarness(options: HarnessOptions) {
     getOwnerEmail: () =>
       options.ownerEmail === undefined ? "owner@example.com" : options.ownerEmail,
     now,
+    profileProjection,
     log: () => {},
     sleep: () => Promise.resolve(),
   });
-  return { workspaceDir, runs, host, hookExtractor, sheets, gmail };
+  return { workspaceDir, runs, host, people, profileProjection, hookExtractor, sheets, gmail };
 }
 
 interface RunResultShape {
@@ -297,14 +339,14 @@ describe("Content Research", () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
     const hn = makeAdapter({ id: "hn", itemsFor: () => [], backfillWindowsDays: [7, 30, 90] });
-    const { workspaceDir, runs, host, gmail } = makeHarness({ adapters: [rss, hn] });
+    const { workspaceDir, runs, host, gmail, people } = makeHarness({ adapters: [rss, hn] });
 
-    const ben = host.addPerson({
-      name: "Ben",
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
-    const ava = host.addPerson({
-      name: "Ava",
+    const ava = watchProfile(host, people, {
+      fullName: "Ava",
       handleHints: { blogRssHints: ["https://ava.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -361,9 +403,9 @@ describe("Content Research", () => {
   it("does not create the owner-only Gmail draft without a confirmed owner identity", async () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
-    const { runs, host, gmail } = makeHarness({ adapters: [rss], ownerEmail: null });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { runs, host, gmail, people } = makeHarness({ adapters: [rss], ownerEmail: null });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -390,9 +432,9 @@ describe("Content Research", () => {
        validators have to be remembered against the URL or every fetch is
        unconditional (spec #116 story 8). */
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host } = makeHarness({ adapters: [rss] });
-    host.addPerson({
-      name: "Ada",
+    const { host, people } = makeHarness({ adapters: [rss] });
+    watchProfile(host, people, {
+      fullName: "Ada",
       handleHints: { blogRssHints: ["https://ada.example/feed"] },
     });
 
@@ -427,14 +469,14 @@ describe("Content Research", () => {
       id: "youtube",
       itemsFor: (pid) => (pid === avaId ? [makeItem({ ...shared, adapterId: "youtube" })] : []),
     });
-    const { runs, host } = makeHarness({ adapters: [rss, youtube] });
+    const { runs, host, people } = makeHarness({ adapters: [rss, youtube] });
 
-    const ben = host.addPerson({
-      name: "Ben",
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
-    const ava = host.addPerson({
-      name: "Ava",
+    const ava = watchProfile(host, people, {
+      fullName: "Ava",
       handleHints: { blogRssHints: [], youtubeChannelId: "UC_ava" },
     });
     const benId = ben.id;
@@ -457,14 +499,17 @@ describe("Content Research", () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
     const hooks = makeHookExtractor();
-    const { runs, host, hookExtractor } = makeHarness({ adapters: [rss], hookExtractor: hooks });
+    const { runs, host, hookExtractor, people } = makeHarness({
+      adapters: [rss],
+      hookExtractor: hooks,
+    });
 
-    const ben = host.addPerson({
-      name: "Ben",
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
-    const ava = host.addPerson({
-      name: "Ava",
+    const ava = watchProfile(host, people, {
+      fullName: "Ava",
       handleHints: { blogRssHints: ["https://ava.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -485,8 +530,11 @@ describe("Content Research", () => {
 
   it("48h overlap checkpoint advances: the second daily run looks back from the checkpoint, not another 7 days", async () => {
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { runs, host } = makeHarness({ adapters: [rss] });
-    host.addPerson({ name: "Ben", handleHints: { blogRssHints: ["https://ben.example/feed"] } });
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
 
     const first = await host.researchNow();
     await host.idle();
@@ -509,8 +557,11 @@ describe("Content Research", () => {
 
   it("backfill: an unsupported window fails explicitly; a supported window passes a genuine historical since", async () => {
     const rss = makeAdapter({ id: "rss", itemsFor: () => [], backfillWindowsDays: [7] });
-    const { runs, host } = makeHarness({ adapters: [rss] });
-    host.addPerson({ name: "Ben", handleHints: { blogRssHints: ["https://ben.example/feed"] } });
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
 
     const refused = await host.backfillNow(30);
     await host.idle();
@@ -529,9 +580,9 @@ describe("Content Research", () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
     const sick = makeAdapter({ id: "reddit", itemsFor: () => [], failWith: rateLimitedResult() });
-    const { runs, host } = makeHarness({ adapters: [rss, sick] });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { runs, host, people } = makeHarness({ adapters: [rss, sick] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -554,9 +605,9 @@ describe("Content Research", () => {
   it("velocity: with a 90-day baseline the score is a z-score against the person, not the raw count", async () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
-    const { workspaceDir, runs, host } = makeHarness({ adapters: [rss] });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { workspaceDir, runs, host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -584,9 +635,9 @@ describe("Content Research", () => {
   it("resonance ranking orders each person's report by score", async () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
-    const { runs, host } = makeHarness({ adapters: [rss] });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -624,9 +675,9 @@ describe("Content Research", () => {
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
     const sheets = makeSheets();
     const gmail = makeGmail({ failFirst: 1 });
-    const { runs, host } = makeHarness({ adapters: [rss], sheets, gmail });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { runs, host, people } = makeHarness({ adapters: [rss], sheets, gmail });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -660,9 +711,9 @@ describe("Content Research", () => {
   it("a Home notification fires when at least one person has new resonance", async () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
-    const { runs, host } = makeHarness({ adapters: [rss] });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -694,7 +745,7 @@ describe("Content Research", () => {
       },
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host } = makeHarness({
+    const { host, people } = makeHarness({
       adapters: [rss],
       discoverer,
       searchPublic: async (query) => {
@@ -702,7 +753,7 @@ describe("Content Research", () => {
         return [{ title: "Ada and Grace", url: "https://example.com/a", snippet: "co-mention" }];
       },
     });
-    host.addPerson({ name: "Ada", handleHints: { blogRssHints: [] } });
+    watchProfile(host, people, { fullName: "Ada", handleHints: { blogRssHints: [] } });
 
     await host.discoverNow();
     await host.idle();
@@ -718,7 +769,7 @@ describe("Content Research", () => {
         throw new Error("search unavailable");
       },
     });
-    sick.host.addPerson({ name: "Ada", handleHints: { blogRssHints: [] } });
+    watchProfile(sick.host, sick.people, { fullName: "Ada", handleHints: { blogRssHints: [] } });
     const sickRunId = await sick.host.discoverNow();
     await sick.host.idle();
     expect(sick.runs.open(sickRunId)?.read().status).toBe("done");
@@ -740,8 +791,11 @@ describe("Content Research", () => {
       },
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { runs, host } = makeHarness({ adapters: [rss], discoverer });
-    host.addPerson({ name: "Ben", handleHints: { blogRssHints: ["https://ben.example/feed"] } });
+    const { runs, host, people } = makeHarness({ adapters: [rss], discoverer });
+    watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
 
     const runId = await host.discoverNow();
     await host.idle();
@@ -752,9 +806,17 @@ describe("Content Research", () => {
     expect(suggestions[0]?.state).toBe("pending");
     expect(suggestions[0]?.relationshipToBrand).toBe("admired systems pioneer");
 
-    // Approve: the suggestion becomes a watched Named Person in one click.
-    host.decideSuggestion(suggestions[0].id, "approved", null);
+    // Approve: the operator selects an existing Profile (or creates and
+    // confirms one) — then the watch is created (#134).
+    const graceProfile = people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+    host.decideSuggestion(suggestions[0].id, "approved", null, graceProfile.id);
     expect(host.listPeople().map((p) => p.name)).toContain("Grace Hopper");
+    expect(host.listPeople().find((p) => p.name === "Grace Hopper")?.profileId).toBe(
+      graceProfile.id,
+    );
 
     // A second discovery run does not re-suggest someone already watched.
     const second = await host.discoverNow();
@@ -777,8 +839,11 @@ describe("Content Research", () => {
       ],
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host } = makeHarness({ adapters: [rss], discoverer });
-    host.addPerson({ name: "Ben", handleHints: { blogRssHints: ["https://ben.example/feed"] } });
+    const { host, people } = makeHarness({ adapters: [rss], discoverer });
+    watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
 
     await host.discoverNow();
     await host.idle();
@@ -801,9 +866,9 @@ describe("Content Research", () => {
   it("the cross-Run index groups reports by person, newest report first", async () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
-    const { host } = makeHarness({ adapters: [rss] });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"] },
     });
     perPerson.set(ben.id, [
@@ -836,8 +901,8 @@ describe("Content Research", () => {
     const reddit = makeAdapter({ id: "reddit", itemsFor: () => [] });
     const hn = makeAdapter({ id: "hn", itemsFor: () => [], backfillWindowsDays: [7, 30, 90] });
     const news = makeAdapter({ id: "news", itemsFor: () => [] });
-    const { host } = makeHarness({ adapters: [rss, reddit, hn, news] });
-    const ava = host.addPerson({ name: "Ava", handleHints: { blogRssHints: [] } });
+    const { host, people } = makeHarness({ adapters: [rss, reddit, hn, news] });
+    const ava = watchProfile(host, people, { fullName: "Ava", handleHints: { blogRssHints: [] } });
 
     await host.researchNow();
     await host.idle();
@@ -873,10 +938,10 @@ describe("Content Research", () => {
         : [];
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host } = makeHarness({ adapters: [rss], discoverFeeds });
+    const { host, people } = makeHarness({ adapters: [rss], discoverFeeds });
 
-    const ben = host.addPerson({
-      name: "Ben",
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/some/post"] },
     });
     const resolved = await host.resolveSourceTargets(ben.id);
@@ -900,9 +965,9 @@ describe("Content Research", () => {
       throw new Error("ENOTFOUND");
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host } = makeHarness({ adapters: [rss], discoverFeeds });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { host, people } = makeHarness({ adapters: [rss], discoverFeeds });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/"] },
     });
 
@@ -926,13 +991,17 @@ describe("Content Research", () => {
       ],
     };
     const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
-    const { host } = makeHarness({ adapters: [rss], discoverer, discoverFeeds });
-    host.addPerson({ name: "Ben", handleHints: { blogRssHints: [] } });
+    const { host, people } = makeHarness({ adapters: [rss], discoverer, discoverFeeds });
+    watchProfile(host, people, { fullName: "Ben", handleHints: { blogRssHints: [] } });
 
     await host.discoverNow();
     await host.idle();
     const suggestion = host.listSuggestions()[0];
-    host.decideSuggestion(suggestion.id, "approved", null);
+    const graceProfile = people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+    host.decideSuggestion(suggestion.id, "approved", null, graceProfile.id);
 
     const grace = host.listPeople().find((p) => p.name === "Grace Hopper")!;
     // The supporting URL's site is watched straight away…
@@ -951,9 +1020,9 @@ describe("Content Research", () => {
     const perPerson = new Map<string, SourceItem[]>();
     const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
     const youtube = makeAdapter({ id: "youtube", itemsFor: (pid) => perPerson.get(pid) ?? [] });
-    const { runs, host } = makeHarness({ adapters: [rss, youtube] });
-    const ben = host.addPerson({
-      name: "Ben",
+    const { runs, host, people } = makeHarness({ adapters: [rss, youtube] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
       handleHints: { blogRssHints: ["https://ben.example/feed"], youtubeChannelId: "UCben" },
     });
     perPerson.set(ben.id, [
@@ -1036,5 +1105,225 @@ describe("Content Research recovery ownership", () => {
       null,
     );
     expect(module.planRecovery?.(runAwaitingRecovery(CONTENT_RESEARCH_BACKFILL_INTAKE))).toBe(null);
+  });
+});
+
+describe("Profile-backed watches (#134)", () => {
+  it("refuses to watch a name without a confirmed Profile", () => {
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const { host } = makeHarness({ adapters: [rss] });
+
+    expect(() => host.addPerson({})).toThrow(
+      new ContentResearchProfileRefusal(
+        "profile-required",
+        "A watch needs a confirmed Profile id.",
+      ),
+    );
+    expect(() => host.addPerson({ profileId: "person_does_not_exist" })).toThrow(
+      new ContentResearchProfileRefusal(
+        "profile-not-found",
+        "No active Person Profile with that id — create and confirm one before watching.",
+      ),
+    );
+    /* The refusal leaves no half-created watch behind. */
+    expect(host.listPeople()).toEqual([]);
+  });
+
+  it("backs the watch with the Profile: the name is the public-safe projection's, and one Profile is one watch", () => {
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const { host, people } = makeHarness({ adapters: [rss] });
+
+    const person = watchProfile(host, people, { fullName: "Ada Lovelace" });
+    expect(person.profileId).toBe(people.get(person.profileId)!.id);
+    expect(person.name).toBe("Ada Lovelace");
+    expect(person.pausedAt).toBeNull();
+
+    /* Watching the same Profile twice returns the existing watch — the
+       confirmed identity, not the name, is the watch's key. Two distinct
+       Profiles that happen to share a name are two watches. */
+    const again = host.addPerson({ profileId: person.profileId });
+    expect(again.id).toBe(person.id);
+    const twinProfile = people.create({
+      fullName: "Ada Lovelace",
+      primaryEmail: "ada.twin@example.com",
+    });
+    const twin = host.addPerson({ profileId: twinProfile.id });
+    expect(twin.id).not.toBe(person.id);
+    expect(host.listPeople()).toHaveLength(2);
+  });
+
+  it("approving a Person Suggestion requires selecting a confirmed Profile first", async () => {
+    const rss = makeAdapter({ id: "rss", itemsFor: () => [] });
+    const discoverer: PeopleDiscoverer = {
+      discover: async () => [
+        {
+          name: "Grace Hopper",
+          reason: "co-mentioned with Ada",
+          supportingUrls: ["https://grace.example/post"],
+          relationshipToBrand: "peer",
+          source: "llm-public-search",
+        },
+      ],
+    };
+    const { host, people } = makeHarness({ adapters: [rss], discoverer });
+    watchProfile(host, people, { fullName: "Ada Lovelace" });
+    await host.discoverNow();
+    await host.idle();
+    const [suggestion] = host.listSuggestions();
+
+    /* A name-only approval creates nothing: the decision is refused until a
+       Profile is selected or created and confirmed. */
+    expect(() => host.decideSuggestion(suggestion.id, "approved", null)).toThrow(
+      ContentResearchProfileRefusal,
+    );
+    expect(() =>
+      host.decideSuggestion(suggestion.id, "approved", null, "person_does_not_exist"),
+    ).toThrow(ContentResearchProfileRefusal);
+    expect(suggestion.state).toBe("pending");
+    expect(host.listPeople()).toHaveLength(1);
+    const profile = people.create({ fullName: "Grace Hopper" });
+    const approved = host.decideSuggestion(suggestion.id, "approved", null, profile.id);
+    expect(approved.state).toBe("approved");
+    const watched = host.listPeople().find((p) => p.profileId === profile.id);
+    expect(watched?.name).toBe("Grace Hopper");
+    expect(watched?.discoveredSourceTargets.map((t) => t.url)).toEqual(["https://grace.example/"]);
+  });
+
+  it("each Run pins the exact Profile revision and public-safe projection it used", async () => {
+    const perPerson = new Map<string, SourceItem[]>();
+    const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    perPerson.set("ben", [
+      makeItem({ url: "https://ben.example/a", title: "A", adapterId: "rss" }),
+    ]);
+
+    const first = await host.researchNow();
+    await host.idle();
+    const firstResult = JSON.parse(runs.open(first)!.readArtifact("result.json")!) as {
+      profilePins: {
+        personId: string;
+        profileId: string;
+        profileRevision: number;
+        projection: { purpose: string; profileRevision: number; fullName: string | null };
+      }[];
+    };
+    expect(firstResult.profilePins).toHaveLength(1);
+    const pin = firstResult.profilePins[0];
+    expect(pin.profileId).toMatch(/^person_/);
+    expect(pin.profileRevision).toBe(1);
+    expect(pin.projection.purpose).toBe("public-safe");
+    expect(pin.projection.fullName).toBe("Ben");
+
+    /* A correction files a new revision; the next Run pins that exact revision
+       and its projection, not whatever is current when the report is read. */
+    people.correct(pin.profileId, { fullName: "Benjamin" });
+    perPerson.set("ben", []);
+    const second = await host.researchNow();
+    await host.idle();
+    const secondResult = JSON.parse(runs.open(second)!.readArtifact("result.json")!) as {
+      profilePins: {
+        profileRevision: number;
+        projection: { profileRevision: number; fullName: string | null };
+      }[];
+    };
+    expect(secondResult.profilePins[0].profileRevision).toBe(2);
+    expect(secondResult.profilePins[0].projection.fullName).toBe("Benjamin");
+    /* The first Run's pin is untouched history. */
+    expect(firstResult.profilePins[0].projection.fullName).toBe("Ben");
+  });
+
+  it("a Run skips a person whose Profile is no longer projectable and still completes", async () => {
+    const perPerson = new Map<string, SourceItem[]>();
+    const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    perPerson.set(ben.id, [
+      makeItem({ url: "https://ben.example/a", title: "A", adapterId: "rss" }),
+    ]);
+
+    people.archive(ben.profileId);
+    const runId = await host.researchNow();
+    await host.idle();
+
+    expect(runs.open(runId)?.read().status).toBe("done");
+    const events = runs.detail(runId)!.events.map((event) => event.type);
+    expect(events).toContain("profile_projection_unavailable");
+    const result = JSON.parse(runs.open(runId)!.readArtifact("result.json")!) as {
+      reports: unknown[];
+      profilePins: unknown[];
+    };
+    expect(result.reports).toEqual([]);
+    expect(result.profilePins).toEqual([]);
+  });
+
+  it("pausing a watch stops its collection without touching its baseline, and resume reactivates it", async () => {
+    const perPerson = new Map<string, SourceItem[]>();
+    const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
+    const { runs, host, people } = makeHarness({ adapters: [rss] });
+    const ben = watchProfile(host, people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    perPerson.set(ben.id, [
+      makeItem({ url: "https://ben.example/a", title: "A", adapterId: "rss" }),
+    ]);
+
+    const first = await host.researchNow();
+    await host.idle();
+    expect(readResult(runs, first).reports).toHaveLength(1);
+
+    host.pauseWatch(ben.id);
+    perPerson.set(ben.id, [
+      makeItem({ url: "https://ben.example/b", title: "B", adapterId: "rss" }),
+    ]);
+    const second = await host.researchNow();
+    await host.idle();
+    expect(readResult(runs, second).reports).toEqual([]);
+    expect(host.listPeople()).toEqual([]); /* paused watches are not scheduled */
+    expect(host.listAllPeople().find((p) => p.id === ben.id)?.pausedAt).not.toBeNull();
+
+    host.resumeWatch(ben.id);
+    expect(host.listPeople()).toHaveLength(1);
+  });
+  it("post-reset: a clean Workspace opens a new ledger Sheet; old remote outputs are neither cleared nor reconciled", async () => {
+    const perPerson = new Map<string, SourceItem[]>();
+    const rss = makeAdapter({ id: "rss", itemsFor: (pid) => perPerson.get(pid) ?? [] });
+    const sheets = makeSheets();
+    const before = makeHarness({ adapters: [rss], sheets });
+    const ben = watchProfile(before.host, before.people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    perPerson.set(ben.id, [
+      makeItem({ url: "https://ben.example/a", title: "A", adapterId: "rss" }),
+    ]);
+    await before.host.researchNow();
+    await before.host.idle();
+    expect(sheets.createdCount()).toBe(1);
+
+    /* A reset Workspace holds no ledger reference, so the next Run asks for a
+       clean new Sheet and seeds it from the Run's own rows — it never reaches
+       back into the old spreadsheet to clear or reconcile it. */
+    const after = makeHarness({ adapters: [rss], sheets });
+    const benAfter = watchProfile(after.host, after.people, {
+      fullName: "Ben",
+      handleHints: { blogRssHints: ["https://ben.example/feed"] },
+    });
+    perPerson.set(benAfter.id, [
+      makeItem({ url: "https://ben.example/a", title: "A", adapterId: "rss" }),
+    ]);
+    await after.host.researchNow();
+    await after.host.idle();
+
+    expect(sheets.createdCount()).toBe(2);
+    /* The new Sheet was populated from this Run; nothing was written twice. */
+    expect(sheets.appended.at(-1)).toHaveLength(1);
   });
 });
