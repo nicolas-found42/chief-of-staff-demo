@@ -718,3 +718,100 @@ describe("WorkspaceContentProjects revisions", () => {
     expect(reread.revisions[1]?.outlineBriefApprovals).toEqual([]);
   });
 });
+
+describe("WorkspaceContentProjects opportunity relationship (#133)", () => {
+  it("records the source Content Opportunity on the first revision and seeds the angle and evidence into the Project", () => {
+    const { projects } = setup();
+    const project = projects.create({
+      subject: { kind: "topic", topic: "Explain what the verified change means in practice" },
+      objective: "educate",
+      audience: "Operations leads",
+      constraints: [],
+      targets: ["linkedin-standard-post"],
+      researchMode: "existing-workspace-evidence",
+      seedMaterial: [],
+      sourceOpportunity: {
+        opportunityId: "opportunity-1",
+        runId: "run_1",
+        title: "Explain what the verified change means in practice",
+        angle: "practical_implication",
+        angleDescription: "Explain the practical impact of the verified change.",
+        sourceUrls: ["https://example.com/story-1", "https://example.com/story-a"],
+        brandProfileRevisionId: "brand_1",
+      },
+    });
+    const revision = project.revisions[0];
+    expect(revision.sourceOpportunity).toEqual({
+      opportunityId: "opportunity-1",
+      runId: "run_1",
+      title: "Explain what the verified change means in practice",
+      angle: "practical_implication",
+      angleDescription: "Explain the practical impact of the verified change.",
+      sourceUrls: ["https://example.com/story-1", "https://example.com/story-a"],
+      brandProfileRevisionId: "brand_1",
+      recordedAt: NOW.toISOString(),
+    });
+    expect(revision.outlineBriefs).toEqual([]);
+    expect(revision.platformOutlines).toEqual([]);
+    expect(revision.drafts).toEqual([]);
+  });
+
+  it("refuses a second Project for an opportunity already linked and finds the Project by opportunity id", () => {
+    const { projects } = setup();
+    const input = {
+      subject: { kind: "topic", topic: "Explain what the verified change means in practice" },
+      objective: "educate",
+      audience: "Operations leads",
+      constraints: [],
+      targets: ["linkedin-standard-post"],
+      researchMode: "existing-workspace-evidence",
+      seedMaterial: [],
+      sourceOpportunity: {
+        opportunityId: "opportunity-1",
+        runId: "run_1",
+        title: "Explain what the verified change means in practice",
+        angle: "practical_implication",
+        angleDescription: "Explain the practical impact of the verified change.",
+        sourceUrls: ["https://example.com/story-1"],
+        brandProfileRevisionId: "brand_1",
+      },
+    } satisfies ContentProjectCreateInput;
+    const first = projects.create(input);
+    expect(projects.projectByOpportunity("opportunity-1")?.id).toBe(first.id);
+    expect(() =>
+      projects.create({ ...input, subject: { kind: "topic", topic: "Re-selection" } }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ContentProjectError>>({ code: "opportunity-already-linked" }),
+    );
+    expect(projects.get(first.id)?.revisions).toHaveLength(1);
+  });
+
+  it("carries the source opportunity forward across revisions without re-stamping it", () => {
+    const { projects } = setup();
+    const project = projects.create({
+      subject: { kind: "topic", topic: "Explain what the verified change means in practice" },
+      objective: "educate",
+      audience: "Operations leads",
+      constraints: [],
+      targets: ["linkedin-standard-post"],
+      researchMode: "existing-workspace-evidence",
+      seedMaterial: [],
+      sourceOpportunity: {
+        opportunityId: "opportunity-1",
+        runId: "run_1",
+        title: "Explain what the verified change means in practice",
+        angle: "practical_implication",
+        angleDescription: "Explain the practical impact of the verified change.",
+        sourceUrls: ["https://example.com/story-1"],
+        brandProfileRevisionId: "brand_1",
+      },
+    });
+    const revised = projects.reviseIntent(project.id, {
+      objective: "establish-authority",
+      audience: "Engineering leaders",
+    });
+    expect(revised.revision).toBe(2);
+    expect(revised.sourceOpportunity).toEqual(project.revisions[0]?.sourceOpportunity);
+    expect(revised.objective).toBe("establish-authority");
+  });
+});
