@@ -4,6 +4,8 @@ import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { openRuns } from "../../../apps/server/src/runs";
 import { ConfigStore } from "../../../apps/server/src/config";
 
@@ -34,6 +36,7 @@ beforeEach(async () => {
     configStore,
     modules: [],
     google: dummyGoogle,
+    people: new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) }),
     onConfigChanged: () => {},
   } as unknown as ApiContext);
   await app.ready();

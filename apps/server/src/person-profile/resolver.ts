@@ -120,7 +120,7 @@ export function matchPersonEvidence(
   return null;
 }
 
-function identifier(signals: PersonIdentitySignals): string {
+export function identifier(signals: PersonIdentitySignals): string {
   const normalized = normalizedSignals(signals);
   const key =
     normalized.emails[0] ??
@@ -305,6 +305,7 @@ export class PersonProfileResolver implements PersonProfiles {
       ).values(),
     ];
     const profile: PersonProfile = {
+      archivedAt: existing?.archivedAt ?? null,
       id: existing?.id ?? identifier(mergedSignals),
       revision: (existing?.revision ?? 0) + 1,
       createdAt: existing?.createdAt ?? observedAt,

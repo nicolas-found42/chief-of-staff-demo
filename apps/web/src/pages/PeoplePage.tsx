@@ -1,0 +1,110 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import type { PersonProfile } from "@chief-of-staff-demo/shared";
+import { api, errorMessage } from "../client";
+import { usePageFocus } from "../usePageFocus";
+import { useTitle } from "../useTitle";
+
+/**
+ * The Person Profiles product area's landing surface (spec #117 IA): a
+ * searchable list over active Profiles, with archived state one explicit
+ * toggle away. Profiles open on their stable detail route.
+ */
+export function PeoplePage() {
+  useTitle("Person Profiles");
+  const focusRef = usePageFocus<HTMLHeadingElement>();
+  const [profiles, setProfiles] = useState<PersonProfile[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setProfiles(await api.people(query, includeArchived));
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, [query, includeArchived]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <>
+      <h1 ref={focusRef} tabIndex={-1}>
+        Person Profiles
+      </h1>
+      <p className="muted">
+        Durable, evidence-backed records of people, owned by the Workspace rather than by the
+        workflow that first met them.
+      </p>
+      {error && (
+        <p className="banner-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="field-row runs-toolbar">
+        <label htmlFor="people-search">Search</label>
+        <input
+          id="people-search"
+          type="search"
+          value={query}
+          placeholder="Name, email, employer, site…"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <label htmlFor="people-archived">
+          <input
+            id="people-archived"
+            type="checkbox"
+            checked={includeArchived}
+            onChange={(event) => setIncludeArchived(event.target.checked)}
+          />{" "}
+          Include archived
+        </label>
+        <Link className="action-button primary" to="/people/new">
+          New profile
+        </Link>
+      </div>
+      {profiles === null ? (
+        <p className="muted">Loading…</p>
+      ) : profiles.length === 0 ? (
+        <p className="muted">
+          {query ? "No Profiles match that search." : "No Profiles yet — create the first one."}
+        </p>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Role</th>
+                <th scope="col">Current employer</th>
+                <th scope="col">Revision</th>
+                <th scope="col">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {profiles.map((profile) => (
+                <tr key={profile.id}>
+                  <td>
+                    <Link to={`/people/${encodeURIComponent(profile.id)}`}>
+                      {profile.fullName ?? "(unnamed)"}
+                    </Link>
+                  </td>
+                  <td>{profile.primaryEmail ?? "—"}</td>
+                  <td>{profile.role ?? "—"}</td>
+                  <td>{profile.currentEmployer ?? "—"}</td>
+                  <td>{profile.revision}</td>
+                  <td>{profile.archivedAt ? "Archived" : "Active"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}

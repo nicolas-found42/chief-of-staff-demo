@@ -11,6 +11,8 @@ import {
 import type { HostedModule } from "../engine/host.js";
 import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
+import { registerPeopleApi } from "./people.js";
+import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 export interface ApiContext {
   runs: Runs;
   port: number;
@@ -21,6 +23,8 @@ export interface ApiContext {
    * Module made it.
    */
   modules: HostedModule[];
+  /** The Person Profiles product area's Workspace-owned interface (spec #117). */
+  people: WorkspacePersonProfiles;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void;
@@ -213,4 +217,8 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   for (const module of ctx.modules) {
     await module.routes?.(app);
   }
+
+  /* The Person Profiles product area is a Workspace resource, not a hosted
+     Module: its routes hang off the Shell under /api/people (ADR-0043). */
+  registerPeopleApi(app, { people: ctx.people });
 }

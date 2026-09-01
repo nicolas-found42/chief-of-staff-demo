@@ -10,6 +10,8 @@ import { registerRelayRoutes } from "./relay/routes.js";
 import { seedRelayBaseUrlFromEnv } from "./relay/state.js";
 import { registerMeetingBriefHubSpotRoutes } from "./modules/meeting-brief-generator/hubspot/routes.js";
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
+import { PersonProfileStore } from "./person-profile/store.js";
+import { WorkspacePersonProfiles } from "./person-profile/profiles.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
@@ -284,6 +286,11 @@ const meetingBriefProduction = meetingBriefTest
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
+/* The Person Profiles product area's Workspace-owned interface. The store is
+   the same one Meeting Brief's resolver writes through: both are synchronous,
+   uncached writers of the one Workspace directory. */
+const peopleStore = new PersonProfileStore(workspaceDir);
+const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [
@@ -309,6 +316,7 @@ await registerApi(app, {
   configStore,
   modules,
   google: googleConnection,
+  people: peopleProfiles,
   onConfigChanged: () => {
     for (const module of modules.filter((candidate) => candidate !== meetingBrief)) {
       module.start?.();
@@ -357,6 +365,7 @@ if (process.env.ENABLE_TEST_SEED === "1") {
       run.failed("extract", "fixture_failure", "The extraction failed. Retry the Run.");
       return run.id;
     },
+    personStore: peopleStore,
   });
 }
 
