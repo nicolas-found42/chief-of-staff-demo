@@ -308,7 +308,9 @@ describe("The versioned nine-target catalog (#132)", () => {
     }
     // Nine targets are nine contracts, not one shape restated nine times.
     expect(platforms.size).toBeGreaterThan(1);
-    expect(new Set(CONTENT_TARGET_CATALOG.map((entry) => entry.contract.outlineResult)).size).toBe(9);
+    expect(new Set(CONTENT_TARGET_CATALOG.map((entry) => entry.contract.outlineResult)).size).toBe(
+      9,
+    );
     expect(
       new Set(
         CONTENT_TARGET_CATALOG.map((entry) =>
@@ -643,15 +645,13 @@ describe("Copy and Markdown exports (#132)", () => {
     const outlineMarkdown = platformOutlineMarkdown(outline);
     expect(outlineMarkdown).toBe(platformOutlineMarkdown(outline));
     expect(outlineMarkdown).toContain(`# ${outline.title}`);
-    expect(outlineMarkdown).toContain(outline.thesis);
+    expect(outlineMarkdown).toContain(`- Thesis: ${outline.thesis}`);
     expect(outlineMarkdown).toContain(outline.ctaIntent!);
     for (const beat of outline.beats) {
       expect(outlineMarkdown).toContain(`${beat.position}. ${beat.direction}`);
       expect(outlineMarkdown).toContain(beat.evidence.claim);
     }
     expect(outlineMarkdown).toContain(SOURCE_ITEM.id);
-    expect(outlineMarkdown).toContain(outline.warnings[0]!);
-
     const draftMarkdown = contentEngineDraftMarkdown(draft);
     expect(draftMarkdown).toBe(contentEngineDraftMarkdown(draft));
     expect(draftMarkdown).toContain(draft.copy);

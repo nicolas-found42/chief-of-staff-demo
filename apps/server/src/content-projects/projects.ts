@@ -1244,7 +1244,10 @@ async function runBounded<T, R>(
   bound: number,
   worker: (item: T) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  const results = Array.from<unknown, PromiseSettledResult<R>>({ length: items.length }, () => ({
+    status: "rejected",
+    reason: new Error("unsettled"),
+  }));
   let next = 0;
   const lanes = Array.from({ length: Math.min(bound, items.length) }, async () => {
     while (next < items.length) {

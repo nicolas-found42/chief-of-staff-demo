@@ -107,8 +107,9 @@ export const CONTENT_TARGET_CATALOG = [
 
 export type ContentProjectTarget = (typeof CONTENT_TARGET_CATALOG)[number]["target"];
 
-export const CONTENT_PROJECT_TARGETS: readonly ContentProjectTarget[] =
-  CONTENT_TARGET_CATALOG.map((entry) => entry.target);
+export const CONTENT_PROJECT_TARGETS: readonly ContentProjectTarget[] = CONTENT_TARGET_CATALOG.map(
+  (entry) => entry.target,
+);
 
 export interface ContentTargetContract {
   platform: string;
