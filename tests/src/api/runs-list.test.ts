@@ -22,6 +22,7 @@ const PORT = 4317;
 
 let app: FastifyInstance;
 let workspaceDir: string;
+let people: WorkspacePersonProfiles;
 
 function seedRun(id: string, meta: Partial<RunMeta>): void {
   const dir = join(workspaceDir, "runs", id);
@@ -63,17 +64,15 @@ beforeEach(async () => {
   configStore.load();
 
   app = fastify({ logger: false });
-  const peopleProfiles = new WorkspacePersonProfiles({
-    store: new PersonProfileStore(workspaceDir),
-  });
-  const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
+  people = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
+  const ownerOnboarding = new OwnerOnboarding({ people, workspaceDir });
   await registerApi(app, {
     runs: openRuns(workspaceDir),
     port: PORT,
     configStore,
     modules: [],
     google: { state: async () => ({ state: "unconfigured" }) },
-    people: peopleProfiles,
+    people,
     onboarding: ownerOnboarding,
     onConfigChanged: () => {},
   } as unknown as ApiContext);
@@ -146,5 +145,36 @@ describe("GET /api/runs", () => {
     seedRun(idFor(1), { module: "long-gone" });
     const page = await list();
     expect(page.runs.map((run) => run.module)).toEqual(["long-gone"]);
+  });
+});
+
+describe("GET /api/runs/:id opaque result", () => {
+  it("returns a Meeting Brief result without interpreting its Person Profile links", async () => {
+    const profile = people.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
+    const runId = idFor(1);
+    seedRun(runId, { module: "meeting-brief-generator" });
+    writeFileSync(
+      join(workspaceDir, "runs", runId, "result.json"),
+      JSON.stringify({
+        version: 1,
+        personProfileLinks: [
+          {
+            guestEmail: "grace@example.com",
+            profileId: profile.id,
+            profileRevision: 1,
+          },
+        ],
+      }),
+      "utf8",
+    );
+    people.correct(profile.id, { role: "Professor of Computer Science" });
+
+    const response = await app.inject({ url: `/api/runs/${runId}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.personProfileLinks[0]).toEqual({
+      guestEmail: "grace@example.com",
+      profileId: profile.id,
+      profileRevision: 1,
+    });
   });
 });

@@ -10,13 +10,15 @@ import {
   type MeetingBriefEvent,
   type MeetingBriefIndex,
   type MeetingBriefIndexEntry,
+  type MeetingBriefPersonProfileReadModel,
   type MeetingBriefRunResult,
   type MeetingBriefUpcoming,
+  meetingBriefOccurrenceIdentity,
   normalizeInternalDomains,
   parseMeetingBriefOccurrenceKey,
 } from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
-import { Runner } from "../../engine/runner.js";
+import { Runner, RunNotRetryableError } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
 import { DurableClock, type DurableSchedule } from "../../engine/durableClock.js";
 import {
@@ -44,6 +46,7 @@ import {
 import { materialFingerprint } from "./revision.js";
 import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
+import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingBriefHostDeps {
   runs: Runs;
@@ -74,6 +77,7 @@ export interface MeetingBriefHostDeps {
   guestProfileConnection?: GuestProfileConnection;
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
+  personProfiles?: Pick<WorkspacePersonProfiles, "consumerState">;
 }
 /**
  * The one place snapshot.json is turned into a value. Null means the Run has no
@@ -110,6 +114,15 @@ function isMeetingBriefEvent(value: unknown): value is MeetingBriefEvent {
     typeof candidate.summary === "string" &&
     typeof candidate.startAt === "string"
   );
+}
+
+class MeetingBriefRegenerationConflict extends Error {
+  readonly code = "meeting-brief-profile-refresh-not-required";
+
+  constructor(runId: string) {
+    super(`Meeting Brief has no stale Person Profile consumers: ${runId}`);
+    this.name = "MeetingBriefRegenerationConflict";
+  }
 }
 
 function toUpcoming(schedule: {
@@ -162,6 +175,7 @@ export class MeetingBriefHost implements HostedModule {
   private readonly profileProvider: GuestProfileProvider | null;
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
+  private readonly profileRegenerations = new Map<string, Promise<string>>();
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
     this.clock = new DurableClock(deps.workspaceDir, this.now);
@@ -235,11 +249,34 @@ export class MeetingBriefHost implements HostedModule {
         ? { calendarProvider: this.calendarProvider }
         : {}),
       ...(deps.calendarUse === "snapshot" ? { calendarSnapshotRequired: true } : {}),
+      ...(deps.personProfiles
+        ? {
+            personProfileConsumerState: deps.personProfiles.consumerState.bind(deps.personProfiles),
+          }
+        : {}),
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
   }
 
   retryRun(id: string): Promise<RunMeta> {
+    const detail = this.deps.runs.detail(id);
+    const requiresRegeneration = detail?.events.some(
+      (event) =>
+        event.type === "brief_delivery_blocked" &&
+        event.detail?.reason === "person_profile_refresh_required",
+    );
+    if (requiresRegeneration) {
+      this.deps.runs.open(id)?.appendEvent("retry_refused", {
+        condition: "profile_refresh_requires_new_run",
+      });
+      return Promise.reject(
+        new RunNotRetryableError(
+          id,
+          "module_declined",
+          "Profile-derived claims require regeneration into a new immutable Brief",
+        ),
+      );
+    }
     return this.runner.retryRun(id);
   }
 
@@ -604,6 +641,85 @@ export class MeetingBriefHost implements HostedModule {
     return this.startBriefForSchedule(record);
   }
 
+  /**
+   * Explicitly regenerate a stale immutable Brief in a new Run. The old Run is
+   * never reopened or rewritten: its frozen event remains the input receipt,
+   * while enrichment and composition execute again against current Profile truth.
+   */
+  async regenerateRun(runId: string): Promise<string> {
+    const active = this.profileRegenerations.get(runId);
+    if (active) return active;
+
+    const existing = this.deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs.find((run) => {
+      const result = this.deps.runs.detail(run.id)?.result as
+        MeetingBriefRunResult | null | undefined;
+      return result?.profileRefreshOf === runId;
+    });
+    if (existing) {
+      const resolved = Promise.resolve(existing.id);
+      this.profileRegenerations.set(runId, resolved);
+      return resolved;
+    }
+
+    const handle = this.deps.runs.open(runId);
+    const meta = handle?.read();
+    const detail = this.deps.runs.detail(runId);
+    if (!handle || meta?.module !== MEETING_BRIEF_MODULE_ID || !detail?.result)
+      throw new Error(`Meeting Brief Run not found: ${runId}`);
+    const snapshotRaw = handle.readArtifact("snapshot.json");
+    if (!snapshotRaw)
+      throw new Error(`Meeting Brief cannot be regenerated without its snapshot: ${runId}`);
+    let snapshot: unknown;
+    try {
+      snapshot = JSON.parse(snapshotRaw);
+    } catch {
+      throw new Error(`Meeting Brief snapshot is not readable: ${runId}`);
+    }
+    if (!isMeetingBriefEvent(snapshot))
+      throw new Error(`Meeting Brief snapshot is incomplete: ${runId}`);
+    const result = detail.result as MeetingBriefRunResult;
+    const hasStaleConsumer = this.profileReadModel(result).consumers.some(
+      ({ state }) => state?.refreshRequired === true,
+    );
+    if (!hasStaleConsumer) throw new MeetingBriefRegenerationConflict(runId);
+    const storedOccurrenceKey = (snapshot as unknown as { occurrenceKey?: unknown }).occurrenceKey;
+    const occurrenceKey =
+      typeof storedOccurrenceKey === "string"
+        ? storedOccurrenceKey
+        : meetingBriefOccurrenceIdentity(snapshot.eventId, snapshot.occurrenceId).occurrenceKey;
+    const regeneration = this.runner.startRun(
+      {
+        intake: MEETING_BRIEF_INTAKE,
+        sourceUrl: null,
+        externalId: meta.externalId ?? occurrenceKey,
+      },
+      {
+        ...snapshot,
+        occurrenceKey,
+        supersedesRunId: runId,
+        profileRefreshOf: runId,
+      },
+    );
+    this.profileRegenerations.set(runId, regeneration);
+    try {
+      return await regeneration;
+    } catch (error) {
+      if (this.profileRegenerations.get(runId) === regeneration)
+        this.profileRegenerations.delete(runId);
+      throw error;
+    }
+  }
+
+  private profileReadModel(result: MeetingBriefRunResult): MeetingBriefPersonProfileReadModel {
+    return {
+      consumers: (result.personProfileLinks ?? []).map((link) => ({
+        link,
+        state:
+          this.deps.personProfiles?.consumerState(link.profileId, link.profileRevision) ?? null,
+      })),
+    };
+  }
+
   /** Recovery scans due records on boot (covers ADR-0032 without blocked Runs) + bounded Calendar reconciliation (issue://83). */
   async recover(): Promise<number> {
     const runsRecovered = await this.runner.recoverRuns();
@@ -667,6 +783,40 @@ export class MeetingBriefHost implements HostedModule {
   // guest-profile routes below are compatibility-only for Workspaces created
   // before Person Profiles became a built-in Workspace capability (ADR-0042).
   async routes(app: FastifyInstance): Promise<void> {
+    app.post("/api/meeting-brief/runs/:id/regenerate", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const detail = this.deps.runs.detail(id);
+      if (detail?.module !== MEETING_BRIEF_MODULE_ID) {
+        reply.code(404);
+        return { error: "meeting-brief-run-not-found" };
+      }
+      try {
+        const runId = await this.regenerateRun(id);
+        reply.code(202);
+        return { runId };
+      } catch (error) {
+        reply.code(409);
+        return {
+          error:
+            error instanceof MeetingBriefRegenerationConflict
+              ? error.code
+              : "meeting-brief-regeneration-unavailable",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    });
+
+    app.get("/api/meeting-brief/runs/:id/profile-consumers", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const detail = this.deps.runs.detail(id);
+      const result = detail?.result as MeetingBriefRunResult | null | undefined;
+      if (detail?.module !== MEETING_BRIEF_MODULE_ID || !result) {
+        reply.code(404);
+        return { error: "meeting-brief-run-not-found" };
+      }
+      return this.profileReadModel(result);
+    });
+
     app.get("/api/meeting-brief/guest-profile/status", async () => {
       if (!this.guestProfileConnection) {
         return {

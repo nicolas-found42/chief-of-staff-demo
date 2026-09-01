@@ -12,6 +12,7 @@ import type {
   HubSpotSetupCheck,
   HubSpotStatus,
   MeetingBriefIndex,
+  MeetingBriefPersonProfileReadModel,
   NamedPerson,
   PersonSuggestion,
   RedactedConfig,
@@ -24,7 +25,10 @@ import type {
   SourceCanaryHealth,
   SourceCanaryReceipt,
   PersonProfile,
+  PersonProfileCorrectionInput,
   PersonProfileCreateInput,
+  PersonProfileDetachInput,
+  PersonProfileMergeInput,
   PersonProfileProjection,
   PersonProfileProjectionPurpose,
   OwnerOnboardingProposal,
@@ -196,6 +200,14 @@ export const api = {
     request<{ status: string }>(`/api/runs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
   getArtifact: (runId: string, name: string) =>
     requestText(`/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`),
+  meetingBriefProfileConsumers: (runId: string) =>
+    request<MeetingBriefPersonProfileReadModel>(
+      `/api/meeting-brief/runs/${encodeURIComponent(runId)}/profile-consumers`,
+    ),
+  regenerateMeetingBrief: (runId: string) =>
+    request<{ runId: string }>(`/api/meeting-brief/runs/${encodeURIComponent(runId)}/regenerate`, {
+      method: "POST",
+    }),
   getConfig: () => request<ConfigPayload>("/api/config"),
   saveConfig: (update: Record<string, unknown>) =>
     request<ConfigPayload>("/api/config", {
@@ -549,7 +561,30 @@ export const api = {
       `/api/people/${encodeURIComponent(profileId)}/projection?${params.toString()}`,
     );
   },
+  // --- Identity repair (ticket #121): correction, merge, detach, invalidations.
+  correctPersonProfile: (profileId: string, input: PersonProfileCorrectionInput) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/corrections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  mergePersonProfile: (profileId: string, input: PersonProfileMergeInput) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/merges`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  detachPersonEvidence: (profileId: string, input: PersonProfileDetachInput) =>
+    request<{ from: PersonProfile; to: PersonProfile | null }>(
+      `/api/people/${encodeURIComponent(profileId)}/detachments`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
 };
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

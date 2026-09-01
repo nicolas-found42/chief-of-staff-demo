@@ -39,6 +39,7 @@ export interface MeetingBriefProductionRuntimeOptions {
    */
   isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
+  personProfiles?: WorkspacePersonProfiles;
 }
 
 export interface MeetingBriefProductionRuntime {
@@ -125,9 +126,11 @@ export function createMeetingBriefProductionRuntime(
      Profiles interface, not the legacy broad resolver: attendees reuse an
      existing Profile on a non-conflicting exact email match or receive one
      minimal email-anchored shell. */
-  const personProfiles = new WorkspacePersonProfiles({
-    store: new PersonProfileStore(options.workspaceDir),
-  });
+  const personProfiles =
+    options.personProfiles ??
+    new WorkspacePersonProfiles({
+      store: new PersonProfileStore(options.workspaceDir),
+    });
   const host = new MeetingBriefHost({
     runs: options.runs,
     workspaceDir: options.workspaceDir,
@@ -148,6 +151,7 @@ export function createMeetingBriefProductionRuntime(
       ? { isOwnerProfileConfirmed: options.isOwnerProfileConfirmed }
       : {}),
     gmailDeliveryProvider,
+    personProfiles,
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

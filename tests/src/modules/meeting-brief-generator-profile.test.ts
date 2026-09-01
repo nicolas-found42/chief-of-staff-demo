@@ -2,7 +2,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
+import fastify from "fastify";
+import type { MeetingBriefEvent, MeetingBriefRunResult } from "@chief-of-staff-demo/shared";
 import { isGuestProfileEmployerMatch } from "@chief-of-staff-demo/shared";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -271,6 +272,14 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
     expect(snapshot.profileId).toBe("person_alice");
     expect(snapshot.profileRevision).toBe(1);
     expect(snapshot.currentEmployer).toBe("Example Labs");
+    const result = runs.detail(runId)!.result as MeetingBriefRunResult;
+    expect(result.personProfileLinks).toEqual([
+      {
+        guestEmail: "alice@external.co",
+        profileId: "person_alice",
+        profileRevision: 1,
+      },
+    ]);
   });
 
   it("each External Guest gets bounded lookup via fixed contract; artifacts keyed by version+guest+source with confidence/role/background/employer/refs/diagnostics/outcome", async () => {
@@ -495,5 +504,225 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       eventVersion: "v1",
     });
     expect(artifact.diagnostics.provider).toBe("Guest Profile");
+  });
+});
+
+describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
+  it("fails visibly before send, and again on retry, when a repair lands after composition", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbf-profile-delivery-"));
+    const runs = openRuns(workspaceDir);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(workspaceDir),
+      now: () => new Date("2026-08-28T10:00:00.000Z"),
+    });
+    const profile = people.create({
+      fullName: "Alice External",
+      primaryEmail: "alice@external.co",
+      role: "CTO",
+    });
+    let repaired = false;
+    let sends = 0;
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date("2026-08-28T11:00:00.000Z"),
+      getInternalDomains: () => ["example.com"],
+      getOwnerEmail: () => "owner@example.com",
+      personProfiles: people,
+      enrich: async () => {
+        const current = people.get(profile.id)!;
+        return {
+          sections: [],
+          evidence: [],
+          personProfileLinks: [
+            {
+              guestEmail: "alice@external.co",
+              profileId: current.id,
+              profileRevision: current.revision,
+            },
+          ],
+        };
+      },
+      completeBrief: completeFixtureBrief,
+      gmailDeliveryProvider: {
+        async findByDeliveryId() {
+          if (!repaired) {
+            repaired = true;
+            people.correct(profile.id, { role: "Founder", note: "Corrected before delivery." });
+          }
+          return null;
+        },
+        async send() {
+          sends += 1;
+          return { messageId: "must-not-send", recipient: "owner@example.com" };
+        },
+      },
+    });
+    const event = fixtureEvent({ version: "v_profile_repair_delivery" });
+    host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
+    const [runId] = await host.processDueSchedules(new Date("2026-08-28T11:00:00.000Z"));
+    await host.idle();
+
+    expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    expect((runs.detail(runId)?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
+    expect(runs.detail(runId)?.events).toContainEqual(
+      expect.objectContaining({
+        type: "brief_delivery_blocked",
+        detail: expect.objectContaining({ reason: "person_profile_refresh_required" }),
+      }),
+    );
+    expect(sends).toBe(0);
+
+    await expect(host.retryRun(runId)).rejects.toThrow(/require regeneration/);
+    expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    expect(sends).toBe(0);
+
+    const staleArtifact = runs.open(runId)!.readArtifact("result.json");
+    const app = fastify({ logger: false });
+    await host.routes(app);
+    await app.ready();
+    const [firstRefresh, concurrentRefresh] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/api/meeting-brief/runs/${runId}/regenerate`,
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/meeting-brief/runs/${runId}/regenerate`,
+      }),
+    ]);
+    expect(firstRefresh.statusCode).toBe(202);
+    expect(concurrentRefresh.statusCode).toBe(202);
+    const refreshedRunId = firstRefresh.json<{ runId: string }>().runId;
+    expect(concurrentRefresh.json<{ runId: string }>().runId).toBe(refreshedRunId);
+    expect(refreshedRunId).not.toBe(runId);
+    await host.idle();
+
+    expect(runs.detail(refreshedRunId)).toMatchObject({ status: "done", failedStage: null });
+    expect(runs.detail(refreshedRunId)?.result as MeetingBriefRunResult).toMatchObject({
+      supersedes: runId,
+      profileRefreshOf: runId,
+      delivery: { status: "sent" },
+      personProfileLinks: [{ profileId: profile.id, profileRevision: 2 }],
+    });
+    expect(sends).toBe(1);
+    expect(runs.open(runId)!.readArtifact("result.json")).toBe(staleArtifact);
+    expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+
+    const repeatedRefresh = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${runId}/regenerate`,
+    });
+    expect(repeatedRefresh.statusCode).toBe(202);
+    expect(repeatedRefresh.json<{ runId: string }>().runId).toBe(refreshedRunId);
+
+    const currentRefresh = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${refreshedRunId}/regenerate`,
+    });
+    expect(currentRefresh.statusCode).toBe(409);
+    expect(currentRefresh.json()).toMatchObject({
+      error: "meeting-brief-profile-refresh-not-required",
+    });
+    await app.close();
+  });
+
+  it("sends one distinct Profile refresh and reconciles that message on retry", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbf-profile-refresh-delivery-"));
+    const runs = openRuns(workspaceDir);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(workspaceDir),
+      now: () => new Date("2026-08-28T10:00:00.000Z"),
+    });
+    const profile = people.create({
+      fullName: "Alice External",
+      primaryEmail: "alice@external.co",
+      role: "CTO",
+    });
+    const sent = new Map<string, { messageId: string; recipient: string }>();
+    let sendCalls = 0;
+    let refreshedMessageId: string | null = null;
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date("2026-08-28T11:00:00.000Z"),
+      getInternalDomains: () => ["example.com"],
+      getOwnerEmail: () => "owner@example.com",
+      personProfiles: people,
+      enrich: async () => {
+        const current = people.get(profile.id)!;
+        return {
+          sections: [],
+          evidence: [],
+          personProfileLinks: [
+            {
+              guestEmail: "alice@external.co",
+              profileId: current.id,
+              profileRevision: current.revision,
+            },
+          ],
+        };
+      },
+      completeBrief: completeFixtureBrief,
+      gmailDeliveryProvider: {
+        async findByDeliveryId(deliveryId) {
+          return sent.get(deliveryId) ?? null;
+        },
+        async send({ deliveryId }) {
+          sendCalls += 1;
+          const delivered = {
+            messageId: `message-${sendCalls}`,
+            recipient: "owner@example.com",
+          };
+          sent.set(deliveryId, delivered);
+          if (sendCalls === 2) {
+            refreshedMessageId = delivered.messageId;
+            throw new Error("Lost acknowledgement after refreshed Gmail send");
+          }
+          return delivered;
+        },
+      },
+    });
+    const event = fixtureEvent({ version: "v_profile_refresh_delivery" });
+    host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
+    const [originalRunId] = await host.processDueSchedules(new Date("2026-08-28T11:00:00.000Z"));
+    await host.idle();
+    const original = runs.detail(originalRunId)?.result as MeetingBriefRunResult;
+    expect(original.delivery).toMatchObject({ status: "sent", messageId: "message-1" });
+
+    people.correct(profile.id, { role: "Founder", note: "Corrected after original delivery." });
+    const app = fastify({ logger: false });
+    await host.routes(app);
+    await app.ready();
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${originalRunId}/regenerate`,
+    });
+    expect(response.statusCode).toBe(202);
+    const refreshedRunId = response.json<{ runId: string }>().runId;
+    await host.idle();
+
+    const failedRefresh = runs.detail(refreshedRunId)?.result as MeetingBriefRunResult;
+    expect(runs.detail(refreshedRunId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    expect(failedRefresh).toMatchObject({
+      profileRefreshOf: originalRunId,
+      personProfileLinks: [{ profileId: profile.id, profileRevision: 2 }],
+    });
+    expect(failedRefresh.delivery.deliveryId).not.toBe(original.delivery.deliveryId);
+    expect(sendCalls).toBe(2);
+    expect(sent.size).toBe(2);
+
+    await host.retryRun(refreshedRunId);
+    await host.idle();
+
+    const reconciledRefresh = runs.detail(refreshedRunId)?.result as MeetingBriefRunResult;
+    expect(reconciledRefresh.delivery).toMatchObject({
+      status: "reconciled",
+      deliveryId: failedRefresh.delivery.deliveryId,
+      messageId: refreshedMessageId,
+    });
+    expect(sendCalls).toBe(2);
+    expect(sent.size).toBe(2);
+    await app.close();
   });
 });

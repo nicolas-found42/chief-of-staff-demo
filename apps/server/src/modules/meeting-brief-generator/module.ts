@@ -4,7 +4,9 @@ import type {
   MeetingBrief,
   MeetingBriefEvent,
   MeetingBriefEnrichmentSection,
+  MeetingBriefPersonProfileLink,
   MeetingBriefRunResult,
+  PersonProfileConsumerState,
 } from "@chief-of-staff-demo/shared";
 import { MEETING_BRIEF_MODULE_ID, MEETING_BRIEF_MODULE_VERSION } from "@chief-of-staff-demo/shared";
 import {
@@ -22,6 +24,7 @@ import { enrichUnified, type MeetingBriefEnrichmentProviders } from "./enrichmen
 export type MeetingBriefInput = MeetingBriefEvent & {
   occurrenceKey: string;
   supersedesRunId?: string | null;
+  profileRefreshOf?: string;
 };
 export interface MeetingBriefModuleDeps {
   now?: () => Date;
@@ -31,6 +34,7 @@ export interface MeetingBriefModuleDeps {
   ) => Promise<{
     sections: unknown[];
     evidence: string[];
+    personProfileLinks?: MeetingBriefPersonProfileLink[];
   }>;
   completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
   getCompleteJson?: () => CompleteJson;
@@ -41,6 +45,10 @@ export interface MeetingBriefModuleDeps {
   isOwnerProfileConfirmed?: () => boolean;
   calendarProvider?: CalendarProvider;
   calendarSnapshotRequired?: boolean;
+  personProfileConsumerState?: (
+    profileId: string,
+    profileRevision: number,
+  ) => PersonProfileConsumerState | null;
 }
 
 function continuationInput(externalId: string | null, now: Date): MeetingBriefInput {
@@ -281,6 +289,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
                 eligible: true,
                 capturedAt: snapshotAt,
                 supersedesRunId: input.supersedesRunId ?? null,
+                ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
               },
               null,
               2,
@@ -290,6 +299,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             ...current,
             occurrenceKey,
             supersedesRunId: input.supersedesRunId ?? null,
+            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
           };
         });
 
@@ -301,7 +311,11 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
       }
 
       // enrich — unified evidence via Google, HubSpot, Person Profiles, Public Intelligence
-      let enrichResult: { sections: unknown[]; evidence: string[] } = {
+      let enrichResult: {
+        sections: unknown[];
+        evidence: string[];
+        personProfileLinks?: MeetingBriefPersonProfileLink[];
+      } = {
         sections: [],
         evidence: [],
       };
@@ -331,10 +345,15 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         const enrichRaw = ctx.readFile("enrich.json");
         if (enrichRaw) {
           try {
-            const parsed = JSON.parse(enrichRaw) as { sections?: unknown[]; evidence?: string[] };
+            const parsed = JSON.parse(enrichRaw) as {
+              sections?: unknown[];
+              evidence?: string[];
+              personProfileLinks?: MeetingBriefPersonProfileLink[];
+            };
             enrichResult = {
               sections: (parsed.sections as unknown[]) ?? [],
               evidence: (parsed.evidence as string[]) ?? [],
+              personProfileLinks: parsed.personProfileLinks ?? [],
             };
           } catch {
             // ignore
@@ -374,8 +393,17 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             enrichAt: now().toISOString(),
             composeAt: now().toISOString(),
             meetingBrief: composed,
-            delivery: deliveryState("pending", deliveryIdFor(occurrenceKey, composed.eventVersion)),
+            delivery: deliveryState(
+              "pending",
+              deliveryIdFor(
+                occurrenceKey,
+                composed.eventVersion,
+                input.profileRefreshOf ? ctx.runId : undefined,
+              ),
+            ),
+            personProfileLinks: enrichResult.personProfileLinks ?? [],
             supersedes,
+            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
           };
           ctx.writeFile("result.json", JSON.stringify(partial, null, 2) + "\n");
           ctx.event("brief_composed", {
@@ -401,6 +429,9 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           getOwnerEmail: () => resolveOwner(),
           ...(deps.isOwnerProfileConfirmed
             ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
+            : {}),
+          ...(deps.personProfileConsumerState
+            ? { personProfileConsumerState: deps.personProfileConsumerState }
             : {}),
         };
         return executeDeliver(deliverArgs);

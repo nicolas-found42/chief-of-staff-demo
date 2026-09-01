@@ -279,6 +279,7 @@ const meetingBriefTest =
         workspaceDir,
         configStore,
         initialNow: new Date("2026-08-28T10:00:00.000Z"),
+        personProfiles: peopleProfiles,
       })
     : null;
 const meetingBriefProduction = meetingBriefTest
@@ -292,6 +293,7 @@ const meetingBriefProduction = meetingBriefTest
       /* Owner onboarding (issue #123): delivery's outward send waits for the
          confirmed owner reference; eligibility keeps the raw identity. */
       isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
+      personProfiles: peopleProfiles,
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
@@ -371,6 +373,10 @@ if (process.env.ENABLE_TEST_SEED === "1") {
     },
     personStore: peopleStore,
     ownerOnboarding,
+    runs,
+    ...(meetingBriefTest
+      ? { upsertMeetingBriefEvent: (event) => meetingBriefTest.upsertEvent(event) }
+      : {}),
   });
 }
 

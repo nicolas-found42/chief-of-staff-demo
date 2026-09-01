@@ -1,5 +1,7 @@
 /** Meeting Brief Generator — Module-owned types (issue://80, ADR-0032/0033/0034). */
 
+import type { PersonProfileConsumerState } from "./person-profile.js";
+
 export const MEETING_BRIEF_MODULE_ID = "meeting-brief-generator" as const;
 export const MEETING_BRIEF_MODULE_VERSION = 1 as const;
 
@@ -148,9 +150,27 @@ export interface MeetingBriefRunResult {
   composeAt: string | null;
   meetingBrief: MeetingBrief;
   delivery: MeetingBriefDeliveryState;
+  /** Exact Profile revisions used to derive guest claims in this immutable Brief. */
+  personProfileLinks?: MeetingBriefPersonProfileLink[];
   supersedes?: string | null;
+  /** The stale immutable Brief this Run explicitly regenerated from Profile truth. */
+  profileRefreshOf?: string;
   /** Audit reason when Calendar current truth prevents outward delivery. */
   deliverySkippedReason?: string;
+}
+
+export interface MeetingBriefPersonProfileLink {
+  guestEmail: string;
+  profileId: string;
+  profileRevision: number;
+}
+
+/** Meeting Brief-owned read model; never persisted into the immutable Run result. */
+export interface MeetingBriefPersonProfileReadModel {
+  consumers: Array<{
+    link: MeetingBriefPersonProfileLink;
+    state: PersonProfileConsumerState | null;
+  }>;
 }
 
 /** GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005). */

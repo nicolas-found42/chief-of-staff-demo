@@ -1,8 +1,33 @@
-import type { MeetingBriefRunResult, RunDetail } from "@chief-of-staff-demo/shared";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import type {
+  MeetingBriefPersonProfileReadModel,
+  MeetingBriefRunResult,
+  RunDetail,
+} from "@chief-of-staff-demo/shared";
+import { Link, useNavigate } from "react-router-dom";
+import { api, errorMessage } from "../../client";
 import { deliveryPresentation } from "./deliveryStatus";
 
 export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
+  const navigate = useNavigate();
+  const [profileReadModel, setProfileReadModel] =
+    useState<MeetingBriefPersonProfileReadModel | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerationError, setRegenerationError] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    void api
+      .meetingBriefProfileConsumers(detail.id)
+      .then((readModel) => {
+        if (current) setProfileReadModel(readModel);
+      })
+      .catch(() => {
+        if (current) setProfileReadModel(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [detail.id]);
   const result = detail.result as MeetingBriefRunResult | null;
   if (!result) {
     if (detail.status === "skipped") {
@@ -22,6 +47,21 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
   const delivery = result.delivery;
   const deliveryStatus = deliveryPresentation(delivery.status);
   const logistics = brief.logistics;
+  const staleProfileConsumers = (profileReadModel?.consumers ?? []).filter(
+    (consumer) => consumer.state?.refreshRequired,
+  );
+  const regenerate = async () => {
+    if (regenerating) return;
+    setRegenerating(true);
+    setRegenerationError(null);
+    try {
+      const refreshed = await api.regenerateMeetingBrief(detail.id);
+      await navigate(`/runs/${refreshed.runId}`);
+    } catch (error) {
+      setRegenerationError(errorMessage(error));
+      setRegenerating(false);
+    }
+  };
 
   return (
     <section aria-labelledby="meeting-brief-result">
@@ -32,6 +72,28 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
           Revision of <Link to={`/runs/${result.supersedes}`}>previous brief</Link> (supersedes{" "}
           {result.supersedes})
         </p>
+      ) : null}
+
+      {staleProfileConsumers.length > 0 ? (
+        <div className="banner banner-warn" role="alert">
+          <strong>Profile-derived claims need refresh.</strong> This immutable Brief used Profile
+          evidence that was later corrected, merged, or detached. It cannot be retried in place;
+          regenerate it from current Profile truth.
+          <ul>
+            {staleProfileConsumers.map(({ link, state }) => (
+              <li key={`${link.guestEmail}-${link.profileId}-${link.profileRevision}`}>
+                {link.guestEmail}: revision {link.profileRevision} of{" "}
+                <Link to={`/people/${state?.currentProfileId ?? link.profileId}`}>
+                  {state?.currentProfileId ?? link.profileId}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="primary" onClick={() => void regenerate()}>
+            {regenerating ? "Regenerating…" : "Regenerate with current profiles"}
+          </button>
+          {regenerationError ? <p>{regenerationError}</p> : null}
+        </div>
       ) : null}
 
       <div className="card">
