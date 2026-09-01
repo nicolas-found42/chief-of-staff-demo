@@ -59,10 +59,14 @@ export class TranscriptRelevanceStore {
    * deletion path, and it is idempotent over an emptied store.
    */
   forgetTranscript(transcriptId: string): { candidates: number; decisions: number } {
+    /* Both filters run unconditionally, so a decision orphaned by a
+       mid-cascade crash cannot survive a completed re-deletion. */
     const candidates = this.readCandidates();
-    const removed = candidates.filter((candidate) => candidate.transcriptId === transcriptId);
-    if (removed.length === 0) return { candidates: 0, decisions: 0 };
-    const removedIds = new Set(removed.map((candidate) => candidate.id));
+    const removedIds = new Set(
+      candidates
+        .filter((candidate) => candidate.transcriptId === transcriptId)
+        .map((candidate) => candidate.id),
+    );
     this.write(
       "candidates.json",
       candidates.filter((candidate) => candidate.transcriptId !== transcriptId),
@@ -72,7 +76,7 @@ export class TranscriptRelevanceStore {
       (decision) => decision.transcriptId !== transcriptId && !removedIds.has(decision.candidateId),
     );
     this.write("decisions.json", keptDecisions);
-    return { candidates: removed.length, decisions: decisions.length - keptDecisions.length };
+    return { candidates: removedIds.size, decisions: decisions.length - keptDecisions.length };
   }
 
   private readCollection<T>(file: string): T[] {

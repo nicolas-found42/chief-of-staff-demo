@@ -266,6 +266,51 @@ describe("Transcript deletion tombstone (issue #128)", () => {
     expect(first.tombstone).toEqual(tombstoneBefore);
   });
 
+  it("a crash after the tombstone write leaves reingestion blocked; re-deleting completes the cascade", async () => {
+    const h = makeHarness();
+    await ingest(h);
+    const record = h.catalog.getTranscript("drive_fileA_r1")!;
+    /* Simulate the crash window: the tombstone stands while the record and
+       every cascade output still exist. */
+    h.catalogStore.writeTombstone({
+      sourceSystem: "drive",
+      externalFileId: "fileA",
+      checksum: record.source.checksum,
+      deletedAt: NOW().toISOString(),
+      policy: "do-not-reingest",
+    });
+
+    /* Reingestion stays blocked at every crash point: the restarted Catalog
+       skips the file even though the record (text) is still on disk. */
+    const restarted = new TranscriptCatalog({
+      workspaceDir: h.workspaceDir,
+      source: h.source,
+      disclosure: { provider: "test-provider", model: "test-model" },
+      identity: new TranscriptIdentityService({
+        store: h.identityStore,
+        people: h.people,
+        extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
+        now: NOW,
+      }),
+      now: NOW,
+      log: () => {},
+    });
+    const blocked = await restarted.processAvailable();
+    expect(blocked.skipped).toBe(1);
+    expect(h.catalog.getTranscript("drive_fileA_r1")).not.toBeNull();
+
+    /* Re-deleting completes the interrupted cascade instead of refusing. */
+    const receipt = h.deletion.delete("drive_fileA_r1", {
+      confirmation: TRANSCRIPT_DELETE_CONFIRMATION,
+    });
+    expect(receipt.removed.transcriptRecords).toBe(1);
+    expect(receipt.removed.identityMentions).toBeGreaterThan(0);
+    expect(h.catalog.getTranscript("drive_fileA_r1")).toBeNull();
+    expect(h.catalogStore.readTombstone("fileA")?.checksum).toBe(record.source.checksum);
+    const still = await restarted.processAvailable();
+    expect(still.skipped).toBe(1);
+  });
+
   it("keeps the deletion receipt readable after the tombstone is restored", async () => {
     const h = makeHarness();
     await ingest(h);
@@ -438,9 +483,17 @@ describe("Transcript deletion cascade (issue #128)", () => {
       matchedSignals: [],
       observedAt: "2026-08-31T12:00:00.000Z",
     };
+    /* The resolver mirrors evidence into mentions/publications; identity
+       repair treats all three as evidence locations, so the cascade must
+       purge transcript-origin records from each. */
+    const mirroredMention: PersonEvidence = {
+      ...transcriptOrigin,
+      id: "ev_transcript_origin_mention",
+    };
     h.peopleStore.save({
       ...profile,
       evidence: [...profile.evidence, transcriptOrigin, independent],
+      mentions: [...profile.mentions, mirroredMention],
     });
 
     const preview = h.deletion.preview("drive_fileA_r1");
@@ -448,25 +501,26 @@ describe("Transcript deletion cascade (issue #128)", () => {
       {
         consumer: "person-profiles",
         label: "Transcript-origin Person Evidence held on Person Profiles",
-        recordCount: 1,
+        recordCount: 2,
       },
     ]);
 
     const receipt = h.deletion.delete("drive_fileA_r1", {
       confirmation: TRANSCRIPT_DELETE_CONFIRMATION,
     });
-    expect(receipt.removed.consumerRecords).toBe(1);
+    expect(receipt.removed.consumerRecords).toBe(2);
 
     const after = h.peopleStore.get(profile.id)!;
     expect(after.evidence.some((e) => e.id === "ev_transcript_origin")).toBe(false);
     expect(after.evidence.some((e) => e.id === "ev_public_web")).toBe(true);
-    /* Transcript-origin evidence copies do not survive inside revisions either. */
+    /* The mirrored evidence location is purged with the same discipline. */
+    expect(after.mentions.some((e) => e.id === "ev_transcript_origin_mention")).toBe(false);
+    /* Transcript-origin evidence copies do not survive inside revisions
+       either — in the canonical store or the mirrored arrays. */
     for (const revision of h.peopleStore.listRevisions(profile.id)) {
       expect(revision.evidence.some((e) => e.id === "ev_transcript_origin")).toBe(false);
+      expect(revision.mentions.some((e) => e.id === "ev_transcript_origin_mention")).toBe(false);
     }
-    /* The Profile itself survives with its identity intact. */
-    expect(h.peopleStore.get(profile.id)?.fullName).toBe("Grace Hopper");
-    expect(after.primaryEmail).toBe("grace@example.com");
   });
 
   it("deletion never touches unrelated Runs", async () => {

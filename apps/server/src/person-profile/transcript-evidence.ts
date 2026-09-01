@@ -1,31 +1,35 @@
 import type { PersonEvidence, PersonProfile, TranscriptRecord } from "@chief-of-staff-demo/shared";
+import { isTranscriptOriginEvidence } from "@chief-of-staff-demo/shared";
 import type { TranscriptConsumerRegistry } from "../transcript-catalog/deletion.js";
 import type { PersonProfileStore } from "./store.js";
 
 /**
- * The evidence convention for transcript-origin Person Evidence: the
- * evidence's `source` names the Transcript Catalog, and its `url` carries
- * the transcript id it was observed in. Evidence that satisfies it is
- * transcript-derived and goes with the transcript; every other evidence
- * record — Calendar shells, HubSpot contacts, public-web research — is
- * independently supported and survives the cascade untouched.
+ * The resolver mirrors canonical evidence into `mentions` and
+ * `publications`; identity repair treats all three arrays as evidence
+ * locations, so every count and purge below walks all of them.
  */
-const TRANSCRIPT_EVIDENCE_SOURCE = "transcript-catalog";
-
-function isTranscriptOrigin(evidence: PersonEvidence, transcriptId: string): boolean {
-  return evidence.source === TRANSCRIPT_EVIDENCE_SOURCE && evidence.url === transcriptId;
+function transcriptOriginCount(profile: PersonProfile, transcriptId: string): number {
+  return (
+    profile.evidence.filter((e) => isTranscriptOriginEvidence(e, transcriptId)).length +
+    profile.mentions.filter((e) => isTranscriptOriginEvidence(e, transcriptId)).length +
+    profile.publications.filter((e) => isTranscriptOriginEvidence(e, transcriptId)).length
+  );
 }
 
 function withoutTranscriptOrigin(
   profile: PersonProfile,
   transcriptId: string,
 ): { profile: PersonProfile; removed: number } | null {
-  const kept = profile.evidence.filter((evidence) => !isTranscriptOrigin(evidence, transcriptId));
-  if (kept.length === profile.evidence.length) return null;
-  return {
-    profile: { ...profile, evidence: kept },
-    removed: profile.evidence.length - kept.length,
-  };
+  const stripped = (records: PersonEvidence[]): [PersonEvidence[], number] => [
+    records.filter((evidence) => !isTranscriptOriginEvidence(evidence, transcriptId)),
+    records.filter((evidence) => isTranscriptOriginEvidence(evidence, transcriptId)).length,
+  ];
+  const [evidence, evidenceRemoved] = stripped(profile.evidence);
+  const [mentions, mentionsRemoved] = stripped(profile.mentions);
+  const [publications, publicationsRemoved] = stripped(profile.publications);
+  const removed = evidenceRemoved + mentionsRemoved + publicationsRemoved;
+  if (removed === 0) return null;
+  return { profile: { ...profile, evidence, mentions, publications }, removed };
 }
 
 /**
@@ -46,11 +50,7 @@ export class WorkspacePersonProfileTranscriptEvidence implements TranscriptConsu
   inspect(record: TranscriptRecord): number {
     return this.store
       .list()
-      .reduce(
-        (total, profile) =>
-          total + profile.evidence.filter((e) => isTranscriptOrigin(e, record.id)).length,
-        0,
-      );
+      .reduce((total, profile) => total + transcriptOriginCount(profile, record.id), 0);
   }
 
   purge(transcriptId: string): number {

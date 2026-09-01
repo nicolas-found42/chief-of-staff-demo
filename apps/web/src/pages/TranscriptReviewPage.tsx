@@ -5,6 +5,7 @@ import type {
   TranscriptRelevanceReviewState,
   TranscriptSummary,
   TranscriptDeletionTombstone,
+  TranscriptConsumerDisclosure,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
@@ -39,6 +40,7 @@ export function TranscriptReviewPage() {
   const [transcripts, setTranscripts] = useState<TranscriptSummary[] | null>(null);
   const [tombstones, setTombstones] = useState<TranscriptDeletionTombstone[]>([]);
   const [confirmations, setConfirmations] = useState<Record<string, string>>({});
+  const [previews, setPreviews] = useState<Record<string, TranscriptConsumerDisclosure[]>>({});
   const load = useCallback(async () => {
     try {
       const queue = await api.transcriptRelevanceQueue();
@@ -132,6 +134,9 @@ export function TranscriptReviewPage() {
         removed.organizationMentions +
         removed.identityCandidates +
         removed.identityDecisions +
+        removed.organizationMergeDecisions +
+        removed.transcriptRememberedMappings +
+        removed.extractionLedgerEntries +
         removed.relevanceCandidates +
         removed.relevanceDecisions +
         removed.consumerRecords;
@@ -336,14 +341,38 @@ export function TranscriptReviewPage() {
                     id={`delete-confirmation-${transcript.id}`}
                     type="text"
                     value={confirmations[transcript.id] ?? ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setConfirmations((current) => ({
                         ...current,
                         [transcript.id]: event.target.value,
-                      }))
-                    }
+                      }));
+                      /* The #122 confirmation pattern: what the cascade will
+                         remove is disclosed before the irreversible action. */
+                      if (previews[transcript.id] === undefined) {
+                        void api
+                          .transcriptDeletionPreview(transcript.id)
+                          .then((preview) =>
+                            setPreviews((current) => ({
+                              ...current,
+                              [transcript.id]: preview.consumerRecords,
+                            })),
+                          )
+                          .catch(() => {});
+                      }
+                    }}
                   />
                 </div>
+                {previews[transcript.id] && (
+                  <p className="muted">
+                    {previews[transcript.id]!.some((disclosure) => disclosure.recordCount > 0)
+                      ? `Deletion will also remove: ${previews[transcript.id]!.filter(
+                          (disclosure) => disclosure.recordCount > 0,
+                        )
+                          .map((d) => `${d.label} (${d.recordCount})`)
+                          .join(", ")}.`
+                      : "No registered consumer holds additional transcript-derived records."}
+                  </p>
+                )}
                 <div className="field-row runs-toolbar">
                   <button
                     className="action-button"

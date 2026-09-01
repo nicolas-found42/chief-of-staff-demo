@@ -39,6 +39,22 @@ export interface PersonEvidence extends PersonEvidenceCandidate {
   observedAt: string;
 }
 
+/**
+ * The evidence-source convention for transcript-origin Person Evidence
+ * (issue #128): the evidence's `source` names the Transcript Catalog and its
+ * `url` carries the transcript id it was observed in. The future producer
+ * lane and the transcript-deletion cascade share this one definition, so
+ * what the cascade purges is exactly what producers write.
+ */
+export const TRANSCRIPT_EVIDENCE_SOURCE = "transcript-catalog";
+
+export function isTranscriptOriginEvidence(
+  evidence: Pick<PersonEvidence, "source" | "url">,
+  transcriptId: string,
+): boolean {
+  return evidence.source === TRANSCRIPT_EVIDENCE_SOURCE && evidence.url === transcriptId;
+}
+
 export interface PersonProfileSourceDiagnostic {
   source: string;
   status: "completed" | "empty" | "failed" | "unconfigured";

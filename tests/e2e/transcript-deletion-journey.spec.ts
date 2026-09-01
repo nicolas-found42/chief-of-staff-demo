@@ -39,12 +39,17 @@ test("transcript deletion journey — delete with disclosure → tombstone → r
   const confirmation = syncCard.getByLabel(/Type DELETE TRANSCRIPT to confirm/);
   await confirmation.fill("delete");
   await expect(syncCard.getByRole("button", { name: "Delete transcript" })).toBeDisabled();
+  /* The confirmation disclosure (#122 pattern) surfaces what the cascade
+     will remove before the irreversible action. */
+  await expect(
+    page.getByText(/Deletion will also remove|No registered consumer holds additional/),
+  ).toBeVisible();
   await confirmation.fill("DELETE TRANSCRIPT");
-
-  await syncCard.getByRole("button", { name: "Delete transcript" }).click();
   await expect(
     page.getByText(/the remote Drive source and any previously created Gmail, Tasks/),
   ).toBeVisible();
+
+  await syncCard.getByRole("button", { name: "Delete transcript" }).click();
 
   // The deleted transcript leaves the retained list and appears as a
   // content-free do-not-reingest tombstone.

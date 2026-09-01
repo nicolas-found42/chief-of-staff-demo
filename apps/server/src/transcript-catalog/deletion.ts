@@ -105,10 +105,12 @@ export class TranscriptDeletionService {
 
   /**
    * The explicit privacy exception to the Catalog's retained corpus (spec
-   * #117). Order matters: consumer cascades and the store cascades first,
-   * the record itself last, then the tombstone — a crash between them
-   * leaves either a fully cascaded record or a tombstone, never text
-   * without a tombstone.
+   * #117). Order matters: the tombstone is written FIRST, before anything
+   * is removed, so reingestion is blocked at every crash point of the
+   * cascade — a crash mid-cascade leaves text plus a standing tombstone,
+   * and re-running the deletion completes it, because every cascade step
+   * is idempotent. A deletion whose record is already gone is a typed
+   * refusal; the tombstone and receipt outlive it.
    */
   delete(transcriptId: string, input: { confirmation: string }): TranscriptDeletionReceipt {
     if (input.confirmation !== TRANSCRIPT_DELETE_CONFIRMATION) {
@@ -118,12 +120,20 @@ export class TranscriptDeletionService {
       );
     }
     const record = this.requireRecord(transcriptId);
-    if (this.catalog.readTombstone(record.source.externalFileId) !== null) {
-      throw new TranscriptDeletionError(
-        "transcript-not-found",
-        `Transcript ${transcriptId} is already deleted; its tombstone stands.`,
-      );
-    }
+
+    /* Tombstone-first: from here on, reingestion is blocked no matter where
+       this cascade is interrupted. A standing tombstone over a live record
+       is an interrupted deletion, not a completed one, so re-running
+       finishes the idempotent steps instead of refusing. */
+    const deletedAt = this.now().toISOString();
+    const tombstone: TranscriptDeletionTombstone = {
+      sourceSystem: record.source.sourceSystem,
+      externalFileId: record.source.externalFileId,
+      checksum: record.source.checksum,
+      deletedAt,
+      policy: "do-not-reingest",
+    };
+    this.catalog.writeTombstone(tombstone);
 
     const removed = zeroCounts();
     const identityCounts = this.identity.forgetTranscript(transcriptId);
@@ -141,16 +151,7 @@ export class TranscriptDeletionService {
       removed.consumerRecords += registry.purge(transcriptId);
     }
 
-    const deletedAt = this.now().toISOString();
-    const tombstone: TranscriptDeletionTombstone = {
-      sourceSystem: record.source.sourceSystem,
-      externalFileId: record.source.externalFileId,
-      checksum: record.source.checksum,
-      deletedAt,
-      policy: "do-not-reingest",
-    };
     this.catalog.deleteTranscript(transcriptId);
-    this.catalog.writeTombstone(tombstone);
 
     const receipt: TranscriptDeletionReceipt = {
       receiptId: `transcript-deletion-${transcriptId}-${deletedAt}`,
