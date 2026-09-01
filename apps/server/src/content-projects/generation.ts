@@ -16,13 +16,15 @@ import { parseResultShape } from "../llm/failure.js";
  */
 export const MAX_GENERATION_INSTRUCTION_LENGTH = 500;
 
-/** What one Platform Outline generation is asked with: the approved Brief and nothing else. */
+/**
+ * What one Platform Outline generation is asked with: the approved Brief and
+ * nothing else. The Content Project assigns ids and versions; a provider
+ * never sees them.
+ */
 export interface OutlineGenerationRequest {
-  projectId: string;
   brief: OutlineBrief;
   evidence: ContentProjectPromptEvidence;
   instruction: string | null;
-  version: number;
 }
 
 /**
@@ -49,14 +51,16 @@ export interface PlatformOutlineProvider {
   generate(request: OutlineGenerationRequest): Promise<PlatformOutlineProviderResult>;
 }
 
-/** What one Draft generation is asked with: the approved Outline version and nothing else. */
+/**
+ * What one Draft generation is asked with: the approved Outline version and
+ * nothing else. The Content Project assigns ids and versions; a provider
+ * never sees them.
+ */
 export interface DraftGenerationRequest {
-  projectId: string;
   brief: OutlineBrief;
   outline: PlatformOutline;
   evidence: ContentProjectPromptEvidence;
   instruction: string | null;
-  version: number;
 }
 
 /**

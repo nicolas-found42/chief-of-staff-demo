@@ -45,6 +45,13 @@ const SOURCE_ITEM: SourceItem = fromPartial<SourceItem>({
   publishedAt: "2026-08-30T12:00:00.000Z",
   discoveredAt: "2026-08-31T17:00:00.000Z",
 });
+const SOURCE_ITEM_2: SourceItem = fromPartial<SourceItem>({
+  ...SOURCE_ITEM,
+  id: "source_2",
+  externalId: "article-2",
+  canonicalUrl: "https://evidence.example/article-2",
+  title: "Additional frozen evidence",
+});
 
 const DIAGNOSTIC: AdapterDiagnostic = fromPartial<AdapterDiagnostic>({
   classification: "items_found",
@@ -114,9 +121,12 @@ function setupApprovedProject(options: SetupOptions = {}) {
     researchMode: "existing-workspace-evidence",
     seedMaterial: ["The audience already generates daily posts."],
   });
-  projects.attachEvidence(project.id, { sourceItems: [SOURCE_ITEM], diagnostics: [DIAGNOSTIC] });
+  projects.attachEvidence(project.id, {
+    sourceItems: [SOURCE_ITEM, SOURCE_ITEM_2],
+    diagnostics: [DIAGNOSTIC],
+  });
   projects.freezeEvidence(project.id, {
-    includedSourceItemIds: [SOURCE_ITEM.id],
+    includedSourceItemIds: [SOURCE_ITEM.id, SOURCE_ITEM_2.id],
     noExternalResearchAcknowledged: false,
   });
   const brief = projects.proposeOutlineBrief(project.id, {
@@ -136,8 +146,8 @@ interface OutlineProviderHarness {
 }
 
 function fakeOutlineProvider(
-  respond: (request: OutlineGenerationRequest) => PlatformOutlineProviderResult = (request) => ({
-    title: `A grounded case for immutable inputs (v${request.version})`,
+  respond: () => PlatformOutlineProviderResult = () => ({
+    title: "A grounded case for immutable inputs",
     hookDirection: "Open with the reproducibility failure the owner knows.",
     targetLength: "900 to 1,200 characters",
     beats: [
@@ -166,7 +176,7 @@ function fakeOutlineProvider(
       target: "linkedin-standard-post",
       async generate(request) {
         calls.push(structuredClone(request));
-        return respond(request);
+        return respond();
       },
     },
   };
@@ -183,7 +193,7 @@ function fakeDraftProvider(
     productionNotes: string[];
     claims: { text: string; sourceItemIds: string[] }[];
   } = (request) => ({
-    copy: `Draft v${request.version}: ${request.outline.thesis}`,
+    copy: `Draft from outline v${request.outline.version}: ${request.outline.thesis}`,
     productionNotes: ["Paste-ready copy."],
     claims: [
       {
@@ -266,7 +276,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       outlineBriefVersion: brief.version,
       version: 1,
       instruction: null,
-      title: "A grounded case for immutable inputs (v1)",
+      title: "A grounded case for immutable inputs",
       hookDirection: "Open with the reproducibility failure the owner knows.",
       thesis: brief.thesis,
       ctaIntent: brief.ctaIntent,
@@ -302,7 +312,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
     expect(stored.platformOutlines[0]).toEqual(generated);
   });
 
-  it("rejects an outline that cites evidence outside the frozen selection or carries no beats", async () => {
+  it("rejects an outline that cites evidence outside the approved Brief's evidence map or carries no beats", async () => {
     const badCitation = fakeOutlineProvider(() => ({
       title: "Bad citation",
       hookDirection: "Hook",
@@ -328,6 +338,32 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       }),
     );
     expect(projects.get(project.id)!.revisions[0].platformOutlines).toHaveLength(0);
+
+    /* source_2 is frozen but the approved Brief's evidence map does not
+       include it, so an Outline beat citing it must be refused too. */
+    const unapprovedCitation = fakeOutlineProvider(() => ({
+      title: "Unapproved citation",
+      hookDirection: "Hook",
+      targetLength: "900 characters",
+      beats: [
+        {
+          direction: "Beat",
+          evidence: { claim: "Frozen but not approved.", sourceItemIds: [SOURCE_ITEM_2.id] },
+          examples: [],
+        },
+      ],
+      warnings: [],
+      productionNotes: [],
+    }));
+    const third = setupApprovedProject({ outlineProviders: [unapprovedCitation.provider] });
+    await expect(
+      third.projects.generateOutline(third.project.id, "linkedin-standard-post"),
+    ).rejects.toThrowError(
+      expect.objectContaining<Partial<ContentProjectError>>({
+        code: "invalid-provider-result",
+      }),
+    );
+    expect(third.projects.get(third.project.id)!.revisions[0].platformOutlines).toHaveLength(0);
 
     const noBeats = fakeOutlineProvider(() => ({
       title: "No beats",
@@ -383,7 +419,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
     expect(second.instruction).toBe(
       "Lead with the approval gate, then the reproducibility payoff.",
     );
-    expect(second.title).toBe("A grounded case for immutable inputs (v2)");
+    expect(second.title).toBe("A grounded case for immutable inputs");
     expect(first).toEqual(firstSnapshot);
     expect(projects.get(project.id)!.revisions[0].platformOutlines.map((o) => o.version)).toEqual([
       1, 2,
@@ -392,12 +428,13 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
 
   it("does not land an outline on a revision created while the provider was generating", async () => {
     let projectsRef: WorkspaceContentProjects | null = null;
+    let projectIdRef: string | null = null;
     const racing: OutlineProviderHarness = {
       calls: [],
       provider: {
         target: "linkedin-standard-post",
-        async generate(request) {
-          projectsRef!.reviseIntent(request.projectId, { audience: "Changed mid flight" });
+        async generate() {
+          projectsRef!.reviseIntent(projectIdRef!, { audience: "Changed mid flight" });
           return {
             title: "Landed late",
             hookDirection: "Hook",
@@ -420,6 +457,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
     };
     const { projects, project } = setupApprovedProject({ outlineProviders: [racing.provider] });
     projectsRef = projects;
+    projectIdRef = project.id;
     await expect(
       projects.generateOutline(project.id, "linkedin-standard-post"),
     ).rejects.toThrowError(
@@ -463,7 +501,7 @@ describe("WorkspaceContentProjects Content Engine Draft generation (#131)", () =
       outlineVersion: generatedOutline.version,
       version: 1,
       instruction: null,
-      copy: `Draft v1: ${brief.thesis}`,
+      copy: `Draft from outline v1: ${brief.thesis}`,
       thesis: brief.thesis,
       evidence: brief.evidenceMap,
       unsupportedClaimPolicy: CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY,
@@ -591,11 +629,9 @@ describe("Model-backed generation adapters (#131)", () => {
     const provider = createModelOutlineProvider(() => completeJson, "linkedin-standard-post");
     const brief = fromPartial<OutlineBrief>({ thesis: "T", evidenceMap: [], version: 1 });
     const result = await provider.generate({
-      projectId: "project_1",
       brief,
       evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
       instruction: null,
-      version: 1,
     });
     expect(result.title).toBe("The approved path");
     expect(calls).toHaveLength(1);
@@ -606,11 +642,9 @@ describe("Model-backed generation adapters (#131)", () => {
     );
     await expect(
       broken.generate({
-        projectId: "project_1",
         brief,
         evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
         instruction: null,
-        version: 1,
       }),
     ).rejects.toThrow();
   });
@@ -627,12 +661,10 @@ describe("Model-backed generation adapters (#131)", () => {
     };
     const provider = createModelDraftProvider(() => completeJson, "linkedin-standard-post");
     const result = await provider.generate({
-      projectId: "project_1",
       brief: fromPartial<OutlineBrief>({ thesis: "T", evidenceMap: [] }),
       outline: fromPartial<PlatformOutline>({ id: "outline_1", thesis: "T", version: 2 }),
       evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
       instruction: "Tighten the hook.",
-      version: 3,
     });
     expect(result.copy).toBe("Finished post copy.");
     const request = seenRequests[0] as { user: string; system: string };

@@ -557,53 +557,40 @@ export class WorkspaceContentProjects {
     input: { instruction?: string } = {},
   ): Promise<PlatformOutline> {
     const instruction = validatedInstruction(input.instruction ?? null);
-    const state = this.readState();
-    const project = requireProject(state, projectId);
-    const planned = this.plannedOutlineGeneration(currentRevision(project), target);
-    const evidence = this.promptEvidence(projectId);
-    if (!evidence) {
-      throw new ContentProjectError(
+    return this.runVersionedGeneration({
+      projectId,
+      plan: (revision) => this.plannedOutlineGeneration(revision, target),
+      noEvidence: new ContentProjectError(
         "outline-generation-blocked",
         "Platform Outline generation needs frozen evidence.",
         ["evidence-review"],
-      );
-    }
-    const result = await planned.provider.generate({
-      projectId,
-      brief: clone(planned.brief),
-      evidence: clone(evidence),
-      instruction,
-      version: planned.version,
+      ),
+      call: (planned, evidence) =>
+        planned.provider.generate({
+          brief: clone(planned.brief),
+          evidence: clone(evidence),
+          instruction,
+        }),
+      changed: (planned, landed) =>
+        landed.brief.id === planned.brief.id
+          ? null
+          : new ContentProjectError(
+              "outline-generation-blocked",
+              "The Project changed while the Outline was generated; approve the Brief on the current revision and generate again.",
+            ),
+      build: (landed, result) =>
+        buildOutline({
+          projectId,
+          brief: landed.brief,
+          target,
+          version: landed.version,
+          instruction,
+          result,
+          approvedEvidenceIds: landed.approvedEvidenceIds,
+          now: this.now(),
+        }),
+      commit: (revision, outline) => revision.platformOutlines.push(outline),
     });
-
-    /* Re-read after awaiting the provider: this is a method that yields, so it
-       must not write back a project it read before the pause. If the owner
-       revised the Project while the provider ran, the approval sequence
-       restarted and the approved Brief no longer exists, so the generation is
-       refused rather than landed on the new revision. */
-    const landedState = this.readState();
-    const landedProject = requireProject(landedState, projectId);
-    const landed = this.plannedOutlineGeneration(currentRevision(landedProject), target);
-    if (landed.brief.id !== planned.brief.id) {
-      throw new ContentProjectError(
-        "outline-generation-blocked",
-        "The Project changed while the Outline was generated; approve the Brief on the current revision and generate again.",
-      );
-    }
-    const outline = buildOutline({
-      projectId,
-      brief: landed.brief,
-      target,
-      version: landed.version,
-      instruction,
-      result,
-      frozenSourceItemIds: landed.frozenSourceItemIds,
-      now: this.now(),
-    });
-    currentRevision(landedProject).platformOutlines.push(outline);
-    this.touch(landedProject);
-    this.writeState(landedState);
-    return clone(outline);
   }
 
   /** Approve the latest Platform Outline version for one target as the Draft source. */
@@ -648,52 +635,81 @@ export class WorkspaceContentProjects {
     input: { instruction?: string } = {},
   ): Promise<ContentEngineDraft> {
     const instruction = validatedInstruction(input.instruction ?? null);
-    const state = this.readState();
-    const project = requireProject(state, projectId);
-    const planned = this.plannedDraftGeneration(currentRevision(project), target);
-    const evidence = this.promptEvidence(projectId);
-    if (!evidence) {
-      throw new ContentProjectError(
+    return this.runVersionedGeneration({
+      projectId,
+      plan: (revision) => this.plannedDraftGeneration(revision, target),
+      noEvidence: new ContentProjectError(
         "draft-generation-blocked",
         "Draft generation needs frozen evidence.",
         ["evidence-review"],
-      );
-    }
-    const result = await planned.provider.generate({
-      projectId,
-      brief: clone(planned.brief),
-      outline: clone(planned.outline),
-      evidence: clone(evidence),
-      instruction,
-      version: planned.version,
+      ),
+      call: (planned, evidence) =>
+        planned.provider.generate({
+          brief: clone(planned.brief),
+          outline: clone(planned.outline),
+          evidence: clone(evidence),
+          instruction,
+        }),
+      changed: (planned, landed) =>
+        landed.outline.id === planned.outline.id
+          ? null
+          : new ContentProjectError(
+              "draft-generation-blocked",
+              "The Project changed while the Draft was generated; approve the Outline on the current revision and generate again.",
+            ),
+      build: (landed, result) =>
+        buildDraft({
+          projectId,
+          brief: landed.brief,
+          outline: landed.outline,
+          target,
+          version: landed.version,
+          instruction,
+          result,
+          approvedEvidenceIds: landed.approvedEvidenceIds,
+          now: this.now(),
+        }),
+      commit: (revision, draft) => revision.drafts.push(draft),
     });
+  }
 
-    /* Re-read after awaiting the provider: the approval this Draft hangs from
-       must still exist on the current revision. */
+  /**
+   * The pipeline both Outline and Draft versions share: a bounded instruction,
+   * the approved plan, the frozen prompt evidence, one provider call, and a
+   * yield-safe re-read that refuses to land on a Project that changed while
+   * the provider ran.
+   */
+  private async runVersionedGeneration<P, T, R>(input: {
+    projectId: string;
+    plan(revision: ContentProjectRevision): P;
+    noEvidence: ContentProjectError;
+    call(planned: P, evidence: ContentProjectPromptEvidence): Promise<T>;
+    changed(planned: P, landed: P): ContentProjectError | null;
+    build(landed: P, result: T): R;
+    commit(revision: ContentProjectRevision, record: R): void;
+  }): Promise<R> {
+    const state = this.readState();
+    const project = requireProject(state, input.projectId);
+    const planned = input.plan(currentRevision(project));
+    const evidence = this.promptEvidence(input.projectId);
+    if (!evidence) throw input.noEvidence;
+    const result = await input.call(planned, evidence);
+
+    /* Re-read after awaiting the provider: this is a method that yields, so it
+       must not write back a project it read before the pause. If the owner
+       revised the Project while the provider ran, the approval sequence
+       restarted, the plan no longer matches, and the generation is refused
+       rather than landed on the new revision. */
     const landedState = this.readState();
-    const landedProject = requireProject(landedState, projectId);
-    const landed = this.plannedDraftGeneration(currentRevision(landedProject), target);
-    if (landed.outline.id !== planned.outline.id) {
-      throw new ContentProjectError(
-        "draft-generation-blocked",
-        "The Project changed while the Draft was generated; approve the Outline on the current revision and generate again.",
-      );
-    }
-    const draft = buildDraft({
-      projectId,
-      brief: landed.brief,
-      outline: landed.outline,
-      target,
-      version: landed.version,
-      instruction,
-      result,
-      approvedEvidenceIds: landed.approvedEvidenceIds,
-      now: this.now(),
-    });
-    currentRevision(landedProject).drafts.push(draft);
+    const landedProject = requireProject(landedState, input.projectId);
+    const landed = input.plan(currentRevision(landedProject));
+    const changed = input.changed(planned, landed);
+    if (changed) throw changed;
+    const record = input.build(landed, result);
+    input.commit(currentRevision(landedProject), record);
     this.touch(landedProject);
     this.writeState(landedState);
-    return clone(draft);
+    return clone(record);
   }
 
   private plannedOutlineGeneration(
@@ -703,7 +719,7 @@ export class WorkspaceContentProjects {
     brief: OutlineBrief;
     provider: PlatformOutlineProvider;
     version: number;
-    frozenSourceItemIds: Set<string>;
+    approvedEvidenceIds: Set<string>;
   } {
     const missing = this.missingGates(revision);
     if (missing.length > 0) {
@@ -737,7 +753,7 @@ export class WorkspaceContentProjects {
       brief,
       provider,
       version: revision.platformOutlines.filter((outline) => outline.target === target).length + 1,
-      frozenSourceItemIds: new Set(revision.frozenEvidence!.sourceItems.map((item) => item.id)),
+      approvedEvidenceIds: new Set(brief.evidenceMap.flatMap((entry) => entry.sourceItemIds)),
     };
   }
 
@@ -1026,24 +1042,33 @@ function currentRevision(project: ContentProject): ContentProjectRevision {
   return revision;
 }
 
+function latestApproved<T>(
+  items: readonly T[],
+  approvedIds: ReadonlySet<string>,
+  matches: (item: T) => boolean,
+  idOf: (item: T) => string,
+): T | null {
+  return [...items].reverse().find((item) => matches(item) && approvedIds.has(idOf(item))) ?? null;
+}
+
 function latestApprovedOutlineBrief(revision: ContentProjectRevision): OutlineBrief | null {
-  const approvedIds = new Set(
-    revision.outlineBriefApprovals.map((approval) => approval.outlineBriefId),
+  return latestApproved(
+    revision.outlineBriefs,
+    new Set(revision.outlineBriefApprovals.map((approval) => approval.outlineBriefId)),
+    () => true,
+    (brief) => brief.id,
   );
-  return [...revision.outlineBriefs].reverse().find((brief) => approvedIds.has(brief.id)) ?? null;
 }
 
 function latestApprovedPlatformOutline(
   revision: ContentProjectRevision,
   target: ContentProjectTarget,
 ): PlatformOutline | null {
-  const approvedIds = new Set(
-    revision.platformOutlineApprovals.map((approval) => approval.platformOutlineId),
-  );
-  return (
-    [...revision.platformOutlines]
-      .reverse()
-      .find((outline) => outline.target === target && approvedIds.has(outline.id)) ?? null
+  return latestApproved(
+    revision.platformOutlines,
+    new Set(revision.platformOutlineApprovals.map((approval) => approval.platformOutlineId)),
+    (outline) => outline.target === target,
+    (outline) => outline.id,
   );
 }
 
@@ -1074,7 +1099,7 @@ function buildOutline(input: {
   version: number;
   instruction: string | null;
   result: PlatformOutlineProviderResult;
-  frozenSourceItemIds: Set<string>;
+  approvedEvidenceIds: Set<string>;
   now: Date;
 }): PlatformOutline {
   if (input.result.beats.length === 0) {
@@ -1084,10 +1109,10 @@ function buildOutline(input: {
     );
   }
   const beats = input.result.beats.map((beat, index) => {
-    if (beat.evidence.sourceItemIds.some((id) => !input.frozenSourceItemIds.has(id))) {
+    if (beat.evidence.sourceItemIds.some((id) => !input.approvedEvidenceIds.has(id))) {
       throw new ContentProjectError(
         "invalid-provider-result",
-        "The Platform Outline may cite only Source Items in the frozen evidence selection.",
+        "The Platform Outline may cite only Source Items in the approved Brief's evidence map.",
       );
     }
     return {
