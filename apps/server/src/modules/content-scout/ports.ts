@@ -1,10 +1,6 @@
 import type {
   BrandProfileRevision,
   BrandProfileScanPage,
-  ContentDraft,
-  DraftReviewNote,
-  DraftTargetContract,
-  OpportunityBrief,
   RankedOpportunity,
   SourceItem,
   SourceTarget,
@@ -20,30 +16,6 @@ export interface OpportunityRanker {
     storyGroups: SourceStoryGroup[];
     limit: number;
   }): Promise<RankedOpportunity[]>;
-}
-
-export interface DraftGenerator {
-  generate(input: {
-    idempotencyKey: string;
-    brief: OpportunityBrief;
-    target: DraftTargetContract;
-  }): Promise<{
-    copy: string;
-    productionNotes: string[];
-    reviewNotes: DraftReviewNote[];
-  }>;
-}
-
-export interface NotionPublisher {
-  findDraftPage(
-    idempotencyKey: string,
-    draft?: ContentDraft,
-  ): Promise<{ id: string; url: string } | null>;
-  createDraftPage(input: {
-    idempotencyKey: string;
-    draft: ContentDraft;
-    brief: OpportunityBrief;
-  }): Promise<{ id: string; url: string }>;
 }
 
 export interface SourceDiscoverer {

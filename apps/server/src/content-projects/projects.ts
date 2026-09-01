@@ -74,6 +74,7 @@ export class ContentProjectError extends Error {
     public readonly code:
       | "invalid-project-input"
       | "owner-not-confirmed"
+      | "opportunity-already-linked"
       | "profile-not-found"
       | "author-forbidden"
       | "project-not-found"
@@ -160,6 +161,15 @@ export class WorkspaceContentProjects {
   }
 
   create(input: ContentProjectCreateInput): ContentProject {
+    if (input.sourceOpportunity) {
+      const linked = this.projectByOpportunity(input.sourceOpportunity.opportunityId);
+      if (linked) {
+        throw new ContentProjectError(
+          "opportunity-already-linked",
+          `Opportunity ${input.sourceOpportunity.opportunityId} already seeded Project ${linked.id}; one Opportunity seeds exactly one Project.`,
+        );
+      }
+    }
     const author = this.selectAuthor(input.authorProfileId);
     const revision = this.initialRevision(input, author);
     const timestamp = this.now().toISOString();
@@ -177,6 +187,14 @@ export class WorkspaceContentProjects {
 
   get(projectId: string): ContentProject | null {
     const project = this.readState().projects.find((candidate) => candidate.id === projectId);
+    return project ? clone(project) : null;
+  }
+
+  /** The one Project this Opportunity seeded, when it seeded one (#133). */
+  projectByOpportunity(opportunityId: string): ContentProject | null {
+    const project = this.readState().projects.find(
+      (candidate) => candidate.revisions[0]?.sourceOpportunity?.opportunityId === opportunityId,
+    );
     return project ? clone(project) : null;
   }
 
@@ -209,6 +227,7 @@ export class WorkspaceContentProjects {
         patch.seedMaterial === undefined
           ? clone(previous.seedMaterial)
           : cleanList(patch.seedMaterial),
+      sourceOpportunity: previous.sourceOpportunity,
       evidenceReview: null,
     });
     project.revisions.push(revision);
@@ -952,6 +971,9 @@ export class WorkspaceContentProjects {
       targets: input.targets,
       researchMode: input.researchMode,
       seedMaterial: cleanList(input.seedMaterial),
+      sourceOpportunity: input.sourceOpportunity
+        ? { ...clone(input.sourceOpportunity), recordedAt: this.now().toISOString() }
+        : null,
       evidenceReview: null,
     });
   }
@@ -1383,6 +1405,7 @@ function buildRevision(seed: ContentProjectRevisionSeed): ContentProjectRevision
     constraints: cleanList(seed.constraints),
     targets: validatedTargets(seed.targets),
     seedMaterial: cleanList(seed.seedMaterial),
+    sourceOpportunity: clone(seed.sourceOpportunity),
     evidenceReview: clone(seed.evidenceReview),
     researchRequest: null,
     frozenEvidence: null,
@@ -1410,6 +1433,7 @@ function nextRevision(
     targets: previous.targets,
     researchMode: previous.researchMode,
     seedMaterial: previous.seedMaterial,
+    sourceOpportunity: previous.sourceOpportunity,
     evidenceReview,
   });
 }

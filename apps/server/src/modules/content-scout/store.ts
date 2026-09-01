@@ -5,7 +5,6 @@ import type {
   BrandProfileRevision,
   BrandProfileProposal,
   BrandProfileSourceScan,
-  ContentPack,
   ContentScoutScheduleState,
   ContentShortlist,
   OpportunityEarlyFollowUp,
@@ -15,6 +14,7 @@ import type {
   SourceSuggestion,
   SourceTarget,
 } from "@chief-of-staff-demo/shared";
+import type { OpportunityProjectInput } from "../../content-projects/opportunity-projects.js";
 import { WorkspaceBrandProfileStore } from "../../brand-profile/store.js";
 
 interface ContentScoutState {
@@ -23,9 +23,9 @@ interface ContentScoutState {
   activeShortlist: ContentShortlist | null;
   pendingActions: Record<
     string,
-    { kind: "selection"; opportunityIds: string[] } | { kind: "skip" }
+    | { kind: "selection"; opportunityIds: string[]; project: OpportunityProjectInput }
+    | { kind: "skip" }
   >;
-  contentPacks: ContentPack[];
   sourceSuggestions: SourceSuggestion[];
   schedule: ContentScoutScheduleState;
   brandProfileProposal: BrandProfileProposal | null;
@@ -48,7 +48,6 @@ const EMPTY: ContentScoutState = {
   sourceTargets: [],
   activeShortlist: null,
   pendingActions: {},
-  contentPacks: [],
   sourceSuggestions: [],
   schedule: {
     lastSuccessfulIntakePeriod: null,
@@ -177,7 +176,7 @@ export class ContentScoutStore {
     return this.readState().activeShortlist;
   }
 
-  recordSelection(runId: string, opportunityIds: string[]): void {
+  recordSelection(runId: string, opportunityIds: string[], project: OpportunityProjectInput): void {
     const state = this.readState();
     const shortlist = state.activeShortlist;
     if (!shortlist || shortlist.runId !== runId) {
@@ -196,7 +195,7 @@ export class ContentScoutStore {
       opportunity.decision = "draft";
       this.recordOpportunityDecision(state, opportunity, "draft");
     }
-    state.pendingActions[runId] = { kind: "selection", opportunityIds: unique };
+    state.pendingActions[runId] = { kind: "selection", opportunityIds: unique, project };
     this.writeState(state);
   }
 
@@ -304,18 +303,6 @@ export class ContentScoutStore {
     const state = this.readState();
     delete state.pendingActions[runId];
     this.writeState(state);
-  }
-
-  saveContentPack(pack: ContentPack): void {
-    const state = this.readState();
-    const index = state.contentPacks.findIndex((candidate) => candidate.id === pack.id);
-    if (index === -1) state.contentPacks.push(pack);
-    else state.contentPacks[index] = pack;
-    this.writeState(state);
-  }
-
-  listContentPacks(): ContentPack[] {
-    return this.readState().contentPacks;
   }
 
   listSourceSuggestions(): SourceSuggestion[] {
@@ -427,7 +414,6 @@ export class ContentScoutStore {
           parsed.pendingActions && typeof parsed.pendingActions === "object"
             ? parsed.pendingActions
             : {},
-        contentPacks: Array.isArray(parsed.contentPacks) ? parsed.contentPacks : [],
         sourceSuggestions: Array.isArray(parsed.sourceSuggestions) ? parsed.sourceSuggestions : [],
         schedule: {
           lastSuccessfulIntakePeriod: parsed.schedule?.lastSuccessfulIntakePeriod ?? null,

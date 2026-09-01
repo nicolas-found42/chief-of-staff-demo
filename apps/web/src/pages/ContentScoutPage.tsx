@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  CONTENT_SCOUT_DRAFT_TARGETS_V1,
+  CONTENT_PROJECT_RESEARCH_MODES,
+  CONTENT_PROJECT_TARGETS,
   SOURCE_BACKFILL_WINDOWS_DAYS,
-  type ContentDraft,
-  type ContentPack,
   type ContentScoutCleanupPreview,
+  type ContentProjectResearchMode,
+  type ContentProjectTarget,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ContentScoutState } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
-type View = "shortlist" | "packs" | "sources" | "brand" | "settings";
+type View = "shortlist" | "sources" | "brand" | "settings";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "shortlist", label: "Shortlist" },
-  { id: "packs", label: "Content Packs" },
   { id: "sources", label: "Sources" },
   { id: "brand", label: "Brand Profile" },
   { id: "settings", label: "Settings & Health" },
@@ -31,16 +31,6 @@ async function waitForRun(runId: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("Content Scout is still working. Open the Intake Run to follow its progress.");
-}
-
-function packTargetIds(pack: ContentPack): Set<string> {
-  return new Set(
-    pack.draftIds.map((id) => {
-      const marker = id.lastIndexOf(":v1");
-      const prefix = marker === -1 ? id : id.slice(0, marker);
-      return prefix.slice(prefix.lastIndexOf(":") + 1);
-    }),
-  );
 }
 
 export function ContentScoutPage() {
@@ -104,7 +94,8 @@ export function ContentScoutPage() {
             Content Scout
           </h1>
           <p className="muted">
-            Public Source Targets become a ranked shortlist, then complete local and Notion drafts.
+            Public Source Targets become a ranked shortlist; selecting an Opportunity starts one
+            governed Content Project in the Content Engine.
           </p>
         </div>
         <button
@@ -173,7 +164,6 @@ export function ContentScoutPage() {
           }}
         />
       )}
-      {view === "packs" && <PacksView packs={state.contentPacks} />}
       {view === "sources" && (
         <SourcesView
           state={state}
@@ -220,8 +210,27 @@ function ShortlistView({
   retainFocus: (button: HTMLButtonElement) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [objective, setObjective] = useState("educate");
+  const [customObjective, setCustomObjective] = useState("");
+  const [audience, setAudience] = useState("");
+  const [targets, setTargets] = useState<ContentProjectTarget[]>([]);
+  const [researchMode, setResearchMode] = useState<ContentProjectResearchMode>(
+    "existing-workspace-evidence",
+  );
+  const [started, setStarted] = useState<
+    { opportunityId: string; projectId: string; created: boolean }[]
+  >([]);
   const shortlist = state.shortlist;
-  useEffect(() => setSelected([]), [shortlist?.runId]);
+  useEffect(() => {
+    setSelected([]);
+    setStarted([]);
+  }, [shortlist?.runId]);
+  const resolvedObjective = objective === "custom" ? customObjective.trim() : objective;
+  const canStart =
+    selected.length > 0 &&
+    resolvedObjective.length > 0 &&
+    audience.trim().length > 0 &&
+    targets.length > 0;
   if (!shortlist) {
     return (
       <div className="card">
@@ -338,23 +347,123 @@ function ShortlistView({
           </article>
         ))
       )}
+      {started.length > 0 && (
+        <div className="card">
+          <h3>Projects started</h3>
+          <ul>
+            {started.map((entry) => (
+              <li key={entry.opportunityId}>
+                <code>{entry.projectId}</code>
+                {entry.created ? "" : " (already existed)"}
+              </li>
+            ))}
+          </ul>
+          <p className="muted">
+            The Projects hold the Opportunity relationship and still require evidence review, an
+            approved Outline Brief, and every other Content Engine gate before generation.
+          </p>
+        </div>
+      )}
+      {selected.length > 0 && (
+        <div className="card">
+          <h3>
+            Start {selected.length === 1 ? "a" : selected.length} Content Project
+            {selected.length === 1 ? "" : "s"}
+          </h3>
+          <p className="muted">
+            Each selected Opportunity becomes exactly one governed Content Project. Nothing is
+            generated here: the Project still requires author, audience, objective, evidence,
+            targets, Brand Voice, and an approved Outline Brief.
+          </p>
+          <div className="form-grid">
+            <label className="field">
+              Objective
+              <select value={objective} onChange={(event) => setObjective(event.target.value)}>
+                <option value="educate">Educate</option>
+                <option value="provoke discussion">Provoke discussion</option>
+                <option value="establish authority">Establish authority</option>
+                <option value="drive a specific action">Drive a specific action</option>
+                <option value="custom">Custom…</option>
+              </select>
+            </label>
+            {objective === "custom" && (
+              <label className="field">
+                Custom objective
+                <input
+                  value={customObjective}
+                  onChange={(event) => setCustomObjective(event.target.value)}
+                  required
+                />
+              </label>
+            )}
+            <label className="field">
+              Intended audience
+              <input
+                value={audience}
+                onChange={(event) => setAudience(event.target.value)}
+                required
+              />
+            </label>
+            <fieldset>
+              <legend>Publication targets</legend>
+              {CONTENT_PROJECT_TARGETS.map((target) => (
+                <label className="checkbox-label" key={target}>
+                  <input
+                    type="checkbox"
+                    checked={targets.includes(target)}
+                    onChange={(event) =>
+                      setTargets((current) =>
+                        event.target.checked
+                          ? [...current, target]
+                          : current.filter((candidate) => candidate !== target),
+                      )
+                    }
+                  />
+                  {target.replaceAll("-", " ")}
+                </label>
+              ))}
+            </fieldset>
+            <label className="field">
+              Research mode
+              <select
+                value={researchMode}
+                onChange={(event) =>
+                  setResearchMode(event.target.value as ContentProjectResearchMode)
+                }
+              >
+                {CONTENT_PROJECT_RESEARCH_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode.replaceAll("-", " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
       <div className="toolbar">
         <button
           type="button"
           className="primary"
-          aria-disabled={busy || selected.length === 0}
+          aria-disabled={busy || !canStart}
           onClick={(event) => {
-            if (busy || selected.length === 0) return;
+            if (busy || !canStart) return;
             retainFocus(event.currentTarget);
             void act(async () => {
-              await api.selectContentScout(shortlist.runId, selected);
+              const response = await api.selectContentScout(shortlist.runId, selected, {
+                objective: resolvedObjective,
+                audience,
+                targets,
+                researchMode,
+              });
+              setStarted(response.projects);
               await waitForRun(shortlist.runId);
-            }, "The complete Content Pack is ready.");
+            }, "The selected Opportunities started their Content Projects.");
           }}
         >
           {busy
-            ? "Generating…"
-            : `Generate ${selected.length || "selected"} pack${selected.length === 1 ? "" : "s"}`}
+            ? "Working…"
+            : `Start ${selected.length === 1 ? "Project" : `${selected.length} Projects`}`}
         </button>
         <button
           type="button"
@@ -369,128 +478,6 @@ function ShortlistView({
         </button>
         <Link to={`/runs/${shortlist.runId}`}>Open Intake Run</Link>
       </div>
-    </section>
-  );
-}
-
-function PacksView({ packs }: { packs: ContentPack[] }) {
-  const [open, setOpen] = useState<{ packId: string; targetId: string } | null>(null);
-  const [loaded, setLoaded] = useState<{
-    draft: ContentDraft;
-    notionPage: { id: string; url: string } | null;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    setLoaded(null);
-    setError(null);
-    api
-      .contentDraft(open.packId, open.targetId)
-      .then(setLoaded)
-      .catch((err: unknown) => setError(errorMessage(err)));
-  }, [open]);
-
-  if (packs.length === 0) {
-    return (
-      <div className="card">
-        <h2>No Content Packs yet</h2>
-        <p className="muted">A pack appears after you choose a shortlist opportunity.</p>
-      </div>
-    );
-  }
-  return (
-    <section aria-labelledby="packs-heading">
-      <h2 id="packs-heading">Content Packs</h2>
-      {packs.map((pack) => {
-        const generated = packTargetIds(pack);
-        return (
-          <article className="card" key={pack.id}>
-            <div className="pack-heading">
-              <div>
-                <h3>{pack.opportunityTitle}</h3>
-                <p className="muted">
-                  {pack.draftIds.length}/23 local drafts · {pack.notionPages.length}/23 Notion pages
-                  {Number.isInteger(pack.supportingSourceItemCount)
-                    ? ` · ${pack.supportingSourceItemCount} supporting Source Item${pack.supportingSourceItemCount === 1 ? "" : "s"}`
-                    : ""}
-                </p>
-              </div>
-              <span
-                className={`status-badge ${pack.status === "complete" ? "status-done" : "status-attention"}`}
-              >
-                {pack.status}
-              </span>
-            </div>
-            <div className="draft-grid">
-              {CONTENT_SCOUT_DRAFT_TARGETS_V1.map((target) => (
-                <button
-                  type="button"
-                  key={target.id}
-                  disabled={!generated.has(target.id)}
-                  onClick={() => setOpen({ packId: pack.id, targetId: target.id })}
-                >
-                  <span>{target.channel}</span>
-                  <strong>{target.format}</strong>
-                </button>
-              ))}
-            </div>
-          </article>
-        );
-      })}
-      {open && (
-        <section className="card draft-reader" aria-labelledby="draft-heading">
-          {error ? (
-            <p className="field-error">{error}</p>
-          ) : !loaded ? (
-            <p className="muted">Loading draft…</p>
-          ) : (
-            <>
-              <div className="pack-heading">
-                <h3 id="draft-heading">
-                  {loaded.draft.target.channel} — {loaded.draft.target.format}
-                </h3>
-                <button type="button" onClick={() => setOpen(null)}>
-                  Close
-                </button>
-              </div>
-              <pre tabIndex={0}>{loaded.draft.copy}</pre>
-              <div className="toolbar">
-                <button
-                  type="button"
-                  onClick={() => void navigator.clipboard.writeText(loaded.draft.copy)}
-                >
-                  Copy draft
-                </button>
-                {loaded.notionPage && (
-                  <a
-                    className="action-button"
-                    href={loaded.notionPage.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open editable Notion copy
-                  </a>
-                )}
-              </div>
-              <details>
-                <summary>Production and evidence notes</summary>
-                <ul>
-                  {loaded.draft.productionNotes.map((note) => (
-                    <li key={note}>{note}</li>
-                  ))}
-                </ul>
-                <ul>
-                  {loaded.draft.reviewNotes.map((note, index) => (
-                    <li key={`${note.claim}-${index}`}>
-                      <strong>{note.kind}:</strong> {note.claim}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            </>
-          )}
-        </section>
-      )}
     </section>
   );
 }
@@ -670,7 +657,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
           .filter((suggestion) => suggestion.state !== "approved")
           .map((suggestion) => (
             <article className="card" key={suggestion.id}>
-              <div className="pack-heading">
+              <div className="card-heading">
                 <div>
                   <h3>{suggestion.label}</h3>
                   <a href={suggestion.url} target="_blank" rel="noreferrer">
@@ -959,7 +946,6 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
 }
 
 function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
-  const [token, setToken] = useState("");
   const [cleanupPreview, setCleanupPreview] = useState<ContentScoutCleanupPreview | null>(null);
   const initial = state.settings ?? {
     timeZone: "UTC",
@@ -969,18 +955,6 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
     shortlistSize: 5,
     canaryIntervalHours: 12,
     canaryDisabledAdapters: [],
-    notion: {
-      databaseId: "",
-      dataSourceId: "",
-      databaseUrl: "",
-      mapping: {
-        name: "Name",
-        status: "Status",
-        platform: "Platform",
-        format: "Format",
-        scheduledDate: "Scheduled date",
-      },
-    },
   };
   const [timeZone, setTimeZone] = useState(initial.timeZone);
   const [dailyTime, setDailyTime] = useState(initial.dailyTime);
@@ -991,11 +965,6 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
   const [canaryDisabledAdapters, setCanaryDisabledAdapters] = useState<string[]>(
     initial.canaryDisabledAdapters,
   );
-  const [parentPageId, setParentPageId] = useState("");
-  const [databaseId, setDatabaseId] = useState(initial.notion.databaseId);
-  const [dataSourceId, setDataSourceId] = useState(initial.notion.dataSourceId);
-  const [databaseUrl, setDatabaseUrl] = useState(initial.notion.databaseUrl);
-  const [mapping, setMapping] = useState(initial.notion.mapping);
   const available = useMemo(
     () => state.adapters.filter((adapter) => adapter.state === "available").length,
     [state.adapters],
@@ -1140,167 +1109,6 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
             <br />
             Last discovery period: {state.schedule.lastSuccessfulDiscoveryPeriod ?? "never"}
           </p>
-        </div>
-        <div className="card">
-          <h3>Notion</h3>
-          <p>
-            Status: <strong>{state.notion.state}</strong>
-            {state.notion.tokenHint ? ` (${state.notion.tokenHint})` : ""}
-          </p>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (busy) return;
-              const button =
-                event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]');
-              if (button) retainFocus(button);
-              void act(() => api.connectNotion(token), "Notion token verified and stored.").then(
-                () => setToken(""),
-              );
-            }}
-          >
-            <label className="field">
-              Internal-integration token
-              <input
-                type="password"
-                autoComplete="off"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                required
-              />
-            </label>
-            <div className="toolbar">
-              <button className="primary" type="submit" aria-disabled={busy}>
-                Verify and connect
-              </button>
-              {state.notion.state !== "unconfigured" && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    retainFocus(event.currentTarget);
-                    void act(() => api.disconnectNotion(), "Notion disconnected.");
-                  }}
-                >
-                  Disconnect
-                </button>
-              )}
-            </div>
-          </form>
-          {state.notion.state === "connected" && (
-            <>
-              <h4>Content calendar</h4>
-              {initial.notion.databaseId && (
-                <p className="banner banner-ok">
-                  Calendar configured.{" "}
-                  <a href={initial.notion.databaseUrl} target="_blank" rel="noreferrer">
-                    Open in Notion
-                  </a>
-                </p>
-              )}
-              <details className="disclosure">
-                <summary>Create the standard Content Scout calendar</summary>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (busy) return;
-                    const button =
-                      event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]');
-                    if (button) retainFocus(button);
-                    void act(
-                      () => api.configureNotionCalendar({ mode: "create", parentPageId }),
-                      "Standard Notion content calendar created and selected.",
-                    );
-                  }}
-                >
-                  <label className="field">
-                    Notion parent page ID
-                    <input
-                      value={parentPageId}
-                      onChange={(event) => setParentPageId(event.target.value)}
-                      required
-                    />
-                  </label>
-                  <p className="field-hint muted">
-                    Share this parent page with the same internal integration first.
-                  </p>
-                  <button className="primary" type="submit" aria-disabled={busy}>
-                    Create standard calendar
-                  </button>
-                </form>
-              </details>
-              <details className="disclosure">
-                <summary>Map an existing Notion calendar</summary>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (busy) return;
-                    const button =
-                      event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]');
-                    if (button) retainFocus(button);
-                    void act(
-                      () =>
-                        api.configureNotionCalendar({
-                          mode: "existing",
-                          databaseId,
-                          dataSourceId,
-                          databaseUrl,
-                          mapping,
-                        }),
-                      "Existing Notion calendar validated and selected without changing its schema.",
-                    );
-                  }}
-                >
-                  <div className="form-grid">
-                    <label className="field">
-                      Database ID
-                      <input
-                        value={databaseId}
-                        onChange={(event) => setDatabaseId(event.target.value)}
-                        required
-                      />
-                    </label>
-                    <label className="field">
-                      Data source ID
-                      <input
-                        value={dataSourceId}
-                        onChange={(event) => setDataSourceId(event.target.value)}
-                        required
-                      />
-                    </label>
-                    <label className="field">
-                      Database URL
-                      <input
-                        type="url"
-                        value={databaseUrl}
-                        onChange={(event) => setDatabaseUrl(event.target.value)}
-                        required
-                      />
-                    </label>
-                    {(["name", "status", "platform", "format", "scheduledDate"] as const).map(
-                      (field) => (
-                        <label className="field" key={field}>
-                          {field === "scheduledDate"
-                            ? "Scheduled date"
-                            : field[0]!.toUpperCase() + field.slice(1)}{" "}
-                          property
-                          <input
-                            value={mapping[field]}
-                            onChange={(event) =>
-                              setMapping((current) => ({ ...current, [field]: event.target.value }))
-                            }
-                            required
-                          />
-                        </label>
-                      ),
-                    )}
-                  </div>
-                  <button className="primary" type="submit" aria-disabled={busy}>
-                    Validate and use calendar
-                  </button>
-                </form>
-              </details>
-            </>
-          )}
         </div>
         <div className="card">
           <h3>Storage & retention</h3>

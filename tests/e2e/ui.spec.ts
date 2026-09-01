@@ -389,11 +389,9 @@ test("partial Content Scout diagnostics stay visible and accessible", async ({ p
   expect((await new AxeBuilder({ page }).withTags(WCAG).analyze()).violations).toEqual([]);
 });
 
-test("Content Scout goes from bounded Brand Profile scan to a complete copied draft", async ({
+test("Content Scout goes from bounded Brand Profile scan to a started Content Project", async ({
   page,
-  context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.request.post("/api/test/owner-identity", {
     data: { email: "owner-onboarding@example.com" },
   });
@@ -436,23 +434,21 @@ test("Content Scout goes from bounded Brand Profile scan to a complete copied dr
   await page.getByRole("button", { name: "Shortlist" }).click();
   await expect(page.getByText("Explain what the verified change means in practice")).toBeVisible();
   await page.getByRole("checkbox", { name: /Explain what the verified change/ }).check();
-  await page.getByRole("button", { name: "Generate 1 pack" }).click();
-  await expect(page.getByText("The complete Content Pack is ready.")).toBeVisible();
-
-  await page.getByRole("button", { name: "Content Packs" }).click();
-  const pack = page.locator("article.card", { hasText: "Explain what the verified change" });
-  await expect(pack).toContainText("23/23 local drafts · 23/23 Notion pages");
-  await expect(pack.getByText("complete", { exact: true })).toBeVisible();
-  await pack.getByRole("button", { name: /LinkedIn Standard post/ }).click();
-  await expect(page.getByRole("heading", { name: "LinkedIn — Standard post" })).toBeVisible();
-  await page.getByRole("button", { name: "Copy draft" }).click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toContain("Evidence-led draft for linkedin-standard-post");
-  await expect(page.getByRole("link", { name: "Open editable Notion copy" })).toHaveAttribute(
-    "href",
-    /^https:\/\/www\.notion\.so\/e2e-content-draft-/,
-  );
+  /* Selecting an Opportunity starts one governed Content Project — with the
+     Project's own required inputs, and nothing generated at selection time. */
+  await page.getByRole("combobox", { name: "Objective" }).selectOption("educate");
+  await page.getByLabel("Intended audience").fill("Operations leads");
+  await page.getByRole("checkbox", { name: "linkedin standard post" }).check();
+  await page
+    .getByRole("combobox", { name: "Research mode" })
+    .selectOption("existing-workspace-evidence");
+  await page.getByRole("button", { name: "Start Project" }).click();
+  await expect(
+    page.getByText("The selected Opportunities started their Content Projects."),
+  ).toBeVisible();
+  const projectCard = page.getByRole("heading", { name: "Projects started" });
+  await expect(projectCard).toBeVisible();
+  await expect(page.locator("code", { hasText: /^project_/ })).toBeVisible();
 
   const runs = await page.request.get("/api/runs?module=content-scout");
   expect(runs.ok()).toBe(true);
@@ -460,7 +456,7 @@ test("Content Scout goes from bounded Brand Profile scan to a complete copied dr
   expect(body.runs).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ intake: "brand-profile-scan", status: "done" }),
-      expect.objectContaining({ intake: "daily-intake", status: "done" }),
+      expect.objectContaining({ intake: "daily-intake", status: "blocked" }),
     ]),
   );
 });

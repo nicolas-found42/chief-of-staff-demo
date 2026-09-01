@@ -102,39 +102,6 @@ export const ConfigSchema = z.strictObject({
           canaryIntervalHours: z.number().int().min(1).max(168).default(12),
           /** Adapter ids whose canary targets this workspace declines to contact (issue #104). */
           canaryDisabledAdapters: z.array(z.string()).default([]),
-          notion: z
-            .strictObject({
-              databaseId: z.string().default(""),
-              dataSourceId: z.string().default(""),
-              databaseUrl: z.string().default(""),
-              mapping: z
-                .strictObject({
-                  name: z.string().default("Name"),
-                  status: z.string().default("Status"),
-                  platform: z.string().default("Platform"),
-                  format: z.string().default("Format"),
-                  scheduledDate: z.string().default("Scheduled date"),
-                })
-                .default({
-                  name: "Name",
-                  status: "Status",
-                  platform: "Platform",
-                  format: "Format",
-                  scheduledDate: "Scheduled date",
-                }),
-            })
-            .default({
-              databaseId: "",
-              dataSourceId: "",
-              databaseUrl: "",
-              mapping: {
-                name: "Name",
-                status: "Status",
-                platform: "Platform",
-                format: "Format",
-                scheduledDate: "Scheduled date",
-              },
-            }),
         })
         .default({
           timeZone: "UTC",
@@ -144,18 +111,6 @@ export const ConfigSchema = z.strictObject({
           shortlistSize: 5,
           canaryIntervalHours: 12,
           canaryDisabledAdapters: [],
-          notion: {
-            databaseId: "",
-            dataSourceId: "",
-            databaseUrl: "",
-            mapping: {
-              name: "Name",
-              status: "Status",
-              platform: "Platform",
-              format: "Format",
-              scheduledDate: "Scheduled date",
-            },
-          },
         }),
       "content-research": z
         .strictObject({
@@ -199,18 +154,6 @@ export const ConfigSchema = z.strictObject({
         shortlistSize: 5,
         canaryIntervalHours: 12,
         canaryDisabledAdapters: [],
-        notion: {
-          databaseId: "",
-          dataSourceId: "",
-          databaseUrl: "",
-          mapping: {
-            name: "Name",
-            status: "Status",
-            platform: "Platform",
-            format: "Format",
-            scheduledDate: "Scheduled date",
-          },
-        },
       },
       "content-research": {
         timeZone: "UTC",

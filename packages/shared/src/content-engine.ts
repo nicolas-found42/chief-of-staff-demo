@@ -1,4 +1,4 @@
-import type { BrandProfileRevision } from "./content-scout.js";
+import type { BrandProfileRevision, ContentAngle } from "./content-scout.js";
 import type { PersonProfilePublicSafeProjection } from "./person-profile.js";
 import type { AdapterDiagnostic, SourceItem } from "./source-items.js";
 
@@ -127,8 +127,30 @@ export interface ContentTargetCatalogEntry {
 export type ContentProjectResearchMode =
   "no-external-research" | "existing-workspace-evidence" | "fresh-bounded-research";
 
+export const CONTENT_PROJECT_RESEARCH_MODES: readonly ContentProjectResearchMode[] = [
+  "no-external-research",
+  "existing-workspace-evidence",
+  "fresh-bounded-research",
+];
 export type ContentProjectSubjectInput =
   { kind: "topic"; topic: string } | { kind: "person-profile"; profileId: string };
+
+/**
+ * The source Content Opportunity (#133) one Project revision was seeded from.
+ * The relationship is recorded at creation and carried through revisions; it
+ * is an input lineage, never a generation trigger: the Project still needs its
+ * own evidence review and an approved Outline Brief.
+ */
+export interface ContentProjectSourceOpportunity {
+  opportunityId: string;
+  runId: string;
+  title: string;
+  angle: ContentAngle;
+  angleDescription: string;
+  sourceUrls: string[];
+  brandProfileRevisionId: string;
+  recordedAt: string;
+}
 
 export type ContentProjectSubject =
   | { kind: "topic"; topic: string }
@@ -143,6 +165,8 @@ export interface ContentProjectCreateInput {
   targets: ContentProjectTarget[];
   researchMode: ContentProjectResearchMode | null;
   seedMaterial: string[];
+  /** The shortlisted Content Opportunity that seeded this Project, when one did. */
+  sourceOpportunity?: Omit<ContentProjectSourceOpportunity, "recordedAt">;
 }
 
 export interface ContentProjectIntentPatch {
@@ -256,6 +280,8 @@ export interface ContentProjectRevision {
   targets: ContentProjectTarget[];
   researchMode: ContentProjectResearchMode | null;
   seedMaterial: string[];
+  /** The shortlisted Content Opportunity that seeded this Project, when one did. */
+  sourceOpportunity: ContentProjectSourceOpportunity | null;
   researchRequest: ResearchRequest | null;
   evidenceReview: ContentProjectEvidenceReview | null;
   frozenEvidence: ContentProjectEvidenceFreeze | null;

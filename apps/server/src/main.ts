@@ -44,12 +44,15 @@ import {
   PublicBrandProfileCrawler,
   modelBrandProfileProposer,
 } from "./modules/content-scout/brand-profile.js";
-import { modelDraftGenerator, modelOpportunityRanker } from "./modules/content-scout/model.js";
+import { modelOpportunityRanker } from "./modules/content-scout/model.js";
+import { WorkspaceContentProjects } from "./content-projects/projects.js";
 import {
-  NotionCalendar,
-  NotionCalendarPublisher,
-  NotionConnection,
-} from "./modules/content-scout/notion.js";
+  createModelDraftProvider,
+  createModelOutlineProvider,
+} from "./content-projects/generation.js";
+import { createPublicSearchResearchProvider } from "./content-projects/research.js";
+import { contentProjectOpportunityStarter } from "./content-projects/opportunity-projects.js";
+import { CONTENT_PROJECT_TARGETS } from "@chief-of-staff-demo/shared";
 import { workspaceLayout } from "./paths.js";
 import { openRuns } from "./runs.js";
 import { ContentResearchHost } from "./modules/content-research/host.js";
@@ -209,9 +212,23 @@ const contentScoutCompleteJson = () => {
 };
 const testContentScout =
   process.env.ENABLE_TEST_SEED === "1" ? contentScoutTestPorts(() => new Date()) : null;
-const notionConnection = new NotionConnection(configStore);
-const notionCalendar = new NotionCalendar(notionConnection, configStore);
-const notionPublisher = new NotionCalendarPublisher(notionConnection, configStore);
+/* The governed Content Engine path (#133): selecting a shortlisted Content
+   Opportunity starts exactly one Content Project here; the Pack and Notion
+   publication path is retired. Generation and research run through the
+   Project's own gates at the Shell's one model seam. */
+const contentProjects = new WorkspaceContentProjects({
+  workspaceDir,
+  people: peopleProfiles,
+  ownerOnboarding,
+  brandProfiles: new WorkspaceBrandProfileStore(workspaceDir, () => new Date()),
+  researchProviders: [createPublicSearchResearchProvider(createPublicSearch(), () => new Date())],
+  outlineProviders: CONTENT_PROJECT_TARGETS.map((target) =>
+    createModelOutlineProvider(contentScoutCompleteJson, target),
+  ),
+  draftProviders: CONTENT_PROJECT_TARGETS.map((target) =>
+    createModelDraftProvider(contentScoutCompleteJson, target),
+  ),
+});
 const contentScout = new ContentScoutHost({
   runs,
   workspaceDir,
@@ -229,10 +246,7 @@ const contentScout = new ContentScoutHost({
       },
     }),
   ranker: testContentScout?.ranker ?? modelOpportunityRanker(contentScoutCompleteJson),
-  draftGenerator: testContentScout?.draftGenerator ?? modelDraftGenerator(contentScoutCompleteJson),
-  notionPublisher: testContentScout?.notionPublisher ?? notionPublisher,
-  notionConnection,
-  notionCalendar,
+  opportunityProjects: contentProjectOpportunityStarter(contentProjects),
   discoverer: new PublicRouteSourceDiscoverer(),
   brandProfileCrawler: testContentScout?.brandProfileCrawler ?? new PublicBrandProfileCrawler(),
   brandProfileProposer:

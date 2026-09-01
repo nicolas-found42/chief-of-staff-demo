@@ -3,10 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type {
-  DraftGenerator,
   BrandProfileCrawler,
   BrandProfileProposer,
-  NotionPublisher,
   OpportunityRanker,
   RuntimeInspector,
 } from "../modules/content-scout/ports.js";
@@ -323,8 +321,6 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
 export function contentScoutTestPorts(now: () => Date): {
   adapters: SourceAdapter[];
   ranker: OpportunityRanker;
-  draftGenerator: DraftGenerator;
-  notionPublisher: NotionPublisher;
   brandProfileCrawler: BrandProfileCrawler;
   brandProfileProposer: BrandProfileProposer;
   runtimeInspector: RuntimeInspector;
@@ -445,35 +441,6 @@ export function contentScoutTestPorts(now: () => Date): {
       ];
     },
   };
-  const draftGenerator: DraftGenerator = {
-    async generate({ brief, target }) {
-      return {
-        copy: `${target.channel} ${target.format}\n\n${brief.opportunity.title}\n\nEvidence-led draft for ${target.id}.`,
-        productionNotes: [target.productionNotes],
-        reviewNotes: [
-          {
-            claim: "A public source describes the verified change.",
-            kind: "fact",
-            sourceUrls: brief.opportunity.sourceUrls,
-          },
-        ],
-      };
-    },
-  };
-  const pages = new Map<string, { id: string; url: string }>();
-  const notionPublisher: NotionPublisher = {
-    async findDraftPage(key) {
-      return pages.get(key) ?? null;
-    },
-    async createDraftPage({ idempotencyKey }) {
-      const page = {
-        id: `e2e-notion-page-${pages.size + 1}`,
-        url: `https://www.notion.so/e2e-content-draft-${pages.size + 1}`,
-      };
-      pages.set(idempotencyKey, page);
-      return page;
-    },
-  };
   const brandProfileCrawler: BrandProfileCrawler = {
     async crawl({ websiteUrl }) {
       return [
@@ -523,8 +490,6 @@ export function contentScoutTestPorts(now: () => Date): {
   return {
     adapters: [adapter, experimentalAdapter],
     ranker,
-    draftGenerator,
-    notionPublisher,
     brandProfileCrawler,
     brandProfileProposer,
     runtimeInspector: {

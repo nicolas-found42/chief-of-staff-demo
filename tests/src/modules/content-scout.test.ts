@@ -5,14 +5,10 @@ import { describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import { ContentScoutHost } from "../../../apps/server/src/modules/content-scout/host";
 import { openRuns } from "../../../apps/server/src/runs";
-import type {
-  DraftGenerator,
-  NotionPublisher,
-  OpportunityRanker,
-} from "../../../apps/server/src/modules/content-scout/ports";
+import type { OpportunityRanker } from "../../../apps/server/src/modules/content-scout/ports";
+import type { OpportunityProjectInput } from "../../../apps/server/src/content-projects/opportunity-projects";
 import type { SourceAdapter } from "../../../apps/server/src/source-adapters/source-adapter";
 import { ConfigStore } from "../../../apps/server/src/config";
-import { CONTENT_SCOUT_DRAFT_TARGETS_V1 } from "@chief-of-staff-demo/shared";
 import type { RankedOpportunity } from "@chief-of-staff-demo/shared";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");
@@ -228,6 +224,15 @@ const ranker: OpportunityRanker = {
   },
 };
 
+const projectInput: OpportunityProjectInput = {
+  objective: "educate",
+  audience: "Operations leads",
+  constraints: [],
+  targets: ["linkedin-standard-post"],
+  researchMode: "existing-workspace-evidence",
+  seedMaterial: [],
+};
+
 describe("ContentScoutHost", () => {
   it("keeps content generation blocked until the owner Profile is confirmed", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-gate-"));
@@ -254,186 +259,12 @@ describe("ContentScoutHost", () => {
     await host.idle();
     const opportunityId = host.activeShortlist()!.opportunities[0].id;
 
-    await expect(host.select(runId, [opportunityId])).rejects.toThrow(/owner Profile/i);
+    await expect(host.select(runId, [opportunityId], projectInput)).rejects.toThrow(
+      /owner Profile/i,
+    );
 
     expect(runs.detail(runId)?.status).toBe("blocked");
     expect(host.activeShortlist()?.runId).toBe(runId);
-  });
-
-  it("stops queued draft generation when owner confirmation is invalidated during a bounded batch", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-active-gate-"));
-    const runs = openRuns(workspaceDir);
-    let confirmed = true;
-    const generationCalls: string[] = [];
-    let markBatchStarted!: () => void;
-    const batchStarted = new Promise<void>((resolve) => {
-      markBatchStarted = resolve;
-    });
-    let releaseBatch!: () => void;
-    const batchRelease = new Promise<void>((resolve) => {
-      releaseBatch = resolve;
-    });
-    const host = new ContentScoutHost({
-      runs,
-      workspaceDir,
-      now: () => NOW,
-      adapters: [rssAdapter()],
-      ranker,
-      isOwnerProfileConfirmed: () => confirmed,
-      draftGenerator: {
-        async generate({ target }) {
-          generationCalls.push(target.id);
-          if (generationCalls.length === 4) markBatchStarted();
-          await batchRelease;
-          return {
-            copy: `Generated ${target.id}`,
-            productionNotes: [],
-            reviewNotes: [],
-          };
-        },
-      },
-      log: () => undefined,
-    });
-    host.acceptBrandProfile({
-      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
-      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
-    });
-    host.addSourceTarget({
-      adapterId: "rss",
-      label: "Example Research",
-      url: "https://example.com/feed.xml",
-    });
-    const runId = await host.scoutNow();
-    await host.idle();
-
-    await host.select(runId, [host.activeShortlist()!.opportunities[0].id]);
-    await batchStarted;
-    confirmed = false;
-    releaseBatch();
-    await host.idle();
-
-    const detail = runs.detail(runId)!;
-    expect(generationCalls).toHaveLength(4);
-    expect(detail.files.filter((file) => file.startsWith("draft-"))).toEqual([]);
-    expect(detail.events.filter((event) => event.type === "content_draft_generated")).toEqual([]);
-    expect(detail.failedStage).toBe("draft");
-    expect(detail.events.at(-1)).toMatchObject({
-      type: "run_failed",
-      detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
-    });
-  });
-
-  it("blocks a selected Run retry when owner confirmation was invalidated", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-retry-gate-"));
-    const runs = openRuns(workspaceDir);
-    let confirmed = true;
-    let generationCalls = 0;
-    const host = new ContentScoutHost({
-      runs,
-      workspaceDir,
-      now: () => NOW,
-      adapters: [rssAdapter()],
-      ranker,
-      isOwnerProfileConfirmed: () => confirmed,
-      draftGenerator: {
-        async generate() {
-          generationCalls += 1;
-          throw new Error("fixture draft failure");
-        },
-      },
-      log: () => undefined,
-    });
-    host.acceptBrandProfile({
-      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
-      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
-    });
-    host.addSourceTarget({
-      adapterId: "rss",
-      label: "Example Research",
-      url: "https://example.com/feed.xml",
-    });
-    const runId = await host.scoutNow();
-    await host.idle();
-    await host.select(runId, [host.activeShortlist()!.opportunities[0].id]);
-    await host.idle();
-    const callsBeforeRetry = generationCalls;
-    expect(runs.detail(runId)?.failedStage).toBe("draft");
-
-    confirmed = false;
-    await host.retryRun(runId);
-    await host.idle();
-
-    expect(generationCalls).toBe(callsBeforeRetry);
-    expect(runs.detail(runId)?.failedStage).toBe("draft");
-    expect(runs.detail(runId)?.events.at(-1)).toMatchObject({
-      type: "run_failed",
-      detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
-    });
-  });
-
-  it("blocks recovery of selected generation when restart observes invalidated confirmation", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-recovery-gate-"));
-    const runs = openRuns(workspaceDir);
-    let releaseDraftStart!: () => void;
-    const draftStarted = new Promise<void>((resolve) => {
-      releaseDraftStart = resolve;
-    });
-    const host = new ContentScoutHost({
-      runs,
-      workspaceDir,
-      now: () => NOW,
-      adapters: [rssAdapter()],
-      ranker,
-      isOwnerProfileConfirmed: () => true,
-      draftGenerator: {
-        async generate() {
-          releaseDraftStart();
-          return await new Promise<never>(() => undefined);
-        },
-      },
-      log: () => undefined,
-    });
-    host.acceptBrandProfile({
-      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
-      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
-    });
-    host.addSourceTarget({
-      adapterId: "rss",
-      label: "Example Research",
-      url: "https://example.com/feed.xml",
-    });
-    const runId = await host.scoutNow();
-    await host.idle();
-    await host.select(runId, [host.activeShortlist()!.opportunities[0].id]);
-    await draftStarted;
-    expect(runs.detail(runId)?.status).toBe("running");
-
-    let recoveredGenerationCalls = 0;
-    const restarted = new ContentScoutHost({
-      runs: openRuns(workspaceDir),
-      workspaceDir,
-      now: () => NOW,
-      adapters: [rssAdapter()],
-      ranker,
-      isOwnerProfileConfirmed: () => false,
-      draftGenerator: {
-        async generate() {
-          recoveredGenerationCalls += 1;
-          throw new Error("generation must stay behind the owner gate");
-        },
-      },
-      log: () => undefined,
-    });
-    restarted.start();
-    await restarted.idle();
-    restarted.stop();
-
-    expect(recoveredGenerationCalls).toBe(0);
-    expect(runs.detail(runId)?.failedStage).toBe("draft");
-    expect(runs.detail(runId)?.events.at(-1)).toMatchObject({
-      type: "run_failed",
-      detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
-    });
   });
 
   it("persists configured sources, produces a ranked shortlist, and durably blocks the Intake Run", async () => {
@@ -549,7 +380,7 @@ describe("ContentScoutHost", () => {
     const firstRunId = await host.scoutNow();
     await host.idle();
     const opportunityId = host.activeShortlist()!.opportunities[0].id;
-    await host.select(firstRunId, [opportunityId]);
+    await host.select(firstRunId, [opportunityId], projectInput);
     await host.idle();
 
     clock.now = new Date("2026-08-26T12:00:00.000Z");
@@ -1009,201 +840,6 @@ United States only
     );
 
     await app.close();
-  });
-
-  it("freezes one brief, generates all 23 drafts independently at concurrency four, and publishes one page per draft", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-pack-"));
-    const runs = openRuns(workspaceDir);
-    const requests: Parameters<DraftGenerator["generate"]>[0][] = [];
-    let active = 0;
-    let maximumActive = 0;
-    const generator: DraftGenerator = {
-      async generate(input) {
-        requests.push(structuredClone(input));
-        active += 1;
-        maximumActive = Math.max(maximumActive, active);
-        await new Promise((resolve) => setTimeout(resolve, 2));
-        active -= 1;
-        return {
-          copy: `Copy for ${input.target.id}`,
-          productionNotes: [`Production notes for ${input.target.channel}`],
-          reviewNotes: [
-            {
-              claim: "The source describes a verified change.",
-              kind: "fact",
-              sourceUrls: input.brief.opportunity.sourceUrls,
-            },
-          ],
-        };
-      },
-    };
-    const pages = new Map<string, { id: string; url: string }>();
-    const notion: NotionPublisher = {
-      async findDraftPage(key) {
-        return pages.get(key) ?? null;
-      },
-      async createDraftPage({ idempotencyKey }) {
-        const page = {
-          id: `page-${pages.size + 1}`,
-          url: `https://notion.example/page-${pages.size + 1}`,
-        };
-        pages.set(idempotencyKey, page);
-        return page;
-      },
-    };
-    const host = new ContentScoutHost({
-      runs,
-      workspaceDir,
-      now: () => NOW,
-      adapters: [rssAdapter()],
-      ranker,
-      draftGenerator: generator,
-      notionPublisher: notion,
-      log: () => undefined,
-    });
-    host.acceptBrandProfile({
-      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
-      sourceScan: {
-        websiteUrl: "https://company.example",
-        includedUrls: ["https://company.example/"],
-        excludedUrls: [],
-      },
-    });
-    host.addSourceTarget({
-      adapterId: "rss",
-      label: "Example Research",
-      url: "https://example.com/feed.xml",
-    });
-    const runId = await host.scoutNow();
-    await host.idle();
-
-    const opportunityId = host.activeShortlist()!.opportunities[0].id;
-    await host.select(runId, [opportunityId]);
-    await host.idle();
-
-    expect(runs.detail(runId)!.status).toBe("done");
-    expect(requests).toHaveLength(23);
-    expect(new Set(requests.map((request) => request.brief.id))).toHaveLength(1);
-    expect(requests.map((request) => request.target.id).sort()).toEqual(
-      CONTENT_SCOUT_DRAFT_TARGETS_V1.map((target) => target.id).sort(),
-    );
-    expect(
-      requests.every(
-        (request) => Object.keys(request).sort().join(",") === "brief,idempotencyKey,target",
-      ),
-    ).toBe(true);
-    expect(maximumActive).toBe(4);
-    expect(pages).toHaveLength(23);
-
-    const packs = host.listContentPacks();
-    expect(packs).toHaveLength(1);
-    expect(packs[0]).toMatchObject({
-      runId,
-      opportunityId,
-      status: "complete",
-    });
-    expect(packs[0]?.draftIds).toHaveLength(23);
-    expect(packs[0]?.notionPageKeys).toHaveLength(23);
-    expect(runs.detail(runId)!.result).toMatchObject({
-      packs: [
-        {
-          generated: 23,
-          published: 23,
-          total: 23,
-          missingDraftTargets: [],
-          missingNotionPages: [],
-        },
-      ],
-    });
-  });
-
-  it("retries only missing drafts and repairs an ambiguous Notion timeout without duplicates", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-retry-"));
-    const runs = openRuns(workspaceDir);
-    const calls = new Map<string, number>();
-    const failOnce = new Set(["linkedin-poll", "tiktok-script"]);
-    const generator: DraftGenerator = {
-      async generate({ target }) {
-        const count = (calls.get(target.id) ?? 0) + 1;
-        calls.set(target.id, count);
-        if (failOnce.has(target.id) && count === 1) {
-          throw new Error(`temporary ${target.id} failure`);
-        }
-        return {
-          copy: `Immutable ${target.id} generation ${count}`,
-          productionNotes: [],
-          reviewNotes: [],
-        };
-      },
-    };
-    const pages = new Map<string, { id: string; url: string }>();
-    let createCalls = 0;
-    let timedOut = false;
-    const notion: NotionPublisher = {
-      async findDraftPage(key) {
-        return pages.get(key) ?? null;
-      },
-      async createDraftPage({ idempotencyKey }) {
-        createCalls += 1;
-        const page = { id: `page-${createCalls}`, url: `https://notion.example/${createCalls}` };
-        pages.set(idempotencyKey, page);
-        if (!timedOut && idempotencyKey.includes("youtube-long-script")) {
-          timedOut = true;
-          throw new Error("timeout after Notion accepted the page");
-        }
-        return page;
-      },
-    };
-    const host = new ContentScoutHost({
-      runs,
-      workspaceDir,
-      now: () => NOW,
-      adapters: [rssAdapter()],
-      ranker,
-      draftGenerator: generator,
-      notionPublisher: notion,
-      log: () => undefined,
-    });
-    host.acceptBrandProfile({
-      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
-      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
-    });
-    host.addSourceTarget({ adapterId: "rss", label: "Feed", url: "https://example.com/feed" });
-    const runId = await host.scoutNow();
-    await host.idle();
-
-    const opportunityId = host.activeShortlist()!.opportunities[0].id;
-    await host.select(runId, [opportunityId]);
-    await host.idle();
-    expect(runs.detail(runId)!.status).toBe("failed");
-    expect(runs.detail(runId)!.failedStage).toBe("draft");
-    const successfulTarget = "linkedin-standard-post";
-    const packId = `${runId}--${opportunityId}`;
-    const successfulArtifact = `draft-${packId}-${successfulTarget}.json`;
-    const successfulBefore = runs.open(runId)!.readArtifact(successfulArtifact);
-
-    await host.retryRun(runId);
-    await host.idle();
-    expect(runs.detail(runId)!.status).toBe("failed");
-    expect(runs.detail(runId)!.failedStage).toBe("publish");
-    expect(calls.get("linkedin-poll")).toBe(2);
-    expect(calls.get("tiktok-script")).toBe(2);
-    expect(calls.get(successfulTarget)).toBe(1);
-    expect(createCalls).toBe(23);
-    expect(pages).toHaveLength(23);
-
-    await host.retryRun(runId);
-    await host.idle();
-    expect(runs.detail(runId)!.status).toBe("done");
-    expect(createCalls).toBe(23);
-    expect(runs.open(runId)!.readArtifact(successfulArtifact)).toBe(successfulBefore);
-    expect(host.listContentPacks()[0]).toMatchObject({
-      status: "complete",
-      draftIds: expect.arrayContaining([
-        `${packId}:linkedin-poll:v1`,
-        `${packId}:tiktok-script:v1`,
-      ]),
-    });
   });
 
   it("supersedes an older blocked shortlist only after its replacement ranks successfully", async () => {
