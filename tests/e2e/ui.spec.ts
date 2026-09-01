@@ -275,7 +275,9 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   // so it leaves the tab bar — the tab bar carries the Module whose product
   // surface presents it, and Content Research's own page carries the way in.
   const tabs = page.locator('.app-header nav[aria-label="Modules"] a');
-  await expect(tabs).toHaveCount(5);
+  // Meeting Debrief is its own Module tab (#139); YouTube Trends is not a
+  // tab — Content Research's page carries it (#135).
+  await expect(tabs).toHaveCount(6);
   await expect(tabs.filter({ hasText: "YouTube Trends" })).toHaveCount(0);
   await expect(tabs.filter({ hasText: "Content Research" })).toHaveCount(1);
 
