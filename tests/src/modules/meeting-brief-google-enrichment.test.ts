@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-call -- test fixtures use any for fakes */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars -- test fixtures use any for fakes */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -388,8 +388,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
     ).toBe(false);
   });
 
-  it("empty is success and individual failures remain explicit after bounded retry, guest kept", async () => {
-    // Make alice exact fail persistently: we set failFirstFor and also make provider always fail for alice by customizing? Our FakeGmailProvider's failFirstFor only fails first call, second succeeds (bounded retry). To make it fail persistently, we need to make it fail both attempts: our FakeGmailProvider currently fails first then succeeds second, so artifact would be completed after retry. For explicit gap after bounded retry, we need provider that fails both attempts. We can achieve by making listExactThreads throw always for alice.
+  it("a persistently failed provider blocks the Brief; successful siblings and their artifacts survive", async () => {
     const failingGmail = {
       async listExactThreads(guestEmail: string, _max: number) {
         if (guestEmail.toLowerCase() === "alice@external.co")
@@ -445,23 +444,38 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
     await host.idle();
     const runId = created[0];
     const detail = runs.detail(runId)!;
-    // Even though one source failed, Run should still be done (empty is success, failed gaps explicit, guest kept)
-    expect(detail.status).toBe("done");
+    // #137 completeness gate: a failed selected provider prevents composition and
+    // delivery; the Run blocks for an automatic bounded-backoff retry, never
+    // completing a partial Brief.
+    expect(detail.status).toBe("blocked");
+    expect(
+      detail.events.some(
+        (e) => e.type === "run_blocked" && e.detail?.reason === "provider_retry_backoff",
+      ),
+    ).toBe(true);
+    expect(runs.open(runId)!.readArtifact("enrich.json")).toBeNull();
+    expect(runs.open(runId)!.readArtifact("result.json")).toBeNull();
+    // The versioned ledger records every selected provider independently.
+    const ledger = JSON.parse(runs.open(runId)!.readArtifact("provider-outcomes.json")!);
+    expect(ledger.version).toBe(1);
+    expect(ledger.retryCount).toBe(1);
+    const outcomes = new Map(
+      (ledger.outcomes as { provider: string; attendee: string; outcome: string }[]).map((o) => [
+        `${o.provider}:${o.attendee}`,
+        o.outcome,
+      ]),
+    );
+    expect(outcomes.get("gmail-relationship:alice@external.co")).toBe("failed");
+    expect(outcomes.get("calendar-history:alice@external.co")).toBe("empty");
+    expect(outcomes.get("drive-workspace:alice@external.co")).toBe("empty");
+    expect(outcomes.get("person-profile:alice@external.co")).toBe("empty");
+    // No Brief composed, so nothing was delivered to anyone.
     const gmailExactRaw = runs.open(runId)!.readArtifact("gmail-exact-alice_external_co-v1.json")!;
     const gmailExact = JSON.parse(gmailExactRaw);
     expect(gmailExact.status).toBe("failed");
     expect(gmailExact.diagnostics.attempts).toBe(2);
     expect(gmailExact.diagnostics.bounded).toBe(true);
-    // Guest kept: enrich sections includes failed source but guest still present
-    const enrichRaw = runs.open(runId)!.readArtifact("enrich.json")!;
-    const enrich = JSON.parse(enrichRaw);
-    expect(
-      enrich.sections.some(
-        (s: any) =>
-          s.source === "gmail-exact" && s.guest === "alice@external.co" && s.status === "failed",
-      ),
-    ).toBe(true);
-    // Other sources for same guest still succeeded (calendar empty, drive empty)
+    // The failed attendee's sibling provider artifacts survived for the retry.
     const calRaw = runs.open(runId)!.readArtifact("calendar-history-alice_external_co-v1.json")!;
     expect(JSON.parse(calRaw).status).toBe("empty");
   });

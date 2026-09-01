@@ -5,6 +5,7 @@ import type {
   MeetingBriefEvent,
   MeetingBriefEnrichmentSection,
   MeetingBriefPersonProfileLink,
+  MeetingBriefProviderOutcome,
   MeetingBriefRunResult,
   PersonProfileConsumerState,
 } from "@chief-of-staff-demo/shared";
@@ -21,6 +22,14 @@ import { composeBrief } from "./compose.js";
 import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { executeDeliver, deliveryIdFor, deliveryState } from "./deliver.js";
 import { enrichUnified, type MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
+import {
+  briefCutoffAt,
+  buildProviderOutcomesLedger,
+  enrichmentVerdict,
+  providerRetryDelayMs,
+  readProviderOutcomes,
+} from "./completeness.js";
+import { StageFailure } from "../../engine/module.js";
 export type MeetingBriefInput = MeetingBriefEvent & {
   occurrenceKey: string;
   supersedesRunId?: string | null;
@@ -35,13 +44,18 @@ export interface MeetingBriefModuleDeps {
     sections: unknown[];
     evidence: string[];
     personProfileLinks?: MeetingBriefPersonProfileLink[];
+    /** Versioned per-provider outcome ledger (#137); absent on legacy fixtures. */
+    outcomes?: MeetingBriefProviderOutcome[];
+    bundleVersion?: number;
   }>;
-  completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
   getCompleteJson?: () => CompleteJson;
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  /** Providers excluded from the required set by an explicit policy action (#137). */
+  getDisabledProviders?: () => readonly string[];
+  completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
   isOwnerProfileConfirmed?: () => boolean;
   calendarProvider?: CalendarProvider;
   calendarSnapshotRequired?: boolean;
@@ -136,6 +150,13 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         return {
           fromStage: "deliver",
           reason: "quiet_period_expired",
+          input: continuationInput(meta.externalId, now()),
+        };
+      }
+      if (meta.status === "blocked" && meta.wait?.reason === "provider_retry_backoff") {
+        return {
+          fromStage: "enrich",
+          reason: "provider_retry_backoff_elapsed",
           input: continuationInput(meta.externalId, now()),
         };
       }
@@ -310,6 +331,8 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         sections: unknown[];
         evidence: string[];
         personProfileLinks?: MeetingBriefPersonProfileLink[];
+        outcomes?: MeetingBriefProviderOutcome[];
+        bundleVersion?: number;
       } = {
         sections: [],
         evidence: [],
@@ -325,11 +348,74 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
               providers: deps.enrichmentProviders,
               internalDomains: internalDomainsForEnrich,
               occurrenceKey,
+              ...(deps.getDisabledProviders
+                ? { disabledProviders: deps.getDisabledProviders() }
+                : {}),
             });
             enrichResult = result;
           } else {
             throw new Error("Meeting Brief enrichment providers are unavailable");
           }
+
+          // Completeness gate (#137, spec #82/Decision 19): every selected
+          // provider's versioned outcome is recorded; a failed one blocks
+          // composition and delivery while successful siblings' artifacts are
+          // retained for the retry that reruns only the missing work.
+          const outcomes = enrichResult.outcomes;
+          if (outcomes) {
+            const disabled = deps.getDisabledProviders?.() ?? [];
+            const verdict = enrichmentVerdict(outcomes, disabled);
+            const prior = readProviderOutcomes(ctx.readFile("provider-outcomes.json"));
+            const ledger = buildProviderOutcomesLedger({
+              occurrenceKey,
+              eventVersion: input.version,
+              bundleVersion: enrichResult.bundleVersion ?? prior?.bundleVersion ?? 1,
+              outcomes,
+              prior,
+              incomplete: !verdict.complete,
+            });
+            ctx.writeFile("provider-outcomes.json", JSON.stringify(ledger, null, 2) + "\n");
+            ctx.event("enrich_provider_outcomes", {
+              complete: verdict.complete,
+              retryCount: ledger.retryCount,
+              failed: verdict.failed.map((outcome) => ({
+                provider: outcome.provider,
+                attendee: outcome.attendee,
+                diagnostics: outcome.diagnostics,
+              })),
+              disabled: outcomes
+                .filter((outcome) => outcome.outcome === "disabled")
+                .map((outcome) => outcome.provider),
+            });
+            if (!verdict.complete) {
+              const cutoff = briefCutoffAt(input.startAt);
+              const nowMs = now().getTime();
+              const failedNames = verdict.failed
+                .map((outcome) => `${outcome.provider} (${outcome.attendee})`)
+                .join(", ");
+              if (cutoff !== null && nowMs >= cutoff) {
+                throw new StageFailure(
+                  `brief_cutoff: automatic enrichment retries stopped 30 minutes before the occurrence start; failed providers: ${failedNames}. No Brief was composed or delivered.`,
+                  "Enrichment stopped at the cutoff. Repair or disable the failed provider, then retry the Run explicitly.",
+                );
+              }
+              const waitUntil = Math.min(
+                nowMs + providerRetryDelayMs(ledger.retryCount),
+                cutoff ?? Infinity,
+              );
+              ctx.event("enrich_retry_scheduled", {
+                attempt: ledger.retryCount + 1,
+                retryAt: new Date(waitUntil).toISOString(),
+                cutoffAt: cutoff === null ? null : new Date(cutoff).toISOString(),
+                failed: failedNames,
+              });
+              ctx.wait({
+                reason: "provider_retry_backoff",
+                timeout: { kind: "at", at: new Date(waitUntil).toISOString() },
+              });
+            }
+          }
+
           ctx.writeFile("enrich.json", JSON.stringify(enrichResult, null, 2) + "\n");
           ctx.event("enrich_completed", {
             sections: enrichResult.sections.length,

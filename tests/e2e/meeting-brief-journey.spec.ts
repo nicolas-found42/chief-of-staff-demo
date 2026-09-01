@@ -284,3 +284,118 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
     page.getByRole("link", { name: /https:\/\/example.com\/acme/ }).first(),
   ).toBeVisible();
 });
+
+test("meeting brief hermetic journey — incomplete provider blocks until cutoff, policy disable, explicit retry delivers", async ({
+  page,
+  request,
+}) => {
+  const CUTOFF_AT = "2026-08-28T14:30:00.000Z";
+
+  // 1. Make the hermetic enrich fixture report a failed selected provider.
+  await request.post("/api/test/meeting-brief/fixture-outcomes", {
+    data: {
+      outcomes: [
+        {
+          provider: "crm",
+          attendee: "alice@external.co",
+          outcome: "failed",
+          artifact: null,
+          diagnostics: { httpStatus: 503, errorCode: null, reason: "Hermetic CRM outage" },
+        },
+      ],
+    },
+  });
+  await request.post("/api/test/meeting-brief/set-now", { data: { now: NOW_BEFORE_DUE } });
+  await request.post("/api/test/meeting-brief/fake-gmail/clear");
+
+  // 2. Schedule the occurrence and run it: the gate must block, not compose.
+  const v1 = fixtureEvent({
+    eventId: "evt_journey_cutoff",
+    version: "v1",
+    summary: "Cutoff Meeting",
+  });
+  await request.post("/api/test/meeting-brief/schedule", { data: { event: v1, dueAt: DUE_AT } });
+  const advance1 = await request.post("/api/test/meeting-brief/advance", { data: { now: DUE_AT } });
+  expect(advance1.ok()).toBe(true);
+  const { created } = (await advance1.json()) as { created: string[] };
+  const runId = created[0];
+  const runMeta = (await (await request.get(`/api/runs/${runId}`)).json()) as {
+    status: string;
+  };
+  expect(runMeta.status).toBe("blocked");
+
+  // 3. Advance to the cutoff: the Run fails visibly and nothing was sent.
+  const advance2 = await request.post("/api/test/meeting-brief/advance", {
+    data: { now: CUTOFF_AT },
+  });
+  expect(advance2.ok()).toBe(true);
+  const failedStatus = (await (await request.get(`/api/runs/${runId}`)).json()) as {
+    status: string;
+    failureHint: string | null;
+  };
+  expect(failedStatus.status).toBe("failed");
+  expect(failedStatus.failureHint).toContain("cutoff");
+
+  const gmailAtCutoff = (await (
+    await request.get("/api/test/meeting-brief/fake-gmail/messages")
+  ).json()) as { messages: unknown[] };
+  expect(gmailAtCutoff.messages).toHaveLength(0);
+
+  // 4. The Brief tab shows the failed Run with its provider outcomes.
+  await page.goto("/meetings/brief");
+  const currentBriefs = page.getByLabel("Current briefs");
+  // Without a composed Brief the entry titles itself by its eventId.
+  await expect(currentBriefs.getByText("evt_journey_cutoff · Run")).toBeVisible();
+  await expect(currentBriefs.getByText("status failed")).toBeVisible();
+  await expect(
+    currentBriefs.getByText("Provider outcomes: crm alice@external.co — failed"),
+  ).toBeVisible();
+  await expect(currentBriefs.getByText(/No structured brief \(run failed\)/)).toBeVisible();
+
+  // 5. The Run detail shows the cutoff failure and no composed Brief.
+  await page.goto(`/runs/${runId}`);
+  await expect(page.getByText(/cutoff/i).first()).toBeVisible();
+
+  // 6. Explicit policy action: disable the failing provider on the Run.
+  const policyRes = await request.post(`/api/meeting-brief/runs/${runId}/provider-policy`, {
+    data: { provider: "crm", action: "disable", reason: "hermetic outage accepted" },
+  });
+  expect(policyRes.ok()).toBe(true);
+
+  // 7. The person's explicit retry is what delivers the complete Brief.
+  const retryRes = await request.post(`/api/runs/${runId}/retry`, { data: {} });
+  expect(retryRes.ok()).toBe(true);
+
+  await expect
+    .poll(
+      async () => {
+        const idx = (await (await request.get("/api/meeting-brief/index")).json()) as {
+          briefs: { eventVersion: string; delivery: { status: string } | null }[];
+        };
+        const entry = idx.briefs.find((b) => b.eventVersion === "v1");
+        return entry?.delivery?.status ?? "none";
+      },
+      { timeout: 15_000 },
+    )
+    .toBe("sent");
+
+  const gmailFinal = (await (
+    await request.get("/api/test/meeting-brief/fake-gmail/messages")
+  ).json()) as { messages: { to: string }[] };
+  expect(gmailFinal.messages).toHaveLength(1);
+  expect(gmailFinal.messages[0].to).toBe("owner@example.com");
+
+  // 8. The tab now shows the delivered Brief as current.
+  await page.goto("/meetings/brief");
+  const delivered = page.getByLabel("Current briefs");
+  await expect(delivered.getByText("Brief for Cutoff Meeting", { exact: true })).toBeVisible();
+  await expect(
+    delivered
+      .getByRole("paragraph")
+      .filter({ hasText: "evt_journey_cutoff" })
+      .getByText("Sent", { exact: true }),
+  ).toBeVisible();
+
+  // Reset the knob for later tests.
+  await request.post("/api/test/meeting-brief/fixture-outcomes", { data: { outcomes: null } });
+});

@@ -7,7 +7,12 @@ import type {
 import { HUBSPOT_MAX_RESULTS } from "@chief-of-staff-demo/shared";
 import type { HubSpotApi } from "./client.js";
 import type { RunContext } from "../../../engine/module.js";
-import { isProviderWideError, readErrorCode, readErrorStatus } from "../enrichment/helpers.js";
+import {
+  isProviderWideError,
+  readErrorCode,
+  readErrorStatus,
+  sanitizeArtifactVersion,
+} from "../enrichment/helpers.js";
 
 function stableRefFor(
   eventVersion: string,
@@ -23,7 +28,7 @@ function fileNameForArtifact(artifact: HubSpotEnrichmentArtifact): string {
   const sanitized = artifact.guestEmail.replace(/[^a-zA-Z0-9]/g, "_");
   const extra = artifact.companyId ?? artifact.dealId ?? "";
   const suffix = extra ? `-${extra}` : "";
-  return `hubspot-${artifact.eventVersion}-${sanitized}-${artifact.source}${suffix}.json`;
+  return `hubspot-${sanitizeArtifactVersion(artifact.eventVersion)}-${sanitized}-${artifact.source}${suffix}.json`;
 }
 
 function recordArtifact(

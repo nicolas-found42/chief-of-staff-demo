@@ -165,6 +165,41 @@ export interface MeetingBriefPersonProfileLink {
   profileRevision: number;
 }
 
+// ---------------------------------------------------------------------------
+// Provider outcome ledger (issue #137) — versioned per-provider enrichment
+// outcomes, diagnostics and reusable artifact references for one Run.
+// ---------------------------------------------------------------------------
+
+export const MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION = 1;
+
+export type MeetingBriefProviderOutcomeStatus = "completed" | "empty" | "failed" | "disabled";
+
+export interface MeetingBriefProviderOutcome {
+  /** Module-owned provider id from the versioned bundle policy (Decision 18). */
+  provider: string;
+  /** Lowercase attendee email the provider ran for. */
+  attendee: string;
+  outcome: MeetingBriefProviderOutcomeStatus;
+  /** Run artifact carrying the reusable result, when the provider produced one. */
+  artifact: string | null;
+  diagnostics: {
+    httpStatus: number | null;
+    errorCode: string | null;
+    reason: string | null;
+  } | null;
+}
+
+/** `provider-outcomes.json` for one Meeting Brief Run — the completeness record. */
+export interface MeetingBriefProviderOutcomes {
+  version: typeof MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION;
+  bundleVersion: number;
+  occurrenceKey: string;
+  eventVersion: string;
+  /** Automatic backoff retries already spent on this Run's enrichment. */
+  retryCount: number;
+  outcomes: MeetingBriefProviderOutcome[];
+}
+
 /** Meeting Brief-owned read model; never persisted into the immutable Run result. */
 export interface MeetingBriefPersonProfileReadModel {
   consumers: Array<{
@@ -210,6 +245,8 @@ export interface MeetingBriefIndexEntry {
   meetingBrief: MeetingBrief | null;
   delivery: MeetingBriefDeliveryState | null;
   supersedes: string | null;
+  /** Per-provider enrichment outcomes when the Run recorded a ledger (#137). */
+  providerOutcomes: MeetingBriefProviderOutcome[] | null;
 }
 // ---------------------------------------------------------------------------
 // HubSpot CRM — per-user private-app token, read-only contact/company/deal

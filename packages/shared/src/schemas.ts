@@ -137,10 +137,23 @@ export const ConfigSchema = z.strictObject({
               lastVerifiedAt: z.string().nullable().default(null),
             })
             .default({ token: "", lastVerifiedAt: null }),
+          /** Explicit provider policy actions (#137): a provider is excluded from
+           *  the required bundle set only through a person's recorded action —
+           *  policy never relaxes silently. */
+          providerPolicy: z
+            .record(
+              z.strictObject({
+                disabled: z.boolean(),
+                changedAt: z.string(),
+                reason: z.string(),
+              }),
+            )
+            .default({}),
         })
         .default({
           internalDomains: [],
           hubspot: { token: "", lastVerifiedAt: null },
+          providerPolicy: {},
         }),
     })
     .default({
