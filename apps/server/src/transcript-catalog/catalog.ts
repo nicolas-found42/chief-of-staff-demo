@@ -55,7 +55,7 @@ export interface TranscriptCatalogDisclosure {
  * the shared Person Profiles Review queue; the Catalog only supplies each
  * newly registered immutable Transcript. */
 export interface TranscriptIdentityProcessor {
-  process(record: TranscriptRecord): void | Promise<void>;
+  process(record: TranscriptRecord): Promise<void>;
   backfill(records: TranscriptRecord[]): Promise<void>;
 }
 
@@ -262,6 +262,7 @@ export class TranscriptCatalog {
       ...record,
       occurrence: association.occurrence,
       speakerIdentityMappings: association.speakerIdentityMappings,
+      roster: association.roster,
     };
     this.store.updateTranscript(updated);
     await this.identity.process(updated);
@@ -392,6 +393,7 @@ export class TranscriptCatalog {
         occurrence: null,
         speakers: collectSpeakerLabels(normalizedText),
         speakerIdentityMappings: [],
+        roster: [],
       };
       this.store.saveTranscript(record);
       await this.identity.process(record);

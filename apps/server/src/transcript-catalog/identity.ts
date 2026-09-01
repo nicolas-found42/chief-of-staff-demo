@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   IdentityDecision,
+  OrganizationMergeDecision,
   RememberedMapping,
   TranscriptIdentityExtractionResult,
   TranscriptMatchCandidate,
@@ -13,6 +14,7 @@ import {
   extractMentions,
   IDENTITY_MINING_ALGORITHM_VERSION,
   normalizeName,
+  type ProfileUrlCanonicalizer,
 } from "./identity-extraction.js";
 import {
   activeMappingFor,
@@ -26,6 +28,7 @@ export interface TranscriptIdentityDeps {
   store: TranscriptIdentityStore;
   people: WorkspacePersonProfiles;
   extractor: TranscriptIdentityExtractor;
+  profileUrlCanonicalizers?: TranscriptProfileUrlCanonicalizer[];
   now?: () => Date;
 }
 
@@ -37,6 +40,8 @@ export interface TranscriptIdentityExtractor {
     record: TranscriptRecord,
   ): TranscriptIdentityExtractionResult | Promise<TranscriptIdentityExtractionResult>;
 }
+
+export type TranscriptProfileUrlCanonicalizer = ProfileUrlCanonicalizer;
 
 class UnknownMentionError extends Error {
   constructor(mentionId: string) {
@@ -62,6 +67,12 @@ export interface DecideInput {
   note?: string;
 }
 
+export interface MergeOrganizationsInput {
+  sourceOrganizationMentionId: string;
+  targetOrganizationMentionId: string;
+  note?: string;
+}
+
 /**
  * Identity mining over the Transcript Catalog (issue #126). Deterministic
  * recognition is supplemented by one validated strict extraction Result
@@ -74,12 +85,14 @@ export class TranscriptIdentityService {
   private readonly store: TranscriptIdentityStore;
   private readonly people: WorkspacePersonProfiles;
   private readonly extractor: TranscriptIdentityExtractor;
+  private readonly profileUrlCanonicalizers: TranscriptProfileUrlCanonicalizer[];
   private readonly now: () => Date;
 
   constructor(deps: TranscriptIdentityDeps) {
     this.store = deps.store;
     this.people = deps.people;
     this.extractor = deps.extractor;
+    this.profileUrlCanonicalizers = deps.profileUrlCanonicalizers ?? [];
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -87,22 +100,23 @@ export class TranscriptIdentityService {
     for (const record of records) await this.process(record);
   }
 
-  process(record: TranscriptRecord): void | Promise<void> {
+  async process(record: TranscriptRecord): Promise<void> {
     const inputVersion = identityInputVersion(record);
     if (this.store.wasProcessed(record.id, IDENTITY_MINING_ALGORITHM_VERSION, inputVersion)) {
       return;
     }
-    const extracted = this.extractor.extract(record);
-    if (extracted instanceof Promise) {
-      return extracted.then((result) => this.finishProcess(record, inputVersion, result));
-    }
+    const extracted = await this.extractor.extract(record);
     this.finishProcess(record, inputVersion, extracted);
   }
 
   private finishProcess(record: TranscriptRecord, inputVersion: string, rawResult: unknown): void {
     const supplement: TranscriptIdentityExtractionResult =
       TranscriptIdentityExtractionResultSchema.parse(rawResult);
-    const { mentions, organizations } = extractMentions(record, supplement);
+    const profiles = this.people.search({ includeArchived: true });
+    const { mentions, organizations } = extractMentions(record, supplement, {
+      knownProfileUrls: profiles.flatMap((profile) => profile.profileUrls),
+      profileUrlCanonicalizers: this.profileUrlCanonicalizers,
+    });
     const mappings = this.store.readMappings();
     const candidates: TranscriptMatchCandidate[] = [];
     const generatedAt = this.now().toISOString();
@@ -110,7 +124,6 @@ export class TranscriptIdentityService {
     for (const mention of mentions) {
       if (mention.kind !== "person" && mention.kind !== "ambiguous-name") continue;
       const mapping = activeMappingFor(mappings, record.id, mention.normalizedForms);
-      const profiles = this.people.search({ includeArchived: true });
       const scored = profiles
         .map((profile) => {
           const signals = candidateSignals(mention, profile, mapping);
@@ -192,6 +205,9 @@ export class TranscriptIdentityService {
         decidedBy: "policy",
         decidedAt: generatedAt,
         note: "Auto-linked on a non-conflicting exact stable identifier.",
+        mappingLineageId: null,
+        mappingId: null,
+        mappingVersion: null,
       });
     }
 
@@ -213,6 +229,9 @@ export class TranscriptIdentityService {
         decidedBy: "owner",
         decidedAt: generatedAt,
         note: `Applied remembered mapping ${mapping.id} v${mapping.mappingVersion} (${mapping.scope} scope).`,
+        mappingLineageId: mapping.lineageId,
+        mappingId: mapping.id,
+        mappingVersion: mapping.mappingVersion,
       });
     }
     this.store.markProcessed({
@@ -263,6 +282,7 @@ export class TranscriptIdentityService {
         relatedPeople: mentions
           .filter((mention) => organization.relatedMentionIds.includes(mention.id))
           .map((mention) => ({ mentionId: mention.id, surfaceText: mention.surfaceText })),
+        mergeDecision: this.store.latestOrganizationDecision(organization.id),
       })),
     };
   }
@@ -332,6 +352,36 @@ export class TranscriptIdentityService {
     const profileRevision =
       profileId === null ? null : (this.people.get(profileId)?.revision ?? null);
 
+    let mappingForDecision: RememberedMapping | null = null;
+    if (input.action === "remember-mapping" && profileId !== null) {
+      const scope = input.scope ?? "transcript";
+      const scopeId = scope === "transcript" ? transcriptId : null;
+      const normalizedForm = mention.normalizedForms[0] ?? normalizeName(mention.surfaceText);
+      const lineageId = `rml_${createHash("sha1")
+        .update(`${scope}|${scopeId ?? ""}|${normalizedForm}`)
+        .digest("hex")
+        .slice(0, 12)}`;
+      const prior = this.store
+        .readMappings()
+        .filter((mapping) => mapping.lineageId === lineageId)
+        .sort((left, right) => right.mappingVersion - left.mappingVersion)[0];
+      const mappingVersion = (prior?.mappingVersion ?? 0) + 1;
+      mappingForDecision = {
+        id: `${lineageId}_v${mappingVersion}`,
+        lineageId,
+        supersedesMappingId: prior?.id ?? null,
+        scope,
+        scopeId,
+        normalizedForm,
+        surfaceText: mention.surfaceText,
+        profileId,
+        mappingVersion,
+        createdAt: decidedAt,
+        revokedAt: null,
+      };
+      this.store.appendMapping(mappingForDecision);
+    }
+
     const targets =
       input.action === "remember-mapping"
         ? this.store
@@ -349,7 +399,9 @@ export class TranscriptIdentityService {
       if (!isNamedTarget && this.store.latestDecision(target.id) !== null) continue;
       this.store.appendDecision({
         id: `id_${createHash("sha1")
-          .update(`${target.id}|${input.action}|${decidedAt}|${profileId ?? ""}`)
+          .update(
+            `${target.id}|${input.action}|${decidedAt}|${profileId ?? ""}|${mappingForDecision?.id ?? ""}`,
+          )
           .digest("hex")
           .slice(0, 12)}`,
         mentionId: target.id,
@@ -361,28 +413,9 @@ export class TranscriptIdentityService {
         decidedBy: "owner",
         decidedAt,
         note: input.note ?? null,
-      });
-    }
-
-    if (input.action === "remember-mapping" && profileId !== null) {
-      const scope = input.scope ?? "transcript";
-      const scopeId = scope === "transcript" ? transcriptId : null;
-      const normalizedForm = mention.normalizedForms[0] ?? normalizeName(mention.surfaceText);
-      const mappingId = `rm_${createHash("sha1")
-        .update(`${scope}|${scopeId ?? ""}|${normalizedForm}`)
-        .digest("hex")
-        .slice(0, 12)}`;
-      const existing = this.store.readMappings().find((m) => m.id === mappingId);
-      this.store.saveMapping({
-        id: mappingId,
-        scope,
-        scopeId,
-        normalizedForm,
-        surfaceText: mention.surfaceText,
-        profileId,
-        mappingVersion: (existing?.mappingVersion ?? 0) + 1,
-        createdAt: existing?.createdAt ?? decidedAt,
-        revokedAt: null,
+        mappingLineageId: mappingForDecision?.lineageId ?? null,
+        mappingId: mappingForDecision?.id ?? null,
+        mappingVersion: mappingForDecision?.mappingVersion ?? null,
       });
     }
 
@@ -396,29 +429,83 @@ export class TranscriptIdentityService {
     return this.store.readMappings();
   }
 
+  mergeOrganizations(input: MergeOrganizationsInput): OrganizationMergeDecision {
+    const organizations = this.store.readOrganizations();
+    const source = organizations.find(
+      (organization) => organization.id === input.sourceOrganizationMentionId,
+    );
+    const target = organizations.find(
+      (organization) => organization.id === input.targetOrganizationMentionId,
+    );
+    if (!source || !target) {
+      throw new InvalidDecisionError("Organization merge requires two existing Mentions.");
+    }
+    if (source.id === target.id) {
+      throw new InvalidDecisionError("An Organization Mention cannot be merged into itself.");
+    }
+    const decisionVersion =
+      this.store
+        .readOrganizationDecisions()
+        .filter((decision) => decision.sourceOrganizationMentionId === source.id).length + 1;
+    const decidedAt = this.now().toISOString();
+    const decision: OrganizationMergeDecision = {
+      id: `od_${createHash("sha1").update(`${source.id}|${target.id}|${decisionVersion}`).digest("hex").slice(0, 12)}`,
+      action: "merge",
+      sourceOrganizationMentionId: source.id,
+      targetOrganizationMentionId: target.id,
+      decisionVersion,
+      algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
+      decidedBy: "owner",
+      decidedAt,
+      note: input.note ?? null,
+      provenance: {
+        source: source.provenance,
+        target: target.provenance,
+      },
+    };
+    this.store.appendOrganizationDecision(decision);
+    return decision;
+  }
+
+  organizationDecisions(): OrganizationMergeDecision[] {
+    return this.store.readOrganizationDecisions();
+  }
+
   /** Reversible by design: revocation prevents future application and appends
    * unresolved decisions that invalidate every currently mapping-derived
    * link inside this mapping's declared scope. */
   revokeMapping(mappingId: string): RememberedMapping {
     const mapping = this.store.readMappings().find((m) => m.id === mappingId);
     if (!mapping) throw new InvalidDecisionError(`Unknown remembered mapping: ${mappingId}`);
+    const latest = this.store
+      .readMappings()
+      .filter((candidate) => candidate.lineageId === mapping.lineageId)
+      .sort((left, right) => right.mappingVersion - left.mappingVersion)[0]!;
+    if (latest.revokedAt !== null) return latest;
     const revokedAt = this.now().toISOString();
-    const revoked: RememberedMapping = { ...mapping, revokedAt };
-    this.store.saveMapping(revoked);
+    const revoked: RememberedMapping = {
+      ...latest,
+      id: `${latest.lineageId}_v${latest.mappingVersion + 1}`,
+      supersedesMappingId: latest.id,
+      mappingVersion: latest.mappingVersion + 1,
+      createdAt: revokedAt,
+      revokedAt,
+    };
+    this.store.appendMapping(revoked);
     for (const mention of this.store.readMentions()) {
       const inScope =
-        mapping.scope === "workspace" || mapping.scopeId === mention.provenance.transcriptId;
-      if (!inScope || !mention.normalizedForms.includes(mapping.normalizedForm)) continue;
-      const latest = this.store.latestDecision(mention.id);
+        latest.scope === "workspace" || latest.scopeId === mention.provenance.transcriptId;
+      if (!inScope || !mention.normalizedForms.includes(latest.normalizedForm)) continue;
+      const latestDecision = this.store.latestDecision(mention.id);
       if (
-        latest?.action !== "remember-mapping" ||
-        latest.outcome !== "linked" ||
-        latest.profileId !== mapping.profileId
+        latestDecision?.action !== "remember-mapping" ||
+        latestDecision.outcome !== "linked" ||
+        latestDecision.mappingLineageId !== latest.lineageId
       ) {
         continue;
       }
       this.store.appendDecision({
-        id: `id_${createHash("sha1").update(`${mention.id}|revoke|${mapping.id}|${revokedAt}`).digest("hex").slice(0, 12)}`,
+        id: `id_${createHash("sha1").update(`${mention.id}|revoke|${latest.lineageId}|${revoked.id}`).digest("hex").slice(0, 12)}`,
         mentionId: mention.id,
         transcriptId: mention.provenance.transcriptId,
         action: "unresolved",
@@ -427,7 +514,10 @@ export class TranscriptIdentityService {
         profileRevision: null,
         decidedBy: "owner",
         decidedAt: revokedAt,
-        note: `Invalidated link from revoked remembered mapping ${mapping.id} v${mapping.mappingVersion}.`,
+        note: `Invalidated link from revoked remembered mapping lineage ${latest.lineageId}.`,
+        mappingLineageId: latest.lineageId,
+        mappingId: revoked.id,
+        mappingVersion: revoked.mappingVersion,
       });
     }
     return revoked;
@@ -451,6 +541,7 @@ function identityInputVersion(record: TranscriptRecord): string {
       JSON.stringify({
         checksum: record.source.checksum,
         speakerIdentityMappings: record.speakerIdentityMappings,
+        roster: record.roster,
       }),
     )
     .digest("hex");

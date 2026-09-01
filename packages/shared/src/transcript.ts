@@ -200,11 +200,19 @@ export interface TranscriptSpeakerIdentityMapping {
   externalContactIds: ExternalContactId[];
 }
 
+/** Calendar roster evidence. A name-to-email roster bridge is review evidence,
+ * not an exact stable identifier observed on a transcript span. */
+export interface TranscriptRosterPerson {
+  displayName: string | null;
+  email: string;
+}
+
 /** Calendar association plus the verified identity facts Calendar/provider
  * metadata supplies for source speaker labels. */
 export interface TranscriptOccurrenceAssociation {
   occurrence: TranscriptOccurrence;
   speakerIdentityMappings: TranscriptSpeakerIdentityMapping[];
+  roster: TranscriptRosterPerson[];
 }
 
 /** One immutable normalized transcript per source revision. */
@@ -221,6 +229,8 @@ export interface TranscriptRecord {
   speakers: string[];
   /** Verified provider/Calendar identity metadata, when available. */
   speakerIdentityMappings: TranscriptSpeakerIdentityMapping[];
+  /** Calendar roster persisted with the association for candidate context. */
+  roster: TranscriptRosterPerson[];
 }
 
 export type TranscriptLedgerState = "pending" | "failed" | "skipped" | "processed";
@@ -283,14 +293,20 @@ export type RememberedMappingScope = "transcript" | "workspace";
 
 /** An explicit, scoped, versioned and reversible normalized-name mapping. */
 export interface RememberedMapping {
+  /** Unique immutable version record. */
   id: string;
+  /** Stable identity shared by every version and its revocation record. */
+  lineageId: string;
+  supersedesMappingId: string | null;
   scope: RememberedMappingScope;
   scopeId: string | null;
   normalizedForm: string;
   surfaceText: string;
   profileId: string;
   mappingVersion: number;
+  /** Timestamp for this immutable version record. */
   createdAt: string;
+  /** Non-null only on the terminal revocation version. */
   revokedAt: string | null;
 }
 
@@ -397,6 +413,9 @@ export interface TranscriptMention {
   /** Alternate names observed for this span. */
   aliases: string[];
   relationshipAssertions: TranscriptRelationshipAssertion[];
+  /** Calendar attendees whose display name matches this observed mention or
+   * one of its strict-extraction aliases. */
+  rosterContext: TranscriptRosterPerson[];
   /** Normalized organization name when the person was named in org context. */
   organizationContext: string | null;
   attendeeStatus: TranscriptAttendeeStatus;
@@ -442,6 +461,10 @@ export interface TranscriptCandidateSignal {
     | "speaker-calendar-email"
     | "remembered-mapping"
     | "normalized-full-name"
+    | "alias"
+    | "title"
+    | "role"
+    | "roster-context"
     | "speaker-label"
     | "employer-hint";
   /** What was compared to what, in review-readable words. */
@@ -457,7 +480,8 @@ export interface TranscriptCandidateConflict {
     | "duplicate-stable-id"
     | "email-belongs-elsewhere"
     | "stable-id-belongs-elsewhere"
-    | "name-email-mismatch";
+    | "name-email-mismatch"
+    | "roster-email-belongs-elsewhere";
   explanation: string;
   /** Hard conflicts prevent auto-linking (spec #117 policy classes). */
   hard: boolean;
@@ -496,8 +520,8 @@ export interface TranscriptMatchCandidate {
 /**
  * The durable, auditable resolution of a Transcript Mention to a Profile, a
  * rejection, or an unresolved state (spec #117 vocabulary). Policy-made
- * decisions are auto-links from non-conflicting stable identifiers or
- * replays of remembered mappings; owner decisions come from the Review queue.
+ * decisions are auto-links from non-conflicting stable identifiers. Mapping
+ * applications and review actions retain owner authority and audit lineage.
  */
 export interface IdentityDecision {
   id: string;
@@ -510,6 +534,26 @@ export interface IdentityDecision {
   decidedBy: "policy" | "owner";
   decidedAt: string;
   note: string | null;
+  /** Exact remembered-mapping authority for mapping-derived decisions. */
+  mappingLineageId: string | null;
+  mappingId: string | null;
+  mappingVersion: number | null;
+}
+
+export interface OrganizationMergeDecision {
+  id: string;
+  action: "merge";
+  sourceOrganizationMentionId: string;
+  targetOrganizationMentionId: string;
+  decisionVersion: number;
+  algorithmVersion: number;
+  decidedBy: "owner";
+  decidedAt: string;
+  note: string | null;
+  provenance: {
+    source: TranscriptMentionProvenance;
+    target: TranscriptMentionProvenance;
+  };
 }
 
 /** One Review-queue row: a mention, its explainable candidates, its decision. */
@@ -530,6 +574,8 @@ export interface OrganizationReviewItem {
   transcriptFileName: string | null;
   organization: OrganizationMention;
   relatedPeople: { mentionId: string; surfaceText: string }[];
+  /** Latest append-only merge decision for this source Organization Mention. */
+  mergeDecision: OrganizationMergeDecision | null;
 }
 
 export interface TranscriptReviewQueue {

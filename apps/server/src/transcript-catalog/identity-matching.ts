@@ -21,6 +21,10 @@ const WEIGHT_EXTERNAL_CONTACT_ID = 5;
 const WEIGHT_SPEAKER_CALENDAR_EMAIL = 5;
 const WEIGHT_REMEMBERED_MAPPING = 5;
 const WEIGHT_FULL_NAME = 2;
+const WEIGHT_ALIAS = 2;
+const WEIGHT_TITLE = 1;
+const WEIGHT_ROLE = 1;
+const WEIGHT_ROSTER_CONTEXT = 2;
 const WEIGHT_SPEAKER_LABEL = 1;
 const WEIGHT_EMPLOYER_HINT = 1;
 const PROBABLE_MIN_SCORE = WEIGHT_FULL_NAME;
@@ -115,14 +119,14 @@ export function activeMappingFor(
   transcriptId: string,
   forms: string[],
 ): RememberedMapping | null {
-  return (
-    mappings.find(
+  const latest = mappings
+    .filter(
       (mapping) =>
-        mapping.revokedAt === null &&
         forms.includes(normalizeName(mapping.normalizedForm)) &&
         (mapping.scope === "workspace" || mapping.scopeId === transcriptId),
-    ) ?? null
-  );
+    )
+    .sort((left, right) => right.mappingVersion - left.mappingVersion)[0];
+  return latest?.revokedAt === null ? latest : null;
 }
 
 export function candidateSignals(
@@ -133,6 +137,8 @@ export function candidateSignals(
   const profileForms = profileNameForms(profile);
   const mentionName = mention.normalizedForms[0] ?? "";
   const profileName = profile.fullName === null ? null : normalizeName(profile.fullName);
+  const aliasMatched =
+    profileName !== null && mention.aliases.map(normalizeName).includes(profileName);
   const nameMatched =
     profileName !== null &&
     (mention.normalizedForms.includes(profileName) ||
@@ -169,6 +175,22 @@ export function candidateSignals(
   const speakerCalendarEmailMatched =
     mention.speakerCalendarEmail !== null &&
     profileEmails.includes(mention.speakerCalendarEmail.normalize("NFKC").toLowerCase());
+  const profileRole = profile.role === null ? null : normalizeName(profile.role);
+  const titleMatched =
+    profileRole !== null &&
+    mention.titles.some((title) => {
+      const normalized = normalizeName(title);
+      return profileRole.includes(normalized) || normalized.includes(profileRole);
+    });
+  const roleMatched =
+    profileRole !== null &&
+    mention.roles.some((role) => {
+      const normalized = normalizeName(role);
+      return profileRole.includes(normalized) || normalized.includes(profileRole);
+    });
+  const rosterContextMatched = mention.rosterContext.some((person) =>
+    profileEmails.includes(person.email.normalize("NFKC").toLowerCase()),
+  );
   const employers = unique(
     [profile.currentEmployer, ...profile.employerHints].filter(
       (value): value is string => value !== null,
@@ -256,6 +278,50 @@ export function candidateSignals(
       weight: WEIGHT_FULL_NAME,
     },
     {
+      signal: "alias",
+      explanation:
+        mention.aliases.length === 0
+          ? "The extraction carries no aliases for this mention."
+          : aliasMatched
+            ? `The extracted alias "${mention.aliases[0]}" matches this Profile's name.`
+            : "The extracted aliases do not match this Profile's name.",
+      matched: aliasMatched,
+      weight: WEIGHT_ALIAS,
+    },
+    {
+      signal: "title",
+      explanation:
+        mention.titles.length === 0
+          ? "The extraction carries no title for this mention."
+          : titleMatched
+            ? `The extracted title "${mention.titles[0]}" matches this Profile's role evidence.`
+            : "The extracted titles do not match this Profile's role evidence.",
+      matched: titleMatched,
+      weight: WEIGHT_TITLE,
+    },
+    {
+      signal: "role",
+      explanation:
+        mention.roles.length === 0
+          ? "The extraction carries no contextual role for this mention."
+          : roleMatched
+            ? `The extracted role "${mention.roles[0]}" matches this Profile's role evidence.`
+            : "The extracted roles do not match this Profile's role evidence.",
+      matched: roleMatched,
+      weight: WEIGHT_ROLE,
+    },
+    {
+      signal: "roster-context",
+      explanation:
+        mention.rosterContext.length === 0
+          ? "No Calendar roster attendee matches this mention's observed names."
+          : rosterContextMatched
+            ? `Calendar roster context connects this mention to ${mention.rosterContext[0]?.email}, which belongs to this Profile.`
+            : "The matching Calendar roster entries do not belong to this Profile.",
+      matched: rosterContextMatched,
+      weight: WEIGHT_ROSTER_CONTEXT,
+    },
+    {
       signal: "speaker-label",
       explanation:
         mention.attendeeStatus !== "speaker"
@@ -309,6 +375,19 @@ export function conflictsFor(
         kind:
           identifier.kind === "email" ? "email-belongs-elsewhere" : "stable-id-belongs-elsewhere",
         explanation: `The exact ${identifier.kind} ${identifier.display} belongs to Profile ${owners[0]?.id}, not this one.`,
+        hard: true,
+      });
+    }
+  }
+  for (const rosterPerson of mention.rosterContext) {
+    const rosterEmail = rosterPerson.email.normalize("NFKC").toLowerCase();
+    const owners = allProfiles.filter((candidate) =>
+      profileStableIdentifiers(candidate).some((item) => item.key === `email:${rosterEmail}`),
+    );
+    if (owners.length > 0 && !owners.some((owner) => owner.id === profile.id)) {
+      conflicts.push({
+        kind: "roster-email-belongs-elsewhere",
+        explanation: `The matching Calendar roster email ${rosterEmail} belongs to Profile ${owners[0]?.id}, not this one.`,
         hard: true,
       });
     }

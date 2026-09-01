@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import type {
   IdentityDecision,
+  OrganizationMergeDecision,
   OrganizationMention,
   RememberedMapping,
   TranscriptMatchCandidate,
@@ -133,12 +134,34 @@ export class TranscriptIdentityStore {
     return this.readCollection<RememberedMapping>("mappings.json");
   }
 
-  /** Upsert by id: re-pointing the same scoped name bumps the version. */
-  saveMapping(mapping: RememberedMapping): void {
-    const all = this.readMappings().filter((m) => m.id !== mapping.id);
+  /** Append-only immutable mapping versions and revocations. */
+  appendMapping(mapping: RememberedMapping): void {
+    const all = this.readMappings();
+    if (all.some((existing) => existing.id === mapping.id)) return;
     all.push(mapping);
-    all.sort((left, right) => left.id.localeCompare(right.id));
+    all.sort(
+      (left, right) =>
+        left.lineageId.localeCompare(right.lineageId) || left.mappingVersion - right.mappingVersion,
+    );
     this.write("mappings.json", all);
+  }
+
+  appendOrganizationDecision(decision: OrganizationMergeDecision): void {
+    const all = this.readOrganizationDecisions();
+    all.push(decision);
+    this.write("organization-decisions.json", all);
+  }
+
+  readOrganizationDecisions(): OrganizationMergeDecision[] {
+    return this.readCollection<OrganizationMergeDecision>("organization-decisions.json");
+  }
+
+  latestOrganizationDecision(organizationMentionId: string): OrganizationMergeDecision | null {
+    return (
+      this.readOrganizationDecisions()
+        .filter((decision) => decision.sourceOrganizationMentionId === organizationMentionId)
+        .at(-1) ?? null
+    );
   }
 
   private readCollection<T>(file: string): T[] {

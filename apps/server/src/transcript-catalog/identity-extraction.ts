@@ -9,7 +9,7 @@ import type {
 } from "@chief-of-staff-demo/shared";
 
 /** Bumped whenever extraction, scoring, or link policy changes meaning. */
-export const IDENTITY_MINING_ALGORITHM_VERSION = 3;
+export const IDENTITY_MINING_ALGORITHM_VERSION = 4;
 
 const LINE_TIMESTAMP = /^\s*\[?(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[APap][Mm])?)\]?\s*/;
 const SPEAKER_COLON = /^([^\s:][^:\n]{0,79}):\s+/;
@@ -256,22 +256,51 @@ export function normalizeName(value: string): string {
 export function normalizeProfileUrl(value: string): string | null {
   try {
     const url = new URL(value.normalize("NFKC").replace(/[.,;!?]+$/, ""));
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    const parts = url.pathname.split("/").filter(Boolean);
-    /* An arbitrary HTTP URL is not a stable person identifier. v1 accepts
-       only a source whose URL shape unambiguously denotes a person Profile. */
-    if (host !== "linkedin.com" || parts.length !== 2 || parts[0]?.toLowerCase() !== "in") {
-      return null;
-    }
     url.protocol = "https:";
-    url.hostname = "linkedin.com";
-    url.pathname = `/in/${parts[1]}`;
+    url.hostname = host;
     url.hash = "";
     url.search = "";
     return url.toString().replace(/\/$/, "");
   } catch {
     return null;
   }
+}
+
+export interface ProfileUrlCanonicalizer {
+  provider: string;
+  canonicalize(value: string): string | null;
+}
+
+interface TranscriptExtractionOptions {
+  knownProfileUrls: string[];
+  profileUrlCanonicalizers: ProfileUrlCanonicalizer[];
+}
+
+function canonicalPersonProfileUrl(
+  value: string,
+  options: TranscriptExtractionOptions,
+): string | null {
+  const normalized = normalizeProfileUrl(value);
+  if (normalized === null) return null;
+  const url = new URL(normalized);
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (url.hostname === "linkedin.com" && parts.length === 2 && parts[0]?.toLowerCase() === "in") {
+    return normalized;
+  }
+  const known = new Set(
+    options.knownProfileUrls
+      .map(normalizeProfileUrl)
+      .filter((candidate): candidate is string => candidate !== null),
+  );
+  if (known.has(normalized)) return normalized;
+  for (const canonicalizer of options.profileUrlCanonicalizers) {
+    const canonical = canonicalizer.canonicalize(value);
+    if (canonical === null) continue;
+    return normalizeProfileUrl(canonical);
+  }
+  return null;
 }
 
 function normalizeHandle(value: string): string {
@@ -396,6 +425,10 @@ export interface TranscriptExtraction {
 export function extractMentions(
   record: TranscriptRecord,
   supplement: TranscriptIdentityExtractionResult,
+  options: TranscriptExtractionOptions = {
+    knownProfileUrls: [],
+    profileUrlCanonicalizers: [],
+  },
 ): TranscriptExtraction {
   const text = record.normalizedText;
   const lines = parseLines(text);
@@ -473,7 +506,7 @@ export function extractMentions(
     const reservedRanges = [...productRanges];
     for (const match of line.utterance.matchAll(PROFILE_URL)) {
       const surface = match[0].replace(/[.,;!?]+$/, "");
-      const normalizedUrl = normalizeProfileUrl(surface);
+      const normalizedUrl = canonicalPersonProfileUrl(surface, options);
       if (normalizedUrl === null) continue;
       const start = line.utteranceStart + match.index;
       reservedRanges.push({ start, end: start + surface.length });
@@ -628,6 +661,7 @@ export function extractMentions(
       roles: [],
       aliases: [],
       relationshipAssertions: [],
+      rosterContext: [],
       organizationContext: null,
       attendeeStatus: line === undefined ? "unknown" : statusFor(line, span.surfaceText),
       confidence: span.confidence,
@@ -683,6 +717,14 @@ export function extractMentions(
   });
 
   applyModelSupplement(record, lines, mentions, organizations, supplement);
+  for (const mention of mentions) {
+    const forms = new Set(
+      [mention.surfaceText, ...mention.aliases].map(normalizeName).filter(Boolean),
+    );
+    mention.rosterContext = record.roster.filter(
+      (person) => person.displayName !== null && forms.has(normalizeName(person.displayName)),
+    );
+  }
   mentions.sort((left, right) => left.provenance.spanStart - right.provenance.spanStart);
   organizations.sort((left, right) => left.provenance.spanStart - right.provenance.spanStart);
   return { mentions, organizations };
@@ -771,6 +813,7 @@ function applyModelSupplement(
       externalContactIds: [],
       speakerCalendarEmail: null,
       ...evidence,
+      rosterContext: [],
       organizationContext: null,
       attendeeStatus: context.speakerLabel === null ? "unknown" : "third-person",
       confidence: extracted.confidence,

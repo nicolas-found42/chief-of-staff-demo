@@ -385,6 +385,7 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
         calendarEventId: "evt_42",
       },
       speakerIdentityMappings: [],
+      roster: [],
     });
     expect(associated.occurrence).toEqual({
       occurrenceKey: "2026-08-17T1300",
@@ -398,6 +399,7 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
       catalog.associateOccurrence("drive_missing_r1", {
         occurrence: { occurrenceKey: "x", calendarEventId: null },
         speakerIdentityMappings: [],
+        roster: [],
       }),
     ).rejects.toThrow(/unknown/i);
   });
@@ -445,6 +447,7 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
       occurrence: null,
       speakers: ["Dana"],
       speakerIdentityMappings: [],
+      roster: [],
     };
     store.saveTranscript(record);
 
