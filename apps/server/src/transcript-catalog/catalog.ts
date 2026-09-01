@@ -80,7 +80,7 @@ const LOCAL_RETENTION =
   "an explicit transcript deletion; nothing is stored remotely by the Catalog.";
 
 const SPEAKER_LABEL = /^\s*([^:\n]{1,80})\s*:\s*.+/;
-const PERSON_LIKE_LABEL = /^\p{Lu}[\p{L}\p{M}]*(?:\s\p{Lu}[\p{L}\p{M}]*){0,2}$/u;
+const PERSON_LIKE_LABEL = /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$/;
 
 /**
  * Source-system speaker labels, in order of first appearance. This is

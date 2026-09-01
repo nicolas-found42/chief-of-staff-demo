@@ -189,6 +189,30 @@ describe("Transcript Catalog consent and backfill", () => {
     expect(converted?.meetingDate).toBe("2026-08-03");
   });
 
+  it("keeps #125's speaker-label classification: two-token capitalized labels only", async () => {
+    const source = fakeSource({
+      fileA: {
+        name: "sync - 2026-08-17T13-00-00.000Z.md",
+        body: [
+          "Grace Hopper: Ready.",
+          "Rear Admiral Grace Hopper: Not a two-token label.",
+          "DR SMITH: Not a person-shaped label.",
+          "OPERATOR: A single-token label is captured.",
+          "Ada Lovelace: Ready too.",
+        ].join("\n"),
+      },
+    });
+    const catalog = makeCatalog(source);
+    await catalog.grantConsent();
+    await catalog.whenIdle();
+
+    expect(catalog.getTranscript("drive_fileA_r1")?.speakers).toEqual([
+      "Grace Hopper",
+      "OPERATOR",
+      "Ada Lovelace",
+    ]);
+  });
+
   it("is idempotent: a second pass over unchanged revisions registers nothing new", async () => {
     const source = fakeSource({
       fileA: { name: "sync - 2026-08-17T13-00-00.000Z.md", body: "Dana: Morning." },
