@@ -147,3 +147,27 @@ export interface PersonProfileMeetingProjection extends PersonProfileProjectionB
 
 export type PersonProfileProjection =
   PersonProfilePublicSafeProjection | PersonProfileMeetingProjection;
+
+/* ---------------------------------------------------------------------------
+ * Owner onboarding (issue #123). The connected Google identity proposes the
+ * Workspace owner's canonical Profile; only an explicit owner confirmation
+ * pins the reference below. These types serve the onboarding namespace and
+ * the /api/onboarding routes, not the Profile store itself.
+ * ------------------------------------------------------------------------- */
+
+/** What onboarding shows before any confirmation: the connected identity and
+ * any existing Profile its exact email already anchors. Never a confirmation. */
+export interface OwnerOnboardingProposal {
+  googleEmail: string;
+  matchedProfileId: string | null;
+  matchedProfileRevision: number | null;
+}
+
+/** The owner reference workflows gate on: an exact Profile revision, held for
+ * one Google identity. Changing or disconnecting that identity voids it. */
+export interface ConfirmedOwnerReference {
+  profileId: string;
+  profileRevision: number;
+  confirmedAt: string;
+  confirmedForGoogleEmail: string;
+}

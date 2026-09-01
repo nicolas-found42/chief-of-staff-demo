@@ -39,6 +39,13 @@ export interface MeetingBriefProductionRuntimeOptions {
   configStore: ConfigStore;
   google: GoogleConnection;
   getCompleteJson: () => CompleteJson;
+  /**
+   * Owner onboarding (issue #123): when given, the owner eligibility and
+   * delivery resolve through it instead of the raw held identity, so no
+   * owner-identity-dependent workflow proceeds without a confirmed owner
+   * Profile reference.
+   */
+  gateOwnerEmail?: () => string | null;
   log?: (message: string) => void;
 }
 
@@ -147,9 +154,8 @@ export function createMeetingBriefProductionRuntime(
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
     },
-    hubSpotConnection,
+    getOwnerEmail: () => (options.gateOwnerEmail ? options.gateOwnerEmail() : ownerEmail),
     gmailDeliveryProvider,
-    getOwnerEmail: () => ownerEmail,
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

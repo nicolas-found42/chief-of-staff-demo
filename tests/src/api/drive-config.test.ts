@@ -5,6 +5,7 @@ import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { openGoogleConnection } from "../../../apps/server/src/google/connection";
@@ -22,6 +23,10 @@ beforeEach(async () => {
   configStore.load();
 
   app = fastify({ logger: false });
+  const peopleProfiles = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(workspaceDir),
+  });
+  const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
   const dummyRuns = {
     list: () => [],
     detail: () => null,
@@ -38,7 +43,8 @@ beforeEach(async () => {
         throw new Error("no probe");
       },
     }),
-    people: new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) }),
+    people: peopleProfiles,
+    onboarding: ownerOnboarding,
     onConfigChanged: () => {},
   });
   await app.ready();

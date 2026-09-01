@@ -12,7 +12,10 @@ import type { HostedModule } from "../engine/host.js";
 import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
 import { registerPeopleApi } from "./people.js";
+import { registerOnboardingApi } from "./onboarding.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import type { OwnerOnboarding } from "../onboarding/owner.js";
+
 export interface ApiContext {
   runs: Runs;
   port: number;
@@ -25,6 +28,8 @@ export interface ApiContext {
   modules: HostedModule[];
   /** The Person Profiles product area's Workspace-owned interface (spec #117). */
   people: WorkspacePersonProfiles;
+  /** Owner onboarding (issue #123): the proposal/confirmation namespace. */
+  onboarding: OwnerOnboarding;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void;
@@ -221,4 +226,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   /* The Person Profiles product area is a Workspace resource, not a hosted
      Module: its routes hang off the Shell under /api/people (ADR-0043). */
   registerPeopleApi(app, { people: ctx.people });
+  /* Owner onboarding (issue #123): the proposal/confirmation namespace, also
+     a Workspace resource rather than a hosted Module. */
+  registerOnboardingApi(app, { onboarding: ctx.onboarding });
 }

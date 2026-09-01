@@ -27,6 +27,8 @@ import type {
   PersonProfileCreateInput,
   PersonProfileProjection,
   PersonProfileProjectionPurpose,
+  OwnerOnboardingProposal,
+  ConfirmedOwnerReference,
   SourceCapability,
   SourceDiagnosticClassification,
   ContentScoutScheduleState,
@@ -551,3 +553,23 @@ export const api = {
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/* ---------------------------------------------------------------------------
+ * Owner onboarding (issue #123): the proposal/confirmation namespace under
+ * /api/onboarding. Mounted here, at the end, as its own section.
+ * ------------------------------------------------------------------------- */
+
+export interface OwnerOnboardingStatus {
+  proposal: OwnerOnboardingProposal | null;
+  confirmed: ConfirmedOwnerReference | null;
+}
+
+export const onboardingApi = {
+  owner: () => request<OwnerOnboardingStatus>("/api/onboarding/owner"),
+  confirm: (profileId: string) =>
+    request<ConfirmedOwnerReference>("/api/onboarding/owner/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ profileId }),
+    }),
+};
