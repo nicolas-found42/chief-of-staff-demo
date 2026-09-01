@@ -209,6 +209,8 @@ interface ExtractedLine {
   /** Absolute offset where the utterance text starts. */
   utteranceStart: number;
   utterance: string;
+  /** Absolute offset of the speaker label itself; null when the line has none. */
+  speakerLabelStart: number | null;
 }
 
 /** A classified span before mention records are built. */
@@ -360,6 +362,7 @@ function parseLines(text: string): ExtractedLine[] {
       rest = rest.slice(timeMatch[0].length);
     }
     let speakerLabel: string | null = null;
+    let speakerLabelStart: number | null = null;
     let utteranceStart = position;
     let utterance = rest;
     const labelMatch = rest.match(SPEAKER_COLON);
@@ -367,11 +370,14 @@ function parseLines(text: string): ExtractedLine[] {
       const label = labelMatch[1]?.trim() ?? "";
       if (PERSON_LIKE_LABEL.test(label) || /^speaker/i.test(label)) {
         speakerLabel = label;
+        // SPEAKER_COLON forbids leading whitespace on the label, and the
+        // separator after the colon may span any whitespace width.
+        speakerLabelStart = position;
         utteranceStart = position + labelMatch[0].length;
         utterance = rest.slice(labelMatch[0].length);
       }
     }
-    lines.push({ timestamp, speakerLabel, utteranceStart, utterance });
+    lines.push({ timestamp, speakerLabel, utteranceStart, utterance, speakerLabelStart });
     offset += rawLine.length + 1;
   }
   return lines;
@@ -442,12 +448,12 @@ export function extractMentions(
       const identityMapping = record.speakerIdentityMappings.find(
         (mapping) => normalizeName(mapping.speakerLabel) === labelForm,
       );
-      const start = line.utteranceStart - (line.speakerLabel.length + 2);
-      if (
+      const start = line.speakerLabelStart;
+      const intact =
+        start !== null &&
         !seenLabelForms.has(labelForm) &&
-        start >= 0 &&
-        text.slice(start, start + line.speakerLabel.length) === line.speakerLabel
-      ) {
+        text.slice(start, start + line.speakerLabel.length) === line.speakerLabel;
+      if (intact) {
         spans.push({
           kind: "person",
           surfaceText: line.speakerLabel,

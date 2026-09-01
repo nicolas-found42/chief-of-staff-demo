@@ -718,6 +718,17 @@ describe("deterministic mention extraction", () => {
     expect(sam!.attendeeStatus).toBe("speaker");
   });
 
+  it("yields the speaker mention when the label colon is followed by several spaces", async () => {
+    const body = "Grace Hopper:  I agree.";
+    const { mentions } = extractMentions(makeRecord(body, "drive_wide_gap_r1"));
+    const speaker = mentions.find((m) => m.surfaceText === "Grace Hopper");
+    expect(speaker).toBeDefined();
+    expect(speaker!.attendeeStatus).toBe("speaker");
+    expect(body.slice(speaker!.provenance.spanStart, speaker!.provenance.spanEnd)).toBe(
+      "Grace Hopper",
+    );
+  });
+
   it("retains organizations with normalized names and person relationships", async () => {
     const { mentions, organizations } = extractMentions(makeRecord(SYNC_TEXT));
     const acme = organizations.find((o) => o.normalizedName === "acme corp");
