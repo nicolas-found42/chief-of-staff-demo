@@ -458,6 +458,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
     "Idea Engine",
     "Content Scout",
     "Meeting Brief Generator",
+    "Meeting Debrief",
     "Content Research",
     "Person Profiles",
     "Settings",

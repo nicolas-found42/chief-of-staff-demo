@@ -64,8 +64,21 @@ export interface TranscriptCatalogDeps {
   source: TranscriptCatalogSource;
   disclosure: TranscriptCatalogDisclosure;
   identity: TranscriptIdentityProcessor;
+  /**
+   * The Meeting Debrief hand-off (issue #139): the Catalog calls it whenever
+   * mining completes for a Transcript — a new registration, the historical
+   * backfill at the start of a pass, or a later Calendar association. The
+   * Catalog hands over the immutable record and owns nothing of what the
+   * Debrief does with it; the Debrief's own exactly-once rule is its own.
+   */
+  debrief?: TranscriptDebriefProcessor;
   now?: () => Date;
   log?: (message: string) => void;
+}
+
+export interface TranscriptDebriefProcessor {
+  process(record: TranscriptRecord): Promise<void>;
+  backfill(records: TranscriptRecord[]): Promise<void>;
 }
 
 export class ConsentRequiredError extends Error {
@@ -124,6 +137,7 @@ export class TranscriptCatalog {
   private readonly source: TranscriptCatalogSource;
   private readonly disclosure: TranscriptCatalogDisclosure;
   private readonly identity: TranscriptIdentityProcessor;
+  private readonly debrief: TranscriptDebriefProcessor | null;
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   /** The pass currently running, if any; a second caller awaits the same one. */
@@ -136,6 +150,7 @@ export class TranscriptCatalog {
     this.identity = deps.identity;
     this.now = deps.now ?? (() => new Date());
     this.log = deps.log ?? (() => {});
+    this.debrief = deps.debrief ?? null;
   }
 
   /**
@@ -266,6 +281,7 @@ export class TranscriptCatalog {
     };
     this.store.updateTranscript(updated);
     await this.identity.process(updated);
+    if (this.debrief) await this.debrief.process(updated);
     return updated;
   }
 
@@ -287,6 +303,7 @@ export class TranscriptCatalog {
     };
     if (this.store.readPaused()) return result;
     await this.identity.backfill(this.store.listTranscripts());
+    if (this.debrief) await this.debrief.backfill(this.store.listTranscripts());
     const listed = await this.source.listFiles();
     for (const file of listed) {
       if (this.store.readPaused()) break;
@@ -397,6 +414,7 @@ export class TranscriptCatalog {
       };
       this.store.saveTranscript(record);
       await this.identity.process(record);
+      if (this.debrief) await this.debrief.process(record);
       this.recordEntry({ ...entry, state: "processed", transcriptId: record.id });
       return "processed";
     } catch (error: unknown) {

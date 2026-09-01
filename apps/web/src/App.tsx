@@ -6,6 +6,8 @@ import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { IdeaEnginePage } from "./pages/IdeaEnginePage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
+import { MeetingDebriefDetailPage } from "./pages/MeetingDebriefDetailPage";
+import { MeetingDebriefPage } from "./pages/MeetingDebriefPage";
 import { NewPersonProfilePage } from "./pages/NewPersonProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PeoplePage } from "./pages/PeoplePage";
@@ -84,6 +86,8 @@ export function App() {
           <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
           <Route path="/meeting-brief" element={<MeetingBriefPage />} />
+          <Route path="/meeting-debrief" element={<MeetingDebriefPage />} />
+          <Route path="/meeting-debrief/:runId" element={<MeetingDebriefDetailPage />} />
           <Route path="/content-research" element={<ContentResearchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/people" element={<PeoplePage />} />

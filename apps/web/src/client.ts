@@ -13,6 +13,8 @@ import type {
   HubSpotStatus,
   MeetingBriefIndex,
   MeetingBriefPersonProfileReadModel,
+  MeetingDebriefDetail,
+  MeetingDebriefIndex,
   NamedPerson,
   PersonSuggestion,
   RedactedConfig,
@@ -482,6 +484,9 @@ export const api = {
       body: JSON.stringify(Array.isArray(input) ? { internalDomains: input } : input),
     }),
   meetingBriefIndex: () => request<MeetingBriefIndex>("/api/meeting-brief/index"),
+  meetingDebriefIndex: () => request<MeetingDebriefIndex>("/api/meeting-debrief/index"),
+  meetingDebriefDetail: (runId: string) =>
+    request<MeetingDebriefDetail>(`/api/meeting-debrief/${encodeURIComponent(runId)}`),
   reconcileMeetingBrief: (forceFullSync = false) =>
     request<{
       scheduled: number;

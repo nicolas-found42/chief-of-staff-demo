@@ -24,6 +24,12 @@ import { IdeaEngineHost } from "./modules/idea-engine/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
 import { MeetingBriefHost } from "./modules/meeting-brief-generator/host.js";
 import { createMeetingBriefProductionRuntime } from "./modules/meeting-brief-generator/production.js";
+import { MeetingDebriefHost } from "./modules/meeting-debrief/host.js";
+import { createMeetingDebriefProductionRuntime } from "./modules/meeting-debrief/production.js";
+import {
+  createMeetingDebriefTestRuntime,
+  registerMeetingDebriefTestRoutes,
+} from "./modules/meeting-debrief/testRuntime.js";
 import {
   createMeetingBriefTestRuntime,
   registerMeetingBriefTestRoutes,
@@ -342,6 +348,42 @@ const meetingBriefProduction = meetingBriefTest
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
+/* Meeting Debrief (issue #139): the retrospective sibling of Meeting Brief.
+   It consumes the Transcript Catalog's immutable records and identity review
+   state, and has no outward-write capability at all. The test runtime keeps
+   everything real except the extraction, so the browser journey never
+   depends on a live model. */
+const meetingDebriefTest =
+  process.env.ENABLE_TEST_SEED === "1"
+    ? createMeetingDebriefTestRuntime({
+        runs,
+        workspaceDir,
+        log: (message) => console.log(`[meeting-debrief] ${message}`),
+      })
+    : null;
+const meetingDebrief: MeetingDebriefHost =
+  meetingDebriefTest?.host ??
+  createMeetingDebriefProductionRuntime({
+    runs,
+    workspaceDir,
+    getCompleteJson: () => {
+      const current = configStore.get();
+      return makeCompleteJson(
+        {
+          provider: current.provider,
+          model: current.model,
+          apiKey: current.apiKey,
+          baseUrl: current.ollama.baseUrl,
+        },
+        layout.mockResultFile,
+      );
+    },
+    getLlmInfo: () => {
+      const current = configStore.get();
+      return { provider: current.provider, model: current.model };
+    },
+    log: (message) => console.log(`[meeting-debrief] ${message}`),
+  }).host;
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [
@@ -351,6 +393,7 @@ const modules: HostedModule[] = [
   contentScout,
   contentResearch,
   meetingBrief,
+  meetingDebrief,
 ];
 const app = fastify({ logger: false });
 
@@ -361,6 +404,9 @@ app.setErrorHandler((error: FastifyError, _request, reply) => {
 const webDist = fileURLToPath(new URL("../../web/dist", import.meta.url));
 await registerStaticServing(app, { webDist });
 
+if (meetingDebriefTest) {
+  registerMeetingDebriefTestRoutes(app, meetingDebriefTest);
+}
 await registerApi(app, {
   runs,
   port,

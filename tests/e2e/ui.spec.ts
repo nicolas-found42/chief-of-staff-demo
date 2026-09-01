@@ -254,9 +254,10 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
-  await expect(tiles).toHaveCount(6);
+  await expect(tiles).toHaveCount(7);
   await expect(tiles.filter({ hasText: "Content Scout" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Meeting Brief Generator" })).not.toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Meeting Debrief" })).not.toContainText("Planned");
 
   const home = page.locator("main#main");
   for (const [label, path] of [

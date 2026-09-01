@@ -326,10 +326,12 @@ explicit uncertainty; every Output Adapter renders this same result.
 _Avoid_: Briefing, prep brief, email body
 
 **Executive Assistant**:
-A planned Module that reads a meeting transcript from the Transcripts Drive folder and produces a
-Meeting Debrief for the workspace owner. It is named for the role it plays rather than for the one
-artifact it produces today, so further retrospective work can join it without renaming the Module.
-_Status_: planned (grilled #15, 2026-08-29)
+The Module that reads a mined transcript from the Transcript Catalog and produces a Meeting Debrief
+for the workspace owner. It is named for the role it plays rather than for the one artifact it
+produces today, so further retrospective work can join it without renaming the role: the role names
+the Run, and the hosted `meeting-debrief` Module is the artifact host of that Run's Meeting Debrief.
+_Status_: retrospective extraction live (issue #139); review wait, expiry, and approval-gated
+outward writes planned (ADR-0038)
 _Avoid_: Executive Coach (the Relay original's framing, and the voice the model is cast in, not the
 Module), Meeting Debrief Generator, Coach Module
 
@@ -337,7 +339,10 @@ Module), Meeting Debrief Generator, Coach Module
 The structured result one Executive Assistant Run extracts from a transcript after a meeting: the
 firm decisions taken, action items carrying an inferred owner and an optional due date, the
 questions left open, a short summary, an effectiveness assessment with the specific evidence behind
-it, and coaching advice. Every Output Adapter renders this same result.
+it, and coaching advice. The role names the Run; the `meeting-debrief` Module is its artifact host
+— it reads the Transcript Catalog's immutable records and review state and holds the Debrief for
+the workspace owner's review, and it decides no identity and writes nothing outward itself. Every
+Output Adapter renders this same result.
 _Avoid_: Meeting Brief (that one is prospective, prepared from Calendar before a meeting; a Meeting
 Debrief is retrospective, extracted from a transcript afterwards), debrief email, meeting notes
 
