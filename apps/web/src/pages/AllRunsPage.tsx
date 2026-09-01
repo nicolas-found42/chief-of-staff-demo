@@ -1,5 +1,10 @@
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import type { DriveIntakeStatus } from "@chief-of-staff-demo/shared";
 import { RunsList } from "../components/RunsList";
+import { api } from "../client";
+import { relativeTime } from "../display";
+import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -17,6 +22,23 @@ import { useTitle } from "../useTitle";
 export function AllRunsPage() {
   useTitle("All runs");
   const headingRef = usePageFocus<HTMLHeadingElement>();
+  /* The transcript intake liveness line. It lived on Transcript → Tasks'
+     own Runs page until that Module was retired (issue #142); the fact it
+     reports is still true, and now belongs to the Transcript Catalog, the
+     sole private transcript intake writer. Remembered facts only — the
+     endpoint makes zero Google calls, and after a restart it claims no
+     last-checked time it does not have. */
+  const [intake, setIntake] = useState<DriveIntakeStatus | null>(null);
+  const { status: googleStatus } = useGoogleConnection();
+  const loadIntake = useCallback(() => {
+    void api
+      .driveIntakeStatus()
+      .then((next) => setIntake(next))
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    loadIntake();
+  }, [loadIntake]);
 
   return (
     <div className="page">
@@ -28,6 +50,17 @@ export function AllRunsPage() {
       <p className="muted">
         Every Module's runs, newest first. A Module's own tab shows only its own.
       </p>
+      {googleStatus?.state === "connected" && intake?.configured && intake.enabled && (
+        <p className="muted" data-testid="intake-liveness">
+          Watching {intake.folderName || "your Drive folder"}
+          {intake.lastPollAt
+            ? ` · last checked ${relativeTime(intake.lastPollAt)}` +
+              (intake.lastPollOutcome === "failed" ? " (that check failed)" : "")
+            : ""}
+          {" · "}
+          every {intake.pollIntervalMinutes} min
+        </p>
+      )}
       <RunsList
         empty={
           <p className="muted">

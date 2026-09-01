@@ -7,7 +7,6 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
     and YouTube Trends is walked where Content Research presents it. */
 const ROUTES = [
   "/",
-  "/transcript",
   "/runs",
   "/content-research/trends",
   "/content-scout",
@@ -22,9 +21,13 @@ const ROUTES = [
   "/no-such-page",
 ];
 
-/** Create a Run via the test seam and land on its detail page. */
+/** Create a Run via the test seam and land on its detail page. The scenario is
+    pinned to ordinary-failure because the no-scenario seed now runs the real
+    conversion fixture to `done` (Completed) — this helper is written against
+    the failed-run surface, which only the failure fixture deterministically
+    produces. */
 async function openRun(page: Page, scenario?: "ordinary-failure"): Promise<void> {
-  const suffix = scenario ? `?scenario=${scenario}` : "";
+  const suffix = `?scenario=${scenario ?? "ordinary-failure"}`;
   const res = await page.request.post(`/api/test/seed${suffix}`);
   if (!res.ok()) throw new Error(`seed failed: ${res.status()} ${await res.text()}`);
   const { runId } = (await res.json()) as { runId: string };
@@ -261,7 +264,7 @@ test("a busy control is styled, not dimmed, and only the pressed one is busy", a
   await expect(page.getByRole("button", { name: "Disconnect" }).first()).toBeDisabled();
   await expect(save).toHaveAttribute("aria-disabled", "false", { timeout: 15_000 });
 
-  await page.route("**/api/drive/sync", stall);
+  await page.route("**/api/transcripts/intake/sync", stall);
   const sync = page.getByRole("button", { name: "Sync now" });
   await sync.focus();
   await sync.dispatchEvent("click");
@@ -287,7 +290,7 @@ test("drag-selecting a filename copies it instead of opening the run", async ({ 
   // a drag to select text landed on the row and navigated, discarding the
   // selection and removing the move-away-to-abort escape (WCAG 2.5.2).
   await openRun(page);
-  await page.goto("/transcript");
+  await page.goto("/runs");
   // The filename is the link now. A press that starts on an anchor begins no
   // selection in any browser, so the drag starts in the cell's padding beside
   // it — which is where a selection starts anyway — and ends over the link, so
@@ -306,13 +309,13 @@ test("drag-selecting a filename copies it instead of opening the run", async ({ 
   await page.mouse.up();
 
   expect(await page.evaluate(() => window.getSelection()?.toString())).not.toBe("");
-  expect(new URL(page.url()).pathname, "drag-select navigated away").toBe("/transcript");
+  expect(new URL(page.url()).pathname, "drag-select navigated away").toBe("/runs");
 
   // The row is still a pointer target when there is nothing selected. (A click
   // that lands inside the selection dismisses it first — Chrome holds the
   // selection through mousedown so the text can be dragged — so it takes the
   // second click to navigate, which is how every selection-guarded row behaves.)
-  await page.goto("/transcript");
+  await page.goto("/runs");
   await page.locator(".run-link").first().click();
   await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
 });
@@ -412,7 +415,7 @@ test("every container that scrolls can be reached by keyboard", async ({ page })
   await page.locator("details summary").click();
   expect(await unreachableScrollers(page), "run detail").toEqual([]);
 
-  await page.goto("/transcript");
+  await page.goto("/runs");
   await expect(page.getByTestId("runs-table")).toBeVisible();
   expect(await unreachableScrollers(page), "runs list").toEqual([]);
 });
@@ -427,8 +430,8 @@ test("changing route moves focus into the page it opened", async ({ page }) => {
   await expect(page.getByLabel("Task list name")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
 
-  await page.getByRole("link", { name: "Transcript → Tasks" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Runs" })).toBeFocused();
+  await page.getByRole("link", { name: "Content Scout" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeFocused();
 });
 
 test("a direct load of a run leaves the header in front of the user", async ({ page }) => {
@@ -454,7 +457,6 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
   // production wiring becomes real.
   for (const name of [
     "Found42 — Chief of Staff",
-    "Transcript → Tasks",
     "Content Scout",
     "Meeting Brief Generator",
     "Meeting Debrief",
@@ -477,7 +479,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Reaching the same run by clicking still moves focus into the page, which is
   // the case the guard must not break.
-  await page.goto("/transcript");
+  await page.goto("/runs");
   await page.locator(".run-link").first().click();
   await expect(heading).toBeFocused();
 });
@@ -502,7 +504,7 @@ test("the runs list stops updating itself once nothing can change", async ({ pag
     },
   );
 
-  await page.goto("/transcript");
+  await page.goto("/runs");
   await expect(page.getByTestId("runs-table")).toBeVisible();
   // The precondition the fix keys off: nothing left that a poll could change.
   await expect(page.locator(".status-active")).toHaveCount(0);

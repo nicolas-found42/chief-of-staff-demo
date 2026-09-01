@@ -9,7 +9,6 @@ import type {
   RuntimeInspector,
 } from "../modules/content-scout/ports.js";
 import type { SourceAdapter } from "../source-adapters/source-adapter.js";
-import type { RunSourceSpec } from "../modules/transcript/module.js";
 import type { PersonProfileStore } from "../person-profile/store.js";
 import type { Runs } from "../runs.js";
 import type {
@@ -28,7 +27,18 @@ import type { TranscriptIdentityExtractionResult } from "@chief-of-staff-demo/sh
 export interface TestSeedContext {
   /** The Workspace directory, so seeded product areas write the same store. */
   workspaceDir: string;
-  startRun: (spec: RunSourceSpec) => Promise<string>;
+  /**
+   * Seeds one fixture Run directly on the Shell's Run store (issue #142).
+   * Transcript → Tasks used to be the vehicle for these; it is retired, and
+   * the Shell surfaces these journeys cover — the Runs list, Run detail,
+   * failure guidance — are the Shell's own, so the fixture is built here
+   * rather than through a Module that no longer exists.
+   */
+  seedFixtureRun: (spec: {
+    fileName: string;
+    /** Present for the conversion-failure scenario, absent for a clean Run. */
+    bytes?: Buffer;
+  }) => Promise<string>;
   createFailedRun: () => string;
   /** The Workspace Person Profile store, so the journey can arrange sourced
       evidence before exercising repair through the real product surface. */
@@ -75,8 +85,7 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
     try {
       const query = request.query as { scenario?: string };
       if (query.scenario === "conversion-failure") {
-        const runId = await ctx.startRun({
-          intake: "drive",
+        const runId = await ctx.seedFixtureRun({
           fileName: "corrupt-transcript.json",
           bytes: Buffer.from('{"PRIVATE TRANSCRIPT MARKER"'),
         });
@@ -107,11 +116,7 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
       if (!bytes) {
         bytes = Buffer.from("# Weekly Product Sync\n\nAlice: hello\nBob: hi\n");
       }
-      const runId = await ctx.startRun({
-        intake: "drive",
-        fileName: "sample-transcript.md",
-        bytes,
-      });
+      const runId = await ctx.seedFixtureRun({ fileName: "sample-transcript.md", bytes });
       reply.code(201);
       return { runId };
     } catch (error) {

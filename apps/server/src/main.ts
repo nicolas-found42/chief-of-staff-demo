@@ -16,11 +16,15 @@ import { WorkspacePersonProfileReferences } from "./person-profile/references.js
 import { TranscriptCatalogStore } from "./transcript-catalog/store.js";
 import { createTranscriptCatalogRuntime } from "./transcript-catalog/production.js";
 import { registerTranscriptIntakeApi } from "./api/transcript-intake.js";
+import { convertToText } from "./text/convert.js";
+import { conversionStageFailure } from "./text/failure.js";
+
+/** The module id fixture Runs are attributed to in the browser suite only. */
+const SEED_FIXTURE_MODULE_ID = "seed-fixture";
 import { OwnerOnboarding } from "./onboarding/owner.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
 import { openGoogleConnection } from "./google/connection.js";
-import { TranscriptHost } from "./modules/transcript/host.js";
 import { YoutubeHost } from "./modules/youtube/host.js";
 import { ContentScoutHost } from "./modules/content-scout/host.js";
 import { MeetingBriefHost } from "./modules/meeting-brief-generator/host.js";
@@ -153,31 +157,6 @@ const transcriptDeletion = new TranscriptDeletionService({
   identity: transcriptIdentityStore,
   relevance: transcriptRelevanceStore,
   registries: transcriptConsumerRegistries,
-  log: (message) => console.log(`[transcript] ${message}`),
-});
-
-const transcript = new TranscriptHost({
-  runs,
-  workspaceDir,
-  port,
-  getConfig: () => configStore.get(),
-  getCompleteJson: () => {
-    const current = configStore.get();
-    return makeCompleteJson(
-      {
-        provider: current.provider,
-        model: current.model,
-        apiKey: current.apiKey,
-        baseUrl: current.ollama.baseUrl,
-      },
-      layout.mockResultFile,
-    );
-  },
-  getLlmInfo: () => {
-    const current = configStore.get();
-    return { provider: current.provider, model: current.model };
-  },
-  google: googleConnection,
   log: (message) => console.log(`[transcript] ${message}`),
 });
 
@@ -447,7 +426,6 @@ const transcriptCatalogRuntime = createTranscriptCatalogRuntime({
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [
-  transcript,
   youtube,
   contentScout,
   contentResearch,
@@ -486,7 +464,10 @@ await registerApi(app, {
 });
 /* The Transcript Catalog's intake surface (issue #142): consent, the
    pre-consent inventory, remembered status, and one pass on demand. */
-registerTranscriptIntakeApi(app, { catalog: transcriptCatalogRuntime.catalog });
+registerTranscriptIntakeApi(app, {
+  catalog: transcriptCatalogRuntime.catalog,
+  intakeStatus: () => transcriptCatalogRuntime.intakeStatus(),
+});
 /* Semantic transcript relevance Review surface (issue #127). */
 registerTranscriptRelevanceApi(app, {
   relevance: transcriptRelevance,
@@ -525,11 +506,39 @@ if (meetingBriefTest) {
 if (process.env.ENABLE_TEST_SEED === "1") {
   await registerTestSeed(app, {
     workspaceDir,
-    startRun: (spec) => transcript.startRun(spec),
+    /* Fixture Runs for the browser suite, built on the Shell's own Run store
+       (issue #142). Transcript → Tasks used to be the vehicle; it is retired,
+       and what these journeys actually cover — the Runs list, Run detail and
+       the conversion-failure guidance — belongs to the Shell and to the
+       neutral text conversion that survives the retirement. */
+    seedFixtureRun: async (spec) => {
+      const run = runs.create({
+        module: SEED_FIXTURE_MODULE_ID,
+        moduleVersion: 1,
+        intake: "drive",
+        fileName: spec.fileName,
+        sourceUrl: null,
+        externalId: null,
+      });
+      run.started("convert");
+      const bytes = spec.bytes ?? Buffer.alloc(0);
+      try {
+        const text = await convertToText(spec.fileName, bytes);
+        run.writeArtifact("transcript.txt", text);
+        run.finished({ status: "done", summary: "Converted" });
+      } catch (error) {
+        /* The real conversion diagnostic, from the same neutral helper the
+           retired Module used — so the journey's assertions still describe
+           what the product does, not a string typed here. */
+        const failure = conversionStageFailure(error, spec.fileName, bytes);
+        run.failed("convert", failure.message, failure.hint, failure.flags);
+      }
+      return run.id;
+    },
     createFailedRun: () => {
       const run = runs.create({
-        module: transcript.id,
-        moduleVersion: transcript.version,
+        module: SEED_FIXTURE_MODULE_ID,
+        moduleVersion: 1,
         intake: "drive",
         fileName: "retryable-failure.md",
         sourceUrl: null,

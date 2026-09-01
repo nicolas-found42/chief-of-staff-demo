@@ -6,13 +6,13 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 test("Drive folder is the only Intake; Runs list and Drive settings are visible", async ({
   page,
 }) => {
-  await page.goto("/transcript");
+  await page.goto("/runs");
   // Upload dropzone is gone — Drive folder is the sole Intake
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All runs" })).toBeVisible();
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Connections" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Transcript → Tasks" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Transcript intake" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Choose folder/i })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
 });
@@ -122,7 +122,7 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
   // region, because the Settings card renders warnings of its own.
   const shellBanner = page.locator('main > [role="status"] .banner-warn');
 
-  for (const path of ["/", "/transcript", "/content-scout"]) {
+  for (const path of ["/", "/runs", "/content-scout"]) {
     await page.goto(path);
     // Shell vocabulary: Tasks and Gmail are Google surfaces, where the old
     // string named Transcript's own pipeline stages.
@@ -152,11 +152,11 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
 });
 
 test("primary actions are reachable and operable by keyboard", async ({ page }) => {
-  await page.goto("/transcript");
+  await page.goto("/runs");
 
   // Drive is the only Intake — no upload button, but the page still has a heading and a way to check
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All runs" })).toBeVisible();
   const seed = await page.request.post("/api/test/seed");
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
@@ -167,21 +167,29 @@ test("primary actions are reachable and operable by keyboard", async ({ page }) 
   await expect(page).toHaveTitle(/· Chief of Staff$/);
 
   // Runs are reachable from the list without a pointer.
-  await page.goto("/transcript");
-  const runLink = page.locator(".run-link").first();
+  await page.goto("/runs");
+  // The seeded Run is the keyboard subject: its fixture writes
+  // transcript.txt, so Files exists to exercise once the disclosure opens.
+  const runLink = page.locator(`.run-link[href="/runs/${runId}"]`);
   await expect(runLink).toBeVisible();
   await runLink.press("Enter");
   await page.waitForURL(/\/runs\/run_/, { timeout: 15_000 });
 
-  // The capped-height log and transcript can be scrolled from the keyboard.
+  // The capped-height log can be scrolled from the keyboard, and the Run's
+  // files stay plain links under "Files" — native links, so keyboard users
+  // reach and open them like every other control. The transcript-module
+  // pre-block they replaced is retired (issue #142).
   await expect(page.locator(".events-log")).toHaveAttribute("tabindex", "0");
   await page.locator("details summary").click();
-  await expect(page.locator(".artifact-pre")).toHaveAttribute("tabindex", "0");
+  const fileLink = page.locator(".run-files a").first();
+  await expect(fileLink).toBeVisible();
+  await fileLink.focus();
+  await expect(fileLink).toBeFocused();
 });
 
 test("the page never scrolls sideways at a 320px viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
-  for (const path of ["/", "/transcript", "/settings"]) {
+  for (const path of ["/", "/runs", "/settings"]) {
     await page.goto(path);
     const overflows = await page.evaluate(() => {
       const root = document.documentElement;
@@ -220,7 +228,7 @@ test("Content Scout Settings exposes safe cleanup and non-color runtime health",
   await expect(page.getByRole("button", { name: /Delete .*expired temporary/ })).toHaveCount(0);
 });
 
-test("the front door is Home, and Transcript keeps the runs list", async ({ page }) => {
+test("the front door is Home, and the Shell's runs list lives at /runs", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
   // Titled after the Shell with no suffix, so opening the most-visited route
@@ -231,8 +239,8 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   // sentence that only exists after both resolve.
   await expect(page.locator(".home-sentence")).toBeVisible();
 
-  // A status surface, not Transcript with different chrome: Intake and the runs
-  // table stay with the Module that owns them.
+  // A status surface, not a Module's page in different chrome: Intake and the
+  // runs table stay with the pages that own them.
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
   await expect(page.getByTestId("runs-table")).toHaveCount(0);
 
@@ -244,8 +252,8 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
 
   // Ticket 12 honesty rule: with Google disconnected the Runs page stays
   // silent about watching — no liveness line, no stale promise.
-  await page.goto("/transcript");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
+  await page.goto("/runs");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("All runs");
   await expect(page.getByTestId("intake-liveness")).toHaveCount(0);
 
   // One tile per Module, from the same list the tab bar renders, so the two
@@ -254,17 +262,18 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
-  await expect(tiles).toHaveCount(6);
+  await expect(tiles).toHaveCount(5);
   await expect(tiles.filter({ hasText: "Content Scout" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Meeting Brief Generator" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Meeting Debrief" })).not.toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Content Research" })).not.toContainText("Planned");
 
   const home = page.locator("main#main");
   for (const [label, path] of [
-    ["Transcript → Tasks", "/transcript"],
     ["YouTube Trends", "/content-research/trends"],
     ["Content Scout", "/content-scout"],
     ["Meeting Brief Generator", "/meetings/brief"],
+    ["Meeting Debrief", "/meeting-debrief"],
     ["Content Research", "/content-research"],
   ] as const) {
     await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);
@@ -275,23 +284,20 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
   // surface presents it, and Content Research's own page carries the way in.
   const tabs = page.locator('.app-header nav[aria-label="Modules"] a');
   // Meeting Debrief is its own Module tab (#139); YouTube Trends is not a
-  // tab — Content Research's page carries it (#135).
-  await expect(tabs).toHaveCount(5);
+  // tab — Content Research's page carries it (#135). Transcript → Tasks is
+  // retired (#142), so four Module tabs remain.
+  await expect(tabs).toHaveCount(4);
   await expect(tabs.filter({ hasText: "YouTube Trends" })).toHaveCount(0);
   await expect(tabs.filter({ hasText: "Content Research" })).toHaveCount(1);
 
-  await home.getByRole("link", { name: "Transcript → Tasks" }).click();
-  await expect(page).toHaveURL(/\/transcript$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Runs");
-  // Dropzone is gone — Drive folder is the Intake; the Runs list stays with
-  // Transcript. Either branch of the list is that surface: the table when this
-  // Module has Runs, its empty state when it has none. Which one shows depends
-  // on what earlier specs left on the shared server, so pinning the table alone
-  // would test spec order rather than the contract.
+  await home.getByRole("link", { name: "Content Scout" }).click();
+  await expect(page).toHaveURL(/\/content-scout$/);
+  // Dropzone is gone — Drive folder is the Intake. And a Module's page is not
+  // a Runs surface any more: with Transcript → Tasks retired (#142) the
+  // Shell's cross-Module list at /runs is the only Runs list there is, so
+  // nothing here renders a table of its own Runs.
   await expect(page.getByTestId("dropzone")).toHaveCount(0);
-  await expect(
-    page.getByTestId("runs-table").or(page.getByText(/No runs yet/).first()),
-  ).toBeVisible();
+  await expect(page.getByTestId("runs-table")).toHaveCount(0);
   await page.getByRole("link", { name: "Found42 — Chief of Staff" }).click();
   await expect(page).toHaveURL(/:\d+\/$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
@@ -309,31 +315,24 @@ test("the Shell lists every Module's runs, and a Module's page lists only its ow
   await expect(page.getByRole("heading", { level: 1, name: "All runs" })).toBeVisible();
   await expect(page.getByTestId("runs-table")).toBeVisible();
   await expect(page.locator(".runs-table thead")).toContainText("Module");
-  // The label the tab bar shows, not the identifier on disk.
-  await expect(page.locator(".runs-table tbody")).toContainText("Transcript → Tasks");
   // An Intake's name is a Module's private vocabulary, so it is not a column here.
   await expect(page.locator(".runs-table thead")).not.toContainText("Source");
   await expect(page.getByRole("navigation", { name: "Modules" })).not.toContainText("runs");
 
-  // The Module's own page is the same list filtered to itself, with its own
-  // chrome around it — and the Intake back, where it belongs.
-  await page.goto("/transcript");
-  await expect(page.getByTestId("runs-table")).toBeVisible();
-  await expect(page.locator(".runs-table thead")).toContainText("Source");
-  await expect(page.locator(".runs-table thead")).not.toContainText("Module");
-  await expect(page.locator(".runs-table tbody")).not.toContainText("Transcript → Tasks");
+  /* Transcript → Tasks was the last Module with a Runs page of its own, and
+     it is retired (issue #142). The cross-Module list is now the only Runs
+     list there is, so what remains to assert is that it is complete and
+     Module-attributed rather than that it differs from a per-Module one. */
 
-  // And the way from a Module's page to the Shell's list.
-  await page.getByRole("link", { name: /Every Module's runs/ }).click();
-  await expect(page).toHaveURL(/\/runs$/);
-
-  // A Run's detail page carries the Shell's half plus the Module's own view,
-  // looked up by the Run's Module.
+  // A Run's detail page is the Shell's half — the stage timeline, events and
+  // files — with a Module's own view only when its Module contributes one.
+  // The seed-fixture Module contributes none, and Transcript → Tasks (whose
+  // ResultView drew the receipt) is retired (#142): "What happened" and the
+  // timeline are the tail every Run carries.
   await page.locator(".run-link").first().click();
   await page.waitForURL(/\/runs\/run_/);
   await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
-  await expect(page.locator(".receipt")).toBeVisible();
-  await expect(page.locator(".run-meta")).toContainText("Transcript → Tasks");
+  await expect(page.locator(".timeline-row").first()).toBeVisible();
 });
 
 test("partial Content Scout diagnostics stay visible and accessible", async ({ page }) => {
@@ -533,10 +532,10 @@ test("Content Research presents YouTube Trends, and the trends page refuses a ba
 });
 
 test("Home enumerates what needs doing, and the rail itemises it", async ({ page }) => {
-  // Guarantees one failed Run whatever ran before this: the mock provider
-  // answers instantly and the Run then fails at outputs, because this workspace
-  // has no Google connection.
-  const seed = await page.request.post("/api/test/seed");
+  // Guarantees one failed Run whatever ran before this: the ordinary-failure
+  // fixture creates a Run that fails at extract with the genuine-failure
+  // wording, and carries no connection flag — it is not an expiry story.
+  const seed = await page.request.post("/api/test/seed?scenario=ordinary-failure");
   if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
   const { runId } = (await seed.json()) as { runId: string };
   await page.goto(`/runs/${runId}`);
@@ -545,10 +544,12 @@ test("Home enumerates what needs doing, and the rail itemises it", async ({ page
   });
   await expect(page.locator(".run-meta")).toContainText("Failed during");
   await expect(page.locator(".run-meta")).not.toContainText("Stopped during");
-  await expect(
-    page.locator(".banner-error").getByRole("link", { name: "Reconnect" }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  // The fixture carries no connection flag, so the banner is the
+  // genuine-failure kind and the way out is Retry, not Reconnect: retryable
+  // (failed at extract, never convert) and showRetry (nothing reconnectable
+  // to wait for) are both true here. Reconnect belongs to connection-flagged
+  // failures, covered by the sign-in refusal and the meeting journeys.
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await expect(page.locator(".timeline-row .status-failed")).toHaveText("Failed");
   await page.goto("/");
   // One clause per rail condition, in the rail's order, with the true total of

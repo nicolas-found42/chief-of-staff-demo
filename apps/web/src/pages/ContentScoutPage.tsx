@@ -73,15 +73,25 @@ export function ContentScoutPage() {
     }
   };
 
+  /* The loading branch must mirror the loaded header's structure exactly: the
+     h1 that usePageFocus focuses is nested under `.page-header > div` once the
+     state arrives, and a bare h1 here would sit at a different reconciliation
+     position, so React would replace the focused node with a fresh one and
+     silently drop focus onto <body> (WCAG 2.4.3 / 4.1.3 — the swap Settings
+     survives by reusing the same heading node). */
   if (!state) {
     return (
-      <section className="page">
-        <h1 ref={headingRef} tabIndex={-1}>
-          Content Scout
-        </h1>
-        <p role="status" className={error ? "field-error" : "muted"}>
-          {error ?? "Loading Content Scout…"}
-        </p>
+      <section className="page content-scout">
+        <div className="page-header">
+          <div>
+            <h1 ref={headingRef} tabIndex={-1}>
+              Content Scout
+            </h1>
+            <p role="status" className={error ? "field-error" : "muted"}>
+              {error ?? "Loading Content Scout…"}
+            </p>
+          </div>
+        </div>
       </section>
     );
   }

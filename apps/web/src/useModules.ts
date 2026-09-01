@@ -12,7 +12,6 @@
  */
 import type { ComponentType } from "react";
 import type { RunDetail } from "@chief-of-staff-demo/shared";
-import { TranscriptResultView } from "./modules/transcript/ResultView";
 import { ContentScoutResultView } from "./modules/content-scout/ResultView";
 import { MeetingBriefResultView } from "./modules/meeting-brief/ResultView";
 
@@ -46,14 +45,6 @@ export interface ModuleDescriptor {
 
 /* Array order is display order, in the nav and on Home alike. */
 const MODULES: ModuleDescriptor[] = [
-  {
-    id: "transcript",
-    path: "/transcript",
-    label: "Transcript → Tasks",
-    description: "Meeting transcripts become Google Tasks and Gmail drafts.",
-    status: "live",
-    resultView: TranscriptResultView,
-  },
   {
     id: "youtube-trends",
     path: "/content-research/trends",

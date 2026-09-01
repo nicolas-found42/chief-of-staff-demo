@@ -300,8 +300,8 @@ export function SettingsPage() {
     setSyncResult(null);
     setError(null);
     try {
-      const { created } = await api.driveSync();
-      setSyncResult(`Synced — ${created} new transcript(s) started.`);
+      const { processed } = await api.driveSync();
+      setSyncResult(`Synced — ${processed} new transcript(s) catalogued.`);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -624,7 +624,7 @@ export function SettingsPage() {
         </section>
 
         <section className="settings-section" aria-labelledby="section-tuning">
-          <h2 id="section-tuning">Transcript → Tasks</h2>
+          <h2 id="section-tuning">Transcript intake</h2>
           <div className="card">
             <div className="form-grid">
               <div className="field">

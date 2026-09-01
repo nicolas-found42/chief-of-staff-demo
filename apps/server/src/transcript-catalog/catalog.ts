@@ -11,7 +11,7 @@ import {
   type TranscriptCatalogStatus,
 } from "@chief-of-staff-demo/shared";
 import { isSupportedFileName, convertToText } from "../text/convert.js";
-import { meetingDateFromFileName } from "../pipeline/run.js";
+import { meetingDateFromFileName } from "../text/meetingDate.js";
 import { TranscriptCatalogStore } from "./store.js";
 
 /** Bumped whenever the normalization/registration behavior changes meaning. */

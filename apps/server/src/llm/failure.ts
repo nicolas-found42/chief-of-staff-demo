@@ -86,7 +86,7 @@ export function isModelCapacityFailure(error: unknown): boolean {
   );
 }
 
-export function resultShapeDiagnostic(error: unknown): ResultShapeDiagnostic | null {
+function resultShapeDiagnostic(error: unknown): ResultShapeDiagnostic | null {
   return error instanceof ResultShapeError ? error.diagnostic : null;
 }
 

@@ -1,4 +1,8 @@
-import type { AppConfig, TranscriptIdentityExtractionResult } from "@chief-of-staff-demo/shared";
+import type {
+  AppConfig,
+  DriveIntakeStatus,
+  TranscriptIdentityExtractionResult,
+} from "@chief-of-staff-demo/shared";
 import { buildDriveClient } from "../intake/drive.js";
 import type { GoogleConnection } from "../google/connection.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
@@ -37,6 +41,14 @@ export interface TranscriptCatalogRuntimeOptions {
 
 export interface TranscriptCatalogRuntime {
   catalog: TranscriptCatalog;
+  /**
+   * What the intake remembers: its configuration and the last completed pass
+   * of this process. It asks Google nothing (ADR-0008), and after a restart it
+   * claims no last-checked time it does not have — the pass fact is held in
+   * memory rather than as a durable checkpoint, because the Catalog's ledger
+   * is already the durable record of what was processed.
+   */
+  intakeStatus(): DriveIntakeStatus;
   /** Begins the periodic processing pass at the configured Drive interval. */
   start(): void;
   stop(): void;
@@ -83,6 +95,8 @@ export function createTranscriptCatalogRuntime(
   });
 
   let timer: ReturnType<typeof setInterval> | null = null;
+  let lastPassAt: string | null = null;
+  let lastPassOutcome: "ok" | "failed" | null = null;
 
   /**
    * One pass, guarded. Consent, an unconfigured folder and a disconnected
@@ -95,15 +109,29 @@ export function createTranscriptCatalogRuntime(
     if (!current.drive.enabled || !current.drive.folderId) return;
     try {
       await catalog.processAvailable();
+      lastPassOutcome = "ok";
     } catch (error) {
+      lastPassOutcome = "failed";
       log(
         `transcript catalog pass failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    lastPassAt = new Date().toISOString();
   };
 
   return {
     catalog,
+    intakeStatus(): DriveIntakeStatus {
+      const current = options.getConfig();
+      return {
+        enabled: current.drive.enabled,
+        configured: Boolean(current.drive.folderId),
+        folderName: current.drive.folderName,
+        pollIntervalMinutes: current.drive.pollIntervalMinutes,
+        lastPollAt: lastPassAt,
+        lastPollOutcome: lastPassOutcome,
+      };
+    },
     start(): void {
       if (timer !== null) return;
       const minutes = options.getConfig().drive.pollIntervalMinutes;

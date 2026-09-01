@@ -14,7 +14,6 @@ import { PeoplePage } from "./pages/PeoplePage";
 import { PersonProfileDetailPage } from "./pages/PersonProfileDetailPage";
 import { TranscriptReviewPage } from "./pages/TranscriptReviewPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
-import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { YoutubePage } from "./pages/YoutubePage";
 import { useIsLoadedEntry } from "./usePageFocus";
@@ -80,7 +79,6 @@ export function App() {
         <ConnectionBanner />
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/transcript" element={<RunsPage />} />
           {/* A Shell page, not a tab: the bar renders Modules (ADR-0014), and
               Home's capped feed links in here for everything older. */}
           <Route path="/runs" element={<AllRunsPage />} />

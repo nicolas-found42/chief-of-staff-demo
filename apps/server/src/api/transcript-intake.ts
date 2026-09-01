@@ -1,8 +1,11 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { TranscriptCatalog } from "../transcript-catalog/catalog.js";
+import type { TranscriptCatalogRuntime } from "../transcript-catalog/production.js";
 
 export interface TranscriptIntakeApiContext {
   catalog: TranscriptCatalog;
+  /** Remembered intake facts — configuration and this process's last pass. */
+  intakeStatus: TranscriptCatalogRuntime["intakeStatus"];
 }
 
 /**
@@ -22,7 +25,10 @@ export function registerTranscriptIntakeApi(
 
   /* Remembered facts only: consent, the ledger's counts, whether a backfill
      is paused. Makes no Google call. */
-  app.get("/api/transcripts/intake", async () => catalog.status());
+  app.get("/api/transcripts/intake", async () => ({
+    ...ctx.intakeStatus(),
+    catalog: catalog.status(),
+  }));
 
   /* The pre-consent inventory. Content-free by construction — the file
      listing is read, never a file's bytes — so nothing is mined before the
