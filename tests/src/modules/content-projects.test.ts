@@ -76,6 +76,8 @@ function setup() {
     ownerOnboarding,
     brandProfiles,
     researchProviders: [],
+    outlineProviders: [],
+    draftProviders: [],
     now: () => NOW,
   });
   return {
@@ -663,6 +665,8 @@ describe("WorkspaceContentProjects revisions", () => {
       ownerOnboarding,
       brandProfiles,
       researchProviders: [],
+      outlineProviders: [],
+      draftProviders: [],
       now: () => NOW,
     });
     expect(restarted.get(project.id)).toEqual(reread);

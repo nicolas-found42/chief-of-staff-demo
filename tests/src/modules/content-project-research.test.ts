@@ -96,6 +96,8 @@ function setup(researchProviders: ResearchProvider[]) {
     ownerOnboarding,
     brandProfiles,
     researchProviders,
+    outlineProviders: [],
+    draftProviders: [],
     now: () => NOW,
   });
   projects.approveContentVoice(owner.id, "Approved Content Voice.");
