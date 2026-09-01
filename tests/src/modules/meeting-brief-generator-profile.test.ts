@@ -175,12 +175,11 @@ describe("Meeting Brief pinned Person Profile consumption (issue #124, #136)", (
     const result = runs.detail(runId)!.result as MeetingBriefRunResult;
     // Every attendee's pinned Profile is a recorded consumer link (issue://136):
     // the internal owner's shell and the external guest's reused Profile.
-    const ownerLink = result.personProfileLinks.find(
-      (link) => link.guestEmail === "owner@example.com",
-    );
+    const links = result.personProfileLinks ?? [];
+    const ownerLink = links.find((link) => link.guestEmail === "owner@example.com");
     expect(ownerLink?.profileRevision).toBe(1);
-    expect(result.personProfileLinks).toHaveLength(2);
-    expect(result.personProfileLinks).toContainEqual({
+    expect(links).toHaveLength(2);
+    expect(links).toContainEqual({
       guestEmail: "alice@external.co",
       profileId: "person_alice",
       profileRevision: 1,

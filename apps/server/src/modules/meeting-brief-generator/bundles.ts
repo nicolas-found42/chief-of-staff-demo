@@ -14,7 +14,7 @@ import { extractDomain } from "./eligibility.js";
  */
 export const MEETING_BRIEF_BUNDLES_VERSION = 1;
 
-export type AttendeeBundleKind = "internal" | "external";
+type AttendeeBundleKind = "internal" | "external";
 
 export type MeetingBriefBundleProvider =
   | "person-profile"
@@ -68,7 +68,7 @@ function isInternalEmail(email: string, internalDomains: string[]): boolean {
 /** Classify one attendee's email against the configured Internal Domains. A
  *  Consumer Domain stays external (spec #117 External Guest): a personal
  *  mailbox is never company evidence. */
-export function classifyAttendee(email: string, internalDomains: string[]): AttendeeBundleKind {
+function classifyAttendee(email: string, internalDomains: string[]): AttendeeBundleKind {
   return isInternalEmail(email, internalDomains) ? "internal" : "external";
 }
 
