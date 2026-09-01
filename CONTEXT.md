@@ -48,6 +48,16 @@ One durable scope of Content Engine work, carrying its subject, Authorized Autho
 approved Outline Briefs, Platform Outlines and optional Content Engine Drafts.
 _Avoid_: Idea, campaign, Content Pack
 
+**Research Request**:
+One finite piece of fresh public research owned by a single Content Project revision: an explicit
+scope, an explicitly configured provider bundle, per-provider query and evidence limits, and one
+diagnostic per provider. Every provider is asked once and the request ends, so it reuses the shared
+Source Item contract without acquiring a Run, checkpoint, baseline, schedule or Named Person watch.
+Its public person queries may carry any identifier the Workspace holds, email included, and record
+the identifier class, provider, timestamp and purpose rather than the identifier value. An
+explicitly selected all-provider bundle reports incomplete until every provider in it succeeds.
+_Avoid_: Research Run, scan, enrichment (that is Person Profiles' word), Content Research
+
 **Authorized Author**:
 The workspace owner or a confirmed Person Profile that Workspace policy permits Content Engine to
 represent as the authorial point of view.

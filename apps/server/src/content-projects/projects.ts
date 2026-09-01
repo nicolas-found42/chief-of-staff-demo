@@ -12,6 +12,7 @@ import {
   type ContentProjectEvidenceSelection,
   type ContentProjectGate,
   type ContentProjectIntentPatch,
+  type ContentProjectPromptEvidence,
   type ContentProjectReadiness,
   type ContentProjectRevision,
   type ContentProjectSubject,
@@ -19,10 +20,16 @@ import {
   type OutlineBrief,
   type OutlineBriefApproval,
   type OutlineBriefProposalInput,
+  type ResearchProviderBundle,
+  type ResearchRequest,
+  type ResearchRequestInput,
+  type ResearchRequestLimits,
+  type ResearchRequestScope,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import { runFiniteResearch, uniqueBy, type ResearchProvider } from "./research.js";
 
 interface ContentProjectState {
   projects: ContentProject[];
@@ -32,7 +39,7 @@ interface ContentProjectState {
 
 type ContentProjectRevisionSeed = Omit<
   ContentProjectRevision,
-  "frozenEvidence" | "outlineBriefs" | "outlineBriefApprovals"
+  "researchRequest" | "frozenEvidence" | "outlineBriefs" | "outlineBriefApprovals"
 >;
 
 export class ContentProjectError extends Error {
@@ -46,7 +53,9 @@ export class ContentProjectError extends Error {
       | "evidence-freeze-blocked"
       | "invalid-evidence-selection"
       | "outline-brief-blocked"
-      | "outline-brief-not-found",
+      | "outline-brief-not-found"
+      | "invalid-research-request"
+      | "research-request-blocked",
     message: string,
     public readonly missingGates: ContentProjectGate[] = [],
   ) {
@@ -70,6 +79,8 @@ export class WorkspaceContentProjects {
       people: WorkspacePersonProfiles;
       ownerOnboarding: OwnerOnboarding;
       brandProfiles: WorkspaceBrandProfileStore;
+      /** The public-research providers a Research Request bundle may be configured from. */
+      researchProviders: ResearchProvider[];
       now?: () => Date;
     },
   ) {
@@ -302,6 +313,129 @@ export class WorkspaceContentProjects {
     return clone(frozen);
   }
 
+  /**
+   * Start and finish one finite Research Request for this Project's current
+   * revision. Everything the request needs to be bounded — which providers may
+   * be asked, how many questions each may be asked, how much evidence may come
+   * back — is stated here, and everything it produces is returned for the owner
+   * to include or exclude before freezing. It creates no schedule, no
+   * checkpoint, no baseline and no Content Research Named Person watch.
+   */
+  async runResearchRequest(
+    projectId: string,
+    input: ResearchRequestInput,
+  ): Promise<ResearchRequest> {
+    const planned = requireProject(this.readState(), projectId);
+    const plannedRevision = currentRevision(planned);
+    if (plannedRevision.researchMode !== "fresh-bounded-research") {
+      throw new ContentProjectError(
+        "research-request-blocked",
+        "Only a fresh-bounded-research Project revision may start a Research Request.",
+        ["research-mode"],
+      );
+    }
+    const scope: ResearchRequestScope = {
+      question: requiredText(input.question, "Research question"),
+      terms: cleanList(input.terms),
+      subject: clone(plannedRevision.subject),
+    };
+    const bundle = this.validatedBundle(input.bundle);
+    const limits = validatedLimits(input.limits);
+    const providers = bundle.providerIds.map((id) => this.requireResearchProvider(id));
+    const subjectProfile =
+      scope.subject.kind === "person-profile"
+        ? this.deps.people.getRevision(scope.subject.profileId, scope.subject.profileRevision)
+        : null;
+    if (scope.subject.kind === "person-profile" && !subjectProfile) {
+      throw new ContentProjectError(
+        "profile-not-found",
+        "The pinned subject Person Profile revision is unavailable.",
+      );
+    }
+
+    const result = await runFiniteResearch({
+      providers,
+      bundle,
+      limits,
+      scope,
+      subjectProfile,
+      now: this.now,
+    });
+
+    /* Re-read after awaiting the providers: this is the one method that yields,
+       so it must not write back a project it read before the pause. */
+    const state = this.readState();
+    const project = requireProject(state, projectId);
+    let revision = currentRevision(project);
+    /* The owner may have revised the Project while the providers were in
+       flight: the revision this request would land on is re-validated here. */
+    if (revision.researchMode !== "fresh-bounded-research") {
+      throw new ContentProjectError(
+        "research-request-blocked",
+        "Only a fresh-bounded-research Project revision may start a Research Request.",
+        ["research-mode"],
+      );
+    }
+    const carriedReview = revision.evidenceReview;
+    if (
+      revision.researchRequest !== null ||
+      revision.frozenEvidence !== null ||
+      revision.evidenceReview !== null ||
+      revision.outlineBriefs.length > 0 ||
+      revision.outlineBriefApprovals.length > 0
+    ) {
+      revision = nextRevision(revision, this.now().toISOString());
+      project.revisions.push(revision);
+    }
+    const request: ResearchRequest = {
+      id: identifier("research", this.now()),
+      projectId,
+      projectRevision: revision.revision,
+      scope,
+      bundle,
+      limits,
+      ...result,
+    };
+    revision.researchRequest = clone(request);
+    /* Evidence the owner attached before the request runs stays in the review,
+       now alongside the research results the owner must vet. */
+    revision.evidenceReview = {
+      attachedAt: this.now().toISOString(),
+      sourceItems: uniqueBy(
+        [...(carriedReview?.sourceItems ?? []), ...clone(request.sourceItems)],
+        (item) => item.id,
+      ),
+      diagnostics: [
+        ...(carriedReview?.diagnostics ?? []),
+        ...request.providerOutcomes.map((outcome) => clone(outcome.diagnostic)),
+      ],
+    };
+    this.touch(project);
+    this.writeState(state);
+    return clone(request);
+  }
+
+  /**
+   * The frozen material a Content Engine generator may prompt with. It is a
+   * projection, not the revision: diagnostics and Research Request identifier
+   * bookkeeping stay on the Project for the owner and never reach a prompt.
+   */
+  promptEvidence(projectId: string): ContentProjectPromptEvidence | null {
+    const project = requireProject(this.readState(), projectId);
+    const revision = currentRevision(project);
+    const frozen = revision.frozenEvidence;
+    if (!frozen) return null;
+    return clone({
+      projectId,
+      projectRevision: revision.revision,
+      sourceItems: frozen.sourceItems,
+      brandVoice: frozen.brandVoice,
+      contentVoice: frozen.contentVoice,
+      profileProjections: frozen.profileProjections,
+      userMaterial: frozen.userMaterial,
+    });
+  }
+
   readiness(projectId: string): ContentProjectReadiness {
     const project = requireProject(this.readState(), projectId);
     const revision = currentRevision(project);
@@ -460,6 +594,34 @@ export class WorkspaceContentProjects {
     };
   }
 
+  private validatedBundle(bundle: ResearchProviderBundle): ResearchProviderBundle {
+    const providerIds = cleanList(bundle.providerIds);
+    if (providerIds.length === 0) {
+      throw new ContentProjectError(
+        "invalid-research-request",
+        "A Research Request needs at least one configured research provider.",
+      );
+    }
+    if (new Set(providerIds).size !== providerIds.length) {
+      throw new ContentProjectError(
+        "invalid-research-request",
+        "A research provider may appear only once in a Research Request bundle.",
+      );
+    }
+    return { providerIds, completeness: bundle.completeness };
+  }
+
+  private requireResearchProvider(providerId: string): ResearchProvider {
+    const provider = this.deps.researchProviders.find((candidate) => candidate.id === providerId);
+    if (!provider) {
+      throw new ContentProjectError(
+        "invalid-research-request",
+        `No research provider is configured with id ${providerId}.`,
+      );
+    }
+    return provider;
+  }
+
   private requireSelectableProfile(profileId: string) {
     const profile = this.deps.people.get(profileId);
     if (!profile || profile.archivedAt !== null) {
@@ -593,6 +755,7 @@ function buildRevision(seed: ContentProjectRevisionSeed): ContentProjectRevision
     targets: validatedTargets(seed.targets),
     seedMaterial: cleanList(seed.seedMaterial),
     evidenceReview: clone(seed.evidenceReview),
+    researchRequest: null,
     frozenEvidence: null,
     outlineBriefs: [],
     outlineBriefApprovals: [],
@@ -623,6 +786,21 @@ function requiredText(value: string, label: string): string {
   const text = value.trim();
   if (!text) throw new ContentProjectError("invalid-project-input", `${label} is required.`);
   return text;
+}
+
+function validatedLimits(limits: ResearchRequestLimits): ResearchRequestLimits {
+  for (const [label, value] of [
+    ["maxQueriesPerProvider", limits.maxQueriesPerProvider],
+    ["maxSourceItems", limits.maxSourceItems],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 1) {
+      throw new ContentProjectError(
+        "invalid-research-request",
+        `A Research Request needs a positive whole ${label} limit.`,
+      );
+    }
+  }
+  return { ...limits };
 }
 
 function cleanList(values: string[]): string[] {
