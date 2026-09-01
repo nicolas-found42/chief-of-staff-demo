@@ -164,6 +164,91 @@ export class TranscriptIdentityStore {
     );
   }
 
+  /**
+   * The transcript-deletion cascade (issue #128): remove every record this
+   * store holds for one transcript. Mentions, organizations, candidates and
+   * decisions are transcript-derived and go with it; the processing entry
+   * goes too, so the ledger stays consistent with the stores it describes.
+   * Mappings scoped to the transcript can never apply again and carry its
+   * surface text, so they go; workspace-scoped mappings are standing owner
+   * authority independent of any one transcript and survive. Idempotent:
+   * a second call over the emptied store removes nothing.
+   */
+  forgetTranscript(transcriptId: string): {
+    mentions: number;
+    organizations: number;
+    candidates: number;
+    decisions: number;
+    organizationDecisions: number;
+    transcriptMappings: number;
+    ledgerEntries: number;
+  } {
+    const ownMentionIds = new Set(
+      this.readMentions()
+        .filter((mention) => mention.provenance.transcriptId === transcriptId)
+        .map((mention) => mention.id),
+    );
+    const ownOrganizationIds = new Set(
+      this.readOrganizations()
+        .filter((organization) => organization.provenance.transcriptId === transcriptId)
+        .map((organization) => organization.id),
+    );
+    const counts = {
+      mentions: ownMentionIds.size,
+      organizations: ownOrganizationIds.size,
+      candidates: this.readCandidates().filter((c) => c.transcriptId === transcriptId).length,
+      decisions: this.readDecisions().filter((d) => d.transcriptId === transcriptId).length,
+      organizationDecisions: this.readOrganizationDecisions().filter((decision) =>
+        ownOrganizationIds.has(decision.sourceOrganizationMentionId),
+      ).length,
+      transcriptMappings: this.readMappings().filter(
+        (mapping) => mapping.scope === "transcript" && mapping.scopeId === transcriptId,
+      ).length,
+      ledgerEntries: this.readProcessingLedger().filter(
+        (entry) => entry.transcriptId === transcriptId,
+      ).length,
+    };
+
+    this.writeIfChanged("mentions.json", () =>
+      this.readMentions().filter((mention) => !ownMentionIds.has(mention.id)),
+    );
+    this.writeIfChanged("organizations.json", () =>
+      this.readOrganizations().filter((organization) => !ownOrganizationIds.has(organization.id)),
+    );
+    this.writeIfChanged("candidates.json", () =>
+      this.readCandidates().filter((candidate) => candidate.transcriptId !== transcriptId),
+    );
+    this.writeIfChanged("decisions.json", () =>
+      this.readDecisions().filter((decision) => decision.transcriptId !== transcriptId),
+    );
+    this.writeIfChanged("organization-decisions.json", () =>
+      this.readOrganizationDecisions().filter(
+        (decision) => !ownOrganizationIds.has(decision.sourceOrganizationMentionId),
+      ),
+    );
+    this.writeIfChanged("mappings.json", () =>
+      this.readMappings().filter(
+        (mapping) => !(mapping.scope === "transcript" && mapping.scopeId === transcriptId),
+      ),
+    );
+    this.writeIfChanged("processing.json", () =>
+      this.readProcessingLedger().filter((entry) => entry.transcriptId !== transcriptId),
+    );
+    this.writeIfChanged("transcripts.json", () => {
+      const meta = this.readTranscriptMeta();
+      delete meta[transcriptId];
+      return meta;
+    });
+    return counts;
+  }
+
+  private writeIfChanged(file: string, next: () => unknown): void {
+    const value = next();
+    const existing = this.read(join(this.root, file));
+    if (JSON.stringify(value) === JSON.stringify(existing)) return;
+    this.write(file, value);
+  }
+
   private readCollection<T>(file: string): T[] {
     return (this.read(join(this.root, file)) as T[] | null) ?? [];
   }

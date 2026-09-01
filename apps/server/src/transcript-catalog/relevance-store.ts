@@ -52,6 +52,29 @@ export class TranscriptRelevanceStore {
     );
   }
 
+  /**
+   * The transcript-deletion cascade (issue #128): relevance candidates and
+   * their decisions are transcript-derived records, so a deleted transcript
+   * carries them. The decision log is otherwise append-only; this is the one
+   * deletion path, and it is idempotent over an emptied store.
+   */
+  forgetTranscript(transcriptId: string): { candidates: number; decisions: number } {
+    const candidates = this.readCandidates();
+    const removed = candidates.filter((candidate) => candidate.transcriptId === transcriptId);
+    if (removed.length === 0) return { candidates: 0, decisions: 0 };
+    const removedIds = new Set(removed.map((candidate) => candidate.id));
+    this.write(
+      "candidates.json",
+      candidates.filter((candidate) => candidate.transcriptId !== transcriptId),
+    );
+    const decisions = this.readDecisions();
+    const keptDecisions = decisions.filter(
+      (decision) => decision.transcriptId !== transcriptId && !removedIds.has(decision.candidateId),
+    );
+    this.write("decisions.json", keptDecisions);
+    return { candidates: removed.length, decisions: decisions.length - keptDecisions.length };
+  }
+
   private readCollection<T>(file: string): T[] {
     return (this.read(join(this.root, file)) as T[] | null) ?? [];
   }
