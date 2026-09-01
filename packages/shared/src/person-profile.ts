@@ -169,6 +169,14 @@ export type PersonProfileProjection =
 
 /** The repair decisions that supersede past facts or attributions. */
 export type PersonProfileRepairKind = "correction" | "merge" | "evidence-detached";
+export const PERSON_PROFILE_REPAIR_FACT_KEYS = [
+  "fullName",
+  "primaryEmail",
+  "role",
+  "currentEmployer",
+  "background",
+] as const;
+export type PersonProfileRepairFactKey = (typeof PERSON_PROFILE_REPAIR_FACT_KEYS)[number];
 
 /**
  * One audited repair decision, filed on the Profile it invalidates. Records
@@ -195,6 +203,16 @@ export interface PersonProfileInvalidation {
   movedTo?: string;
   /** kind "evidence-detached": where the evidence was wrongly attributed before. */
   movedFrom?: string;
+}
+
+/** One compatibility rule for legacy single-revision and current multi-revision records. */
+export function invalidationAffectsRevision(
+  record: Pick<PersonProfileInvalidation, "affectedRevision" | "affectedRevisions">,
+  revision: number,
+): boolean {
+  return (
+    record.affectedRevision === revision || record.affectedRevisions?.includes(revision) === true
+  );
 }
 
 /** Current read-time state of one consumer's exact pinned Profile revision. */
@@ -229,9 +247,7 @@ export interface PersonProfileCorrectionInput {
 export interface PersonProfileMergeInput {
   duplicateId: string;
   /** Chosen values for conflicting facts, keyed by fact name. */
-  resolutions?: Partial<
-    Record<"fullName" | "primaryEmail" | "role" | "currentEmployer" | "background", string>
-  >;
+  resolutions?: Partial<Record<PersonProfileRepairFactKey, string>>;
   /** Audit note recorded with the merge decision. */
   note?: string;
 }

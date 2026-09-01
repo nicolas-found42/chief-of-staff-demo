@@ -369,6 +369,9 @@ if (process.env.ENABLE_TEST_SEED === "1") {
     },
     personStore: peopleStore,
     runs,
+    ...(meetingBriefTest
+      ? { upsertMeetingBriefEvent: (event) => meetingBriefTest.upsertEvent(event) }
+      : {}),
   });
 }
 

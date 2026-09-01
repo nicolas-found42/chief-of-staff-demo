@@ -24,6 +24,7 @@ import { enrichUnified, type MeetingBriefEnrichmentProviders } from "./enrichmen
 export type MeetingBriefInput = MeetingBriefEvent & {
   occurrenceKey: string;
   supersedesRunId?: string | null;
+  profileRefreshOf?: string;
 };
 export interface MeetingBriefModuleDeps {
   now?: () => Date;
@@ -287,6 +288,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
                 eligible: true,
                 capturedAt: snapshotAt,
                 supersedesRunId: input.supersedesRunId ?? null,
+                ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
               },
               null,
               2,
@@ -296,6 +298,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             ...current,
             occurrenceKey,
             supersedesRunId: input.supersedesRunId ?? null,
+            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
           };
         });
 
@@ -379,6 +382,9 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           }
           brief = composed;
           const supersedes = input.supersedesRunId ?? null;
+          const deliveryVersion = input.profileRefreshOf
+            ? `${composed.eventVersion}-profile-${ctx.runId}`
+            : composed.eventVersion;
           const partial: MeetingBriefRunResult = {
             version: 1,
             eventId: input.eventId,
@@ -389,9 +395,10 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             enrichAt: now().toISOString(),
             composeAt: now().toISOString(),
             meetingBrief: composed,
-            delivery: deliveryState("pending", deliveryIdFor(occurrenceKey, composed.eventVersion)),
+            delivery: deliveryState("pending", deliveryIdFor(occurrenceKey, deliveryVersion)),
             personProfileLinks: enrichResult.personProfileLinks ?? [],
             supersedes,
+            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
           };
           ctx.writeFile("result.json", JSON.stringify(partial, null, 2) + "\n");
           ctx.event("brief_composed", {

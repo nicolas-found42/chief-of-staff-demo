@@ -3,6 +3,8 @@ import type { PersonProfileStore } from "./store.js";
 import {
   PERSON_PROFILE_MEETING_PROJECTION_VERSION,
   PERSON_PROFILE_PUBLIC_SAFE_PROJECTION_VERSION,
+  PERSON_PROFILE_REPAIR_FACT_KEYS,
+  invalidationAffectsRevision,
   type PersonProfile,
   type PersonProfileCorrectionInput,
   type PersonProfileConsumerState,
@@ -319,27 +321,21 @@ export class WorkspacePersonProfiles {
       );
 
     const resolutions = input.resolutions ?? {};
-    const factFields = ["fullName", "role", "currentEmployer", "background"] as const;
-    const conflicts = [
-      ...factFields.filter(
-        (field) =>
-          survivor[field] !== null &&
-          duplicate[field] !== null &&
-          survivor[field] !== duplicate[field],
-      ),
-      ...(survivor.primaryEmail &&
-      duplicate.primaryEmail &&
-      survivor.primaryEmail !== duplicate.primaryEmail
-        ? (["primaryEmail"] as const)
-        : []),
-    ];
+    const conflicts = PERSON_PROFILE_REPAIR_FACT_KEYS.filter(
+      (field) =>
+        survivor[field] !== null &&
+        duplicate[field] !== null &&
+        survivor[field] !== duplicate[field],
+    );
     const unresolved = conflicts.filter((field) => resolutions[field] === undefined);
     if (unresolved.length > 0)
       throw new PersonProfileValidationError(
         "merge-conflict",
         `Both Profiles state different ${unresolved.join(", ")}; resolve them explicitly.`,
       );
-    const resolved = (field: (typeof factFields)[number]): string | null => {
+    const resolved = (
+      field: Exclude<(typeof PERSON_PROFILE_REPAIR_FACT_KEYS)[number], "primaryEmail">,
+    ): string | null => {
       const choice = trimmed(resolutions[field]);
       if (choice !== null) return choice;
       return survivor[field] ?? duplicate[field];
@@ -524,10 +520,8 @@ export class WorkspacePersonProfiles {
     if (!profile) return null;
     /* Immutable history discloses its own invalidation: a projection of an
        older revision carries every repair record filed against it. */
-    const affecting = (currentRecord?.invalidations ?? []).filter(
-      (record) =>
-        record.affectedRevision === profile.revision ||
-        record.affectedRevisions?.includes(profile.revision),
+    const affecting = (currentRecord?.invalidations ?? []).filter((record) =>
+      invalidationAffectsRevision(record, profile.revision),
     );
     const base = {
       ...(affecting.length === 0 ? {} : { invalidations: affecting }),
@@ -572,10 +566,8 @@ export class WorkspacePersonProfiles {
     const pinned = this.store.getRevision(profileId, profileRevision);
     const record = this.store.get(profileId);
     if (!pinned || !record) return null;
-    const invalidations = (record.invalidations ?? []).filter(
-      (invalidation) =>
-        invalidation.affectedRevision === profileRevision ||
-        invalidation.affectedRevisions?.includes(profileRevision),
+    const invalidations = (record.invalidations ?? []).filter((invalidation) =>
+      invalidationAffectsRevision(invalidation, profileRevision),
     );
     const current = record.mergedInto ? this.store.get(record.mergedInto) : record;
     if (!current) return null;

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { PersonEvidence, PersonProfile } from "@chief-of-staff-demo/shared";
+import { invalidationAffectsRevision } from "@chief-of-staff-demo/shared";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import {
   PersonProfileValidationError,
@@ -701,6 +702,22 @@ describe("WorkspacePersonProfiles.detachEvidence", () => {
   );
 });
 describe("WorkspacePersonProfiles invalidation disclosure", () => {
+  it("uses one compatibility rule for legacy and multi-revision invalidations", () => {
+    const legacy = {
+      id: "inv_legacy",
+      kind: "correction" as const,
+      affectedRevision: 2,
+      occurredAt: NOW.toISOString(),
+      detail: "Legacy repair",
+    };
+    const current = { ...legacy, id: "inv_current", affectedRevisions: [1, 2] };
+
+    expect(invalidationAffectsRevision(legacy, 1)).toBe(false);
+    expect(invalidationAffectsRevision(legacy, 2)).toBe(true);
+    expect(invalidationAffectsRevision(current, 1)).toBe(true);
+    expect(invalidationAffectsRevision(current, 3)).toBe(false);
+  });
+
   function supersededStore() {
     const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-inval-")));
     store.save(richProfile({ revision: 1, role: "Mathematician" }));

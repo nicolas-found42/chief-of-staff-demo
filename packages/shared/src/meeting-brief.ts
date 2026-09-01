@@ -153,6 +153,8 @@ export interface MeetingBriefRunResult {
   /** Exact Profile revisions used to derive guest claims in this immutable Brief. */
   personProfileLinks?: MeetingBriefPersonProfileLink[];
   supersedes?: string | null;
+  /** The stale immutable Brief this Run explicitly regenerated from Profile truth. */
+  profileRefreshOf?: string;
   /** Audit reason when Calendar current truth prevents outward delivery. */
   deliverySkippedReason?: string;
 }

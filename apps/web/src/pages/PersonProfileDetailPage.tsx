@@ -4,6 +4,11 @@ import type {
   PersonProfile,
   PersonProfileInvalidation,
   PersonProfileMatchConfidence,
+  PersonProfileRepairFactKey,
+} from "@chief-of-staff-demo/shared";
+import {
+  PERSON_PROFILE_REPAIR_FACT_KEYS,
+  invalidationAffectsRevision,
 } from "@chief-of-staff-demo/shared";
 
 import { api, errorMessage } from "../client";
@@ -22,12 +27,23 @@ const REPAIR_LABELS: Record<PersonProfileInvalidation["kind"], string> = {
   "evidence-detached": "Evidence detached",
 };
 
-const repairableFactFields = [
-  { key: "primaryEmail", label: "Primary email", control: "email" },
-  { key: "role", label: "Role", control: "text" },
-  { key: "currentEmployer", label: "Current employer", control: "text" },
-  { key: "background", label: "Background", control: "textarea" },
-] as const;
+const REPAIR_FACT_PRESENTATION: Record<
+  PersonProfileRepairFactKey,
+  { label: string; control: "text" | "email" | "textarea" }
+> = {
+  fullName: { label: "Full name", control: "text" },
+  primaryEmail: { label: "Primary email", control: "email" },
+  role: { label: "Role", control: "text" },
+  currentEmployer: { label: "Current employer", control: "text" },
+  background: { label: "Background", control: "textarea" },
+};
+const repairableFactFields = PERSON_PROFILE_REPAIR_FACT_KEYS.filter(
+  (key): key is Exclude<PersonProfileRepairFactKey, "fullName"> => key !== "fullName",
+).map((key) => ({ key, ...REPAIR_FACT_PRESENTATION[key] }));
+const mergeRepairFactFields = PERSON_PROFILE_REPAIR_FACT_KEYS.map((key) => ({
+  key,
+  ...REPAIR_FACT_PRESENTATION[key],
+}));
 
 function described(profile: PersonProfile): string {
   return [profile.fullName, profile.role, profile.currentEmployer]
@@ -268,7 +284,7 @@ export function PersonProfileDetailPage() {
             Back to the current revision ({current.revision})
           </button>
           {(current.invalidations ?? [])
-            .filter((record) => record.affectedRevision === viewed.revision)
+            .filter((record) => invalidationAffectsRevision(record, viewed.revision))
             .map((record) => (
               <span key={record.id}>
                 {" "}
@@ -390,56 +406,34 @@ export function PersonProfileDetailPage() {
                 }
               />
             </div>
-            <div className="field-row">
-              <label htmlFor="merge-full-name">Resolved full name</label>
-              <input
-                id="merge-full-name"
-                autoComplete="off"
-                value={mergeForm.fullName}
-                onChange={(event) => setMergeForm({ ...mergeForm, fullName: event.target.value })}
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="merge-primary-email">Resolved primary email</label>
-              <input
-                id="merge-primary-email"
-                type="email"
-                autoComplete="off"
-                value={mergeForm.primaryEmail}
-                onChange={(event) =>
-                  setMergeForm({ ...mergeForm, primaryEmail: event.target.value })
-                }
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="merge-role">Resolved role</label>
-              <input
-                id="merge-role"
-                autoComplete="off"
-                value={mergeForm.role}
-                onChange={(event) => setMergeForm({ ...mergeForm, role: event.target.value })}
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="merge-employer">Resolved current employer</label>
-              <input
-                id="merge-employer"
-                autoComplete="off"
-                value={mergeForm.currentEmployer}
-                onChange={(event) =>
-                  setMergeForm({ ...mergeForm, currentEmployer: event.target.value })
-                }
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="merge-background">Resolved background</label>
-              <textarea
-                id="merge-background"
-                rows={3}
-                value={mergeForm.background}
-                onChange={(event) => setMergeForm({ ...mergeForm, background: event.target.value })}
-              />
-            </div>
+            {mergeRepairFactFields.map(({ key, label, control }) => {
+              const id = `merge-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+              return (
+                <div className="field-row" key={key}>
+                  <label htmlFor={id}>Resolved {label.toLowerCase()}</label>
+                  {control === "textarea" ? (
+                    <textarea
+                      id={id}
+                      rows={3}
+                      value={mergeForm[key]}
+                      onChange={(event) =>
+                        setMergeForm({ ...mergeForm, [key]: event.target.value })
+                      }
+                    />
+                  ) : (
+                    <input
+                      id={id}
+                      type={control}
+                      autoComplete="off"
+                      value={mergeForm[key]}
+                      onChange={(event) =>
+                        setMergeForm({ ...mergeForm, [key]: event.target.value })
+                      }
+                    />
+                  )}
+                </div>
+              );
+            })}
             <div className="field-row">
               <label htmlFor="merge-note">Merge note</label>
               <input

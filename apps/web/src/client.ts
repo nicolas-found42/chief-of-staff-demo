@@ -202,6 +202,10 @@ export const api = {
     request<MeetingBriefPersonProfileReadModel>(
       `/api/meeting-brief/runs/${encodeURIComponent(runId)}/profile-consumers`,
     ),
+  regenerateMeetingBrief: (runId: string) =>
+    request<{ runId: string }>(`/api/meeting-brief/runs/${encodeURIComponent(runId)}/regenerate`, {
+      method: "POST",
+    }),
   getConfig: () => request<ConfigPayload>("/api/config"),
   saveConfig: (update: Record<string, unknown>) =>
     request<ConfigPayload>("/api/config", {

@@ -43,7 +43,11 @@ export function deliveryState(
 export interface DeliverBriefArgs {
   ctx: RunContext;
   brief: MeetingBrief;
-  input: MeetingBriefEvent & { occurrenceKey: string; supersedesRunId?: string | null };
+  input: MeetingBriefEvent & {
+    occurrenceKey: string;
+    supersedesRunId?: string | null;
+    profileRefreshOf?: string;
+  };
   occurrenceKey: string;
   now: () => Date;
   calendarProvider?: CalendarProvider | null;
@@ -129,7 +133,10 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   } = args;
   const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
-  const deliveryId = deliveryIdFor(occurrenceKey, brief.eventVersion);
+  const deliveryVersion = input.profileRefreshOf
+    ? `${brief.eventVersion}-profile-${ctx.runId}`
+    : brief.eventVersion;
+  const deliveryId = deliveryIdFor(occurrenceKey, deliveryVersion);
 
   // ---- Current Calendar truth: fetched once, shared by the quiet gate and the pre-send recheck.
   // The quiet gate must consult this fresh state (not the snapshot-frozen start): a material
@@ -161,12 +168,17 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   // First brief sends immediately; revision waits 5 min unless meeting is within 5 min.
   // isRevision must survive resume (planResume stub input has no supersedes) — check result.json fallback.
   let isRevision = Boolean(input.supersedesRunId);
+  let isProfileRefresh = Boolean(input.profileRefreshOf);
   if (!isRevision) {
     const resultRawForRevision = ctx.readFile("result.json");
     if (resultRawForRevision) {
       try {
-        const parsed = JSON.parse(resultRawForRevision) as { supersedes?: string | null };
+        const parsed = JSON.parse(resultRawForRevision) as {
+          supersedes?: string | null;
+          profileRefreshOf?: string;
+        };
         if (parsed.supersedes) isRevision = true;
+        if (parsed.profileRefreshOf) isProfileRefresh = true;
       } catch {
         // ignore
       }
@@ -176,7 +188,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   const startMs = Date.parse(gateStart);
   const nowMs = now().getTime();
   const timeUntilStart = Number.isNaN(startMs) ? 0 : startMs - nowMs;
-  const shouldWaitForQuiet = isRevision && timeUntilStart > 5 * 60 * 1000;
+  const shouldWaitForQuiet = isRevision && !isProfileRefresh && timeUntilStart > 5 * 60 * 1000;
   if (shouldWaitForQuiet) {
     const existingRaw = ctx.readFile("delivery.json");
     let alreadyWaited = false;

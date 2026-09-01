@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import fastify from "fastify";
 import type {
   MeetingBriefEvent,
   MeetingBriefRunResult,
@@ -531,17 +532,20 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
       getInternalDomains: () => ["example.com"],
       getOwnerEmail: () => "owner@example.com",
       personProfiles: people,
-      enrich: async () => ({
-        sections: [],
-        evidence: [],
-        personProfileLinks: [
-          {
-            guestEmail: "alice@external.co",
-            profileId: profile.id,
-            profileRevision: profile.revision,
-          },
-        ],
-      }),
+      enrich: async () => {
+        const current = people.get(profile.id)!;
+        return {
+          sections: [],
+          evidence: [],
+          personProfileLinks: [
+            {
+              guestEmail: "alice@external.co",
+              profileId: current.id,
+              profileRevision: current.revision,
+            },
+          ],
+        };
+      },
       completeBrief: completeFixtureBrief,
       gmailDeliveryProvider: {
         async findByDeliveryId() {
@@ -572,9 +576,33 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
     );
     expect(sends).toBe(0);
 
-    await host.retryRun(runId);
-    await host.idle();
+    await expect(host.retryRun(runId)).rejects.toThrow(/require regeneration/);
     expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
     expect(sends).toBe(0);
+
+    const staleArtifact = runs.open(runId)!.readArtifact("result.json");
+    const app = fastify({ logger: false });
+    await host.routes(app);
+    await app.ready();
+    const refreshed = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${runId}/regenerate`,
+    });
+    expect(refreshed.statusCode).toBe(202);
+    const refreshedRunId = refreshed.json<{ runId: string }>().runId;
+    expect(refreshedRunId).not.toBe(runId);
+    await host.idle();
+
+    expect(runs.detail(refreshedRunId)).toMatchObject({ status: "done", failedStage: null });
+    expect(runs.detail(refreshedRunId)?.result as MeetingBriefRunResult).toMatchObject({
+      supersedes: runId,
+      profileRefreshOf: runId,
+      delivery: { status: "sent" },
+      personProfileLinks: [{ profileId: profile.id, profileRevision: 2 }],
+    });
+    expect(sends).toBe(1);
+    expect(runs.open(runId)!.readArtifact("result.json")).toBe(staleArtifact);
+    expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    await app.close();
   });
 });

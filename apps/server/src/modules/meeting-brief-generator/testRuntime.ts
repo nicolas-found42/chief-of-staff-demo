@@ -111,8 +111,22 @@ export function createMeetingBriefTestRuntime(
     getOwnerEmail: () => "owner@example.com",
     hubSpotConnection,
     ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
-    enrich: async (_input, ctx) => {
+    enrich: async (input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });
+      const personProfileLinks = options.personProfiles
+        ? input.attendees.flatMap((attendee) => {
+            const profile = options.personProfiles!.search({ query: attendee.email })[0];
+            return profile
+              ? [
+                  {
+                    guestEmail: attendee.email,
+                    profileId: profile.id,
+                    profileRevision: profile.revision,
+                  },
+                ]
+              : [];
+          })
+        : [];
       return {
         sections: [
           {
@@ -124,6 +138,7 @@ export function createMeetingBriefTestRuntime(
           },
         ],
         evidence: ["https://example.com/alice", "https://example.com/acme"],
+        personProfileLinks,
       };
     },
     completeBrief: async (input): Promise<MeetingBrief> => ({

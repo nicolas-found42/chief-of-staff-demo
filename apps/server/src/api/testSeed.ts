@@ -14,7 +14,11 @@ import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 import type { PersonProfileStore } from "../person-profile/store.js";
 import type { Runs } from "../runs.js";
-import type { MeetingBriefRunResult, PersonEvidence } from "@chief-of-staff-demo/shared";
+import type {
+  MeetingBriefEvent,
+  MeetingBriefRunResult,
+  PersonEvidence,
+} from "@chief-of-staff-demo/shared";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 
 export interface TestSeedContext {
@@ -24,6 +28,7 @@ export interface TestSeedContext {
       evidence before exercising repair through the real product surface. */
   personStore: PersonProfileStore;
   runs: Runs;
+  upsertMeetingBriefEvent?: (event: MeetingBriefEvent) => void;
 }
 
 /**
@@ -135,6 +140,31 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
       sourceUrl: null,
       externalId: "evt_profile_repair::2026-08-31T15:00:00Z",
     });
+    const snapshot: MeetingBriefEvent & { occurrenceKey: string } = {
+      calendarId: "primary",
+      eventId: "evt_profile_repair",
+      occurrenceId: "2026-08-31T15:00:00Z",
+      occurrenceKey: "evt_profile_repair::2026-08-31T15:00:00Z",
+      version: "v1",
+      summary: "Profile repair fixture",
+      startAt: "2026-08-31T15:00:00.000Z",
+      endAt: "2026-08-31T15:30:00.000Z",
+      attendees: [
+        {
+          email: "owner@example.com",
+          displayName: "Owner",
+          responseStatus: "accepted",
+          organizer: true,
+        },
+        {
+          email: profile.primaryEmail ?? "profile@example.com",
+          displayName: profile.fullName ?? "Profile guest",
+          responseStatus: "accepted",
+        },
+      ],
+      status: "confirmed",
+    };
+    ctx.upsertMeetingBriefEvent?.(snapshot);
     const result: MeetingBriefRunResult = {
       version: 1,
       eventId: "evt_profile_repair",
@@ -183,6 +213,7 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
       supersedes: null,
     };
     run.started("compose");
+    run.writeArtifact("snapshot.json", `${JSON.stringify(snapshot, null, 2)}\n`);
     run.writeArtifact("result.json", `${JSON.stringify(result, null, 2)}\n`);
     run.finished({ status: "done", summary: "Profile repair fixture" });
     reply.code(201);

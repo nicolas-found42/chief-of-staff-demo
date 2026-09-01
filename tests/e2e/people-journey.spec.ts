@@ -70,6 +70,13 @@ test("person profiles journey — nav → search → create → detail → revis
   await expect(page.getByRole("alert")).toContainText("Profile-derived claims need refresh");
   await expect(page.getByRole("alert")).toContainText("revision 1");
   await scanForViolations(page);
+  await page.getByRole("button", { name: "Regenerate with current profiles" }).click();
+  await expect.poll(() => new URL(page.url()).pathname).not.toBe(`/runs/${linkedRunId}`);
+  await expect(page).toHaveURL(/\/runs\/run_/);
+  await expect(page.getByText("Sent", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert", { name: /Profile-derived claims/ })).toHaveCount(0);
+  await page.goto(`/runs/${linkedRunId}`);
+  await expect(page.getByRole("alert")).toContainText("Profile-derived claims need refresh");
   await page.goto(`/people/${profileId}`);
   await page.getByLabel("Clear primary email").check();
   await page.getByLabel("Clear current employer").check();
