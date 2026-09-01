@@ -75,7 +75,10 @@ function makeCatalog(
   workspaceDir: string = mkdtempSync(join(tmpdir(), "transcript-catalog-debrief-")),
   debrief?: TranscriptDebriefProcessor,
 ): TranscriptCatalog {
-  const people = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(workspaceDir),
+    lifecycle: [],
+  });
   const identity: TranscriptIdentityExtractor = {
     version: "test-empty-v1",
     extract() {
