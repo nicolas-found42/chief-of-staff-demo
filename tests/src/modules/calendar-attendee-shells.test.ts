@@ -71,7 +71,7 @@ let profiles: WorkspacePersonProfiles;
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "calendar-shells-"));
   store = new PersonProfileStore(workspaceDir);
-  profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+  profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 });
 
 describe("WorkspacePersonProfiles.ensureCalendarAttendeeProfile — reuse", () => {

@@ -65,10 +65,81 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
     const { profileId } = request.params as { profileId: string };
     const profile = people.get(profileId);
     if (!profile) {
+      const tombstone = people.tombstone(profileId);
+      if (tombstone) {
+        reply.code(410);
+        return {
+          error: "profile-privacy-deleted",
+          message: "This Person Profile was privacy-deleted from the local Workspace.",
+          tombstone,
+          receipt: people.deletionReceipt(profileId),
+        };
+      }
       reply.code(404);
       return { error: "profile-not-found", message: "No Person Profile with that id." };
     }
     return profile;
+  });
+
+  /** Lifecycle preview: active consumer configuration and immutable source
+      residue are visible before either archive or privacy deletion. */
+  app.get("/api/people/:profileId/lifecycle", async (request: FastifyRequest, reply) => {
+    try {
+      const { profileId } = request.params as { profileId: string };
+      return people.lifecycle(profileId);
+    } catch (error) {
+      return repairFailure(reply, error);
+    }
+  });
+
+  /**
+   * A lifecycle refusal always answers with the disclosure the operator needs
+   * to act on it: which configurations still point here, and which immutable
+   * source documents would outlive the Profile.
+   */
+  function lifecycleFailure(reply: FastifyReply, profileId: string, error: unknown): unknown {
+    if (
+      error instanceof PersonProfileValidationError &&
+      (error.code === "active-dependencies" || error.code === "privacy-confirmation-required")
+    ) {
+      reply.code(error.code === "active-dependencies" ? 409 : 400);
+      return {
+        error: error.code,
+        message: error.message,
+        lifecycle: people.lifecycle(profileId),
+      };
+    }
+    return repairFailure(reply, error);
+  }
+
+  app.post("/api/people/:profileId/archive", async (request: FastifyRequest, reply) => {
+    const { profileId } = request.params as { profileId: string };
+    try {
+      return people.archive(profileId);
+    } catch (error) {
+      return lifecycleFailure(reply, profileId, error);
+    }
+  });
+
+  app.post("/api/people/:profileId/restore", async (request: FastifyRequest, reply) => {
+    try {
+      const { profileId } = request.params as { profileId: string };
+      return people.restore(profileId);
+    } catch (error) {
+      return repairFailure(reply, error);
+    }
+  });
+
+  app.post("/api/people/:profileId/privacy-delete", async (request: FastifyRequest, reply) => {
+    const { profileId } = request.params as { profileId: string };
+    try {
+      const body = (request.body ?? {}) as { confirmation?: unknown };
+      return people.privacyDelete(profileId, {
+        confirmation: typeof body.confirmation === "string" ? body.confirmation : "",
+      });
+    } catch (error) {
+      return lifecycleFailure(reply, profileId, error);
+    }
   });
 
   app.get("/api/people/:profileId/revisions", async (request: FastifyRequest, reply) => {

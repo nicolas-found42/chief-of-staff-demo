@@ -19,6 +19,7 @@ describe("Meeting Brief-owned Person Profile consumer read model", () => {
     const people = new WorkspacePersonProfiles({
       store: new PersonProfileStore(workspaceDir),
       now: () => new Date("2026-08-31T16:00:00.000Z"),
+      lifecycle: [],
     });
     const profile = people.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
     const run = runs.create({

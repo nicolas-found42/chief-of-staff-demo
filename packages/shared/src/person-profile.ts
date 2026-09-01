@@ -98,6 +98,74 @@ export interface PersonProfile {
   invalidations?: PersonProfileInvalidation[];
 }
 
+// ---------------------------------------------------------------------------
+// Profile lifecycle (ticket #122): dependencies, residual sources, and purge.
+// ---------------------------------------------------------------------------
+
+export type PersonProfileDependentConfigurationAction = "pause" | "repoint";
+
+/** A consumer-owned configuration that must be resolved before archive. */
+export interface PersonProfileDependentConfiguration {
+  id: string;
+  consumer: string;
+  label: string;
+  profileId: string;
+  state: "active" | "paused";
+  availableActions: PersonProfileDependentConfigurationAction[];
+}
+
+/**
+ * Immutable source material that privacy deletion deliberately does not
+ * rewrite. The disclosure is a reference — which document, of what kind,
+ * separately deletable or not — and never copies the document's title or text,
+ * because the receipt outlives the identity the document may still name.
+ * Source deletion, where supported, is a separate operation.
+ */
+export interface PersonProfileResidualSourceArtifact {
+  artifactId: string;
+  kind: "transcript" | "public-source";
+  separateDeleteSupported: boolean;
+}
+
+export interface PersonProfileLifecycleState {
+  profileId: string;
+  profileRevision: number;
+  archivedAt: string | null;
+  dependentConfigurations: PersonProfileDependentConfiguration[];
+  residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+}
+
+export const PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION = "DELETE PROFILE" as const;
+
+export interface PersonProfileDeletionCounts {
+  canonicalProfileRecords: number;
+  revisions: number;
+  evidence: number;
+  aliases: number;
+  candidates: number;
+  mappings: number;
+  decisions: number;
+  activeLinks: number;
+  personSnapshots: number;
+}
+
+/** Minimal referential marker: no name, email, claim, evidence, or source text. */
+export interface PersonProfileTombstone {
+  profileId: string;
+  deletedAt: string;
+}
+
+/** Audited local result; `remoteProviderOperations` is always zero. */
+export interface PersonProfileDeletionReceipt {
+  receiptId: string;
+  profileId: string;
+  deletedAt: string;
+  removed: PersonProfileDeletionCounts;
+  tombstone: PersonProfileTombstone;
+  residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+  remoteProviderOperations: 0;
+}
+
 /**
  * One evidence record reduced to what a consumer may see for its purpose: the
  * provenance (which source, which URL) and the match confidence survive; the

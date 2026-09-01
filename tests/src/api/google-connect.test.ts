@@ -32,6 +32,7 @@ beforeEach(async () => {
   app = fastify({ logger: false });
   const peopleProfiles = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
+    lifecycle: [],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
   await registerApi(app, {

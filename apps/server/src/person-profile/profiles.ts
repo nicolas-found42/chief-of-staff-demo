@@ -4,6 +4,7 @@ import {
   PERSON_PROFILE_CALENDAR_SOURCE,
   PERSON_PROFILE_MEETING_PROJECTION_VERSION,
   PERSON_PROFILE_PUBLIC_SAFE_PROJECTION_VERSION,
+  PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION,
   PERSON_PROFILE_REPAIR_FACT_KEYS,
   invalidationAffectsRevision,
   type PersonProfile,
@@ -15,6 +16,12 @@ import {
   type PersonProfileDetachInput,
   type PersonProfileInvalidation,
   type PersonProfileMergeInput,
+  type PersonProfileLifecycleState,
+  type PersonProfileDependentConfiguration,
+  type PersonProfileResidualSourceArtifact,
+  type PersonProfileDeletionCounts,
+  type PersonProfileDeletionReceipt,
+  type PersonProfileTombstone,
   type PersonProfileProjection,
   type PersonProjectedEvidence,
 } from "@chief-of-staff-demo/shared";
@@ -46,12 +53,33 @@ export class PersonProfileValidationError extends Error {
       | "nothing-to-correct"
       | "profile-merged"
       | "merge-conflict"
-      | "evidence-not-found",
+      | "evidence-not-found"
+      | "active-dependencies"
+      | "privacy-confirmation-required",
     message: string,
   ) {
     super(message);
     this.name = "PersonProfileValidationError";
   }
+}
+
+/** The share of a deletion receipt one consumer registry can account for. */
+export type PersonProfileRegistryDeletionCounts = Pick<
+  PersonProfileDeletionCounts,
+  "aliases" | "candidates" | "mappings" | "decisions" | "activeLinks" | "personSnapshots"
+>;
+
+/**
+ * One local Workspace holder of Profile references outside the canonical store.
+ * Meeting Brief Runs, #126's identity-review store and #134's Named Person
+ * watches each register one; no external provider belongs behind this port.
+ */
+export interface PersonProfileLifecycleRegistry {
+  inspect(profileId: string): {
+    dependentConfigurations: PersonProfileDependentConfiguration[];
+    residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+  };
+  privacyDelete(profileId: string): PersonProfileRegistryDeletionCounts;
 }
 
 export interface PersonProfileProjectionOptions {
@@ -96,10 +124,20 @@ function searchHaystack(profile: PersonProfile): string {
 export class WorkspacePersonProfiles {
   private readonly store: PersonProfileStore;
   private readonly now: () => Date;
+  private readonly registries: PersonProfileLifecycleRegistry[];
 
-  constructor(deps: { store: PersonProfileStore; now?: () => Date }) {
+  constructor(deps: {
+    store: PersonProfileStore;
+    now?: () => Date;
+    /* Stated at every composition site, never defaulted: a deletion receipt
+       that reports zero references because nobody was asked would certify a
+       purge that never happened. An empty list is the explicit claim that
+       this Workspace holds Profile references nowhere else. */
+    lifecycle: PersonProfileLifecycleRegistry[];
+  }) {
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
+    this.registries = deps.lifecycle;
   }
 
   search(options: PersonProfileSearchOptions = {}): PersonProfile[] {
@@ -109,6 +147,92 @@ export class WorkspacePersonProfiles {
       .filter((profile) => options.includeArchived || profile.archivedAt === null)
       .filter((profile) => !needle || searchHaystack(profile).includes(needle))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }
+
+  /** Archive is reversible lifecycle state and never rewrites factual history. */
+  archive(profileId: string): PersonProfile {
+    const profile = this.repairable(profileId);
+    if (profile.archivedAt !== null) return profile;
+    this.requireNoActiveDependencies(profileId, "archiving");
+    const archived = { ...profile, archivedAt: this.now().toISOString() };
+    this.store.saveCurrent(archived);
+    return archived;
+  }
+
+  /** Restore makes the same canonical identity eligible for new consumers. */
+  restore(profileId: string): PersonProfile {
+    const profile = this.repairable(profileId);
+    if (profile.archivedAt === null) return profile;
+    const restored = { ...profile, archivedAt: null };
+    this.store.saveCurrent(restored);
+    return restored;
+  }
+
+  /** One local-only preview shared by archive and privacy-delete surfaces. */
+  lifecycle(profileId: string): PersonProfileLifecycleState {
+    const profile = this.store.get(profileId);
+    if (!profile)
+      throw new PersonProfileValidationError(
+        "profile-not-found",
+        "No Person Profile with that id.",
+      );
+    const inspected = this.registries.map((registry) => registry.inspect(profileId));
+    return {
+      profileId,
+      profileRevision: profile.revision,
+      archivedAt: profile.archivedAt,
+      dependentConfigurations: inspected.flatMap((one) => one.dependentConfigurations),
+      residualSourceArtifacts: inspected.flatMap((one) => one.residualSourceArtifacts),
+    };
+  }
+
+  /**
+   * The explicit privacy exception to immutable local history. Every registered
+   * local registry is asked to purge its share, and the receipt accounts for
+   * all of them; source text and remote providers are outside the operation by
+   * construction.
+   */
+  privacyDelete(profileId: string, input: { confirmation: string }): PersonProfileDeletionReceipt {
+    if (input.confirmation !== PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION)
+      throw new PersonProfileValidationError(
+        "privacy-confirmation-required",
+        `Privacy deletion requires the exact confirmation ${PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION}.`,
+      );
+    const profile = this.store.get(profileId);
+    if (!profile)
+      throw new PersonProfileValidationError(
+        "profile-not-found",
+        "No Person Profile with that id.",
+      );
+    this.requireNoActiveDependencies(profileId, "privacy-deleting");
+    const preview = this.lifecycle(profileId);
+    const registryRemoved = this.purgeRegistries(profileId);
+    const deletedAt = this.now().toISOString();
+    const canonicalRemoved = this.store.privacyDelete(profile, deletedAt);
+    const receipt: PersonProfileDeletionReceipt = {
+      receiptId: `profile-deletion-${profileId}-${deletedAt}`,
+      profileId,
+      deletedAt,
+      removed: {
+        canonicalProfileRecords: canonicalRemoved.canonicalProfileRecords,
+        revisions: canonicalRemoved.revisions,
+        evidence: canonicalRemoved.evidence,
+        ...registryRemoved,
+      },
+      tombstone: canonicalRemoved.tombstone,
+      residualSourceArtifacts: preview.residualSourceArtifacts,
+      remoteProviderOperations: 0,
+    };
+    this.store.saveDeletionReceipt(receipt);
+    return receipt;
+  }
+
+  tombstone(profileId: string): PersonProfileTombstone | null {
+    return this.store.getTombstone(profileId);
+  }
+
+  deletionReceipt(profileId: string): PersonProfileDeletionReceipt | null {
+    return this.store.getDeletionReceipt(profileId);
   }
 
   create(input: PersonProfileCreateInput): PersonProfile {
@@ -239,6 +363,39 @@ export class WorkspacePersonProfiles {
   }
 
   /** The current record of a Profile that still owns its identity. */
+  /**
+   * Neither archive nor privacy deletion may quietly strand a consumer that is
+   * still pointed at this Profile: the operator resolves each active
+   * configuration explicitly, by pausing or re-pointing it, and retries.
+   */
+  private requireNoActiveDependencies(profileId: string, operation: string): void {
+    const active = this.lifecycle(profileId).dependentConfigurations.filter(
+      (dependency) => dependency.state === "active",
+    );
+    if (active.length === 0) return;
+    throw new PersonProfileValidationError(
+      "active-dependencies",
+      `Pause or re-point every active dependent configuration before ${operation} this Profile.`,
+    );
+  }
+
+  private purgeRegistries(profileId: string): PersonProfileRegistryDeletionCounts {
+    const total: PersonProfileRegistryDeletionCounts = {
+      aliases: 0,
+      candidates: 0,
+      mappings: 0,
+      decisions: 0,
+      activeLinks: 0,
+      personSnapshots: 0,
+    };
+    for (const registry of this.registries) {
+      const removed = registry.privacyDelete(profileId);
+      for (const key of Object.keys(total) as (keyof PersonProfileRegistryDeletionCounts)[])
+        total[key] += removed[key];
+    }
+    return total;
+  }
+
   private repairable(profileId: string): PersonProfile {
     const profile = this.store.get(profileId);
     if (!profile)
@@ -520,6 +677,10 @@ export class WorkspacePersonProfiles {
     const currentRecord = this.store.get(profileId);
     /* A merged-away Profile has no current identity of its own; consumers
        follow mergedInto. Its exact revisions stay projected as history. */
+    /* Archive stops new consumption: no purpose-specific projection is served
+       for an archived Profile, current or exact-revision. Its revisions stay
+       readable as history through the revision interface. */
+    if (currentRecord?.archivedAt) return null;
     if (currentRecord?.mergedInto !== undefined && options?.revision === undefined) return null;
     if (!profile) return null;
     /* Immutable history discloses its own invalidation: a projection of an

@@ -12,6 +12,7 @@ import { registerMeetingBriefHubSpotRoutes } from "./modules/meeting-brief-gener
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
 import { PersonProfileStore } from "./person-profile/store.js";
 import { WorkspacePersonProfiles } from "./person-profile/profiles.js";
+import { WorkspacePersonProfileReferences } from "./person-profile/references.js";
 import { OwnerOnboarding } from "./onboarding/owner.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
@@ -77,7 +78,13 @@ const googleConnection = openGoogleConnection(configStore, port);
    same Runs, not one object per Module over one directory. */
 const runs = openRuns(workspaceDir);
 const peopleStore = new PersonProfileStore(workspaceDir);
-const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
+/* Meeting Brief Runs hold pinned Profile links and per-person projection
+   snapshots, so they are a registered holder of Profile references: a privacy
+   deletion has to reach them, not just the canonical store. */
+const peopleProfiles = new WorkspacePersonProfiles({
+  store: peopleStore,
+  lifecycle: [new WorkspacePersonProfileReferences(runs)],
+});
 const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
 
 const transcript = new TranscriptHost({

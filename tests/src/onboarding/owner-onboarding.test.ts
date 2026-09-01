@@ -27,7 +27,7 @@ let onboarding: OwnerOnboarding;
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-owner-onboarding-"));
   store = new PersonProfileStore(workspaceDir);
-  profiles = new WorkspacePersonProfiles({ store });
+  profiles = new WorkspacePersonProfiles({ store, lifecycle: [] });
   onboarding = new OwnerOnboarding({ people: profiles, workspaceDir });
 });
 

@@ -2,12 +2,20 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { PersonEvidence, PersonProfile } from "@chief-of-staff-demo/shared";
+import { fromPartial } from "@total-typescript/shoehorn";
+import type {
+  PersonEvidence,
+  PersonProfile,
+  PersonProfileDependentConfiguration,
+  PersonProfileResidualSourceArtifact,
+} from "@chief-of-staff-demo/shared";
 import { invalidationAffectsRevision } from "@chief-of-staff-demo/shared";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import {
   PersonProfileValidationError,
   WorkspacePersonProfiles,
+  type PersonProfileLifecycleRegistry,
+  type PersonProfileRegistryDeletionCounts,
 } from "../../../apps/server/src/person-profile/profiles";
 
 /**
@@ -22,6 +30,7 @@ function makeService(dir = mkdtempSync(join(tmpdir(), "person-profiles-svc-"))) 
   return new WorkspacePersonProfiles({
     store: new PersonProfileStore(dir),
     now: () => NOW,
+    lifecycle: [],
   });
 }
 
@@ -119,12 +128,240 @@ describe("WorkspacePersonProfiles.search", () => {
   it("searches archived Profiles only when the caller asks for them", () => {
     const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-arch-")));
     store.save(richProfile({ id: "person_ada", archivedAt: "2026-08-30T09:00:00.000Z" }));
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
     expect(profiles.search({ query: "ada" })).toEqual([]);
     const found = profiles.search({ query: "ada", includeArchived: true });
     expect(found).toHaveLength(1);
     expect(found[0].archivedAt).toBe("2026-08-30T09:00:00.000Z");
+  });
+});
+
+/**
+ * One local Workspace holder of Profile references. Every lifecycle test states
+ * exactly what it registers; nothing is inferred from a default.
+ */
+function registry(
+  entries: Partial<{
+    dependentConfigurations: PersonProfileDependentConfiguration[];
+    residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+    removed: Partial<PersonProfileRegistryDeletionCounts>;
+    purged: string[];
+  }> = {},
+): PersonProfileLifecycleRegistry {
+  return {
+    inspect: () => ({
+      dependentConfigurations: entries.dependentConfigurations ?? [],
+      residualSourceArtifacts: entries.residualSourceArtifacts ?? [],
+    }),
+    privacyDelete: (profileId) => {
+      entries.purged?.push(profileId);
+      return {
+        aliases: 0,
+        candidates: 0,
+        mappings: 0,
+        decisions: 0,
+        activeLinks: 0,
+        personSnapshots: 0,
+        ...entries.removed,
+      };
+    },
+  };
+}
+
+const ACTIVE_WATCH: PersonProfileDependentConfiguration = fromPartial({
+  id: "watch_ada",
+  consumer: "content-research",
+  label: "Ada weekly watch",
+  state: "active",
+  availableActions: ["pause", "repoint"],
+});
+
+const RESIDUAL_SOURCES: PersonProfileResidualSourceArtifact[] = [
+  fromPartial({ artifactId: "transcript_42", kind: "transcript", separateDeleteSupported: true }),
+  fromPartial({
+    artifactId: "source_item_7",
+    kind: "public-source",
+    separateDeleteSupported: false,
+  }),
+];
+
+describe("WorkspacePersonProfiles archive lifecycle", () => {
+  it("archives and restores a Profile while preventing every new consumer projection", () => {
+    const profiles = makeService();
+    const created = profiles.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
+
+    const archived = profiles.archive(created.id);
+
+    expect(archived.archivedAt).toBe(NOW.toISOString());
+    expect(profiles.search()).toEqual([]);
+    expect(profiles.project("public-safe", created.id)).toBeNull();
+    expect(profiles.project("meeting", created.id, { revision: created.revision })).toBeNull();
+    expect(
+      validationCode(() => profiles.ensureCalendarAttendeeProfile({ email: "grace@example.com" })),
+    ).toBe("conflicting-identity");
+    /* Archive is lifecycle state, not erasure: the factual history it was
+       archived with stays exactly readable. */
+    expect(profiles.getRevision(created.id, created.revision)?.fullName).toBe("Grace Hopper");
+
+    const restored = profiles.restore(created.id);
+
+    expect(restored.archivedAt).toBeNull();
+    expect(profiles.project("public-safe", created.id)?.profileRevision).toBe(created.revision);
+    expect(profiles.search().map((profile) => profile.id)).toEqual([created.id]);
+  });
+
+  it("refuses to archive over active dependent configuration and names the pause or re-point actions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "person-profiles-dependencies-"));
+    const profiles = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(dir),
+      now: () => NOW,
+      lifecycle: [registry({ dependentConfigurations: [ACTIVE_WATCH] })],
+    });
+    const created = profiles.create({ fullName: "Ada Lovelace" });
+
+    expect(profiles.lifecycle(created.id).dependentConfigurations).toEqual([
+      expect.objectContaining({
+        id: "watch_ada",
+        consumer: "content-research",
+        state: "active",
+        availableActions: ["pause", "repoint"],
+      }),
+    ]);
+    expect(validationCode(() => profiles.archive(created.id))).toBe("active-dependencies");
+    expect(profiles.get(created.id)?.archivedAt).toBeNull();
+  });
+});
+
+describe("WorkspacePersonProfiles privacy deletion", () => {
+  function deletable(registries: PersonProfileLifecycleRegistry[]): WorkspacePersonProfiles {
+    const dir = mkdtempSync(join(tmpdir(), "person-profiles-privacy-delete-"));
+    const store = new PersonProfileStore(dir);
+    store.save(richProfile({ revision: 1 }));
+    store.save(richProfile({ revision: 2 }));
+    return new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: registries });
+  }
+
+  it("requires separate confirmation and purges structured local identity behind one seam", () => {
+    const purged: string[] = [];
+    const profiles = deletable([
+      registry({
+        residualSourceArtifacts: RESIDUAL_SOURCES,
+        removed: { aliases: 3, candidates: 2, mappings: 1, decisions: 4 },
+        purged,
+      }),
+      registry({ removed: { activeLinks: 2, personSnapshots: 2 }, purged }),
+    ]);
+
+    expect(
+      validationCode(() => profiles.privacyDelete("person_ada", { confirmation: "archive" })),
+    ).toBe("privacy-confirmation-required");
+    expect(profiles.get("person_ada")?.fullName).toBe("Ada Lovelace");
+    expect(purged).toEqual([]);
+
+    const receipt = profiles.privacyDelete("person_ada", { confirmation: "DELETE PROFILE" });
+
+    /* Every registered holder of Profile references is asked, and the receipt
+       accounts for all of them together. */
+    expect(purged).toEqual(["person_ada", "person_ada"]);
+    expect(receipt.removed).toEqual({
+      canonicalProfileRecords: 1,
+      revisions: 2,
+      evidence: 3,
+      aliases: 3,
+      candidates: 2,
+      mappings: 1,
+      decisions: 4,
+      activeLinks: 2,
+      personSnapshots: 2,
+    });
+    expect(receipt.remoteProviderOperations).toBe(0);
+    expect(profiles.get("person_ada")).toBeNull();
+    expect(profiles.revisions("person_ada")).toEqual([]);
+    expect(profiles.project("meeting", "person_ada", { revision: 1 })).toBeNull();
+  });
+
+  it("discloses the immutable source documents that outlive the Profile", () => {
+    const profiles = deletable([registry({ residualSourceArtifacts: RESIDUAL_SOURCES })]);
+
+    /* The same disclosure backs the confirmation surface and the receipt. */
+    expect(profiles.lifecycle("person_ada").residualSourceArtifacts).toEqual(RESIDUAL_SOURCES);
+
+    const receipt = profiles.privacyDelete("person_ada", { confirmation: "DELETE PROFILE" });
+
+    expect(receipt.residualSourceArtifacts).toEqual([
+      { artifactId: "transcript_42", kind: "transcript", separateDeleteSupported: true },
+      { artifactId: "source_item_7", kind: "public-source", separateDeleteSupported: false },
+    ]);
+  });
+
+  it("refuses to privacy-delete over active dependent configuration", () => {
+    const purged: string[] = [];
+    const profiles = deletable([registry({ dependentConfigurations: [ACTIVE_WATCH], purged })]);
+
+    expect(
+      validationCode(() =>
+        profiles.privacyDelete("person_ada", { confirmation: "DELETE PROFILE" }),
+      ),
+    ).toBe("active-dependencies");
+    expect(purged).toEqual([]);
+    expect(profiles.get("person_ada")?.fullName).toBe("Ada Lovelace");
+    expect(profiles.tombstone("person_ada")).toBeNull();
+  });
+
+  it("leaves a tombstone and a persisted receipt that carry no identity content", () => {
+    const profiles = deletable([registry({ residualSourceArtifacts: RESIDUAL_SOURCES })]);
+
+    profiles.privacyDelete("person_ada", { confirmation: "DELETE PROFILE" });
+
+    expect(profiles.tombstone("person_ada")).toEqual({
+      profileId: "person_ada",
+      deletedAt: NOW.toISOString(),
+    });
+    /* Shape only — an id, a time, counts, kinds and flags. No name, address,
+       claim, evidence text, or source title survives at rest. */
+    expect(Object.keys(profiles.tombstone("person_ada")!)).toEqual(["profileId", "deletedAt"]);
+    const atRest = JSON.stringify({
+      tombstone: profiles.tombstone("person_ada"),
+      receipt: profiles.deletionReceipt("person_ada"),
+    });
+    for (const content of [
+      "Ada Lovelace",
+      "ada@example.com",
+      "Analytical Engines",
+      "Engineer",
+      "Writes about computation.",
+      "A published talk",
+      "Spoke about evidence-backed identity.",
+      "example.com/~ada",
+    ])
+      expect(atRest).not.toContain(content);
+  });
+
+  it("reaches no remote provider for any Profile lifecycle operation", () => {
+    const profiles = deletable([registry({ residualSourceArtifacts: RESIDUAL_SOURCES })]);
+    const realFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (input) => {
+      calls.push(input instanceof Request ? input.url : input.toString());
+      return Promise.reject(new Error("no remote provider is reachable from a Profile operation"));
+    };
+
+    try {
+      profiles.lifecycle("person_ada");
+      profiles.archive("person_ada");
+      profiles.restore("person_ada");
+      const receipt = profiles.privacyDelete("person_ada", { confirmation: "DELETE PROFILE" });
+      /* Local deletion never claims to have deleted anything remote. */
+      expect(receipt.remoteProviderOperations).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+
+    expect(calls).toEqual([]);
   });
 });
 
@@ -203,7 +440,7 @@ describe("WorkspacePersonProfiles revision retrieval", () => {
     store.save(richProfile({ revision: 1, currentEmployer: "Analytical Engines Ltd" }));
     const current = richProfile({ revision: 2, currentEmployer: "Analytical Engines Co" });
     store.save(current);
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
     expect(profiles.get("person_ada")).toEqual(current);
     expect(profiles.getRevision("person_ada", 1)?.currentEmployer).toBe("Analytical Engines Ltd");
@@ -224,6 +461,7 @@ describe("WorkspacePersonProfiles revision retrieval", () => {
     const profiles = new WorkspacePersonProfiles({
       store: new PersonProfileStore(dir),
       now: () => NOW,
+      lifecycle: [],
     });
 
     expect(profiles.revisions("person_legacy").map((p) => p.revision)).toEqual([3]);
@@ -236,7 +474,7 @@ describe("WorkspacePersonProfiles projections", () => {
   it("public-safe projection carries public facts and publishing surfaces only", () => {
     const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-pub-")));
     store.save(richProfile());
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
     const projection = profiles.project("public-safe", "person_ada");
     expect(projection?.projectionVersion).toBe(1);
@@ -270,7 +508,7 @@ describe("WorkspacePersonProfiles projections", () => {
   it("meeting projection carries contact and evidence but not enrichment plumbing", () => {
     const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-meet-")));
     store.save(richProfile());
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
     const projection = profiles.project("meeting", "person_ada");
     if (projection?.purpose !== "meeting") throw new Error("expected meeting projection");
@@ -291,7 +529,7 @@ describe("WorkspacePersonProfiles projections", () => {
     const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-pin-")));
     store.save(richProfile({ revision: 1, role: "Mathematician" }));
     store.save(richProfile({ revision: 2, role: "Engineer" }));
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
     const pinned = profiles.project("public-safe", "person_ada", { revision: 1 });
     expect(pinned?.profileRevision).toBe(1);
@@ -465,7 +703,10 @@ describe("WorkspacePersonProfiles.merge", () => {
       ...duplicateOverrides,
     });
     store.save(duplicate);
-    return { profiles: new WorkspacePersonProfiles({ store, now: () => NOW }), duplicate };
+    return {
+      profiles: new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] }),
+      duplicate,
+    };
   }
 
   it("merges a duplicate through an audited decision without losing provenance or signals", () => {
@@ -572,7 +813,11 @@ describe("WorkspacePersonProfiles.detachEvidence", () => {
       currentEmployer: null,
     });
     store.save(correct);
-    return { profiles: new WorkspacePersonProfiles({ store, now: () => NOW }), wrong, correct };
+    return {
+      profiles: new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] }),
+      wrong,
+      correct,
+    };
   }
 
   it("splits wrongly attached evidence to the correct Profile without keeping the old attribution as fact", () => {
@@ -671,7 +916,7 @@ describe("WorkspacePersonProfiles.detachEvidence", () => {
           evidence: [],
         }),
       );
-      const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+      const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
       const split = profiles.detachEvidence("person_ada", {
         evidenceId: duplicated.id,
@@ -722,7 +967,7 @@ describe("WorkspacePersonProfiles invalidation disclosure", () => {
     const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-inval-")));
     store.save(richProfile({ revision: 1, role: "Mathematician" }));
     store.save(richProfile({ revision: 2, role: "Engineer" }));
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
     profiles.correct("person_ada", { role: "Countess of Lovelace", note: "She was a countess." });
     return profiles;
   }
@@ -804,7 +1049,7 @@ describe("WorkspacePersonProfiles invalidation disclosure", () => {
         evidence: [],
       }),
     );
-    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
 
     profiles.merge("person_ada", {
       duplicateId: "person_duplicate",

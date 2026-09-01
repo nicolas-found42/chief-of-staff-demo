@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PersonProfile, PersonProfileProjection } from "@chief-of-staff-demo/shared";
+import { fromPartial } from "@total-typescript/shoehorn";
+import type {
+  PersonProfile,
+  PersonProfileDependentConfiguration,
+  PersonProfileProjection,
+  PersonProfileResidualSourceArtifact,
+} from "@chief-of-staff-demo/shared";
 import { registerPeopleApi } from "../../../apps/server/src/api/people";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -18,13 +24,32 @@ let app: FastifyInstance;
 let workspaceDir: string;
 let profiles: WorkspacePersonProfiles;
 let store: PersonProfileStore;
+/** What this Workspace's one consumer registry reports; set per test. */
+let references: {
+  dependentConfigurations: PersonProfileDependentConfiguration[];
+  residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+};
 
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-people-routes-"));
   store = new PersonProfileStore(workspaceDir);
+  references = { dependentConfigurations: [], residualSourceArtifacts: [] };
   profiles = new WorkspacePersonProfiles({
     store,
     now: () => new Date("2026-08-31T16:00:00.000Z"),
+    lifecycle: [
+      {
+        inspect: () => references,
+        privacyDelete: () => ({
+          aliases: 0,
+          candidates: 0,
+          mappings: 0,
+          decisions: 0,
+          activeLinks: 0,
+          personSnapshots: 0,
+        }),
+      },
+    ],
   });
   app = fastify();
   registerPeopleApi(app, { people: profiles });
@@ -110,6 +135,131 @@ describe("GET /api/people/:profileId", () => {
     const missing = await app.inject({ url: "/api/people/person_unknown" });
     expect(missing.statusCode).toBe(404);
     expect(missing.json()).toMatchObject({ error: "profile-not-found" });
+  });
+});
+
+const ACTIVE_WATCH: PersonProfileDependentConfiguration = fromPartial({
+  id: "watch_grace",
+  consumer: "content-research",
+  label: "Grace weekly watch",
+  state: "active",
+  availableActions: ["pause", "repoint"],
+});
+
+const RESIDUAL_TRANSCRIPT: PersonProfileResidualSourceArtifact = fromPartial({
+  artifactId: "transcript_42",
+  kind: "transcript",
+  separateDeleteSupported: true,
+});
+
+describe("/api/people/:profileId lifecycle", () => {
+  it("archives and restores explicitly, with archived Profiles unavailable to new consumers", async () => {
+    const created = await createGrace();
+    const preview = await app.inject({ url: `/api/people/${created.id}/lifecycle` });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({
+      profileId: created.id,
+      archivedAt: null,
+      dependentConfigurations: [],
+    });
+
+    const archived = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/archive`,
+    });
+    expect(archived.statusCode).toBe(200);
+    expect(archived.json()).toMatchObject({ archivedAt: "2026-08-31T16:00:00.000Z" });
+    const unavailable = await app.inject({
+      url: `/api/people/${created.id}/projection?purpose=public-safe`,
+    });
+    expect(unavailable.statusCode).toBe(404);
+
+    const restored = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/restore`,
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toMatchObject({ archivedAt: null });
+  });
+
+  it("refuses archive and privacy deletion while a dependent configuration is active, naming its actions", async () => {
+    const created = await createGrace();
+    references.dependentConfigurations = [{ ...ACTIVE_WATCH, profileId: created.id }];
+
+    for (const url of [
+      `/api/people/${created.id}/archive`,
+      `/api/people/${created.id}/privacy-delete`,
+    ]) {
+      const refused = await app.inject({
+        method: "POST",
+        url,
+        payload: { confirmation: "DELETE PROFILE" },
+      });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toMatchObject({
+        error: "active-dependencies",
+        lifecycle: {
+          dependentConfigurations: [
+            { id: "watch_grace", state: "active", availableActions: ["pause", "repoint"] },
+          ],
+        },
+      });
+    }
+    const survivor = await app.inject({ url: `/api/people/${created.id}` });
+    expect(survivor.statusCode).toBe(200);
+    expect(survivor.json()).toMatchObject({ archivedAt: null });
+  });
+
+  it("discloses residual source documents on the confirmation refusal, before anything is deleted", async () => {
+    const created = await createGrace();
+    references.residualSourceArtifacts = [RESIDUAL_TRANSCRIPT];
+
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/privacy-delete`,
+      payload: { confirmation: "archive" },
+    });
+
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json()).toMatchObject({
+      error: "privacy-confirmation-required",
+      lifecycle: {
+        residualSourceArtifacts: [
+          { artifactId: "transcript_42", kind: "transcript", separateDeleteSupported: true },
+        ],
+      },
+    });
+    expect((await app.inject({ url: `/api/people/${created.id}` })).statusCode).toBe(200);
+  });
+
+  it("privacy-deletes only after distinct confirmation and returns the residual-source receipt", async () => {
+    const created = await createGrace();
+    references.residualSourceArtifacts = [RESIDUAL_TRANSCRIPT];
+
+    const deleted = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/privacy-delete`,
+      payload: { confirmation: "DELETE PROFILE" },
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({
+      profileId: created.id,
+      remoteProviderOperations: 0,
+      removed: { canonicalProfileRecords: 1, revisions: 1 },
+      residualSourceArtifacts: [
+        { artifactId: "transcript_42", kind: "transcript", separateDeleteSupported: true },
+      ],
+      tombstone: { profileId: created.id },
+    });
+    const gone = await app.inject({ url: `/api/people/${created.id}` });
+    expect(gone.statusCode).toBe(410);
+    expect(gone.json()).toMatchObject({
+      error: "profile-privacy-deleted",
+      tombstone: { profileId: created.id },
+      receipt: { remoteProviderOperations: 0 },
+    });
+    /* The tombstone keeps the reference resolvable; it names nobody. */
+    expect(JSON.stringify(gone.json().tombstone)).not.toContain("Grace");
   });
 });
 

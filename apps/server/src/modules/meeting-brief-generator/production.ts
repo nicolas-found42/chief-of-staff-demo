@@ -25,6 +25,7 @@ import {
 import { DuckDuckGoPublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import { createEmployerProposer } from "./enrichment/employerProposer.js";
 import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
+import { WorkspacePersonProfileReferences } from "../../person-profile/references.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
 
 export interface MeetingBriefProductionRuntimeOptions {
@@ -130,6 +131,7 @@ export function createMeetingBriefProductionRuntime(
     options.personProfiles ??
     new WorkspacePersonProfiles({
       store: new PersonProfileStore(options.workspaceDir),
+      lifecycle: [new WorkspacePersonProfileReferences(options.runs)],
     });
   const host = new MeetingBriefHost({
     runs: options.runs,

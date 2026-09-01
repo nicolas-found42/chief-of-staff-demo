@@ -184,6 +184,7 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
     const attendeeProfiles = new WorkspacePersonProfiles({
       store,
       now: () => new Date(now),
+      lifecycle: [],
     });
     store.save({
       id: "person_alice",
@@ -514,6 +515,7 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
     const people = new WorkspacePersonProfiles({
       store: new PersonProfileStore(workspaceDir),
       now: () => new Date("2026-08-28T10:00:00.000Z"),
+      lifecycle: [],
     });
     const profile = people.create({
       fullName: "Alice External",
@@ -633,6 +635,7 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
     const people = new WorkspacePersonProfiles({
       store: new PersonProfileStore(workspaceDir),
       now: () => new Date("2026-08-28T10:00:00.000Z"),
+      lifecycle: [],
     });
     const profile = people.create({
       fullName: "Alice External",
