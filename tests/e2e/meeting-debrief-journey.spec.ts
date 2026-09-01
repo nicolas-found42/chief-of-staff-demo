@@ -159,9 +159,11 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     page.getByText("Roster confirmation required before review can complete."),
   ).toBeVisible();
   await expect(page.getByText("Awaiting your review").first()).toBeVisible();
-  await expect(
-    page.getByText("The workspace owner's Google identity is not confirmed in Settings."),
-  ).toBeVisible();
+  // The gate's refusal surface, whatever the shared server's owner state is:
+  // journey 1 guarantees only the unconfirmed roster, so assert that blocker
+  // rather than one that depends on other specs' onboarding state.
+  await expect(page.getByText("Approval is blocked until:")).toBeVisible();
+  await expect(page.getByText("The attendee roster is not confirmed yet.")).toBeVisible();
   await expect(page.getByText("Alice — confirmed Profile")).toBeVisible();
   await expect(page.getByText("Bob — awaiting review")).toBeVisible();
 
@@ -229,30 +231,42 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
 
 const OWNER_EMAIL = "owner@example.com";
 
+/**
+ * Establishes the review journey's owner precondition idempotently and
+ * verifies it took: the journey never assumes what earlier specs on the
+ * shared hermetic server did to the onboarding state.
+ */
 async function confirmOwner(request: APIRequestContext): Promise<void> {
-  const identity = await request.post("/api/test/owner-identity", { data: { email: OWNER_EMAIL } });
-  expect(identity.ok()).toBe(true);
-  const created = await request.post("/api/people", {
-    data: { fullName: "Workspace Owner", primaryEmail: OWNER_EMAIL },
-  });
-  // The owner Profile may already exist from a previous journey pass.
-  if (created.ok()) {
-    const profile = (await created.json()) as { id: string };
-    const confirmed = await request.post("/api/onboarding/owner/confirm", {
-      data: { profileId: profile.id },
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const identity = await request.post("/api/test/owner-identity", {
+      data: { email: OWNER_EMAIL },
     });
-    expect(confirmed.ok()).toBe(true);
-  } else {
-    const existing = (await (
-      await request.get("/api/people?query=" + encodeURIComponent(OWNER_EMAIL))
-    ).json()) as Array<{ id: string }>;
-    const holder = existing[0];
-    expect(holder).toBeTruthy();
-    const confirmed = await request.post("/api/onboarding/owner/confirm", {
-      data: { profileId: holder.id },
+    expect(identity.ok()).toBe(true);
+    const created = await request.post("/api/people", {
+      data: { fullName: "Workspace Owner", primaryEmail: OWNER_EMAIL },
     });
-    expect(confirmed.ok()).toBe(true);
+    let profileId: string;
+    if (created.ok()) {
+      profileId = ((await created.json()) as { id: string }).id;
+    } else {
+      // The owner Profile may already exist from a previous journey pass.
+      const existing = (await (
+        await request.get("/api/people?query=" + encodeURIComponent(OWNER_EMAIL))
+      ).json()) as Array<{ id: string }>;
+      const holder = existing[0];
+      expect(holder).toBeTruthy();
+      profileId = holder.id;
+    }
+    const confirmed = await request.post("/api/onboarding/owner/confirm", {
+      data: { profileId },
+    });
+    if (!confirmed.ok()) continue;
+    const status = (await (await request.get("/api/onboarding/owner")).json()) as {
+      confirmed: { confirmedForGoogleEmail: string } | null;
+    };
+    if (status.confirmed?.confirmedForGoogleEmail === OWNER_EMAIL) return;
   }
+  throw new Error("Owner identity could not be confirmed for the review journey");
 }
 
 test("meeting debrief review journey — regenerate, drop, roster, recipients, approval lock, redo", async ({
@@ -261,7 +275,19 @@ test("meeting debrief review journey — regenerate, drop, roster, recipients, a
 }) => {
   await confirmOwner(request);
 
+  // A transcript id unique to this journey: seeding must never re-resolve to
+  // a Run another journey on the shared server already created.
   const transcript = transcriptRecord({
+    id: "drive_journey_review_r1",
+    source: {
+      sourceSystem: "drive",
+      externalFileId: "journey-review",
+      fileName: "Review sync - 2026-08-17T13-00-00.000Z.md",
+      sourceUrl: null,
+      checksum: "journey-checksum-review",
+      observedRevision: 1,
+      modifiedAt: "2026-08-17T13:05:00.000Z",
+    },
     normalizedText: [
       "Alice: We decided to ship the billing fix on Friday.",
       "Bob: I will own the billing fix follow-up.",
@@ -324,8 +350,18 @@ test("meeting debrief review journey — regenerate, drop, roster, recipients, a
     page.getByText("carol@example.com — added (confirmed Profile with verified email)"),
   ).toBeVisible();
 
-  // 6. Approve: the Run locks, and every mutation seam refuses.
+  // 6. Approve: the Run locks, and every mutation seam refuses. Approval is
+  //    verified through the API before anything is built on top of it.
   await page.getByRole("button", { name: "Approve Debrief" }).click();
+  await waitForStatus(request, seeded.runId, "done");
+  await expect
+    .poll(async () => {
+      const detail = (await (
+        await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
+      ).json()) as { review: { state: string } | null };
+      return detail.review?.state;
+    })
+    .toBe("approved");
   await expect(page.getByText("Approved — locked").first()).toBeVisible();
   await expect(page.getByText(/Approved and locked/)).toBeVisible();
   const approvedDetail = (await (
@@ -347,19 +383,36 @@ test("meeting debrief review journey — regenerate, drop, roster, recipients, a
   expect(lockedTry.status()).toBe(409);
 
   // 7. Redo after approval: a distinct Run with a duplicate-output warning.
+  //    The redo Run is identified through the API — the one Run of this
+  //    transcript that is not the approved original — never by diffing the
+  //    whole index, which other journeys' Runs also populate.
   await page.getByRole("button", { name: /Redo \(start a new Debrief Run\)/ }).click();
-  await expect(page.getByText(/Approved and locked/)).toBeVisible();
-  const index = (await (await request.get("/api/meeting-debrief/index")).json()) as {
-    entries: Array<{ runId: string }>;
-  };
-  expect(index.entries.length).toBeGreaterThanOrEqual(2);
-  const redoRunId = index.entries
-    .map((entry) => entry.runId)
-    .find((candidate) => candidate !== seeded.runId);
-  expect(redoRunId).toBeTruthy();
+  let redoRunId: string | null = null;
+  await expect
+    .poll(async () => {
+      const index = (await (await request.get("/api/meeting-debrief/index")).json()) as {
+        entries: Array<{ runId: string; transcriptId: string }>;
+      };
+      const candidates = index.entries.filter(
+        (entry) => entry.transcriptId === transcript.id && entry.runId !== seeded.runId,
+      );
+      redoRunId = candidates[0]?.runId ?? null;
+      return redoRunId;
+    })
+    .toBeTruthy();
   // The detail surface renders once; wait for the redo Run to hold its
-  // review record before reading the warning from it.
+  // review record — and the verified warning — before reading it on the page.
   await waitForStatus(request, redoRunId!, "blocked");
+  await expect
+    .poll(async () => {
+      const detail = (await (
+        await request.get(`/api/meeting-debrief/${encodeURIComponent(redoRunId!)}`)
+      ).json()) as {
+        review: { state: string; duplicateWarning: { approvedRunId: string } | null } | null;
+      };
+      return detail.review?.duplicateWarning?.approvedRunId ?? null;
+    })
+    .toBe(seeded.runId);
   await page.goto(`/meeting-debrief/${encodeURIComponent(redoRunId!)}`);
   await expect(page.getByText(/Duplicate output warning/)).toBeVisible();
   await expect(page.getByText(new RegExp(seeded.runId))).toBeVisible();
