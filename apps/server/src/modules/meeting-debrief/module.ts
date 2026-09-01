@@ -34,6 +34,7 @@ import {
   type DebriefApprovalGateDeps,
 } from "./review.js";
 import { buildDebriefMessages, resolveActionItemOwners } from "./extraction.js";
+import { composeExternalDebriefBody } from "./externalBody.js";
 
 export type {
   DebriefCatalogReader,
@@ -83,28 +84,121 @@ export interface MeetingDebriefModuleDeps {
  * completes and nothing leaves the app, which is how #139's "no outward write"
  * property survives as structure rather than as a promise.
  */
-async function createApprovalDraft(
+/** The Gmail draft receipt: written before Tasks, read on every retry. */
+interface DebriefDraftReceipt {
+  version: 1;
+  draftId: string;
+  to: string[];
+}
+
+/** The Tasks receipt: one entry per action item index already created. */
+interface DebriefTasksReceipt {
+  version: 1;
+  tasks: Array<{ index: number; taskId: string }>;
+}
+
+function readReceipt<T>(ctx: RunContext, file: string): T | null {
+  const raw = ctx.readFile(file);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Outward work an already-approved Run still owes, read from its receipts
+ * (issue #141, AC 7). A Tasks outage leaves the approval recorded and the
+ * Tasks missing; this is how a resume tells that apart from a stray second
+ * approval, which stays refused.
+ */
+function hasPendingApprovalOutputs(
+  ctx: RunContext,
+  deps: MeetingDebriefModuleDeps,
+  state: MeetingDebriefReviewState,
+  ownerProfileId: string | null,
+): boolean {
+  const outputs = deps.outputs;
+  if (outputs === undefined) return false;
+  if (readReceipt<DebriefDraftReceipt>(ctx, "draft.json") === null) return true;
+  if (outputs.createTask === undefined || ownerProfileId === null) return false;
+  const dropped = new Set(state.review.droppedActionItems);
+  const created = new Set(
+    (readReceipt<DebriefTasksReceipt>(ctx, "tasks.json")?.tasks ?? []).map((entry) => entry.index),
+  );
+  return currentDebrief(ctx).actionItems.some(
+    (action, index) =>
+      !dropped.has(index) && action.ownerProfileId === ownerProfileId && !created.has(index),
+  );
+}
+
+/**
+ * The outward writes terminal approval performs (issue #141). Ordering is
+ * load-bearing: the Gmail draft is created and its receipt written before any
+ * Task, so a Tasks outage can never leave Tasks referring to a debrief nobody
+ * was sent. Both adapters are driven from Run receipts rather than from
+ * whether this function has run before, so a retry after a partial failure
+ * re-sends nothing and re-creates only what is missing.
+ */
+async function writeApprovalOutputs(
   ctx: RunContext,
   deps: MeetingDebriefModuleDeps,
   record: TranscriptRecord,
   state: MeetingDebriefReviewState,
   ownerEmail: string | null,
+  ownerProfileId: string | null,
 ): Promise<void> {
   const outputs = deps.outputs;
   if (outputs === undefined) return;
-  const to = [
-    ...state.roster.entries
-      .filter((entry) => entry.email !== ownerEmail)
-      .map((entry) => entry.email),
-    ...state.recipients.additional.map((recipient) => recipient.email),
-  ];
-  const draftId = await outputs.createDraft({
-    to,
-    subject: `Meeting debrief — ${record.source.fileName}`,
-    body: currentDebrief(ctx).summary,
-  });
-  ctx.writeFile("draft.json", `${JSON.stringify({ version: 1, draftId, to }, null, 2)}\n`);
-  ctx.event("debrief_draft_created", { draftId, recipientCount: to.length });
+
+  const debrief = currentDebrief(ctx);
+  let draft = readReceipt<DebriefDraftReceipt>(ctx, "draft.json");
+  if (draft === null) {
+    const to = [
+      ...state.roster.entries
+        .filter((entry) => entry.email !== ownerEmail)
+        .map((entry) => entry.email),
+      ...state.recipients.additional.map((recipient) => recipient.email),
+    ];
+    const draftId = await outputs.createDraft({
+      to,
+      subject: `Meeting debrief — ${record.source.fileName}`,
+      body: composeExternalDebriefBody(debrief, state.review.droppedActionItems),
+    });
+    draft = { version: 1, draftId, to };
+    ctx.writeFile("draft.json", `${JSON.stringify(draft, null, 2)}\n`);
+    ctx.event("debrief_draft_created", { draftId, recipientCount: to.length });
+  }
+
+  const createTask = outputs.createTask;
+  if (createTask === undefined) return;
+
+  /* Retained actions only — a dropped action is not an action — and of those,
+     only the ones the Catalog resolved to the owner's own Profile. A null
+     ownerProfileId means the Catalog did not resolve the mention, which is
+     not the same as resolving it to the owner. */
+  const dropped = new Set(state.review.droppedActionItems);
+  const receipt = readReceipt<DebriefTasksReceipt>(ctx, "tasks.json") ?? {
+    version: 1 as const,
+    tasks: [],
+  };
+  const created = new Set(receipt.tasks.map((entry) => entry.index));
+  for (const [index, action] of debrief.actionItems.entries()) {
+    if (dropped.has(index)) continue;
+    if (ownerProfileId === null || action.ownerProfileId !== ownerProfileId) continue;
+    if (created.has(index)) continue;
+    const taskId = await createTask({
+      title: action.title,
+      notes: `From the meeting debrief for ${record.source.fileName}.`,
+      due: action.dueDate,
+    });
+    /* Persisted per Task, not once at the end: a failure halfway through must
+       leave behind exactly the Tasks that succeeded. */
+    receipt.tasks.push({ index, taskId });
+    ctx.writeFile("tasks.json", `${JSON.stringify(receipt, null, 2)}\n`);
+    ctx.event("debrief_task_created", { taskId, actionIndex: index });
+  }
 }
 
 /** How the Run's association stands, read from the immutable record itself. */
@@ -285,7 +379,28 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     }
     const state = await ctx.stage("review", async () => ensureReviewState(ctx, record));
     if (state.approval) {
-      throw new Error("Debrief Run was already approved");
+      /* Approval is terminal and already recorded. The one legitimate reason
+         to be back here is that its outward writes did not finish — a Tasks
+         outage after the draft went out (issue #141, AC 7). Both adapters are
+         driven from Run receipts, so completing them re-sends nothing and
+         creates only what is missing. Anything else is a second approval. */
+      const approvedOwner = gate.ownerEmail();
+      const approvedOwnerProfileId =
+        approvedOwner === null ? null : (gate.verifiedForEmail(approvedOwner)?.profileId ?? null);
+      if (!hasPendingApprovalOutputs(ctx, deps, state, approvedOwnerProfileId)) {
+        throw new Error("Debrief Run was already approved");
+      }
+      await ctx.stage("review", async () => {
+        await writeApprovalOutputs(ctx, deps, record, state, approvedOwner, approvedOwnerProfileId);
+      });
+      const resumedCount =
+        state.roster.entries.filter((entry) => entry.email !== approvedOwner).length +
+        state.recipients.additional.length;
+      return {
+        status: "done",
+        summary: `Approved with ${resumedCount} recipient${resumedCount === 1 ? "" : "s"}`,
+        detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
+      };
     }
 
     const request = state.request;
@@ -340,7 +455,14 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           locked.roster.entries.filter((entry) => entry.email !== owner).length +
           locked.recipients.additional.length;
         ctx.event("debrief_approved", { approvedAt, recipientCount });
-        await createApprovalDraft(ctx, deps, record, locked, owner);
+        await writeApprovalOutputs(
+          ctx,
+          deps,
+          record,
+          locked,
+          owner,
+          owner === null ? null : (gate.verifiedForEmail(owner)?.profileId ?? null),
+        );
         return {
           status: "done",
           summary: `Approved with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
