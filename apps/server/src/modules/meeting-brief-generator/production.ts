@@ -136,9 +136,9 @@ export function createMeetingBriefProductionRuntime(
      minimal email-anchored shell. */
   /* A root that composes its own Person Profiles still states the registry
      with the real Workspace stores behind the disclosure; the owner
-     reference arrives through the option when this root owns onboarding. */
-  const transcriptCatalog = new TranscriptCatalogStore(options.workspaceDir);
-  const contentResearchItems = new ContentResearchStore(options.workspaceDir, () => new Date());
+     reference arrives through the option when this root owns onboarding.
+     The stores exist only for this fallback — the main root injects a shared
+     personProfiles and never constructs them. */
   const personProfiles =
     options.personProfiles ??
     new WorkspacePersonProfiles({
@@ -146,8 +146,9 @@ export function createMeetingBriefProductionRuntime(
       lifecycle: [
         new WorkspacePersonProfileReferences(options.runs, {
           ownerReference: options.ownerReference ?? (() => null),
-          transcripts: () => transcriptCatalog.listTranscripts(),
-          publicItems: () => contentResearchItems.listAllItems(),
+          transcripts: () => new TranscriptCatalogStore(options.workspaceDir).listTranscripts(),
+          publicItems: () =>
+            new ContentResearchStore(options.workspaceDir, () => new Date()).listAllItems(),
         }),
       ],
     });
