@@ -369,6 +369,12 @@ export class ContentResearchStore {
 
   /** Collected Source Items, newest first, bounded — discovery reads receipts, not the whole corpus. */
   listItems(limit = 100): SourceItem[] {
+    return this.listAllItems().slice(0, limit);
+  }
+
+  /** Every collected Source Item, newest first — the Profile lifecycle
+      registry scans the whole corpus for documents naming a person. */
+  listAllItems(): SourceItem[] {
     if (!existsSync(this.itemsDir)) return [];
     const items: SourceItem[] = [];
     for (const file of readdirSync(this.itemsDir)) {
@@ -379,7 +385,7 @@ export class ContentResearchStore {
       }
     }
     items.sort((a, b) => (a.discoveredAt < b.discoveredAt ? 1 : -1));
-    return items.slice(0, limit);
+    return items;
   }
 
   // Ledger spreadsheet reference

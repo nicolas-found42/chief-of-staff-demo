@@ -459,6 +459,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
     "Content Scout",
     "Meeting Brief Generator",
     "Content Research",
+    "Person Profiles",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");

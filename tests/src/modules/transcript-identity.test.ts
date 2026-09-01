@@ -81,6 +81,7 @@ function makeHarness(
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
     now: NOW,
+    lifecycle: [],
   });
   const store = new TranscriptIdentityStore(workspaceDir);
   const service = new TranscriptIdentityService({

@@ -8,6 +8,7 @@ import {
   type NamedPerson,
   type PersonSuggestion,
   type RunMeta,
+  type SourceItem,
 } from "@chief-of-staff-demo/shared";
 import type { HostedModule } from "../../engine/host.js";
 import { Runner } from "../../engine/runner.js";
@@ -197,6 +198,12 @@ export class ContentResearchHost implements HostedModule {
 
   listAllPeople(): NamedPerson[] {
     return this.store.listAllPeople();
+  }
+
+  /** Every collected Source Item, for the Profile lifecycle registry's
+      residual-source disclosure (it scans for documents naming a person). */
+  listSourceItems(): SourceItem[] {
+    return this.store.listAllItems();
   }
 
   archivePerson(id: string): NamedPerson {

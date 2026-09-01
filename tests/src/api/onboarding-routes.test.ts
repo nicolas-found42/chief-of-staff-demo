@@ -21,7 +21,10 @@ let onboarding: OwnerOnboarding;
 
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "cos-onboarding-routes-"));
-  profiles = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
+  profiles = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(workspaceDir),
+    lifecycle: [],
+  });
   onboarding = new OwnerOnboarding({ people: profiles, workspaceDir });
   app = fastify();
   registerOnboardingApi(app, { onboarding });

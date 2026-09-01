@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError } from "fastify";
-import { DEFAULT_MODELS } from "@chief-of-staff-demo/shared";
+import { DEFAULT_MODELS, type ConfirmedOwnerReference } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "./config.js";
 import { registerApi } from "./api/router.js";
 import { registerStaticServing } from "./api/static.js";
@@ -12,6 +12,8 @@ import { registerMeetingBriefHubSpotRoutes } from "./modules/meeting-brief-gener
 import { contentScoutTestPorts, registerTestSeed } from "./api/testSeed.js";
 import { PersonProfileStore } from "./person-profile/store.js";
 import { WorkspacePersonProfiles } from "./person-profile/profiles.js";
+import { WorkspacePersonProfileReferences } from "./person-profile/references.js";
+import { TranscriptCatalogStore } from "./transcript-catalog/store.js";
 import { OwnerOnboarding } from "./onboarding/owner.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
@@ -77,7 +79,21 @@ const googleConnection = openGoogleConnection(configStore, port);
    same Runs, not one object per Module over one directory. */
 const runs = openRuns(workspaceDir);
 const peopleStore = new PersonProfileStore(workspaceDir);
-const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
+/* Lifecycle disclosures come from the real Workspace stores: the confirmed
+   owner reference is the active dependent configuration, and the residual
+   disclosure scans the catalogued transcripts and collected public source
+   items that name the person. All reads are local. */
+const transcriptCatalogStore = new TranscriptCatalogStore(workspaceDir);
+const peopleProfiles: WorkspacePersonProfiles = new WorkspacePersonProfiles({
+  store: peopleStore,
+  lifecycle: [
+    new WorkspacePersonProfileReferences(runs, {
+      ownerReference: (): ConfirmedOwnerReference | null => ownerOnboarding.confirmed(),
+      transcripts: () => transcriptCatalogStore.listTranscripts(),
+      publicItems: () => contentResearch.listSourceItems(),
+    }),
+  ],
+});
 const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
 
 const transcript = new TranscriptHost({

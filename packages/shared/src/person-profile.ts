@@ -105,6 +105,98 @@ export interface PersonProfile {
   invalidations?: PersonProfileInvalidation[];
 }
 
+// ---------------------------------------------------------------------------
+// Profile lifecycle (ticket #122): dependencies, residual sources, and purge.
+// ---------------------------------------------------------------------------
+
+export type PersonProfileDependentConfigurationAction = "pause" | "repoint";
+
+/** A consumer-owned configuration that must be resolved before archive. */
+export interface PersonProfileDependentConfiguration {
+  id: string;
+  consumer: string;
+  label: string;
+  profileId: string;
+  state: "active" | "paused";
+  availableActions: PersonProfileDependentConfigurationAction[];
+}
+
+/**
+ * Immutable source material that privacy deletion deliberately does not
+ * rewrite. The disclosure is a reference — which document, of what kind,
+ * separately deletable or not — and never copies the document's title or text,
+ * because the receipt outlives the identity the document may still name.
+ * Source deletion, where supported, is a separate operation.
+ */
+export interface PersonProfileResidualSourceArtifact {
+  artifactId: string;
+  kind: "transcript" | "public-source";
+  separateDeleteSupported: boolean;
+}
+
+export interface PersonProfileLifecycleState {
+  profileId: string;
+  profileRevision: number;
+  archivedAt: string | null;
+  dependentConfigurations: PersonProfileDependentConfiguration[];
+  residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+}
+
+export const PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION = "DELETE PROFILE" as const;
+
+export interface PersonProfileDeletionCounts {
+  canonicalProfileRecords: number;
+  revisions: number;
+  evidence: number;
+  aliases: number;
+  candidates: number;
+  mappings: number;
+  decisions: number;
+  activeLinks: number;
+  personSnapshots: number;
+}
+
+/** Minimal referential marker: no name, email, claim, evidence, or source text. */
+export interface PersonProfileTombstone {
+  profileId: string;
+  deletedAt: string;
+}
+
+/**
+ * The body of a refused lifecycle operation. A refusal is a disclosure: it
+ * carries the same lifecycle state the confirmation surface reads, so the
+ * operator can see what still points here and what would outlive the Profile
+ * without having to go and ask a second endpoint.
+ */
+export interface PersonProfileLifecycleRefusal {
+  error: "active-dependencies" | "privacy-confirmation-required";
+  message: string;
+  lifecycle: PersonProfileLifecycleState;
+}
+
+/** Audited local result; `remoteProviderOperations` is always zero. */
+export interface PersonProfileDeletionReceipt {
+  receiptId: string;
+  profileId: string;
+  deletedAt: string;
+  removed: PersonProfileDeletionCounts;
+  tombstone: PersonProfileTombstone;
+  residualSourceArtifacts: PersonProfileResidualSourceArtifact[];
+  remoteProviderOperations: 0;
+}
+
+/**
+ * What a privacy-deleted Profile's route answers with. The tombstone keeps the
+ * reference resolvable and the receipt says what the deletion accounted for;
+ * neither names the person.
+ */
+export interface PersonProfilePrivacyDeleted {
+  error: "profile-privacy-deleted";
+  message: string;
+  tombstone: PersonProfileTombstone;
+  receipt: PersonProfileDeletionReceipt | null;
+}
+
 /**
  * One evidence record reduced to what a consumer may see for its purpose: the
  * provenance (which source, which URL) and the match confidence survive; the

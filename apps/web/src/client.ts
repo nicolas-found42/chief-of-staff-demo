@@ -27,7 +27,9 @@ import type {
   PersonProfile,
   PersonProfileCorrectionInput,
   PersonProfileCreateInput,
+  PersonProfileDeletionReceipt,
   PersonProfileDetachInput,
+  PersonProfileLifecycleState,
   PersonProfileMergeInput,
   PersonProfileProjection,
   PersonProfileProjectionPurpose,
@@ -50,6 +52,11 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /* Some failures are disclosures, not just a message: a refused Profile
+       lifecycle operation answers with the configurations and residual source
+       documents the operator has to act on. Keep the parsed body so the
+       surface can render it instead of only its first sentence. */
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -60,8 +67,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
+    let parsed: unknown;
     try {
       const body = (await response.json()) as { error?: string; message?: string };
+      parsed = body;
       if (body.message) {
         message = body.message;
       } else if (body.error) {
@@ -70,7 +79,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Non-JSON error body; keep the status text.
     }
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, parsed);
   }
   return (await response.json()) as T;
 }
@@ -581,6 +590,26 @@ export const api = {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
+      },
+    ),
+  // --- Profile lifecycle (ticket #122): archive, restore, privacy deletion.
+  personProfileLifecycle: (profileId: string) =>
+    request<PersonProfileLifecycleState>(`/api/people/${encodeURIComponent(profileId)}/lifecycle`),
+  archivePersonProfile: (profileId: string) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/archive`, {
+      method: "POST",
+    }),
+  restorePersonProfile: (profileId: string) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/restore`, {
+      method: "POST",
+    }),
+  privacyDeletePersonProfile: (profileId: string, confirmation: string) =>
+    request<PersonProfileDeletionReceipt>(
+      `/api/people/${encodeURIComponent(profileId)}/privacy-delete`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation }),
       },
     ),
 };

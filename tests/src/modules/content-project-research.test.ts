@@ -76,7 +76,7 @@ function recordingProvider(
 function setup(researchProviders: ResearchProvider[]) {
   const workspaceDir = mkdtempSync(join(tmpdir(), "content-project-research-"));
   const store = new PersonProfileStore(workspaceDir);
-  const people = new WorkspacePersonProfiles({ store, now: () => NOW });
+  const people = new WorkspacePersonProfiles({ store, now: () => NOW, lifecycle: [] });
   const owner = people.create({ fullName: "Workspace Owner", primaryEmail: "owner@example.com" });
   const ownerOnboarding = new OwnerOnboarding({ people, workspaceDir, now: () => NOW });
   ownerOnboarding.setConnectedIdentity("owner@example.com");

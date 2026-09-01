@@ -4,10 +4,16 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { PersonIdentitySignals, PersonProfile } from "@chief-of-staff-demo/shared";
+import type {
+  PersonIdentitySignals,
+  PersonProfile,
+  PersonProfileDeletionReceipt,
+  PersonProfileTombstone,
+} from "@chief-of-staff-demo/shared";
 
 function normalized(value: string): string {
   return value.trim().toLowerCase();
@@ -34,9 +40,13 @@ function intersects(left: string[], right: string[]): boolean {
 
 export class PersonProfileStore {
   private readonly profilesDir: string;
+  private readonly tombstonesDir: string;
+  private readonly receiptsDir: string;
 
   constructor(workspaceDir: string) {
     this.profilesDir = join(workspaceDir, "person-profiles");
+    this.tombstonesDir = join(workspaceDir, "person-profile-tombstones");
+    this.receiptsDir = join(workspaceDir, "person-profile-deletion-receipts");
   }
 
   get(id: string): PersonProfile | null {
@@ -114,10 +124,80 @@ export class PersonProfileStore {
     this.writeAtomic(join(root, "current.json"), content);
   }
 
+  /**
+   * Lifecycle state belongs to the current resource, not to its immutable
+   * factual revisions. Archive/restore therefore replaces only current.json;
+   * exact revision reads keep returning the facts recorded at that revision.
+   */
+  saveCurrent(profile: PersonProfile): void {
+    const root = join(this.profilesDir, profile.id);
+    mkdirSync(root, { recursive: true });
+    this.writeAtomic(join(root, "current.json"), `${JSON.stringify(profile, null, 2)}\n`);
+  }
+
+  /**
+   * Removes the exact canonical record and every immutable factual revision,
+   * then writes only a content-free referential tombstone. Source documents
+   * live outside this store and are deliberately untouched.
+   */
+  privacyDelete(
+    profile: PersonProfile,
+    deletedAt: string,
+  ): {
+    canonicalProfileRecords: number;
+    revisions: number;
+    evidence: number;
+    tombstone: PersonProfileTombstone;
+  } {
+    const revisions = this.listRevisions(profile.id);
+    const evidenceIds = new Set(
+      revisions
+        .flatMap((revision) => [
+          ...revision.publications,
+          ...revision.mentions,
+          ...revision.evidence,
+        ])
+        .map((item) => item.id),
+    );
+    rmSync(join(this.profilesDir, profile.id), { recursive: true, force: true });
+    const tombstone: PersonProfileTombstone = { profileId: profile.id, deletedAt };
+    mkdirSync(this.tombstonesDir, { recursive: true });
+    this.writeAtomic(
+      join(this.tombstonesDir, `${profile.id}.json`),
+      `${JSON.stringify(tombstone, null, 2)}\n`,
+    );
+    return {
+      canonicalProfileRecords: 1,
+      revisions: revisions.length,
+      evidence: evidenceIds.size,
+      tombstone,
+    };
+  }
+
+  getTombstone(profileId: string): PersonProfileTombstone | null {
+    return this.readJson<PersonProfileTombstone>(join(this.tombstonesDir, `${profileId}.json`));
+  }
+
+  saveDeletionReceipt(receipt: PersonProfileDeletionReceipt): void {
+    mkdirSync(this.receiptsDir, { recursive: true });
+    this.writeAtomic(
+      join(this.receiptsDir, `${receipt.profileId}.json`),
+      `${JSON.stringify(receipt, null, 2)}\n`,
+    );
+  }
+
+  getDeletionReceipt(profileId: string): PersonProfileDeletionReceipt | null {
+    return this.readJson<PersonProfileDeletionReceipt>(join(this.receiptsDir, `${profileId}.json`));
+  }
+
   private read(path: string): PersonProfile | null {
+    return this.readJson<PersonProfile>(path);
+  }
+
+  private readJson<T>(path: string): T | null {
     if (!existsSync(path)) return null;
     try {
-      return JSON.parse(readFileSync(path, "utf8")) as PersonProfile;
+      return JSON.parse(readFileSync(path, "utf8")) as T;
     } catch {
       return null;
     }
