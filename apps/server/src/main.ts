@@ -14,6 +14,8 @@ import { PersonProfileStore } from "./person-profile/store.js";
 import { WorkspacePersonProfiles } from "./person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "./person-profile/references.js";
 import { TranscriptCatalogStore } from "./transcript-catalog/store.js";
+import { createTranscriptCatalogRuntime } from "./transcript-catalog/production.js";
+import { registerTranscriptIntakeApi } from "./api/transcript-intake.js";
 import { OwnerOnboarding } from "./onboarding/owner.js";
 import type { HostedModule } from "./engine/host.js";
 import { makeCompleteJson } from "./llm/providers.js";
@@ -422,6 +424,26 @@ const meetingDebrief: MeetingDebriefHost =
     },
     log: (message) => console.log(`[meeting-debrief] ${message}`),
   }).host;
+
+/* The Transcript Catalog's production composition (issue #142, completing the
+   #126 hand-forward). Until this existed only the Catalog's store was wired,
+   so Transcript → Tasks was still the Workspace's only reader of the
+   transcript folder. This is the sole private transcript intake writer that
+   replaces it: one Drive client, one folder read, one checkpoint, and the
+   Meeting Debrief hand-off on every newly mined Transcript. */
+const transcriptCatalogRuntime = createTranscriptCatalogRuntime({
+  workspaceDir,
+  port,
+  google: googleConnection,
+  people: peopleProfiles,
+  getConfig: () => configStore.get(),
+  getLlmInfo: () => {
+    const current = configStore.get();
+    return { provider: current.provider, model: current.model };
+  },
+  debrief: meetingDebrief,
+  log: (message) => console.log(`[transcript-catalog] ${message}`),
+});
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [
@@ -462,6 +484,9 @@ await registerApi(app, {
     meetingBrief.start();
   },
 });
+/* The Transcript Catalog's intake surface (issue #142): consent, the
+   pre-consent inventory, remembered status, and one pass on demand. */
+registerTranscriptIntakeApi(app, { catalog: transcriptCatalogRuntime.catalog });
 /* Semantic transcript relevance Review surface (issue #127). */
 registerTranscriptRelevanceApi(app, {
   relevance: transcriptRelevance,
@@ -547,10 +572,12 @@ await refreshOwnerIdentity();
 for (const module of modules) {
   module.start?.();
 }
+transcriptCatalogRuntime.start();
 meetingBriefProduction?.relayPoller.start();
 
 const shutdown = async (): Promise<void> => {
   meetingBriefProduction?.relayPoller.stop();
+  transcriptCatalogRuntime.stop();
   for (const module of modules) {
     module.stop?.();
   }

@@ -81,9 +81,18 @@ export interface DriveIntakeDeps {
   /** Test seam: override Drive client. */
   getDriveClient?: (config: AppConfig, port: number) => DriveFileClient;
 }
-function buildDriveClient(config: AppConfig, port: number) {
+/**
+ * The Workspace's Drive client. Exported because the Transcript Catalog is
+ * the sole private transcript intake writer (issue #142) and reads the same
+ * folder through the same seam — one Drive client path, not two.
+ */
+export function buildDriveClient(config: AppConfig, port: number): DriveFileClient {
   const auth = buildGoogleAuth(config, port);
-  return google.drive({ version: "v3", auth });
+  /* `DriveFileClient` is a deliberate narrowing of the googleapis client to
+     the three calls this Workspace makes. The generated type is wider and
+     differently optional, so the narrowing is asserted here, at the one place
+     the real client is built. */
+  return google.drive({ version: "v3", auth }) as unknown as DriveFileClient;
 }
 
 export class DriveIntake {
@@ -241,26 +250,14 @@ export class DriveIntake {
         };
       };
       try {
-        response = (await drive.files.list({
+        response = await drive.files.list({
           q: `'${folderId}' in parents and trashed=false`,
           fields: "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, size)",
           pageSize: 100,
           ...(pageToken === undefined ? {} : { pageToken }),
           includeItemsFromAllDrives: true,
           supportsAllDrives: true,
-        })) as {
-          data?: {
-            files?: Array<{
-              id?: string;
-              name?: string;
-              mimeType?: string;
-              webViewLink?: string;
-              size?: string;
-              modifiedTime?: string;
-            }>;
-            nextPageToken?: string | null;
-          };
-        };
+        });
       } catch (error: unknown) {
         try {
           this.deps.google.observe(error);
@@ -323,9 +320,12 @@ export class DriveIntake {
 
         try {
           if (isGoogleDoc) {
-            const exported = await drive.files.export({ fileId, mimeType: "text/plain" }, {
-              responseType: "arraybuffer",
-            } as unknown as Record<string, unknown>);
+            const exported = await drive.files.export(
+              { fileId, mimeType: "text/plain" },
+              {
+                responseType: "arraybuffer",
+              },
+            );
             bytes = toBuffer(exported.data);
             if (bytes.byteLength > MAX_UPLOAD_BYTES) {
               this.deps.log(
@@ -334,9 +334,12 @@ export class DriveIntake {
               continue;
             }
           } else {
-            const fetched = await drive.files.get({ fileId, alt: "media" }, {
-              responseType: "arraybuffer",
-            } as unknown as Record<string, unknown>);
+            const fetched = await drive.files.get(
+              { fileId, alt: "media" },
+              {
+                responseType: "arraybuffer",
+              },
+            );
             bytes = toBuffer(fetched.data);
             if (bytes.byteLength > MAX_UPLOAD_BYTES) {
               this.deps.log(
