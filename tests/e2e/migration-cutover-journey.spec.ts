@@ -398,6 +398,12 @@ test("a gated boot leaves the pre-cutover Workspace byte-for-byte unchanged thro
       ...process.env,
       PORT: String(SECOND_PORT),
       MIGRATION_TEST_WORKSPACE_DIR: secondWorkspace,
+      /* The environment the app actually ships in: docker-compose declares this,
+         and the Shell seeds relay.json from it on a Workspace that has no
+         address stored. Without it here the byte-for-byte proof below ran under
+         an environment no deployment uses, and missed a gated boot writing to
+         the Workspace it was holding. */
+      RELAY_BASE_URL: "http://relay:4318",
     },
     stdio: "ignore",
   });

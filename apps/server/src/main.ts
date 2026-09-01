@@ -543,10 +543,6 @@ registerTranscriptDeletionApi(app, {
   catalog: transcriptCatalogStore,
   deletion: transcriptDeletion,
 });
-// A fresh Workspace adopts the relay address the deployment declares, so the
-// bundled relay is reachable before anyone opens Settings. A stored address
-// wins, so this never overrides an operator's own choice (issue #109).
-seedRelayBaseUrlFromEnv(workspaceDir, process.env.RELAY_BASE_URL);
 registerRelayRoutes(app, {
   workspaceDir,
   processWakeUps: (messages) => meetingBrief.handleRelayWakeUp(messages).then(() => undefined),
@@ -661,6 +657,14 @@ async function startModules(): Promise<void> {
      and reads the reset's empty state from disk rather than a stale cache. */
   mkdirSync(layout.runsDir, { recursive: true });
   seedContentResearchV1(contentResearch, peopleProfiles);
+  /* A fresh Workspace adopts the relay address the deployment declares, so the
+     bundled relay is reachable before anyone opens Settings. A stored address
+     wins, so this never overrides an operator's own choice (issue #109). It
+     belongs here for the same reason as the two above: docker-compose declares
+     RELAY_BASE_URL, so at the top level this wrote relay.json into a Workspace
+     the gate was still holding — and left the address unseeded after a reset
+     deleted it, until the next restart. */
+  seedRelayBaseUrlFromEnv(workspaceDir, process.env.RELAY_BASE_URL);
 
   /* The workspace owner has to be known before the first Run, not discovered by
      one: eligibility drops the owner-declined rule when it is null (ADR-0034), so
