@@ -7,50 +7,72 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
 
-const workspace = mkdtempSync(join(tmpdir(), "tf-e2e-"));
-mkdirSync(join(workspace, "runs"), { recursive: true });
-writeFileSync(
-  join(workspace, "config.json"),
-  JSON.stringify(
-    {
-      provider: "mock",
-      model: "",
-      apiKey: "",
-      tasklistName: "Meeting Followups",
-      google: {
-        clientId: "",
-        clientSecret: "",
-        refreshToken: null,
-        lastConnectedAt: null,
-        hasExpiredBefore: false,
-      },
-      drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
-      ollama: { baseUrl: "http://127.0.0.1:11434" },
-      /* The hermetic server holds the Content Scout clock just before its due
-         times: a 30-second scheduler tick that fires a scheduled daily-intake
-         Run (blocked forever until a decision) or a weekly Discovery Run would
-         otherwise interleave scheduled Runs and Source Suggestions into any
-         journey that takes longer than one tick after a Brand Profile and an
-         active Source Target exist. Journeys drive Scout and Discovery
-         explicitly, so the schedule stays production-defaulted in the app and
-         parked here only. */
-      modules: {
-        "content-scout": {
-          dailyTime: "23:59",
-          weeklyDiscoveryDay: 7,
-          weeklyDiscoveryTime: "23:59",
+/* A second hermetic instance (the migration journey's gated-boot proof, issue
+   #144) supplies its own pre-cutover Workspace — every product file present,
+   deliberately no migration marker — so the boot itself can be proved to
+   write nothing. The default browser-suite boot is unchanged. */
+const workspace = process.env.MIGRATION_TEST_WORKSPACE_DIR
+  ? resolve(process.env.MIGRATION_TEST_WORKSPACE_DIR)
+  : mkdtempSync(join(tmpdir(), "tf-e2e-"));
+if (!process.env.MIGRATION_TEST_WORKSPACE_DIR) {
+  mkdirSync(join(workspace, "runs"), { recursive: true });
+  writeFileSync(
+    join(workspace, "config.json"),
+    JSON.stringify(
+      {
+        provider: "mock",
+        model: "",
+        apiKey: "",
+        tasklistName: "Meeting Followups",
+        google: {
+          clientId: "",
+          clientSecret: "",
+          refreshToken: null,
+          lastConnectedAt: null,
+          hasExpiredBefore: false,
+        },
+        drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
+        ollama: { baseUrl: "http://127.0.0.1:11434" },
+        /* The hermetic server holds the Content Scout clock just before its due
+           times: a 30-second scheduler tick that fires a scheduled daily-intake
+           Run (blocked forever until a decision) or a weekly Discovery Run would
+           otherwise interleave scheduled Runs and Source Suggestions into any
+           journey that takes longer than one tick after a Brand Profile and an
+           active Source Target exist. Journeys drive Scout and Discovery
+           explicitly, so the schedule stays production-defaulted in the app and
+           parked here only. */
+        modules: {
+          "content-scout": {
+            dailyTime: "23:59",
+            weeklyDiscoveryDay: 7,
+            weeklyDiscoveryTime: "23:59",
+          },
         },
       },
-    },
-    null,
-    2,
-  ),
-);
-copyFileSync(join(root, "tests/fixtures/mock-result.json"), join(workspace, "mock-result.json"));
+      null,
+      2,
+    ),
+  );
+  copyFileSync(join(root, "tests/fixtures/mock-result.json"), join(workspace, "mock-result.json"));
+  /* The hermetic server boots post-cutover: the one-time migration marker is
+     present, so the gate is inactive and every existing journey runs ungated
+     (issue #144). */
+  mkdirSync(join(workspace, "migration"), { recursive: true });
+  writeFileSync(
+    join(workspace, "migration", "completed.json"),
+    `${JSON.stringify({ migratedAt: new Date().toISOString() })}\n`,
+  );
+}
 
 const child = spawn(process.execPath, [join(root, "apps/server/dist/main.js")], {
   cwd: root,
-  env: { ...process.env, PORT: "4319", WORKSPACE_DIR: workspace, ENABLE_TEST_SEED: "1" },
+  env: {
+    ...process.env,
+    /* A second hermetic instance spawned by a journey passes its own port. */
+    PORT: process.env.PORT ?? "4319",
+    WORKSPACE_DIR: workspace,
+    ENABLE_TEST_SEED: "1",
+  },
   stdio: ["ignore", "inherit", "inherit"],
 });
 

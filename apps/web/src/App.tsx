@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
@@ -8,22 +9,81 @@ import { MeetingsOverviewPage } from "./pages/MeetingsOverviewPage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
 import { MeetingDebriefDetailPage } from "./pages/MeetingDebriefDetailPage";
 import { MeetingDebriefPage } from "./pages/MeetingDebriefPage";
+import { MigrationGatePage } from "./pages/MigrationGatePage";
 import { NewPersonProfilePage } from "./pages/NewPersonProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { OnboardingSetupPage } from "./pages/OnboardingSetupPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { PersonProfileDetailPage } from "./pages/PersonProfileDetailPage";
 import { TranscriptReviewPage } from "./pages/TranscriptReviewPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { YoutubePage } from "./pages/YoutubePage";
+import { migrationApi, type MigrationStatus } from "./client";
+import { PRODUCT_AREAS } from "./productAreas";
 import { useIsLoadedEntry } from "./usePageFocus";
-import { useModules } from "./useModules";
 
+/**
+ * The Shell. Before any route renders, the boot gate asks /api/migration/status
+ * once: a pre-cutover Workspace renders the migration gate instead of the whole
+ * product shell, so no product route — and no product API call — happens while
+ * the reset is pending. The server's 503 preHandler on normal /api/* routes is
+ * the backstop, not the primary defense.
+ */
 export function App() {
   // Records the history entry the browser loaded, before any route can navigate
   // off it. Asked for here rather than in the pages so the capture cannot depend
   // on which route happened to match first.
   useIsLoadedEntry();
+
+  const [status, setStatus] = useState<MigrationStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    migrationApi
+      .status()
+      .then((payload) => {
+        if (live) setStatus(payload);
+      })
+      .catch((err) => {
+        if (live) setStatusError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /* Re-reads the migration status once the in-process cutover has run: the
+     boot read is stale by definition the moment the reset confirms, and only
+     the gate page knows that moment. */
+  const refreshMigrationStatus = useCallback(() => {
+    migrationApi
+      .status()
+      .then((payload) => setStatus(payload))
+      .catch((err) => setStatusError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  /* Gated: the shell's landmarks hold (skip link, header, main) but the header
+     carries the wordmark only — no product navigation invites a route whose
+     every API call would be refused. */
+  if (status?.state === "required") {
+    return (
+      <div className="app-shell">
+        <a className="skip-link" href="#main">
+          Skip to main content
+        </a>
+        <header className="app-header">
+          <Link className="app-title" to="/">
+            Found42 — Chief of Staff
+          </Link>
+        </header>
+        <main className="app-main" id="main" tabIndex={-1}>
+          <MigrationGatePage onCutOver={refreshMigrationStatus} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -36,36 +96,26 @@ export function App() {
       </a>
       <header className="app-header">
         {/* The wordmark is the way back to the front door, and it stays outside
-            <nav aria-label="Modules">: Home is not a Module (CONTEXT.md), and a
-            link in there would both relabel it as one in the accessibility tree
-            and add a second candidate to the nav's current-page indicator. A
-            plain Link rather than a NavLink for the same reason — the current
-            state belongs to the tab bar, and an aria-current with nothing drawn
-            for it is exactly the drift the nav styling avoids. */}
+            any <nav>: Home is not a product area, and a link in there would
+            both relabel it as one in the accessibility tree and add a second
+            candidate to the nav's current-page indicator. A plain Link rather
+            than a NavLink for the same reason — the current state belongs to
+            the tab bar, and an aria-current with nothing drawn for it is
+            exactly the drift the nav styling avoids. */}
         <Link className="app-title" to="/">
           Found42 — Chief of Staff
         </Link>
-        {/* A tab promises function (ADR-0014): the bar renders live, top-level
-            Modules only, from the same list Home's cards read. A planned
-            Module keeps its route mounted below and is announced from Home
-            instead; a Module presented under another Module's surface
-            (YouTube Trends under Content Research) is announced on Home and
-            entered from its parent's page. */}
-        <nav aria-label="Modules">
-          {useModules()
-            .filter((module) => module.status === "live" && !module.parent)
-            .map((module) => (
-              <NavLink key={module.id} to={module.path}>
-                {module.label}
-              </NavLink>
-            ))}
-        </nav>
-        {/* Product areas are explicit (ADR-0043), not derived from the Module
-            registry. Person Profiles is a Workspace resource with its own
-            product surface, not a Module, so it gets its own nav. */}
+        {/* Product areas are explicit (spec: Navigation and onboarding #1;
+            ADR-0043), not derived from the Module registry: Person Profiles is
+            a Workspace resource with its own surface, not a Module, and the
+            four areas name ownership, not backend registration. Nav and Home's
+            cards read the same list, so the two cannot disagree. */}
         <nav aria-label="Products">
-          <NavLink to="/people">Person Profiles</NavLink>
-          <NavLink to="/meetings">Meeting Wizard</NavLink>
+          {PRODUCT_AREAS.map((area) => (
+            <NavLink key={area.id} to={area.path}>
+              {area.label}
+            </NavLink>
+          ))}
         </nav>
         <nav aria-label="Settings">
           <NavLink to="/settings">Settings</NavLink>
@@ -77,12 +127,29 @@ export function App() {
             where one in a new row above <main> would be jumped straight over.
             No Module renders it (ADR-0011). */}
         <ConnectionBanner />
+        {statusError && (
+          <div className="banner banner-error" role="alert">
+            {statusError}
+          </div>
+        )}
+        {status === null && !statusError && <p className="muted">Loading…</p>}
         <Routes>
           <Route path="/" element={<HomePage />} />
-          {/* A Shell page, not a tab: the bar renders Modules (ADR-0014), and
-              Home's capped feed links in here for everything older. */}
+          {/* A Shell page, not a tab: the bar renders product areas (spec:
+              Navigation and onboarding #1), and Home's capped feed links in
+              here for everything older. */}
           <Route path="/runs" element={<AllRunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
+          {/* The migration gate, reachable by URL when not gated: the page
+              itself reports that no migration is needed. While gated, the boot
+              gate above renders it for every route. */}
+          <Route
+            path="/migration"
+            element={<MigrationGatePage onCutOver={refreshMigrationStatus} />}
+          />
+          {/* Only reachable post-completion: the gate holds /onboarding closed
+              like every other route. */}
+          <Route path="/onboarding" element={<OnboardingSetupPage />} />
           {/* YouTube Trends is presented under Content Research (spec:
               /content-research/trends); the legacy top-level route is gone. */}
           <Route path="/content-research/trends" element={<YoutubePage />} />

@@ -3,8 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
 
-/** Every static route the page-wide scans walk. Each Module's tab is in here,
-    and YouTube Trends is walked where Content Research presents it. */
+/** Every static route the page-wide scans walk. Each product area's page is
+    in here, and YouTube Trends is walked where Content Research presents it. */
 const ROUTES = [
   "/",
   "/runs",
@@ -430,7 +430,7 @@ test("changing route moves focus into the page it opened", async ({ page }) => {
   await expect(page.getByLabel("Task list name")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
 
-  await page.getByRole("link", { name: "Content Scout" }).click();
+  await page.getByRole("link", { name: "Content Engine" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeFocused();
 });
 
@@ -453,13 +453,10 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
-  // The bar lists live Modules only; each Module joins that sequence when its
-  // production wiring becomes real.
+  // The bar lists the four product areas explicitly (ADR-0043), then Settings.
   for (const name of [
     "Found42 — Chief of Staff",
-    "Content Scout",
-    "Meeting Brief Generator",
-    "Meeting Debrief",
+    "Content Engine",
     "Content Research",
     "Person Profiles",
     "Meeting Wizard",

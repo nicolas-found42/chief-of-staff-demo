@@ -1,8 +1,8 @@
 # Found42 Chief of Staff
 
-A local application that hosts Found42's meeting and content workflows as tabs in one app. It
-replaces Relay, which is being retired; each Relay workflow worth keeping is rebuilt here as a
-Module.
+A local application that hosts Found42's meeting and content workflows as four product areas in
+one app. It replaces Relay, which is being retired; each Relay workflow worth keeping is rebuilt
+here as a Module.
 
 ## Language
 
@@ -13,22 +13,31 @@ _Avoid_: Host app, platform, framework
 
 **Home**:
 The Shell's front door — the surface the app opens on, stating where the workspace stands and
-linking into the Modules. Not a Module: it has no workflow of its own.
+linking into the product areas. Not a Module: it has no workflow of its own.
 _Avoid_: Dashboard, landing page
+
+**Product area**:
+One of the four things the app is for — Content Engine, Content Research, Person Profiles, Meeting
+Wizard. A product area names ownership, not backend registration: it may present one Module, two
+(Meeting Wizard), or a Workspace resource that is no Module at all (Person Profiles). The four are
+an explicit list the header nav and Home's cards both render, never derived from the Module
+registry (ADR-0043), so a Module can be added, retired or re-parented without the app appearing to
+gain or lose a product.
+_Avoid_: Tab, section, module (a product area is not one)
 
 **Module**:
 One workflow. A Module contributes what is specific to its workflow and relies on the Shell for
 everything generic. It is **planned** until its Runs, Intakes and Output Adapters exist and
 **live** once they do; independently of that, it either has something for a person to look at,
-and is presented as a tab or under another Module's product surface, or it is **headless**. A
-planned Module is announced on Home and holds no tab.
+reached inside the product area that presents it, or it is **headless**. No Module holds a
+navigation entry of its own: navigation is the four product areas (ADR-0043).
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
 
 **Headless Module**:
-A live Module with nothing for a person to look at. It holds no tab, and its Runs are read in
-the Runs list. Headless is not a stage of building: a headless Module is finished.
-_Status_: no instance. YouTube Trends was the worked example and turned out to hold a tab
-(ADR-0025); the term stays because the category is real and the next Module may land in it.
+A live Module with nothing for a person to look at. It has no surface of its own, and its Runs are
+read in the Runs list. Headless is not a stage of building: a headless Module is finished.
+_Status_: no instance. YouTube Trends was the worked example and turned out to have something to
+look at (ADR-0025); the term stays because the category is real and the next Module may land in it.
 _Avoid_: Background Module, planned Module (a planned Module is unbuilt; a headless one works)
 
 **Content Scout**:

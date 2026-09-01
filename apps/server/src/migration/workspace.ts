@@ -1,4 +1,13 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  rmdirSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -8,7 +17,10 @@ import { join } from "node:path";
  * The preview classifies every local persistence category the Workspace can hold
  * and reports nothing but category names and counts, so a person can see what a
  * reset would take and what it would keep without any stored value being shown.
- * Nothing here deletes, writes, or calls a provider; the reset itself is issue://144.
+ * The preview itself reads and never writes; the reset (issue://144) shares this
+ * module and deletes, rewrites, and marks exactly what the preview classifies.
+ * Neither ever calls a provider: the reset's validation reads the rewritten
+ * files back and checks structure, never reachability.
  *
  * `config.json` and `relay.json` each hold authentication material and product
  * state in one file. They are parsed key by key against an explicit table rather
@@ -75,7 +87,11 @@ export interface RemoteRecordDisclosure {
 export interface UnsafeMixedStateFinding {
   /** A recognized Workspace entry, or the unrecognized entry's own name. */
   entry: string;
-  /** A dotted key path inside a recognized mixed file, or null. */
+  /**
+   * A dotted key path inside a recognized mixed file, the name of an entry
+   * inside a recognized directory, or null when the entry itself is the
+   * finding. Structure either way — never a stored value.
+   */
   key: string | null;
   /**
    * `unreadable`: not valid JSON, or not a JSON object. `malformed`: a
@@ -98,10 +114,12 @@ type CategoryName =
   | "provider-tokens"
   | "connection-credentials"
   | "connection-verification-state"
+  | "owner-onboarding-state"
   | "runs-and-artifacts"
   | "person-profiles"
   | "content-state"
   | "research-state"
+  | "transcript-catalog"
   | "module-state-and-checkpoints"
   | "intake-schedules"
   | "calendar-schedule-and-checkpoints"
@@ -161,10 +179,16 @@ const CATEGORIES: ReadonlyArray<readonly [CategoryName, WorkspaceMigrationDispos
      tokens, keys, client registrations, identifiers and secrets, never the
      health check that watched them work. */
   ["connection-verification-state", "disposable-product-state"],
+  /* The owner confirmation is product state the onboarding flow writes, not a
+     credential: a reset deletes it and onboarding asks for it again. */
+  ["owner-onboarding-state", "disposable-product-state"],
   ["runs-and-artifacts", "disposable-product-state"],
   ["person-profiles", "disposable-product-state"],
   ["content-state", "disposable-product-state"],
   ["research-state", "disposable-product-state"],
+  /* The Transcript Catalog's retained corpus, identity decisions, relevance
+     candidates and its tombstones and deletion receipts. */
+  ["transcript-catalog", "disposable-product-state"],
   ["module-state-and-checkpoints", "disposable-product-state"],
   ["intake-schedules", "disposable-product-state"],
   ["calendar-schedule-and-checkpoints", "disposable-product-state"],
@@ -190,8 +214,13 @@ const REMOTE_RECORDS: readonly RemoteRecordName[] = [
 const DIRECTORIES: Record<string, CategoryName> = {
   runs: "runs-and-artifacts",
   "person-profiles": "person-profiles",
+  "person-profile-tombstones": "person-profiles",
+  "person-profile-deletion-receipts": "person-profiles",
   "content-scout": "content-state",
+  "content-engine": "content-state",
   "content-research": "research-state",
+  "transcript-catalog": "transcript-catalog",
+  onboarding: "owner-onboarding-state",
 };
 
 /** Files that hold no authentication material, so the whole file is one record. */
@@ -309,6 +338,18 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "modules.meeting-brief-generator.guestProfile.lastCheckDetail": "non-auth-workflow-configuration",
   "modules.meeting-brief-generator.hubspot.token": "provider-tokens",
   "modules.meeting-brief-generator.hubspot.lastVerifiedAt": "connection-verification-state",
+  /* Recorded provider-policy actions (issue #137). The schema keys the record
+     by provider id, so a key here is recognized by construction; the action
+     itself is an object, and its three fields are what the reset drops with
+     the rest of the workflow configuration — a re-enabled provider is a
+     decision the owner makes again after the cutover, not one restored. */
+  "modules.meeting-brief-generator.providerPolicy": composite("non-auth-workflow-configuration", {
+    kind: "record",
+    values: {
+      kind: "object",
+      keys: { disabled: SCALAR, changedAt: SCALAR, reason: SCALAR },
+    },
+  }),
 };
 
 /** `relay.json`, key by key. The installation identity and its secret authenticate the relay. */
@@ -352,6 +393,19 @@ function recordCount(value: unknown): number {
   return 1;
 }
 
+/* The migration's own bookkeeping, shared by the preview and the reset: the
+   receipt and marker a completed run writes, and the rewrite an interrupted one
+   left staged. Declared here because the preview is what meets them first. */
+const MIGRATION_DIRECTORY = "migration";
+const MIGRATION_MARKER_FILE = "completed.json";
+const MIGRATION_RECEIPT_FILE = "receipt.json";
+
+/** Whether one file inside the migration directory is this module's own. */
+function isMigrationBookkeeping(name: string): boolean {
+  if (name === MIGRATION_MARKER_FILE || name === MIGRATION_RECEIPT_FILE) return true;
+  return name.endsWith(".tmp") && Object.hasOwn(MIXED_FILES, name.slice(0, -".tmp".length));
+}
+
 function countFiles(directory: string): number {
   let count = 0;
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -393,6 +447,22 @@ export function previewWorkspaceMigration(workspaceDir: string): WorkspaceMigrat
     const table = entry.isFile() ? MIXED_FILES[entry.name] : undefined;
     if (table) {
       classifyMixedFile(join(workspaceDir, entry.name), entry.name, table, add, findings);
+      continue;
+    }
+    if (entry.isDirectory() && entry.name === MIGRATION_DIRECTORY) {
+      /* Not Workspace state, and so counted in no category: this module's own
+         record of a finished or interrupted run. The preview only reads, so it
+         reads past the bookkeeping rather than failing closed on the artifact
+         of the very reset it is previewing — the reset clears it itself before
+         it reclassifies. Anything else in there is unclassified all the same. */
+      for (const child of readdirSync(join(workspaceDir, entry.name), { withFileTypes: true })) {
+        if (child.isFile() && isMigrationBookkeeping(child.name)) continue;
+        findings.push({
+          entry: MIGRATION_DIRECTORY,
+          key: child.name,
+          reason: "unrecognized-entry",
+        });
+      }
       continue;
     }
     findings.push({ entry: entry.name, key: null, reason: "unrecognized-entry" });
@@ -511,4 +581,313 @@ function validateComposite(
       return;
     }
   }
+}
+
+/**
+ * The destructive half of the consolidation cutover — issue://144. The reset
+ * re-runs the fail-closed classifier at execute time, never trusting a stale
+ * inventory, then deletes what the classifier named disposable, rewrites the
+ * two mixed files down to their authentication keys, and leaves a content-free
+ * receipt and a one-time marker. A staged rewrite is renamed into place, so a
+ * crash can never tear a mixed file, and the marker is written last: until it
+ * exists, the next attempt classifies the Workspace as required and finishes
+ * the interrupted reset. Deletion is restart-safe by construction — a record
+ * an earlier attempt already removed is simply absent.
+ */
+
+/** The three answers to "where does this Workspace stand in the cutover?". */
+export type MigrationState = "fresh" | "required" | "completed";
+
+/**
+ * The content-free record a completed reset leaves behind: counts, never paths,
+ * key names, or stored values. `directories` and `files` count the product
+ * directories and whole-file records the reset deleted, mirroring the boundary
+ * tables above.
+ */
+export interface MigrationReceipt {
+  schemaVersion: 1;
+  migratedAt: string; // ISO timestamp
+  durationMs: number;
+  categories: {
+    directories: number;
+    files: number;
+    preservedConfigKeys: number;
+    droppedConfigKeys: number;
+    preservedRelayKeys: number;
+    droppedRelayKeys: number;
+  };
+}
+
+/**
+ * The exact confirmation phrase the reset requires, in the house pattern of
+ * `PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION` and
+ * `TRANSCRIPT_DELETE_CONFIRMATION`: typed character for character, never
+ * normalized, and checked before anything is read or written.
+ */
+export const MIGRATION_CONFIRMATION_PHRASE = "RESET WORKSPACE";
+
+/** How one reset attempt ended. A `confirmation-mismatch` or `unsafe-mixed-state` changed nothing. */
+export type WorkspaceMigrationResult =
+  | { outcome: "completed"; receipt: MigrationReceipt }
+  | { outcome: "already-completed" }
+  | { outcome: "confirmation-mismatch" }
+  | { outcome: "unsafe-mixed-state"; findings: UnsafeMixedStateFinding[] };
+
+/** The categories whose stored values a reset keeps, derived from the same table the preview reports. */
+const AUTHENTICATION_CATEGORIES: Record<string, true> = Object.fromEntries(
+  CATEGORIES.filter(([, classification]) => classification === "authentication").map(([name]) => [
+    name,
+    true as const,
+  ]),
+);
+
+/**
+ * Where the Workspace stands. `completed` is the marker's word alone. `fresh`
+ * holds nothing the classifier would even read — no mixed file, no product
+ * directory, no whole-file product record — so there is nothing a reset would
+ * change; a Workspace directory that does not exist is fresh by definition.
+ */
+export function readMigrationState(workspaceDir: string): MigrationState {
+  if (existsSync(join(workspaceDir, MIGRATION_DIRECTORY, MIGRATION_MARKER_FILE)))
+    return "completed";
+  if (!existsSync(workspaceDir)) return "fresh";
+  return readdirSync(workspaceDir, { withFileTypes: true }).some(
+    (entry) =>
+      Object.hasOwn(MIXED_FILES, entry.name) ||
+      Object.hasOwn(DIRECTORIES, entry.name) ||
+      Object.hasOwn(WHOLE_FILES, entry.name),
+  )
+    ? "required"
+    : "fresh";
+}
+
+/** The receipt a completed reset left, or null when there is none or it cannot be read. */
+export function readMigrationReceipt(workspaceDir: string): MigrationReceipt | null {
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(workspaceDir, MIGRATION_DIRECTORY, MIGRATION_RECEIPT_FILE), "utf8"),
+    );
+    if (!isPlainObject(parsed) || parsed.schemaVersion !== 1) return null;
+    return parsed as unknown as MigrationReceipt;
+  } catch {
+    return null;
+  }
+}
+
+/** A dotted table key's value in a document, or undefined when the key is absent. */
+function valueAt(document: Record<string, unknown>, key: string): unknown {
+  let node: unknown = document;
+  for (const part of key.split(".")) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+/** Sets a dotted table key in a document, creating the intermediate objects it needs. */
+function setDotted(document: Record<string, unknown>, key: string, value: unknown): void {
+  const parts = key.split(".");
+  const leaf = parts.pop();
+  /* A table key is never empty, so the leaf always exists. */
+  if (leaf === undefined) throw new Error(`cannot set the empty key in a rewrite`);
+  let node = document;
+  for (const part of parts) {
+    if (!isPlainObject(node[part])) node[part] = {};
+    node = node[part] as Record<string, unknown>;
+  }
+  node[leaf] = value;
+}
+
+/**
+ * Sorts one mixed file's stored keys into the authentication values a reset
+ * keeps and the keys it drops. Mirrors the classifier's walk: a recognized
+ * table entry decides its whole value, and everything the tables do not name
+ * has already failed the classifier closed, so nothing unrecognized arrives.
+ */
+function splitTable(
+  parsed: Record<string, unknown>,
+  table: Record<string, TableEntry>,
+): { preserved: Map<string, unknown>; dropped: string[] } {
+  const preserved = new Map<string, unknown>();
+  const dropped: string[] = [];
+  const walk = (node: unknown, key: string): void => {
+    const tableEntry = Object.hasOwn(table, key) ? table[key] : undefined;
+    if (tableEntry) {
+      const category = isCompositeEntry(tableEntry) ? tableEntry.category : tableEntry;
+      if (AUTHENTICATION_CATEGORIES[category]) preserved.set(key, node);
+      else dropped.push(key);
+      return;
+    }
+    if (isPlainObject(node))
+      for (const [child, value] of Object.entries(node))
+        walk(value, key ? `${key}.${child}` : child);
+  };
+  walk(parsed, "");
+  return { preserved, dropped };
+}
+
+/** The rewrite plan for one mixed file: the document that keeps only its authentication keys. */
+interface TableRewrite {
+  entry: string;
+  document: Record<string, unknown>;
+  preserved: Map<string, unknown>;
+  dropped: string[];
+}
+
+/** Plans the rewrite of one mixed file, or returns null when the file does not exist. */
+function planTableRewrite(
+  workspaceDir: string,
+  entry: string,
+  table: Record<string, TableEntry>,
+): TableRewrite | null {
+  const path = join(workspaceDir, entry);
+  if (!existsSync(path)) return null;
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  /* Unreachable behind a classifier that just passed: a non-object mixed file fails closed there. */
+  if (!isPlainObject(parsed)) return null;
+  const { preserved, dropped } = splitTable(parsed, table);
+  const document: Record<string, unknown> = {};
+  for (const [key, value] of preserved) setDotted(document, key, value);
+  return { entry, document, preserved, dropped };
+}
+
+/**
+ * The reset's own invariant, checked before anything is deleted: every
+ * authentication value the source held survives the rewrite present — and
+ * non-empty where the source held one — and every dropped key is gone.
+ * Structure only: no value is compared to anything external and no provider is
+ * asked anything.
+ */
+function assertRewriteKeepsAuthentication(rewrite: TableRewrite): void {
+  for (const [key, value] of rewrite.preserved) {
+    const kept = valueAt(rewrite.document, key);
+    if (kept === undefined)
+      throw new Error(`the reset lost the preserved ${rewrite.entry} key "${key}"`);
+    if (recordCount(value) > 0 && recordCount(kept) === 0)
+      throw new Error(`the reset emptied the preserved ${rewrite.entry} key "${key}"`);
+  }
+  for (const key of rewrite.dropped) {
+    if (valueAt(rewrite.document, key) !== undefined)
+      throw new Error(`the reset kept the dropped ${rewrite.entry} key "${key}"`);
+  }
+}
+
+/**
+ * Removes this module's own bookkeeping from an interrupted run — a staged
+ * rewrite, a receipt, a marker — so the fail-closed classifier re-reads only
+ * Workspace state. A `migration` directory holding anything else survives this
+ * and fails the preview closed below, like any unrecognized entry.
+ */
+function clearMigrationBookkeeping(workspaceDir: string): void {
+  const directory = join(workspaceDir, MIGRATION_DIRECTORY);
+  if (!existsSync(directory)) return;
+  for (const name of [
+    MIGRATION_MARKER_FILE,
+    MIGRATION_RECEIPT_FILE,
+    ...Object.keys(MIXED_FILES).map((file) => `${file}.tmp`),
+  ])
+    rmSync(join(directory, name), { force: true });
+  try {
+    rmdirSync(directory);
+  } catch {
+    /* Not ours alone — the classifier fails closed on it. */
+  }
+}
+
+/**
+ * Writes a rewritten mixed file so a crash can never tear it: the new content
+ * is staged inside the migration directory and renamed over the file, which is
+ * atomic within one filesystem. A staged file a crash leaves behind is this
+ * module's own bookkeeping and is cleared on the next attempt.
+ */
+function writeRewrite(
+  workspaceDir: string,
+  entry: string,
+  document: Record<string, unknown>,
+): void {
+  const migrationDirectory = join(workspaceDir, MIGRATION_DIRECTORY);
+  mkdirSync(migrationDirectory, { recursive: true });
+  const staged = join(migrationDirectory, `${entry}.tmp`);
+  writeFileSync(staged, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+  renameSync(staged, join(workspaceDir, entry));
+}
+
+export function executeWorkspaceMigration(
+  workspaceDir: string,
+  input: { typedConfirmation: string },
+): WorkspaceMigrationResult {
+  /* The confirmation is checked before anything is read or written — a
+     mismatched phrase changes nothing, byte for byte. */
+  if (input.typedConfirmation !== MIGRATION_CONFIRMATION_PHRASE)
+    return { outcome: "confirmation-mismatch" };
+  if (!existsSync(workspaceDir)) throw new Error("the Workspace directory to reset does not exist");
+  if (existsSync(join(workspaceDir, MIGRATION_DIRECTORY, MIGRATION_MARKER_FILE)))
+    return { outcome: "already-completed" };
+
+  clearMigrationBookkeeping(workspaceDir);
+
+  /* Never trust a stale inventory: the classifier runs again, on the Workspace
+     as it stands right now, and a fail-closed finding ends the reset before
+     anything is deleted. */
+  const preview = previewWorkspaceMigration(workspaceDir);
+  if (preview.outcome === "unsafe-mixed-state")
+    return { outcome: "unsafe-mixed-state", findings: preview.findings };
+
+  const startedAt = Date.now();
+  const rewrites = [
+    planTableRewrite(workspaceDir, "config.json", CONFIG_KEYS),
+    planTableRewrite(workspaceDir, "relay.json", RELAY_KEYS),
+  ].filter((rewrite): rewrite is TableRewrite => rewrite !== null);
+  /* Invariants first: if authentication cannot be carried through a rewrite,
+     the reset stops here and the Workspace still holds everything it held. */
+  for (const rewrite of rewrites) assertRewriteKeepsAuthentication(rewrite);
+
+  /* Deletion mirrors the classifier exactly: a classified directory or whole
+     file is removed even if an earlier attempt already removed it. */
+  let directories = 0;
+  let files = 0;
+  for (const entry of readdirSync(workspaceDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && Object.hasOwn(DIRECTORIES, entry.name)) {
+      rmSync(join(workspaceDir, entry.name), { recursive: true, force: true });
+      directories += 1;
+    } else if (entry.isFile() && Object.hasOwn(WHOLE_FILES, entry.name)) {
+      rmSync(join(workspaceDir, entry.name), { force: true });
+      files += 1;
+    }
+  }
+
+  for (const rewrite of rewrites) writeRewrite(workspaceDir, rewrite.entry, rewrite.document);
+
+  const configRewrite = rewrites.find((rewrite) => rewrite.entry === "config.json");
+  const relayRewrite = rewrites.find((rewrite) => rewrite.entry === "relay.json");
+  const receipt: MigrationReceipt = {
+    schemaVersion: 1,
+    migratedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAt,
+    categories: {
+      directories,
+      files,
+      preservedConfigKeys: configRewrite?.preserved.size ?? 0,
+      droppedConfigKeys: configRewrite?.dropped.length ?? 0,
+      preservedRelayKeys: relayRewrite?.preserved.size ?? 0,
+      droppedRelayKeys: relayRewrite?.dropped.length ?? 0,
+    },
+  };
+
+  /* Receipt first, marker last: the marker's existence is the word that the
+     whole reset finished. */
+  const migrationDirectory = join(workspaceDir, MIGRATION_DIRECTORY);
+  mkdirSync(migrationDirectory, { recursive: true });
+  writeFileSync(
+    join(migrationDirectory, MIGRATION_RECEIPT_FILE),
+    `${JSON.stringify(receipt, null, 2)}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(migrationDirectory, MIGRATION_MARKER_FILE),
+    `${JSON.stringify({ migratedAt: receipt.migratedAt }, null, 2)}\n`,
+    "utf8",
+  );
+
+  return { outcome: "completed", receipt };
 }

@@ -703,3 +703,95 @@ export const onboardingApi = {
       body: JSON.stringify({ profileId }),
     }),
 };
+
+/* ---------------------------------------------------------------------------
+ * Workspace migration (ticket #144): the one-time auth-preserving reset under
+ * /api/migration. Mounted here, at the end, as its own section. Shapes match
+ * the ticket contract and the read-only preview classifier in
+ * apps/server/src/migration/workspace.ts — the preview payload is content-free
+ * by construction: names of categories, counts, never stored values.
+ * ------------------------------------------------------------------------- */
+
+type MigrationState = "fresh" | "required" | "completed";
+
+/** The content-free purge receipt the reset writes when it succeeds. */
+export interface MigrationReceipt {
+  schemaVersion: 1;
+  migratedAt: string;
+  durationMs: number;
+  categories: {
+    directories: number;
+    files: number;
+    preservedConfigKeys: number;
+    droppedConfigKeys: number;
+    preservedRelayKeys: number;
+    droppedRelayKeys: number;
+  };
+}
+
+interface OnboardingStep {
+  id: string;
+  label: string;
+  done: boolean;
+  href: string;
+}
+
+export interface OnboardingStatus {
+  complete: boolean;
+  steps: OnboardingStep[];
+}
+
+export interface MigrationStatus {
+  state: MigrationState;
+  onboarding: OnboardingStatus;
+}
+
+/** One inventoried category: its name verbatim, its disposition, a count. */
+export interface MigrationInventoryCategory {
+  name: string;
+  classification: "authentication" | "disposable-product-state";
+  count: number;
+}
+
+/**
+ * A provider-owned record local values merely name. The values are deleted
+ * with `localCategory`; the record itself is never touched by the reset.
+ */
+interface MigrationRemoteRecordDisclosure {
+  name: string;
+  classification: "remote-reference";
+  count: number;
+  localCategory: string;
+  deletedByReset: false;
+}
+
+/**
+ * Why the reset boundary could not be drawn. Names structure — a file, a
+ * dotted key — never a stored value; the reset deletes nothing in this state.
+ */
+interface MigrationUnsafeMixedStateFinding {
+  entry: string;
+  key: string | null;
+  reason: "unreadable" | "malformed" | "unrecognized-key" | "unrecognized-entry";
+}
+
+export type MigrationInventory =
+  | {
+      outcome: "inventory";
+      categories: MigrationInventoryCategory[];
+      remoteRecords: MigrationRemoteRecordDisclosure[];
+    }
+  | { outcome: "unsafe-mixed-state"; findings: MigrationUnsafeMixedStateFinding[] };
+
+export const migrationApi = {
+  /** Always mounted, never gated — the boot gate itself reads it. */
+  status: () => request<MigrationStatus>("/api/migration/status"),
+  inventory: () => request<MigrationInventory>("/api/migration/inventory"),
+  confirm: (typedConfirmation: string) =>
+    request<{ receipt: MigrationReceipt }>("/api/migration/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ typedConfirmation }),
+    }),
+  receipt: () => request<MigrationReceipt>("/api/migration/receipt"),
+};

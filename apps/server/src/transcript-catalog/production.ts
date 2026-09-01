@@ -56,6 +56,12 @@ export interface TranscriptCatalogRuntime {
   /** Begins the periodic processing pass at the configured Drive interval. */
   start(): void;
   stop(): void;
+  /**
+   * Resolves when the in-flight intake pass — and any Module Run it enqueued —
+   * has settled. The migration gate's quiesce seam (issue #144): arming the
+   * gate waits on it before the reset deletes Workspace state.
+   */
+  drain(): Promise<void>;
 }
 
 /**
@@ -101,6 +107,19 @@ export function createTranscriptCatalogRuntime(
   let timer: ReturnType<typeof setInterval> | null = null;
   let lastPassAt: string | null = null;
   let lastPassOutcome: "ok" | "failed" | null = null;
+  /* One pass at a time, over one settled promise: the migration gate's arm
+     seam drains it before the reset deletes Workspace state (issue #144). */
+  let pending: Promise<void> = Promise.resolve();
+  const runPass = (): void => {
+    pending = pending
+      .catch(() => undefined)
+      .then(pass)
+      .catch((error: unknown) => {
+        log(
+          `transcript catalog pass failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  };
 
   /**
    * One pass, guarded. Consent, an unconfigured folder and a disconnected
@@ -145,16 +164,19 @@ export function createTranscriptCatalogRuntime(
     start(): void {
       if (timer !== null) return;
       const minutes = options.getConfig().drive.pollIntervalMinutes;
-      timer = setInterval(() => void pass(), minutes * 60_000);
+      timer = setInterval(runPass, minutes * 60_000);
       /* Node keeps the process alive for a timer; intake must not be the
          reason a shutdown hangs. */
       timer.unref();
-      void pass();
+      runPass();
     },
     stop(): void {
       if (timer === null) return;
       clearInterval(timer);
       timer = null;
+    },
+    async drain(): Promise<void> {
+      await pending;
     },
   };
 }

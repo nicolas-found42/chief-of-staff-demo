@@ -62,31 +62,24 @@ test("the complete product surface is reachable — four areas, Shell Runs, Sett
 }) => {
   await page.goto("/");
 
-  // The nav bars are the explicit product map (ADR-0043: "Product navigation is
-  // therefore explicit rather than derived from the Module registry"). Content
-  // Engine speaks through its Content Scout tab; Meeting Wizard owns its
-  // Products entry with the Brief and Debrief Modules as tabs beneath it.
-  const modulesNav = page.locator('nav[aria-label="Modules"]');
+  // The nav bars are the explicit product map (ADR-0043: "Product navigation
+  // is therefore explicit rather than derived from the Module registry"):
+  // exactly four top-level product areas, then Settings. There is no Modules
+  // bar any more — the registry is not a navigation contract.
+  const productsNav = page.locator('nav[aria-label="Products"]');
+  await expect(productsNav.getByRole("link")).toHaveCount(4);
+  await expect(page.locator('nav[aria-label="Modules"]')).toHaveCount(0);
   for (const [name, href] of [
-    ["Content Scout", "/content-scout"],
-    ["Meeting Brief Generator", "/meetings/brief"],
-    ["Meeting Debrief", "/meeting-debrief"],
+    ["Content Engine", "/content-scout"],
     ["Content Research", "/content-research"],
+    ["Person Profiles", "/people"],
+    ["Meeting Wizard", "/meetings"],
   ] as const) {
     await expect(
-      modulesNav.getByRole("link", { name }),
-      `${name} must be a nav tab`,
+      productsNav.getByRole("link", { name }),
+      `${name} must be a nav area`,
     ).toHaveAttribute("href", href);
   }
-  const productsNav = page.locator('nav[aria-label="Products"]');
-  await expect(productsNav.getByRole("link", { name: "Person Profiles" })).toHaveAttribute(
-    "href",
-    "/people",
-  );
-  await expect(productsNav.getByRole("link", { name: "Meeting Wizard" })).toHaveAttribute(
-    "href",
-    "/meetings",
-  );
   await expect(
     page.locator('nav[aria-label="Settings"]').getByRole("link", { name: "Settings" }),
   ).toHaveAttribute("href", "/settings");

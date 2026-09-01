@@ -1,10 +1,13 @@
 /**
  * The Modules this Shell hosts, as one list rather than two.
  *
- * The header nav and Home's cards both render from here, so the two cannot
- * disagree about what exists. This is not the server-side registry of ADR-0002:
- * it is the seam that registry can slot behind later without either caller
- * changing, which is why it is shaped as what an endpoint would serve.
+ * Since the product-area cutover (spec: Navigation and onboarding #1) the
+ * header nav and Home's cards render the explicit four-area list in
+ * productAreas.ts instead; this descriptor list remains what Run rendering
+ * reads — a Run's label and its Module's own ResultView. It is not the
+ * server-side registry of ADR-0002: it is the seam that registry can slot
+ * behind later without either caller changing, which is why it is shaped as
+ * what an endpoint would serve.
  *
  * A hook rather than an exported const for that same reason — the day this
  * becomes a fetch, a const forces both callers to become async, and that is the
@@ -18,13 +21,13 @@ import { MeetingBriefResultView } from "./modules/meeting-brief/ResultView";
 export interface ModuleDescriptor {
   /** Stable identity. Survives a route rename; never derived from `path`. */
   id: string;
-  /** Where the tab and Home's card link. Presentation — expected to change. */
+  /** Where the Module's Runs surface links. Presentation — expected to change. */
   path: string;
-  /** The tab's text, e.g. "Transcript → Tasks". */
+  /** How the Module is named aloud, e.g. on a Run row. */
   label: string;
-  /** One line, for Home's card. */
+  /** One line, for contexts that summarize the Module. */
   description: string;
-  /** A planned Module has a tab and no Runs yet (CONTEXT.md). */
+  /** A planned Module has no Runs yet (CONTEXT.md). */
   status: "live" | "planned";
   /**
    * The Module's own view of one of its Runs, rendered under the Shell's half
@@ -43,7 +46,7 @@ export interface ModuleDescriptor {
   parent?: string;
 }
 
-/* Array order is display order, in the nav and on Home alike. */
+/* Array order is display order, wherever the list is rendered. */
 const MODULES: ModuleDescriptor[] = [
   {
     id: "youtube-trends",
@@ -91,14 +94,6 @@ const MODULES: ModuleDescriptor[] = [
     status: "live",
   },
 ];
-
-/**
- * Every Module the Shell advertises. Not the route table: a line there and a
- * line here are different facts — what to mount, versus what to advertise.
- */
-export function useModules(): ModuleDescriptor[] {
-  return MODULES;
-}
 
 /**
  * How a Module's identity is spoken aloud. A Run whose Module is no longer

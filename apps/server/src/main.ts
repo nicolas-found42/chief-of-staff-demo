@@ -88,6 +88,12 @@ import { WorkspacePersonProfileTranscriptEvidence } from "./person-profile/trans
 import { createLexicalTranscriptRelevanceIndex } from "./transcript-catalog/relevance-index.js";
 import { registerTranscriptRelevanceApi } from "./api/transcript-review.js";
 import { registerTranscriptDeletionApi } from "./api/transcript-delete.js";
+import {
+  registerMigrationGate,
+  registerMigrationRoutes,
+  type MigrationGate,
+} from "./api/migration.js";
+import { readMigrationState } from "./migration/workspace.js";
 
 const port = Number(process.env.PORT ?? 4317);
 /* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
@@ -96,9 +102,51 @@ const port = Number(process.env.PORT ?? 4317);
 const host = process.env.HOST ?? "127.0.0.1";
 const workspaceDir = process.env.WORKSPACE_DIR ?? "./workspace";
 const layout = workspaceLayout(workspaceDir);
-mkdirSync(layout.runsDir, { recursive: true });
+/* The one-time Workspace migration gate (issue #144). A pre-cutover Workspace
+   blocks every normal API surface behind the migration UI and keeps the
+   Modules unstarted; confirming the migration in this process performs the
+   boot-time startup sequence itself (startModules). The hermetic test seed's
+   arm/disarm seam drives the same gate, so there is one machinery.
+   `modulesRunning` is the gate's knowledge of what it started and stopped:
+   the arm seam stops Modules, and neither restart path may double-start a
+   scheduler the confirm already restarted. */
+let gateActive = readMigrationState(workspaceDir) === "required";
+let modulesRunning = false;
+const migrationGate: MigrationGate = {
+  isActive() {
+    return gateActive;
+  },
+  setActive(active: boolean) {
+    gateActive = active;
+    if (active && modulesRunning) stopModules();
+    if (!active && !modulesRunning) void startModules();
+  },
+  complete() {
+    gateActive = false;
+    if (!modulesRunning) {
+      /* The reset rewrote config.json on disk preserving only authentication;
+         adopt that rewrite in memory before any Module runs, so no stale
+         pre-cutover destination or schedule survives the cutover. */
+      configStore.load({ persist: false });
+      void startModules();
+    }
+  },
+};
+function stopModules(): void {
+  for (const module of modules) {
+    module.stop?.();
+  }
+  transcriptCatalogRuntime.stop();
+  meetingBriefProduction?.relayPoller.stop();
+  modulesRunning = false;
+}
 
-const configStore = new ConfigStore(layout.configFile);
+/* While the gate holds the Workspace pre-cutover, boot writes nothing:
+   ConfigStore reads config.json without normalizing it back, and the runs
+   directory and the V1 watchlist are written by startModules, which the gate
+   does not run. Cancelling must leave the Workspace byte-for-byte unchanged
+   (spec Cutover ACs). */
+const configStore = new ConfigStore(layout.configFile, !migrationGate.isActive());
 const config = configStore.load();
 
 const googleConnection = openGoogleConnection(configStore, port);
@@ -319,7 +367,6 @@ const contentResearch = new ContentResearchHost({
   configStore,
   log: (message) => console.log(`[content-research] ${message}`),
 });
-seedContentResearchV1(contentResearch, peopleProfiles);
 const meetingBriefCompleteJson = () => {
   const current = configStore.get();
   return makeCompleteJson(
@@ -438,6 +485,18 @@ app.setErrorHandler((error: FastifyError, _request, reply) => {
   reply.code(error.statusCode ?? 500).send({ error: error.message });
 });
 
+/* Mounted before the route registrations, so the hold reaches every /api
+   route Fastify declares afterwards. */
+registerMigrationGate(app, migrationGate);
+registerMigrationRoutes(app, {
+  workspaceDir,
+  gate: migrationGate,
+  configStore,
+  googleConnection,
+  ownerOnboarding,
+  brandProfiles,
+});
+
 const webDist = fileURLToPath(new URL("../../web/dist", import.meta.url));
 await registerStaticServing(app, { webDist });
 
@@ -553,6 +612,32 @@ if (process.env.ENABLE_TEST_SEED === "1") {
     personStore: peopleStore,
     ownerOnboarding,
     runs,
+    migration: {
+      gate: migrationGate,
+      /* The reset deletes the parked hermetic clock as disposable product
+         configuration; disarm re-parks it so every later e2e spec on this
+         serial server inherits the same silent schedule start-server wrote. */
+      restoreHermeticDefaults: () => {
+        const scout = configStore.getModuleConfig("content-scout");
+        configStore.setModuleConfig("content-scout", {
+          ...scout,
+          dailyTime: "23:59",
+          weeklyDiscoveryDay: 7,
+          weeklyDiscoveryTime: "23:59",
+        });
+      },
+      /* Arm quiesces the runtime before it returns: the catalog pass first —
+         it may enqueue Module Runs — then the relay poller's wake-up, then
+         every Module's enqueued Runs. Confirm deletes runs/ only over a
+         settled engine (issue #144). */
+      drainModules: async () => {
+        await transcriptCatalogRuntime.drain();
+        if (meetingBriefProduction) {
+          await meetingBriefProduction.relayPoller.drain();
+        }
+        await Promise.all(modules.map((module) => module.idle?.() ?? Promise.resolve()));
+      },
+    },
     ...(meetingBriefTest
       ? { upsertMeetingBriefEvent: (event) => meetingBriefTest.upsertEvent(event) }
       : {}),
@@ -564,40 +649,45 @@ console.log(
   `chief-of-staff-demo listening on http://localhost:${port} (workspace: ${resolve(workspaceDir)}, provider: ${config.provider}, model: ${config.model || DEFAULT_MODELS[config.provider]})`,
 );
 
-// The workspace owner has to be known before the first Run, not discovered by
-// one: eligibility drops the owner-declined rule when it is null (ADR-0034), so
-// a Run that raced the lookup would silently brief a declined meeting. Google
-// being unreachable leaves it null and is not fatal — deliver then fails
-// retryably rather than sending to nobody.
-await meetingBriefProduction?.refreshOwnerIdentity().catch((error: unknown) => {
-  console.log(
-    `[meeting-brief] owner identity unavailable at boot: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  return null;
-});
+/* The boot-time startup sequence, named so the migration gate's in-process
+   cutover performs exactly it (gate.complete) — and so the boot path can skip
+   it while the gate holds the Workspace pre-cutover. */
+async function startModules(): Promise<void> {
+  /* Both writes the gate withholds, and both idempotent, so the boot path and
+     the in-process cutover reach the same Workspace: a cutover confirmed in
+     this process must leave what a restart after the same cutover would, not a
+     Workspace missing its runs directory until the next Run and its V1
+     watchlist until the next restart. The seed no-ops once anyone is watched,
+     and reads the reset's empty state from disk rather than a stale cache. */
+  mkdirSync(layout.runsDir, { recursive: true });
+  seedContentResearchV1(contentResearch, peopleProfiles);
 
-/* Same rule for owner onboarding and the workflows gated behind it: the
-   identity is held before the first Run, and Google being unreachable at
-   boot is not fatal — it preserves the last determinate owner identity. */
-await refreshOwnerIdentity();
-for (const module of modules) {
-  module.start?.();
-}
-transcriptCatalogRuntime.start();
-meetingBriefProduction?.relayPoller.start();
+  /* The workspace owner has to be known before the first Run, not discovered by
+     one: eligibility drops the owner-declined rule when it is null (ADR-0034), so
+     a Run that raced the lookup would silently brief a declined meeting. Google
+     being unreachable leaves it null and is not fatal — deliver then fails
+     retryably rather than sending to nobody. */
+  await meetingBriefProduction?.refreshOwnerIdentity().catch((error: unknown) => {
+    console.log(
+      `[meeting-brief] owner identity unavailable at boot: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  });
 
-const shutdown = async (): Promise<void> => {
-  meetingBriefProduction?.relayPoller.stop();
-  transcriptCatalogRuntime.stop();
+  /* Same rule for owner onboarding and the workflows gated behind it: the
+     identity is held before the first Run, and Google being unreachable at
+     boot is not fatal — it preserves the last determinate owner identity. */
+  await refreshOwnerIdentity();
   for (const module of modules) {
-    module.stop?.();
+    module.start?.();
   }
-  await app.close();
-  process.exit(0);
-};
-process.on("SIGINT", () => {
-  void shutdown();
-});
-process.on("SIGTERM", () => {
-  void shutdown();
-});
+  transcriptCatalogRuntime.start();
+  meetingBriefProduction?.relayPoller.start();
+  modulesRunning = true;
+}
+
+/* The gate skips the boot-time startup over an un-migrated Workspace; a
+   completed Workspace boots exactly as before the gate existed. */
+if (!migrationGate.isActive()) {
+  await startModules();
+}

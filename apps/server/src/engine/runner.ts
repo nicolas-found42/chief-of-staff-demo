@@ -237,8 +237,21 @@ export class Runner<Input> {
       /* A Stage failure is already on the Run, so the log stays quiet about it.
          Anything else escaped a Stage — a Module bug, or durable work refused
          outside one — and leaves the Run where it stood, which is the restart
-         hole's shape and is fixed with it. */
-      if (!TERMINAL.has(run.read().status)) {
+         hole's shape and is fixed with it.
+
+         The one state where nothing can be read is a Run whose record was
+         deleted under the engine — the one-time reset removes runs/ while an
+         execute is still in flight (issue #144). The Run is gone, so there is
+         nothing to mark: the queue stays settled instead of crashing the
+         process with an unhandled rejection. */
+      let status: string;
+      try {
+        status = run.read().status;
+      } catch {
+        this.deps.log?.(`Run ${run.id} record is gone; nothing to mark: ${errorMessage(error)}`);
+        return;
+      }
+      if (!TERMINAL.has(status)) {
         this.deps.log?.(`Run ${run.id} stopped outside a Stage: ${errorMessage(error)}`);
       }
     } finally {

@@ -87,9 +87,18 @@ function normalize(config: AppConfig): AppConfig {
 export class ConfigStore {
   private config: AppConfig | null = null;
 
-  constructor(private readonly configFile: string) {}
+  /**
+   * `persistOnLoad` defaults to the historical behavior: every load normalizes
+   * the stored file and writes it back. The migration gate passes false while
+   * it holds the Workspace pre-cutover — boot must write nothing — and adopts
+   * the reset's rewrite with `load({ persist: false })`.
+   */
+  constructor(
+    private readonly configFile: string,
+    private readonly persistOnLoad = true,
+  ) {}
 
-  load(): AppConfig {
+  load(options: { persist?: boolean } = {}): AppConfig {
     let stored: unknown = {};
     if (existsSync(this.configFile)) {
       try {
@@ -122,7 +131,9 @@ export class ConfigStore {
     }
     const parsed = ConfigSchema.parse(merged);
     this.config = normalize(parsed);
-    this.persist();
+    if (options.persist ?? this.persistOnLoad) {
+      this.persist();
+    }
     return this.config;
   }
 

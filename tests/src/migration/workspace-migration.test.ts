@@ -43,6 +43,7 @@ const STORED_VALUES = [
   "notion-database-id",
   "a diagnostic detail",
   "an idea prompt",
+  "a policy reason",
   "found42.test",
   "a private artifact",
   "A Named Person",
@@ -108,6 +109,12 @@ function completeConfig() {
       "meeting-brief-generator": {
         internalDomains: ["found42.test"],
         hubspot: { token: "hubspot-token", lastVerifiedAt: TIMESTAMP },
+        /* A recorded policy action (issue #137). Defaulted empty, this is the
+           one config record a fixture has to populate on purpose or the
+           classifier is never asked about its interior. */
+        providerPolicy: {
+          crm: { disabled: true, changedAt: TIMESTAMP, reason: "a policy reason" },
+        },
       },
     },
   });
@@ -307,10 +314,12 @@ describe("Workspace migration preview", () => {
       "provider-tokens",
       "connection-credentials",
       "connection-verification-state",
+      "owner-onboarding-state",
       "runs-and-artifacts",
       "person-profiles",
       "content-state",
       "research-state",
+      "transcript-catalog",
       "module-state-and-checkpoints",
       "intake-schedules",
       "calendar-schedule-and-checkpoints",
@@ -397,7 +406,7 @@ describe("Workspace migration preview", () => {
        remote record. The retired Notion calendar keys stay classified in the
        inventory for legacy Workspaces, but a clean config carries none. */
     expect(categories.get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 27),
+      category("disposable-product-state", 28),
     );
     expect(categories.get("mock-provider-state")).toEqual(category("disposable-product-state", 1));
     expect(categories.get("operating-system-metadata")).toEqual(
@@ -423,10 +432,56 @@ describe("Workspace migration preview", () => {
     /* Those same 8 values are on the delete side, inside the category every
        disclosure names, so nothing is preserved by being disclosed. */
     expect(inventory(preview).get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 27),
+      category("disposable-product-state", 28),
     );
     /* No category answers "deleted or kept" with a remote reference. */
     expect(named(preview, "remote-reference")).toEqual([]);
+  });
+
+  /* The migration's own directory is not Workspace state. A reset clears it
+     before it reclassifies, but a preview only reads, so it has to read past
+     the bookkeeping of a finished or interrupted run rather than fail closed
+     on the artifact of the very reset it is previewing. */
+  it("reads past its own bookkeeping instead of failing closed on it", () => {
+    const root = workspace("own-bookkeeping", {
+      "config.json": completeConfig(),
+      "migration/receipt.json": { schemaVersion: 1 },
+      "migration/completed.json": { migratedAt: TIMESTAMP },
+      /* A rewrite a crash left staged, cleared by the next attempt. */
+      "migration/config.json.tmp": completeConfig(),
+    });
+
+    const preview = previewWorkspaceMigration(root);
+
+    /* Read past, not counted: no category grew by the three files, so the
+       receipt cannot be reported as one more product record to delete. */
+    expect(
+      [...inventory(preview).values()].reduce((total, entry) => total + entry.count, 0),
+    ).toEqual(
+      [
+        ...inventory(
+          previewWorkspaceMigration(
+            workspace("no-bookkeeping", {
+              "config.json": completeConfig(),
+            }),
+          ),
+        ).values(),
+      ].reduce((total, entry) => total + entry.count, 0),
+    );
+  });
+
+  it("fails closed on anything else the migration directory holds", () => {
+    const root = workspace("foreign-bookkeeping", {
+      "config.json": completeConfig(),
+      "migration/completed.json": { migratedAt: TIMESTAMP },
+      "migration/notes.txt": "something nobody classified",
+    });
+
+    /* Named by structure — the directory and the file inside it — never by
+       what the file holds. */
+    expect(findings(previewWorkspaceMigration(root))).toEqual([
+      { entry: "migration", key: "notes.txt", reason: "unrecognized-entry" },
+    ]);
   });
 
   it("keeps operating system metadata out of the fail-closed path", () => {

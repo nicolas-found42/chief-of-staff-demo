@@ -256,44 +256,48 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("All runs");
   await expect(page.getByTestId("intake-liveness")).toHaveCount(0);
 
-  // One tile per Module, from the same list the tab bar renders, so the two
-  // cannot disagree about what exists. Counted by role rather than by the
-  // layout's class names, which are the bento's business and not a contract.
+  // One card per product area, from the same explicit list the header nav
+  // renders (productAreas.ts; ADR-0043), so the two cannot disagree about
+  // what exists. Counted by role rather than by the layout's class names,
+  // which are the bento's business and not a contract.
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
-  await expect(tiles).toHaveCount(5);
-  await expect(tiles.filter({ hasText: "Content Scout" })).not.toContainText("Planned");
-  await expect(tiles.filter({ hasText: "Meeting Brief Generator" })).not.toContainText("Planned");
-  await expect(tiles.filter({ hasText: "Meeting Debrief" })).not.toContainText("Planned");
+  await expect(tiles).toHaveCount(4);
+  await expect(tiles.filter({ hasText: "Content Engine" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Content Research" })).not.toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Person Profiles" })).not.toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Meeting Wizard" })).not.toContainText("Planned");
 
-  /* The tile links bind to the Modules grid, not all of main: a finished
-     scheduled Run can land a feed link naming the same Module ("Content
+  /* The card links bind to the product grid, not all of main: a finished
+     scheduled Run can land a feed link naming the same area ("Content
      Research daily"), and a main-scoped role query cannot tell them apart. */
-  const moduleTiles = page.locator(".module-grid");
+  const areaTiles = page.locator(".module-grid");
   for (const [label, path] of [
-    ["YouTube Trends", "/content-research/trends"],
-    ["Content Scout", "/content-scout"],
-    ["Meeting Brief Generator", "/meetings/brief"],
-    ["Meeting Debrief", "/meeting-debrief"],
+    ["Content Engine", "/content-scout"],
     ["Content Research", "/content-research"],
+    ["Person Profiles", "/people"],
+    ["Meeting Wizard", "/meetings"],
   ] as const) {
-    await expect(moduleTiles.getByRole("link", { name: label })).toHaveAttribute("href", path);
+    await expect(areaTiles.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }
 
-  // Trends is presented under Content Research (spec: /content-research/trends),
-  // so it leaves the tab bar — the tab bar carries the Module whose product
-  // surface presents it, and Content Research's own page carries the way in.
-  const tabs = page.locator('.app-header nav[aria-label="Modules"] a');
-  // Meeting Debrief is its own Module tab (#139); YouTube Trends is not a
-  // tab — Content Research's page carries it (#135). Transcript → Tasks is
-  // retired (#142), so four Module tabs remain.
-  await expect(tabs).toHaveCount(4);
-  await expect(tabs.filter({ hasText: "YouTube Trends" })).toHaveCount(0);
-  await expect(tabs.filter({ hasText: "Content Research" })).toHaveCount(1);
+  // The header nav carries exactly the four product areas (spec: Navigation
+  // and onboarding #1; ADR-0043) — explicit, never derived from the Module
+  // registry — so there is no Modules bar to enumerate.
+  const productsNav = page.locator('.app-header nav[aria-label="Products"]');
+  await expect(productsNav.getByRole("link")).toHaveCount(4);
+  await expect(page.locator('.app-header nav[aria-label="Modules"]')).toHaveCount(0);
+  for (const [label, path] of [
+    ["Content Engine", "/content-scout"],
+    ["Content Research", "/content-research"],
+    ["Person Profiles", "/people"],
+    ["Meeting Wizard", "/meetings"],
+  ] as const) {
+    await expect(productsNav.getByRole("link", { name: label })).toHaveAttribute("href", path);
+  }
 
-  await moduleTiles.getByRole("link", { name: "Content Scout" }).click();
+  await areaTiles.getByRole("link", { name: "Content Engine" }).click();
   await expect(page).toHaveURL(/\/content-scout$/);
   // Dropzone is gone — Drive folder is the Intake. And a Module's page is not
   // a Runs surface any more: with Transcript → Tasks retired (#142) the
@@ -320,7 +324,7 @@ test("the Shell lists every Module's runs, and a Module's page lists only its ow
   await expect(page.locator(".runs-table thead")).toContainText("Module");
   // An Intake's name is a Module's private vocabulary, so it is not a column here.
   await expect(page.locator(".runs-table thead")).not.toContainText("Source");
-  await expect(page.getByRole("navigation", { name: "Modules" })).not.toContainText("runs");
+  await expect(page.getByRole("navigation", { name: "Products" })).not.toContainText("runs");
 
   /* Transcript → Tasks was the last Module with a Runs page of its own, and
      it is retired (issue #142). The cross-Module list is now the only Runs

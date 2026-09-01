@@ -1,3 +1,4 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,10 +19,12 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
-import { TranscriptCatalog } from "../transcript-catalog/catalog.js";
 import { TranscriptIdentityService } from "../transcript-catalog/identity.js";
+import { TranscriptCatalog } from "../transcript-catalog/catalog.js";
 import { TranscriptIdentityStore } from "../transcript-catalog/identity-store.js";
 import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import type { MigrationGate } from "./migration.js";
+import { readMigrationState } from "../migration/workspace.js";
 import type { TranscriptIdentityExtractionResult } from "@chief-of-staff-demo/shared";
 
 export interface TestSeedContext {
@@ -46,6 +49,22 @@ export interface TestSeedContext {
   ownerOnboarding: OwnerOnboarding;
   runs: Runs;
   upsertMeetingBriefEvent?: (event: MeetingBriefEvent) => void;
+  /**
+   * The migration gate seam (issue #144): arm clears the completed marker and
+   * activates the hold, disarm restores the hermetic post-cutover state.
+   * Present only when ENABLE_TEST_SEED builds the browser suite's server.
+   */
+  migration?: {
+    gate: MigrationGate;
+    /** Re-writes the parked hermetic defaults the reset deletes. */
+    restoreHermeticDefaults: () => void;
+    /**
+     * Resolves when every in-flight intake pass, relay wake-up, and enqueued
+     * Module Run has settled — arm waits on it before returning, so the reset
+     * never deletes runs/ under a live execute (issue #144).
+     */
+    drainModules: () => Promise<void>;
+  };
 }
 
 const SEED_CORPUS = [
@@ -320,6 +339,31 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
       return;
     }
   });
+
+  /* The migration gate seam (issue #144): arm clears the one-time completed
+     marker and activates the hold, so a journey can drive the pre-cutover UI;
+     disarm restores exactly the state start-server.mjs left — marker back,
+     parked Scout clock back, hold released. Both go through the Shell's one
+     gate object: the arm/disarm pair never runs a parallel machinery. */
+  const migration = ctx.migration;
+  if (migration) {
+    app.post("/api/test/migration/arm", async () => {
+      rmSync(join(ctx.workspaceDir, "migration"), { recursive: true, force: true });
+      migration.gate.setActive(true);
+      await migration.drainModules();
+      return { state: readMigrationState(ctx.workspaceDir) };
+    });
+    app.post("/api/test/migration/disarm", async () => {
+      mkdirSync(join(ctx.workspaceDir, "migration"), { recursive: true });
+      writeFileSync(
+        join(ctx.workspaceDir, "migration", "completed.json"),
+        `${JSON.stringify({ migratedAt: new Date().toISOString() })}\n`,
+      );
+      migration.restoreHermeticDefaults();
+      migration.gate.setActive(false);
+      return { state: readMigrationState(ctx.workspaceDir) };
+    });
+  }
 }
 
 /** Fixed ports for the browser suite; production never selects these dependencies. */

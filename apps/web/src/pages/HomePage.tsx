@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { api, errorMessage, migrationApi, type OnboardingStatus } from "../client";
 import { connectionNotice } from "../connectionNotice";
 import { homeStatus } from "../homeStatus";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { formatTime, relativeTime } from "../display";
-import { useModules } from "../useModules";
+import { PRODUCT_AREAS } from "../productAreas";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -27,7 +27,7 @@ export function HomePage() {
   useTitle(null);
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const { status, refresh: refreshConnection } = useGoogleConnection();
-  const modules = useModules();
+  const areas = PRODUCT_AREAS;
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [provider, setProvider] = useState<ProviderId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +44,27 @@ export function HomePage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  /* Post-reset onboarding (spec: Migration and Cutover, step 7) has no other
+     persistent surface: the gate hands the user to /onboarding once, and if
+     they leave, this is the way back. Asked once per visit — a step completed
+     in another tab is picked up the next time Home mounts. A failure is
+     silent: the banner is informational, and Home's error state already has a
+     voice. */
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    migrationApi
+      .status()
+      .then((payload) => {
+        if (live) setOnboarding(payload.onboarding);
+      })
+      .catch(() => {
+        // Silent: no banner rather than a broken one.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   /* Asked once: the provider only changes through Settings, which is a full
      route away, and the poll below has no reason to keep asking. */
@@ -130,6 +151,14 @@ export function HomePage() {
           {error}
         </div>
       )}
+      {/* Post-reset onboarding banner: a status region, not an alert — nothing
+          failed. Sits between the head card and the rail/grid, so it is read
+          before either. */}
+      {onboarding !== null && !onboarding.complete && (
+        <div className="banner" role="status">
+          Workspace setup is not finished. <Link to="/onboarding">Finish setup</Link>
+        </div>
+      )}
 
       {/* The rail leads the markup and the Modules follow, so a reader who takes
           the page in one column meets what needs them before what merely exists
@@ -192,22 +221,22 @@ export function HomePage() {
         </div>
 
         <div className="home-main">
-          <h2 className="home-section">Modules</h2>
+          <h2 className="home-section">Products</h2>
+          {/* The four product areas are explicit (spec: Navigation and
+              onboarding #1; ADR-0043), not derived from the Module registry —
+              the same list the header nav reads, so the two cannot disagree. */}
           <div className="module-grid">
-            {modules.map((module, index) => (
-              <div className="card module-card" key={module.id}>
+            {areas.map((area, index) => (
+              <div className="card module-card" key={area.id}>
                 {/* Decorative: the ordinal is the tile's position, which the
                     reading order already carries. */}
                 <p className="module-number" aria-hidden="true">
                   {String(index + 1).padStart(2, "0")}
                 </p>
                 <h3>
-                  <Link to={module.path}>{module.label}</Link>
-                  {module.status === "planned" && (
-                    <span className="status-badge status-active">Planned</span>
-                  )}
+                  <Link to={area.path}>{area.label}</Link>
                 </h3>
-                <p className="muted">{module.description}</p>
+                <p className="muted">{area.description}</p>
               </div>
             ))}
           </div>

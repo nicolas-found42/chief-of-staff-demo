@@ -21,4 +21,10 @@ export interface HostedModule {
   /** Start or restart this Module's Intakes: at boot, and after a settings save. */
   start?(): void;
   stop?(): void;
+  /**
+   * Resolves when this Module's every enqueued Run has settled — the migration
+   * gate's quiesce seam (issue #144): the reset must not delete runs/ under an
+   * in-flight execute, so arming the gate waits on it first.
+   */
+  idle?(): Promise<void>;
 }

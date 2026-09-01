@@ -12,6 +12,7 @@ export interface RelayWakeUpPollerOptions {
 /** Shell-owned outbound relay loop. Messages remain buffered until Intake succeeds. */
 export class RelayWakeUpPoller {
   private running = false;
+  private loopPromise: Promise<void> | null = null;
   private readonly waitSeconds: number;
   private readonly idleDelayMs: number;
 
@@ -23,11 +24,20 @@ export class RelayWakeUpPoller {
   start(): void {
     if (this.running) return;
     this.running = true;
-    void this.loop();
+    this.loopPromise = this.loop();
   }
 
   stop(): void {
     this.running = false;
+  }
+
+  /**
+   * Resolves when the loop's current poll — and any wake-up processing it
+   * started — has settled. The migration gate's quiesce seam (issue #144):
+   * arming the gate waits on it before the reset deletes runs/.
+   */
+  async drain(): Promise<void> {
+    await this.loopPromise;
   }
 
   async pollOnce(waitSeconds = this.waitSeconds): Promise<RelayMessage[]> {

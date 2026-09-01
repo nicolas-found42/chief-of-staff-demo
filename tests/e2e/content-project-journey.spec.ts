@@ -56,8 +56,8 @@ test("content project journey — brand voice revisions → scout → select →
   // 1. The product area is reachable from explicit navigation, not a hidden route.
   await page.goto("/");
   await page
-    .getByRole("navigation", { name: "Modules" })
-    .getByRole("link", { name: "Content Scout" })
+    .getByRole("navigation", { name: "Products" })
+    .getByRole("link", { name: "Content Engine" })
     .click();
   await expect(page).toHaveURL(/\/content-scout$/);
   await expect(page.getByRole("heading", { level: 1, name: "Content Scout" })).toBeFocused();
