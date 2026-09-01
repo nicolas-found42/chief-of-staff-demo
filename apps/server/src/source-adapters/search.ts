@@ -19,6 +19,9 @@ export type PublicSearch = (query: string) => Promise<PublicSearchResult[]>;
 
 const MAX_RESULTS = 8;
 
+/** The anonymous HTML route this seam searches by default. */
+export const PUBLIC_SEARCH_ROUTE = "https://html.duckduckgo.com/html/";
+
 /** A DuckDuckGo HTML result link, unwrapping its `uddg` redirect parameter. */
 function resolveHref(href: string, base: string): string | null {
   try {
@@ -36,7 +39,7 @@ function resolveHref(href: string, base: string): string | null {
 export function createPublicSearch(
   fetchText: PublicHttpFetch = publicHttpFetch,
   endpoint: (query: string) => string = (query) =>
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    `${PUBLIC_SEARCH_ROUTE}?q=${encodeURIComponent(query)}`,
 ): PublicSearch {
   return async (query) => {
     const response = await fetchText(endpoint(query));

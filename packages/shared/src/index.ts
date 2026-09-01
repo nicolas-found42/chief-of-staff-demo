@@ -7,5 +7,6 @@ export * from "./source-items.js";
 export * from "./content-scout.js";
 export * from "./meeting-brief.js";
 export * from "./content-research.js";
+export * from "./content-engine.js";
 export * from "./person-profile.js";
 export * from "./llm.js";

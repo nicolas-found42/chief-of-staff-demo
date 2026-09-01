@@ -51,6 +51,12 @@ export interface PersonSocialProfile {
   url: string;
 }
 
+/** A provider-owned stable contact key, namespaced by its source system. */
+export interface ExternalContactId {
+  system: string;
+  externalId: string;
+}
+
 export interface PersonPublishingFeed {
   url: string;
   title: string | null;
@@ -75,6 +81,7 @@ export interface PersonProfile {
   emails: string[];
   handles: Record<string, string[]>;
   profileUrls: string[];
+  externalContactIds?: ExternalContactId[];
   employerHints: string[];
   role: string | null;
   background: string | null;
