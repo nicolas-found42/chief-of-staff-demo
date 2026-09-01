@@ -48,6 +48,10 @@ import type {
   YoutubeTrends,
   TranscriptRelevanceQuery,
   TranscriptRelevanceReviewItem,
+  TranscriptSummary,
+  TranscriptConsumerDisclosure,
+  TranscriptDeletionReceipt,
+  TranscriptDeletionTombstone,
 } from "@chief-of-staff-demo/shared";
 
 export class ApiError extends Error {
@@ -577,6 +581,27 @@ export const api = {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action, ...(note ? { note } : {}) }),
       },
+    ),
+  transcripts: () => request<{ transcripts: TranscriptSummary[] }>("/api/transcripts"),
+  transcriptDeletionPreview: (transcriptId: string) =>
+    request<{ transcript: TranscriptSummary; consumerRecords: TranscriptConsumerDisclosure[] }>(
+      `/api/transcripts/${encodeURIComponent(transcriptId)}/deletion-preview`,
+    ),
+  deleteTranscript: (transcriptId: string, confirmation: string) =>
+    request<TranscriptDeletionReceipt>(
+      `/api/transcripts/${encodeURIComponent(transcriptId)}/delete`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation }),
+      },
+    ),
+  transcriptTombstones: () =>
+    request<{ tombstones: TranscriptDeletionTombstone[] }>("/api/transcripts/tombstones"),
+  restoreTranscriptProcessing: (externalFileId: string) =>
+    request<{ tombstone: TranscriptDeletionTombstone }>(
+      `/api/transcripts/tombstones/${encodeURIComponent(externalFileId)}/restore`,
+      { method: "POST" },
     ),
   people: (query?: string, includeArchived?: boolean) => {
     const params = new URLSearchParams();

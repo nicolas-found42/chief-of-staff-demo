@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import type {
   TranscriptRelevanceReviewItem,
   TranscriptRelevanceReviewState,
+  TranscriptSummary,
+  TranscriptDeletionTombstone,
+  TranscriptConsumerDisclosure,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
@@ -34,7 +37,10 @@ export function TranscriptReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
-
+  const [transcripts, setTranscripts] = useState<TranscriptSummary[] | null>(null);
+  const [tombstones, setTombstones] = useState<TranscriptDeletionTombstone[]>([]);
+  const [confirmations, setConfirmations] = useState<Record<string, string>>({});
+  const [previews, setPreviews] = useState<Record<string, TranscriptConsumerDisclosure[]>>({});
   const load = useCallback(async () => {
     try {
       const queue = await api.transcriptRelevanceQueue();
@@ -44,9 +50,20 @@ export function TranscriptReviewPage() {
     }
   }, []);
 
+  const loadCorpus = useCallback(async () => {
+    try {
+      const [corpus, standing] = await Promise.all([api.transcripts(), api.transcriptTombstones()]);
+      setTranscripts(corpus.transcripts);
+      setTombstones(standing.tombstones);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadCorpus();
+  }, [load, loadCorpus]);
 
   const runSearch = async () => {
     setError(null);
@@ -104,6 +121,51 @@ export function TranscriptReviewPage() {
   const visible = (items ?? []).filter(
     (item) => stateFilter === "all" || item.reviewState === stateFilter,
   );
+
+  const deleteTranscript = async (transcriptId: string) => {
+    setError(null);
+    setNotice(null);
+    try {
+      const receipt = await api.deleteTranscript(transcriptId, confirmations[transcriptId] ?? "");
+      const { removed } = receipt;
+      const removedTotal =
+        removed.transcriptRecords +
+        removed.identityMentions +
+        removed.organizationMentions +
+        removed.identityCandidates +
+        removed.identityDecisions +
+        removed.organizationMergeDecisions +
+        removed.transcriptRememberedMappings +
+        removed.extractionLedgerEntries +
+        removed.relevanceCandidates +
+        removed.relevanceDecisions +
+        removed.consumerRecords;
+      await loadCorpus();
+      setConfirmations((current) => ({ ...current, [transcriptId]: "" }));
+      setNotice(
+        `Transcript deleted. ${removedTotal} local records removed, ` +
+          `tombstone written for ${receipt.tombstone.externalFileId}. ` +
+          `Remote provider operations: ${receipt.remoteProviderOperations} — the remote Drive source ` +
+          `and any previously created Gmail, Tasks, or other provider records remain untouched.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const restoreProcessing = async (externalFileId: string) => {
+    setError(null);
+    setNotice(null);
+    try {
+      await api.restoreTranscriptProcessing(externalFileId);
+      await loadCorpus();
+      setNotice(
+        `Processing permission restored for ${externalFileId}. The Catalog will process the file again on its next pass.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
 
   return (
     <>
@@ -247,6 +309,113 @@ export function TranscriptReviewPage() {
           ))}
         </ul>
       )}
+
+      <section aria-labelledby="retained-transcripts-heading">
+        <h2 id="retained-transcripts-heading">Retained transcripts</h2>
+        <p className="muted">
+          Deleting a transcript removes every local copy of it — the full text, excerpts, mentions,
+          candidates, and your identity and relevance decisions. It deletes nothing remotely: the
+          remote Drive source and any previously created Gmail, Tasks, or other provider records
+          remain untouched. Type DELETE TRANSCRIPT to confirm.
+        </p>
+        {transcripts === null ? (
+          <p className="muted">Loading…</p>
+        ) : transcripts.length === 0 ? (
+          <p className="muted">No transcripts are retained locally.</p>
+        ) : (
+          <ul className="relevance-list">
+            {transcripts.map((transcript) => (
+              <li key={transcript.id} className="card">
+                <h3>{transcript.fileName}</h3>
+                <dl>
+                  <dt>Meeting date</dt>
+                  <dd>{transcript.meetingDate ?? "—"}</dd>
+                  <dt>Recorded locally at</dt>
+                  <dd>{transcript.ingestedAt}</dd>
+                </dl>
+                <div className="field-row">
+                  <label htmlFor={`delete-confirmation-${transcript.id}`}>
+                    Type DELETE TRANSCRIPT to confirm deleting “{transcript.fileName}”
+                  </label>
+                  <input
+                    id={`delete-confirmation-${transcript.id}`}
+                    type="text"
+                    value={confirmations[transcript.id] ?? ""}
+                    onChange={(event) => {
+                      setConfirmations((current) => ({
+                        ...current,
+                        [transcript.id]: event.target.value,
+                      }));
+                      /* The #122 confirmation pattern: what the cascade will
+                         remove is disclosed before the irreversible action. */
+                      if (previews[transcript.id] === undefined) {
+                        void api
+                          .transcriptDeletionPreview(transcript.id)
+                          .then((preview) =>
+                            setPreviews((current) => ({
+                              ...current,
+                              [transcript.id]: preview.consumerRecords,
+                            })),
+                          )
+                          .catch(() => {});
+                      }
+                    }}
+                  />
+                </div>
+                {previews[transcript.id] && (
+                  <p className="muted">
+                    {previews[transcript.id]!.some((disclosure) => disclosure.recordCount > 0)
+                      ? `Deletion will also remove: ${previews[transcript.id]!.filter(
+                          (disclosure) => disclosure.recordCount > 0,
+                        )
+                          .map((d) => `${d.label} (${d.recordCount})`)
+                          .join(", ")}.`
+                      : "No registered consumer holds additional transcript-derived records."}
+                  </p>
+                )}
+                <div className="field-row runs-toolbar">
+                  <button
+                    className="action-button"
+                    type="button"
+                    disabled={(confirmations[transcript.id] ?? "") !== "DELETE TRANSCRIPT"}
+                    onClick={() => void deleteTranscript(transcript.id)}
+                  >
+                    Delete transcript
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {tombstones.length > 0 && (
+          <>
+            <h3>Deleted transcripts — do not reingest</h3>
+            <ul className="relevance-list">
+              {tombstones.map((tombstone) => (
+                <li key={tombstone.externalFileId} className="card">
+                  <dl>
+                    <dt>Source file</dt>
+                    <dd>{tombstone.externalFileId}</dd>
+                    <dt>Deleted at</dt>
+                    <dd>{tombstone.deletedAt}</dd>
+                    <dt>Policy</dt>
+                    <dd>Do not reingest until processing permission is restored</dd>
+                  </dl>
+                  <div className="field-row runs-toolbar">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => void restoreProcessing(tombstone.externalFileId)}
+                    >
+                      Restore processing permission
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
     </>
   );
 }

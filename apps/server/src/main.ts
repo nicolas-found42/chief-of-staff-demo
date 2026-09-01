@@ -71,8 +71,15 @@ import {
 import { createGmailDraft } from "./google/gmail.js";
 import { TranscriptRelevanceService } from "./transcript-catalog/relevance.js";
 import { TranscriptRelevanceStore } from "./transcript-catalog/relevance-store.js";
+import { TranscriptIdentityStore } from "./transcript-catalog/identity-store.js";
+import {
+  TranscriptDeletionService,
+  type TranscriptConsumerRegistry,
+} from "./transcript-catalog/deletion.js";
+import { WorkspacePersonProfileTranscriptEvidence } from "./person-profile/transcript-evidence.js";
 import { createLexicalTranscriptRelevanceIndex } from "./transcript-catalog/relevance-index.js";
 import { registerTranscriptRelevanceApi } from "./api/transcript-review.js";
+import { registerTranscriptDeletionApi } from "./api/transcript-delete.js";
 
 const port = Number(process.env.PORT ?? 4317);
 /* Loopback by default (ADR-0001). A container sets HOST=0.0.0.0 because the
@@ -121,10 +128,28 @@ const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceD
    composition remains with the integrating ticket (#126 hand-forward). The
    local lexical index keeps every judgment in-process (ADR-0001); a model- or
    embedding-backed searcher replaces it at the same seam. */
+const transcriptRelevanceStore = new TranscriptRelevanceStore(workspaceDir);
+const transcriptIdentityStore = new TranscriptIdentityStore(workspaceDir);
 const transcriptRelevance = new TranscriptRelevanceService({
-  corpus: new TranscriptCatalogStore(workspaceDir),
-  store: new TranscriptRelevanceStore(workspaceDir),
+  corpus: transcriptCatalogStore,
+  store: transcriptRelevanceStore,
   searcher: createLexicalTranscriptRelevanceIndex(),
+});
+
+/* Transcript deletion with local cascades and reingestion tombstones (issue
+   #128). Consumer modules register a cascade each: the Person Profiles
+   registry purges transcript-origin Person Evidence (including its copies
+   inside Profile revisions) while independently supported facts survive.
+   A consumer built on transcript-derived Runs registers here the same way. */
+const transcriptConsumerRegistries: TranscriptConsumerRegistry[] = [
+  new WorkspacePersonProfileTranscriptEvidence(peopleStore),
+];
+const transcriptDeletion = new TranscriptDeletionService({
+  catalog: transcriptCatalogStore,
+  identity: transcriptIdentityStore,
+  relevance: transcriptRelevanceStore,
+  registries: transcriptConsumerRegistries,
+  log: (message) => console.log(`[transcript] ${message}`),
 });
 
 const transcript = new TranscriptHost({
@@ -427,6 +452,12 @@ await registerApi(app, {
 });
 /* Semantic transcript relevance Review surface (issue #127). */
 registerTranscriptRelevanceApi(app, { relevance: transcriptRelevance });
+/* Transcript deletion surface (issue #128): corpus listing, cascade
+   deletion, tombstones, and restore-processing-permission. */
+registerTranscriptDeletionApi(app, {
+  catalog: transcriptCatalogStore,
+  deletion: transcriptDeletion,
+});
 // A fresh Workspace adopts the relay address the deployment declares, so the
 // bundled relay is reachable before anyone opens Settings. A stored address
 // wins, so this never overrides an operator's own choice (issue #109).

@@ -4,11 +4,14 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type {
   TranscriptConsent,
+  TranscriptDeletionReceipt,
+  TranscriptDeletionTombstone,
   TranscriptLedgerEntry,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
@@ -22,10 +25,14 @@ import type {
 export class TranscriptCatalogStore {
   private readonly root: string;
   private readonly transcriptsDir: string;
+  private readonly tombstonesDir: string;
+  private readonly receiptsDir: string;
 
   constructor(workspaceDir: string) {
     this.root = join(workspaceDir, "transcript-catalog");
     this.transcriptsDir = join(this.root, "transcripts");
+    this.tombstonesDir = join(this.root, "tombstones");
+    this.receiptsDir = join(this.root, "deletion-receipts");
   }
 
   readConsent(): TranscriptConsent | null {
@@ -105,6 +112,85 @@ export class TranscriptCatalogStore {
       .filter((name) => name.endsWith(".json"))
       .map((name) => this.read(join(this.transcriptsDir, name)) as TranscriptRecord | null)
       .filter((record): record is TranscriptRecord => record !== null);
+  }
+
+  /**
+   * Delete the local record of one transcript (issue #128). The artifact is
+   * immutable while it exists, so the only local path that removes one is
+   * the explicit deletion cascade.
+   */
+  deleteTranscript(id: string): boolean {
+    const path = join(this.transcriptsDir, `${id}.json`);
+    if (!existsSync(path)) return false;
+    rmSync(path);
+    return true;
+  }
+
+  /**
+   * The content-free do-not-reingest record, keyed by source identity
+   * (external file id). It is written by the deletion cascade and read
+   * before every processing attempt, so a deleted source wins over
+   * automatic Drive detection (spec #117, constraint 11) across restarts.
+   */
+  writeTombstone(tombstone: TranscriptDeletionTombstone): void {
+    mkdirSync(this.tombstonesDir, { recursive: true });
+    this.writeAtomic(this.tombstonePath(tombstone.externalFileId), this.serialize(tombstone));
+  }
+
+  readTombstone(externalFileId: string): TranscriptDeletionTombstone | null {
+    return this.read(this.tombstonePath(externalFileId)) as TranscriptDeletionTombstone | null;
+  }
+
+  listTombstones(): TranscriptDeletionTombstone[] {
+    if (!existsSync(this.tombstonesDir)) return [];
+    return readdirSync(this.tombstonesDir)
+      .filter((name) => name.endsWith(".json"))
+      .map(
+        (name) => this.read(join(this.tombstonesDir, name)) as TranscriptDeletionTombstone | null,
+      )
+      .filter((tombstone): tombstone is TranscriptDeletionTombstone => tombstone !== null)
+      .sort((left, right) => left.deletedAt.localeCompare(right.deletedAt));
+  }
+
+  /** Explicit restore of processing permission removes the tombstone. */
+  deleteTombstone(externalFileId: string): boolean {
+    const path = this.tombstonePath(externalFileId);
+    if (!existsSync(path)) return false;
+    rmSync(path);
+    return true;
+  }
+
+  /**
+   * Restore clears the exactly-once record for the source file too, so the
+   * next pass processes it fresh instead of trusting a processed entry whose
+   * record no longer exists. The deletion receipt keeps the audit trail.
+   */
+  removeLedgerEntries(externalFileId: string): number {
+    const entries = this.readLedger();
+    const kept = entries.filter((entry) => entry.externalFileId !== externalFileId);
+    if (kept.length === entries.length) return 0;
+    mkdirSync(this.root, { recursive: true });
+    this.writeAtomic(join(this.root, "ledger.json"), this.serialize(kept));
+    return entries.length - kept.length;
+  }
+
+  /** The audited receipt of one deletion; readable even after a restore. */
+  saveDeletionReceipt(receipt: TranscriptDeletionReceipt): void {
+    mkdirSync(this.receiptsDir, { recursive: true });
+    this.writeAtomic(
+      join(this.receiptsDir, `${receipt.transcriptId}.json`),
+      this.serialize(receipt),
+    );
+  }
+
+  getDeletionReceipt(transcriptId: string): TranscriptDeletionReceipt | null {
+    return this.read(
+      join(this.receiptsDir, `${transcriptId}.json`),
+    ) as TranscriptDeletionReceipt | null;
+  }
+
+  private tombstonePath(externalFileId: string): string {
+    return join(this.tombstonesDir, `${encodeURIComponent(externalFileId)}.json`);
   }
 
   private serialize(value: unknown): string {

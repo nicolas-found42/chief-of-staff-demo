@@ -136,6 +136,21 @@ export class PersonProfileStore {
   }
 
   /**
+   * Rewrite one immutable revision in place. Only a deletion cascade needs
+   * this (issue #128): transcript-origin evidence must not survive inside
+   * revision copies, while every other fact of the revision stays exactly
+   * as recorded.
+   */
+  replaceRevision(profile: PersonProfile): void {
+    const revisions = join(this.profilesDir, profile.id, "revisions");
+    mkdirSync(revisions, { recursive: true });
+    this.writeAtomic(
+      join(revisions, `${profile.revision}.json`),
+      `${JSON.stringify(profile, null, 2)}\n`,
+    );
+  }
+
+  /**
    * Removes the exact canonical record and every immutable factual revision,
    * then writes only a content-free referential tombstone. Source documents
    * live outside this store and are deliberately untouched.

@@ -321,6 +321,10 @@ export class TranscriptCatalog {
   private async processFile(
     file: TranscriptSourceFileMeta,
   ): Promise<keyof TranscriptProcessingPass> {
+    /* A deleted source tombstone wins over automatic Drive detection (spec
+       #117, constraint 11): the file is not even fetched until the owner
+       explicitly restores processing permission. */
+    if (this.store.readTombstone(file.externalFileId)) return "skipped";
     const latest = this.store.latestEntry(file.externalFileId);
     let bytes: Buffer | null;
     try {

@@ -37,7 +37,10 @@ test("semantic transcript relevance journey — nav → search → confirm → r
     .getByLabel("Search the transcript corpus")
     .fill("export button timing out on large accounts");
   await page.getByRole("button", { name: "Search transcripts" }).click();
-  const syncCard = page.getByRole("listitem").filter({
+  /* The page also lists the retained transcript corpus for deletion
+     (issue #128); scope every assertion to the relevance results list. */
+  const relevanceItems = page.locator("ul.relevance-list").first();
+  const syncCard = relevanceItems.getByRole("listitem").filter({
     hasText: "Weekly Product Sync — 2026-08-17T13-00-00.000Z.md",
   });
   await expect(syncCard).toHaveCount(1);
@@ -65,7 +68,7 @@ test("semantic transcript relevance journey — nav → search → confirm → r
   // 5. A second search surfaces another conversation; the owner rejects it.
   await page.getByLabel("Search the transcript corpus").fill("investor update draft churn numbers");
   await page.getByRole("button", { name: "Search transcripts" }).click();
-  const boardCard = page.getByRole("listitem").filter({
+  const boardCard = relevanceItems.getByRole("listitem").filter({
     hasText: "Board Prep — 2026-08-19T10-00-00.000Z.md",
   });
   await expect(boardCard).toHaveCount(1);
@@ -76,7 +79,7 @@ test("semantic transcript relevance journey — nav → search → confirm → r
   // 6. A third result can be left unresolved explicitly.
   await page.getByLabel("Search the transcript corpus").fill("onboarding flow plan-selection step");
   await page.getByRole("button", { name: "Search transcripts" }).click();
-  const unresolvedCard = page
+  const unresolvedCard = relevanceItems
     .getByRole("listitem")
     .filter({ hasText: "Weekly Product Sync — 2026-08-17T13-00-00.000Z.md" })
     .filter({ hasText: "plan-selection" });
@@ -99,6 +102,6 @@ test("semantic transcript relevance journey — nav → search → confirm → r
   await page.getByRole("button", { name: "Search transcripts" }).click();
   await expect(page.getByText("No new relevance candidates.")).toBeVisible();
   await page.getByLabel("Review state").selectOption("all");
-  await expect(page.getByRole("listitem")).toHaveCount(3);
+  await expect(relevanceItems.getByRole("listitem")).toHaveCount(3);
   await scanForViolations(page);
 });

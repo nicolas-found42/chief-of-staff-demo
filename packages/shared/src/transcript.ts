@@ -698,3 +698,76 @@ export interface TranscriptRelevanceReviewItem {
   decision: TranscriptRelevanceDecision | null;
   reviewState: TranscriptRelevanceReviewState;
 }
+
+/* ==========================================================================
+ * Transcript deletion (ADR-0043, issue #128)
+ *
+ * Local deletion of one immutable Transcript record. It is local-only by
+ * construction: the remote Drive source and every previously created provider
+ * record (Gmail drafts, Tasks, Sheets) stay untouched, and the receipt says
+ * so with a zero remote-operation count.
+ * ========================================================================== */
+
+/** The exact confirmation phrase transcript deletion requires (spec #117). */
+export const TRANSCRIPT_DELETE_CONFIRMATION = "DELETE TRANSCRIPT";
+
+/**
+ * The content-free record a deleted Transcript leaves behind: source identity,
+ * checksum, deletion time, and the do-not-reingest policy — and nothing else.
+ * No file name, no participants, no text; it outlives the identity the deleted
+ * document may still have named.
+ */
+export interface TranscriptDeletionTombstone {
+  sourceSystem: "drive";
+  externalFileId: string;
+  checksum: string;
+  deletedAt: string;
+  policy: "do-not-reingest";
+}
+
+/** What one registered consumer of transcript-derived records will lose. */
+export interface TranscriptConsumerDisclosure {
+  consumer: string;
+  label: string;
+  recordCount: number;
+}
+
+export interface TranscriptDeletionRemovedCounts {
+  /** The immutable normalized record itself. */
+  transcriptRecords: number;
+  identityMentions: number;
+  organizationMentions: number;
+  identityCandidates: number;
+  identityDecisions: number;
+  organizationMergeDecisions: number;
+  /** Remembered mappings scoped to the deleted transcript; they can never
+   *  apply again and carry its surface text. Workspace-scoped mappings are
+   *  standing owner authority and survive. */
+  transcriptRememberedMappings: number;
+  extractionLedgerEntries: number;
+  relevanceCandidates: number;
+  relevanceDecisions: number;
+  /** Records removed through registered consumer cascades. */
+  consumerRecords: number;
+}
+
+/** The audited result of one transcript deletion. */
+export interface TranscriptDeletionReceipt {
+  receiptId: string;
+  transcriptId: string;
+  externalFileId: string;
+  deletedAt: string;
+  removed: TranscriptDeletionRemovedCounts;
+  tombstone: TranscriptDeletionTombstone;
+  remoteProviderOperations: number;
+}
+
+/** A retained transcript as the deletion surface lists it: metadata only. */
+export interface TranscriptSummary {
+  id: string;
+  externalFileId: string;
+  fileName: string;
+  sourceUrl: string | null;
+  meetingDate: string | null;
+  ingestedAt: string;
+}
