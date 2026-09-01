@@ -55,6 +55,7 @@ export interface ContentScoutModuleDeps {
   recordSanitizedDiagnostic?: (id: string, contentType: string, body: string) => void;
   intakeCompleted?: (period: string | null) => void;
   shortlistSize?: () => number;
+  isOwnerProfileConfirmed?: () => boolean;
 }
 
 function collectionStart(target: SourceTarget, now: Date): string {
@@ -477,6 +478,12 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
     const missingPages = new Map<string, string[]>();
 
     await ctx.stage("draft", async () => {
+      if (deps.isOwnerProfileConfirmed && !deps.isOwnerProfileConfirmed()) {
+        throw new StageFailure(
+          "owner_not_confirmed",
+          "Confirm the workspace owner Profile before generating content.",
+        );
+      }
       if (!deps.draftGenerator) {
         throw new StageFailure(
           "draft_generator_unconfigured",

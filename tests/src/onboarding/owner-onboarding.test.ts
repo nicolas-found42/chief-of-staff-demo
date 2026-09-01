@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
+import { ConfigStore } from "../../../apps/server/src/config";
+import { openGoogleConnection } from "../../../apps/server/src/google/connection";
 import type {
   ConfirmedOwnerReference,
   PersonProfileCreateInput,
@@ -216,6 +218,74 @@ describe("durability across restart", () => {
       "profileRevision",
     ]);
     expect(raw.toLowerCase()).not.toMatch(/token|secret|credential|refresh/);
+  });
+
+  it("preserves the persisted owner when production Google wiring is indeterminate after restart", async () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    const confirmed = onboarding.confirm(profile.id);
+    const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+    const config = new ConfigStore(join(workspaceDir, "config.json"));
+    config.load();
+    config.update({ google: { clientId: "client-id", clientSecret: "client-secret" } });
+    config.setGoogleRefreshToken("persisted-refresh-token");
+    const google = openGoogleConnection(config, 4317, {
+      probe: async () => {
+        throw new Error("temporary Google outage");
+      },
+    });
+
+    await restarted.refreshConnectedIdentity(() => google.state());
+
+    expect(restarted.confirmed()).toEqual(confirmed);
+    expect(restarted.outwardOwnerEmail()).toBe("ada@example.com");
+  });
+
+  it("preserves the persisted owner when Google identity lookup throws during restart", async () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    const confirmed = onboarding.confirm(profile.id);
+    const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+
+    await restarted.refreshConnectedIdentity(async () => {
+      throw new Error("temporary Google outage");
+    });
+
+    expect(restarted.confirmed()).toEqual(confirmed);
+  });
+
+  it.each(["disconnected", "expired"] as const)(
+    "invalidates the persisted owner when Google is explicitly %s",
+    async (state) => {
+      const profile = createProfile();
+      onboarding.setConnectedIdentity("ada@example.com");
+      onboarding.confirm(profile.id);
+      const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+
+      await restarted.refreshConnectedIdentity(async () => ({ state, email: null }));
+
+      expect(restarted.confirmed()).toBeNull();
+      const afterInvalidation = new OwnerOnboarding({ people: profiles, workspaceDir });
+      afterInvalidation.setConnectedIdentity("ada@example.com");
+      expect(afterInvalidation.confirmed()).toBeNull();
+    },
+  );
+
+  it("invalidates the persisted owner after successfully observing a different email", async () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    onboarding.confirm(profile.id);
+    const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+
+    await restarted.refreshConnectedIdentity(async () => ({
+      state: "connected",
+      email: "grace@example.com",
+    }));
+
+    expect(restarted.confirmed()).toBeNull();
+    const afterInvalidation = new OwnerOnboarding({ people: profiles, workspaceDir });
+    afterInvalidation.setConnectedIdentity("ada@example.com");
+    expect(afterInvalidation.confirmed()).toBeNull();
   });
 });
 

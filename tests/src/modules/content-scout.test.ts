@@ -260,6 +260,119 @@ describe("ContentScoutHost", () => {
     expect(host.activeShortlist()?.runId).toBe(runId);
   });
 
+  it("blocks a selected Run retry when owner confirmation was invalidated", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-retry-gate-"));
+    const runs = openRuns(workspaceDir);
+    let confirmed = true;
+    let generationCalls = 0;
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [rssAdapter()],
+      ranker,
+      isOwnerProfileConfirmed: () => confirmed,
+      draftGenerator: {
+        async generate() {
+          generationCalls += 1;
+          throw new Error("fixture draft failure");
+        },
+      },
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Example Research",
+      url: "https://example.com/feed.xml",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+    await host.select(runId, [host.activeShortlist()!.opportunities[0].id]);
+    await host.idle();
+    const callsBeforeRetry = generationCalls;
+    expect(runs.detail(runId)?.failedStage).toBe("draft");
+
+    confirmed = false;
+    await host.retryRun(runId);
+    await host.idle();
+
+    expect(generationCalls).toBe(callsBeforeRetry);
+    expect(runs.detail(runId)?.failedStage).toBe("draft");
+    expect(runs.detail(runId)?.events.at(-1)).toMatchObject({
+      type: "run_failed",
+      detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
+    });
+  });
+
+  it("blocks recovery of selected generation when restart observes invalidated confirmation", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-recovery-gate-"));
+    const runs = openRuns(workspaceDir);
+    let releaseDraftStart!: () => void;
+    const draftStarted = new Promise<void>((resolve) => {
+      releaseDraftStart = resolve;
+    });
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [rssAdapter()],
+      ranker,
+      isOwnerProfileConfirmed: () => true,
+      draftGenerator: {
+        async generate() {
+          releaseDraftStart();
+          return await new Promise<never>(() => undefined);
+        },
+      },
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Example Research",
+      url: "https://example.com/feed.xml",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+    await host.select(runId, [host.activeShortlist()!.opportunities[0].id]);
+    await draftStarted;
+    expect(runs.detail(runId)?.status).toBe("running");
+
+    let recoveredGenerationCalls = 0;
+    const restarted = new ContentScoutHost({
+      runs: openRuns(workspaceDir),
+      workspaceDir,
+      now: () => NOW,
+      adapters: [rssAdapter()],
+      ranker,
+      isOwnerProfileConfirmed: () => false,
+      draftGenerator: {
+        async generate() {
+          recoveredGenerationCalls += 1;
+          throw new Error("generation must stay behind the owner gate");
+        },
+      },
+      log: () => undefined,
+    });
+    restarted.start();
+    await restarted.idle();
+    restarted.stop();
+
+    expect(recoveredGenerationCalls).toBe(0);
+    expect(runs.detail(runId)?.failedStage).toBe("draft");
+    expect(runs.detail(runId)?.events.at(-1)).toMatchObject({
+      type: "run_failed",
+      detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
+    });
+  });
+
   it("persists configured sources, produces a ranked shortlist, and durably blocks the Intake Run", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-scout-"));
     const runs = openRuns(workspaceDir);

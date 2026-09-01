@@ -189,10 +189,7 @@ const contentResearchCompleteJson = () => {
    dependent outward workflows get it only while a confirmed owner Profile
    reference stands — otherwise the typed owner-missing state. */
 const refreshOwnerIdentity = async (): Promise<void> => {
-  const status = await googleConnection.state();
-  ownerOnboarding.setConnectedIdentity(
-    status.state === "connected" && status.email ? status.email.toLowerCase() : null,
-  );
+  await ownerOnboarding.refreshConnectedIdentity(() => googleConnection.state());
 };
 const brandProfiles = new WorkspaceBrandProfileStore(workspaceDir);
 const contentResearch = new ContentResearchHost({
@@ -328,7 +325,7 @@ await registerApi(app, {
   onConfigChanged: async () => {
     meetingBriefProduction?.invalidateGoogleIdentity();
     await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
-    await refreshOwnerIdentity().catch(() => ownerOnboarding.setConnectedIdentity(null));
+    await refreshOwnerIdentity();
     for (const module of modules.filter((candidate) => candidate !== meetingBrief)) {
       module.start?.();
     }
@@ -396,10 +393,8 @@ await meetingBriefProduction?.refreshOwnerIdentity().catch((error: unknown) => {
 
 /* Same rule for owner onboarding and the workflows gated behind it: the
    identity is held before the first Run, and Google being unreachable at
-   boot is not fatal — it leaves the owner unconfirmed. */
-await refreshOwnerIdentity().catch(() => {
-  ownerOnboarding.setConnectedIdentity(null);
-});
+   boot is not fatal — it preserves the last determinate owner identity. */
+await refreshOwnerIdentity();
 for (const module of modules) {
   module.start?.();
 }

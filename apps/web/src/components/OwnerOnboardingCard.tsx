@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type {
-  ConfirmedOwnerReference,
-  OwnerOnboardingProposal,
-  PersonProfile,
-} from "@chief-of-staff-demo/shared";
-import { api, errorMessage, onboardingApi } from "../client";
-
-interface OwnerOnboardingStatus {
-  proposal: OwnerOnboardingProposal | null;
-  confirmed: ConfirmedOwnerReference | null;
-}
+import type { PersonProfile } from "@chief-of-staff-demo/shared";
+import { api, errorMessage, onboardingApi, type OwnerOnboardingStatus } from "../client";
 
 /**
  * Owner onboarding (issue #123): the connected Google identity proposes the
@@ -18,7 +9,7 @@ interface OwnerOnboardingStatus {
  * or creates-and-confirms it. Nothing is confirmed without the button press,
  * and the pinned reference carries the exact Profile revision.
  */
-export function OwnerOnboardingCard({ onChange }: { onChange?: () => void }) {
+export function OwnerOnboardingCard() {
   const [status, setStatus] = useState<OwnerOnboardingStatus | null>(null);
   const [profiles, setProfiles] = useState<PersonProfile[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -50,7 +41,6 @@ export function OwnerOnboardingCard({ onChange }: { onChange?: () => void }) {
     try {
       await onboardingApi.confirm(selectedId);
       await refresh();
-      onChange?.();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {

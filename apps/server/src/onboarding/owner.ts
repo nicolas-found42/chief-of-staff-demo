@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ConfirmedOwnerReference, OwnerOnboardingProposal } from "@chief-of-staff-demo/shared";
+import type {
+  ConfirmedOwnerReference,
+  GoogleConnectionState,
+  OwnerOnboardingProposal,
+} from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 
 /**
@@ -25,6 +29,32 @@ export class OwnerOnboarding {
     this.people = deps.people;
     this.stateFile = join(deps.workspaceDir, "onboarding", "owner-confirmation.json");
     this.now = deps.now ?? (() => new Date());
+    this.connectedEmail = this.read()?.confirmedForGoogleEmail ?? null;
+  }
+
+  /**
+   * Refresh production's held Google identity without treating an
+   * indeterminate provider response as a disconnect. A connected state with
+   * no email, or a failed status read, preserves the last confirmed identity;
+   * only a determinate disconnect/expiry or a different observed email can
+   * invalidate it.
+   */
+  async refreshConnectedIdentity(
+    readStatus: () => Promise<{ state: GoogleConnectionState; email: string | null }>,
+  ): Promise<void> {
+    let status: { state: GoogleConnectionState; email: string | null };
+    try {
+      status = await readStatus();
+    } catch {
+      return;
+    }
+    if (status.state === "connected") {
+      if (status.email) this.setConnectedIdentity(status.email);
+      return;
+    }
+    if (status.state === "disconnected" || status.state === "expired") {
+      this.setConnectedIdentity(null);
+    }
   }
 
   /**

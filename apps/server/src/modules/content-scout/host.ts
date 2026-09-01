@@ -130,6 +130,9 @@ export class ContentScoutHost implements HostedModule {
         },
         shortlistSize: () =>
           deps.configStore?.get().modules[CONTENT_SCOUT_MODULE_ID].shortlistSize ?? 5,
+        ...(deps.isOwnerProfileConfirmed
+          ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
+          : {}),
         now,
         sleep:
           deps.sleep ??
