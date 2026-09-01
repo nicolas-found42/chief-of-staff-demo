@@ -268,7 +268,10 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
   await expect(tiles.filter({ hasText: "Meeting Debrief" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Content Research" })).not.toContainText("Planned");
 
-  const home = page.locator("main#main");
+  /* The tile links bind to the Modules grid, not all of main: a finished
+     scheduled Run can land a feed link naming the same Module ("Content
+     Research daily"), and a main-scoped role query cannot tell them apart. */
+  const moduleTiles = page.locator(".module-grid");
   for (const [label, path] of [
     ["YouTube Trends", "/content-research/trends"],
     ["Content Scout", "/content-scout"],
@@ -276,7 +279,7 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
     ["Meeting Debrief", "/meeting-debrief"],
     ["Content Research", "/content-research"],
   ] as const) {
-    await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);
+    await expect(moduleTiles.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }
 
   // Trends is presented under Content Research (spec: /content-research/trends),
@@ -290,7 +293,7 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
   await expect(tabs.filter({ hasText: "YouTube Trends" })).toHaveCount(0);
   await expect(tabs.filter({ hasText: "Content Research" })).toHaveCount(1);
 
-  await home.getByRole("link", { name: "Content Scout" }).click();
+  await moduleTiles.getByRole("link", { name: "Content Scout" }).click();
   await expect(page).toHaveURL(/\/content-scout$/);
   // Dropzone is gone — Drive folder is the Intake. And a Module's page is not
   // a Runs surface any more: with Transcript → Tasks retired (#142) the

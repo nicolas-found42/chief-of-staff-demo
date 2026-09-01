@@ -343,14 +343,21 @@ export function contentScoutTestPorts(now: () => Date): {
         checkpoint: "e2e-checkpoint-1",
         items: ["public-change", "independent-analysis", "operator-impact"].map(
           (externalId, index) => ({
-            id: `rss:e2e-${externalId}`,
-            externalId: `e2e-${externalId}`,
+            /* Item identity is keyed to this Source Target, the way real feeds
+               are distinct sources: two journeys each approve their own Target
+               and every shortlist Run must get its own Opportunity identity.
+               A shared fixture key would collide across journeys on exact-
+               duplicate eligibility, the seven-day same-angle cooldown, and
+               the one-Opportunity-one-Project seam. */
+            id: `${target.id}:e2e-${externalId}`,
+            externalId: `e2e-${target.id}:${externalId}`,
             targetId: target.id,
             adapterId: "rss",
-            canonicalUrl: `https://example.com/research/${externalId}`,
+            canonicalUrl: `https://example.com/research/${target.id}/${externalId}`,
             author: "Example Research",
             title: `Verified public evidence ${index + 1}`,
             body: `Independent public-source evidence ${index + 1} describes the verified change and its practical consequences.`,
+            storyKey: `e2e-${target.id}:${externalId}`,
             description: null,
             publishedAt: at,
             discoveredAt: at,

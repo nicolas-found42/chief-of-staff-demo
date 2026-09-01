@@ -26,6 +26,21 @@ writeFileSync(
       },
       drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
       ollama: { baseUrl: "http://127.0.0.1:11434" },
+      /* The hermetic server holds the Content Scout clock just before its due
+         times: a 30-second scheduler tick that fires a scheduled daily-intake
+         Run (blocked forever until a decision) or a weekly Discovery Run would
+         otherwise interleave scheduled Runs and Source Suggestions into any
+         journey that takes longer than one tick after a Brand Profile and an
+         active Source Target exist. Journeys drive Scout and Discovery
+         explicitly, so the schedule stays production-defaulted in the app and
+         parked here only. */
+      modules: {
+        "content-scout": {
+          dailyTime: "23:59",
+          weeklyDiscoveryDay: 7,
+          weeklyDiscoveryTime: "23:59",
+        },
+      },
     },
     null,
     2,
