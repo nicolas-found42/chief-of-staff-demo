@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import type { MeetingBrief, MeetingBriefEvent } from "@chief-of-staff-demo/shared";
+import type {
+  MeetingBrief,
+  MeetingBriefEvent,
+  MeetingBriefProviderOutcome,
+} from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../../config.js";
 import type { Runs } from "../../runs.js";
 import { FakeCalendarProvider, type CalendarEvent } from "./calendar.js";
@@ -90,6 +94,9 @@ export function createMeetingBriefTestRuntime(
   options: MeetingBriefTestRuntimeOptions,
 ): MeetingBriefTestRuntime {
   let now = new Date(options.initialNow);
+  /* Journey knob (#137): the per-provider outcome ledger the fixture enrich
+     reports. Null keeps the legacy fixture outside the completeness gate. */
+  let fixtureOutcomes: MeetingBriefProviderOutcome[] | null = null;
   const calendar = new FakeCalendarProvider();
   const gmailDelivery = new FakeGmailDeliveryProvider({ ownerEmail: "owner@example.com" });
   const hubSpotConnection = new HubSpotConnection(
@@ -139,6 +146,9 @@ export function createMeetingBriefTestRuntime(
         ],
         evidence: ["https://example.com/alice", "https://example.com/acme"],
         personProfileLinks,
+        // Set by the journey (#137) to drive the completeness gate and cutoff;
+        // null keeps the legacy fixture outside the gate.
+        ...(fixtureOutcomes ? { outcomes: fixtureOutcomes, bundleVersion: 1 } : {}),
       };
     },
     completeBrief: async (input): Promise<MeetingBrief> => ({
@@ -202,6 +212,9 @@ export function createMeetingBriefTestRuntime(
     upsertEvent(event: MeetingBriefEvent) {
       calendar.upsertEvent(toCalendarEvent(event));
     },
+    setFixtureOutcomes(outcomes: MeetingBriefProviderOutcome[] | null) {
+      fixtureOutcomes = outcomes;
+    },
   };
 }
 
@@ -214,6 +227,7 @@ export interface MeetingBriefTestRuntime {
   setNow(value: Date): void;
   advance(ms: number): Date;
   upsertEvent(event: MeetingBriefEvent): void;
+  setFixtureOutcomes(outcomes: MeetingBriefProviderOutcome[] | null): void;
 }
 
 /**
@@ -266,6 +280,12 @@ export function registerMeetingBriefTestRoutes(
   app.post("/api/test/meeting-brief/fake-gmail/clear", async () => {
     runtime.gmailDelivery.clear();
     return { cleared: true };
+  });
+  // Journey knob (#137): set or clear the fixture provider-outcome ledger.
+  app.post("/api/test/meeting-brief/fixture-outcomes", async (request) => {
+    const body = request.body as { outcomes?: MeetingBriefProviderOutcome[] | null };
+    runtime.setFixtureOutcomes(body.outcomes ?? null);
+    return { set: body.outcomes ?? null };
   });
 }
 
