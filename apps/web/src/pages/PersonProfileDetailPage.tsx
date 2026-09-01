@@ -45,6 +45,56 @@ const mergeRepairFactFields = PERSON_PROFILE_REPAIR_FACT_KEYS.map((key) => ({
   ...REPAIR_FACT_PRESENTATION[key],
 }));
 
+function RepairFactControl({
+  id,
+  label,
+  control,
+  value,
+  onChange,
+  clear,
+}: {
+  id: string;
+  label: string;
+  control: "text" | "email" | "textarea";
+  value: string;
+  onChange: (value: string) => void;
+  clear?: { checked: boolean; label: string; onChange: (checked: boolean) => void };
+}) {
+  return (
+    <div className="field-row">
+      <label htmlFor={id}>{label}</label>
+      {control === "textarea" ? (
+        <textarea
+          id={id}
+          rows={3}
+          disabled={clear?.checked}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <input
+          id={id}
+          type={control}
+          autoComplete="off"
+          disabled={clear?.checked}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+      {clear ? (
+        <label>
+          <input
+            type="checkbox"
+            checked={clear.checked}
+            onChange={(event) => clear.onChange(event.target.checked)}
+          />{" "}
+          {clear.label}
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
 function described(profile: PersonProfile): string {
   return [profile.fullName, profile.role, profile.currentEmployer]
     .filter((value) => value !== null)
@@ -331,41 +381,20 @@ export function PersonProfileDetailPage() {
             {repairableFactFields.map(({ key, label, control }) => {
               const id = `correct-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
               return (
-                <div className="field-row" key={key}>
-                  <label htmlFor={id}>{label}</label>
-                  {control === "textarea" ? (
-                    <textarea
-                      id={id}
-                      rows={3}
-                      disabled={clearCorrection[key]}
-                      value={correction[key]}
-                      onChange={(event) =>
-                        setCorrection({ ...correction, [key]: event.target.value })
-                      }
-                    />
-                  ) : (
-                    <input
-                      id={id}
-                      type={control}
-                      autoComplete="off"
-                      disabled={clearCorrection[key]}
-                      value={correction[key]}
-                      onChange={(event) =>
-                        setCorrection({ ...correction, [key]: event.target.value })
-                      }
-                    />
-                  )}
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={clearCorrection[key]}
-                      onChange={(event) =>
-                        setClearCorrection({ ...clearCorrection, [key]: event.target.checked })
-                      }
-                    />{" "}
-                    Clear {label.toLowerCase()}
-                  </label>
-                </div>
+                <RepairFactControl
+                  key={key}
+                  id={id}
+                  label={label}
+                  control={control}
+                  value={correction[key]}
+                  onChange={(value) => setCorrection({ ...correction, [key]: value })}
+                  clear={{
+                    checked: clearCorrection[key],
+                    label: `Clear ${label.toLowerCase()}`,
+                    onChange: (checked) =>
+                      setClearCorrection({ ...clearCorrection, [key]: checked }),
+                  }}
+                />
               );
             })}
             <div className="field-row">
@@ -409,29 +438,14 @@ export function PersonProfileDetailPage() {
             {mergeRepairFactFields.map(({ key, label, control }) => {
               const id = `merge-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
               return (
-                <div className="field-row" key={key}>
-                  <label htmlFor={id}>Resolved {label.toLowerCase()}</label>
-                  {control === "textarea" ? (
-                    <textarea
-                      id={id}
-                      rows={3}
-                      value={mergeForm[key]}
-                      onChange={(event) =>
-                        setMergeForm({ ...mergeForm, [key]: event.target.value })
-                      }
-                    />
-                  ) : (
-                    <input
-                      id={id}
-                      type={control}
-                      autoComplete="off"
-                      value={mergeForm[key]}
-                      onChange={(event) =>
-                        setMergeForm({ ...mergeForm, [key]: event.target.value })
-                      }
-                    />
-                  )}
-                </div>
+                <RepairFactControl
+                  key={key}
+                  id={id}
+                  label={`Resolved ${label.toLowerCase()}`}
+                  control={control}
+                  value={mergeForm[key]}
+                  onChange={(value) => setMergeForm({ ...mergeForm, [key]: value })}
+                />
               );
             })}
             <div className="field-row">

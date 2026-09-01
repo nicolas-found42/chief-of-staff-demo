@@ -15,13 +15,20 @@ import { renderMeetingBriefEmail } from "./output.js";
 import { materialFingerprint } from "./revision.js";
 
 /**
- * Stable idempotency key for a Run. Persisted before the outward Gmail write.
- * Occurrence + eventVersion is stable across retries of the same Run; runId would also work
- * but this key is deterministic even before the Run id is known in some paths.
+ * Stable idempotency key for one immutable Brief generation. A Profile refresh
+ * uses its new Run identity so it cannot reconcile the stale generation's Gmail
+ * message, while retries within that Run keep the same key.
  */
-export function deliveryIdFor(occurrenceKey: string, eventVersion: string): string {
+export function deliveryIdFor(
+  occurrenceKey: string,
+  eventVersion: string,
+  profileRefreshRunId?: string,
+): string {
   // Sanitize: occurrenceKey already `eventId::occurrenceId`, version is opaque string
-  return `mb-deliver-${occurrenceKey}-${eventVersion}`;
+  const generation = profileRefreshRunId
+    ? `${eventVersion}-profile-${profileRefreshRunId}`
+    : eventVersion;
+  return `mb-deliver-${occurrenceKey}-${generation}`;
 }
 
 export function deliveryState(
@@ -133,10 +140,24 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   } = args;
   const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
-  const deliveryVersion = input.profileRefreshOf
-    ? `${brief.eventVersion}-profile-${ctx.runId}`
-    : brief.eventVersion;
-  const deliveryId = deliveryIdFor(occurrenceKey, deliveryVersion);
+  let isProfileRefresh = Boolean(input.profileRefreshOf);
+  if (!isProfileRefresh) {
+    const resultRaw = ctx.readFile("result.json");
+    if (resultRaw) {
+      try {
+        isProfileRefresh = Boolean(
+          (JSON.parse(resultRaw) as MeetingBriefRunResult).profileRefreshOf,
+        );
+      } catch {
+        // A malformed result remains a Run failure at its owning Stage.
+      }
+    }
+  }
+  const deliveryId = deliveryIdFor(
+    occurrenceKey,
+    brief.eventVersion,
+    isProfileRefresh ? ctx.runId : undefined,
+  );
 
   // ---- Current Calendar truth: fetched once, shared by the quiet gate and the pre-send recheck.
   // The quiet gate must consult this fresh state (not the snapshot-frozen start): a material
@@ -168,17 +189,12 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   // First brief sends immediately; revision waits 5 min unless meeting is within 5 min.
   // isRevision must survive resume (planResume stub input has no supersedes) — check result.json fallback.
   let isRevision = Boolean(input.supersedesRunId);
-  let isProfileRefresh = Boolean(input.profileRefreshOf);
   if (!isRevision) {
     const resultRawForRevision = ctx.readFile("result.json");
     if (resultRawForRevision) {
       try {
-        const parsed = JSON.parse(resultRawForRevision) as {
-          supersedes?: string | null;
-          profileRefreshOf?: string;
-        };
+        const parsed = JSON.parse(resultRawForRevision) as { supersedes?: string | null };
         if (parsed.supersedes) isRevision = true;
-        if (parsed.profileRefreshOf) isProfileRefresh = true;
       } catch {
         // ignore
       }

@@ -382,9 +382,6 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           }
           brief = composed;
           const supersedes = input.supersedesRunId ?? null;
-          const deliveryVersion = input.profileRefreshOf
-            ? `${composed.eventVersion}-profile-${ctx.runId}`
-            : composed.eventVersion;
           const partial: MeetingBriefRunResult = {
             version: 1,
             eventId: input.eventId,
@@ -395,7 +392,14 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             enrichAt: now().toISOString(),
             composeAt: now().toISOString(),
             meetingBrief: composed,
-            delivery: deliveryState("pending", deliveryIdFor(occurrenceKey, deliveryVersion)),
+            delivery: deliveryState(
+              "pending",
+              deliveryIdFor(
+                occurrenceKey,
+                composed.eventVersion,
+                input.profileRefreshOf ? ctx.runId : undefined,
+              ),
+            ),
             personProfileLinks: enrichResult.personProfileLinks ?? [],
             supersedes,
             ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),

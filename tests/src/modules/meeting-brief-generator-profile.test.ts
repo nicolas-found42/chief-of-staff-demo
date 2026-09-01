@@ -584,12 +584,20 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
     const app = fastify({ logger: false });
     await host.routes(app);
     await app.ready();
-    const refreshed = await app.inject({
-      method: "POST",
-      url: `/api/meeting-brief/runs/${runId}/regenerate`,
-    });
-    expect(refreshed.statusCode).toBe(202);
-    const refreshedRunId = refreshed.json<{ runId: string }>().runId;
+    const [firstRefresh, concurrentRefresh] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/api/meeting-brief/runs/${runId}/regenerate`,
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/meeting-brief/runs/${runId}/regenerate`,
+      }),
+    ]);
+    expect(firstRefresh.statusCode).toBe(202);
+    expect(concurrentRefresh.statusCode).toBe(202);
+    const refreshedRunId = firstRefresh.json<{ runId: string }>().runId;
+    expect(concurrentRefresh.json<{ runId: string }>().runId).toBe(refreshedRunId);
     expect(refreshedRunId).not.toBe(runId);
     await host.idle();
 
@@ -603,6 +611,121 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
     expect(sends).toBe(1);
     expect(runs.open(runId)!.readArtifact("result.json")).toBe(staleArtifact);
     expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+
+    const repeatedRefresh = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${runId}/regenerate`,
+    });
+    expect(repeatedRefresh.statusCode).toBe(202);
+    expect(repeatedRefresh.json<{ runId: string }>().runId).toBe(refreshedRunId);
+
+    const currentRefresh = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${refreshedRunId}/regenerate`,
+    });
+    expect(currentRefresh.statusCode).toBe(409);
+    expect(currentRefresh.json()).toMatchObject({
+      error: "meeting-brief-profile-refresh-not-required",
+    });
+    await app.close();
+  });
+
+  it("sends one distinct Profile refresh and reconciles that message on retry", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbf-profile-refresh-delivery-"));
+    const runs = openRuns(workspaceDir);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(workspaceDir),
+      now: () => new Date("2026-08-28T10:00:00.000Z"),
+    });
+    const profile = people.create({
+      fullName: "Alice External",
+      primaryEmail: "alice@external.co",
+      role: "CTO",
+    });
+    const sent = new Map<string, { messageId: string; recipient: string }>();
+    let sendCalls = 0;
+    let refreshedMessageId: string | null = null;
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date("2026-08-28T11:00:00.000Z"),
+      getInternalDomains: () => ["example.com"],
+      getOwnerEmail: () => "owner@example.com",
+      personProfiles: people,
+      enrich: async () => {
+        const current = people.get(profile.id)!;
+        return {
+          sections: [],
+          evidence: [],
+          personProfileLinks: [
+            {
+              guestEmail: "alice@external.co",
+              profileId: current.id,
+              profileRevision: current.revision,
+            },
+          ],
+        };
+      },
+      completeBrief: completeFixtureBrief,
+      gmailDeliveryProvider: {
+        async findByDeliveryId(deliveryId) {
+          return sent.get(deliveryId) ?? null;
+        },
+        async send({ deliveryId }) {
+          sendCalls += 1;
+          const delivered = {
+            messageId: `message-${sendCalls}`,
+            recipient: "owner@example.com",
+          };
+          sent.set(deliveryId, delivered);
+          if (sendCalls === 2) {
+            refreshedMessageId = delivered.messageId;
+            throw new Error("Lost acknowledgement after refreshed Gmail send");
+          }
+          return delivered;
+        },
+      },
+    });
+    const event = fixtureEvent({ version: "v_profile_refresh_delivery" });
+    host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
+    const [originalRunId] = await host.processDueSchedules(new Date("2026-08-28T11:00:00.000Z"));
+    await host.idle();
+    const original = runs.detail(originalRunId)?.result as MeetingBriefRunResult;
+    expect(original.delivery).toMatchObject({ status: "sent", messageId: "message-1" });
+
+    people.correct(profile.id, { role: "Founder", note: "Corrected after original delivery." });
+    const app = fastify({ logger: false });
+    await host.routes(app);
+    await app.ready();
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/meeting-brief/runs/${originalRunId}/regenerate`,
+    });
+    expect(response.statusCode).toBe(202);
+    const refreshedRunId = response.json<{ runId: string }>().runId;
+    await host.idle();
+
+    const failedRefresh = runs.detail(refreshedRunId)?.result as MeetingBriefRunResult;
+    expect(runs.detail(refreshedRunId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    expect(failedRefresh).toMatchObject({
+      profileRefreshOf: originalRunId,
+      personProfileLinks: [{ profileId: profile.id, profileRevision: 2 }],
+    });
+    expect(failedRefresh.delivery.deliveryId).not.toBe(original.delivery.deliveryId);
+    expect(sendCalls).toBe(2);
+    expect(sent.size).toBe(2);
+
+    await host.retryRun(refreshedRunId);
+    await host.idle();
+
+    const reconciledRefresh = runs.detail(refreshedRunId)?.result as MeetingBriefRunResult;
+    expect(reconciledRefresh.delivery).toMatchObject({
+      status: "reconciled",
+      deliveryId: failedRefresh.delivery.deliveryId,
+      messageId: refreshedMessageId,
+    });
+    expect(sendCalls).toBe(2);
+    expect(sent.size).toBe(2);
     await app.close();
   });
 });

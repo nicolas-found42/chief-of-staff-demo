@@ -115,6 +115,15 @@ function isMeetingBriefEvent(value: unknown): value is MeetingBriefEvent {
   );
 }
 
+class MeetingBriefRegenerationConflict extends Error {
+  readonly code = "meeting-brief-profile-refresh-not-required";
+
+  constructor(runId: string) {
+    super(`Meeting Brief has no stale Person Profile consumers: ${runId}`);
+    this.name = "MeetingBriefRegenerationConflict";
+  }
+}
+
 function toUpcoming(schedule: {
   key: string;
   dueAt: string;
@@ -165,6 +174,7 @@ export class MeetingBriefHost implements HostedModule {
   private readonly profileProvider: GuestProfileProvider | null;
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
+  private readonly profileRegenerations = new Map<string, Promise<string>>();
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
     this.clock = new DurableClock(deps.workspaceDir, this.now);
@@ -633,6 +643,20 @@ export class MeetingBriefHost implements HostedModule {
    * while enrichment and composition execute again against current Profile truth.
    */
   async regenerateRun(runId: string): Promise<string> {
+    const active = this.profileRegenerations.get(runId);
+    if (active) return active;
+
+    const existing = this.deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs.find((run) => {
+      const result = this.deps.runs.detail(run.id)?.result as
+        MeetingBriefRunResult | null | undefined;
+      return result?.profileRefreshOf === runId;
+    });
+    if (existing) {
+      const resolved = Promise.resolve(existing.id);
+      this.profileRegenerations.set(runId, resolved);
+      return resolved;
+    }
+
     const handle = this.deps.runs.open(runId);
     const meta = handle?.read();
     const detail = this.deps.runs.detail(runId);
@@ -649,12 +673,17 @@ export class MeetingBriefHost implements HostedModule {
     }
     if (!isMeetingBriefEvent(snapshot))
       throw new Error(`Meeting Brief snapshot is incomplete: ${runId}`);
+    const result = detail.result as MeetingBriefRunResult;
+    const hasStaleConsumer = this.profileReadModel(result).consumers.some(
+      ({ state }) => state?.refreshRequired === true,
+    );
+    if (!hasStaleConsumer) throw new MeetingBriefRegenerationConflict(runId);
     const storedOccurrenceKey = (snapshot as unknown as { occurrenceKey?: unknown }).occurrenceKey;
     const occurrenceKey =
       typeof storedOccurrenceKey === "string"
         ? storedOccurrenceKey
         : meetingBriefOccurrenceIdentity(snapshot.eventId, snapshot.occurrenceId).occurrenceKey;
-    return this.runner.startRun(
+    const regeneration = this.runner.startRun(
       {
         intake: MEETING_BRIEF_INTAKE,
         sourceUrl: null,
@@ -667,6 +696,24 @@ export class MeetingBriefHost implements HostedModule {
         profileRefreshOf: runId,
       },
     );
+    this.profileRegenerations.set(runId, regeneration);
+    try {
+      return await regeneration;
+    } catch (error) {
+      if (this.profileRegenerations.get(runId) === regeneration)
+        this.profileRegenerations.delete(runId);
+      throw error;
+    }
+  }
+
+  private profileReadModel(result: MeetingBriefRunResult): MeetingBriefPersonProfileReadModel {
+    return {
+      consumers: (result.personProfileLinks ?? []).map((link) => ({
+        link,
+        state:
+          this.deps.personProfiles?.consumerState(link.profileId, link.profileRevision) ?? null,
+      })),
+    };
   }
 
   /** Recovery scans due records on boot (covers ADR-0032 without blocked Runs) + bounded Calendar reconciliation (issue://83). */
@@ -746,7 +793,10 @@ export class MeetingBriefHost implements HostedModule {
       } catch (error) {
         reply.code(409);
         return {
-          error: "meeting-brief-regeneration-unavailable",
+          error:
+            error instanceof MeetingBriefRegenerationConflict
+              ? error.code
+              : "meeting-brief-regeneration-unavailable",
           message: error instanceof Error ? error.message : String(error),
         };
       }
@@ -760,14 +810,7 @@ export class MeetingBriefHost implements HostedModule {
         reply.code(404);
         return { error: "meeting-brief-run-not-found" };
       }
-      const readModel: MeetingBriefPersonProfileReadModel = {
-        consumers: (result.personProfileLinks ?? []).map((link) => ({
-          link,
-          state:
-            this.deps.personProfiles?.consumerState(link.profileId, link.profileRevision) ?? null,
-        })),
-      };
-      return readModel;
+      return this.profileReadModel(result);
     });
 
     app.get("/api/meeting-brief/guest-profile/status", async () => {
