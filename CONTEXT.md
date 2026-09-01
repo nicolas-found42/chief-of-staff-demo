@@ -98,6 +98,8 @@ audiences, offers, differentiators, proof, tone, vocabulary, and content constra
 generated from a bounded crawl of the company's website; thereafter owned by the person, not the
 website. Its canonical representation is versioned local Markdown. A rescan proposes a three-way
 diff against the previous website baseline and the person's current revision, never an overwrite.
+Every accepted revision is retained; restoring one appends it as a new current revision rather
+than rewinding history.
 Content Engine presents this resource under the user-facing label **Brand Voice**.
 _Avoid_: Brand document, Brand Guide, Brand Brief
 

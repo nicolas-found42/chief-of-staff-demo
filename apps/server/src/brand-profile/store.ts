@@ -1,9 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BrandProfileRevision, BrandProfileSourceScan } from "@chief-of-staff-demo/shared";
+import type {
+  BrandProfileRevision,
+  BrandProfileRevisionSummary,
+  BrandProfileSourceScan,
+} from "@chief-of-staff-demo/shared";
 
-type BrandProfileMetadata = Omit<BrandProfileRevision, "markdown">;
+type BrandProfileMetadata = BrandProfileRevisionSummary;
 
 /**
  * Workspace-owned access to Brand Profile revisions — the resource Content
@@ -77,6 +81,11 @@ export class WorkspaceBrandProfileStore {
   get(id: string): BrandProfileRevision | null {
     const metadata = this.readState().brandProfiles.find((revision) => revision.id === id);
     return metadata ? this.readRevision(metadata) : null;
+  }
+
+  /** Newest last, matching the append-only state file; callers reverse for display. */
+  list(): BrandProfileMetadata[] {
+    return this.readState().brandProfiles;
   }
 
   private readRevision(metadata: BrandProfileMetadata): BrandProfileRevision | null {

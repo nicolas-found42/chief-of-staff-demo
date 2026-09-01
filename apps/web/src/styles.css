@@ -285,6 +285,149 @@ body {
   padding: 0.75rem 1rem;
 }
 
+/* The Brand Profile surface. The scan form and the manual editor are the two
+   forms whose layout used to fall out of inline-flow accident; both now name
+   their layout, and every control reuses the primitives above. */
+.brand-scan-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem 1rem;
+}
+
+.brand-scan-form .field {
+  flex: 1 1 18rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.brand-editor {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  min-height: 24rem;
+  resize: vertical;
+}
+
+.brand-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.brand-proposal-meta {
+  margin-top: -0.25rem;
+}
+
+/* One row per proposed section: the accept checkbox stands beside the
+   disclosure rather than inside its summary, so expanding a section never
+   risks toggling acceptance and no click needs suppressing. */
+.brand-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.4rem 0;
+}
+
+.brand-section:last-child {
+  border-bottom: none;
+}
+
+.brand-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  min-height: 2.75rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.brand-section-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.brand-section-detail summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+}
+
+.brand-section-name {
+  font-weight: 600;
+}
+
+.brand-section-detail .status-badge {
+  margin-left: auto;
+}
+
+/* Diff halves read as text, not as code: pre-wrap keeps the paragraph breaks
+   a section's value carries while letting lines wrap. */
+.brand-diff-value {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.brand-result-preview {
+  margin: 0.75rem 0;
+}
+
+.brand-preview {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.brand-history {
+  display: grid;
+  gap: 0;
+}
+
+.brand-history summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+}
+
+.brand-history-when {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.brand-history-note {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.brand-history summary .status-badge {
+  margin-left: auto;
+}
+
+.brand-history-body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0.75rem;
+}
+
+.brand-history-body p {
+  margin: 0;
+}
+
 /* ---------------------------------------------------------------------------
    Primitives (ADR-0015). Five named classes the whole UI composes from; a new
    surface reaches for these before inventing chrome:
@@ -336,6 +479,12 @@ body {
 .form-grid label {
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+/* A one-column form: the Markdown editor is the point of the card and takes
+   the card's whole width, monospace and tall enough to read prose in. */
+.brand-edit-form {
+  grid-template-columns: 1fr;
 }
 
 .field-hint {
@@ -638,6 +787,7 @@ tr:last-child td {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
 /* The filename cell holds the link, and the link carries 0.7rem of padding to
    reach a 44px target. Against the shared `vertical-align: top` that left it
    sitting a line lower than every other cell in its own row. */
@@ -648,6 +798,7 @@ tr:last-child td {
 .ok {
   color: var(--ok);
 }
+
 .bad {
   color: var(--bad);
 }

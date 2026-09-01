@@ -18,6 +18,7 @@ import {
 import {
   CONTENT_SCOUT_MODULE_ID,
   CONTENT_SCOUT_MODULE_VERSION,
+  acceptedProposalMarkdown,
   isSuccessfulSourceDiagnostic,
   SOURCE_BACKFILL_WINDOWS_DAYS,
   CANARY_INTERVAL_MS,
@@ -50,7 +51,6 @@ import {
 } from "./discovery.js";
 import {
   CONTENT_SCOUT_BRAND_SCAN_INTAKE,
-  acceptedProposalMarkdown,
   brandProfileScanModule,
   type BrandProfileScanInput,
 } from "./brand-profile.js";
@@ -692,6 +692,7 @@ export class ContentScoutHost implements HostedModule {
       return {
         brandProfile: this.currentBrandProfile(),
         brandProfileProposal: this.brandProfileProposal(),
+        brandProfileRevisions: this.store.listBrandProfiles(),
         sourceTargets: this.listSourceTargets(),
         shortlist: this.activeShortlist(),
         sourceSuggestions: this.listSourceSuggestions(),
@@ -819,6 +820,33 @@ export class ContentScoutHost implements HostedModule {
         siteBaselineMarkdown: proposal.proposedMarkdown,
       });
       this.store.clearBrandProfileProposal(id);
+      reply.code(201);
+      return { revision };
+    });
+
+    app.get("/api/content-scout/brand-profile/revisions/:id", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const revision = this.store.brandProfile(id);
+      if (!revision) {
+        reply.code(404).send({ error: "Brand Profile revision not found." });
+        return;
+      }
+      return { revision };
+    });
+
+    app.post("/api/content-scout/brand-profile/revisions/:id/restore", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const stored = this.store.brandProfile(id);
+      if (!stored) {
+        reply.code(404).send({ error: "Brand Profile revision not found." });
+        return;
+      }
+      /* Restoring is itself a new immutable revision: history never rewrites. */
+      const revision = this.acceptBrandProfile({
+        markdown: stored.markdown,
+        sourceScan: stored.sourceScan,
+        note: `Restored from ${stored.id}`,
+      });
       reply.code(201);
       return { revision };
     });

@@ -424,7 +424,7 @@ test("Content Scout goes from bounded Brand Profile scan to a started Content Pr
   await expect(
     page.getByText("Depth 1 · https://company.example/blog", { exact: false }),
   ).toContainText("Default transient");
-  await page.getByRole("button", { name: "Accept selected sections" }).click();
+  await page.getByRole("button", { name: /^Accept \d+ selected sections?/ }).click();
   await expect(page.getByText(/^Current revision brand_/)).toBeVisible();
 
   await page.getByRole("button", { name: "Sources" }).click();

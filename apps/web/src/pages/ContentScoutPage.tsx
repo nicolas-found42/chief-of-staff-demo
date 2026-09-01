@@ -4,6 +4,9 @@ import {
   CONTENT_PROJECT_RESEARCH_MODES,
   CONTENT_PROJECT_TARGETS,
   SOURCE_BACKFILL_WINDOWS_DAYS,
+  acceptedProposalMarkdown,
+  type BrandProfileSectionDiff,
+  type BrandProfileRevisionSummary,
   type ContentScoutCleanupPreview,
   type ContentProjectResearchMode,
   type ContentProjectTarget,
@@ -20,6 +23,18 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "brand", label: "Brand Profile" },
   { id: "settings", label: "Settings & Health" },
 ];
+
+/* Storage tokens never render raw: each diff status earns a display badge, so
+   the two pre-selection states — accepted by default, held for review — read
+   at a glance. */
+const BRAND_DIFF_BADGES: Record<
+  BrandProfileSectionDiff["status"],
+  { className: string; label: string }
+> = {
+  unchanged: { className: "status-skipped", label: "Unchanged" },
+  non_conflicting: { className: "status-done", label: "Website update" },
+  conflicting: { className: "status-attention", label: "Conflicts with your edits" },
+};
 
 async function waitForRun(runId: string): Promise<void> {
   for (let attempt = 0; attempt < 300; attempt += 1) {
@@ -748,24 +763,57 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
 }
 
 function BrandView({ state, busy, act, retainFocus }: ViewProps) {
-  const [websiteUrl, setWebsiteUrl] = useState(state.brandProfile?.sourceScan.websiteUrl ?? "");
-  const [markdown, setMarkdown] = useState(
-    state.brandProfile?.markdown ??
-      "# Brand Profile\n\n## Positioning\n\n## Audience\n\n## Voice\n\n## Avoided subjects\n",
-  );
   const revision = state.brandProfile;
   const proposal = state.brandProfileProposal;
+  const [websiteUrl, setWebsiteUrl] = useState(revision?.sourceScan.websiteUrl ?? "");
+  const [markdown, setMarkdown] = useState(
+    revision?.markdown ??
+      "# Brand Profile\n\n## Positioning\n\n## Audience\n\n## Voice\n\n## Avoided subjects\n",
+  );
+  /* The editor binds to the revision it opened on. A newer current revision —
+     an acceptance, a restore — replaces the textarea's text: leaving
+     pre-acceptance content there, one "Accept new revision" away from silently
+     overwriting the acceptance, is the mistake this surface must not invite. */
+  const [editorRevisionId, setEditorRevisionId] = useState(revision?.id ?? null);
+  useEffect(() => {
+    if (revision && revision.id !== editorRevisionId) {
+      setEditorRevisionId(revision.id);
+      setMarkdown(revision.markdown);
+      setWebsiteUrl(revision.sourceScan.websiteUrl);
+    }
+  }, [revision, editorRevisionId]);
   const [includedUrls, setIncludedUrls] = useState<string[]>([]);
   const [acceptedSections, setAcceptedSections] = useState<string[]>([]);
+  /* A history row loads its revision body once, when it first opens. */
+  const [revisionBodies, setRevisionBodies] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!proposal) return;
     setIncludedUrls(proposal.pages.filter((page) => page.included).map((page) => page.url));
     setAcceptedSections(
       proposal.sectionDiffs
-        .filter((diff) => diff.status !== "unchanged" && diff.status !== "conflicting")
+        .filter((diff) => diff.status === "non_conflicting")
         .map((diff) => diff.section),
     );
   }, [proposal]);
+
+  const openRevisionBody = (entry: BrandProfileRevisionSummary, open: boolean) => {
+    if (!open || revisionBodies[entry.id] !== undefined) return;
+    void api
+      .brandProfileRevision(entry.id)
+      .then(({ revision: loaded }) =>
+        setRevisionBodies((current) => ({ ...current, [entry.id]: loaded.markdown })),
+      )
+      .catch(() =>
+        setRevisionBodies((current) => ({
+          ...current,
+          [entry.id]: "This revision could not be loaded.",
+        })),
+      );
+  };
+
+  /* The state file stores revisions oldest first; a history reads newest first. */
+  const history = [...state.brandProfileRevisions].reverse();
+
   return (
     <section aria-labelledby="brand-heading">
       <h2 id="brand-heading">Brand Profile</h2>
@@ -774,7 +822,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
         accept only the sections you want. No scan changes the current profile.
       </p>
       <form
-        className="card"
+        className="card brand-scan-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (busy) return;
@@ -804,8 +852,12 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
       {proposal && (
         <section className="card" aria-labelledby="proposal-heading">
           <h3 id="proposal-heading">Review website evidence</h3>
+          <p className="muted brand-proposal-meta">
+            Scanned {new Date(proposal.createdAt).toLocaleString()} · {proposal.websiteUrl}
+            {proposal.basedOnRevisionId ? ` · based on revision ${proposal.basedOnRevisionId}` : ""}
+          </p>
           <p className="muted">
-            Excluded defaults stay visible and can be included before acceptance.
+            Excluded pages stay visible and can be included before acceptance.
           </p>
           <div className="profile-pages">
             {proposal.pages.map((page) => (
@@ -833,44 +885,60 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
             ))}
           </div>
           <h3>Section-by-section proposal</h3>
-          {proposal.sectionDiffs.map((diff) => (
-            <details className="disclosure" key={diff.section}>
-              <summary>
-                <label onClick={(event) => event.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={acceptedSections.includes(diff.section)}
-                    onChange={(event) =>
-                      setAcceptedSections((current) =>
-                        event.target.checked
-                          ? [...current, diff.section]
-                          : current.filter((section) => section !== diff.section),
-                      )
-                    }
-                  />{" "}
-                  Accept {diff.section}
-                </label>{" "}
-                <span
-                  className={`status-badge ${diff.status === "conflicting" ? "status-attention" : "status-source"}`}
-                >
-                  {diff.status.replaceAll("_", " ")}
-                </span>
-              </summary>
-              <div className="profile-diff">
-                <div>
-                  <strong>Current</strong>
-                  <p>{diff.currentValue || "No accepted value"}</p>
+          <p className="muted">
+            Website updates are pre-selected — they don't touch sections you have edited since the
+            last scan. Conflicting sections stay unchecked until you accept them.
+          </p>
+          <div className="brand-sections">
+            {proposal.sectionDiffs.map((diff) => {
+              const badge = BRAND_DIFF_BADGES[diff.status];
+              return (
+                <div className="brand-section" key={diff.section}>
+                  <label className="brand-section-toggle">
+                    <input
+                      type="checkbox"
+                      checked={acceptedSections.includes(diff.section)}
+                      onChange={(event) =>
+                        setAcceptedSections((current) =>
+                          event.target.checked
+                            ? [...current, diff.section]
+                            : current.filter((section) => section !== diff.section),
+                        )
+                      }
+                    />
+                    <span>Accept</span>
+                  </label>
+                  <details className="disclosure brand-section-detail">
+                    <summary>
+                      <span className="brand-section-name">{diff.section}</span>
+                      <span className={`status-badge ${badge.className}`}>{badge.label}</span>
+                    </summary>
+                    <div className="profile-diff">
+                      <div>
+                        <strong>Current</strong>
+                        <pre className="brand-diff-value">
+                          {diff.currentValue || "No accepted value"}
+                        </pre>
+                      </div>
+                      <div>
+                        <strong>Website proposal</strong>
+                        <pre className="brand-diff-value">
+                          {diff.proposedValue ||
+                            "No new website value; accepting this will not delete the current value."}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
                 </div>
-                <div>
-                  <strong>Website proposal</strong>
-                  <p>
-                    {diff.proposedValue ||
-                      "No new website value; accepting this will not delete the current value."}
-                  </p>
-                </div>
-              </div>
-            </details>
-          ))}
+              );
+            })}
+          </div>
+          <details className="disclosure brand-result-preview">
+            <summary>Preview the revision this will create</summary>
+            <pre className="brand-preview">
+              {acceptedProposalMarkdown(proposal, acceptedSections)}
+            </pre>
+          </details>
           <button
             className="primary"
             type="button"
@@ -894,7 +962,11 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
               );
             }}
           >
-            Accept selected sections
+            {busy
+              ? "Accepting…"
+              : `Accept ${acceptedSections.length} selected section${
+                  acceptedSections.length === 1 ? "" : "s"
+                }`}
           </button>
         </section>
       )}
@@ -904,7 +976,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
         Each manual acceptance also creates a new immutable Markdown revision.
       </p>
       <form
-        className="card"
+        className="card form-grid brand-edit-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (busy) return;
@@ -936,20 +1008,77 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
         <label className="field">
           Accepted Markdown
           <textarea
+            className="brand-editor"
             rows={18}
             value={markdown}
             onChange={(event) => setMarkdown(event.target.value)}
             required
           />
         </label>
-        <button className="primary" type="submit" aria-disabled={busy}>
-          {busy ? "Saving…" : revision ? "Accept new revision" : "Accept Brand Profile"}
-        </button>
+        <div className="brand-edit-actions">
+          <button className="primary" type="submit" aria-disabled={busy}>
+            {busy ? "Saving…" : revision ? "Accept new revision" : "Accept Brand Profile"}
+          </button>
+        </div>
       </form>
+
       {revision && (
         <p className="muted">
           Current revision {revision.id}, accepted {new Date(revision.createdAt).toLocaleString()}.
         </p>
+      )}
+
+      {history.length > 0 && (
+        <section aria-labelledby="brand-history-heading">
+          <h2 id="brand-history-heading">Revision history</h2>
+          <p className="muted">
+            Every acceptance is kept. Opening a revision shows its Markdown; restoring one appends
+            it as a new current revision — history is never rewritten.
+          </p>
+          <div className="brand-history">
+            {history.map((entry) => (
+              <details
+                className="disclosure"
+                key={entry.id}
+                onToggle={(event) => openRevisionBody(entry, event.currentTarget.open)}
+              >
+                <summary>
+                  <span className="brand-history-when">
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </span>
+                  <span className="brand-history-note">{entry.note ?? "Accepted revision"}</span>
+                  {entry.id === revision?.id && (
+                    <span className="status-badge status-active">Current</span>
+                  )}
+                </summary>
+                <div className="brand-history-body">
+                  <p className="muted">
+                    {entry.changedSections.length > 0
+                      ? `Changed vs the previous revision: ${entry.changedSections.join(", ")}`
+                      : "No section changed vs the previous revision."}
+                  </p>
+                  <pre className="brand-preview">{revisionBodies[entry.id] ?? "Loading…"}</pre>
+                  {entry.id !== revision?.id && (
+                    <button
+                      type="button"
+                      aria-disabled={busy}
+                      onClick={(event) => {
+                        if (busy) return;
+                        retainFocus(event.currentTarget);
+                        void act(
+                          () => api.restoreBrandProfileRevision(entry.id),
+                          `Revision ${entry.id} is the current Brand Profile again.`,
+                        );
+                      }}
+                    >
+                      Restore this revision
+                    </button>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
       )}
     </section>
   );

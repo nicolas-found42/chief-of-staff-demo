@@ -826,6 +826,12 @@ United States only
 
     const app = Fastify();
     host.routes(app);
+    // Regression: the state projection must carry the pending proposal — a
+    // dropped field here leaves every scan invisible to the UI.
+    const scanState = (await app.inject({ method: "GET", url: "/api/content-scout" })).json<{
+      brandProfileProposal: { id: string } | null;
+    }>();
+    expect(scanState.brandProfileProposal?.id).toBe(proposal.id);
     const acceptedSections = proposal.sectionDiffs.map((diff) => diff.section);
     const response = await app.inject({
       method: "POST",
@@ -838,6 +844,82 @@ United States only
     expect(accepted.markdown).toContain(
       "## Geographic or regulatory constraints\nUnited States only",
     );
+
+    await app.close();
+  });
+
+  it("serves revision history and restores a past revision as a new current one", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-brand-history-"));
+    const runs = openRuns(workspaceDir);
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [rssAdapter()],
+      ranker,
+      log: () => undefined,
+    });
+    const initial = host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Summary\nFirst version\n",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+      note: "Initial accepted website proposal",
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Summary\nSecond version\n",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+      note: "Manual revision",
+    });
+
+    const app = Fastify();
+    host.routes(app);
+
+    const listed = (await app.inject({ method: "GET", url: "/api/content-scout" })).json<{
+      brandProfileRevisions: { id: string; note: string | null }[];
+    }>();
+    expect(listed.brandProfileRevisions.map((revision) => revision.id)).toEqual([
+      initial.id,
+      expect.any(String),
+    ]);
+    expect(listed.brandProfileRevisions[0]).not.toHaveProperty("markdown");
+
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/content-scout/brand-profile/revisions/${initial.id}`,
+    });
+    expect(read.statusCode).toBe(200);
+    // Pin the endpoint's documented shape at the typed json<T> boundary.
+    const stored = read.json<{ revision: { markdown: string } }>();
+    expect(stored.revision.markdown).toContain("First version");
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/content-scout/brand-profile/revisions/brand_absent",
+        })
+      ).statusCode,
+    ).toBe(404);
+
+    const restored = await app.inject({
+      method: "POST",
+      url: `/api/content-scout/brand-profile/revisions/${initial.id}/restore`,
+      payload: {},
+    });
+    expect(restored.statusCode).toBe(201);
+    const current = host.currentBrandProfile()!;
+    expect(current.markdown).toContain("First version");
+    expect(current.note).toBe(`Restored from ${initial.id}`);
+    expect(current.id).not.toBe(initial.id);
+    /* Restore appends; the stored revision it copied from survives untouched. */
+    const reread = await app.inject({
+      method: "GET",
+      url: `/api/content-scout/brand-profile/revisions/${initial.id}`,
+    });
+    const untouched = reread.json<{ revision: { markdown: string } }>();
+    expect(untouched.revision.markdown).toContain("First version");
+    const after = (await app.inject({ method: "GET", url: "/api/content-scout" })).json<{
+      brandProfileRevisions: unknown[];
+    }>();
+    expect(after.brandProfileRevisions).toHaveLength(3);
 
     await app.close();
   });

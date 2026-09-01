@@ -304,15 +304,3 @@ function profileDiff(
     return { section, oldWebsiteValue, currentValue, proposedValue, status };
   });
 }
-
-export function acceptedProposalMarkdown(
-  proposal: BrandProfileProposal,
-  acceptedSections: string[],
-): string {
-  const accepted = new Set(acceptedSections);
-  const blocks = proposal.sectionDiffs.map((diff) => {
-    const value = accepted.has(diff.section) ? diff.proposedValue : diff.currentValue;
-    return `## ${diff.section}\n${value}`.trimEnd();
-  });
-  return `# Brand Profile\n\n${blocks.join("\n\n")}\n`;
-}

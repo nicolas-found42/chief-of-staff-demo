@@ -95,6 +95,12 @@ export interface BrandProfileRevision {
   siteBaselineMarkdown?: string;
 }
 
+/**
+ * A stored Brand Profile revision without its Markdown body — the shape a
+ * listing carries. Bodies load one revision at a time through the API.
+ */
+export type BrandProfileRevisionSummary = Omit<BrandProfileRevision, "markdown">;
+
 export interface BrandProfileScanPage {
   url: string;
   title: string;
@@ -121,6 +127,24 @@ export interface BrandProfileProposal {
   proposedMarkdown: string;
   basedOnRevisionId: string | null;
   sectionDiffs: BrandProfileSectionDiff[];
+}
+
+/**
+ * The composed Markdown a proposal acceptance stores: accepted sections take
+ * the website proposal, every other section keeps its current value. Shared so
+ * the review UI can preview exactly what the accept endpoint will write,
+ * rather than approximating it.
+ */
+export function acceptedProposalMarkdown(
+  proposal: BrandProfileProposal,
+  acceptedSections: string[],
+): string {
+  const accepted = new Set(acceptedSections);
+  const blocks = proposal.sectionDiffs.map((diff) => {
+    const value = accepted.has(diff.section) ? diff.proposedValue : diff.currentValue;
+    return `## ${diff.section}\n${value}`.trimEnd();
+  });
+  return `# Brand Profile\n\n${blocks.join("\n\n")}\n`;
 }
 
 export const CONTENT_ANGLE_TYPES = [

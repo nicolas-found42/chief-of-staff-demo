@@ -1,5 +1,6 @@
 import type {
   BrandProfileRevision,
+  BrandProfileRevisionSummary,
   BrandProfileProposal,
   ContentProjectResearchMode,
   ContentProjectTarget,
@@ -117,6 +118,7 @@ export interface ConfigPayload {
 export interface ContentScoutState {
   brandProfile: BrandProfileRevision | null;
   brandProfileProposal: BrandProfileProposal | null;
+  brandProfileRevisions: BrandProfileRevisionSummary[];
   sourceTargets: SourceTarget[];
   shortlist: ContentShortlist | null;
   adapters: {
@@ -285,6 +287,15 @@ export const api = {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       },
+    ),
+  brandProfileRevision: (id: string) =>
+    request<{ revision: BrandProfileRevision }>(
+      `/api/content-scout/brand-profile/revisions/${encodeURIComponent(id)}`,
+    ),
+  restoreBrandProfileRevision: (id: string) =>
+    request<{ revision: BrandProfileRevision }>(
+      `/api/content-scout/brand-profile/revisions/${encodeURIComponent(id)}/restore`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
     ),
   addContentSource: (input: { adapterId: string; label: string; url: string }) =>
     request<{ target: SourceTarget }>("/api/content-scout/sources", {

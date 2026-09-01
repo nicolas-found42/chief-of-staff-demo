@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import type {
   BrandProfileRevision,
+  BrandProfileRevisionSummary,
   BrandProfileProposal,
   BrandProfileSourceScan,
   ContentScoutScheduleState,
@@ -107,6 +108,10 @@ export class ContentScoutStore {
 
   brandProfile(id: string): BrandProfileRevision | null {
     return this.brandProfiles.get(id);
+  }
+
+  listBrandProfiles(): BrandProfileRevisionSummary[] {
+    return this.brandProfiles.list();
   }
 
   addSourceTarget(input: { adapterId: string; label: string; url: string }): SourceTarget {
