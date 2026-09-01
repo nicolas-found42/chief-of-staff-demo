@@ -502,19 +502,18 @@ export function ContentResearchPage() {
                           onToggle={() => toggleReport(report.runId)}
                         >
                           <summary>
-                            <Link
-                              to={`/runs/${report.runId}`}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {new Date(report.generatedAt).toLocaleString()}
-                            </Link>{" "}
-                            · max resonance {report.resonanceScoreMax.toFixed(2)} ·{" "}
-                            {filtered.length} item
+                            {new Date(report.generatedAt).toLocaleString()} · max resonance{" "}
+                            {report.resonanceScoreMax.toFixed(2)} · {filtered.length} item
                             {filtered.length === 1 ? "" : "s"}
                             {platform !== "all" ? ` · ${platform}` : ""} ·{" "}
                             {report.runId.slice(0, 8)}
                           </summary>
                           <div className="disclosure-body">
+                            {/* The Run link belongs in the body: a link inside <summary>
+                                nests one interactive control inside another. */}
+                            <p className="muted">
+                              <Link to={`/runs/${report.runId}`}>Open this Run</Link>
+                            </p>
                             {filtered.length === 0 ? (
                               <p className="muted">No items for this platform in this report.</p>
                             ) : (
