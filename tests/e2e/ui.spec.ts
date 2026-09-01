@@ -427,6 +427,17 @@ test("Content Scout goes from bounded Brand Profile scan to a started Content Pr
   await page.getByRole("button", { name: /^Accept \d+ selected sections?/ }).click();
   await expect(page.getByText(/^Current revision brand_/)).toBeVisible();
 
+  // The scan Run's detail page renders its receipt: a brand-profile-scan
+  // result carries evidence counts, not the discovery adapter table, and
+  // rendering it through the discovery shape once blanked the whole app.
+  await page.goto("/runs");
+  await page
+    .getByRole("link", { name: /Content Scout Brand Profile proposal/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: "Content Scout receipt" })).toBeVisible();
+  await expect(page.getByText(/pages crawled/)).toContainText("included in the evidence");
+  await page.goto("/content-scout");
   await page.getByRole("button", { name: "Sources" }).click();
   await page.getByLabel("Source Adapter").selectOption("rss");
   await page.getByLabel("Name").fill("Example Research");

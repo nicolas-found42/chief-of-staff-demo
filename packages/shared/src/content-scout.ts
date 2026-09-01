@@ -254,6 +254,17 @@ export interface ContentScoutRunResult {
   }[];
 }
 
+/**
+ * The result of a Brand Profile scan Run: evidence counts for the receipt,
+ * not the collection receipt a discovery Run carries. The proposal itself
+ * lives in the Module's state, not in the Run artifact.
+ */
+export interface ContentScoutBrandProfileScanRunResult {
+  pages: number;
+  included: number;
+  changedSections: number;
+}
+
 export interface SourceCanaryReceipt {
   adapterId: string;
   adapterVersion: string;

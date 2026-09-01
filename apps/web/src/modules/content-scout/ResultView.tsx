@@ -1,5 +1,6 @@
 import {
   isSuccessfulSourceDiagnostic,
+  type ContentScoutBrandProfileScanRunResult,
   type ContentScoutRunResult,
   type RunDetail,
   type SourceCapability,
@@ -19,6 +20,22 @@ const SOURCE_CAPABILITY_LABELS: Record<SourceCapability, string> = {
 };
 
 export function ContentScoutResultView({ detail }: { detail: RunDetail }) {
+  /* A Brand Profile scan Run carries evidence counts, not the collection
+     receipt; reading it through the discovery shape crashes the whole app
+     on its absent fields. */
+  if (detail.intake === "brand-profile-scan") {
+    const scan = detail.result as ContentScoutBrandProfileScanRunResult | null;
+    if (!scan) return null;
+    return (
+      <section aria-labelledby="content-scout-receipt">
+        <h2 id="content-scout-receipt">Content Scout receipt</h2>
+        <p>
+          {scan.pages} pages crawled · {scan.included} included in the evidence ·{" "}
+          {scan.changedSections} section{scan.changedSections === 1 ? "" : "s"} proposed a change
+        </p>
+      </section>
+    );
+  }
   const result = detail.result as ContentScoutRunResult | null;
   if (!result) return null;
   return (
