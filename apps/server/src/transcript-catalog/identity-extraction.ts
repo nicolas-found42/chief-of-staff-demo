@@ -268,8 +268,7 @@ export function normalizeProfileUrl(value: string): string | null {
   }
 }
 
-export interface ProfileUrlCanonicalizer {
-  provider: string;
+interface ProfileUrlCanonicalizer {
   canonicalize(value: string): string | null;
 }
 
@@ -717,6 +716,7 @@ export function extractMentions(
   });
 
   applyModelSupplement(record, lines, mentions, organizations, supplement);
+  linkAssertedOrganizationContext(mentions, organizations);
   for (const mention of mentions) {
     const forms = new Set(
       [mention.surfaceText, ...mention.aliases].map(normalizeName).filter(Boolean),
@@ -728,6 +728,41 @@ export function extractMentions(
   mentions.sort((left, right) => left.provenance.spanStart - right.provenance.spanStart);
   organizations.sort((left, right) => left.provenance.spanStart - right.provenance.spanStart);
   return { mentions, organizations };
+}
+
+const ORGANIZATION_CONTEXT_RELATIONSHIPS = new Set([
+  "affiliated with",
+  "employed by",
+  "member of",
+  "represents",
+  "works at",
+  "works for",
+]);
+
+function linkAssertedOrganizationContext(
+  mentions: TranscriptMention[],
+  organizations: OrganizationMention[],
+): void {
+  const assertions = [
+    ...mentions.flatMap((mention) => mention.relationshipAssertions),
+    ...organizations.flatMap((organization) => organization.relationshipAssertions),
+  ];
+  for (const mention of mentions) {
+    const personForms = new Set([mention.surfaceText, ...mention.aliases].map(normalizeName));
+    for (const assertion of assertions) {
+      if (!ORGANIZATION_CONTEXT_RELATIONSHIPS.has(normalizeName(assertion.relationship))) continue;
+      if (!personForms.has(normalizeName(assertion.subject))) continue;
+      const organization = organizations.find((candidate) =>
+        [candidate.surfaceText, ...candidate.aliases]
+          .map(normalizeName)
+          .includes(normalizeName(assertion.object)),
+      );
+      if (organization === undefined) continue;
+      mention.organizationContext = organization.normalizedName;
+      organization.relatedMentionIds = unique([...organization.relatedMentionIds, mention.id]);
+      break;
+    }
+  }
 }
 
 function evidenceText(value: string): string {

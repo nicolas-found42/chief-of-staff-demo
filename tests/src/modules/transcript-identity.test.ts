@@ -71,6 +71,7 @@ interface Harness {
 
 function makeHarness(
   extractor: TranscriptIdentityExtractor = {
+    version: "test-empty-v1",
     extract() {
       return EMPTY_EXTRACTION;
     },
@@ -168,7 +169,7 @@ describe("Transcript Catalog identity processing", () => {
     expect(h.people.search({ includeArchived: true })).toEqual([]);
   });
 
-  it("backfills an already registered unchanged Transcript once across restart", async () => {
+  it("backfills an unchanged Transcript and rematches when Profiles change across restart", async () => {
     const h = makeHarness();
     const body = "Email grace@example.com before the review.";
     const record = makeRecord(body);
@@ -221,11 +222,14 @@ describe("Transcript Catalog identity processing", () => {
     expect(await firstEra.processAvailable()).toMatchObject({ unchanged: 1 });
     expect(h.service.reviewQueue().items).toHaveLength(1);
 
-    h.people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
+    const grace = h.people.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "grace@example.com",
+    });
     const restartedIdentity = new TranscriptIdentityService({
       store: new TranscriptIdentityStore(h.workspaceDir),
       people: h.people,
-      extractor: { extract: () => EMPTY_EXTRACTION },
+      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
       now: NOW,
     });
     const secondEra = new TranscriptCatalog({
@@ -238,9 +242,131 @@ describe("Transcript Catalog identity processing", () => {
 
     expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
     expect(restartedIdentity.reviewQueue().items[0]).toMatchObject({
-      candidates: [],
-      decision: null,
+      decision: {
+        profileId: expect.any(String),
+        decidedBy: "policy",
+      },
     });
+    expect(restartedIdentity.reviewQueue().items[0]?.candidates).toContainEqual(
+      expect.objectContaining({ profileId: grace.id }),
+    );
+  });
+
+  it("reprocesses an unchanged Transcript when a canonicalizer version becomes available", async () => {
+    const h = makeHarness();
+    const profile = h.people.create({ fullName: "Provider Profile" });
+    new PersonProfileStore(h.workspaceDir).save({
+      ...profile,
+      profileUrls: ["https://github.com/aturing"],
+    });
+    const body = "Provider: https://github.com/aturing/repositories";
+    const firstEra = catalogFor(h, body);
+    await firstEra.grantConsent();
+    await firstEra.whenIdle();
+    expect(h.service.reviewQueue().items.flatMap((item) => item.mention.profileUrls)).toEqual([]);
+
+    const restartedIdentity = new TranscriptIdentityService({
+      store: new TranscriptIdentityStore(h.workspaceDir),
+      people: h.people,
+      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
+      profileUrlCanonicalizers: [
+        {
+          version: "github-v1",
+          canonicalize(value) {
+            const url = new URL(value);
+            return url.hostname.toLowerCase() === "github.com" &&
+              url.pathname === "/aturing/repositories"
+              ? "https://github.com/aturing"
+              : null;
+          },
+        },
+      ],
+      now: NOW,
+    });
+    const secondEra = catalogFor({ ...h, service: restartedIdentity }, body);
+
+    expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
+    expect(restartedIdentity.reviewQueue().items).toContainEqual(
+      expect.objectContaining({
+        mention: expect.objectContaining({
+          profileUrls: ["https://github.com/aturing"],
+        }),
+        decision: expect.objectContaining({ profileId: profile.id, decidedBy: "policy" }),
+      }),
+    );
+  });
+
+  it("reprocesses a previously rejected URL when a Profile adds it as known identity", async () => {
+    const h = makeHarness();
+    const profile = h.people.create({ fullName: "Known Personal Site" });
+    const body = "Personal page: https://about.me/grace";
+    const firstEra = catalogFor(h, body);
+    await firstEra.grantConsent();
+    await firstEra.whenIdle();
+    expect(h.service.reviewQueue().items.flatMap((item) => item.mention.profileUrls)).toEqual([]);
+
+    new PersonProfileStore(h.workspaceDir).save({
+      ...profile,
+      profileUrls: ["https://about.me/grace"],
+    });
+    const restartedIdentity = new TranscriptIdentityService({
+      store: new TranscriptIdentityStore(h.workspaceDir),
+      people: h.people,
+      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
+      now: NOW,
+    });
+    const secondEra = catalogFor({ ...h, service: restartedIdentity }, body);
+
+    expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
+    expect(restartedIdentity.reviewQueue().items).toContainEqual(
+      expect.objectContaining({
+        mention: expect.objectContaining({ profileUrls: ["https://about.me/grace"] }),
+        decision: expect.objectContaining({ profileId: profile.id, decidedBy: "policy" }),
+      }),
+    );
+  });
+
+  it("reprocesses an unchanged Transcript when the strict extractor version changes", async () => {
+    const body = "operator";
+    const h = makeHarness({ version: "strict-v1", extract: () => EMPTY_EXTRACTION });
+    const profile = h.people.create({ fullName: "Grace Hopper" });
+    const firstEra = catalogFor(h, body);
+    await firstEra.grantConsent();
+    await firstEra.whenIdle();
+    expect(h.service.reviewQueue().items).toEqual([]);
+
+    const restartedIdentity = new TranscriptIdentityService({
+      store: new TranscriptIdentityStore(h.workspaceDir),
+      people: h.people,
+      extractor: {
+        version: "strict-v2",
+        extract() {
+          return {
+            version: 1,
+            mentions: [
+              {
+                spanStart: 0,
+                spanEnd: body.length,
+                kind: "person",
+                confidence: "high",
+                titles: [],
+                roles: [],
+                aliases: ["Grace Hopper"],
+                relationshipAssertions: [],
+              },
+            ],
+            organizations: [],
+          } satisfies TranscriptIdentityExtractionResult;
+        },
+      },
+      now: NOW,
+    });
+    const secondEra = catalogFor({ ...h, service: restartedIdentity }, body);
+
+    expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
+    expect(restartedIdentity.reviewQueue().items[0]?.candidates).toContainEqual(
+      expect.objectContaining({ profileId: profile.id }),
+    );
   });
 
   it("persists Calendar/provider speaker signals and reprocesses identity through Catalog", async () => {
@@ -319,6 +445,7 @@ describe("Transcript Catalog identity processing", () => {
     const graceStart = body.indexOf("Grace Hopper");
     const acmeStart = body.indexOf("Acme Corp");
     const h = makeHarness({
+      version: "test-strict-v1",
       extract() {
         return {
           version: 1,
@@ -382,6 +509,7 @@ describe("Transcript Catalog identity processing", () => {
     const body = "Grace Hopper: Ready for review.";
     const start = body.indexOf("Grace Hopper");
     const h = makeHarness({
+      version: "test-strict-v1",
       extract() {
         return {
           version: 1,
@@ -443,6 +571,63 @@ describe("Transcript Catalog identity processing", () => {
     expect(item.decision).toBeNull();
   });
 
+  it("derives durable organization context from validated strict relationship assertions", async () => {
+    const body = "ada works at engine works.";
+    const personStart = body.indexOf("ada");
+    const organizationStart = body.indexOf("engine works");
+    const assertion = { subject: "ada", relationship: "works at", object: "engine works" };
+    const h = makeHarness({
+      version: "test-relationships-v1",
+      extract() {
+        return {
+          version: 1,
+          mentions: [
+            {
+              spanStart: personStart,
+              spanEnd: personStart + "ada".length,
+              kind: "person",
+              confidence: "high",
+              titles: [],
+              roles: [],
+              aliases: ["Ada Lovelace"],
+              relationshipAssertions: [],
+            },
+          ],
+          organizations: [
+            {
+              spanStart: organizationStart,
+              spanEnd: organizationStart + "engine works".length,
+              confidence: "high",
+              aliases: ["Engine Works"],
+              domains: [],
+              externalCompanyIds: [],
+              relationshipAssertions: [assertion],
+            },
+          ],
+        } satisfies TranscriptIdentityExtractionResult;
+      },
+    });
+    const profile = h.people.create({
+      fullName: "Ada Lovelace",
+      currentEmployer: "Engine Works",
+    });
+    const catalog = catalogFor(h, body);
+
+    await catalog.grantConsent();
+    await catalog.whenIdle();
+
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.mention.surfaceText === "ada")!;
+    expect(item.mention.organizationContext).toBe("engine works");
+    expect(
+      item.candidates.find((candidate) => candidate.profileId === profile.id)?.signals,
+    ).toContainEqual(expect.objectContaining({ signal: "employer-hint", matched: true }));
+    expect(h.service.reviewQueue().organizations[0]?.relatedPeople).toEqual([
+      { mentionId: item.mention.id, surfaceText: "ada" },
+    ]);
+  });
+
   it("persists versioned Organization merge decisions with provenance and audit history", async () => {
     const body = "Acme Corp met Acme Incorporated.";
     const first = body.indexOf("Acme Corp");
@@ -471,7 +656,7 @@ describe("Transcript Catalog identity processing", () => {
         },
       ],
     };
-    const h = makeHarness({ extract: () => extraction });
+    const h = makeHarness({ version: "test-strict-v1", extract: () => extraction });
     const catalog = catalogFor(h, body);
     await catalog.grantConsent();
     await catalog.whenIdle();
@@ -511,7 +696,7 @@ describe("Transcript Catalog identity processing", () => {
     const restarted = new TranscriptIdentityService({
       store: new TranscriptIdentityStore(h.workspaceDir),
       people: h.people,
-      extractor: { extract: () => EMPTY_EXTRACTION },
+      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
       profileUrlCanonicalizers: [],
       now: NOW,
     });
@@ -526,6 +711,7 @@ describe("Transcript Catalog identity processing", () => {
 
   it("rejects non-strict extraction adapter output before persisting identity", async () => {
     const h = makeHarness({
+      version: "invalid-test-v1",
       extract() {
         return {
           version: 1,
@@ -728,7 +914,7 @@ describe("candidate generation and auto-link policy", () => {
 
   it("accepts an exact known Profile URL and a provider-canonicalized person URL", async () => {
     const github: TranscriptProfileUrlCanonicalizer = {
-      provider: "github",
+      version: "github-v1",
       canonicalize(value) {
         const url = new URL(value);
         return url.hostname.toLowerCase() === "github.com" && url.pathname === "/aturing"
@@ -1201,6 +1387,147 @@ describe("remembered mappings", () => {
     });
   });
 
+  it("prefers active transcript authority over a higher-version workspace lineage", async () => {
+    const h = makeHarness();
+    const transcriptId = "drive_mapping_precedence_r1";
+    const grace = h.people.create({ fullName: "Grace Hopper" });
+    const murray = h.people.create({ fullName: "Grace Murray Hopper" });
+    const initial = makeRecord("Grace Hopper: ready.", transcriptId);
+    initial.source.checksum = "mapping-precedence-v1";
+    await h.service.process(initial);
+    const named = h.service.reviewQueue().items.find((item) => item.transcriptId === transcriptId)!;
+
+    h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: grace.id,
+      scope: "workspace",
+    });
+    h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: murray.id,
+      scope: "workspace",
+    });
+    const transcriptDecision = h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: grace.id,
+      scope: "transcript",
+    });
+    const transcriptMapping = h.service
+      .mappings()
+      .find((mapping) => mapping.scope === "transcript")!;
+    expect(transcriptDecision.mappingAuthority).toEqual({
+      lineageId: transcriptMapping.lineageId,
+      mappingId: transcriptMapping.id,
+      mappingVersion: 1,
+    });
+
+    const expanded = makeRecord("Grace Hopper: ready.\nGrace Hopper joined later.", transcriptId);
+    expanded.source.checksum = "mapping-precedence-v2";
+    await h.service.process(expanded);
+    const later = h.service
+      .reviewQueue()
+      .items.find(
+        (item) => item.transcriptId === transcriptId && item.mention.provenance.spanStart > 0,
+      )!;
+
+    expect(later.decision).toMatchObject({
+      profileId: grace.id,
+      mappingAuthority: {
+        lineageId: transcriptMapping.lineageId,
+        mappingId: transcriptMapping.id,
+        mappingVersion: 1,
+      },
+    });
+    expect(later.rememberedMapping).toMatchObject({ id: transcriptMapping.id });
+  });
+
+  it("ignores a revoked workspace lineage while an active transcript lineage remains", async () => {
+    const h = makeHarness();
+    const transcriptId = "drive_mapping_revoked_workspace_r1";
+    const grace = h.people.create({ fullName: "Grace Hopper" });
+    const murray = h.people.create({ fullName: "Grace Murray Hopper" });
+    const initial = makeRecord("Grace Hopper: ready.", transcriptId);
+    initial.source.checksum = "mapping-revoked-v1";
+    await h.service.process(initial);
+    const named = h.service.reviewQueue().items.find((item) => item.transcriptId === transcriptId)!;
+    h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: murray.id,
+      scope: "workspace",
+    });
+    const workspace = h.service.mappings()[0];
+    h.service.decide({
+      mentionId: named.mention.id,
+      action: "remember-mapping",
+      profileId: grace.id,
+      scope: "transcript",
+    });
+    const transcriptMapping = h.service
+      .mappings()
+      .find((mapping) => mapping.scope === "transcript")!;
+    h.service.revokeMapping(workspace.id);
+
+    const expanded = makeRecord("Grace Hopper: ready.\nGrace Hopper joined later.", transcriptId);
+    expanded.source.checksum = "mapping-revoked-v2";
+    await h.service.process(expanded);
+    const later = h.service
+      .reviewQueue()
+      .items.find(
+        (item) => item.transcriptId === transcriptId && item.mention.provenance.spanStart > 0,
+      )!;
+
+    expect(later.decision).toMatchObject({
+      profileId: grace.id,
+      mappingAuthority: { lineageId: transcriptMapping.lineageId },
+    });
+    expect(later.rememberedMapping).toMatchObject({ id: transcriptMapping.id });
+  });
+
+  it("keeps conflicting active lineages reviewable instead of applying either one", async () => {
+    const h = makeHarness();
+    const first = h.people.create({ fullName: "First Profile" });
+    const second = h.people.create({ fullName: "Second Profile" });
+    for (const [lineageId, profileId] of [
+      ["legacy_lineage_first", first.id],
+      ["legacy_lineage_second", second.id],
+    ] as const) {
+      h.store.appendMapping({
+        id: `${lineageId}_v1`,
+        lineageId,
+        supersedesMappingId: null,
+        scope: "workspace",
+        scopeId: null,
+        normalizedForm: "grace hopper",
+        surfaceText: "Grace Hopper",
+        profileId,
+        mappingVersion: 1,
+        createdAt: NOW().toISOString(),
+        revokedAt: null,
+      });
+    }
+
+    await h.service.process(makeRecord("Grace Hopper: ready.", "drive_mapping_conflict_r1"));
+    const item = h.service
+      .reviewQueue()
+      .items.find((candidate) => candidate.transcriptId === "drive_mapping_conflict_r1")!;
+    expect(item.decision).toBeNull();
+    expect(item.rememberedMapping).toBeNull();
+    expect(item.candidates.map((candidate) => candidate.profileId).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
+    expect(
+      item.candidates.every((candidate) =>
+        candidate.signals.some(
+          (signal) => signal.signal === "remembered-mapping" && signal.matched,
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps immutable mapping lineage and revokes links applied by every version", async () => {
     const h = makeHarness();
     const grace = h.people.create({ fullName: "Grace Hopper" });
@@ -1244,26 +1571,34 @@ describe("remembered mappings", () => {
       revokedAt: null,
     });
     expect(v1Decision).toMatchObject({
-      mappingLineageId: mappings[0].lineageId,
-      mappingId: mappings[0].id,
-      mappingVersion: 1,
+      mappingAuthority: {
+        lineageId: mappings[0].lineageId,
+        mappingId: mappings[0].id,
+        mappingVersion: 1,
+      },
     });
     expect(v1Applied.decision).toMatchObject({
-      mappingLineageId: mappings[0].lineageId,
-      mappingId: mappings[0].id,
-      mappingVersion: 1,
+      mappingAuthority: {
+        lineageId: mappings[0].lineageId,
+        mappingId: mappings[0].id,
+        mappingVersion: 1,
+      },
     });
     expect(v2Decision).toMatchObject({
-      mappingLineageId: mappings[1].lineageId,
-      mappingId: mappings[1].id,
-      mappingVersion: 2,
+      mappingAuthority: {
+        lineageId: mappings[1].lineageId,
+        mappingId: mappings[1].id,
+        mappingVersion: 2,
+      },
     });
 
     await h.service.process(makeRecord("Grace Hopper: v2 applies.\n", "drive_mapping_v2_r1"));
     const v2Applied = h.service
       .reviewQueue()
       .items.find((item) => item.transcriptId === "drive_mapping_v2_r1")!;
-    expect(v2Applied.decision).toMatchObject({ mappingId: mappings[1].id, mappingVersion: 2 });
+    expect(v2Applied.decision).toMatchObject({
+      mappingAuthority: { mappingId: mappings[1].id, mappingVersion: 2 },
+    });
 
     const revoked = h.service.revokeMapping(mappings[1].id);
     expect(revoked).toMatchObject({

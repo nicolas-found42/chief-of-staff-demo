@@ -14,12 +14,11 @@ import {
   extractMentions,
   IDENTITY_MINING_ALGORITHM_VERSION,
   normalizeName,
-  type ProfileUrlCanonicalizer,
 } from "./identity-extraction.js";
 import {
-  activeMappingFor,
   candidateSignals,
   conflictsFor,
+  mappingResolutionFor,
   policyClassOf,
 } from "./identity-matching.js";
 import { type TranscriptIdentityMeta, TranscriptIdentityStore } from "./identity-store.js";
@@ -36,12 +35,18 @@ export interface TranscriptIdentityDeps {
  * service still validates the value against the strict shared Result Shape at
  * the trust boundary before using it. */
 export interface TranscriptIdentityExtractor {
+  /** Changes whenever the strict extraction adapter's classifications can change. */
+  version: string;
   extract(
     record: TranscriptRecord,
   ): TranscriptIdentityExtractionResult | Promise<TranscriptIdentityExtractionResult>;
 }
 
-export type TranscriptProfileUrlCanonicalizer = ProfileUrlCanonicalizer;
+export interface TranscriptProfileUrlCanonicalizer {
+  /** Changes whenever this canonicalization policy can change. */
+  version: string;
+  canonicalize(value: string): string | null;
+}
 
 class UnknownMentionError extends Error {
   constructor(mentionId: string) {
@@ -101,12 +106,46 @@ export class TranscriptIdentityService {
   }
 
   async process(record: TranscriptRecord): Promise<void> {
-    const inputVersion = identityInputVersion(record);
+    const inputVersion = this.inputVersion(record);
     if (this.store.wasProcessed(record.id, IDENTITY_MINING_ALGORITHM_VERSION, inputVersion)) {
       return;
     }
     const extracted = await this.extractor.extract(record);
     this.finishProcess(record, inputVersion, extracted);
+  }
+
+  private inputVersion(record: TranscriptRecord): string {
+    const profiles = this.people
+      .search({ includeArchived: true })
+      .map((profile) => ({
+        id: profile.id,
+        revision: profile.revision,
+        fullName: profile.fullName,
+        primaryEmail: profile.primaryEmail,
+        emails: profile.emails,
+        handles: profile.handles,
+        profileUrls: profile.profileUrls,
+        externalContactIds: profile.externalContactIds ?? [],
+        employerHints: profile.employerHints,
+        role: profile.role,
+        currentEmployer: profile.currentEmployer,
+        archivedAt: profile.archivedAt,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          checksum: record.source.checksum,
+          speakerIdentityMappings: record.speakerIdentityMappings,
+          roster: record.roster,
+          profiles,
+          extractorVersion: this.extractor.version,
+          canonicalizerVersions: this.profileUrlCanonicalizers.map(
+            (canonicalizer) => canonicalizer.version,
+          ),
+        }),
+      )
+      .digest("hex");
   }
 
   private finishProcess(record: TranscriptRecord, inputVersion: string, rawResult: unknown): void {
@@ -123,7 +162,7 @@ export class TranscriptIdentityService {
 
     for (const mention of mentions) {
       if (mention.kind !== "person" && mention.kind !== "ambiguous-name") continue;
-      const mapping = activeMappingFor(mappings, record.id, mention.normalizedForms);
+      const mapping = mappingResolutionFor(mappings, record.id, mention.normalizedForms);
       const scored = profiles
         .map((profile) => {
           const signals = candidateSignals(mention, profile, mapping);
@@ -205,9 +244,7 @@ export class TranscriptIdentityService {
         decidedBy: "policy",
         decidedAt: generatedAt,
         note: "Auto-linked on a non-conflicting exact stable identifier.",
-        mappingLineageId: null,
-        mappingId: null,
-        mappingVersion: null,
+        mappingAuthority: null,
       });
     }
 
@@ -216,7 +253,7 @@ export class TranscriptIdentityService {
        candidate's policy class to confirmed. */
     for (const mention of mentions) {
       if (this.store.latestDecision(mention.id) !== null) continue;
-      const mapping = activeMappingFor(mappings, record.id, mention.normalizedForms);
+      const mapping = mappingResolutionFor(mappings, record.id, mention.normalizedForms).applicable;
       if (mapping === null || this.people.get(mapping.profileId) === null) continue;
       this.store.appendDecision({
         id: `id_${createHash("sha1").update(`${mention.id}|mapping|${mapping.id}|${mapping.mappingVersion}`).digest("hex").slice(0, 12)}`,
@@ -229,9 +266,11 @@ export class TranscriptIdentityService {
         decidedBy: "owner",
         decidedAt: generatedAt,
         note: `Applied remembered mapping ${mapping.id} v${mapping.mappingVersion} (${mapping.scope} scope).`,
-        mappingLineageId: mapping.lineageId,
-        mappingId: mapping.id,
-        mappingVersion: mapping.mappingVersion,
+        mappingAuthority: {
+          lineageId: mapping.lineageId,
+          mappingId: mapping.id,
+          mappingVersion: mapping.mappingVersion,
+        },
       });
     }
     this.store.markProcessed({
@@ -269,11 +308,11 @@ export class TranscriptIdentityService {
                 left.profileId.localeCompare(right.profileId),
             ),
           decision: this.store.latestDecision(mention.id),
-          rememberedMapping: activeMappingFor(
+          rememberedMapping: mappingResolutionFor(
             mappings,
             mention.provenance.transcriptId,
             mention.normalizedForms,
-          ),
+          ).applicable,
         })),
       organizations: organizations.map((organization) => ({
         transcriptId: organization.provenance.transcriptId,
@@ -413,9 +452,14 @@ export class TranscriptIdentityService {
         decidedBy: "owner",
         decidedAt,
         note: input.note ?? null,
-        mappingLineageId: mappingForDecision?.lineageId ?? null,
-        mappingId: mappingForDecision?.id ?? null,
-        mappingVersion: mappingForDecision?.mappingVersion ?? null,
+        mappingAuthority:
+          mappingForDecision === null
+            ? null
+            : {
+                lineageId: mappingForDecision.lineageId,
+                mappingId: mappingForDecision.id,
+                mappingVersion: mappingForDecision.mappingVersion,
+              },
       });
     }
 
@@ -500,7 +544,7 @@ export class TranscriptIdentityService {
       if (
         latestDecision?.action !== "remember-mapping" ||
         latestDecision.outcome !== "linked" ||
-        latestDecision.mappingLineageId !== latest.lineageId
+        latestDecision.mappingAuthority?.lineageId !== latest.lineageId
       ) {
         continue;
       }
@@ -515,9 +559,11 @@ export class TranscriptIdentityService {
         decidedBy: "owner",
         decidedAt: revokedAt,
         note: `Invalidated link from revoked remembered mapping lineage ${latest.lineageId}.`,
-        mappingLineageId: latest.lineageId,
-        mappingId: revoked.id,
-        mappingVersion: revoked.mappingVersion,
+        mappingAuthority: {
+          lineageId: latest.lineageId,
+          mappingId: revoked.id,
+          mappingVersion: revoked.mappingVersion,
+        },
       });
     }
     return revoked;
@@ -530,19 +576,4 @@ export class TranscriptIdentityService {
       .sort((left, right) => right.score - left.score);
     return own.find((candidate) => !candidate.conflicts.some((conflict) => conflict.hard)) ?? null;
   }
-}
-
-/** Derived-input version for the durable processing ledger. Calendar/provider
- * speaker identity enrichment can change while the transcript artifact stays
- * immutable, and must trigger a fresh identity pass. */
-function identityInputVersion(record: TranscriptRecord): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        checksum: record.source.checksum,
-        speakerIdentityMappings: record.speakerIdentityMappings,
-        roster: record.roster,
-      }),
-    )
-    .digest("hex");
 }

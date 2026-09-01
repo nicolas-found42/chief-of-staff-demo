@@ -535,9 +535,11 @@ export interface IdentityDecision {
   decidedAt: string;
   note: string | null;
   /** Exact remembered-mapping authority for mapping-derived decisions. */
-  mappingLineageId: string | null;
-  mappingId: string | null;
-  mappingVersion: number | null;
+  mappingAuthority: {
+    lineageId: string;
+    mappingId: string;
+    mappingVersion: number;
+  } | null;
 }
 
 export interface OrganizationMergeDecision {

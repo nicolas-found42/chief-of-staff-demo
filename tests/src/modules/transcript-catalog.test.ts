@@ -59,6 +59,7 @@ function makeCatalog(
   source: TranscriptCatalogSource,
   workspaceDir: string = mkdtempSync(join(tmpdir(), "transcript-catalog-")),
   extractor: TranscriptIdentityExtractor = {
+    version: "test-empty-v1",
     extract() {
       return { version: 1, mentions: [], organizations: [] };
     },

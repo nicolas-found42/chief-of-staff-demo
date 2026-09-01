@@ -114,25 +114,47 @@ function profileStableIdentifiers(profile: PersonProfile): StableIdentifier[] {
   ]);
 }
 
-export function activeMappingFor(
+export interface MappingResolution {
+  applicable: RememberedMapping | null;
+  evidence: RememberedMapping[];
+  conflicting: boolean;
+}
+
+export function mappingResolutionFor(
   mappings: RememberedMapping[],
   transcriptId: string,
   forms: string[],
-): RememberedMapping | null {
-  const latest = mappings
-    .filter(
-      (mapping) =>
-        forms.includes(normalizeName(mapping.normalizedForm)) &&
-        (mapping.scope === "workspace" || mapping.scopeId === transcriptId),
-    )
-    .sort((left, right) => right.mappingVersion - left.mappingVersion)[0];
-  return latest?.revokedAt === null ? latest : null;
+): MappingResolution {
+  const normalizedForms = new Set(forms.map(normalizeName));
+  const latestByLineage = new Map<string, RememberedMapping>();
+  for (const mapping of mappings) {
+    if (!normalizedForms.has(normalizeName(mapping.normalizedForm))) continue;
+    if (mapping.scope === "transcript" && mapping.scopeId !== transcriptId) continue;
+    const current = latestByLineage.get(mapping.lineageId);
+    if (current === undefined || mapping.mappingVersion > current.mappingVersion) {
+      latestByLineage.set(mapping.lineageId, mapping);
+    }
+  }
+  const active = [...latestByLineage.values()].filter((mapping) => mapping.revokedAt === null);
+  const transcriptAuthorities = active.filter((mapping) => mapping.scope === "transcript");
+  const evidence =
+    transcriptAuthorities.length > 0
+      ? transcriptAuthorities
+      : active.filter((mapping) => mapping.scope === "workspace");
+  const conflicting = new Set(evidence.map((mapping) => mapping.profileId)).size > 1;
+  const applicable = conflicting
+    ? null
+    : ([...evidence].sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id),
+      )[0] ?? null);
+  return { applicable, evidence, conflicting };
 }
 
 export function candidateSignals(
   mention: TranscriptMention,
   profile: PersonProfile,
-  mapping: RememberedMapping | null,
+  mapping: MappingResolution,
 ): TranscriptCandidateSignal[] {
   const profileForms = profileNameForms(profile);
   const mentionName = mention.normalizedForms[0] ?? "";
@@ -258,12 +280,14 @@ export function candidateSignals(
     {
       signal: "remembered-mapping",
       explanation:
-        mapping === null
+        mapping.evidence.length === 0
           ? "No remembered mapping applies to this mention inside its scope."
-          : mapping.profileId === profile.id
-            ? `Remembered mapping v${mapping.mappingVersion} ties this name to the Profile inside its ${mapping.scope} scope.`
+          : mapping.evidence.some((authority) => authority.profileId === profile.id)
+            ? mapping.conflicting
+              ? "A remembered mapping points at this Profile, but another active lineage conflicts and requires review."
+              : `Remembered mapping v${mapping.applicable?.mappingVersion} ties this name to the Profile inside its ${mapping.applicable?.scope} scope.`
             : "A remembered mapping applies to this name, but it points at a different Profile.",
-      matched: mapping !== null && mapping.profileId === profile.id,
+      matched: mapping.evidence.some((authority) => authority.profileId === profile.id),
       weight: WEIGHT_REMEMBERED_MAPPING,
     },
     {
