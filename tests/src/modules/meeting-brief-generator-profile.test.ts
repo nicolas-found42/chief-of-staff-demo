@@ -2,8 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeetingBriefEvent, PersonProfile } from "@chief-of-staff-demo/shared";
+import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 import { isGuestProfileEmployerMatch } from "@chief-of-staff-demo/shared";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
 import { ConfigStore } from "../../../apps/server/src/config";
@@ -176,48 +178,35 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
     now = new Date("2026-08-28T09:00:00.000Z");
   });
 
-  it("consumes reusable Person Profile snapshots without a Guest Profile endpoint", async () => {
-    const resolved: PersonProfile[] = [];
-    const personProfiles = {
-      async resolve(signals: {
-        emails: string[];
-        fullNames: string[];
-        handles: Record<string, string[]>;
-        profileUrls: string[];
-        employerHints: string[];
-      }): Promise<PersonProfile> {
-        const profile: PersonProfile = {
-          id: `person-${signals.emails[0]}`,
-          revision: 1,
-          createdAt: "2026-08-28T09:00:00.000Z",
-          updatedAt: "2026-08-28T09:00:00.000Z",
-          fullName: signals.fullNames[0] ?? null,
-          primaryEmail: signals.emails[0] ?? null,
-          emails: signals.emails,
-          handles: {},
-          profileUrls: ["https://example.com/alice"],
-          employerHints: [],
-          role: "Founder",
-          background: "Builds evidence-backed products",
-          currentEmployer: "Example Labs",
-          socialProfiles: [],
-          websites: ["https://example.com/alice"],
-          feeds: [{ url: "https://example.com/alice/feed.xml", title: "Alice's feed" }],
-          publications: [],
-          mentions: [],
-          evidence: [],
-          sourceDiagnostics: [
-            { source: "public-web", status: "completed", detail: "profile matched" },
-          ],
-          archivedAt: null,
-        };
-        resolved.push(profile);
-        return profile;
-      },
-      get() {
-        return null;
-      },
-    };
+  it("consumes the pinned Person Profile revision without a Guest Profile endpoint", async () => {
+    const store = new PersonProfileStore(workspaceDir);
+    const attendeeProfiles = new WorkspacePersonProfiles({
+      store,
+      now: () => new Date(now),
+    });
+    store.save({
+      id: "person_alice",
+      revision: 1,
+      createdAt: "2026-08-28T09:00:00.000Z",
+      updatedAt: "2026-08-28T09:00:00.000Z",
+      fullName: "Alice External",
+      primaryEmail: "alice@external.co",
+      emails: ["alice@external.co"],
+      handles: {},
+      profileUrls: ["https://example.com/alice"],
+      employerHints: [],
+      role: "Founder",
+      background: "Builds evidence-backed products",
+      currentEmployer: "Example Labs",
+      socialProfiles: [],
+      websites: ["https://example.com/alice"],
+      feeds: [{ url: "https://example.com/alice/feed.xml", title: "Alice's feed" }],
+      publications: [],
+      mentions: [],
+      evidence: [],
+      sourceDiagnostics: [{ source: "public-web", status: "completed", detail: "profile matched" }],
+      archivedAt: null,
+    });
     const host = new MeetingBriefHost({
       runs,
       workspaceDir,
@@ -230,7 +219,7 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        personProfiles,
+        attendeeProfiles,
         getHubSpotApi: () => stubHubSpotApi(),
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -257,16 +246,30 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
     await host.idle();
 
     expect(runs.detail(runId)!.status).toBe("done");
-    expect(resolved).toHaveLength(1);
-    expect(resolved[0]?.primaryEmail).toBe("alice@external.co");
-    expect(resolved[0]?.fullName).toBe("Alice External");
+    // The existing Profile was reused, not resolved or duplicated, and the
+    // Run pins the exact id + revision it consumed (issue #124).
+    expect(store.list()).toHaveLength(2);
+    expect(attendeeProfiles.get("person_alice")?.revision).toBe(1);
+    const pins = JSON.parse(runs.open(runId)!.readArtifact("attendee-profiles.json")!) as Array<{
+      email: string;
+      profileId: string;
+      profileRevision: number;
+      origin: string;
+    }>;
+    expect(pins).toContainEqual({
+      email: "alice@external.co",
+      profileId: "person_alice",
+      profileRevision: 1,
+      origin: "reused",
+    });
     expect(runs.detail(runId)!.files).toContain(
       "person-profile-alice_external_co-v_person_profile_1.json",
     );
     const snapshot = JSON.parse(
       runs.open(runId)!.readArtifact("person-profile-alice_external_co-v_person_profile_1.json")!,
-    ) as PersonProfile;
-    expect(snapshot.id).toBe("person-alice@external.co");
+    ) as { profileId: string; profileRevision: number; currentEmployer: string | null };
+    expect(snapshot.profileId).toBe("person_alice");
+    expect(snapshot.profileRevision).toBe(1);
     expect(snapshot.currentEmployer).toBe("Example Labs");
   });
 

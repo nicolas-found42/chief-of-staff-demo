@@ -7,7 +7,7 @@ import type {
   HubSpotEnrichmentArtifact,
   MeetingBriefEnrichmentSection,
   MeetingBriefEvent,
-  PersonProfile,
+  PersonProfileMeetingProjection,
 } from "@chief-of-staff-demo/shared";
 import {
   GUEST_PROFILE_PROVIDER_ID,
@@ -23,7 +23,7 @@ import { enrichCalendarHistory } from "../google/calendarHistory.js";
 import type { DriveProvider } from "../google/drive.js";
 import { enrichDriveDocs } from "../google/drive.js";
 import type { GuestProfileProvider } from "../profile/provider.js";
-import type { PersonProfiles } from "../../../person-profile/resolver.js";
+import { WorkspacePersonProfiles } from "../../../person-profile/profiles.js";
 import type { HubSpotApi } from "../hubspot/client.js";
 import { enrichGuestWithHubSpot } from "../hubspot/enrichment.js";
 import type { PublicIntelligenceProvider } from "./publicIntelligence.js";
@@ -48,7 +48,10 @@ export interface MeetingBriefEnrichmentProviders {
   gmailProvider?: GmailProvider | null;
   calendarHistoryProvider?: CalendarHistoryProvider | null;
   driveProvider?: DriveProvider | null;
-  personProfiles?: PersonProfiles | null;
+  /** The Workspace Person Profiles interface: Calendar attendee identity is
+   *  resolved and pinned through it (issue #124), never through the legacy
+   *  broad resolver. */
+  attendeeProfiles?: WorkspacePersonProfiles | null;
   /** @deprecated Legacy single-endpoint adapter retained while stored config and old Runs migrate. */
   profileProvider?: GuestProfileProvider | null;
   getHubSpotApi?: (() => HubSpotApi | null) | null;
@@ -87,72 +90,97 @@ function profileSection(
 }
 
 function personProfileSection(
-  profile: PersonProfile,
-  guestEmail: string,
+  projection: PersonProfileMeetingProjection,
 ): MeetingBriefEnrichmentSection {
-  const directEvidence = [profile.role, profile.background, profile.currentEmployer]
+  const directEvidence = [projection.role, projection.background, projection.currentEmployer]
     .filter((value): value is string => Boolean(value))
     .map(sanitizeEvidence);
-  const sourcedEvidence = profile.evidence
+  const sourcedEvidence = projection.evidence
     .map((item) => sanitizeEvidence(item.summary || item.title))
     .filter(Boolean);
   const references = deduplicateEvidence([
-    ...profile.profileUrls,
-    ...profile.websites,
-    ...profile.feeds.map((feed) => feed.url),
-    ...profile.evidence.map((item) => item.url),
+    ...projection.socialProfiles.map((item) => item.url),
+    ...projection.websites,
+    ...projection.feeds.map((feed) => feed.url),
+    ...projection.evidence.map((item) => item.url),
   ]);
   return {
     source: PERSON_PROFILE_SOURCE_ID,
-    guest: guestEmail.toLowerCase(),
+    guest: projection.primaryEmail?.toLowerCase() ?? "",
     status: directEvidence.length > 0 || sourcedEvidence.length > 0 ? "completed" : "empty",
     evidence: deduplicateEvidence([...directEvidence, ...sourcedEvidence]),
     references,
   };
 }
 
-async function enrichPersonProfile(
-  profiles: PersonProfiles,
-  input: {
-    guestEmail: string;
-    guestName: string | null;
-    companyDomain: string | null;
-    eventVersion: string;
-  },
-  ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
-): Promise<{ profile: PersonProfile; section: MeetingBriefEnrichmentSection }> {
-  const sanitized = input.guestEmail.replace(/[^a-zA-Z0-9]/g, "_");
-  const filename = `person-profile-${sanitized}-${sanitizeArtifactVersion(input.eventVersion)}.json`;
-  const existingRaw = ctx.readFile(filename);
-  if (existingRaw) {
-    try {
-      const existing = JSON.parse(existingRaw) as PersonProfile;
-      if (existing.id && existing.revision > 0)
-        return {
-          profile: existing,
-          section: personProfileSection(existing, input.guestEmail),
-        };
-    } catch {
-      // A malformed Run-local snapshot is refreshed from the canonical Workspace profile.
-    }
+/** One pinned attendee identity: the exact email, the Profile it resolved to,
+ *  and the exact revision the consumer used (spec #117 Implementation
+ *  Decision 5). */
+export interface AttendeeProfilePin {
+  email: string;
+  profileId: string;
+  profileRevision: number;
+  origin: "reused" | "shell";
+}
+
+/**
+ * Calendar attendee identity (issue #124): every non-resource attendee is
+ * routed through the shared Person Profiles interface — an exact non-
+ * conflicting email match reuses the existing Profile, an unknown attendee
+ * receives one idempotent minimal email-anchored shell. Conflicting stable
+ * identifiers throw, so the enrich stage fails visibly instead of merging or
+ * overwriting Profiles. The pins are persisted as the Run's
+ * `attendee-profiles.json` artifact, the consumer's exact-revision record.
+ */
+function pinAttendeeProfiles(
+  profiles: WorkspacePersonProfiles,
+  event: MeetingBriefEvent,
+  occurrenceKey: string,
+  ctx: Pick<RunContext, "writeFile" | "event">,
+): AttendeeProfilePin[] {
+  const provenance = `occurrence ${occurrenceKey} version ${event.version}`;
+  const byEmail = new Map<string, AttendeeProfilePin>();
+  for (const attendee of event.attendees) {
+    if (attendee.resource) continue;
+    const email = attendee.email.toLowerCase();
+    if (byEmail.has(email)) continue;
+    const { profile, created } = profiles.ensureCalendarAttendeeProfile({
+      email,
+      provenance,
+    });
+    byEmail.set(email, {
+      email,
+      profileId: profile.id,
+      profileRevision: profile.revision,
+      origin: created ? "shell" : "reused",
+    });
   }
-  const profile = await profiles.resolve({
-    emails: [input.guestEmail],
-    fullNames: input.guestName ? [input.guestName] : [],
-    handles: {},
-    profileUrls: [],
-    employerHints: input.companyDomain ? [input.companyDomain] : [],
-  });
-  ctx.writeFile(filename, `${JSON.stringify(profile, null, 2)}\n`);
-  const section = personProfileSection(profile, input.guestEmail);
-  ctx.event("person_profile_resolved", {
-    guest: input.guestEmail.toLowerCase(),
-    profileId: profile.id,
-    profileRevision: profile.revision,
-    outcome: section.status,
-    sources: profile.sourceDiagnostics.map((item) => item.source),
-  });
-  return { profile, section };
+  const pins = [...byEmail.values()];
+  ctx.writeFile("attendee-profiles.json", `${JSON.stringify(pins, null, 2)}\n`);
+  ctx.event("attendee_profiles_pinned", { occurrenceKey, version: event.version, attendees: pins });
+  return pins;
+}
+
+/** Read the pinned meeting projection for one attendee and record it as the
+ *  Run-local consumer snapshot (`person-profile-<guest>-<version>.json`). */
+function pinnedPersonProfile(
+  profiles: WorkspacePersonProfiles,
+  pin: AttendeeProfilePin,
+  eventVersion: string,
+  ctx: Pick<RunContext, "writeFile">,
+): { projection: PersonProfileMeetingProjection; section: MeetingBriefEnrichmentSection } {
+  const projection = profiles.project("meeting", pin.profileId, { revision: pin.profileRevision });
+  if (projection?.purpose !== "meeting")
+    throw new StageFailure(
+      "enrich",
+      `Pinned Person Profile ${pin.profileId} revision ${pin.profileRevision} is no longer retrievable`,
+    );
+  const sanitized = pin.email.replace(/[^a-zA-Z0-9]/g, "_");
+  ctx.writeFile(
+    `person-profile-${sanitized}-${sanitizeArtifactVersion(eventVersion)}.json`,
+    `${JSON.stringify(projection, null, 2)}\n`,
+  );
+  return { projection, section: personProfileSection(projection) };
 }
 
 // Preservation helpers for hubspot/profile
@@ -422,13 +450,31 @@ export async function enrichUnified(
   const eventVersion = event.version;
   const eventStartAt = event.startAt;
 
+  // Calendar attendee identity (issue #124): route every non-resource
+  // attendee through the shared Person Profiles interface and pin the exact
+  // Profile id + revision this Run consumes. A conflicting stable identifier
+  // throws out of here, failing the stage visibly.
+  let attendeePins: AttendeeProfilePin[] | null = null;
+  if (providers.attendeeProfiles) {
+    try {
+      attendeePins = pinAttendeeProfiles(providers.attendeeProfiles, event, occurrenceKey, ctx);
+    } catch (error) {
+      // A conflicting stable identifier (issue #124) is a classified, visible
+      // enrich failure — never a silent merge or overwrite.
+      throw new StageFailure(
+        "enrich",
+        `conflicting_identity: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   // Spec A: fail when required enrichment class wholly unavailable (rejected/missing_configuration/provider-wide outage)
   if (externalAttendees.length > 0) {
     const missing: string[] = [];
     if (!providers.gmailProvider) missing.push("gmail");
     if (!providers.calendarHistoryProvider) missing.push("calendarHistory");
     if (!providers.driveProvider) missing.push("drive");
-    if (!providers.personProfiles && !providers.profileProvider) missing.push("personProfile");
+    if (!providers.attendeeProfiles && !providers.profileProvider) missing.push("personProfile");
     if (!hubSpotApi) missing.push("hubSpot");
     if (!providers.publicIntelligenceProvider) missing.push("publicIntelligence");
     if (missing.length > 0) {
@@ -496,23 +542,27 @@ export async function enrichUnified(
       allSections.push(section);
     }
 
-    // 5. Person Profile. New Runs use the Workspace-owned resolver; the legacy
-    // single-endpoint provider remains readable for old tests/config during migration.
+    // 5. Person Profile. New Runs consume the attendee's pinned Person
+    // Profile revision through the shared interface (issue #124); the legacy
+    // single-endpoint provider remains readable for old tests/config during
+    // migration.
     let profileArtifact: GuestProfileArtifact | null = null;
     let profileEmployerMatch: { name: string; domain: string | null } | null = null;
-    if (providers.personProfiles) {
-      const { profile, section } = await enrichPersonProfile(
-        providers.personProfiles,
-        {
-          guestEmail,
-          guestName,
-          companyDomain: !isConsumer && !isInternal && domain ? lowerDomain : null,
-          eventVersion,
-        },
+    if (providers.attendeeProfiles && attendeePins) {
+      const pin = attendeePins.find((item) => item.email === guestEmail.toLowerCase());
+      if (!pin)
+        throw new StageFailure(
+          "enrich",
+          `no pinned Person Profile for attendee ${guestEmail.toLowerCase()}`,
+        );
+      const { projection, section } = pinnedPersonProfile(
+        providers.attendeeProfiles,
+        pin,
+        eventVersion,
         ctx,
       );
-      if (profile.currentEmployer) {
-        profileEmployerMatch = { name: profile.currentEmployer, domain: null };
+      if (projection.currentEmployer) {
+        profileEmployerMatch = { name: projection.currentEmployer, domain: null };
       }
       allSections.push(section);
     } else if (providers.profileProvider) {
@@ -657,6 +707,20 @@ export async function enrichUnified(
         ctx,
       );
       allSections.push(industryNews);
+    }
+  }
+
+  // Internal attendees have no enrichment bundle loop, but their attendee
+  // identity is still pinned (issue #124): give each one a person-profile
+  // section from the exact Profile revision this Run consumes.
+  if (providers.attendeeProfiles && attendeePins) {
+    const enrichedGuests = new Set(
+      externalAttendees.map((attendee) => attendee.email.toLowerCase()),
+    );
+    for (const pin of attendeePins) {
+      if (enrichedGuests.has(pin.email)) continue;
+      const { section } = pinnedPersonProfile(providers.attendeeProfiles, pin, eventVersion, ctx);
+      allSections.push(section);
     }
   }
 

@@ -24,14 +24,8 @@ import {
 } from "./google/calendar.js";
 import { DuckDuckGoPublicIntelligenceProvider } from "./enrichment/publicIntelligence.js";
 import { createEmployerProposer } from "./enrichment/employerProposer.js";
-import { PersonProfileResolver } from "../../person-profile/resolver.js";
+import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
-import {
-  createHubSpotPersonProfileSource,
-  createPublicWebPersonProfileSource,
-} from "../../person-profile/sources.js";
-import { createPublicSearch } from "../../source-adapters/search.js";
-import { createFeedDiscoverer } from "../../source-adapters/feeds.js";
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;
@@ -122,15 +116,12 @@ export function createMeetingBriefProductionRuntime(
     workspaceCalendarRelayRegistry(relayStore),
   );
   const hubSpotConnection = new HubSpotConnection(options.configStore);
-  const personProfiles = new PersonProfileResolver({
+  /* Calendar attendee identity (issue #124) routes through the shared Person
+     Profiles interface, not the legacy broad resolver: attendees reuse an
+     existing Profile on a non-conflicting exact email match or receive one
+     minimal email-anchored shell. */
+  const personProfiles = new WorkspacePersonProfiles({
     store: new PersonProfileStore(options.workspaceDir),
-    sources: [
-      createHubSpotPersonProfileSource(() => hubSpotConnection.api()),
-      createPublicWebPersonProfileSource({
-        search: createPublicSearch(),
-        discoverFeeds: createFeedDiscoverer(),
-      }),
-    ],
   });
   const host = new MeetingBriefHost({
     runs: options.runs,
@@ -143,7 +134,7 @@ export function createMeetingBriefProductionRuntime(
       gmailProvider,
       calendarHistoryProvider,
       driveProvider,
-      personProfiles,
+      attendeeProfiles: personProfiles,
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
     },
