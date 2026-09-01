@@ -4,6 +4,7 @@ import type {
   MeetingBrief,
   MeetingBriefEvent,
   MeetingBriefEnrichmentSection,
+  MeetingBriefPersonProfileLink,
   MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
 import { MEETING_BRIEF_MODULE_ID, MEETING_BRIEF_MODULE_VERSION } from "@chief-of-staff-demo/shared";
@@ -31,6 +32,7 @@ export interface MeetingBriefModuleDeps {
   ) => Promise<{
     sections: unknown[];
     evidence: string[];
+    personProfileLinks?: MeetingBriefPersonProfileLink[];
   }>;
   completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
   getCompleteJson?: () => CompleteJson;
@@ -300,7 +302,11 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
       }
 
       // enrich — unified evidence via Google, HubSpot, Person Profiles, Public Intelligence
-      let enrichResult: { sections: unknown[]; evidence: string[] } = {
+      let enrichResult: {
+        sections: unknown[];
+        evidence: string[];
+        personProfileLinks?: MeetingBriefPersonProfileLink[];
+      } = {
         sections: [],
         evidence: [],
       };
@@ -330,10 +336,15 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         const enrichRaw = ctx.readFile("enrich.json");
         if (enrichRaw) {
           try {
-            const parsed = JSON.parse(enrichRaw) as { sections?: unknown[]; evidence?: string[] };
+            const parsed = JSON.parse(enrichRaw) as {
+              sections?: unknown[];
+              evidence?: string[];
+              personProfileLinks?: MeetingBriefPersonProfileLink[];
+            };
             enrichResult = {
               sections: (parsed.sections as unknown[]) ?? [],
               evidence: (parsed.evidence as string[]) ?? [],
+              personProfileLinks: parsed.personProfileLinks ?? [],
             };
           } catch {
             // ignore
@@ -374,6 +385,7 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             composeAt: now().toISOString(),
             meetingBrief: composed,
             delivery: deliveryState("pending", deliveryIdFor(occurrenceKey, composed.eventVersion)),
+            personProfileLinks: enrichResult.personProfileLinks ?? [],
             supersedes,
           };
           ctx.writeFile("result.json", JSON.stringify(partial, null, 2) + "\n");

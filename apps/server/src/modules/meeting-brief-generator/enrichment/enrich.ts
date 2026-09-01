@@ -7,6 +7,7 @@ import type {
   HubSpotEnrichmentArtifact,
   MeetingBriefEnrichmentSection,
   MeetingBriefEvent,
+  MeetingBriefPersonProfileLink,
   PersonProfile,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -408,7 +409,11 @@ export async function enrichUnified(
   event: MeetingBriefEvent,
   ctx: Pick<RunContext, "writeFile" | "event" | "readFile">,
   deps: UnifiedEnrichDeps,
-): Promise<{ sections: MeetingBriefEnrichmentSection[]; evidence: string[] }> {
+): Promise<{
+  sections: MeetingBriefEnrichmentSection[];
+  evidence: string[];
+  personProfileLinks: MeetingBriefPersonProfileLink[];
+}> {
   const providers = deps.providers;
   const hubSpotApi = providers.getHubSpotApi?.() ?? null;
   const internalDomains = deps.internalDomains ?? [];
@@ -416,6 +421,7 @@ export async function enrichUnified(
     (a) => !a.resource && isExternalGuest(a, internalDomains),
   );
   const allSections: MeetingBriefEnrichmentSection[] = [];
+  const personProfileLinks: MeetingBriefPersonProfileLink[] = [];
   const occurrenceKey =
     deps.occurrenceKey ??
     meetingBriefOccurrenceIdentity(event.eventId, event.occurrenceId).occurrenceKey;
@@ -514,6 +520,11 @@ export async function enrichUnified(
       if (profile.currentEmployer) {
         profileEmployerMatch = { name: profile.currentEmployer, domain: null };
       }
+      personProfileLinks.push({
+        guestEmail: guestEmail.toLowerCase(),
+        profileId: profile.id,
+        profileRevision: profile.revision,
+      });
       allSections.push(section);
     } else if (providers.profileProvider) {
       const { artifact, section } = await enrichProfileWithRetry(
@@ -674,5 +685,5 @@ export async function enrichUnified(
 
   // Persist aggregated enrich.json with normalized deduped evidence
   // The caller will write enrich.json, but we return sections and evidence
-  return { sections: dedupedSections, evidence: globalDeduped };
+  return { sections: dedupedSections, evidence: globalDeduped, personProfileLinks };
 }

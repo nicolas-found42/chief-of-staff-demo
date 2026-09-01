@@ -27,7 +27,6 @@ import type {
   PersonProfileCorrectionInput,
   PersonProfileCreateInput,
   PersonProfileDetachInput,
-  PersonProfileInvalidation,
   PersonProfileMergeInput,
   PersonProfileProjection,
   PersonProfileProjectionPurpose,
@@ -572,10 +571,6 @@ export const api = {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       },
-    ),
-  personProfileInvalidations: (profileId: string) =>
-    request<PersonProfileInvalidation[]>(
-      `/api/people/${encodeURIComponent(profileId)}/invalidations`,
     ),
 };
 

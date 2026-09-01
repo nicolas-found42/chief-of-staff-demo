@@ -195,13 +195,26 @@ export interface PersonProfileInvalidation {
   movedFrom?: string;
 }
 
+/** Current read-time state of one consumer's exact pinned Profile revision. */
+export interface PersonProfileConsumerState {
+  profileId: string;
+  profileRevision: number;
+  currentProfileId: string;
+  currentProfileRevision: number;
+  refreshRequired: boolean;
+  invalidations: PersonProfileInvalidation[];
+}
+
 /** What the owner corrects on an ordinary factual repair; omitted facts are unchanged. */
 export interface PersonProfileCorrectionInput {
   fullName?: string;
   primaryEmail?: string;
-  role?: string;
-  currentEmployer?: string;
-  background?: string;
+  /** `null` explicitly removes a false fact; omission leaves it unchanged. */
+  role?: string | null;
+  /** `null` explicitly removes a false fact; omission leaves it unchanged. */
+  currentEmployer?: string | null;
+  /** `null` explicitly removes a false fact; omission leaves it unchanged. */
+  background?: string | null;
   /** Audit note recorded with the correction decision. */
   note?: string;
 }

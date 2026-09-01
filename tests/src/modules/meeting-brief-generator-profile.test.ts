@@ -2,7 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MeetingBriefEvent, PersonProfile } from "@chief-of-staff-demo/shared";
+import type {
+  MeetingBriefEvent,
+  MeetingBriefRunResult,
+  PersonProfile,
+} from "@chief-of-staff-demo/shared";
 import { isGuestProfileEmployerMatch } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
@@ -268,6 +272,14 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
     ) as PersonProfile;
     expect(snapshot.id).toBe("person-alice@external.co");
     expect(snapshot.currentEmployer).toBe("Example Labs");
+    const result = runs.detail(runId)!.result as MeetingBriefRunResult;
+    expect(result.personProfileLinks).toEqual([
+      {
+        guestEmail: "alice@external.co",
+        profileId: "person-alice@external.co",
+        profileRevision: 1,
+      },
+    ]);
   });
 
   it("each External Guest gets bounded lookup via fixed contract; artifacts keyed by version+guest+source with confidence/role/background/employer/refs/diagnostics/outcome", async () => {

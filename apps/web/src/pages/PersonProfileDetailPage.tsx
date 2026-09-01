@@ -106,6 +106,11 @@ export function PersonProfileDetailPage() {
     background: "",
     note: "",
   });
+  const [clearCorrection, setClearCorrection] = useState({
+    role: false,
+    currentEmployer: false,
+    background: false,
+  });
   const [mergeForm, setMergeForm] = useState({
     duplicateId: "",
     fullName: "",
@@ -139,11 +144,21 @@ export function PersonProfileDetailPage() {
     const stated = {
       ...(correction.fullName.trim() === "" ? {} : { fullName: correction.fullName }),
       ...(correction.primaryEmail.trim() === "" ? {} : { primaryEmail: correction.primaryEmail }),
-      ...(correction.role.trim() === "" ? {} : { role: correction.role }),
-      ...(correction.currentEmployer.trim() === ""
-        ? {}
-        : { currentEmployer: correction.currentEmployer }),
-      ...(correction.background.trim() === "" ? {} : { background: correction.background }),
+      ...(clearCorrection.role
+        ? { role: null }
+        : correction.role.trim() === ""
+          ? {}
+          : { role: correction.role }),
+      ...(clearCorrection.currentEmployer
+        ? { currentEmployer: null }
+        : correction.currentEmployer.trim() === ""
+          ? {}
+          : { currentEmployer: correction.currentEmployer }),
+      ...(clearCorrection.background
+        ? { background: null }
+        : correction.background.trim() === ""
+          ? {}
+          : { background: correction.background }),
       ...(correction.note.trim() === "" ? {} : { note: correction.note }),
     };
     void runRepair(() => api.correctPersonProfile(profileId, stated));
@@ -302,31 +317,67 @@ export function PersonProfileDetailPage() {
               <input
                 id="correct-role"
                 autoComplete="off"
+                disabled={clearCorrection.role}
                 value={correction.role}
                 onChange={(event) => setCorrection({ ...correction, role: event.target.value })}
               />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={clearCorrection.role}
+                  onChange={(event) =>
+                    setClearCorrection({ ...clearCorrection, role: event.target.checked })
+                  }
+                />{" "}
+                Clear role
+              </label>
             </div>
             <div className="field-row">
               <label htmlFor="correct-employer">Current employer</label>
               <input
                 id="correct-employer"
                 autoComplete="off"
+                disabled={clearCorrection.currentEmployer}
                 value={correction.currentEmployer}
                 onChange={(event) =>
                   setCorrection({ ...correction, currentEmployer: event.target.value })
                 }
               />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={clearCorrection.currentEmployer}
+                  onChange={(event) =>
+                    setClearCorrection({
+                      ...clearCorrection,
+                      currentEmployer: event.target.checked,
+                    })
+                  }
+                />{" "}
+                Clear current employer
+              </label>
             </div>
             <div className="field-row">
               <label htmlFor="correct-background">Background</label>
               <textarea
                 id="correct-background"
                 rows={3}
+                disabled={clearCorrection.background}
                 value={correction.background}
                 onChange={(event) =>
                   setCorrection({ ...correction, background: event.target.value })
                 }
               />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={clearCorrection.background}
+                  onChange={(event) =>
+                    setClearCorrection({ ...clearCorrection, background: event.target.checked })
+                  }
+                />{" "}
+                Clear background
+              </label>
             </div>
             <div className="field-row">
               <label htmlFor="correct-note">What was wrong?</label>

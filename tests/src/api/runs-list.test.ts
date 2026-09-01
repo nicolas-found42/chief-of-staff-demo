@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
@@ -21,6 +21,7 @@ const PORT = 4317;
 
 let app: FastifyInstance;
 let workspaceDir: string;
+let people: WorkspacePersonProfiles;
 
 function seedRun(id: string, meta: Partial<RunMeta>): void {
   const dir = join(workspaceDir, "runs", id);
@@ -62,13 +63,14 @@ beforeEach(async () => {
   configStore.load();
 
   app = fastify({ logger: false });
+  people = new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) });
   await registerApi(app, {
     runs: openRuns(workspaceDir),
     port: PORT,
     configStore,
     modules: [],
     google: { state: async () => ({ state: "unconfigured" }) },
-    people: new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) }),
+    people,
     onConfigChanged: () => {},
   } as unknown as ApiContext);
   await app.ready();
@@ -140,5 +142,47 @@ describe("GET /api/runs", () => {
     seedRun(idFor(1), { module: "long-gone" });
     const page = await list();
     expect(page.runs.map((run) => run.module)).toEqual(["long-gone"]);
+  });
+});
+
+describe("GET /api/runs/:id Person Profile consumer disclosure", () => {
+  it("marks a Meeting Brief's affected pinned Profile claims for explicit refresh", async () => {
+    const profile = people.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
+    const runId = idFor(1);
+    seedRun(runId, { module: "meeting-brief-generator" });
+    writeFileSync(
+      join(workspaceDir, "runs", runId, "result.json"),
+      JSON.stringify({
+        version: 1,
+        personProfileLinks: [
+          {
+            guestEmail: "grace@example.com",
+            profileId: profile.id,
+            profileRevision: 1,
+          },
+        ],
+      }),
+      "utf8",
+    );
+    people.correct(profile.id, { role: "Professor of Computer Science" });
+
+    const response = await app.inject({ url: `/api/runs/${runId}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.personProfileLinks[0]).toMatchObject({
+      profileId: profile.id,
+      profileRevision: 1,
+      currentProfileId: profile.id,
+      currentProfileRevision: 2,
+      refreshRequired: true,
+      invalidations: [{ kind: "correction", affectedRevision: 1 }],
+    });
+    const persisted = JSON.parse(
+      readFileSync(join(workspaceDir, "runs", runId, "result.json"), "utf8"),
+    );
+    expect(persisted.personProfileLinks[0]).toEqual({
+      guestEmail: "grace@example.com",
+      profileId: profile.id,
+      profileRevision: 1,
+    });
   });
 });

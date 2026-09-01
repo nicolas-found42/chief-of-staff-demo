@@ -247,6 +247,34 @@ describe("POST /api/people/:profileId/corrections", () => {
     expect(taken.statusCode).toBe(400);
     expect(taken.json()).toMatchObject({ error: "duplicate-profile" });
   });
+
+  it("accepts explicit nulls to clear false nullable facts", async () => {
+    const seeded = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: {
+        fullName: "Grace Hopper",
+        role: "Rear Admiral",
+        currentEmployer: "US Navy",
+        background: "Incorrect background",
+      },
+    });
+    const created = seeded.json<PersonProfile>();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { role: null, currentEmployer: null, background: null },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<PersonProfile>()).toMatchObject({
+      revision: 2,
+      role: null,
+      currentEmployer: null,
+      background: null,
+    });
+  });
 });
 
 describe("identity repair routes", () => {
@@ -309,29 +337,29 @@ describe("identity repair routes", () => {
   it("POST /:profileId/detachments splits wrongly attached evidence to the correct Profile", async () => {
     const wrong = await createGrace();
     const correct = await createSecond();
+    const wronglyAttributed = {
+      id: "ev_mention",
+      source: "public-web",
+      kind: "mention" as const,
+      title: "A news story",
+      summary: "Someone was profiled.",
+      url: "https://news.example.com/story",
+      identitySignals: {
+        emails: [],
+        fullNames: [],
+        handles: {},
+        profileUrls: [],
+        employerHints: [],
+      },
+      claims: {},
+      matchConfidence: "medium" as const,
+      matchedSignals: ["fullName:grace hopper"],
+      observedAt: "2026-08-30T08:00:00.000Z",
+    };
     store.save({
       ...store.get(wrong.id)!,
-      mentions: [
-        {
-          id: "ev_mention",
-          source: "public-web",
-          kind: "mention",
-          title: "A news story",
-          summary: "Someone was profiled.",
-          url: "https://news.example.com/story",
-          identitySignals: {
-            emails: [],
-            fullNames: [],
-            handles: {},
-            profileUrls: [],
-            employerHints: [],
-          },
-          claims: {},
-          matchConfidence: "medium",
-          matchedSignals: ["fullName:grace hopper"],
-          observedAt: "2026-08-30T08:00:00.000Z",
-        },
-      ],
+      mentions: [wronglyAttributed],
+      evidence: [wronglyAttributed],
     });
 
     const split = await app.inject({
@@ -342,12 +370,14 @@ describe("identity repair routes", () => {
     expect(split.statusCode).toBe(200);
     const body = split.json<{ from: PersonProfile; to: PersonProfile }>();
     expect(body.from.mentions).toEqual([]);
+    expect(body.from.evidence).toEqual([]);
     expect(body.from.invalidations?.at(-1)).toMatchObject({
       kind: "evidence-detached",
       evidenceId: "ev_mention",
       movedTo: correct.id,
     });
     expect(body.to.mentions[0]).toMatchObject({ id: "ev_mention", source: "public-web" });
+    expect(body.to.evidence[0]).toMatchObject({ id: "ev_mention", source: "public-web" });
     expect(body.to.invalidations?.at(-1)).toMatchObject({
       kind: "evidence-detached",
       movedFrom: wrong.id,

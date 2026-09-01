@@ -24,6 +24,16 @@ function makeService(dir = mkdtempSync(join(tmpdir(), "person-profiles-svc-"))) 
   });
 }
 
+function validationCode(run: () => void): string {
+  try {
+    run();
+  } catch (error) {
+    expect(error).toBeInstanceOf(PersonProfileValidationError);
+    return (error as PersonProfileValidationError).code;
+  }
+  throw new Error("expected a PersonProfileValidationError");
+}
+
 function evidence(overrides: Partial<PersonEvidence>): PersonEvidence {
   return {
     id: "ev_1",
@@ -330,26 +340,16 @@ describe("WorkspacePersonProfiles.correct", () => {
     const created = profiles.create({ fullName: "Grace Hopper" });
     profiles.create({ fullName: "Ada Lovelace", primaryEmail: "ada@example.com" });
 
-    const codeOf = (run: () => void): string => {
-      try {
-        run();
-      } catch (error) {
-        expect(error).toBeInstanceOf(PersonProfileValidationError);
-        return (error as PersonProfileValidationError).code;
-      }
-      throw new Error("expected a PersonProfileValidationError");
-    };
-
-    expect(codeOf(() => profiles.correct("person_unknown", { role: "x" }))).toBe(
+    expect(validationCode(() => profiles.correct("person_unknown", { role: "x" }))).toBe(
       "profile-not-found",
     );
-    expect(codeOf(() => profiles.correct(created.id, {}))).toBe("nothing-to-correct");
-    expect(codeOf(() => profiles.correct(created.id, { primaryEmail: "not-an-email" }))).toBe(
-      "invalid-identity-input",
-    );
-    expect(codeOf(() => profiles.correct(created.id, { primaryEmail: "ada@example.com" }))).toBe(
-      "duplicate-profile",
-    );
+    expect(validationCode(() => profiles.correct(created.id, {}))).toBe("nothing-to-correct");
+    expect(
+      validationCode(() => profiles.correct(created.id, { primaryEmail: "not-an-email" })),
+    ).toBe("invalid-identity-input");
+    expect(
+      validationCode(() => profiles.correct(created.id, { primaryEmail: "ada@example.com" })),
+    ).toBe("duplicate-profile");
     // Refusals are durable: no revision was appended.
     expect(profiles.revisions(created.id).map((p) => p.revision)).toEqual([1]);
   });
@@ -359,6 +359,38 @@ describe("WorkspacePersonProfiles.correct", () => {
     const created = profiles.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
     const corrected = profiles.correct(created.id, { role: "Professor of Computer Science" });
     expect(corrected.invalidations?.[0]?.detail).toContain("superseded");
+  });
+
+  it("explicitly clears false nullable facts while preserving the superseded snapshot", () => {
+    const profiles = makeService();
+    const created = profiles.create({
+      fullName: "Grace Hopper",
+      role: "Rear Admiral",
+      currentEmployer: "US Navy",
+      background: "Incorrect background",
+    });
+
+    const corrected = profiles.correct(created.id, {
+      role: null,
+      currentEmployer: null,
+      background: null,
+      note: "These claims belonged to another person.",
+    });
+
+    expect(corrected).toMatchObject({
+      revision: 2,
+      role: null,
+      currentEmployer: null,
+      background: null,
+    });
+    expect(profiles.getRevision(created.id, 1)).toMatchObject({
+      role: "Rear Admiral",
+      currentEmployer: "US Navy",
+      background: "Incorrect background",
+    });
+    expect(corrected.invalidations?.at(-1)?.detail).toBe(
+      "These claims belonged to another person.",
+    );
   });
 });
 describe("WorkspacePersonProfiles.merge", () => {
@@ -460,24 +492,14 @@ describe("WorkspacePersonProfiles.merge", () => {
 
   it("names the problem for unknown, self, and already-merged targets", () => {
     const { profiles } = seedPair();
-    const codeOf = (run: () => void): string => {
-      try {
-        run();
-      } catch (error) {
-        expect(error).toBeInstanceOf(PersonProfileValidationError);
-        return (error as PersonProfileValidationError).code;
-      }
-      throw new Error("expected a PersonProfileValidationError");
-    };
-
-    expect(codeOf(() => profiles.merge("person_ada", { duplicateId: "person_unknown" }))).toBe(
-      "profile-not-found",
-    );
-    expect(codeOf(() => profiles.merge("person_ada", { duplicateId: "person_ada" }))).toBe(
+    expect(
+      validationCode(() => profiles.merge("person_ada", { duplicateId: "person_unknown" })),
+    ).toBe("profile-not-found");
+    expect(validationCode(() => profiles.merge("person_ada", { duplicateId: "person_ada" }))).toBe(
       "self-merge",
     );
     profiles.merge("person_ada", { duplicateId: "person_ada2" });
-    expect(codeOf(() => profiles.merge("person_ada", { duplicateId: "person_ada2" }))).toBe(
+    expect(validationCode(() => profiles.merge("person_ada", { duplicateId: "person_ada2" }))).toBe(
       "profile-merged",
     );
   });
@@ -564,29 +586,77 @@ describe("WorkspacePersonProfiles.detachEvidence", () => {
       evidenceId: "ev_mention",
     });
 
-    const codeOf = (run: () => void): string => {
-      try {
-        run();
-      } catch (error) {
-        expect(error).toBeInstanceOf(PersonProfileValidationError);
-        return (error as PersonProfileValidationError).code;
-      }
-      throw new Error("expected a PersonProfileValidationError");
-    };
-    expect(codeOf(() => profiles.detachEvidence("person_unknown", { evidenceId: "x" }))).toBe(
-      "profile-not-found",
-    );
-    expect(codeOf(() => profiles.detachEvidence(wrong.id, { evidenceId: "nope" }))).toBe(
+    expect(
+      validationCode(() => profiles.detachEvidence("person_unknown", { evidenceId: "x" })),
+    ).toBe("profile-not-found");
+    expect(validationCode(() => profiles.detachEvidence(wrong.id, { evidenceId: "nope" }))).toBe(
       "evidence-not-found",
     );
     expect(
-      codeOf(() =>
+      validationCode(() =>
         profiles.detachEvidence(wrong.id, { evidenceId: "ev_mention", toProfileId: "unknown" }),
       ),
     ).toBe("profile-not-found");
     // Refusals are durable: no revision was appended for the failed detach.
     expect(profiles.get(wrong.id)?.revision).toBe(3);
   });
+
+  it.each(["publications", "mentions"] as const)(
+    "removes and re-attributes resolver-shaped %s duplicated in general evidence",
+    (collection) => {
+      const store = new PersonProfileStore(
+        mkdtempSync(join(tmpdir(), "person-profiles-resolver-detach-")),
+      );
+      const duplicated = evidence({
+        id: `ev_resolver_${collection}`,
+        kind: collection === "publications" ? "publication" : "mention",
+      });
+      store.save(
+        richProfile({
+          [collection]: [duplicated],
+          evidence: [duplicated],
+        }),
+      );
+      store.save(
+        richProfile({
+          id: "person_correct",
+          revision: 1,
+          primaryEmail: null,
+          emails: [],
+          publications: [],
+          mentions: [],
+          evidence: [],
+        }),
+      );
+      const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+
+      const split = profiles.detachEvidence("person_ada", {
+        evidenceId: duplicated.id,
+        toProfileId: "person_correct",
+      });
+
+      expect(split.from[collection]).toEqual([]);
+      expect(split.from.evidence).toEqual([]);
+      expect(split.to?.[collection].map((item) => item.id)).toEqual([duplicated.id]);
+      expect(split.to?.evidence.map((item) => item.id)).toEqual([duplicated.id]);
+      const publicProjection = profiles.project("public-safe", "person_ada");
+      const meetingProjection = profiles.project("meeting", "person_ada");
+      expect(
+        publicProjection?.purpose === "public-safe"
+          ? publicProjection.publications.map((item) => item.id)
+          : [],
+      ).not.toContain(duplicated.id);
+      expect(
+        meetingProjection?.purpose === "meeting"
+          ? [
+              ...meetingProjection.publications,
+              ...meetingProjection.mentions,
+              ...meetingProjection.evidence,
+            ].map((item) => item.id)
+          : [],
+      ).not.toContain(duplicated.id);
+    },
+  );
 });
 describe("WorkspacePersonProfiles invalidation disclosure", () => {
   function supersededStore() {
@@ -612,6 +682,49 @@ describe("WorkspacePersonProfiles invalidation disclosure", () => {
       kind: "correction",
       affectedRevision: 2,
       detail: "She was a countess.",
+    });
+  });
+
+  it("marks an affected pinned consumer revision for explicit refresh", () => {
+    const profiles = makeService();
+    const created = profiles.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
+
+    expect(profiles.consumerState(created.id, 1)).toMatchObject({
+      profileId: created.id,
+      profileRevision: 1,
+      currentProfileId: created.id,
+      currentProfileRevision: 1,
+      refreshRequired: false,
+      invalidations: [],
+    });
+
+    profiles.correct(created.id, { role: "Professor" });
+
+    expect(profiles.consumerState(created.id, 1)).toMatchObject({
+      profileId: created.id,
+      profileRevision: 1,
+      currentProfileId: created.id,
+      currentProfileRevision: 2,
+      refreshRequired: true,
+      invalidations: [{ kind: "correction", affectedRevision: 1 }],
+    });
+    expect(profiles.consumerState(created.id, 9)).toBeNull();
+  });
+
+  it("redirects a merged-away consumer pin to the surviving Profile for refresh", () => {
+    const profiles = makeService();
+    const survivor = profiles.create({ fullName: "Grace Hopper" });
+    const duplicate = profiles.create({ fullName: "Grace Hopper" });
+
+    profiles.merge(survivor.id, { duplicateId: duplicate.id });
+
+    expect(profiles.consumerState(duplicate.id, 1)).toMatchObject({
+      profileId: duplicate.id,
+      profileRevision: 1,
+      currentProfileId: survivor.id,
+      currentProfileRevision: 2,
+      refreshRequired: true,
+      invalidations: [{ kind: "merge", mergedInto: survivor.id, affectedRevision: 1 }],
     });
   });
 

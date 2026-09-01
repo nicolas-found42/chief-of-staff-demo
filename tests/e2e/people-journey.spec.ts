@@ -51,6 +51,12 @@ test("person profiles journey — nav → search → create → detail → revis
   await expect(page.getByText("No enrichment diagnostics recorded.")).toBeVisible();
 
   const profileId = new URL(page.url()).pathname.split("/").pop()!;
+  const linkedBriefResponse = await page.request.post(
+    "/api/test/seed-person-profile-meeting-brief",
+    { data: { profileId } },
+  );
+  expect(linkedBriefResponse.ok()).toBe(true);
+  const linkedRunId = ((await linkedBriefResponse.json()) as { runId: string }).runId;
   await page.getByLabel("Role", { exact: true }).last().fill("Professor of Computer Science");
   await page.getByLabel("What was wrong?").fill("Teaching at Vassar, not serving.");
   await page.getByRole("button", { name: "Append correction" }).click();
@@ -59,6 +65,19 @@ test("person profiles journey — nav → search → create → detail → revis
   ).toBeVisible();
   await expect(page.getByText(/Correction — revision 1 superseded/)).toContainText(
     "Teaching at Vassar, not serving.",
+  );
+  await page.goto(`/runs/${linkedRunId}`);
+  await expect(page.getByRole("alert")).toContainText("Profile-derived claims need refresh");
+  await expect(page.getByRole("alert")).toContainText("revision 1");
+  await scanForViolations(page);
+  await page.goto(`/people/${profileId}`);
+  await page.getByLabel("Clear current employer").check();
+  await page.getByLabel("Clear background").check();
+  await page.getByLabel("What was wrong?").fill("Employer and background were false claims.");
+  await page.getByRole("button", { name: "Append correction" }).click();
+  await expect(page.getByRole("definition").filter({ hasText: "US Navy" })).toHaveCount(0);
+  await expect(page.getByText(/Correction — revision 2 superseded/)).toContainText(
+    "Employer and background were false claims.",
   );
   // A direct load of the same URL is the same Profile: the route is the resource.
   await page.reload();
@@ -102,7 +121,7 @@ test("person profiles journey — nav → search → create → detail → revis
   await page.getByLabel("Resolved role").fill("Professor of Computer Science");
   await page.getByLabel("Merge note").fill("Duplicate shell for the same person.");
   await page.getByRole("button", { name: "Merge profile" }).click();
-  await expect(page.getByText(/Merge — revision 2 superseded/)).toContainText(
+  await expect(page.getByText(/Merge — revision 3 superseded/)).toContainText(
     "Duplicate shell for the same person.",
   );
   await page.goto(`/people/${conflictingId}`);
@@ -128,7 +147,7 @@ test("person profiles journey — nav → search → create → detail → revis
   await page.getByLabel("Move to profile id (optional)").fill(correctId);
   await page.getByLabel("Detach note").fill("This source describes Katherine, not Grace.");
   await page.getByRole("button", { name: "Detach evidence" }).click();
-  await expect(page.getByText(/Evidence detached — revision 4 superseded/)).toContainText(
+  await expect(page.getByText(/Evidence detached — revision 5 superseded/)).toContainText(
     "This source describes Katherine, not Grace.",
   );
   await expect(page.getByText("Wrong-person evidence")).toHaveCount(0);

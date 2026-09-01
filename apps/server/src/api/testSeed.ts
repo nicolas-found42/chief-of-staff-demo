@@ -13,7 +13,8 @@ import type {
 import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
 import type { PersonProfileStore } from "../person-profile/store.js";
-import type { PersonEvidence } from "@chief-of-staff-demo/shared";
+import type { Runs } from "../runs.js";
+import type { MeetingBriefRunResult, PersonEvidence } from "@chief-of-staff-demo/shared";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 
 export interface TestSeedContext {
@@ -22,6 +23,7 @@ export interface TestSeedContext {
   /** The Workspace Person Profile store, so the journey can arrange sourced
       evidence before exercising repair through the real product surface. */
   personStore: PersonProfileStore;
+  runs: Runs;
 }
 
 /**
@@ -117,6 +119,74 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
     ctx.personStore.save(next);
     reply.code(201);
     return { revision: next.revision, evidenceId: evidence.id };
+  });
+
+  app.post("/api/test/seed-person-profile-meeting-brief", async (request, reply) => {
+    const { profileId } = request.body as { profileId?: string };
+    const profile = profileId ? ctx.personStore.get(profileId) : null;
+    if (!profile) {
+      reply.code(404);
+      return { error: "profile-not-found", message: "No Person Profile with that id." };
+    }
+    const run = ctx.runs.create({
+      module: "meeting-brief-generator",
+      moduleVersion: 1,
+      intake: "calendar",
+      sourceUrl: null,
+      externalId: "evt_profile_repair::2026-08-31T15:00:00Z",
+    });
+    const result: MeetingBriefRunResult = {
+      version: 1,
+      eventId: "evt_profile_repair",
+      occurrenceId: "2026-08-31T15:00:00Z",
+      eventVersion: "v1",
+      occurrenceKey: "evt_profile_repair::2026-08-31T15:00:00Z",
+      snapshotAt: "2026-08-31T12:00:00.000Z",
+      enrichAt: "2026-08-31T12:00:00.000Z",
+      composeAt: "2026-08-31T12:00:00.000Z",
+      meetingBrief: {
+        version: 1,
+        eventId: "evt_profile_repair",
+        occurrenceId: "2026-08-31T15:00:00Z",
+        eventVersion: "v1",
+        generatedAt: "2026-08-31T12:00:00.000Z",
+        logistics: {
+          title: "Profile repair fixture",
+          startAt: "2026-08-31T15:00:00.000Z",
+          endAt: "2026-08-31T15:30:00.000Z",
+          location: null,
+          conferenceLink: null,
+          organizer: null,
+        },
+        summary: "Brief derived from a pinned Person Profile revision.",
+        guests: [],
+        companies: [],
+        conversationStarters: [],
+        sourceReferences: [],
+        missingEvidence: [],
+        uncertainty: [],
+      },
+      delivery: {
+        status: "sent",
+        sentAt: "2026-08-31T12:05:00.000Z",
+        messageId: "fixture-profile-repair",
+        recipient: "owner@example.com",
+        attempts: 1,
+      },
+      personProfileLinks: [
+        {
+          guestEmail: profile.primaryEmail ?? "profile@example.com",
+          profileId: profile.id,
+          profileRevision: profile.revision,
+        },
+      ],
+      supersedes: null,
+    };
+    run.started("compose");
+    run.writeArtifact("result.json", `${JSON.stringify(result, null, 2)}\n`);
+    run.finished({ status: "done", summary: "Profile repair fixture" });
+    reply.code(201);
+    return { runId: run.id };
   });
 }
 

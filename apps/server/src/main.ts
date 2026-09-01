@@ -366,6 +366,7 @@ if (process.env.ENABLE_TEST_SEED === "1") {
       return run.id;
     },
     personStore: peopleStore,
+    runs,
   });
 }
 

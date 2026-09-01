@@ -22,6 +22,9 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
   const delivery = result.delivery;
   const deliveryStatus = deliveryPresentation(delivery.status);
   const logistics = brief.logistics;
+  const staleProfileLinks = (result.personProfileLinks ?? []).filter(
+    (link) => link.refreshRequired,
+  );
 
   return (
     <section aria-labelledby="meeting-brief-result">
@@ -32,6 +35,23 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
           Revision of <Link to={`/runs/${result.supersedes}`}>previous brief</Link> (supersedes{" "}
           {result.supersedes})
         </p>
+      ) : null}
+
+      {staleProfileLinks.length > 0 ? (
+        <div className="banner banner-warn" role="alert">
+          <strong>Profile-derived claims need refresh.</strong> This immutable Brief used Profile
+          evidence that was later corrected, merged, or detached.
+          <ul>
+            {staleProfileLinks.map((link) => (
+              <li key={`${link.guestEmail}-${link.profileId}-${link.profileRevision}`}>
+                {link.guestEmail}: revision {link.profileRevision} of{" "}
+                <Link to={`/people/${link.currentProfileId ?? link.profileId}`}>
+                  {link.currentProfileId ?? link.profileId}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       <div className="card">

@@ -5,6 +5,7 @@ import {
   PERSON_PROFILE_PUBLIC_SAFE_PROJECTION_VERSION,
   type PersonProfile,
   type PersonProfileCorrectionInput,
+  type PersonProfileConsumerState,
   type PersonProfileCreateInput,
   type PersonProfileDetachInput,
   type PersonProfileInvalidation,
@@ -17,9 +18,9 @@ import {
  * The Person Profiles deep interface (spec #117, Deep interfaces item 1): the
  * Workspace-owned operations over the canonical store — search, explicit
  * creation, current/exact-revision retrieval, and purpose-specific
- * projections. Matching indexes, revision writes, and deletion invalidation
- * stay behind it; merge/split/correction/archive and the Review queue are
- * later slices that extend this class.
+ * projections and identity repair. Matching indexes, revision writes,
+ * correction, merge, detach/split, and consumer invalidation stay behind it;
+ * archive/privacy deletion and the Review queue are separate slices.
  */
 export interface PersonProfileSearchOptions {
   /** Case-insensitive text over name, contact, employer, and site identity. */
@@ -181,15 +182,16 @@ export class WorkspacePersonProfiles {
     const next: PersonProfile = { ...current };
 
     let stated = 0;
-    for (const [field, value] of [
-      ["fullName", trimmed(input.fullName)],
-      ["role", trimmed(input.role)],
-      ["currentEmployer", trimmed(input.currentEmployer)],
-      ["background", trimmed(input.background)],
-    ] as const) {
-      if (value === null) continue;
+    const fullName = trimmed(input.fullName);
+    if (fullName !== null) {
       stated += 1;
-      next[field] = value;
+      next.fullName = fullName;
+    }
+    for (const field of ["role", "currentEmployer", "background"] as const) {
+      const value = input[field];
+      if (value === undefined) continue;
+      stated += 1;
+      next[field] = value === null ? null : trimmed(value);
     }
 
     const primaryEmail = trimmed(input.primaryEmail)?.toLowerCase() ?? null;
@@ -302,9 +304,9 @@ export class WorkspacePersonProfiles {
       );
 
     const resolutions = input.resolutions ?? {};
-    const FACTS = ["fullName", "role", "currentEmployer", "background"] as const;
+    const factFields = ["fullName", "role", "currentEmployer", "background"] as const;
     const conflicts = [
-      ...FACTS.filter(
+      ...factFields.filter(
         (field) =>
           survivor[field] !== null &&
           duplicate[field] !== null &&
@@ -322,7 +324,7 @@ export class WorkspacePersonProfiles {
         "merge-conflict",
         `Both Profiles state different ${unresolved.join(", ")}; resolve them explicitly.`,
       );
-    const resolved = (field: (typeof FACTS)[number]): string | null => {
+    const resolved = (field: (typeof factFields)[number]): string | null => {
       const choice = trimmed(resolutions[field]);
       if (choice !== null) return choice;
       return survivor[field] ?? duplicate[field];
@@ -419,19 +421,25 @@ export class WorkspacePersonProfiles {
         "Evidence cannot be detached to the Profile it is already attributed to.",
       );
 
-    const LOCATIONS = ["publications", "mentions", "evidence"] as const;
-    const location = LOCATIONS.find((key) =>
-      source[key].some((item) => item.id === input.evidenceId),
+    const evidenceLocations = ["publications", "mentions", "evidence"] as const;
+    const representations = evidenceLocations.flatMap((location) =>
+      source[location]
+        .filter((item) => item.id === input.evidenceId)
+        .map((item) => ({ location, item })),
     );
-    if (!location)
+    if (representations.length === 0)
       throw new PersonProfileValidationError(
         "evidence-not-found",
         "No such evidence record on that Profile.",
       );
-    const evidence = source[location].find((item) => item.id === input.evidenceId)!;
 
     const from = this.appendRevision(
-      { ...source, [location]: source[location].filter((item) => item.id !== input.evidenceId) },
+      {
+        ...source,
+        publications: source.publications.filter((item) => item.id !== input.evidenceId),
+        mentions: source.mentions.filter((item) => item.id !== input.evidenceId),
+        evidence: source.evidence.filter((item) => item.id !== input.evidenceId),
+      },
       {
         kind: "evidence-detached",
         affectedRevision: source.revision,
@@ -445,8 +453,20 @@ export class WorkspacePersonProfiles {
 
     let to: PersonProfile | null = null;
     if (target !== null) {
+      const movedTo = <T extends (typeof evidenceLocations)[number]>(location: T) => [
+        ...target[location],
+        ...representations
+          .filter((representation) => representation.location === location)
+          .map((representation) => representation.item)
+          .filter((item) => !target[location].some((existing) => existing.id === item.id)),
+      ];
       to = this.appendRevision(
-        { ...target, [location]: [...target[location], evidence] },
+        {
+          ...target,
+          publications: movedTo("publications"),
+          mentions: movedTo("mentions"),
+          evidence: movedTo("evidence"),
+        },
         {
           kind: "evidence-detached",
           affectedRevision: target.revision,
@@ -528,6 +548,26 @@ export class WorkspacePersonProfiles {
   /** The append-only invalidation log of a Profile; consumers poll it to refresh. */
   invalidations(profileId: string): PersonProfileInvalidation[] {
     return this.store.get(profileId)?.invalidations ?? [];
+  }
+
+  /** Derives whether an exact consumer pin needs refresh without editing its artifact. */
+  consumerState(profileId: string, profileRevision: number): PersonProfileConsumerState | null {
+    const pinned = this.store.getRevision(profileId, profileRevision);
+    const record = this.store.get(profileId);
+    if (!pinned || !record) return null;
+    const invalidations = (record.invalidations ?? []).filter(
+      (invalidation) => invalidation.affectedRevision === profileRevision,
+    );
+    const current = record.mergedInto ? this.store.get(record.mergedInto) : record;
+    if (!current) return null;
+    return {
+      profileId,
+      profileRevision,
+      currentProfileId: current.id,
+      currentProfileRevision: current.revision,
+      refreshRequired: record.mergedInto !== undefined || invalidations.length > 0,
+      invalidations,
+    };
   }
   /** Keeps the canonical id stable while letting a name-only second Profile exist. */
   private uniqueId(base: string): string {
