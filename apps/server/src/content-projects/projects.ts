@@ -23,6 +23,8 @@ import {
   type OutlineBrief,
   type OutlineBriefApproval,
   type OutlineBriefProposalInput,
+  type OutlineSetFailure,
+  type OutlineSetOutcome,
   type PlatformOutline,
   type PlatformOutlineApproval,
   type ResearchProviderBundle,
@@ -59,6 +61,13 @@ type ContentProjectRevisionSeed = Omit<
   | "platformOutlineApprovals"
   | "drafts"
 >;
+
+/**
+ * How many sibling Outline generations may be in flight at once when the
+ * caller does not name a bound. An implementation policy value: changing it
+ * changes how the provider seam is loaded, never what the Project persists.
+ */
+export const DEFAULT_OUTLINE_SET_CONCURRENCY = 3;
 
 export class ContentProjectError extends Error {
   constructor(
@@ -593,6 +602,90 @@ export class WorkspaceContentProjects {
     });
   }
 
+  /**
+   * Generate the Outline Set for the current revision's latest approved
+   * Outline Brief: the sibling Platform Outlines for every selected target
+   * that does not yet hold Outline work citing that Brief, started
+   * concurrently within a configured bound. Successful siblings persist when
+   * a target fails, so a repeat of this same call is the missing-only retry:
+   * it regenerates exactly the missing or failed targets and never
+   * duplicates or regenerates existing work.
+   */
+  async generateOutlineSet(
+    projectId: string,
+    input: { concurrency?: number } = {},
+  ): Promise<OutlineSetOutcome> {
+    const concurrency = validatedConcurrency(input.concurrency);
+    const state = this.readState();
+    const project = requireProject(state, projectId);
+    const planned = this.plannedOutlineSet(currentRevision(project));
+    const evidence = this.promptEvidence(projectId);
+    if (!evidence) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        "Platform Outline generation needs frozen evidence.",
+        ["evidence-review"],
+      );
+    }
+    const settled = await runBounded(planned.pending, concurrency, async (target) => {
+      const provider = planned.providers.get(target)!;
+      return provider.generate({
+        brief: clone(planned.brief),
+        evidence: clone(evidence),
+        instruction: null,
+      });
+    });
+
+    /* Re-read after awaiting the providers: this is a method that yields, so
+       it must not write back a project it read before the pause. The set only
+       lands on the revision whose approved Brief it was planned from. */
+    const landedState = this.readState();
+    const landedProject = requireProject(landedState, projectId);
+    const landedRevision = currentRevision(landedProject);
+    const landedBrief = latestApprovedOutlineBrief(landedRevision);
+    if (landedBrief?.id !== planned.brief.id) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        "The Project changed while the Outline Set was generated; approve the Brief on the current revision and generate again.",
+      );
+    }
+    const generated: PlatformOutline[] = [];
+    const failures: OutlineSetFailure[] = [];
+    for (const [index, target] of planned.pending.entries()) {
+      const result = settled[index];
+      if (!result || result.status === "rejected") {
+        failures.push(outlineSetFailure(target, result?.reason));
+        continue;
+      }
+      try {
+        const outline = buildOutline({
+          projectId,
+          brief: landedBrief,
+          target,
+          version: landedRevision.platformOutlines.filter((o) => o.target === target).length + 1,
+          instruction: null,
+          result: result.value,
+          approvedEvidenceIds: new Set(landedBrief.evidenceMap.flatMap((e) => e.sourceItemIds)),
+          now: this.now(),
+        });
+        landedRevision.platformOutlines.push(outline);
+        generated.push(outline);
+      } catch (error) {
+        failures.push(outlineSetFailure(target, error));
+      }
+    }
+    if (generated.length > 0) {
+      this.touch(landedProject);
+      this.writeState(landedState);
+    }
+    return clone({
+      outlineBriefId: landedBrief.id,
+      outlineBriefVersion: landedBrief.version,
+      generated,
+      failures,
+    });
+  }
+
   /** Approve the latest Platform Outline version for one target as the Draft source. */
   approveOutline(projectId: string, target: ContentProjectTarget): PlatformOutlineApproval {
     const state = this.readState();
@@ -755,6 +848,52 @@ export class WorkspaceContentProjects {
       version: revision.platformOutlines.filter((outline) => outline.target === target).length + 1,
       approvedEvidenceIds: new Set(brief.evidenceMap.flatMap((entry) => entry.sourceItemIds)),
     };
+  }
+
+  /**
+   * The set-level plan behind `generateOutlineSet`: the approved Brief every
+   * sibling is generated from, one configured provider per selected target,
+   * and the targets still missing Outline work that cites that Brief. The
+   * missing-only rule lives here, not with callers.
+   */
+  private plannedOutlineSet(revision: ContentProjectRevision): {
+    brief: OutlineBrief;
+    providers: Map<ContentProjectTarget, PlatformOutlineProvider>;
+    pending: ContentProjectTarget[];
+  } {
+    const missing = this.missingGates(revision);
+    if (missing.length > 0) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        `Platform Outline generation needs these gates first: ${missing.join(", ")}.`,
+        missing,
+      );
+    }
+    const brief = latestApprovedOutlineBrief(revision);
+    if (!brief) {
+      throw new ContentProjectError(
+        "outline-generation-blocked",
+        "Only an approved immutable Outline Brief can start Platform Outline generation.",
+      );
+    }
+    const providers = new Map<ContentProjectTarget, PlatformOutlineProvider>();
+    for (const target of brief.targets) {
+      const provider = this.deps.outlineProviders.find((candidate) => candidate.target === target);
+      if (!provider) {
+        throw new ContentProjectError(
+          "outline-not-supported",
+          `No Platform Outline provider is configured for the ${target} target.`,
+        );
+      }
+      providers.set(target, provider);
+    }
+    const pending = brief.targets.filter(
+      (target) =>
+        !revision.platformOutlines.some(
+          (outline) => outline.target === target && outline.outlineBriefId === brief.id,
+        ),
+    );
+    return { brief, providers, pending };
   }
 
   private plannedDraftGeneration(
@@ -1082,6 +1221,53 @@ function validatedInstruction(instruction: string | null): string | null {
     );
   }
   return text;
+}
+
+function validatedConcurrency(bound: number | undefined): number {
+  if (bound === undefined) return DEFAULT_OUTLINE_SET_CONCURRENCY;
+  if (!Number.isInteger(bound) || bound < 1) {
+    throw new ContentProjectError(
+      "invalid-project-input",
+      "The Outline Set concurrency bound must be a positive whole number.",
+    );
+  }
+  return bound;
+}
+
+/**
+ * Run one worker per item with at most `bound` workers in flight, preserving
+ * item order in the settled results. A worker's rejection never stops the
+ * other items: partial success is the point.
+ */
+async function runBounded<T, R>(
+  items: readonly T[],
+  bound: number,
+  worker: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(bound, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      try {
+        results[index] = { status: "fulfilled", value: await worker(items[index]!) };
+      } catch (error) {
+        results[index] = { status: "rejected", reason: error };
+      }
+    }
+  });
+  await Promise.all(lanes);
+  return results;
+}
+
+function outlineSetFailure(target: ContentProjectTarget, error: unknown): OutlineSetFailure {
+  return error instanceof ContentProjectError
+    ? { target, code: error.code, message: error.message }
+    : {
+        target,
+        code: "provider-failed",
+        message: error instanceof Error ? error.message : String(error),
+      };
 }
 
 function providerText(value: string, label: string): string {

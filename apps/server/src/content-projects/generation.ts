@@ -1,13 +1,19 @@
 import { z } from "zod";
-import type {
-  ContentProjectPromptEvidence,
-  ContentProjectTarget,
-  OutlineBrief,
-  OutlineBriefEvidenceMapEntry,
-  PlatformOutline,
+import {
+  CONTENT_TARGET_CATALOG,
+  type ContentProjectPromptEvidence,
+  type ContentProjectTarget,
+  type OutlineBrief,
+  type OutlineBriefEvidenceMapEntry,
+  type PlatformOutline,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
 import { parseResultShape } from "../llm/failure.js";
+
+/** The catalog contract one target's generation adapter is bound to. */
+function targetContract(target: ContentProjectTarget) {
+  return CONTENT_TARGET_CATALOG.find((entry) => entry.target === target)!.contract;
+}
 
 /**
  * A regeneration instruction is bounded prose: it steers the next immutable
@@ -142,12 +148,16 @@ export function createModelOutlineProvider(
   getCompleteJson: () => CompleteJson,
   target: ContentProjectTarget,
 ): PlatformOutlineProvider {
+  const contract = targetContract(target);
   return {
     target,
     async generate(request) {
       const raw = await getCompleteJson()({
         schema: OutlineWireSchema,
         system: `Draft the structure of one ${target} Platform Outline from an approved immutable Outline Brief.
+
+Target contract: platform ${contract.platform}, format ${contract.format}. The outline plan is the
+${contract.outlineResult}; its optional Draft is the ${contract.draftResult}.
 
 The outline is a plan, not publishable copy. Return JSON with title, hookDirection, targetLength,
 beats, warnings, and productionNotes. Each beat has direction, evidence (claim plus the Brief
