@@ -22,7 +22,11 @@ test("transcript deletion journey — delete with disclosure → tombstone → r
   await page.goto("/people");
   await page.getByRole("link", { name: "Review queue" }).click();
   await expect(page.getByRole("heading", { name: "Retained transcripts", level: 2 })).toBeVisible();
-  await expect(page.getByText("No transcripts are retained locally.")).toBeVisible();
+  /* Other journeys share this server and may retain their own transcripts;
+     this journey's contract is scoped to its own seeded record. */
+  await expect(page.getByRole("listitem").filter({ hasText: "Weekly Product Sync" })).toHaveCount(
+    0,
+  );
 
   // Seed a real corpus through the real Catalog over the hermetic Workspace.
   const seeded = await page.request.post("/api/test/seed-transcript-corpus");
