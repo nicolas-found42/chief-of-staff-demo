@@ -194,20 +194,27 @@ export class WorkspacePersonProfiles {
       next[field] = value === null ? null : trimmed(value);
     }
 
-    const primaryEmail = trimmed(input.primaryEmail)?.toLowerCase() ?? null;
-    if (primaryEmail !== null) {
-      stated += 1;
-      if (!EMAIL_PATTERN.test(primaryEmail))
-        throw new PersonProfileValidationError(
-          "invalid-identity-input",
-          `Not an email address: ${primaryEmail}`,
-        );
-      if (primaryEmail !== current.primaryEmail)
-        this.ensureEmailAvailable(primaryEmail, [current.id]);
-      next.primaryEmail = primaryEmail;
-      /* The previous address stays an identity signal of this person; only the
-         primary designation moves. Signal history is never silently erased. */
-      if (!next.emails.includes(primaryEmail)) next.emails = [...next.emails, primaryEmail];
+    if (input.primaryEmail !== undefined) {
+      const primaryEmail =
+        input.primaryEmail === null ? null : (trimmed(input.primaryEmail)?.toLowerCase() ?? null);
+      /* A blank form field still means "not stated"; JSON null is the explicit
+         repair decision that clears a false canonical address. */
+      if (input.primaryEmail === null || primaryEmail !== null) {
+        stated += 1;
+        if (primaryEmail !== null && !EMAIL_PATTERN.test(primaryEmail))
+          throw new PersonProfileValidationError(
+            "invalid-identity-input",
+            `Not an email address: ${primaryEmail}`,
+          );
+        if (primaryEmail !== null && primaryEmail !== current.primaryEmail)
+          this.ensureEmailAvailable(primaryEmail, [current.id]);
+        next.primaryEmail = primaryEmail;
+        /* A corrected-away primary address is no longer a current identity
+           signal. Its exact value remains readable only on old revisions. */
+        next.emails = next.emails.filter((email) => email !== current.primaryEmail);
+        if (primaryEmail !== null && !next.emails.includes(primaryEmail))
+          next.emails = [...next.emails, primaryEmail];
+      }
     }
 
     if (stated === 0)
@@ -241,20 +248,28 @@ export class WorkspacePersonProfiles {
     return profile;
   }
 
-  /** Persists the next revision of `next` and files one invalidation record. */
+  /** Persists the next revision and marks every prior consumer pin for refresh. */
   private appendRevision(
     next: PersonProfile,
     record: Omit<PersonProfileInvalidation, "id" | "occurredAt">,
   ): PersonProfile {
     const occurredAt = this.now().toISOString();
     const invalidations = next.invalidations ?? [];
+    const affectedRevisions = this.store
+      .listRevisions(next.id)
+      .map((revision) => revision.revision);
     const repaired: PersonProfile = {
       ...next,
       revision: next.revision + 1,
       updatedAt: occurredAt,
       invalidations: [
         ...invalidations,
-        { id: `inv_${invalidations.length + 1}`, ...record, occurredAt },
+        {
+          id: `inv_${invalidations.length + 1}`,
+          ...record,
+          affectedRevisions,
+          occurredAt,
+        },
       ],
     };
     this.store.save(repaired);
@@ -510,7 +525,9 @@ export class WorkspacePersonProfiles {
     /* Immutable history discloses its own invalidation: a projection of an
        older revision carries every repair record filed against it. */
     const affecting = (currentRecord?.invalidations ?? []).filter(
-      (record) => record.affectedRevision === profile.revision,
+      (record) =>
+        record.affectedRevision === profile.revision ||
+        record.affectedRevisions?.includes(profile.revision),
     );
     const base = {
       ...(affecting.length === 0 ? {} : { invalidations: affecting }),
@@ -556,7 +573,9 @@ export class WorkspacePersonProfiles {
     const record = this.store.get(profileId);
     if (!pinned || !record) return null;
     const invalidations = (record.invalidations ?? []).filter(
-      (invalidation) => invalidation.affectedRevision === profileRevision,
+      (invalidation) =>
+        invalidation.affectedRevision === profileRevision ||
+        invalidation.affectedRevisions?.includes(profileRevision),
     );
     const current = record.mergedInto ? this.store.get(record.mergedInto) : record;
     if (!current) return null;

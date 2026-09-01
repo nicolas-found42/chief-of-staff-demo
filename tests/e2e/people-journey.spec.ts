@@ -71,10 +71,14 @@ test("person profiles journey — nav → search → create → detail → revis
   await expect(page.getByRole("alert")).toContainText("revision 1");
   await scanForViolations(page);
   await page.goto(`/people/${profileId}`);
+  await page.getByLabel("Clear primary email").check();
   await page.getByLabel("Clear current employer").check();
   await page.getByLabel("Clear background").check();
   await page.getByLabel("What was wrong?").fill("Employer and background were false claims.");
   await page.getByRole("button", { name: "Append correction" }).click();
+  await expect(page.getByRole("definition").filter({ hasText: "grace@example.com" })).toHaveCount(
+    0,
+  );
   await expect(page.getByRole("definition").filter({ hasText: "US Navy" })).toHaveCount(0);
   await expect(page.getByText(/Correction — revision 2 superseded/)).toContainText(
     "Employer and background were false claims.",

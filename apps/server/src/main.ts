@@ -265,6 +265,11 @@ const meetingBriefCompleteJson = () => {
     layout.mockResultFile,
   );
 };
+/* The Person Profiles product area's Workspace-owned interface. Meeting Brief
+   receives this deep interface for consumer validation while enrichment writes
+   through a resolver over the same uncached Workspace store. */
+const peopleStore = new PersonProfileStore(workspaceDir);
+const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
 const meetingBriefLog = (message: string) => console.log(`[meeting-brief] ${message}`);
 const meetingBriefTest =
   process.env.ENABLE_TEST_SEED === "1"
@@ -273,6 +278,7 @@ const meetingBriefTest =
         workspaceDir,
         configStore,
         initialNow: new Date("2026-08-28T10:00:00.000Z"),
+        personProfiles: peopleProfiles,
       })
     : null;
 const meetingBriefProduction = meetingBriefTest
@@ -283,14 +289,10 @@ const meetingBriefProduction = meetingBriefTest
       configStore,
       google: googleConnection,
       getCompleteJson: meetingBriefCompleteJson,
+      personProfiles: peopleProfiles,
       log: meetingBriefLog,
     });
 const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
-/* The Person Profiles product area's Workspace-owned interface. The store is
-   the same one Meeting Brief's resolver writes through: both are synchronous,
-   uncached writers of the one Workspace directory. */
-const peopleStore = new PersonProfileStore(workspaceDir);
-const peopleProfiles = new WorkspacePersonProfiles({ store: peopleStore });
 /* The Shell's whole knowledge of what it hosts. Order is arbitrary: what a
    person sees is the web app's Module list, not this one. */
 const modules: HostedModule[] = [

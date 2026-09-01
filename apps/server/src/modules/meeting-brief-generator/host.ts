@@ -10,6 +10,7 @@ import {
   type MeetingBriefEvent,
   type MeetingBriefIndex,
   type MeetingBriefIndexEntry,
+  type MeetingBriefPersonProfileReadModel,
   type MeetingBriefRunResult,
   type MeetingBriefUpcoming,
   normalizeInternalDomains,
@@ -44,6 +45,7 @@ import {
 import { materialFingerprint } from "./revision.js";
 import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
+import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingBriefHostDeps {
   runs: Runs;
@@ -73,6 +75,7 @@ export interface MeetingBriefHostDeps {
   guestProfileConnection?: GuestProfileConnection;
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
+  personProfiles?: Pick<WorkspacePersonProfiles, "consumerState">;
 }
 /**
  * The one place snapshot.json is turned into a value. Null means the Run has no
@@ -231,6 +234,11 @@ export class MeetingBriefHost implements HostedModule {
         ? { calendarProvider: this.calendarProvider }
         : {}),
       ...(deps.calendarUse === "snapshot" ? { calendarSnapshotRequired: true } : {}),
+      ...(deps.personProfiles
+        ? {
+            personProfileConsumerState: deps.personProfiles.consumerState.bind(deps.personProfiles),
+          }
+        : {}),
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
   }
@@ -663,6 +671,24 @@ export class MeetingBriefHost implements HostedModule {
   // guest-profile routes below are compatibility-only for Workspaces created
   // before Person Profiles became a built-in Workspace capability (ADR-0042).
   async routes(app: FastifyInstance): Promise<void> {
+    app.get("/api/meeting-brief/runs/:id/profile-consumers", async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const detail = this.deps.runs.detail(id);
+      const result = detail?.result as MeetingBriefRunResult | null | undefined;
+      if (detail?.module !== MEETING_BRIEF_MODULE_ID || !result) {
+        reply.code(404);
+        return { error: "meeting-brief-run-not-found" };
+      }
+      const readModel: MeetingBriefPersonProfileReadModel = {
+        consumers: (result.personProfileLinks ?? []).map((link) => ({
+          link,
+          state:
+            this.deps.personProfiles?.consumerState(link.profileId, link.profileRevision) ?? null,
+        })),
+      };
+      return readModel;
+    });
+
     app.get("/api/meeting-brief/guest-profile/status", async () => {
       if (!this.guestProfileConnection) {
         return {

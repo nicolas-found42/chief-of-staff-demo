@@ -1,10 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import {
-  DEFAULT_MODELS,
-  ConfigUpdateSchema,
-  MEETING_BRIEF_MODULE_ID,
-  type MeetingBriefRunResult,
-} from "@chief-of-staff-demo/shared";
+import { DEFAULT_MODELS, ConfigUpdateSchema } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import { redactConfig } from "../config.js";
 import {
@@ -67,18 +62,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       reply.code(404).send({ error: "run not found" });
       return;
     }
-    const result = detail.result as MeetingBriefRunResult | null;
-    if (detail.module !== MEETING_BRIEF_MODULE_ID || !result?.personProfileLinks) return detail;
-    return {
-      ...detail,
-      result: {
-        ...result,
-        personProfileLinks: result.personProfileLinks.map((link) => ({
-          ...link,
-          ...ctx.people.consumerState(link.profileId, link.profileRevision),
-        })),
-      },
-    };
+    return detail;
   });
 
   app.post("/api/runs/:id/retry", async (request, reply) => {

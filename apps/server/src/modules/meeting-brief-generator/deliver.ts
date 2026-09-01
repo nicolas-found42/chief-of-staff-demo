@@ -4,6 +4,7 @@ import type {
   MeetingBriefDeliveryState,
   MeetingBriefRunResult,
   MeetingBriefEvent,
+  PersonProfileConsumerState,
 } from "@chief-of-staff-demo/shared";
 import { meetingBriefOccurrenceIdentity } from "@chief-of-staff-demo/shared";
 import { StageFailure } from "../../engine/module.js";
@@ -49,6 +50,10 @@ export interface DeliverBriefArgs {
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  personProfileConsumerState?: (
+    profileId: string,
+    profileRevision: number,
+  ) => PersonProfileConsumerState | null;
 }
 
 export interface DeliverResult {
@@ -120,6 +125,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     gmailDeliveryProvider,
     getInternalDomains,
     getOwnerEmail,
+    personProfileConsumerState,
   } = args;
   const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
@@ -359,6 +365,43 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
       const reason = error instanceof Error ? error.message : String(error);
       persistDeliveryFailure(ctx, deliveryId, (existingDelivery?.attempts ?? 0) + 1, reason);
       throw new StageFailure("deliver", `Gmail reconciliation failed: ${reason}`);
+    }
+  }
+
+  // ---- Person Profile truth immediately before the outward write ----
+  // Reconciliation above is read-only and may prove that a previous attempt
+  // already sent. Only a genuinely new Gmail write is blocked by a repair that
+  // landed after composition or during a quiet-period/retry continuation.
+  if (personProfileConsumerState) {
+    let links: MeetingBriefRunResult["personProfileLinks"] = [];
+    const resultRaw = ctx.readFile("result.json");
+    if (resultRaw) {
+      try {
+        links = (JSON.parse(resultRaw) as MeetingBriefRunResult).personProfileLinks ?? [];
+      } catch {
+        links = [];
+      }
+    }
+    const stale = links.flatMap((link) => {
+      const state = personProfileConsumerState(link.profileId, link.profileRevision);
+      return state === null || state.refreshRequired ? [{ link, state }] : [];
+    });
+    if (stale.length > 0) {
+      const reason = "Person Profile claims changed after this Brief was composed.";
+      persistDeliveryFailure(ctx, deliveryId, (existingDelivery?.attempts ?? 0) + 1, reason);
+      ctx.event("brief_delivery_blocked", {
+        reason: "person_profile_refresh_required",
+        profiles: stale.map(({ link, state }) => ({
+          profileId: link.profileId,
+          profileRevision: link.profileRevision,
+          currentProfileId: state?.currentProfileId ?? null,
+          currentProfileRevision: state?.currentProfileRevision ?? null,
+        })),
+      });
+      throw new StageFailure(
+        reason,
+        "Refresh or regenerate the Meeting Brief before delivering Profile-derived claims.",
+      );
     }
   }
 

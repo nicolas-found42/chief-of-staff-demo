@@ -11,6 +11,8 @@ import { isGuestProfileEmployerMatch } from "@chief-of-staff-demo/shared";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
 import { ConfigStore } from "../../../apps/server/src/config";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { GuestProfileConnection } from "../../../apps/server/src/modules/meeting-brief-generator/connections/profile";
 import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
@@ -504,5 +506,75 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
       eventVersion: "v1",
     });
     expect(artifact.diagnostics.provider).toBe("Guest Profile");
+  });
+});
+
+describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
+  it("fails visibly before send, and again on retry, when a repair lands after composition", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "mbf-profile-delivery-"));
+    const runs = openRuns(workspaceDir);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(workspaceDir),
+      now: () => new Date("2026-08-28T10:00:00.000Z"),
+    });
+    const profile = people.create({
+      fullName: "Alice External",
+      primaryEmail: "alice@external.co",
+      role: "CTO",
+    });
+    let repaired = false;
+    let sends = 0;
+    const host = new MeetingBriefHost({
+      runs,
+      workspaceDir,
+      now: () => new Date("2026-08-28T11:00:00.000Z"),
+      getInternalDomains: () => ["example.com"],
+      getOwnerEmail: () => "owner@example.com",
+      personProfiles: people,
+      enrich: async () => ({
+        sections: [],
+        evidence: [],
+        personProfileLinks: [
+          {
+            guestEmail: "alice@external.co",
+            profileId: profile.id,
+            profileRevision: profile.revision,
+          },
+        ],
+      }),
+      completeBrief: completeFixtureBrief,
+      gmailDeliveryProvider: {
+        async findByDeliveryId() {
+          if (!repaired) {
+            repaired = true;
+            people.correct(profile.id, { role: "Founder", note: "Corrected before delivery." });
+          }
+          return null;
+        },
+        async send() {
+          sends += 1;
+          return { messageId: "must-not-send", recipient: "owner@example.com" };
+        },
+      },
+    });
+    const event = fixtureEvent({ version: "v_profile_repair_delivery" });
+    host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
+    const [runId] = await host.processDueSchedules(new Date("2026-08-28T11:00:00.000Z"));
+    await host.idle();
+
+    expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    expect((runs.detail(runId)?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
+    expect(runs.detail(runId)?.events).toContainEqual(
+      expect.objectContaining({
+        type: "brief_delivery_blocked",
+        detail: expect.objectContaining({ reason: "person_profile_refresh_required" }),
+      }),
+    );
+    expect(sends).toBe(0);
+
+    await host.retryRun(runId);
+    await host.idle();
+    expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
+    expect(sends).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 /** Meeting Brief Generator — Module-owned types (issue://80, ADR-0032/0033/0034). */
 
-import type { PersonProfileInvalidation } from "./person-profile.js";
+import type { PersonProfileConsumerState } from "./person-profile.js";
 
 export const MEETING_BRIEF_MODULE_ID = "meeting-brief-generator" as const;
 export const MEETING_BRIEF_MODULE_VERSION = 1 as const;
@@ -161,14 +161,14 @@ export interface MeetingBriefPersonProfileLink {
   guestEmail: string;
   profileId: string;
   profileRevision: number;
-  /** Derived by the read API from current Workspace Profile state. */
-  currentProfileId?: string;
-  /** Derived by the read API from current Workspace Profile state. */
-  currentProfileRevision?: number;
-  /** Derived true when a later repair invalidated the pinned Profile claims. */
-  refreshRequired?: boolean;
-  /** Repair decisions affecting the pinned revision, derived without rewriting the Run. */
-  invalidations?: PersonProfileInvalidation[];
+}
+
+/** Meeting Brief-owned read model; never persisted into the immutable Run result. */
+export interface MeetingBriefPersonProfileReadModel {
+  consumers: Array<{
+    link: MeetingBriefPersonProfileLink;
+    state: PersonProfileConsumerState | null;
+  }>;
 }
 
 /** GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005). */

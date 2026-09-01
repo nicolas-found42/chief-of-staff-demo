@@ -132,7 +132,7 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
   /**
    * Identity repair (ticket #121): an ordinary factual correction appends a
    * revision; the superseded snapshot stays readable and the correction is
-   * filed as an audited invalidation of the revision it superseded.
+   * filed as one audited decision covering every historical consumer pin.
    */
   app.post("/api/people/:profileId/corrections", async (request: FastifyRequest, reply) => {
     try {

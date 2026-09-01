@@ -6,12 +6,14 @@ import { FakeCalendarProvider, type CalendarEvent } from "./calendar.js";
 import { FakeGmailDeliveryProvider, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { MeetingBriefHost } from "./host.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
+import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingBriefTestRuntimeOptions {
   runs: Runs;
   workspaceDir: string;
   configStore: ConfigStore;
   initialNow: Date;
+  personProfiles?: WorkspacePersonProfiles;
 }
 
 export function fixtureGmailDeliveryProvider(
@@ -108,6 +110,7 @@ export function createMeetingBriefTestRuntime(
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",
     hubSpotConnection,
+    ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
     enrich: async (_input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });
       return {

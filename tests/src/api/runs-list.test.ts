@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
@@ -145,8 +145,8 @@ describe("GET /api/runs", () => {
   });
 });
 
-describe("GET /api/runs/:id Person Profile consumer disclosure", () => {
-  it("marks a Meeting Brief's affected pinned Profile claims for explicit refresh", async () => {
+describe("GET /api/runs/:id opaque result", () => {
+  it("returns a Meeting Brief result without interpreting its Person Profile links", async () => {
     const profile = people.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
     const runId = idFor(1);
     seedRun(runId, { module: "meeting-brief-generator" });
@@ -168,18 +168,7 @@ describe("GET /api/runs/:id Person Profile consumer disclosure", () => {
 
     const response = await app.inject({ url: `/api/runs/${runId}` });
     expect(response.statusCode).toBe(200);
-    expect(response.json().result.personProfileLinks[0]).toMatchObject({
-      profileId: profile.id,
-      profileRevision: 1,
-      currentProfileId: profile.id,
-      currentProfileRevision: 2,
-      refreshRequired: true,
-      invalidations: [{ kind: "correction", affectedRevision: 1 }],
-    });
-    const persisted = JSON.parse(
-      readFileSync(join(workspaceDir, "runs", runId, "result.json"), "utf8"),
-    );
-    expect(persisted.personProfileLinks[0]).toEqual({
+    expect(response.json().result.personProfileLinks[0]).toEqual({
       guestEmail: "grace@example.com",
       profileId: profile.id,
       profileRevision: 1,

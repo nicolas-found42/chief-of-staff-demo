@@ -12,6 +12,7 @@ import type {
   HubSpotSetupCheck,
   HubSpotStatus,
   MeetingBriefIndex,
+  MeetingBriefPersonProfileReadModel,
   NamedPerson,
   PersonSuggestion,
   RedactedConfig,
@@ -197,6 +198,10 @@ export const api = {
     request<{ status: string }>(`/api/runs/${encodeURIComponent(id)}/retry`, { method: "POST" }),
   getArtifact: (runId: string, name: string) =>
     requestText(`/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`),
+  meetingBriefProfileConsumers: (runId: string) =>
+    request<MeetingBriefPersonProfileReadModel>(
+      `/api/meeting-brief/runs/${encodeURIComponent(runId)}/profile-consumers`,
+    ),
   getConfig: () => request<ConfigPayload>("/api/config"),
   saveConfig: (update: Record<string, unknown>) =>
     request<ConfigPayload>("/api/config", {

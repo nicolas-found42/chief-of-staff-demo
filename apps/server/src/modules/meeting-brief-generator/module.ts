@@ -6,6 +6,7 @@ import type {
   MeetingBriefEnrichmentSection,
   MeetingBriefPersonProfileLink,
   MeetingBriefRunResult,
+  PersonProfileConsumerState,
 } from "@chief-of-staff-demo/shared";
 import { MEETING_BRIEF_MODULE_ID, MEETING_BRIEF_MODULE_VERSION } from "@chief-of-staff-demo/shared";
 import {
@@ -42,6 +43,10 @@ export interface MeetingBriefModuleDeps {
   getOwnerEmail?: () => string | null;
   calendarProvider?: CalendarProvider;
   calendarSnapshotRequired?: boolean;
+  personProfileConsumerState?: (
+    profileId: string,
+    profileRevision: number,
+  ) => PersonProfileConsumerState | null;
 }
 
 function continuationInput(externalId: string | null, now: Date): MeetingBriefInput {
@@ -410,6 +415,9 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           gmailDeliveryProvider: gmailDeliveryProvider ?? null,
           getInternalDomains: () => resolveDomains(),
           getOwnerEmail: () => resolveOwner(),
+          ...(deps.personProfileConsumerState
+            ? { personProfileConsumerState: deps.personProfileConsumerState }
+            : {}),
         };
         return executeDeliver(deliverArgs);
       });

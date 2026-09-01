@@ -328,6 +328,7 @@ describe("WorkspacePersonProfiles.correct", () => {
         id: "inv_1",
         kind: "correction",
         affectedRevision: 1,
+        affectedRevisions: [1],
         occurredAt: NOW.toISOString(),
         detail: "She was teaching at Vassar, not serving.",
       },
@@ -391,6 +392,47 @@ describe("WorkspacePersonProfiles.correct", () => {
     expect(corrected.invalidations?.at(-1)?.detail).toBe(
       "These claims belonged to another person.",
     );
+  });
+
+  it("removes a false primary email from current identity signals while preserving history", () => {
+    const profiles = makeService();
+    const created = profiles.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "wrong@example.com",
+    });
+
+    const cleared = profiles.correct(created.id, {
+      primaryEmail: null,
+      note: "That address belongs to a different Grace Hopper.",
+    });
+
+    expect(cleared).toMatchObject({ revision: 2, primaryEmail: null, emails: [] });
+    expect(profiles.getRevision(created.id, 1)).toMatchObject({
+      primaryEmail: "wrong@example.com",
+      emails: ["wrong@example.com"],
+    });
+    expect(cleared.invalidations?.at(-1)?.detail).toBe(
+      "That address belongs to a different Grace Hopper.",
+    );
+    const actualOwner = profiles.create({
+      fullName: "Grace Hopper II",
+      primaryEmail: "wrong@example.com",
+    });
+    expect(actualOwner.primaryEmail).toBe("wrong@example.com");
+  });
+
+  it("replaces a false primary email without retaining the old address as a current signal", () => {
+    const profiles = makeService();
+    const created = profiles.create({
+      fullName: "Grace Hopper",
+      primaryEmail: "wrong@example.com",
+    });
+
+    const corrected = profiles.correct(created.id, { primaryEmail: "grace@example.com" });
+
+    expect(corrected.primaryEmail).toBe("grace@example.com");
+    expect(corrected.emails).toEqual(["grace@example.com"]);
+    expect(profiles.getRevision(created.id, 1)?.emails).toEqual(["wrong@example.com"]);
   });
 });
 describe("WorkspacePersonProfiles.merge", () => {
@@ -709,6 +751,66 @@ describe("WorkspacePersonProfiles invalidation disclosure", () => {
       invalidations: [{ kind: "correction", affectedRevision: 1 }],
     });
     expect(profiles.consumerState(created.id, 9)).toBeNull();
+  });
+
+  it("invalidates every historical revision whose claims may survive a later correction", () => {
+    const profiles = makeService();
+    const created = profiles.create({ fullName: "Grace Hopper", role: "Rear Admiral" });
+    profiles.correct(created.id, { background: "Computer pioneer" });
+    profiles.correct(created.id, { role: "Professor" });
+
+    expect(profiles.consumerState(created.id, 1)).toMatchObject({
+      refreshRequired: true,
+      invalidations: [
+        { kind: "correction", affectedRevision: 1 },
+        { kind: "correction", affectedRevision: 2, affectedRevisions: [1, 2] },
+      ],
+    });
+    expect(profiles.consumerState(created.id, 2)).toMatchObject({
+      refreshRequired: true,
+      invalidations: [{ kind: "correction", affectedRevision: 2, affectedRevisions: [1, 2] }],
+    });
+  });
+
+  it("invalidates older consumer pins after a later merge and detach", () => {
+    const store = new PersonProfileStore(mkdtempSync(join(tmpdir(), "person-profiles-history-")));
+    store.save(richProfile({ revision: 1 }));
+    store.save(richProfile({ revision: 2, background: "Second revision" }));
+    store.save(
+      richProfile({
+        id: "person_duplicate",
+        revision: 1,
+        primaryEmail: null,
+        emails: [],
+        publications: [],
+        mentions: [],
+        evidence: [],
+      }),
+    );
+    const profiles = new WorkspacePersonProfiles({ store, now: () => NOW });
+
+    profiles.merge("person_ada", {
+      duplicateId: "person_duplicate",
+      resolutions: { background: "Second revision" },
+    });
+    expect(profiles.consumerState("person_ada", 1)?.invalidations).toContainEqual(
+      expect.objectContaining({
+        kind: "merge",
+        affectedRevision: 2,
+        affectedRevisions: [1, 2],
+        mergedFrom: "person_duplicate",
+      }),
+    );
+
+    profiles.detachEvidence("person_ada", { evidenceId: "ev_mention" });
+    expect(profiles.consumerState("person_ada", 1)?.invalidations).toContainEqual(
+      expect.objectContaining({
+        kind: "evidence-detached",
+        affectedRevision: 3,
+        affectedRevisions: [1, 2, 3],
+        evidenceId: "ev_mention",
+      }),
+    );
   });
 
   it("redirects a merged-away consumer pin to the surviving Profile for refresh", () => {

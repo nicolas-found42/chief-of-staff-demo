@@ -22,6 +22,13 @@ const REPAIR_LABELS: Record<PersonProfileInvalidation["kind"], string> = {
   "evidence-detached": "Evidence detached",
 };
 
+const repairableFactFields = [
+  { key: "primaryEmail", label: "Primary email", control: "email" },
+  { key: "role", label: "Role", control: "text" },
+  { key: "currentEmployer", label: "Current employer", control: "text" },
+  { key: "background", label: "Background", control: "textarea" },
+] as const;
+
 function described(profile: PersonProfile): string {
   return [profile.fullName, profile.role, profile.currentEmployer]
     .filter((value) => value !== null)
@@ -107,6 +114,7 @@ export function PersonProfileDetailPage() {
     note: "",
   });
   const [clearCorrection, setClearCorrection] = useState({
+    primaryEmail: false,
     role: false,
     currentEmployer: false,
     background: false,
@@ -143,7 +151,11 @@ export function PersonProfileDetailPage() {
     event.preventDefault();
     const stated = {
       ...(correction.fullName.trim() === "" ? {} : { fullName: correction.fullName }),
-      ...(correction.primaryEmail.trim() === "" ? {} : { primaryEmail: correction.primaryEmail }),
+      ...(clearCorrection.primaryEmail
+        ? { primaryEmail: null }
+        : correction.primaryEmail.trim() === ""
+          ? {}
+          : { primaryEmail: correction.primaryEmail }),
       ...(clearCorrection.role
         ? { role: null }
         : correction.role.trim() === ""
@@ -300,85 +312,46 @@ export function PersonProfileDetailPage() {
                 onChange={(event) => setCorrection({ ...correction, fullName: event.target.value })}
               />
             </div>
-            <div className="field-row">
-              <label htmlFor="correct-primary-email">Primary email</label>
-              <input
-                id="correct-primary-email"
-                type="email"
-                autoComplete="off"
-                value={correction.primaryEmail}
-                onChange={(event) =>
-                  setCorrection({ ...correction, primaryEmail: event.target.value })
-                }
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="correct-role">Role</label>
-              <input
-                id="correct-role"
-                autoComplete="off"
-                disabled={clearCorrection.role}
-                value={correction.role}
-                onChange={(event) => setCorrection({ ...correction, role: event.target.value })}
-              />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={clearCorrection.role}
-                  onChange={(event) =>
-                    setClearCorrection({ ...clearCorrection, role: event.target.checked })
-                  }
-                />{" "}
-                Clear role
-              </label>
-            </div>
-            <div className="field-row">
-              <label htmlFor="correct-employer">Current employer</label>
-              <input
-                id="correct-employer"
-                autoComplete="off"
-                disabled={clearCorrection.currentEmployer}
-                value={correction.currentEmployer}
-                onChange={(event) =>
-                  setCorrection({ ...correction, currentEmployer: event.target.value })
-                }
-              />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={clearCorrection.currentEmployer}
-                  onChange={(event) =>
-                    setClearCorrection({
-                      ...clearCorrection,
-                      currentEmployer: event.target.checked,
-                    })
-                  }
-                />{" "}
-                Clear current employer
-              </label>
-            </div>
-            <div className="field-row">
-              <label htmlFor="correct-background">Background</label>
-              <textarea
-                id="correct-background"
-                rows={3}
-                disabled={clearCorrection.background}
-                value={correction.background}
-                onChange={(event) =>
-                  setCorrection({ ...correction, background: event.target.value })
-                }
-              />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={clearCorrection.background}
-                  onChange={(event) =>
-                    setClearCorrection({ ...clearCorrection, background: event.target.checked })
-                  }
-                />{" "}
-                Clear background
-              </label>
-            </div>
+            {repairableFactFields.map(({ key, label, control }) => {
+              const id = `correct-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+              return (
+                <div className="field-row" key={key}>
+                  <label htmlFor={id}>{label}</label>
+                  {control === "textarea" ? (
+                    <textarea
+                      id={id}
+                      rows={3}
+                      disabled={clearCorrection[key]}
+                      value={correction[key]}
+                      onChange={(event) =>
+                        setCorrection({ ...correction, [key]: event.target.value })
+                      }
+                    />
+                  ) : (
+                    <input
+                      id={id}
+                      type={control}
+                      autoComplete="off"
+                      disabled={clearCorrection[key]}
+                      value={correction[key]}
+                      onChange={(event) =>
+                        setCorrection({ ...correction, [key]: event.target.value })
+                      }
+                    />
+                  )}
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={clearCorrection[key]}
+                      onChange={(event) =>
+                        setClearCorrection({ ...clearCorrection, [key]: event.target.checked })
+                      }
+                    />{" "}
+                    Clear {label.toLowerCase()}
+                  </label>
+                </div>
+              );
+            })}
             <div className="field-row">
               <label htmlFor="correct-note">What was wrong?</label>
               <input

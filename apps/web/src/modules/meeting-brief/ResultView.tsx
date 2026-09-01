@@ -1,8 +1,30 @@
-import type { MeetingBriefRunResult, RunDetail } from "@chief-of-staff-demo/shared";
+import { useEffect, useState } from "react";
+import type {
+  MeetingBriefPersonProfileReadModel,
+  MeetingBriefRunResult,
+  RunDetail,
+} from "@chief-of-staff-demo/shared";
 import { Link } from "react-router-dom";
+import { api } from "../../client";
 import { deliveryPresentation } from "./deliveryStatus";
 
 export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
+  const [profileReadModel, setProfileReadModel] =
+    useState<MeetingBriefPersonProfileReadModel | null>(null);
+  useEffect(() => {
+    let current = true;
+    void api
+      .meetingBriefProfileConsumers(detail.id)
+      .then((readModel) => {
+        if (current) setProfileReadModel(readModel);
+      })
+      .catch(() => {
+        if (current) setProfileReadModel(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [detail.id]);
   const result = detail.result as MeetingBriefRunResult | null;
   if (!result) {
     if (detail.status === "skipped") {
@@ -22,8 +44,8 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
   const delivery = result.delivery;
   const deliveryStatus = deliveryPresentation(delivery.status);
   const logistics = brief.logistics;
-  const staleProfileLinks = (result.personProfileLinks ?? []).filter(
-    (link) => link.refreshRequired,
+  const staleProfileConsumers = (profileReadModel?.consumers ?? []).filter(
+    (consumer) => consumer.state?.refreshRequired,
   );
 
   return (
@@ -37,16 +59,16 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
         </p>
       ) : null}
 
-      {staleProfileLinks.length > 0 ? (
+      {staleProfileConsumers.length > 0 ? (
         <div className="banner banner-warn" role="alert">
           <strong>Profile-derived claims need refresh.</strong> This immutable Brief used Profile
           evidence that was later corrected, merged, or detached.
           <ul>
-            {staleProfileLinks.map((link) => (
+            {staleProfileConsumers.map(({ link, state }) => (
               <li key={`${link.guestEmail}-${link.profileId}-${link.profileRevision}`}>
                 {link.guestEmail}: revision {link.profileRevision} of{" "}
-                <Link to={`/people/${link.currentProfileId ?? link.profileId}`}>
-                  {link.currentProfileId ?? link.profileId}
+                <Link to={`/people/${state?.currentProfileId ?? link.profileId}`}>
+                  {state?.currentProfileId ?? link.profileId}
                 </Link>
               </li>
             ))}

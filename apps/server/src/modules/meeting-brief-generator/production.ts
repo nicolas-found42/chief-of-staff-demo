@@ -32,6 +32,7 @@ import {
 } from "../../person-profile/sources.js";
 import { createPublicSearch } from "../../source-adapters/search.js";
 import { createFeedDiscoverer } from "../../source-adapters/feeds.js";
+import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingBriefProductionRuntimeOptions {
   runs: Runs;
@@ -40,6 +41,7 @@ export interface MeetingBriefProductionRuntimeOptions {
   google: GoogleConnection;
   getCompleteJson: () => CompleteJson;
   log?: (message: string) => void;
+  personProfiles?: WorkspacePersonProfiles;
 }
 
 export interface MeetingBriefProductionRuntime {
@@ -150,6 +152,7 @@ export function createMeetingBriefProductionRuntime(
     hubSpotConnection,
     gmailDeliveryProvider,
     getOwnerEmail: () => ownerEmail,
+    ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

@@ -172,14 +172,16 @@ export type PersonProfileRepairKind = "correction" | "merge" | "evidence-detache
 
 /**
  * One audited repair decision, filed on the Profile it invalidates. Records
- * are append-only: a record never edits history, it marks the affected
- * revision so consumers refresh what they hold from it.
+ * are append-only: a record never edits history, it marks every affected
+ * historical revision so consumers refresh what they hold from it.
  */
 export interface PersonProfileInvalidation {
   id: string;
   kind: PersonProfileRepairKind;
   /** The revision whose then-current facts this record invalidates. */
   affectedRevision: number;
+  /** Every historical revision a consumer may still hold from before this decision. */
+  affectedRevisions?: number[];
   occurredAt: string;
   /** The decision in the owner's words, or a generated audit line. */
   detail: string;
@@ -208,7 +210,8 @@ export interface PersonProfileConsumerState {
 /** What the owner corrects on an ordinary factual repair; omitted facts are unchanged. */
 export interface PersonProfileCorrectionInput {
   fullName?: string;
-  primaryEmail?: string;
+  /** `null` explicitly removes a false canonical email and current identity signal. */
+  primaryEmail?: string | null;
   /** `null` explicitly removes a false fact; omission leaves it unchanged. */
   role?: string | null;
   /** `null` explicitly removes a false fact; omission leaves it unchanged. */

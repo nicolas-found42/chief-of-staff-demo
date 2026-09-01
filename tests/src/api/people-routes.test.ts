@@ -275,6 +275,41 @@ describe("POST /api/people/:profileId/corrections", () => {
       background: null,
     });
   });
+
+  it("accepts an explicit null to clear a false primary email and its current signal", async () => {
+    const seeded = await app.inject({
+      method: "POST",
+      url: "/api/people",
+      payload: { fullName: "Grace Hopper", primaryEmail: "wrong@example.com" },
+    });
+    const created = seeded.json<PersonProfile>();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/people/${created.id}/corrections`,
+      payload: { primaryEmail: null, note: "Wrong person address." },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<PersonProfile>()).toMatchObject({
+      revision: 2,
+      primaryEmail: null,
+      emails: [],
+      invalidations: [
+        {
+          kind: "correction",
+          affectedRevision: 1,
+          affectedRevisions: [1],
+          detail: "Wrong person address.",
+        },
+      ],
+    });
+    const historical = await app.inject({ url: `/api/people/${created.id}/revisions/1` });
+    expect(historical.json<PersonProfile>()).toMatchObject({
+      primaryEmail: "wrong@example.com",
+      emails: ["wrong@example.com"],
+    });
+  });
 });
 
 describe("identity repair routes", () => {
