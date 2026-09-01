@@ -23,6 +23,10 @@ import type {
   SourceBackfillWindowDays,
   SourceCanaryHealth,
   SourceCanaryReceipt,
+  PersonProfile,
+  PersonProfileCreateInput,
+  PersonProfileProjection,
+  PersonProfileProjectionPurpose,
   SourceCapability,
   SourceDiagnosticClassification,
   ContentScoutScheduleState,
@@ -51,8 +55,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
-      const body = (await response.json()) as { error?: string };
-      if (body.error) {
+      const body = (await response.json()) as { error?: string; message?: string };
+      if (body.message) {
+        message = body.message;
+      } else if (body.error) {
         message = body.error;
       }
     } catch {
@@ -511,6 +517,36 @@ export const api = {
     }),
   discoverContentResearchPeople: () =>
     request<{ runId: string }>("/api/content-research/discover", { method: "POST" }),
+  people: (query?: string, includeArchived?: boolean) => {
+    const params = new URLSearchParams();
+    if (query) params.set("query", query);
+    if (includeArchived) params.set("includeArchived", "true");
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return request<PersonProfile[]>(`/api/people${suffix}`);
+  },
+  createPersonProfile: (input: PersonProfileCreateInput) =>
+    request<PersonProfile>("/api/people", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  personProfile: (profileId: string) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}`),
+  personProfileRevisions: (profileId: string) =>
+    request<PersonProfile[]>(`/api/people/${encodeURIComponent(profileId)}/revisions`),
+  personProfileRevision: (profileId: string, revision: number) =>
+    request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}/revisions/${revision}`),
+  personProfileProjection: (
+    profileId: string,
+    purpose: PersonProfileProjectionPurpose,
+    revision?: number,
+  ) => {
+    const params = new URLSearchParams({ purpose });
+    if (revision !== undefined) params.set("revision", String(revision));
+    return request<PersonProfileProjection>(
+      `/api/people/${encodeURIComponent(profileId)}/projection?${params.toString()}`,
+    );
+  },
 };
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

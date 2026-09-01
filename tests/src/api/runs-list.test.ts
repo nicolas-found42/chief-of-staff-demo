@@ -5,6 +5,8 @@ import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunMeta, RunPage } from "@chief-of-staff-demo/shared";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { openRuns } from "../../../apps/server/src/runs";
 
@@ -66,6 +68,7 @@ beforeEach(async () => {
     configStore,
     modules: [],
     google: { state: async () => ({ state: "unconfigured" }) },
+    people: new WorkspacePersonProfiles({ store: new PersonProfileStore(workspaceDir) }),
     onConfigChanged: () => {},
   } as unknown as ApiContext);
   await app.ready();

@@ -12,11 +12,16 @@ import type {
 } from "../modules/content-scout/ports.js";
 import type { SourceAdapter } from "../source-adapters/source-adapter.js";
 import type { RunSourceSpec } from "../modules/transcript/module.js";
+import type { PersonProfileStore } from "../person-profile/store.js";
 import { modelBrandProfileProposer } from "../modules/content-scout/brand-profile.js";
 
 export interface TestSeedContext {
   startRun: (spec: RunSourceSpec) => Promise<string>;
   createFailedRun: () => string;
+  /** The Workspace Person Profile store, so the journey can append a
+      revision that no product operation creates yet (correction is a later
+      slice) and the browser can step back to an exact historical one. */
+  personStore: PersonProfileStore;
 }
 
 /**
@@ -73,6 +78,23 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
       reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
       return;
     }
+  });
+
+  app.post("/api/test/seed-person-revision", async (request, reply) => {
+    const { profileId, role } = request.body as { profileId?: string; role?: string };
+    const profile = profileId ? ctx.personStore.get(profileId) : null;
+    if (!profile) {
+      reply.code(404);
+      return { error: "profile-not-found", message: "No Person Profile with that id." };
+    }
+    const next = {
+      ...profile,
+      revision: profile.revision + 1,
+      ...(role === undefined ? {} : { role }),
+    };
+    ctx.personStore.save(next);
+    reply.code(201);
+    return { revision: next.revision, role: next.role };
   });
 }
 

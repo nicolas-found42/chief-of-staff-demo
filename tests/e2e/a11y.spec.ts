@@ -13,6 +13,8 @@ const ROUTES = [
   "/content-scout",
   "/meeting-brief",
   "/content-research",
+  "/people",
+  "/people/new",
   "/settings",
   "/settings?google=connected",
   "/settings?google=error",

@@ -209,6 +209,7 @@ describe("Guest Profile enrichment via host seam — bounded per-guest fixed con
           sourceDiagnostics: [
             { source: "public-web", status: "completed", detail: "profile matched" },
           ],
+          archivedAt: null,
         };
         resolved.push(profile);
         return profile;

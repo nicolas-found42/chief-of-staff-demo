@@ -44,7 +44,12 @@ export class PersonProfileStore {
   }
 
   getRevision(id: string, revision: number): PersonProfile | null {
-    return this.read(join(this.profilesDir, id, "revisions", `${revision}.json`));
+    const persisted = this.read(join(this.profilesDir, id, "revisions", `${revision}.json`));
+    if (persisted) return persisted;
+    /* Profiles written before revisioned persistence kept only current.json:
+       its revision is still exactly retrievable. */
+    const current = this.read(join(this.profilesDir, id, "current.json"));
+    return current && current.revision === revision ? current : null;
   }
 
   list(): PersonProfile[] {
@@ -52,6 +57,21 @@ export class PersonProfileStore {
     return readdirSync(this.profilesDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => this.get(entry.name))
+      .filter((profile): profile is PersonProfile => profile !== null);
+  }
+
+  /** Every persisted revision of one Profile, oldest first. Empty when unknown. */
+  listRevisions(id: string): PersonProfile[] {
+    const revisionsDir = join(this.profilesDir, id, "revisions");
+    if (!existsSync(revisionsDir)) {
+      const current = this.read(join(this.profilesDir, id, "current.json"));
+      return current ? [current] : [];
+    }
+    return readdirSync(revisionsDir)
+      .filter((name) => /^\d+\.json$/.test(name))
+      .map((name) => Number.parseInt(name, 10))
+      .sort((left, right) => left - right)
+      .map((revision) => this.read(join(revisionsDir, `${revision}.json`)))
       .filter((profile): profile is PersonProfile => profile !== null);
   }
 

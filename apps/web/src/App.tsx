@@ -6,7 +6,10 @@ import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { IdeaEnginePage } from "./pages/IdeaEnginePage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
+import { NewPersonProfilePage } from "./pages/NewPersonProfilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { PeoplePage } from "./pages/PeoplePage";
+import { PersonProfileDetailPage } from "./pages/PersonProfileDetailPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -53,6 +56,12 @@ export function App() {
               </NavLink>
             ))}
         </nav>
+        {/* Product areas are explicit (ADR-0043), not derived from the Module
+            registry. Person Profiles is a Workspace resource with its own
+            product surface, not a Module, so it gets its own nav. */}
+        <nav aria-label="Products">
+          <NavLink to="/people">Person Profiles</NavLink>
+        </nav>
         <nav aria-label="Settings">
           <NavLink to="/settings">Settings</NavLink>
         </nav>
@@ -76,6 +85,9 @@ export function App() {
           <Route path="/meeting-brief" element={<MeetingBriefPage />} />
           <Route path="/content-research" element={<ContentResearchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/people" element={<PeoplePage />} />
+          <Route path="/people/new" element={<NewPersonProfilePage />} />
+          <Route path="/people/:profileId" element={<PersonProfileDetailPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>
