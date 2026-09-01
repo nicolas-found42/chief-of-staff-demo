@@ -5,6 +5,8 @@ import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { MeetingDebriefHost } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
+import { googleDebriefOutputs } from "./googleOutputs.js";
+import type { GoogleConnection } from "../../google/connection.js";
 
 export interface MeetingDebriefProductionRuntimeOptions {
   runs: Runs;
@@ -16,6 +18,14 @@ export interface MeetingDebriefProductionRuntimeOptions {
   people: WorkspacePersonProfiles;
   /** The confirmed owner identity's email, as the Shell holds it (ADR-0036). */
   ownerEmail: () => string | null;
+  /**
+   * The Workspace's Google connection, backing terminal approval's outward
+   * writes (issue #141). Absent, approval still completes and the Module has
+   * no way to reach Gmail or Tasks at all.
+   */
+  google?: GoogleConnection;
+  /** The Tasks list owner Tasks are filed under. */
+  tasklistName?: () => string;
   log?: (message: string) => void;
 }
 
@@ -59,6 +69,14 @@ export function createMeetingDebriefProductionRuntime(
     ownerEmail: options.ownerEmail,
     getCompleteJson: options.getCompleteJson,
     getLlmInfo: options.getLlmInfo,
+    ...(options.google
+      ? {
+          outputs: googleDebriefOutputs(
+            options.google,
+            options.tasklistName?.() ?? "Meeting Debrief",
+          ),
+        }
+      : {}),
     ...(options.log ? { log: options.log } : {}),
   });
   return { host };

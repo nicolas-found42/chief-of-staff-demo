@@ -411,6 +411,9 @@ const meetingDebrief: MeetingDebriefHost =
     workspaceDir,
     people: peopleProfiles,
     ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
+    /* Terminal approval's outward writes (issue #141): one Gmail draft to the
+       confirmed recipients, then Tasks for the owner's own retained actions. */
+    google: googleConnection,
     getCompleteJson: () => {
       const current = configStore.get();
       return makeCompleteJson(
