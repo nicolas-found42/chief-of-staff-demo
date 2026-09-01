@@ -1,6 +1,25 @@
 import { expect, test } from "@playwright/test";
 
-test("owner onboarding journey — propose → create → confirm → correct", async ({ page }) => {
+test("owner onboarding journey — propose → create → confirm → correct → disconnect", async ({
+  page,
+}) => {
+  let googleConnected = true;
+  const googleStatus = () => ({
+    state: googleConnected ? "connected" : "disconnected",
+    email: googleConnected ? "owner-onboarding@example.com" : null,
+    redirectUri: "http://127.0.0.1:4319/api/google/callback",
+    scopes: [],
+    lastConnectedAt: "2026-08-31T12:00:00.000Z",
+    expiresAbout: null,
+  });
+  await page.route("**/api/google/status", async (route) => {
+    await route.fulfill({ json: googleStatus() });
+  });
+  await page.route("**/api/google/disconnect", async (route) => {
+    const response = await route.fetch();
+    googleConnected = false;
+    await route.fulfill({ response });
+  });
   const identity = await page.request.post("/api/test/owner-identity", {
     data: { email: "owner-onboarding@example.com" },
   });
@@ -44,4 +63,12 @@ test("owner onboarding journey — propose → create → confirm → correct", 
     .selectOption({ label: "Workspace Owner — owner-onboarding@example.com" });
   await ownerCard.getByRole("button", { name: "Confirm owner Profile" }).click();
   await expect(ownerCard).toContainText("Confirmed — Profile Workspace Owner (revision 1)");
+
+  await page.getByText("Manage Google connection").click();
+  await page
+    .getByRole("group", { name: "Google" })
+    .getByRole("button", { name: "Disconnect", exact: true })
+    .click();
+  await expect(ownerCard.getByText("Confirmed", { exact: true })).toHaveCount(0);
+  await expect(ownerCard).toContainText("Connect a Google account to propose the owner Profile.");
 });

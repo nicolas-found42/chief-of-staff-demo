@@ -36,8 +36,8 @@ export class OwnerOnboarding {
    * Refresh production's held Google identity without treating an
    * indeterminate provider response as a disconnect. A connected state with
    * no email, or a failed status read, preserves the last confirmed identity;
-   * only a determinate disconnect/expiry or a different observed email can
-   * invalidate it.
+   * only determinate configuration loss, disconnect/expiry, or a different
+   * observed email can invalidate it.
    */
   async refreshConnectedIdentity(
     readStatus: () => Promise<{ state: GoogleConnectionState; email: string | null }>,
@@ -52,9 +52,7 @@ export class OwnerOnboarding {
       if (status.email) this.setConnectedIdentity(status.email);
       return;
     }
-    if (status.state === "disconnected" || status.state === "expired") {
-      this.setConnectedIdentity(null);
-    }
+    this.setConnectedIdentity(null);
   }
 
   /**

@@ -260,6 +260,66 @@ describe("ContentScoutHost", () => {
     expect(host.activeShortlist()?.runId).toBe(runId);
   });
 
+  it("stops queued draft generation when owner confirmation is invalidated during a bounded batch", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-active-gate-"));
+    const runs = openRuns(workspaceDir);
+    let confirmed = true;
+    const generationCalls: string[] = [];
+    let markBatchStarted!: () => void;
+    const batchStarted = new Promise<void>((resolve) => {
+      markBatchStarted = resolve;
+    });
+    let releaseBatch!: () => void;
+    const batchRelease = new Promise<void>((resolve) => {
+      releaseBatch = resolve;
+    });
+    const host = new ContentScoutHost({
+      runs,
+      workspaceDir,
+      now: () => NOW,
+      adapters: [rssAdapter()],
+      ranker,
+      isOwnerProfileConfirmed: () => confirmed,
+      draftGenerator: {
+        async generate({ target }) {
+          generationCalls.push(target.id);
+          if (generationCalls.length === 4) markBatchStarted();
+          await batchRelease;
+          return {
+            copy: `Generated ${target.id}`,
+            productionNotes: [],
+            reviewNotes: [],
+          };
+        },
+      },
+      log: () => undefined,
+    });
+    host.acceptBrandProfile({
+      markdown: "# Brand Profile\n\n## Positioning\nPractical, educational guidance.",
+      sourceScan: { websiteUrl: "https://company.example", includedUrls: [], excludedUrls: [] },
+    });
+    host.addSourceTarget({
+      adapterId: "rss",
+      label: "Example Research",
+      url: "https://example.com/feed.xml",
+    });
+    const runId = await host.scoutNow();
+    await host.idle();
+
+    await host.select(runId, [host.activeShortlist()!.opportunities[0].id]);
+    await batchStarted;
+    confirmed = false;
+    releaseBatch();
+    await host.idle();
+
+    expect(generationCalls).toHaveLength(4);
+    expect(runs.detail(runId)?.failedStage).toBe("draft");
+    expect(runs.detail(runId)?.events.at(-1)).toMatchObject({
+      type: "run_failed",
+      detail: { reason: expect.stringMatching(/owner_not_confirmed/) },
+    });
+  });
+
   it("blocks a selected Run retry when owner confirmation was invalidated", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-content-owner-retry-gate-"));
     const runs = openRuns(workspaceDir);

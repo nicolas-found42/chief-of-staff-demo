@@ -601,7 +601,7 @@ export function SettingsPage() {
           </div>
 
           {/* Owner onboarding (issue #123): identity proposal and confirmation. */}
-          <OwnerOnboardingCard />
+          <OwnerOnboardingCard googleConnectionState={googleStatus?.state ?? null} />
           <div className="card" role="group" aria-labelledby="group-provider">
             <h3 id="group-provider">Extraction provider</h3>
             {providerSettled ? (

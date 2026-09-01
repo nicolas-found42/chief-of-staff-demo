@@ -254,6 +254,26 @@ describe("durability across restart", () => {
     expect(restarted.confirmed()).toEqual(confirmed);
   });
 
+  it("invalidates the persisted owner when cleared Google configuration is observed after restart", async () => {
+    const profile = createProfile();
+    onboarding.setConnectedIdentity("ada@example.com");
+    onboarding.confirm(profile.id);
+    const config = new ConfigStore(join(workspaceDir, "config.json"));
+    config.load();
+    config.update({ google: { clientId: "client-id", clientSecret: "client-secret" } });
+    config.setGoogleRefreshToken("persisted-refresh-token");
+    config.update({ google: { clientId: "", clientSecret: "" } });
+    const google = openGoogleConnection(config, 4317);
+    const restarted = new OwnerOnboarding({ people: profiles, workspaceDir });
+
+    await restarted.refreshConnectedIdentity(() => google.state());
+
+    expect(restarted.confirmed()).toBeNull();
+    const afterInvalidation = new OwnerOnboarding({ people: profiles, workspaceDir });
+    afterInvalidation.setConnectedIdentity("ada@example.com");
+    expect(afterInvalidation.confirmed()).toBeNull();
+  });
+
   it.each(["disconnected", "expired"] as const)(
     "invalidates the persisted owner when Google is explicitly %s",
     async (state) => {

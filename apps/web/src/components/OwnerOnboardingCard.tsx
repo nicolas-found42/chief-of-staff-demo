@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { PersonProfile } from "@chief-of-staff-demo/shared";
+import type { GoogleConnectionState, PersonProfile } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, onboardingApi, type OwnerOnboardingStatus } from "../client";
 
 /**
@@ -9,7 +9,11 @@ import { api, errorMessage, onboardingApi, type OwnerOnboardingStatus } from "..
  * or creates-and-confirms it. Nothing is confirmed without the button press,
  * and the pinned reference carries the exact Profile revision.
  */
-export function OwnerOnboardingCard() {
+export function OwnerOnboardingCard({
+  googleConnectionState,
+}: {
+  googleConnectionState: GoogleConnectionState | null;
+}) {
   const [status, setStatus] = useState<OwnerOnboardingStatus | null>(null);
   const [profiles, setProfiles] = useState<PersonProfile[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -32,7 +36,7 @@ export function OwnerOnboardingCard() {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [googleConnectionState, refresh]);
 
   const confirm = async () => {
     if (!selectedId) return;

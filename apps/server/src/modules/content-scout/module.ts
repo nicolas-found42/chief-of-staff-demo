@@ -476,14 +476,17 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
     const packById = new Map(packs.map((pack) => [pack.id, pack]));
     const missingDrafts = new Map<string, string[]>();
     const missingPages = new Map<string, string[]>();
-
-    await ctx.stage("draft", async () => {
+    const requireOwnerConfirmation = () => {
       if (deps.isOwnerProfileConfirmed && !deps.isOwnerProfileConfirmed()) {
         throw new StageFailure(
           "owner_not_confirmed",
           "Confirm the workspace owner Profile before generating content.",
         );
       }
+    };
+
+    await ctx.stage("draft", async () => {
+      requireOwnerConfirmation();
       if (!deps.draftGenerator) {
         throw new StageFailure(
           "draft_generator_unconfigured",
@@ -516,6 +519,7 @@ export function contentScoutModule(deps: ContentScoutModuleDeps): ShellModule<Co
             if (!existing.draftIds.includes(draftId)) existing.draftIds.push(draftId);
             return;
           }
+          requireOwnerConfirmation();
           try {
             const generated = await deps.draftGenerator!.generate({
               idempotencyKey: draftId,
