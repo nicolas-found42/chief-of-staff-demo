@@ -60,6 +60,8 @@ export interface MeetingDebriefHostDeps {
   profiles?: DebriefProfileDirectory;
   /** The confirmed owner identity's email, for the approval gate (spec #450). */
   ownerEmail?: () => string | null;
+  /** The outward-write surface terminal approval reaches (issue #141). */
+  outputs?: MeetingDebriefModuleDeps["outputs"];
 }
 
 function parseRunResult(raw: string | null): MeetingDebriefRunResult | null {
@@ -158,6 +160,7 @@ export class MeetingDebriefHost implements HostedModule {
         ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
         ...(deps.getLlmInfo ? { getLlmInfo: deps.getLlmInfo } : {}),
         gate: this.gate,
+        ...(deps.outputs ? { outputs: deps.outputs } : {}),
         ...(deps.now ? { now: deps.now } : {}),
       }),
       log: deps.log,
