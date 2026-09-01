@@ -44,12 +44,19 @@ function makeAttendeeProfiles(): WorkspacePersonProfiles {
   });
 }
 
-function stubHubSpotApi(): HubSpotApi {
+/**
+ * Counts the CRM lookups the Run actually performs. A retry must rerun only the
+ * failed provider, and the ledger keeping `crm:…:completed` cannot show that on
+ * its own — a provider re-fetched on every attempt would leave the same ledger.
+ * The count is what separates a reused artifact from a repeated call.
+ */
+function stubHubSpotApi(calls: { count: number }): HubSpotApi {
   return {
     async listContacts() {
       return { results: [] };
     },
     async searchContactByEmail() {
+      calls.count += 1;
       return null;
     },
     async getAssociatedCompanyIds() {
@@ -115,6 +122,7 @@ interface Harness {
   host: MeetingBriefHost;
   gmail: FlakyGmailProvider;
   sends: () => number;
+  crmCalls: () => number;
 }
 
 function makeHarness(overrides: Partial<MeetingBriefHostDeps> = {}): Harness {
@@ -133,6 +141,7 @@ function makeHarness(overrides: Partial<MeetingBriefHostDeps> = {}): Harness {
       return { messageId: `m-${sends}`, recipient: "owner@example.com" };
     },
   };
+  const crmCalls = { count: 0 };
   const host = new MeetingBriefHost({
     runs,
     workspaceDir,
@@ -146,13 +155,13 @@ function makeHarness(overrides: Partial<MeetingBriefHostDeps> = {}): Harness {
       calendarHistoryProvider: new FakeCalendarHistoryProvider(),
       driveProvider: new FakeDriveProvider(),
       attendeeProfiles: makeAttendeeProfiles(),
-      getHubSpotApi: () => stubHubSpotApi(),
+      getHubSpotApi: () => stubHubSpotApi(crmCalls),
       publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
     },
     getInternalDomains: () => ["example.com"],
     ...overrides,
   });
-  return { runs, workspaceDir, host, gmail, sends: () => sends };
+  return { runs, workspaceDir, host, gmail, sends: () => sends, crmCalls: () => crmCalls.count };
 }
 
 let nowMs = Date.parse(DUE_AT);
@@ -252,6 +261,11 @@ describe("automatic bounded-backoff retries", () => {
     const secondRetryAt = Date.parse(retryEvents[retryEvents.length - 1].detail?.retryAt as string);
     expect(secondRetryAt).toBe(Date.parse(DUE_AT) + 60_000 + 120_000);
 
+    /* The whole point of the per-provider ledger: CRM succeeded on the first
+       attempt and is not asked again across either backoff. */
+    const crmCallsAfterFirstAttempt = harness.crmCalls();
+    expect(crmCallsAfterFirstAttempt).toBeGreaterThan(0);
+
     // Heal the provider and advance: the retry completes the whole Run.
     harness.gmail.heal();
     await advance(harness, "2026-08-28T11:03:00.000Z");
@@ -260,6 +274,7 @@ describe("automatic bounded-backoff retries", () => {
     const finalLedger = ledgerOf(harness, runId);
     expect(finalLedger.retryCount).toBe(2);
     expect(finalLedger.outcomes.every((o) => o.outcome !== "failed")).toBe(true);
+    expect(harness.crmCalls()).toBe(crmCallsAfterFirstAttempt);
     expect((detail.result as { delivery?: { status?: string } } | null)?.delivery?.status).toBe(
       "sent",
     );
@@ -344,7 +359,6 @@ describe("explicit policy actions", () => {
     });
     expect(repaired.statusCode).toBe(200);
     await app.close();
-    // Repair alone never completes the Run — the explicit retry does.
     harness.gmail.heal();
     // Repair alone never completes the Run — the explicit retry does.
     const detail = harness.runs.detail(runId)!;

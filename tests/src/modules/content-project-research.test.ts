@@ -446,6 +446,27 @@ describe("Content Project Research Requests", () => {
       "userMaterial",
     ]);
     expect(prompt.sourceItems.map((item) => item.id)).toEqual(["web_1"]);
+    /* The Source Item allowlist, pinned the same way the top-level shape is:
+       a prompt sees what a writer works from, and none of the plumbing that
+       says where the item came from or how complete it is. A field added to
+       SourceItem lands here only when someone names it on purpose. */
+    expect(Object.keys(prompt.sourceItems[0]).sort()).toEqual([
+      "author",
+      "body",
+      "canonicalUrl",
+      "description",
+      "id",
+      "publishedAt",
+      "title",
+      "transcript",
+    ]);
+    /* The owner's frozen record keeps the provenance the projection drops, so
+       the narrowing is what the prompt sees rather than what was stored. */
+    const frozenItem = projects.get(project.id)!.revisions[0].frozenEvidence!.sourceItems[0];
+    expect(frozenItem.adapterId).toBe("public-web");
+    for (const plumbing of ["adapterId", "externalId", "targetId", "discoveredAt"]) {
+      expect(Object.keys(prompt.sourceItems[0])).not.toContain(plumbing);
+    }
     expect(prompt.profileProjections.map((entry) => entry.role)).toEqual(["author", "subject"]);
     const serialized = JSON.stringify(prompt);
     expect(serialized).not.toContain("grace@example.com");

@@ -335,6 +335,40 @@ export interface ContentProjectEvidenceFreeze {
 }
 
 /**
+ * The Source Item fields a generation prompt may see.
+ *
+ * An allowlist rather than the stored record, because `ContentProjectPromptEvidence`
+ * is serialized verbatim into the prompt: without this, every field a Source Item
+ * grows would reach a model the day it was added, and the review that added it
+ * would be about the field, not about the prompt. Named here, a new field is
+ * Workspace-only until someone decides otherwise on purpose.
+ *
+ * What is left out is plumbing rather than evidence — provenance receipts,
+ * per-field completeness states, engagement counts, story keys, and the adapter,
+ * target and external identity that say where the item came from. A writer works
+ * from none of it, and each one is a way for operational detail to be read back
+ * as a fact about the subject.
+ *
+ * `transcript` is in: a Source Adapter fills it from the public artifact it
+ * fetched — YouTube captions, today — and `SourceItem` is public evidence by
+ * construction. It is named last on purpose, as the one field here whose
+ * contents are long-form third-party prose, so that a future private-transcript
+ * source has exactly one line to reconsider rather than a spread to audit.
+ */
+export type PromptSourceItem = Pick<
+  SourceItem,
+  | "id"
+  | "canonicalUrl"
+  | "author"
+  | "title"
+  | "body"
+  | "description"
+  | "publishedAt"
+  | "claims"
+  | "transcript"
+>;
+
+/**
  * What a Content Engine generator may put in a prompt: the frozen public
  * evidence and the approved voice, and nothing else. Search diagnostics and the
  * Research Request's identifier bookkeeping are structurally absent here, so an
@@ -344,7 +378,7 @@ export interface ContentProjectEvidenceFreeze {
 export interface ContentProjectPromptEvidence {
   projectId: string;
   projectRevision: number;
-  sourceItems: SourceItem[];
+  sourceItems: PromptSourceItem[];
   brandVoice: BrandProfileRevision;
   contentVoice: ContentVoiceRevision;
   profileProjections: ContentProjectProfileSnapshot[];

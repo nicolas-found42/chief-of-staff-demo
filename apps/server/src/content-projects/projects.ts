@@ -15,6 +15,7 @@ import {
   type ContentProjectGate,
   type ContentProjectIntentPatch,
   type ContentProjectPromptEvidence,
+  type PromptSourceItem,
   type ContentProjectReadiness,
   type ContentProjectRevision,
   type ContentProjectSubject,
@@ -484,7 +485,20 @@ export class WorkspaceContentProjects {
     return clone({
       projectId,
       projectRevision: revision.revision,
-      sourceItems: frozen.sourceItems,
+      /* Projected field by field, never spread: the frozen record keeps the
+         whole Source Item for the owner, and `PromptSourceItem` names the part
+         a model is allowed to read. */
+      sourceItems: frozen.sourceItems.map((item): PromptSourceItem => ({
+        id: item.id,
+        canonicalUrl: item.canonicalUrl,
+        author: item.author,
+        title: item.title,
+        body: item.body,
+        description: item.description,
+        publishedAt: item.publishedAt,
+        ...(item.claims ? { claims: item.claims } : {}),
+        transcript: item.transcript,
+      })),
       brandVoice: frozen.brandVoice,
       contentVoice: frozen.contentVoice,
       profileProjections: frozen.profileProjections,

@@ -1145,7 +1145,7 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
           </dl>
           <p className="muted">
             Cleanup covers only sanitized diagnostics older than 30 days and failed temporary media
-            older than 24 hours. Brand Profiles, source history, Run receipts, Content Packs, and
+            older than 24 hours. Brand Profiles, source history, Run receipts, Content Projects, and
             evidence transcripts remain.
           </p>
           <div className="toolbar">
