@@ -265,7 +265,7 @@ test("the front door is Home, and Transcript keeps the runs list", async ({ page
     ["YouTube Trends", "/youtube"],
     ["Idea Engine", "/idea-engine"],
     ["Content Scout", "/content-scout"],
-    ["Meeting Brief Generator", "/meeting-brief"],
+    ["Meeting Brief Generator", "/meetings/brief"],
     ["Content Research", "/content-research"],
   ] as const) {
     await expect(home.getByRole("link", { name: label })).toHaveAttribute("href", path);

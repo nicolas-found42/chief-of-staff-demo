@@ -119,14 +119,6 @@ function completeConfig() {
       },
       "meeting-brief-generator": {
         internalDomains: ["found42.test"],
-        guestProfile: {
-          endpoint: "https://guests.test",
-          apiKey: "guest-profile-api-key",
-          lastVerifiedAt: TIMESTAMP,
-          lastCheckAt: TIMESTAMP,
-          lastCheckState: "connected",
-          lastCheckDetail: "a diagnostic detail",
-        },
         hubspot: { token: "hubspot-token", lastVerifiedAt: TIMESTAMP },
       },
     },
@@ -328,9 +320,10 @@ describe("Workspace migration preview", () => {
 
   it("classifies every recognized credential category as authentication", () => {
     const categories = inventory(previewWorkspaceMigration(completeWorkspace("credentials")));
-
-    /* The Shell's model key and the Meeting Brief guest profile key. */
-    expect(categories.get("provider-api-keys")).toEqual(category("authentication", 2));
+    /* The Shell's model key is the one provider API key left after the
+       Guest Profile adapter's removal (issue #136); the legacy key's
+       classification is still covered by the legacy-key tests below. */
+    expect(categories.get("provider-api-keys")).toEqual(category("authentication", 1));
     /* The Google OAuth client id and secret. */
     expect(categories.get("oauth-client-registrations")).toEqual(category("authentication", 2));
     /* The Google refresh token, the Notion token, the HubSpot token. */
@@ -385,13 +378,15 @@ describe("Workspace migration preview", () => {
       category("disposable-product-state", 1),
     );
     /* When each connection was last verified, and whether Google has ever
-       expired — operational metadata, not credentials. */
+       expired — operational metadata, not credentials. The legacy Guest
+       Profile verification metadata is classified by the legacy-key tests,
+       not by this post-cutover fixture (issue #136). */
     expect(categories.get("connection-verification-state")).toEqual(
-      category("disposable-product-state", 5),
+      category("disposable-product-state", 4),
     );
-    /* 28 workflow settings plus the 11 local values that name a remote record. */
+    /* 24 workflow settings plus the 11 local values that name a remote record. */
     expect(categories.get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 39),
+      category("disposable-product-state", 35),
     );
     expect(categories.get("mock-provider-state")).toEqual(category("disposable-product-state", 1));
     expect(categories.get("operating-system-metadata")).toEqual(
@@ -417,7 +412,7 @@ describe("Workspace migration preview", () => {
     /* Those same 11 values are on the delete side, inside the category every
        disclosure names, so nothing is preserved by being disclosed. */
     expect(inventory(preview).get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 39),
+      category("disposable-product-state", 35),
     );
     /* No category answers "deleted or kept" with a remote reference. */
     expect(named(preview, "remote-reference")).toEqual([]);

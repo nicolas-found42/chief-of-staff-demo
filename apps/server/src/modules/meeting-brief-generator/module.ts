@@ -166,10 +166,6 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
       }
       const occurrenceKey = input.occurrenceKey;
       const snapshotAt = now().toISOString();
-      const resolveDomains = (): string[] => {
-        if (deps.getInternalDomains) return deps.getInternalDomains();
-        return [];
-      };
       const resolveOwner = (): string | null => {
         if (deps.getOwnerEmail) return deps.getOwnerEmail();
         return null;
@@ -252,9 +248,8 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
               if (found) current = found;
             }
           }
-          const domains = resolveDomains();
           const owner = resolveOwner();
-          const { eligible, reason } = snapshotEligibility(current, domains, owner);
+          const { eligible, reason } = snapshotEligibility(current, owner);
           if (!eligible) {
             ctx.event("snapshot_skipped", {
               eventId: current.eventId,
@@ -425,7 +420,6 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           now,
           calendarProvider: deps.calendarProvider ?? null,
           gmailDeliveryProvider: gmailDeliveryProvider ?? null,
-          getInternalDomains: () => resolveDomains(),
           getOwnerEmail: () => resolveOwner(),
           ...(deps.isOwnerProfileConfirmed
             ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }

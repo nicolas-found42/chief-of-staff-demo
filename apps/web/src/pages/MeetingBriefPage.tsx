@@ -1,20 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import type {
-  MeetingBriefCancellation,
-  MeetingBriefIndexEntry,
-  MeetingBriefUpcoming,
-} from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { useMemo } from "react";
+import { Link, useParams } from "react-router-dom";
+import type { MeetingBriefIndexEntry } from "@chief-of-staff-demo/shared";
+import { api } from "../client";
+import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 import { deliveryPresentation } from "../modules/meeting-brief/deliveryStatus";
 
-type IndexState = {
-  upcoming: MeetingBriefUpcoming[];
-  briefs: MeetingBriefIndexEntry[];
-  cancellations: MeetingBriefCancellation[];
-};
+/** Stable fetcher: the Brief journey reads the module's Cross-Run index. */
+const fetchIndex = () => api.meetingBriefIndex();
 
 function groupByOccurrence(
   briefs: MeetingBriefIndexEntry[],
@@ -47,73 +41,36 @@ function DeliveryBadge({ delivery }: { delivery: MeetingBriefIndexEntry["deliver
 }
 
 export function MeetingBriefPage() {
-  useTitle("Meeting Brief Generator");
+  const { occurrenceKey } = useParams();
   const headingRef = usePageFocus<HTMLHeadingElement>();
-  const [index, setIndex] = useState<IndexState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const data = await api.meetingBriefIndex();
-      setIndex(data);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const prepareNow = useCallback(async (occurrenceKey: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.prepareMeetingBriefNow(occurrenceKey);
-      const data = await api.meetingBriefIndex();
-      setIndex(data);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // Poll while any brief is pending or blocked equivalent (pending delivery) or upcoming due soon.
-  useEffect(() => {
-    if (!index) return;
-    const hasPending = index.briefs.some((b) => b.delivery?.status === "pending");
-    if (!hasPending && index.upcoming.length === 0) return;
-    const id = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(id);
-  }, [index, refresh]);
+  useTitle("Meeting Brief");
+  const { index, error, busy, refresh, prepareNow } = useMeetingIndex(fetchIndex);
 
   const groups = useMemo(() => {
     if (!index) return new Map<string, MeetingBriefIndexEntry[]>();
     return groupByOccurrence(index.briefs);
   }, [index]);
+  const visibleGroups = useMemo(
+    () => (occurrenceKey ? new Map([...groups].filter(([key]) => key === occurrenceKey)) : groups),
+    [groups, occurrenceKey],
+  );
 
   const currentByOccurrence = useMemo(() => {
     const map = new Map<string, MeetingBriefIndexEntry>();
     const cancelled = new Set(index?.cancellations.map((item) => item.occurrenceKey) ?? []);
-    for (const [key, list] of groups) {
+    for (const [key, list] of visibleGroups) {
       if (cancelled.has(key)) continue;
       const latestRevision = list[0];
       if (latestRevision) map.set(key, latestRevision);
     }
     return map;
-  }, [groups, index]);
+  }, [visibleGroups, index]);
 
   if (!index) {
     return (
       <div className="page">
         <h1 ref={headingRef} tabIndex={-1}>
-          Meeting Brief Generator
+          Meeting Brief
         </h1>
         {error ? (
           <div className="banner banner-error" role="alert">
@@ -128,14 +85,24 @@ export function MeetingBriefPage() {
     );
   }
 
-  const upcoming = index.upcoming;
-  const briefs = index.briefs;
+  const upcoming = occurrenceKey
+    ? index.upcoming.filter((item) => item.occurrenceKey === occurrenceKey)
+    : index.upcoming;
+  const briefs = occurrenceKey
+    ? index.briefs.filter((entry) => entry.occurrenceKey === occurrenceKey)
+    : index.briefs;
 
   return (
     <div className="page">
       <h1 ref={headingRef} tabIndex={-1}>
-        Meeting Brief Generator
+        Meeting Brief
       </h1>
+      {occurrenceKey ? (
+        <p>
+          <Link to="/meetings">← Meeting Wizard overview</Link> · occurrence{" "}
+          <code>{occurrenceKey}</code>
+        </p>
+      ) : null}
       <p className="muted">
         Upcoming Eligible Meetings from Intake schedules; current briefs are latest per occurrence.
         History preserves revision chain and cancellation state. Briefs are derived from Runs — no

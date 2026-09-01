@@ -85,7 +85,6 @@ export async function reconcileCalendar(args: {
   provider: CalendarProvider;
   store: MeetingBriefCalendarStore;
   clock: DurableClock;
-  internalDomains: string[];
   ownerEmail: string | null | (() => string | null);
   now: Date;
   calendarId?: string;
@@ -188,7 +187,7 @@ export async function reconcileCalendar(args: {
 
     const key = occurrenceKeyFor(event);
     seenKeys.add(key);
-    const eligible = isEligibleMeeting(event, args.internalDomains, ownerEmail);
+    const eligible = isEligibleMeeting(event, ownerEmail);
     const startMs = Date.parse(event.startAt);
     const isFuture = !Number.isNaN(startMs) && startMs > args.now.getTime();
 

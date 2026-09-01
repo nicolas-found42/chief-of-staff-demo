@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- host bridges optional Module deps and ConfigStore that may be absent in tests */
 import type { FastifyInstance } from "fastify";
-import type { RunMeta } from "@chief-of-staff-demo/shared";
 import {
-  GUEST_PROFILE_PROVIDER_NAME,
-  GUEST_PROFILE_PROVIDER_ID,
   MEETING_BRIEF_INTAKE,
   MEETING_BRIEF_MODULE_ID,
+  type RunMeta,
   MEETING_BRIEF_MODULE_VERSION,
   type MeetingBriefEvent,
   type MeetingBriefIndex,
@@ -26,8 +24,6 @@ import {
   type MeetingBriefInput,
   type MeetingBriefModuleDeps,
 } from "./module.js";
-import { GuestProfileConnection } from "./connections/profile.js";
-import { createHttpGuestProfileProvider, type GuestProfileProvider } from "./profile/provider.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
 import type { HubSpotApi } from "./hubspot/client.js";
 import type { MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
@@ -74,7 +70,6 @@ export interface MeetingBriefHostDeps {
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
   isOwnerProfileConfirmed?: () => boolean;
-  guestProfileConnection?: GuestProfileConnection;
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
   personProfiles?: Pick<WorkspacePersonProfiles, "consumerState">;
@@ -171,8 +166,6 @@ export class MeetingBriefHost implements HostedModule {
   private lastFullSyncAt: Date | null = null;
   private maintenanceInProgress = false;
   private readonly fullSyncIntervalMs = 6 * 60 * 60 * 1000;
-  private readonly guestProfileConnection: GuestProfileConnection | null;
-  private readonly profileProvider: GuestProfileProvider | null;
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   private readonly profileRegenerations = new Map<string, Promise<string>>();
@@ -181,37 +174,6 @@ export class MeetingBriefHost implements HostedModule {
     this.clock = new DurableClock(deps.workspaceDir, this.now);
     this.calendarStore = new MeetingBriefCalendarStore(deps.workspaceDir);
     this.calendarProvider = deps.calendarProvider ?? new FakeCalendarProvider();
-    if (deps.guestProfileConnection) {
-      this.guestProfileConnection = deps.guestProfileConnection;
-    } else if (deps.configStore) {
-      this.guestProfileConnection = new GuestProfileConnection(deps.configStore, null, this.now);
-    } else {
-      this.guestProfileConnection = null;
-    }
-    if (deps.enrichmentProviders?.profileProvider !== undefined) {
-      this.profileProvider = deps.enrichmentProviders.profileProvider;
-    } else if (this.guestProfileConnection) {
-      const connection = this.guestProfileConnection;
-      const dynamic: GuestProfileProvider = {
-        id: GUEST_PROFILE_PROVIDER_ID,
-        async lookup(input) {
-          const current = connection.providerForCurrentConfig();
-          const status = connection.status();
-          if (!current || !status.endpoint)
-            throw new Error("missing_configuration: Guest Profile not configured");
-          const configured =
-            deps.configStore?.getModuleConfig(MEETING_BRIEF_MODULE_ID).guestProfile;
-          return current.lookup({
-            ...input,
-            endpoint: status.endpoint,
-            apiKey: configured?.apiKey ?? "",
-          });
-        },
-      };
-      this.profileProvider = dynamic;
-    } else {
-      this.profileProvider = createHttpGuestProfileProvider();
-    }
     // HubSpot wiring — per-user private-app token, Shell stores secret (issue://86)
     if (deps.hubSpotConnection) {
       this.hubSpotConnection = deps.hubSpotConnection;
@@ -230,7 +192,6 @@ export class MeetingBriefHost implements HostedModule {
     }
     const enrichmentProviders: MeetingBriefEnrichmentProviders = {
       ...deps.enrichmentProviders,
-      profileProvider: this.profileProvider,
       getHubSpotApi: this.getHubSpotApi,
     };
     const module = meetingBriefModule({
@@ -445,7 +406,6 @@ export class MeetingBriefHost implements HostedModule {
       provider: this.calendarProvider,
       store: this.calendarStore,
       clock: this.clock,
-      internalDomains: this.getInternalDomains(),
       ownerEmail: () => this.getOwnerEmail(),
       now: this.now(),
       calendarId: MEETING_BRIEF_CALENDAR_ID,
@@ -780,8 +740,6 @@ export class MeetingBriefHost implements HostedModule {
   }
 
   // Live Module (issue://92) — Settings/Intake plus Cross-Run index. The
-  // guest-profile routes below are compatibility-only for Workspaces created
-  // before Person Profiles became a built-in Workspace capability (ADR-0042).
   async routes(app: FastifyInstance): Promise<void> {
     app.post("/api/meeting-brief/runs/:id/regenerate", async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -817,62 +775,17 @@ export class MeetingBriefHost implements HostedModule {
       return this.profileReadModel(result);
     });
 
-    app.get("/api/meeting-brief/guest-profile/status", async () => {
-      if (!this.guestProfileConnection) {
-        return {
-          provider: GUEST_PROFILE_PROVIDER_NAME,
-          endpoint: null,
-          apiKeyHint: "",
-          state: "unconfigured" as const,
-          lastVerifiedAt: null,
-          lastCheck: null,
-        };
-      }
-      return this.guestProfileConnection.status();
-    });
-
-    app.post("/api/meeting-brief/guest-profile/connect", async (request, reply) => {
-      if (!this.guestProfileConnection) {
-        reply.code(500).send({ error: "Guest Profile connection not configured" });
-        return;
-      }
-      const body = request.body as { endpoint?: string; apiKey?: string };
-      try {
-        const status = this.guestProfileConnection.connect(body.endpoint ?? "", body.apiKey ?? "");
-        return status;
-      } catch (e) {
-        reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
-        return;
-      }
-    });
-
-    app.post("/api/meeting-brief/guest-profile/disconnect", async () => {
-      if (!this.guestProfileConnection) {
-        return {
-          provider: GUEST_PROFILE_PROVIDER_NAME,
-          endpoint: null,
-          apiKeyHint: "",
-          state: "unconfigured" as const,
-          lastVerifiedAt: null,
-          lastCheck: null,
-        };
-      }
-      return this.guestProfileConnection.disconnect();
-    });
-
-    app.post("/api/meeting-brief/guest-profile/check", async () => {
-      if (!this.guestProfileConnection) {
-        return {
-          state: "unconfigured" as const,
-          detail: "Guest Profile not configured",
-          checkedAt: this.now().toISOString(),
-        };
-      }
-      return this.guestProfileConnection.verifySetup();
-    });
-
     // GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005)
     app.get("/api/meeting-brief/index", async () => {
+      return this.index();
+    });
+
+    // GET /api/meetings/overview — the Meeting Wizard read projection (spec
+    // Implementation Decision 3, kept separate per Decision 9): a read over
+    // Calendar occurrences and Brief state that links sibling records
+    // without owning a combined lifecycle record. Brief and Debrief remain
+    // separate lifecycles (ADR-0043).
+    app.get("/api/meetings/overview", async () => {
       return this.index();
     });
 

@@ -13,11 +13,15 @@ import { FakeGmailDeliveryProvider } from "../../../apps/server/src/modules/meet
 import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
 import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
 import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
-import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
-import { isEligibleMeeting } from "../../../apps/server/src/modules/meeting-brief-generator/eligibility";
+import {
+  eligibilityReason,
+  isEligibleMeeting,
+} from "../../../apps/server/src/modules/meeting-brief-generator/eligibility";
 import { normalizeInternalDomains } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { completeFixtureBrief } from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 
 function stubHubSpotApi(): HubSpotApi {
@@ -44,6 +48,14 @@ function stubHubSpotApi(): HubSpotApi {
       return [];
     },
   };
+}
+
+function makeAttendeeProfiles(): WorkspacePersonProfiles {
+  return new WorkspacePersonProfiles({
+    store: new PersonProfileStore(mkdtempSync(join(tmpdir(), "mb-attendee-profiles-"))),
+    now: () => new Date("2026-08-28T10:00:00.000Z"),
+    lifecycle: [],
+  });
 }
 
 function calEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -90,7 +102,7 @@ beforeEach(() => {
       gmailProvider: new FakeGmailProvider(),
       calendarHistoryProvider: new FakeCalendarHistoryProvider(),
       driveProvider: new FakeDriveProvider(),
-      profileProvider: createFakeGuestProfileProvider({}),
+      attendeeProfiles: makeAttendeeProfiles(),
       getHubSpotApi: () => stubHubSpotApi(),
       publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
     },
@@ -121,26 +133,16 @@ describe("eligibility — Internal Domains normalized case-insensitive (issue://
     ]);
   });
 
-  it("classifies external guest case-insensitively after email parsing", () => {
-    const internal = ["Internal.COM"];
+  it("internal attendees are eligible now, and external guests stay eligible", () => {
     expect(
       isEligibleMeeting(
         calEvent({ attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }] }),
-        internal,
         null,
       ),
-    ).toBe(false);
-    expect(
-      isEligibleMeeting(
-        calEvent({ attendees: [{ email: "BOB@INTERNAL.COM", responseStatus: "accepted" }] }),
-        internal,
-        null,
-      ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isEligibleMeeting(
         calEvent({ attendees: [{ email: "alice@external.co", responseStatus: "accepted" }] }),
-        internal,
         null,
       ),
     ).toBe(true);
@@ -207,12 +209,12 @@ describe("eligibility table via host — timed/all-day, cancelled/confirmed, own
     ]);
     await host.reconcileCalendar();
     expect(host.listUpcoming()).toHaveLength(1);
-    // internal only -> not eligible
+    // internal only -> eligible (issue://136): internal meetings schedule like external ones
     fakeCal.setEvents([
       calEvent({ attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }] }),
     ]);
     await host.reconcileCalendar();
-    expect(host.listUpcoming()).toHaveLength(0);
+    expect(host.listUpcoming()).toHaveLength(1);
     // consumer domain remains external
     fakeCal.setEvents([
       calEvent({ attendees: [{ email: "alice@gmail.com", responseStatus: "accepted" }] }),
@@ -295,6 +297,128 @@ describe("eligibility table via host — timed/all-day, cancelled/confirmed, own
     for (const r of runs.list({ module: "meeting-brief-generator" }).runs) {
       expect(r.status).not.toBe("blocked");
     }
+  });
+});
+
+describe("Eligible Meeting — internal and external, owner participation (issue://136)", () => {
+  it("an internal meeting with a non-declined attendee is eligible", () => {
+    expect(
+      eligibilityReason(
+        calEvent({ attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }] }),
+        "owner@example.com",
+      ),
+    ).toBe("eligible");
+  });
+
+  it("all-day events never start a Brief", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          isAllDay: true,
+          attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("all_day_excluded");
+  });
+
+  it("events without a start and end never start a Brief", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          startAt: "",
+          endAt: "",
+          attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("missing_time");
+  });
+
+  it("cancelled events never start a Brief", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          status: "cancelled",
+          attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("cancelled");
+  });
+
+  it("events the owner declined never start a Brief", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          attendees: [
+            { email: "owner@example.com", responseStatus: "declined", organizer: true },
+            { email: "bob@internal.com", responseStatus: "accepted" },
+          ],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("owner_declined");
+  });
+
+  it("owner-only events never start a Brief", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          attendees: [{ email: "owner@example.com", responseStatus: "accepted", organizer: true }],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("no_other_attendee");
+  });
+
+  it("the owner is never counted as the other attendee, even outside the Internal Domains", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          attendees: [
+            { email: "owner@example.com", responseStatus: "accepted", organizer: true },
+            {
+              email: "room@resource.calendar.google.com",
+              responseStatus: "accepted",
+              resource: true,
+            },
+          ],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("no_other_attendee");
+  });
+
+  it("events whose only other attendee declined never start a Brief", () => {
+    expect(
+      eligibilityReason(
+        calEvent({
+          attendees: [
+            { email: "owner@example.com", responseStatus: "accepted", organizer: true },
+            { email: "bob@internal.com", responseStatus: "declined" },
+          ],
+        }),
+        "owner@example.com",
+      ),
+    ).toBe("no_other_attendee");
+  });
+
+  it("an internal meeting schedules automatically like an external one", async () => {
+    fakeCal.setEvents([
+      calEvent({ attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }] }),
+    ]);
+    await host.reconcileCalendar();
+    expect(host.listUpcoming()).toHaveLength(1);
+  });
+
+  it("a manual, non-Calendar meeting never starts a Brief — only Calendar Intake schedules can", async () => {
+    fakeCal.setEvents([]);
+    await host.reconcileCalendar();
+    await expect(host.prepareNow("evt_manual_not_in_intake/v1")).rejects.toThrow(
+      "Meeting occurrence is not scheduled: evt_manual_not_in_intake/v1",
+    );
+    expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(0);
   });
 });
 

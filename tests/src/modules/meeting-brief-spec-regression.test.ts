@@ -8,14 +8,22 @@ import {
   FakeCalendarProvider,
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
-import { createHttpGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import type { HubSpotApi } from "../../../apps/server/src/modules/meeting-brief-generator/hubspot/client";
 import { enrichUnified } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/enrich";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+
+function makeAttendeeProfiles(): WorkspacePersonProfiles {
+  return new WorkspacePersonProfiles({
+    store: new PersonProfileStore(mkdtempSync(join(tmpdir(), "spec-attendee-profiles-"))),
+    now: () => new Date("2026-08-28T10:00:00.000Z"),
+    lifecycle: [],
+  });
+}
 import { FakeGmailProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmail";
 import { FakeCalendarHistoryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/calendarHistory";
 import { FakeDriveProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/drive";
 import { FakePublicIntelligenceProvider } from "../../../apps/server/src/modules/meeting-brief-generator/enrichment/publicIntelligence";
-import { createFakeGuestProfileProvider } from "../../../apps/server/src/modules/meeting-brief-generator/profile/provider";
 import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 import { completeFixtureBrief } from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
 import { fixtureGmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/testRuntime";
@@ -97,7 +105,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => ({
           searchContactByEmail: async () => null,
           listContacts: async () => ({ results: [] }),
@@ -151,7 +159,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => ({
           searchContactByEmail: async () => null,
           listContacts: async () => ({ results: [] }),
@@ -192,7 +200,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => null,
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -233,7 +241,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => ({
           searchContactByEmail: async () => null,
           listContacts: async () => ({ results: [] }),
@@ -276,80 +284,6 @@ describe("Spec regression — PR 93 findings", () => {
     expect(third.length).toBe(0);
   });
 
-  it("4. Guest Profile provider-wide 401/502/503/504 throw and fail closed", async () => {
-    const fakeFetch = async () =>
-      ({
-        status: 401,
-        ok: false,
-        json: async () => ({}),
-      }) as unknown as Response;
-    const provider = createHttpGuestProfileProvider(fakeFetch);
-    await expect(
-      provider.lookup({
-        guestEmail: "alice@external.co",
-        endpoint: "https://example.com",
-        apiKey: "k",
-        occurrenceKey: "evt::occ",
-        eventVersion: "v1",
-      }),
-    ).rejects.toThrow(/rejected/);
-    // 502/504 outages classify provider-wide the same way (issue #80 US68)
-    for (const status of [502, 504]) {
-      const outageFetch = async () =>
-        ({ status, ok: false, json: async () => ({}) }) as unknown as Response;
-      await expect(
-        createHttpGuestProfileProvider(outageFetch).lookup({
-          guestEmail: "alice@external.co",
-          endpoint: "https://example.com",
-          apiKey: "k",
-          occurrenceKey: "evt::occ",
-          eventVersion: "v1",
-        }),
-      ).rejects.toThrow(/unavailable/);
-    }
-    // Also verify enrichUnified fails closed when provider throws provider-wide
-    const files = new Map<string, string>();
-    const ctx = {
-      readFile: (name: string) => files.get(name) ?? null,
-      writeFile: (name: string, value: string) => files.set(name, value),
-      event: () => {},
-    };
-    const throwingProvider = {
-      id: "guest-profile" as const,
-      async lookup() {
-        throw Object.assign(new Error("rejected: unauthorized (401)"), { status: 401 });
-      },
-    };
-    await expect(
-      enrichUnified(
-        fixtureEvent(),
-        ctx as unknown as Pick<
-          import("../../../apps/server/src/engine/module").RunContext,
-          "readFile" | "writeFile" | "event"
-        >,
-        {
-          providers: {
-            gmailProvider: new FakeGmailProvider(),
-            calendarHistoryProvider: new FakeCalendarHistoryProvider(),
-            driveProvider: new FakeDriveProvider(),
-            profileProvider: throwingProvider,
-            getHubSpotApi: () => ({
-              searchContactByEmail: async () => null,
-              listContacts: async () => ({ results: [] }),
-              getAssociatedCompanyIds: async () => [],
-              getCompany: async () => null,
-              getAssociatedDealIds: async () => [],
-              getDeal: async () => null,
-              getAssociatedDealIdsForCompany: async () => [],
-            }),
-            publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
-          },
-          internalDomains: [],
-        },
-      ),
-    ).rejects.toThrow();
-  });
-
   it("5. sparse cancelled non-recurring tombstone without start/end is preserved and removes schedule by eventId", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "spec-sparse-"));
     const runs = openRuns(workspaceDir);
@@ -364,7 +298,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => null,
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -442,7 +376,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => api,
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },
@@ -459,7 +393,7 @@ describe("Spec regression — PR 93 findings", () => {
         gmailProvider: new FakeGmailProvider(),
         calendarHistoryProvider: new FakeCalendarHistoryProvider(),
         driveProvider: new FakeDriveProvider(),
-        profileProvider: createFakeGuestProfileProvider({}),
+        attendeeProfiles: makeAttendeeProfiles(),
         getHubSpotApi: () => api,
         publicIntelligenceProvider: new FakePublicIntelligenceProvider(),
       },

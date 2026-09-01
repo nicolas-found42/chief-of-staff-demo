@@ -59,7 +59,6 @@ export interface DeliverBriefArgs {
   now: () => Date;
   calendarProvider?: CalendarProvider | null;
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
-  getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
   isOwnerProfileConfirmed?: () => boolean;
   personProfileConsumerState?: (
@@ -135,12 +134,10 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     now,
     calendarProvider,
     gmailDeliveryProvider,
-    getInternalDomains,
     getOwnerEmail,
     isOwnerProfileConfirmed,
     personProfileConsumerState,
   } = args;
-  const resolveDomains = (): string[] => (getInternalDomains ? getInternalDomains() : []);
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
   let isProfileRefresh = Boolean(input.profileRefreshOf);
   if (!isProfileRefresh) {
@@ -259,14 +256,13 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
   if (calendarProvider) {
     try {
       const current = currentEvent ?? undefined;
-      const domains = resolveDomains();
       const owner = resolveOwner();
       const reason =
         current === undefined
           ? "occurrence_not_found"
           : current.status === "cancelled"
             ? "cancelled"
-            : !isEligibleMeeting(current, domains, owner)
+            : !isEligibleMeeting(current, owner)
               ? "not_eligible_at_delivery"
               : null;
       if (reason) {

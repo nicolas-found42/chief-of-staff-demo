@@ -11,7 +11,8 @@ const ROUTES = [
   "/youtube",
   "/idea-engine",
   "/content-scout",
-  "/meeting-brief",
+  "/meetings",
+  "/meetings/brief",
   "/content-research",
   "/people",
   "/people/new",
@@ -461,6 +462,7 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
     "Meeting Debrief",
     "Content Research",
     "Person Profiles",
+    "Meeting Wizard",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");

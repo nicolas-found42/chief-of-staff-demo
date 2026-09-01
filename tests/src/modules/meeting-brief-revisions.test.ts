@@ -237,11 +237,11 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
     expect(result.occurrenceKey).toBe("evt_rev_1::2026-08-28T15:00:00Z");
   });
 
-  it("ends skipped when not Eligible via Internal Domains (no external guest), no enrichment/email", async () => {
-    const domains = ["external.co", "example.com"];
+  it("ends skipped when not Eligible (owner-only meeting, issue://136), no enrichment/email", async () => {
     const enrichCalls: number[] = [];
     const { host, runs } = makeHost({
-      getInternalDomains: () => domains,
+      ownerEmail: "owner@example.com",
+      getInternalDomains: () => ["external.co", "example.com"],
       enrich: async (_input, ctx) => {
         enrichCalls.push(1);
         ctx.event("should_not_run", {});
@@ -250,7 +250,17 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
       completeBrief: defaultCompleteBrief(),
       gmailDeliveryProvider: defaultDeliver(),
     });
-    const event = fixtureEvent({ version: "v1" }); // alice@external.co and owner@example.com both internal now -> no external guest
+    const event = fixtureEvent({
+      version: "v1",
+      attendees: [
+        {
+          email: "owner@example.com",
+          displayName: "Owner",
+          responseStatus: "accepted",
+          organizer: true,
+        },
+      ],
+    });
     host.scheduleOccurrence(event, new Date("2026-08-28T11:00:00.000Z"));
     now = new Date("2026-08-28T11:00:00.000Z");
     const created = await host.processDueSchedules(new Date(now));
@@ -260,14 +270,13 @@ describe("Snapshot freezes event identity/version/occurrence, skipped when not E
     expect(detail.status).toBe("skipped");
     const meta = runs.open(created[0])!.read();
     expect(meta.status).toBe("skipped");
-    expect(meta.skipReason).toBeDefined();
+    expect(meta.skipReason).toBe("no_other_attendee");
     // No enrich artifacts beyond snapshot
     expect(detail.files).toContain("snapshot.json");
     expect(detail.files).not.toContain("enrich.json");
     expect(detail.files).not.toContain("result.json");
     expect(detail.files).not.toContain("delivery.json");
     expect(enrichCalls).toHaveLength(0);
-    void domains;
   });
 
   it("ends skipped when owner declined", async () => {

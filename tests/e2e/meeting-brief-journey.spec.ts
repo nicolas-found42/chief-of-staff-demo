@@ -81,10 +81,8 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   expect(idx.upcoming.some((u) => u.version === "v1")).toBe(true);
 
   // Open live tab — shows upcoming, no current brief yet
-  await page.goto("/meeting-brief");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Meeting Brief Generator" }),
-  ).toBeVisible();
+  await page.goto("/meetings/brief");
+  await expect(page.getByRole("heading", { level: 1, name: "Meeting Brief" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Upcoming meetings" })).toBeVisible();
   await expect(page.getByText("Initial Meeting")).toBeVisible();
   await expect(page.getByText(/Current briefs/)).toBeVisible();
@@ -126,7 +124,7 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   expect(idxAfter.upcoming.length).toBe(0);
 
   // Re-open tab and assert current brief rendering, evidence warnings, delivery state
-  await page.goto("/meeting-brief");
+  await page.goto("/meetings/brief");
   const currentBriefs = page.getByLabel("Current briefs");
   await expect(currentBriefs.getByRole("heading", { name: /Initial Meeting · Run/ })).toBeVisible();
   // Current brief section shows linked Run and delivery sent
@@ -171,7 +169,7 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   await expect(page.getByText(/^Message ID:/)).toBeVisible();
 
   // Back to tab for revision
-  await page.goto("/meeting-brief");
+  await page.goto("/meetings/brief");
 
   // 4. Change event to new material version — then one more rapid revision to test coalescing
   // First revision v2 (material: title changed) scheduled at same due time (already past) → will go to quiet wait
@@ -262,7 +260,7 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   expect(gmailFinal.messages[1].deliveryId).toContain("v3");
 
   // Tab shows updated revision as current, and superseded explain
-  await page.goto("/meeting-brief");
+  await page.goto("/meetings/brief");
   await expect(
     currentBriefs.getByRole("heading", { name: /Final revised title · Run/ }),
   ).toBeVisible();

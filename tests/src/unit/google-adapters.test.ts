@@ -146,14 +146,6 @@ const config: AppConfig = {
     },
     "meeting-brief-generator": {
       internalDomains: [],
-      guestProfile: {
-        endpoint: "",
-        apiKey: "",
-        lastVerifiedAt: null,
-        lastCheckAt: null,
-        lastCheckState: null,
-        lastCheckDetail: null,
-      },
       hubspot: { token: "", lastVerifiedAt: null },
     },
   },

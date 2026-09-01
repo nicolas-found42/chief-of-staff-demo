@@ -7,15 +7,14 @@ export type SnapshotSource = MeetingBriefEvent;
 
 /**
  * Snapshot eligibility check (issue://84, ADR-0033).
- * Freezes current event, occurrence, version and validates eligibility
- * using Internal Domains + ownerEmail. Returns ineligibility reason when skipped.
+ * Freezes current event, occurrence, version and validates eligibility using
+ * the ownerEmail. Returns ineligibility reason when skipped.
  */
 export function snapshotEligibility(
   event: SnapshotSource,
-  internalDomains: string[],
   ownerEmail: string | null,
 ): { eligible: boolean; reason: string } {
-  const reason = eligibilityReason(event, internalDomains, ownerEmail);
+  const reason = eligibilityReason(event, ownerEmail);
   return { eligible: reason === "eligible", reason };
 }
 

@@ -80,14 +80,6 @@ function defaultConfig(): AppConfig {
       },
       "meeting-brief-generator": {
         internalDomains: [],
-        guestProfile: {
-          endpoint: "",
-          apiKey: "",
-          lastVerifiedAt: null,
-          lastCheckAt: null,
-          lastCheckState: null,
-          lastCheckDetail: null,
-        },
         hubspot: { token: "", lastVerifiedAt: null },
       },
     },
@@ -124,6 +116,15 @@ export class ConfigStore {
     // Old configs had fireflies/watch — strictObject would reject them; drop before parse.
     delete merged.fireflies;
     delete merged.watch;
+    // Legacy Guest Profile adapter configuration (removed by issue #136's
+    // cutover): stored keys are dropped so strict parsing accepts old files.
+    const briefModules = (merged.modules ?? {}) as Record<string, unknown>;
+    if (
+      briefModules["meeting-brief-generator"] &&
+      typeof briefModules["meeting-brief-generator"] === "object"
+    ) {
+      delete (briefModules["meeting-brief-generator"] as Record<string, unknown>).guestProfile;
+    }
     const parsed = ConfigSchema.parse(merged);
     this.config = normalize(parsed);
     this.persist();
