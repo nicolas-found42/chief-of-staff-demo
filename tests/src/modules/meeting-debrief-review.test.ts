@@ -21,7 +21,9 @@ import type {
 import { workspaceProfileDirectory } from "../../../apps/server/src/modules/meeting-debrief/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+import { RunNotResumableError } from "../../../apps/server/src/engine/runner";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
+import type { RunMeta } from "@chief-of-staff-demo/shared";
 
 const OWNER_EMAIL = "owner@example.com";
 const BASE_TIME = Date.parse("2026-09-01T12:00:00.000Z");
@@ -88,9 +90,12 @@ interface Harness {
   extractInputs: DebriefExtractInput[];
   /** Forces the next extraction call to fail once (regeneration failure). */
   failNextExtraction: { value: boolean };
+  /** Arms the flip-after-first-call owner gate (durable-refusal test). */
+  ownerFlip: { armed: boolean; calls: number };
+  workspaceDir: string;
 }
 
-function makeHarness(): Harness {
+function makeHarness(HostCtor: typeof MeetingDebriefHost = MeetingDebriefHost): Harness {
   const workspaceDir = mkdtempSync(join(tmpdir(), "meeting-debrief-review-"));
   const runs = openRuns(workspaceDir);
   const people = new WorkspacePersonProfiles({
@@ -111,7 +116,12 @@ function makeHarness(): Harness {
   let generation = 0;
   const extractInputs: DebriefExtractInput[] = [];
   const failNextExtraction = { value: false };
-  const host = new MeetingDebriefHost({
+  /* Armed only by the durable-refusal test: the FIRST ownerEmail() call of the
+     armed flow (the host route's synchronous pre-check) still sees the owner,
+     every later call (the Module Stage's durable re-assertion) does not — a
+     deterministic construction of the gate flip between the two adapters. */
+  const ownerFlip = { armed: false, calls: 0 };
+  const host = new HostCtor({
     runs,
     catalog: {
       getTranscript: (id) => catalog.get(id) ?? null,
@@ -130,12 +140,23 @@ function makeHarness(): Harness {
     },
     now: () => new Date(nowMs),
     profiles: workspaceProfileDirectory(people),
-    ownerEmail: () => OWNER_EMAIL,
+    ownerEmail: () => (ownerFlip.armed && ++ownerFlip.calls > 1 ? null : OWNER_EMAIL),
     log: () => {},
   });
   const app = fastify({ logger: false });
   host.routes(app);
-  return { runs, host, people, catalog, clock, app, extractInputs, failNextExtraction };
+  return {
+    runs,
+    host,
+    people,
+    catalog,
+    clock,
+    app,
+    extractInputs,
+    failNextExtraction,
+    ownerFlip,
+    workspaceDir,
+  };
 }
 
 let h: Harness;
@@ -748,7 +769,9 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
 
     const detail = h.runs.detail(runId)!;
     expect(detail.status).toBe("done");
-    expect(detail.summary).toContain("Approved with 4 recipients");
+    // The owner is never a recipient of their own Debrief: the count names
+    // the confirmed attendees plus explicit selections, not the owner.
+    expect(detail.summary).toContain("Approved with 3 recipients");
     const events = detail.events.map((event) => event.type);
     expect(events).toContain("debrief_approved");
 
@@ -833,6 +856,8 @@ function makeHarnessWithOwner(ownerEmail: string | null): Harness {
     app,
     extractInputs: [],
     failNextExtraction: { value: false },
+    ownerFlip: { armed: false, calls: 0 },
+    workspaceDir,
   };
 }
 
@@ -974,5 +999,225 @@ describe("Meeting Debrief redo (#140, spec #453)", () => {
       .runs.map((summary) => summary.id);
     expect(ids).toHaveLength(2);
     expect(new Set(ids)).toEqual(new Set([runId, redoRunId]));
+  });
+});
+
+class FlakyResumeHost extends MeetingDebriefHost {
+  failNextResume = false;
+  protected override resumeOwnerTurn(runId: string): Promise<RunMeta> {
+    if (this.failNextResume) {
+      this.failNextResume = false;
+      return Promise.reject(new RunNotResumableError(runId));
+    }
+    return super.resumeOwnerTurn(runId);
+  }
+}
+
+describe("Meeting Debrief review corrections (#140 review round)", () => {
+  it("durable refusal clears the pending request: the owner can fix blockers and retry", async () => {
+    anchoredProfile("Alice", "alice@example.com");
+    const record = makeRecord({
+      ...LINKED,
+      roster: [
+        { displayName: "Owner", email: OWNER_EMAIL },
+        { displayName: "Alice", email: "alice@example.com" },
+      ],
+    });
+    const runId = await startRun(record);
+    const confirmed = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: {
+        entries: [
+          { email: OWNER_EMAIL, displayName: "Owner" },
+          { email: "alice@example.com", displayName: "Alice" },
+        ],
+      },
+    });
+    expect(confirmed.statusCode).toBe(200);
+    const deadlineBefore = h.runs.open(runId)!.read().wait;
+
+    // The gate flips between the route's synchronous check (open) and the
+    // Module Stage's durable re-assertion (closed): the refusal happens
+    // inside the Run, after the route already said yes.
+    h.ownerFlip.armed = true;
+    const approved = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+    });
+    expect(approved.statusCode).toBe(200);
+    await h.host.idle();
+    h.ownerFlip.armed = false;
+
+    // The Run kept waiting — and the pending request did NOT strand it.
+    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(reviewStateOf(runId).request).toBeNull();
+    expect(h.runs.detail(runId)!.events.some((e) => e.type === "debrief_approval_refused")).toBe(
+      true,
+    );
+
+    // Every mutation seam answers again — no run-not-reviewable strand.
+    const drop = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
+    });
+    expect(drop.statusCode).toBe(200);
+    const retried = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+    });
+    expect(retried.statusCode).toBe(200);
+    await h.host.idle();
+    expect(h.runs.detail(runId)?.status).toBe("done");
+    expect(deadlineBefore?.timeout.kind).toBe("at");
+  });
+
+  it("a Shell-side resume failure reports honestly and reverts the persisted request", async () => {
+    const flaky = makeHarness(FlakyResumeHost);
+    h = flaky;
+    const flakyHost = flaky.host as FlakyResumeHost;
+    const runId = await startRun(makeRecord());
+
+    flakyHost.failNextResume = true;
+    const regenerate = await flaky.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/regenerate`,
+      payload: { field: "summary" },
+    });
+    expect(regenerate.statusCode).toBe(409);
+    expect(regenerate.json().error).toBe("run-not-resumable");
+    expect(reviewStateOf(runId).request).toBeNull();
+    expect(h.runs.detail(runId)?.status).toBe("blocked");
+
+    // The seam unlocked: the same request goes through now.
+    const retried = await flaky.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/regenerate`,
+      payload: { field: "summary" },
+    });
+    expect(retried.statusCode).toBe(200);
+    await flaky.host.idle();
+    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(reviewStateOf(runId).request).toBeNull();
+
+    // The approve route reverts the same way, once the gate is open.
+    anchoredProfile("Alice", "alice@example.com");
+    const confirmed = await flaky.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: {
+        entries: [
+          { email: OWNER_EMAIL, displayName: "Owner" },
+          { email: "alice@example.com", displayName: "Alice" },
+        ],
+      },
+    });
+    expect(confirmed.statusCode).toBe(200);
+    flakyHost.failNextResume = true;
+    const approve = await flaky.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+    });
+    expect(approve.statusCode).toBe(409);
+    expect(approve.json().error).toBe("run-not-resumable");
+    expect(reviewStateOf(runId).request).toBeNull();
+    expect(h.runs.detail(runId)?.status).toBe("blocked");
+  });
+
+  it("mints Calendar shells only for emails the Calendar occurrence actually lists", async () => {
+    const runId = await startRun(
+      makeRecord({
+        ...LINKED,
+        roster: [{ displayName: "Alice", email: "alice@example.com" }],
+      }),
+    );
+
+    const posted = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: {
+        entries: [
+          { email: "alice@example.com", displayName: "Alice" },
+          { email: "dana@elsewhere.com", displayName: "Dana" },
+        ],
+      },
+    });
+    expect(posted.statusCode).toBe(200);
+
+    const state = reviewStateOf(runId);
+    const alice = state.roster.entries.find((entry) => entry.email === "alice@example.com");
+    const dana = state.roster.entries.find((entry) => entry.email === "dana@elsewhere.com");
+    // A roster member: the Calendar-anchored shell, as before.
+    expect(alice?.profileId).not.toBeNull();
+    // A typed email the occurrence never listed: no Calendar-sourced shell.
+    expect(dana?.profileId).toBeNull();
+    expect(h.people.search().some((profile) => profile.primaryEmail === "dana@elsewhere.com")).toBe(
+      false,
+    );
+    const detail = await (
+      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
+    ).json();
+    expect(detail.review.approvalBlockers).toContain(
+      "attendee-unverified-email:dana@elsewhere.com",
+    );
+  });
+
+  it("keeps the original review deadline across a durable refusal and a restart", async () => {
+    anchoredProfile("Alice", "alice@example.com");
+    const record = makeRecord({
+      ...LINKED,
+      roster: [
+        { displayName: "Owner", email: OWNER_EMAIL },
+        { displayName: "Alice", email: "alice@example.com" },
+      ],
+    });
+    const runId = await startRun(record);
+    await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: {
+        entries: [
+          { email: OWNER_EMAIL, displayName: "Owner" },
+          { email: "alice@example.com", displayName: "Alice" },
+        ],
+      },
+    });
+    const originalDeadline = Date.parse(
+      (h.runs.open(runId)!.read().wait?.timeout as { kind: "at"; at: string }).at,
+    );
+
+    // Ten days pass before the owner asks for approval, so a re-armed FRESH
+    // window would be measurably later than the original deadline.
+    h.clock.advanceDays(10);
+
+    // Refused inside the Stage: the re-wait must re-arm the ORIGINAL
+    // deadline, not a fresh thirty days.
+    h.ownerFlip.armed = true;
+    await h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
+    await h.host.idle();
+    h.ownerFlip.armed = false;
+
+    const meta = h.runs.open(runId)!.read();
+    expect(meta.status).toBe("blocked");
+    if (meta.wait?.timeout.kind !== "at") throw new Error("expected a dated wait");
+    expect(Date.parse(meta.wait.timeout.at)).toBe(originalDeadline);
+
+    // Restart: a fresh host over the same Workspace expires the Run on the
+    // original schedule, not a fresh window.
+    h.clock.advanceDays(MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS - 9);
+    const restarted = new MeetingDebriefHost({
+      runs: h.runs,
+      catalog: { getTranscript: (id) => h.catalog.get(id) ?? null },
+      identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
+      extract: (input) => Promise.resolve(fakeExtraction(input, 99)),
+      now: () => new Date(BASE_TIME + (MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS + 1) * 86400000),
+      profiles: workspaceProfileDirectory(h.people),
+      ownerEmail: () => OWNER_EMAIL,
+      log: () => {},
+    });
+    expect(await restarted.recover()).toBe(1);
+    await restarted.idle();
+    expect(h.runs.detail(runId)?.status).toBe("skipped");
+    expect(h.runs.detail(runId)?.skipReason).toBe(MEETING_DEBRIEF_EXPIRED_REASON);
   });
 });

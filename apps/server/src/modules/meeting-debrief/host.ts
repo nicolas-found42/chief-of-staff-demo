@@ -29,6 +29,7 @@ import {
   serializeReviewState,
   type DebriefApprovalGateDeps,
 } from "./review.js";
+import { EMAIL_PATTERN } from "../../person-profile/profiles.js";
 import type { DebriefProfileDirectory } from "./profiles.js";
 import {
   meetingDebriefModule,
@@ -113,8 +114,6 @@ interface RecipientBody {
   email?: unknown;
 }
 
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /**
  * Meeting Debrief host — what the Shell holds (HostedModule) and what the
  * Transcript Catalog calls when mining completes (`process` / `backfill`,
@@ -189,6 +188,20 @@ export class MeetingDebriefHost implements HostedModule {
    */
   recover(): Promise<number> {
     return this.runner.recoverRuns();
+  }
+
+  /**
+   * The one resume seam for owner-requested review turns. Overridable so a
+   * test can force the Shell-side resume to fail and prove the persisted
+   * request reverts instead of stranding the review.
+   */
+  protected resumeOwnerTurn(runId: string): Promise<RunMeta> {
+    return this.runner.resumeRun(runId);
+  }
+
+  /** Undo a persisted owner request the Shell could not carry out. */
+  private revertRequest(run: RunHandle, state: MeetingDebriefReviewState): void {
+    this.writeState(run, { ...state, request: null });
   }
 
   /** The Catalog's mining-completion hand-off for one immutable Transcript. */
@@ -475,7 +488,18 @@ export class MeetingDebriefHost implements HostedModule {
       found.state.request = { kind: "regenerate", field: field as never };
       this.writeState(found.run, found.state);
       found.run.appendEvent("debrief_regeneration_requested", { field });
-      await this.runner.resumeRun(runId).catch(() => null);
+      try {
+        await this.resumeOwnerTurn(runId);
+      } catch (error) {
+        if (error instanceof RunNotResumableError) {
+          /* The Shell never carried the request out: revert it, so the review
+             stays unlocked and the route reports the failure honestly. */
+          this.revertRequest(found.run, found.state);
+          reply.code(409).send({ error: "run-not-resumable" });
+          return;
+        }
+        throw error;
+      }
       return { resumed: true, field };
     });
 
@@ -524,7 +548,7 @@ export class MeetingDebriefHost implements HostedModule {
       const seen = new Set<string>();
       const cleaned: Array<{ email: string; displayName: string | null }> = [];
       for (const entry of entries) {
-        if (typeof entry.email !== "string" || !EMAIL_SHAPE.test(entry.email.trim())) {
+        if (typeof entry.email !== "string" || !EMAIL_PATTERN.test(entry.email.trim())) {
           reply.code(400).send({ error: "invalid-roster-entry" });
           return;
         }
@@ -552,9 +576,16 @@ export class MeetingDebriefHost implements HostedModule {
       }
       const bound: MeetingDebriefReviewState["roster"]["entries"] = [];
       const occurrenceKey = record?.occurrence?.occurrenceKey ?? null;
+      /* Only emails the Calendar occurrence itself lists are Calendar's to
+         anchor: a typed email absent from the roster is bound to an existing
+         holder like an unlinked entry, and never minted a Calendar shell. */
+      const occurrenceRosterEmails = new Set(
+        (record?.roster ?? []).map((person) => person.email.trim().toLowerCase()),
+      );
       try {
         for (const entry of cleaned) {
-          if (linked && this.profiles) {
+          const calendarListed = linked && occurrenceRosterEmails.has(entry.email);
+          if (calendarListed && this.profiles) {
             const pinned = this.profiles.ensureCalendarAttendee(
               entry.email,
               `meeting-debrief roster — occurrence ${occurrenceKey}`,
@@ -601,7 +632,7 @@ export class MeetingDebriefHost implements HostedModule {
       const body = (request.body ?? {}) as RecipientBody;
       const profileId = typeof body.profileId === "string" ? body.profileId.trim() : "";
       const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-      if (profileId === "" || !EMAIL_SHAPE.test(email)) {
+      if (profileId === "" || !EMAIL_PATTERN.test(email)) {
         reply.code(400).send({ error: "invalid-recipient" });
         return;
       }
@@ -670,9 +701,10 @@ export class MeetingDebriefHost implements HostedModule {
       this.writeState(found.run, found.state);
       found.run.appendEvent("debrief_approval_requested", {});
       try {
-        await this.runner.resumeRun(runId);
+        await this.resumeOwnerTurn(runId);
       } catch (error) {
         if (error instanceof RunNotResumableError) {
+          this.revertRequest(found.run, found.state);
           reply.code(409).send({ error: "run-not-resumable" });
           return;
         }

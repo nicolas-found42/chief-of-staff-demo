@@ -111,7 +111,8 @@ export function isCalendarVerifiedEmail(profile: PersonProfile, email: string): 
   );
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** The one email-shape rule; consumers validate addresses against it. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function trimmed(value: string | undefined): string | null {
   const text = value?.trim();

@@ -10,6 +10,7 @@ import {
   MEETING_DEBRIEF_MODULE_VERSION,
   MeetingDebriefExtractionSchema,
 } from "@chief-of-staff-demo/shared";
+import type { RunEvent } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { modelDiagnosticEventDetail, parseResultShape } from "../../llm/failure.js";
 import { errorMessage } from "../../engine/failure.js";
@@ -49,7 +50,7 @@ const MAX_EXTRACT_ATTEMPTS = 3;
 export type DebriefInput =
   | { kind: "fresh"; transcriptId: string }
   | { kind: "resume"; fromStage: "associate" | "extract" }
-  | { kind: "review"; action: "owner" | "expire" };
+  | { kind: "review"; action: "owner" | "expire"; deadline?: string };
 
 export interface MeetingDebriefModuleDeps {
   now?: () => Date;
@@ -117,6 +118,29 @@ async function extractWithModel(
     throw new Error(`extraction failed after ${MAX_EXTRACT_ATTEMPTS} attempts`);
   }
   return parsed;
+}
+
+/**
+ * The most recent durable wait deadline on a Run's timeline — the original
+ * review window a crashed review turn must re-arm (issue #140 review round).
+ */
+function lastWaitDeadline(events: readonly RunEvent[]): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const detail = events[index]?.detail;
+    if (!detail) continue;
+    const timeout = detail.timeout;
+    if (
+      typeof timeout === "object" &&
+      timeout !== null &&
+      "kind" in timeout &&
+      "at" in timeout &&
+      timeout.kind === "at" &&
+      typeof timeout.at === "string"
+    ) {
+      return timeout.at;
+    }
+  }
+  return undefined;
 }
 
 /** The current stored debrief, for merging a regenerated field into. */
@@ -201,7 +225,11 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
    * owner reason. Runs the pending owner action, then either ends the Run
    * (approval, expiry) or returns it to the wait.
    */
-  const reviewTurn = async (ctx: RunContext, action: "owner" | "expire"): Promise<RunOutcome> => {
+  const reviewTurn = async (
+    ctx: RunContext,
+    action: "owner" | "expire",
+    deadline: string | undefined,
+  ): Promise<RunOutcome> => {
     if (action === "expire") {
       return ctx.stage("review", async () => {
         ctx.event("debrief_expired", { reason: MEETING_DEBRIEF_EXPIRED_REASON });
@@ -255,9 +283,13 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           /* The Run keeps waiting: an approval refused here must not end a
              Debrief the owner still has on screen. The host route already
              refuses synchronously with the same blockers; this is the
-             durable authority re-asserting against races. */
+             durable authority re-asserting against races. The pending
+             request is cleared, so every review seam answers again and the
+             owner can fix the blockers and retry. */
+          const unlocked: MeetingDebriefReviewState = { ...state, request: null };
+          ctx.writeFile("review.json", serializeReviewState(unlocked));
           ctx.event("debrief_approval_refused", { blockers });
-          wait(ctx);
+          wait(ctx, deadline);
         }
         const approvedAt = now().toISOString();
         const locked: MeetingDebriefReviewState = {
@@ -266,7 +298,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           approval: { approvedAt },
         };
         ctx.writeFile("review.json", serializeReviewState(locked));
-        const recipientCount = locked.roster.entries.length + locked.recipients.additional.length;
+        const owner = gate.ownerEmail();
+        const recipientCount =
+          locked.roster.entries.filter((entry) => entry.email !== owner).length +
+          locked.recipients.additional.length;
         ctx.event("debrief_approved", { approvedAt, recipientCount });
         return {
           status: "done",
@@ -276,9 +311,11 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       });
     }
 
-    // No pending action: recovery or a stray resume — return to the wait.
+    // No pending action: recovery or a stray resume — return to the wait on
+    // the deadline the durable wait record already carried, never a fresh
+    // thirty days; a restart must not re-arm a window the clock already ran.
     await ctx.stage("review", async () => {
-      wait(ctx);
+      wait(ctx, deadline);
     });
     /* `wait` never returns; this line only satisfies the type checker. */
     throw new Error("unreachable");
@@ -330,12 +367,16 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     planRecovery(state) {
       if (state.status !== "pending" && state.status !== "running") return null;
       if (state.files.includes("review.json") || state.files.includes("result.json")) {
+        /* The wait record was cleared when the Run resumed, so the original
+           deadline survives only on the Run's timeline: re-arm that one,
+           never a fresh thirty days. */
+        const deadline = lastWaitDeadline(state.events);
         return {
           fromStage: "review",
           reason: state.files.includes("review.json")
             ? "debrief_review_survived_restart"
             : "debrief_result_survived_restart",
-          input: { kind: "review", action: "owner" },
+          input: { kind: "review", action: "owner", ...(deadline ? { deadline } : {}) },
         };
       }
       return {
@@ -360,13 +401,17 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       return {
         fromStage: meta.wait.stage,
         reason: "owner_review_action",
-        input: { kind: "review", action: "owner" },
+        input: {
+          kind: "review",
+          action: "owner",
+          ...(meta.wait.timeout.kind === "at" ? { deadline: meta.wait.timeout.at } : {}),
+        },
       };
     },
 
     async run(ctx: RunContext, input: DebriefInput): Promise<RunOutcome> {
       if (input.kind === "review") {
-        return reviewTurn(ctx, input.action);
+        return reviewTurn(ctx, input.action, input.deadline);
       }
 
       const transcriptId =
