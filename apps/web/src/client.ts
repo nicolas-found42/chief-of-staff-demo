@@ -44,6 +44,7 @@ import type {
   SourceTarget,
   YoutubeChannel,
   YoutubeTrends,
+  TranscriptRelevanceReviewItem,
 } from "@chief-of-staff-demo/shared";
 
 export class ApiError extends Error {
@@ -531,6 +532,33 @@ export const api = {
     }),
   discoverContentResearchPeople: () =>
     request<{ runId: string }>("/api/content-research/discover", { method: "POST" }),
+  transcriptRelevanceQueue: () =>
+    request<{ items: TranscriptRelevanceReviewItem[] }>("/api/transcripts/review/relevance"),
+  searchTranscriptRelevance: (query: {
+    text: string;
+    meeting?: { title?: string; topics?: string[] };
+  }) =>
+    request<{ items: TranscriptRelevanceReviewItem[] }>(
+      "/api/transcripts/review/relevance/search",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(query),
+      },
+    ),
+  decideTranscriptRelevance: (
+    candidateId: string,
+    action: "confirm" | "reject" | "unresolved",
+    note?: string,
+  ) =>
+    request<{ item: TranscriptRelevanceReviewItem }>(
+      `/api/transcripts/review/relevance/${encodeURIComponent(candidateId)}/decision`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ...(note ? { note } : {}) }),
+      },
+    ),
   people: (query?: string, includeArchived?: boolean) => {
     const params = new URLSearchParams();
     if (query) params.set("query", query);

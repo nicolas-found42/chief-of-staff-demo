@@ -66,6 +66,9 @@ export function PeoplePage() {
         <Link className="action-button primary" to="/people/new">
           New profile
         </Link>
+        <Link className="action-button" to="/people/review">
+          Review queue
+        </Link>
       </div>
       {profiles === null ? (
         <p className="muted">Loading…</p>
