@@ -1603,7 +1603,8 @@ code {
 
 /* Marked by more than a colour, like the header nav's current page: the border
    and the weight survive forced-colors mode (WCAG 1.4.1). */
-.sub-tab[aria-current="true"] {
+.sub-tab[aria-current="true"],
+.sub-tab[aria-current="page"] {
   border-color: var(--line);
   background: var(--surface);
   color: var(--ink);

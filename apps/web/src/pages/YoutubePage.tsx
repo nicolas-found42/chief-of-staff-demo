@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ChannelTrend, YoutubeTrends } from "@chief-of-staff-demo/shared";
 import { LineChart } from "../components/LineChart";
+import { ContentResearchSubNav } from "../components/ContentResearchSubNav";
 import { api, errorMessage } from "../client";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -153,6 +154,7 @@ export function YoutubePage() {
           {running ? "Recording…" : "Record today"}
         </button>
       </div>
+      <ContentResearchSubNav />
 
       <p className="muted">
         Every channel below is checked once a day, from six in the morning, and every video on it is

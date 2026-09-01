@@ -47,13 +47,15 @@ export function App() {
         <Link className="app-title" to="/">
           Found42 — Chief of Staff
         </Link>
-        {/* A tab promises function (ADR-0014): the bar renders live Modules
-            only, from the same list Home's cards read. A planned Module keeps
-            its route mounted below and is announced from Home instead; going
-            live here is what restores its tab. */}
+        {/* A tab promises function (ADR-0014): the bar renders live, top-level
+            Modules only, from the same list Home's cards read. A planned
+            Module keeps its route mounted below and is announced from Home
+            instead; a Module presented under another Module's surface
+            (YouTube Trends under Content Research) is announced on Home and
+            entered from its parent's page. */}
         <nav aria-label="Modules">
           {useModules()
-            .filter((module) => module.status === "live")
+            .filter((module) => module.status === "live" && !module.parent)
             .map((module) => (
               <NavLink key={module.id} to={module.path}>
                 {module.label}
@@ -84,7 +86,9 @@ export function App() {
               Home's capped feed links in here for everything older. */}
           <Route path="/runs" element={<AllRunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
-          <Route path="/youtube" element={<YoutubePage />} />
+          {/* YouTube Trends is presented under Content Research (spec:
+              /content-research/trends); the legacy top-level route is gone. */}
+          <Route path="/content-research/trends" element={<YoutubePage />} />
           <Route path="/idea-engine" element={<IdeaEnginePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
           1:{" "}
