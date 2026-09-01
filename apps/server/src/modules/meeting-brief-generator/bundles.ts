@@ -8,9 +8,13 @@ import { isInternalDomain } from "./eligibility.js";
  * required: a Brief is never presented as complete when configured evidence
  * is missing (spec #82).
  *
- * The confirmed-transcripts lane is not yet a selectable provider; the bundle
- * lists grow when that lane lands rather than shipping an unenforceable
- * requirement.
+ * The confirmed-transcripts lane (issue #138) is a selectable provider but is
+ * deliberately in neither attendee bundle. It is meeting-level rather than
+ * attendee-level, and Transcript intake is consent-gated: a Workspace that
+ * never consented has no transcripts, so requiring the lane per attendee
+ * would block Briefs over evidence that cannot exist. It runs when it is
+ * configured and records its own outcome, which keeps it inside the policy
+ * action vocabulary without making it an unenforceable requirement.
  */
 export const MEETING_BRIEF_BUNDLES_VERSION = 1;
 
@@ -24,7 +28,8 @@ export type MeetingBriefBundleProvider =
   | "drive-workspace"
   | "crm"
   | "employer-proposal"
-  | "public-intelligence";
+  | "public-intelligence"
+  | "confirmed-transcripts";
 
 /** Every provider id the bundles may select — the policy action route's vocabulary. */
 export const MEETING_BRIEF_BUNDLE_PROVIDERS: readonly MeetingBriefBundleProvider[] = [
@@ -36,6 +41,7 @@ export const MEETING_BRIEF_BUNDLE_PROVIDERS: readonly MeetingBriefBundleProvider
   "crm",
   "employer-proposal",
   "public-intelligence",
+  "confirmed-transcripts",
 ];
 
 export interface MeetingBriefAttendeeBundle {

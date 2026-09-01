@@ -58,6 +58,21 @@ export interface TranscriptEvidenceInput {
   semantic: SemanticTranscriptCandidate[];
 }
 
+/** The enrichment section id this lane contributes, and its provider id. */
+export const TRANSCRIPT_EVIDENCE_SOURCE_ID = "confirmed-transcripts";
+
+/**
+ * The Brief's read into the Transcript Catalog. It is meeting-level, not
+ * attendee-level: the organization and meeting-series lanes are properties of
+ * the occurrence rather than of any one guest, so the Brief asks once.
+ */
+export interface MeetingTranscriptEvidenceProvider {
+  collect(request: {
+    occurrenceKey: string;
+    attendees: string[];
+  }): Promise<TranscriptEvidenceInput>;
+}
+
 /**
  * How many cited excerpts composition may receive. The set is bounded so a
  * large corpus cannot flood a Brief; the ranking below decides which survive.

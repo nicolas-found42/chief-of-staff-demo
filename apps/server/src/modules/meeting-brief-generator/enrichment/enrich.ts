@@ -40,6 +40,11 @@ import {
 import type { RunContext } from "../../../engine/module.js";
 import { StageFailure } from "../../../engine/module.js";
 import {
+  TRANSCRIPT_EVIDENCE_SOURCE_ID,
+  selectTranscriptEvidence,
+  type MeetingTranscriptEvidenceProvider,
+} from "../transcriptEvidence.js";
+import {
   deduplicateEvidence,
   readErrorStatus,
   sanitizeEvidence,
@@ -66,6 +71,10 @@ export interface MeetingBriefEnrichmentProviders {
         eventVersion: string,
       ) => Promise<{ name: string; domain: string | null } | null>)
     | null;
+  /** The confirmed-transcript lane (issue #138). Absent, the lane does not
+   *  run: a Workspace that never consented to Transcript intake has no
+   *  transcripts, and that must not stop a Brief. */
+  transcriptEvidence?: MeetingTranscriptEvidenceProvider | null;
 }
 
 export interface UnifiedEnrichDeps {
@@ -756,6 +765,63 @@ export async function enrichUnified(
       } else if (isExternal) {
         // Selected with no accepted employer match — there is nothing to research yet.
         pushOutcome("public-intelligence", attendeeEmail, "empty", null, null);
+      }
+    }
+  }
+
+  // Confirmed transcript evidence (issue #138). It runs once, outside the
+  // per-attendee loop: the organization and meeting-series lanes belong to the
+  // occurrence, not to any one guest. Confirmed links — and only similarity
+  // the owner explicitly confirmed — become a composable section; everything
+  // still pending goes to its own review artifact, so composition is never
+  // handed a suggestion it could state as fact.
+  if (providers.transcriptEvidence) {
+    if (disabled[TRANSCRIPT_EVIDENCE_SOURCE_ID]) {
+      pushOutcome(TRANSCRIPT_EVIDENCE_SOURCE_ID, "", "disabled", null, null);
+    } else {
+      try {
+        const collected = await providers.transcriptEvidence.collect({
+          occurrenceKey,
+          attendees: classified.map(({ attendee }) => attendee.email.toLowerCase()),
+        });
+        const selection = selectTranscriptEvidence(collected);
+        allSections.push({
+          source: TRANSCRIPT_EVIDENCE_SOURCE_ID,
+          status: selection.evidence.length > 0 ? "completed" : "empty",
+          evidence: selection.evidence.map((item) => sanitizeEvidence(item.excerpt)),
+          references: [],
+        });
+        ctx.writeFile(
+          "transcript-suggestions.json",
+          JSON.stringify({ version: 1, suggestions: selection.suggestions }, null, 2) + "\n",
+        );
+        pushOutcome(
+          TRANSCRIPT_EVIDENCE_SOURCE_ID,
+          "",
+          selection.evidence.length > 0 ? "completed" : "empty",
+          null,
+          null,
+        );
+      } catch (error) {
+        // A lane that is configured and then fails is missing evidence, and
+        // #137's gate must see it — never a silently thinner Brief.
+        allSections.push({
+          source: TRANSCRIPT_EVIDENCE_SOURCE_ID,
+          status: "failed",
+          evidence: [],
+          references: [],
+        });
+        outcomes.push({
+          provider: TRANSCRIPT_EVIDENCE_SOURCE_ID,
+          attendee: "",
+          outcome: "failed",
+          artifact: null,
+          diagnostics: {
+            httpStatus: readErrorStatus(error),
+            errorCode: null,
+            reason: error instanceof Error ? error.message : String(error),
+          },
+        });
       }
     }
   }
