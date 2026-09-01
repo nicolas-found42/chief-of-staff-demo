@@ -1,30 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { MeetingBriefIndexEntry } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { api } from "../client";
+import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 import { deliveryPresentation } from "../modules/meeting-brief/deliveryStatus";
 
-type IndexState = {
-  upcoming: {
-    occurrenceKey: string;
-    eventId: string;
-    occurrenceId: string;
-    version: string;
-    summary: string;
-    startAt: string;
-    dueAt: string;
-  }[];
-  briefs: MeetingBriefIndexEntry[];
-  cancellations: {
-    occurrenceKey: string;
-    summary: string;
-    occurrenceId: string;
-    version: string;
-    cancelledAt: string;
-  }[];
-};
+/** Stable fetcher: the Overview reads the Meeting Wizard projection. */
+const fetchOverview = () => api.meetingsOverview();
 
 /**
  * Meeting Wizard Overview (spec #117): a read projection keyed by Calendar
@@ -35,49 +18,7 @@ type IndexState = {
 export function MeetingsOverviewPage() {
   useTitle("Meeting Wizard");
   const headingRef = usePageFocus<HTMLHeadingElement>();
-  const [index, setIndex] = useState<IndexState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const data = await api.meetingsOverview();
-      setIndex(data);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const prepareNow = useCallback(async (occurrenceKey: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.prepareMeetingBriefNow(occurrenceKey);
-      const data = await api.meetingsOverview();
-      setIndex(data);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // Poll while a brief is preparing or delivery is pending.
-  useEffect(() => {
-    if (!index) return;
-    const hasPending = index.briefs.some((b) => b.delivery?.status === "pending");
-    if (!hasPending && index.upcoming.length === 0) return;
-    const id = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(id);
-  }, [index, refresh]);
+  const { index, error, busy, refresh, prepareNow } = useMeetingIndex(fetchOverview);
 
   const currentByOccurrence = new Map<string, MeetingBriefIndexEntry>();
   const cancelled = new Set(index?.cancellations.map((item) => item.occurrenceKey) ?? []);

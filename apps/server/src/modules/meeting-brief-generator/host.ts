@@ -406,7 +406,6 @@ export class MeetingBriefHost implements HostedModule {
       provider: this.calendarProvider,
       store: this.calendarStore,
       clock: this.clock,
-      internalDomains: this.getInternalDomains(),
       ownerEmail: () => this.getOwnerEmail(),
       now: this.now(),
       calendarId: MEETING_BRIEF_CALENDAR_ID,
@@ -782,9 +781,10 @@ export class MeetingBriefHost implements HostedModule {
     });
 
     // GET /api/meetings/overview — the Meeting Wizard read projection (spec
-    // Implementation Decision 4): a read over Calendar occurrences and Brief
-    // state that links sibling records without owning a combined lifecycle
-    // record. Brief and Debrief remain separate lifecycles (ADR-0043).
+    // Implementation Decision 3, kept separate per Decision 9): a read over
+    // Calendar occurrences and Brief state that links sibling records
+    // without owning a combined lifecycle record. Brief and Debrief remain
+    // separate lifecycles (ADR-0043).
     app.get("/api/meetings/overview", async () => {
       return this.index();
     });

@@ -133,26 +133,16 @@ describe("eligibility — Internal Domains normalized case-insensitive (issue://
     ]);
   });
 
-  it("internal attendees are eligible now, external guests stay eligible, case-insensitive domains", () => {
-    const internal = ["Internal.COM"];
+  it("internal attendees are eligible now, and external guests stay eligible", () => {
     expect(
       isEligibleMeeting(
         calEvent({ attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }] }),
-        internal,
-        null,
-      ),
-    ).toBe(true);
-    expect(
-      isEligibleMeeting(
-        calEvent({ attendees: [{ email: "BOB@INTERNAL.COM", responseStatus: "accepted" }] }),
-        internal,
         null,
       ),
     ).toBe(true);
     expect(
       isEligibleMeeting(
         calEvent({ attendees: [{ email: "alice@external.co", responseStatus: "accepted" }] }),
-        internal,
         null,
       ),
     ).toBe(true);
@@ -311,13 +301,10 @@ describe("eligibility table via host — timed/all-day, cancelled/confirmed, own
 });
 
 describe("Eligible Meeting — internal and external, owner participation (issue://136)", () => {
-  const internalDomains = ["internal.com"];
-
   it("an internal meeting with a non-declined attendee is eligible", () => {
     expect(
       eligibilityReason(
         calEvent({ attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }] }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("eligible");
@@ -330,7 +317,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
           isAllDay: true,
           attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("all_day_excluded");
@@ -344,7 +330,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
           endAt: "",
           attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("missing_time");
@@ -357,7 +342,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
           status: "cancelled",
           attendees: [{ email: "bob@internal.com", responseStatus: "accepted" }],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("cancelled");
@@ -372,7 +356,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
             { email: "bob@internal.com", responseStatus: "accepted" },
           ],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("owner_declined");
@@ -384,7 +367,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
         calEvent({
           attendees: [{ email: "owner@example.com", responseStatus: "accepted", organizer: true }],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("no_other_attendee");
@@ -403,7 +385,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
             },
           ],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("no_other_attendee");
@@ -418,7 +399,6 @@ describe("Eligible Meeting — internal and external, owner participation (issue
             { email: "bob@internal.com", responseStatus: "declined" },
           ],
         }),
-        internalDomains,
         "owner@example.com",
       ),
     ).toBe("no_other_attendee");

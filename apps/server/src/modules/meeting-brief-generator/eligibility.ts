@@ -56,8 +56,11 @@ export function isConsumerDomain(domain: string): boolean {
   return CONSUMER_DOMAINS.has(normalizeDomain(domain));
 }
 
-/** Whether an email's domain is contained in the normalized internalDomains set. */
-function isInternalDomain(email: string, internalDomains: string[]): boolean {
+/** Whether an email's domain is contained in the internalDomains set
+ *  (case-insensitive over both sides, after email parsing). The one Internal
+ *  Domain definition: eligibility, guest classification, and provider
+ *  bundles all classify through it. */
+export function isInternalDomain(email: string, internalDomains: string[]): boolean {
   const domain = extractDomain(email);
   if (!domain) return false;
   const normalized = normalizeDomain(domain);
@@ -95,20 +98,12 @@ export function isExternalGuest(attendee: CalendarAttendee, internalDomains: str
  *   Consumer Domains stay external for classification, recurring occurrences
  *   independent per occurrence identity.
  */
-export function isEligibleMeeting(
-  event: CalendarEvent,
-  _internalDomains: string[],
-  ownerEmail: string | null,
-): boolean {
-  return eligibilityReason(event, _internalDomains, ownerEmail) === "eligible";
+export function isEligibleMeeting(event: CalendarEvent, ownerEmail: string | null): boolean {
+  return eligibilityReason(event, ownerEmail) === "eligible";
 }
 
 /** Helper for tests: classify a meeting with diagnostic reason when ineligible. */
-export function eligibilityReason(
-  event: CalendarEvent,
-  _internalDomains: string[],
-  ownerEmail: string | null,
-): string {
+export function eligibilityReason(event: CalendarEvent, ownerEmail: string | null): string {
   if (event.isAllDay === true) return "all_day_excluded";
   if (!event.startAt || !event.endAt) return "missing_time";
   if (event.status === "cancelled") return "cancelled";

@@ -1,4 +1,4 @@
-import { extractDomain } from "./eligibility.js";
+import { isInternalDomain } from "./eligibility.js";
 
 /**
  * Versioned provider bundle policy (issue://136, spec Implementation Decision
@@ -56,24 +56,12 @@ const EXTERNAL_BUNDLE: MeetingBriefAttendeeBundle = {
   ],
 };
 
-/** Whether the email's domain is one of the configured Internal Domains
- *  (case-insensitive over both sides, after email parsing). */
-function isInternalEmail(email: string, internalDomains: string[]): boolean {
-  const domain = extractDomain(email);
-  if (!domain) return false;
-  const normalized = domain.toLowerCase();
-  return internalDomains.some((candidate) => candidate.trim().toLowerCase() === normalized);
-}
-
 /** Classify one attendee's email against the configured Internal Domains. A
  *  Consumer Domain stays external (spec #117 External Guest): a personal
  *  mailbox is never company evidence. */
 function classifyAttendee(email: string, internalDomains: string[]): AttendeeBundleKind {
-  return isInternalEmail(email, internalDomains) ? "internal" : "external";
+  return isInternalDomain(email, internalDomains) ? "internal" : "external";
 }
-
-/** The approved versioned bundle for one attendee, selected by Internal
- *  Domain classification. */
 export function attendeeBundleFor(
   email: string,
   internalDomains: string[],

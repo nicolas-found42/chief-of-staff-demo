@@ -423,9 +423,9 @@ export async function enrichUnified(
   }
 
   for (const { attendee, bundle } of classified) {
-    const guestEmail = attendee.email;
-    const guestName = attendee.displayName ?? null;
-    const domain = extractDomain(guestEmail) ?? "";
+    const attendeeEmail = attendee.email;
+    const attendeeName = attendee.displayName ?? null;
+    const domain = extractDomain(attendeeEmail) ?? "";
     const lowerDomain = domain.toLowerCase();
     const isConsumer = isConsumerDomain(lowerDomain);
     const isExternal = bundle.kind === "external";
@@ -437,7 +437,7 @@ export async function enrichUnified(
       const { section } = await enrichGmailExact(
         providers.gmailProvider,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         ctx,
       );
       allSections.push(section);
@@ -454,7 +454,7 @@ export async function enrichUnified(
       const { section } = await enrichGmailCompanyDomain(
         providers.gmailProvider,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         lowerDomain,
         ctx,
       );
@@ -466,7 +466,7 @@ export async function enrichUnified(
       const { section } = await enrichCalendarHistory(
         providers.calendarHistoryProvider,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         eventStartAt,
         ctx,
       );
@@ -480,7 +480,7 @@ export async function enrichUnified(
       const { section } = await enrichDriveDocs(
         providers.driveProvider,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         companyForDrive,
         ctx,
       );
@@ -491,11 +491,11 @@ export async function enrichUnified(
     // through the shared interface (issue #124, #136).
     let profileEmployerMatch: { name: string; domain: string | null } | null = null;
     if (selects("person-profile") && providers.attendeeProfiles && attendeePins) {
-      const pin = attendeePins.find((item) => item.email === guestEmail.toLowerCase());
+      const pin = attendeePins.find((item) => item.email === attendeeEmail.toLowerCase());
       if (!pin)
         throw new StageFailure(
           "enrich",
-          `no pinned Person Profile for attendee ${guestEmail.toLowerCase()}`,
+          `no pinned Person Profile for attendee ${attendeeEmail.toLowerCase()}`,
         );
       const { projection, section } = pinnedPersonProfile(
         providers.attendeeProfiles,
@@ -507,7 +507,7 @@ export async function enrichUnified(
         profileEmployerMatch = { name: projection.currentEmployer, domain: null };
       }
       personProfileLinks.push({
-        guestEmail: guestEmail.toLowerCase(),
+        guestEmail: attendeeEmail.toLowerCase(),
         profileId: pin.profileId,
         profileRevision: pin.profileRevision,
       });
@@ -522,7 +522,7 @@ export async function enrichUnified(
       const { sections, employerMatch } = await enrichHubSpotWithRetry(
         hubSpotApi,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         ctx,
       );
       hubspotCompany = employerMatch;
@@ -541,7 +541,7 @@ export async function enrichUnified(
         source: "hubspot",
       };
       employerMatchEvidence = [
-        `HubSpot company ${hubspotCompany.name} associated to ${guestEmail}`,
+        `HubSpot company ${hubspotCompany.name} associated to ${attendeeEmail}`,
       ];
       employerMatchReferences = [`https://app.hubspot.com/companies/${hubspotCompany.id}`];
     } else if (profileEmployerMatch) {
@@ -552,7 +552,8 @@ export async function enrichUnified(
       };
       const personProfileSection = allSections.find(
         (section) =>
-          section.source === PERSON_PROFILE_SOURCE_ID && section.guest === guestEmail.toLowerCase(),
+          section.source === PERSON_PROFILE_SOURCE_ID &&
+          section.guest === attendeeEmail.toLowerCase(),
       );
       employerMatchEvidence = personProfileSection?.evidence ?? [];
       employerMatchReferences = personProfileSection?.references ?? [];
@@ -562,7 +563,7 @@ export async function enrichUnified(
       providers.publicIntelligenceProvider
     ) {
       // Model proposes candidate to drive research
-      const candidate = await providers.proposeEmployer(guestEmail, guestName, eventVersion);
+      const candidate = await providers.proposeEmployer(attendeeEmail, attendeeName, eventVersion);
       if (candidate) {
         const candName = candidate.name.trim();
         const candDomain = candidate.domain?.trim() ?? null;
@@ -570,8 +571,8 @@ export async function enrichUnified(
         const { artifact, section, verified } = await enrichEmployerVerification(
           providers.publicIntelligenceProvider,
           eventVersion,
-          guestEmail,
-          guestName,
+          attendeeEmail,
+          attendeeName,
           candName,
           candDomain,
           eventStartAt,
@@ -584,7 +585,7 @@ export async function enrichUnified(
           employerMatchReferences = artifact.references;
           allSections.push({
             source: "employer-match",
-            guest: guestEmail.toLowerCase(),
+            guest: attendeeEmail.toLowerCase(),
             company: candName,
             status: "completed",
             evidence: employerMatchEvidence,
@@ -600,12 +601,12 @@ export async function enrichUnified(
       (employerMatch.source === "hubspot" || employerMatch.source === "profile")
     ) {
       const existingMatchSection = allSections.find(
-        (s) => s.source === "employer-match" && s.guest === guestEmail.toLowerCase(),
+        (s) => s.source === "employer-match" && s.guest === attendeeEmail.toLowerCase(),
       );
       if (!existingMatchSection) {
         allSections.push({
           source: "employer-match",
-          guest: guestEmail.toLowerCase(),
+          guest: attendeeEmail.toLowerCase(),
           company: employerMatch.name,
           status: "completed",
           evidence: employerMatchEvidence,
@@ -622,7 +623,7 @@ export async function enrichUnified(
       const { section: companyNews } = await enrichCompanyNews(
         providers.publicIntelligenceProvider,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         companyName,
         companyDomain,
         eventStartAt,
@@ -633,7 +634,7 @@ export async function enrichUnified(
       const { section: industryNews } = await enrichIndustryNews(
         providers.publicIntelligenceProvider,
         eventVersion,
-        guestEmail,
+        attendeeEmail,
         companyName,
         companyDomain,
         eventStartAt,
