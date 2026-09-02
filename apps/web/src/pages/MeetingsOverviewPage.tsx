@@ -59,6 +59,9 @@ export function MeetingsOverviewPage() {
         <Link to="/meetings/brief" className="action-button">
           Open the Brief journey
         </Link>
+        <Link to="/meeting-debrief" className="action-button">
+          Open the Debrief journey
+        </Link>
       </div>
 
       {!index ? (
