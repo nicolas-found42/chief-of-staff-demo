@@ -28,6 +28,7 @@ import type {
   SourceCanaryHealth,
   SourceCanaryReceipt,
   PersonProfile,
+  PersonIdentitySignals,
   PersonProfileCorrectionInput,
   PersonProfileCreateInput,
   PersonProfileDeletionReceipt,
@@ -113,6 +114,19 @@ async function requestText(path: string, init?: RequestInit): Promise<string> {
 export interface ConfigPayload {
   config: RedactedConfig;
   defaults: Record<string, string>;
+}
+
+/** A typed-identifier lookup: the proposed Profile, never yet saved by `preview`. */
+export interface PersonProfileLookup {
+  profile: PersonProfile;
+  signals: PersonIdentitySignals;
+  existing: boolean;
+}
+
+/** The Meeting Brief bundle vocabulary and the owner's recorded policy over it. */
+export interface ProviderPolicyState {
+  providers: string[];
+  policy: Record<string, { disabled: boolean; changedAt: string; reason: string }>;
 }
 
 export interface ContentScoutState {
@@ -444,6 +458,14 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(Array.isArray(input) ? { internalDomains: input } : input),
     }),
+  meetingBriefProviderPolicy: () =>
+    request<ProviderPolicyState>("/api/meeting-brief/provider-policy"),
+  saveMeetingBriefProviderPolicy: (disabled: string[]) =>
+    request<ProviderPolicyState>("/api/meeting-brief/provider-policy", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ disabled }),
+    }),
   meetingBriefIndex: () => request<MeetingBriefIndex>("/api/meeting-brief/index"),
   meetingDebriefIndex: () => request<MeetingDebriefIndex>("/api/meeting-debrief/index"),
   meetingDebriefDetail: (runId: string) =>
@@ -630,6 +652,25 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     }),
+  lookupPersonProfile: (identifier: string) =>
+    request<PersonProfileLookup>("/api/people/lookup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identifier }),
+    }),
+  acceptPersonProfileLookup: (identifier: string) =>
+    request<PersonProfileLookup>("/api/people/lookup/accept", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identifier }),
+    }),
+  /** Re-run the public-web search from the identity the Profile already holds. */
+  enrichPersonProfile: async (profileId: string) =>
+    (
+      await request<PersonProfileLookup>(`/api/people/${encodeURIComponent(profileId)}/enrich`, {
+        method: "POST",
+      })
+    ).profile,
   personProfile: (profileId: string) =>
     request<PersonProfile>(`/api/people/${encodeURIComponent(profileId)}`),
   personProfileRevisions: (profileId: string) =>

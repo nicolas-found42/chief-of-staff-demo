@@ -62,6 +62,12 @@ export const ConfigSchema = z.strictObject({
   ollama: z.strictObject({
     baseUrl: z.string().default(DEFAULT_OLLAMA_BASE_URL),
   }),
+  search: z
+    .strictObject({
+      /** Base URL of the self-hosted SearXNG instance, when one is composed (ADR-0049). */
+      searxngUrl: z.string().optional(),
+    })
+    .default({}),
   /**
    * Each Module's own configuration, namespaced under the Module rather than
    * joining the Shell's settings as more top-level keys — so a Module's
@@ -214,6 +220,11 @@ export const ConfigUpdateSchema = z.strictObject({
       baseUrl: z.string().optional(),
     })
     .optional(),
+  search: z
+    .strictObject({
+      searxngUrl: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type ConfigUpdate = z.infer<typeof ConfigUpdateSchema>;
@@ -247,6 +258,10 @@ export interface RedactedConfig {
   /** Not a secret: a local endpoint address, returned verbatim. */
   ollama: {
     baseUrl: string;
+  };
+  /** Not a secret: a local endpoint address, returned verbatim. */
+  search: {
+    searxngUrl: string | null;
   };
 }
 

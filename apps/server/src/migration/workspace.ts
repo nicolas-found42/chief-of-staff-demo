@@ -278,6 +278,7 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "drive.folderName": "google-drive-folders",
   "drive.pollIntervalMinutes": "non-auth-workflow-configuration",
   "ollama.baseUrl": "non-auth-workflow-configuration",
+  "search.searxngUrl": "non-auth-workflow-configuration",
   "modules.youtube-trends.channels": composite("youtube-channels", {
     kind: "array",
     elements: {

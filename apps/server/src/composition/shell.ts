@@ -65,7 +65,12 @@ import { ContentResearchStore } from "../modules/content-research/store.js";
 import { ContentResearchWatchRegistry } from "../modules/content-research/profile-registry.js";
 import { createHookExtractor, createPeopleDiscoverer } from "../modules/content-research/model.js";
 import { seedContentResearchV1 } from "../modules/content-research/seed.js";
-import { createPublicSearch } from "../source-adapters/search.js";
+import { createPublicSearch, type PublicSearchDiagnostics } from "../source-adapters/search.js";
+import { createFeedDiscoverer } from "../source-adapters/feeds.js";
+import { createPublicWebPersonProfileSource } from "../person-profile/sources.js";
+import { PersonProfileResolver } from "../person-profile/resolver.js";
+import { parsePersonIdentifier } from "../person-profile/identifier.js";
+import { createPersonClaimExtractor } from "../person-profile/claims.js";
 import { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import { buildGoogleAuth } from "../google/oauth.js";
 import {
@@ -248,6 +253,48 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     ],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
+  /* The public-web identity resolver, wired here for the first time: the seam
+     and its source existed but nothing in production built them, so a Profile
+     could only ever start from a name a Module already held. The typed
+     identifier lookup is its caller. */
+  const peopleCompleteJson = () => {
+    const current = configStore.get();
+    return makeCompleteJson(
+      {
+        provider: current.provider,
+        model: current.model,
+        apiKey: current.apiKey,
+        baseUrl: current.ollama.baseUrl,
+      },
+      layout.mockResultFile,
+    );
+  };
+  /* One shared PublicSearch instance for every consumer: one home IP shares
+     every provider's rate limits, so the query cache and the per-provider
+     cooldowns must be app-wide rather than per consumer — three separate
+     instances would fan the same query out three times and spend the very
+     limits the fan-out exists to pace. */
+  const searxngUrl = configStore.get().search.searxngUrl || process.env.SEARXNG_URL;
+  const publicSearchDiagnostics: PublicSearchDiagnostics = (event) => {
+    const detail = event.detail ? ` — ${event.detail}` : "";
+    console.log(
+      `[public-search] ${event.provider} ${event.outcome} (${event.results} results, ${event.ms}ms)${detail}`,
+    );
+  };
+  const publicSearch = createPublicSearch(undefined, undefined, {
+    diagnostics: publicSearchDiagnostics,
+    ...(searxngUrl !== undefined ? { searxngUrl } : {}),
+  });
+  const peopleResolver = new PersonProfileResolver({
+    store: peopleStore,
+    sources: [
+      createPublicWebPersonProfileSource({
+        search: publicSearch,
+        discoverFeeds: createFeedDiscoverer(),
+        extractClaims: createPersonClaimExtractor(peopleCompleteJson),
+      }),
+    ],
+  });
 
   /* Semantic transcript relevance (issue #127): the reviewable discovery lane
      over the Transcript Catalog's retained corpus. Like the Catalog itself it
@@ -311,7 +358,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     people: peopleProfiles,
     ownerOnboarding,
     brandProfiles: new WorkspaceBrandProfileStore(workspaceDir, () => new Date()),
-    researchProviders: [createPublicSearchResearchProvider(createPublicSearch(), () => new Date())],
+    researchProviders: [createPublicSearchResearchProvider(publicSearch, () => new Date())],
     outlineProviders: CONTENT_PROJECT_TARGETS.map((target) =>
       createModelOutlineProvider(contentScoutCompleteJson, target),
     ),
@@ -386,7 +433,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       },
     }),
     hookExtractor: { extract: createHookExtractor(contentResearchCompleteJson) },
-    searchPublic: createPublicSearch(),
+    searchPublic: publicSearch,
     discoverer: {
       discover: async (input) => {
         const shape = await createPeopleDiscoverer(contentResearchCompleteJson)(input);
@@ -470,11 +517,15 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
-         confirmed owner reference; eligibility keeps the raw identity. */
+       confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
+        /* An attendee met for the first time is enriched from the public web
+       before the Brief pins its revision, so a Calendar shell is not the
+       whole of what the Brief knows about a new person. */
+        resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
-         Catalog's confirmed links and its reviewed relevance decisions. */
+       Catalog's confirmed links and its reviewed relevance decisions. */
         transcriptRelevance,
         log: meetingBriefLog,
       });
@@ -605,6 +656,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     modules,
     google: googleConnection,
     people: peopleProfiles,
+    peopleResolver,
     onboarding: ownerOnboarding,
     onConfigChanged: async () => {
       meetingBriefProduction?.invalidateGoogleIdentity();

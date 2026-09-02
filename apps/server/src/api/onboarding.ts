@@ -93,7 +93,9 @@ export async function buildOnboardingStatus(deps: OnboardingStatusDeps): Promise
       id: "owner-profile",
       label: "Confirm the owner Profile",
       done: ownerConfirmed !== null,
-      href: "/onboarding",
+      /* The Owner Profile card lives in Settings; "/onboarding" would send the
+         owner back to the checklist they clicked from. */
+      href: "/settings",
     },
     {
       id: "brand-voice",

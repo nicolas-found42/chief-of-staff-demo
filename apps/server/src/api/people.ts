@@ -12,10 +12,14 @@ import {
   PersonProfileValidationError,
   WorkspacePersonProfiles,
 } from "../person-profile/profiles.js";
+import { PersonIdentifierError, parsePersonIdentifier } from "../person-profile/identifier.js";
+import type { PersonProfileResolver } from "../person-profile/resolver.js";
 
 export interface PeopleApiContext {
   /** The Workspace-owned Person Profiles interface; routes stay thin over it. */
   people: WorkspacePersonProfiles;
+  /** Public-web identity resolution behind the typed-identifier lookup. */
+  resolver: PersonProfileResolver;
 }
 
 const PURPOSES: readonly PersonProfileProjectionPurpose[] = ["public-safe", "meeting"];
@@ -61,6 +65,75 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       }
       throw error;
     }
+  });
+
+  /**
+   * Typed-identifier lookup: an email address or a profile URL starts the
+   * public-web search that a Module's transcript or Calendar name would
+   * otherwise be the only way to begin.
+   *
+   * `preview` writes nothing. The proposal it returns is a suggestion, never a
+   * confirmation — /accept is what mints the Profile, and it re-runs the search
+   * rather than trusting evidence handed back by the browser.
+   */
+  async function lookup(request: FastifyRequest, reply: FastifyReply, mode: "preview" | "accept") {
+    const body = request.body as { identifier?: unknown } | undefined;
+    if (typeof body?.identifier !== "string") {
+      reply.code(400);
+      return { error: "invalid-identifier", message: "Send an identifier string to look up." };
+    }
+    try {
+      const signals = parsePersonIdentifier(body.identifier);
+      const profile =
+        mode === "accept"
+          ? await ctx.resolver.resolve(signals)
+          : await ctx.resolver.preview(signals);
+      return { profile, signals, existing: people.get(profile.id) !== null };
+    } catch (error) {
+      if (error instanceof PersonIdentifierError) {
+        reply.code(400);
+        return { error: error.code, message: error.message };
+      }
+      throw error;
+    }
+  }
+
+  app.post("/api/people/lookup", async (request: FastifyRequest, reply: FastifyReply) =>
+    lookup(request, reply, "preview"),
+  );
+
+  app.post("/api/people/lookup/accept", async (request: FastifyRequest, reply: FastifyReply) =>
+    lookup(request, reply, "accept"),
+  );
+
+  /**
+   * Re-run the public-web search for a Profile that already exists, from the
+   * identity it already holds. A shell a Module minted from an email alone is
+   * the case this answers: without it, the only way to enrich one was to
+   * remember the identifier and type it into the lookup again.
+   */
+  app.post("/api/people/:profileId/enrich", async (request: FastifyRequest, reply) => {
+    const { profileId } = request.params as { profileId: string };
+    const profile = people.get(profileId);
+    if (!profile) {
+      reply.code(404);
+      return { error: "profile-not-found", message: "No active Person Profile with that id." };
+    }
+    if (profile.archivedAt !== null) {
+      reply.code(409);
+      return {
+        error: "profile-archived",
+        message: "Restore this Person Profile before searching for it again.",
+      };
+    }
+    const enriched = await ctx.resolver.resolve({
+      emails: profile.emails,
+      fullNames: profile.fullName ? [profile.fullName] : [],
+      handles: profile.handles,
+      profileUrls: profile.profileUrls,
+      employerHints: profile.employerHints,
+    });
+    return { profile: enriched, signals: null, existing: true };
   });
 
   app.get("/api/people/:profileId", async (request: FastifyRequest, reply) => {

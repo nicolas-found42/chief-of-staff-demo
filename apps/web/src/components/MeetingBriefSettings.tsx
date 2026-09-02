@@ -16,6 +16,19 @@ interface RelayStatus {
   hasSecret: boolean;
 }
 
+/** Human labels for the bundle vocabulary; the ids themselves are the contract. */
+const PROVIDER_LABELS: Record<string, string> = {
+  "person-profile": "Person Profile",
+  "gmail-relationship": "Gmail relationship evidence",
+  "gmail-company-domain": "Gmail company domain",
+  "calendar-history": "Calendar history",
+  "drive-workspace": "Drive Workspace evidence",
+  crm: "HubSpot CRM",
+  "employer-proposal": "Employer proposal",
+  "public-intelligence": "Public person and company intelligence",
+  "confirmed-transcripts": "Confirmed transcripts",
+};
+
 export function MeetingBriefSettings({
   googleStatus,
   googleCheck,
@@ -36,6 +49,11 @@ export function MeetingBriefSettings({
   const [hubSpotError, setHubSpotError] = useState<string | null>(null);
   const [hubSpotCheck, setHubSpotCheck] = useState<HubSpotSetupCheck | null>(null);
   const [checkingHubSpot, setCheckingHubSpot] = useState(false);
+  const [bundleProviders, setBundleProviders] = useState<string[]>([]);
+  const [bundleDisabled, setBundleDisabled] = useState<string[]>([]);
+  const [bundleBusy, setBundleBusy] = useState(false);
+  const [bundleNotice, setBundleNotice] = useState<string | null>(null);
+  const [bundleRecorded, setBundleRecorded] = useState(false);
 
   const refreshRelay = async () => {
     try {
@@ -62,6 +80,18 @@ export function MeetingBriefSettings({
       .meetingBriefConfig()
       .then((config) => setInternalDomains(config.internalDomains.join(", ")))
       .catch((error: unknown) => setDomainsNotice(errorMessage(error)));
+    void api
+      .meetingBriefProviderPolicy()
+      .then((state) => {
+        setBundleProviders(state.providers);
+        setBundleDisabled(
+          Object.entries(state.policy)
+            .filter(([, entry]) => entry.disabled)
+            .map(([provider]) => provider),
+        );
+        setBundleRecorded(Object.keys(state.policy).length > 0);
+      })
+      .catch((error: unknown) => setBundleNotice(errorMessage(error)));
   }, []);
 
   const runRelayAction = async (action: () => Promise<unknown>) => {
@@ -75,6 +105,25 @@ export function MeetingBriefSettings({
       setRelayError(errorMessage(error));
     } finally {
       setRelayBusy(false);
+    }
+  };
+
+  const saveBundlePolicy = async () => {
+    if (bundleBusy) return;
+    setBundleBusy(true);
+    setBundleNotice(null);
+    try {
+      const state = await api.saveMeetingBriefProviderPolicy(bundleDisabled);
+      setBundleRecorded(Object.keys(state.policy).length > 0);
+      setBundleNotice(
+        bundleDisabled.length === 0
+          ? "Policy recorded — every bundle provider is required."
+          : `Policy recorded — ${String(bundleDisabled.length)} provider(s) disabled.`,
+      );
+    } catch (error) {
+      setBundleNotice(errorMessage(error));
+    } finally {
+      setBundleBusy(false);
     }
   };
 
@@ -257,6 +306,56 @@ export function MeetingBriefSettings({
             aria-disabled={domainsBusy}
           >
             {domainsBusy ? "Saving…" : "Save domains"}
+          </button>
+        </div>
+
+        <div className="card" role="group" aria-labelledby="group-meeting-brief-bundles">
+          <h3 id="group-meeting-brief-bundles">Workflow bundles</h3>
+          <p className="muted">
+            Every provider a bundle selects is required: a Brief is never presented as complete when
+            configured evidence is missing. A provider leaves the required set only through an
+            explicit action here — policy never relaxes silently.
+          </p>
+          {bundleProviders.length === 0 ? (
+            <p className="muted" role="status">
+              Loading bundle providers…
+            </p>
+          ) : (
+            <ul className="setup-check-list">
+              {bundleProviders.map((provider) => (
+                <li key={provider}>
+                  <label htmlFor={`bundle-${provider}`}>
+                    <input
+                      id={`bundle-${provider}`}
+                      type="checkbox"
+                      checked={!bundleDisabled.includes(provider)}
+                      onChange={(event) =>
+                        setBundleDisabled((current) =>
+                          event.target.checked
+                            ? current.filter((id) => id !== provider)
+                            : [...current, provider],
+                        )
+                      }
+                    />{" "}
+                    {PROVIDER_LABELS[provider] ?? provider}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="muted field-hint">
+            {bundleRecorded
+              ? "A policy is recorded for this Workspace."
+              : "No policy recorded yet — save once to confirm the bundle, even if you disable nothing."}
+          </p>
+          {bundleNotice ? <p role="status">{bundleNotice}</p> : null}
+          <button
+            type="button"
+            className="action-button"
+            onClick={() => void saveBundlePolicy()}
+            aria-disabled={bundleBusy}
+          >
+            {bundleBusy ? "Saving…" : "Save bundle policy"}
           </button>
         </div>
 

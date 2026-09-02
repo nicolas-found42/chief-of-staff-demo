@@ -579,6 +579,26 @@ export function PersonProfileDetailPage() {
       )}
       <p className="muted">{described(profile) || "No resolved facts yet."}</p>
 
+      {!current.mergedInto && !current.archivedAt && !isHistorical && (
+        <div className="card">
+          <h2>Search the public web again</h2>
+          <p className="muted">
+            Runs the same search the typed-identifier lookup runs, from the identity this Profile
+            already holds — its emails, names, handles and profile addresses. Anything new is added
+            as a further revision; nothing already recorded is removed. A Profile a meeting minted
+            from an email alone starts here.
+          </p>
+          <button
+            type="button"
+            className="action-button"
+            aria-disabled={busy}
+            onClick={() => void runRepair(() => api.enrichPersonProfile(profileId))}
+          >
+            {busy ? "Searching…" : "Search again"}
+          </button>
+        </div>
+      )}
+
       <div className="card">
         <h2>Current facts</h2>
         <dl>

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppConfig } from "@chief-of-staff-demo/shared";
 import { registerApi } from "../../../apps/server/src/api/router";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { PersonProfileResolver } from "../../../apps/server/src/person-profile/resolver";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { ConfigStore } from "../../../apps/server/src/config";
@@ -43,8 +44,9 @@ beforeEach(async () => {
   });
 
   app = fastify({ logger: false });
+  const peopleStore = new PersonProfileStore(workspaceDir);
   const peopleProfiles = new WorkspacePersonProfiles({
-    store: new PersonProfileStore(workspaceDir),
+    store: peopleStore,
     lifecycle: [],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
@@ -55,6 +57,7 @@ beforeEach(async () => {
     modules: [],
     google,
     people: peopleProfiles,
+    peopleResolver: new PersonProfileResolver({ store: peopleStore, sources: [] }),
     onboarding: ownerOnboarding,
     onConfigChanged: () => {},
   });

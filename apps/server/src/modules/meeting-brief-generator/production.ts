@@ -46,6 +46,9 @@ export interface MeetingBriefProductionRuntimeOptions {
   isOwnerProfileConfirmed?: () => boolean;
   log?: (message: string) => void;
   personProfiles?: WorkspacePersonProfiles;
+  /** Public-web enrichment for an attendee met for the first time; the root
+   *  passes the shared resolver, and without it a new attendee stays a shell. */
+  resolveNewAttendee?: (email: string) => Promise<unknown>;
   /** The Catalog's relevance service, backing the confirmed-transcript lane
    *  (issue #138). Absent — a Workspace with no Transcript consent — the lane
    *  does not run and the Brief is unaffected. */
@@ -170,6 +173,7 @@ export function createMeetingBriefProductionRuntime(
       calendarHistoryProvider,
       driveProvider,
       attendeeProfiles: personProfiles,
+      ...(options.resolveNewAttendee ? { resolveNewAttendee: options.resolveNewAttendee } : {}),
       publicIntelligenceProvider: new DuckDuckGoPublicIntelligenceProvider(),
       proposeEmployer: createEmployerProposer(options.getCompleteJson),
       ...(options.transcriptRelevance

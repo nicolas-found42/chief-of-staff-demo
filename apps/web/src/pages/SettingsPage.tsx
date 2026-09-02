@@ -57,6 +57,7 @@ interface FormState {
   /* Held as the raw string so clearing the field doesn't silently coerce to 0. */
   pollIntervalMinutes: string;
   ollamaBaseUrl: string;
+  searxngUrl: string;
 }
 
 export function SettingsPage() {
@@ -105,6 +106,7 @@ export function SettingsPage() {
           driveFolderName: fetched.config.drive.folderName,
           pollIntervalMinutes: String(fetched.config.drive.pollIntervalMinutes),
           ollamaBaseUrl: fetched.config.ollama.baseUrl,
+          searxngUrl: fetched.config.search.searxngUrl ?? "",
         });
       } catch (err) {
         setError(errorMessage(err));
@@ -194,6 +196,9 @@ export function SettingsPage() {
           pollIntervalMinutes: Number(form.pollIntervalMinutes),
         },
         ollama: { baseUrl: form.ollamaBaseUrl },
+        // Always sent, empty string included: unlike an omitted field this
+        // also clears a stored URL, matching how the Ollama field behaves.
+        search: { searxngUrl: form.searxngUrl },
       };
       if (form.apiKey !== "") {
         update.apiKey = form.apiKey;
@@ -216,7 +221,7 @@ export function SettingsPage() {
               driveFolderName: savedPayload.config.drive.folderName,
               pollIntervalMinutes: String(savedPayload.config.drive.pollIntervalMinutes),
               ollamaBaseUrl: savedPayload.config.ollama.baseUrl,
-              apiKey: "",
+              searxngUrl: savedPayload.config.search.searxngUrl ?? "",
               googleClientSecret: "",
             }
           : current,
@@ -448,6 +453,23 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="searxng-url">SearXNG URL</label>
+          <input
+            id="searxng-url"
+            aria-describedby="searxng-url-hint"
+            value={form.searxngUrl}
+            placeholder="http://searxng:8080"
+            onChange={(event) => setField("searxngUrl", event.target.value)}
+          />
+          <p id="searxng-url-hint" className="muted field-hint">
+            Base URL of a self-hosted SearXNG instance. Leave empty to search without it. Use
+            http://searxng:8080 when this app runs in the compose stack, or http://127.0.0.1:8080
+            when both run on the host. No API key needed.
+          </p>
+        </div>
+      </div>
       {form.provider === "mock" && (
         <p className="muted">
           Mock mode returns workspace/mock-result.json (or a skip stub when absent) — useful for

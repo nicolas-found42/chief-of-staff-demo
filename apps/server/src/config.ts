@@ -48,6 +48,7 @@ function defaultConfig(): AppConfig {
     notion: { token: "", lastVerifiedAt: null },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
+    search: {},
     modules: {
       "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
       "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },
@@ -233,6 +234,9 @@ export function redactConfig(config: AppConfig): RedactedConfig {
     },
     ollama: {
       baseUrl: config.ollama.baseUrl,
+    },
+    search: {
+      searxngUrl: config.search.searxngUrl ?? null,
     },
   };
 }

@@ -13,8 +13,19 @@ export interface PublicHttpResponse {
 
 export type PublicHttpFetch = (
   url: string,
-  options?: { etag?: string | null; lastModified?: string | null },
+  options?: {
+    etag?: string | null;
+    lastModified?: string | null;
+    timeoutMs?: number;
+    method?: "POST";
+    body?: string;
+  },
 ) => Promise<PublicHttpResponse>;
+/** A stable browser-like UA for the documented HTML-scrape exceptions
+ * (duckduckgo, mojeek — see docs/research/anti-bot-keyless-search.md). API
+ * surfaces keep the descriptive default UA below. */
+export const browserUserAgent =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
 function privateIpv4(hostname: string): boolean {
   const octets = hostname.split(".").map(Number);
@@ -57,41 +68,63 @@ export function assertPublicHttpUrl(value: string): URL {
   return url;
 }
 
-export const publicHttpFetch: PublicHttpFetch = async (value, options = {}) => {
-  const url = assertPublicHttpUrl(value);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20_000);
-  try {
-    const headers: Record<string, string> = {
-      accept:
-        "text/html, application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9",
-      "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
-    };
-    if (options.etag) headers["if-none-match"] = options.etag;
-    if (options.lastModified) headers["if-modified-since"] = options.lastModified;
-    const response = await fetch(url, {
-      headers,
-      redirect: "follow",
-      signal: controller.signal,
-      credentials: "omit",
-    });
-    const body = await response.text();
-    if (body.length > 5_000_000) {
-      throw new Error("Source response exceeded the 5 MB collection limit.");
+/**
+ * The transports public collection and search fetch through. The default is
+ * the guarded, 20-second, shared-UA fetch everything used while there was one
+ * route; the options exist because the provider bundle (ADR-0049) needs
+ * variants the guard cannot express — a declared contact UA (SEC EDGAR 403s
+ * generic agents), an unguarded fetch for a fixed self-hosted SearXNG URL,
+ * and longer deadlines for sources that answer slowly. A single request may
+ * still override the deadline through `timeoutMs`.
+ */
+export function createHttpFetch(
+  options: { timeoutMs?: number; headers?: Record<string, string>; guarded?: boolean } = {},
+): PublicHttpFetch {
+  const defaultTimeoutMs = options.timeoutMs ?? 20_000;
+  const guarded = options.guarded ?? true;
+  return async (value, perCall = {}) => {
+    const url = guarded ? assertPublicHttpUrl(value) : new URL(value);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), perCall.timeoutMs ?? defaultTimeoutMs);
+    try {
+      const headers: Record<string, string> = {
+        accept:
+          "text/html, application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9",
+        "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
+        ...options.headers,
+      };
+      if (perCall.etag) headers["if-none-match"] = perCall.etag;
+      if (perCall.lastModified) headers["if-modified-since"] = perCall.lastModified;
+      const response = await fetch(url, {
+        ...(perCall.method !== undefined ? { method: perCall.method } : {}),
+        ...(perCall.body !== undefined ? { body: perCall.body } : {}),
+        headers: perCall.body
+          ? { ...headers, "content-type": "application/x-www-form-urlencoded" }
+          : headers,
+        redirect: "follow",
+        signal: controller.signal,
+        credentials: "omit",
+      });
+      const body = await response.text();
+      if (body.length > 5_000_000) {
+        throw new Error("Source response exceeded the 5 MB collection limit.");
+      }
+      return {
+        url: response.url || url.toString(),
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        retryAfter: response.headers.get("retry-after"),
+        body,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    return {
-      url: response.url || url.toString(),
-      status: response.status,
-      contentType: response.headers.get("content-type"),
-      etag: response.headers.get("etag"),
-      lastModified: response.headers.get("last-modified"),
-      retryAfter: response.headers.get("retry-after"),
-      body,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-};
+  };
+}
+
+export const publicHttpFetch: PublicHttpFetch = createHttpFetch();
 
 export function retryAfterMilliseconds(value: string | null, now: Date): number | undefined {
   if (!value) return undefined;

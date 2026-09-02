@@ -924,6 +924,47 @@ export class MeetingBriefHost implements HostedModule {
       return { internalDomains: normalized };
     });
 
+    // GET /api/meeting-brief/provider-policy — the bundle vocabulary and the
+    // recorded policy, so workflow bundles can be configured at onboarding
+    // (spec step 7) rather than only as an action on an existing Run.
+    app.get("/api/meeting-brief/provider-policy", async () => {
+      return {
+        providers: [...MEETING_BRIEF_BUNDLE_PROVIDERS],
+        policy: this.getProviderPolicy(),
+      };
+    });
+
+    // PUT /api/meeting-brief/provider-policy — record the owner's explicit
+    // policy over the whole bundle in one action. Every provider is written,
+    // enabled ones included: an affirmed provider is a recorded decision, not
+    // an absent one, which is what keeps policy from relaxing silently (#137).
+    app.put("/api/meeting-brief/provider-policy", async (request, reply) => {
+      const body = request.body as { disabled?: unknown; reason?: unknown } | undefined;
+      const disabled = body?.disabled ?? [];
+      if (!Array.isArray(disabled) || !disabled.every((p) => typeof p === "string")) {
+        return reply.code(400).send({ error: "disabled must be an array of provider ids" });
+      }
+      const unknown = disabled.filter(
+        (p) => !MEETING_BRIEF_BUNDLE_PROVIDERS.includes(p as MeetingBriefBundleProvider),
+      );
+      if (unknown.length > 0) {
+        return reply.code(400).send({
+          error: "unknown-provider",
+          unknown,
+          providers: [...MEETING_BRIEF_BUNDLE_PROVIDERS],
+        });
+      }
+      const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+      for (const provider of MEETING_BRIEF_BUNDLE_PROVIDERS) {
+        this.setProviderPolicy(
+          provider,
+          disabled.includes(provider),
+          reason || "workflow bundle policy configured in Settings",
+        );
+      }
+      return { providers: [...MEETING_BRIEF_BUNDLE_PROVIDERS], policy: this.getProviderPolicy() };
+    });
+
     // POST /api/meeting-brief/runs/:id/provider-policy — an explicit repair,
     // disable, or re-enable action recorded on the Run (#137). Disabling or
     // re-enabling persists the versioned provider policy; every action stops

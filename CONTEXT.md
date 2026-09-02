@@ -133,6 +133,14 @@ from a failed retrieval. A platform is not a Source Adapter and one adapter's fa
 the others from running.
 _Avoid_: Scraper (too narrow), connector (reserved for authenticated service connections)
 
+**Search Provider**:
+One independent keyless public-search source behind the PublicSearch seam. It answers a query
+with normalized public results or refuses; one provider's refusal narrows the merged results
+and never fails the query, and only every provider refusing is a failed search (ADR-0049). Its
+health is visible in the seam's diagnostics, never in the shape of a result.
+_Avoid_: Search engine (some providers are registries, archives or indexes), source (that is a
+Source Target's word), scraper (the posture is keyless APIs and feeds first)
+
 **Source Item**:
 One normalized piece of public source material retrieved from a Source Target, with its canonical
 URL, platform identity, author, publication time, extracted content, evidence, and field-level

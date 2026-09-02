@@ -108,6 +108,7 @@ const config: AppConfig = {
   notion: { token: "", lastVerifiedAt: null },
   drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
   ollama: { baseUrl: "http://127.0.0.1:11434" },
+  search: {},
   modules: {
     "youtube-trends": { channels: [], spreadsheetId: "", spreadsheetUrl: "" },
     "idea-engine": { spreadsheetId: "", spreadsheetUrl: "", prompts: {} },

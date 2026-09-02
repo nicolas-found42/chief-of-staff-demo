@@ -481,3 +481,68 @@ describe("Meeting Brief enrich routes Calendar attendee identity through Person 
     expect(profiles.get(holder.id)?.archivedAt).not.toBeNull();
   });
 });
+
+describe("a newly shelled attendee is enriched from the public web before its revision is pinned", () => {
+  it("enriches only new shells, and pins the enriched revision", async () => {
+    const owner = profiles.create({ fullName: "Owner", primaryEmail: "owner@example.com" });
+    const searched: string[] = [];
+    const deps = {
+      ...makeEnrichDeps(),
+      providers: {
+        ...makeEnrichDeps().providers,
+        resolveNewAttendee: async (email: string) => {
+          searched.push(email);
+          /* Stand in for the resolver: a real one saves a further revision
+             over the shell it just found. */
+          const shell = profiles.get(shellId(email));
+          if (shell) profiles.correct(shell.id, { role: "Researcher" });
+          return null;
+        },
+      },
+    };
+    const { files, events, ctx } = makeEnrichCtx();
+
+    await enrichUnified(attendeeEvent(), ctx, deps);
+
+    // The reused owner Profile is not searched again; both new shells are.
+    expect(searched.sort()).toEqual(["alice@external.co", "carol@external.co"]);
+    expect(searched).not.toContain(owner.primaryEmail);
+
+    const pins = JSON.parse(files.get("attendee-profiles.json")!) as Array<{
+      email: string;
+      profileRevision: number;
+      origin: string;
+    }>;
+    // The enriched revision is what the Brief consumes, not the bare shell.
+    const alice = pins.find((pin) => pin.email === "alice@external.co")!;
+    expect(alice.origin).toBe("shell");
+    expect(alice.profileRevision).toBe(2);
+    expect(profiles.get(shellId("alice@external.co"))?.revision).toBe(2);
+    expect(events.map((entry) => entry.name)).toContain("attendee_profile_enriched");
+  });
+
+  it("leaves the shell standing when the search fails, and never fails the Brief", async () => {
+    profiles.create({ fullName: "Owner", primaryEmail: "owner@example.com" });
+    const deps = {
+      ...makeEnrichDeps(),
+      providers: {
+        ...makeEnrichDeps().providers,
+        resolveNewAttendee: async () => {
+          throw new Error("search unreachable");
+        },
+      },
+    };
+    const { files, events, ctx } = makeEnrichCtx();
+
+    await enrichUnified(attendeeEvent(), ctx, deps);
+
+    const pins = JSON.parse(files.get("attendee-profiles.json")!) as Array<{
+      email: string;
+      profileRevision: number;
+    }>;
+    expect(pins.find((pin) => pin.email === "alice@external.co")?.profileRevision).toBe(1);
+    const failure = events.find((entry) => entry.name === "attendee_profile_enrichment_failed");
+    expect(failure).toBeDefined();
+    expect(JSON.stringify(failure?.data)).toContain("search unreachable");
+  });
+});

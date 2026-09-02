@@ -214,7 +214,22 @@ export class PersonProfileResolver implements PersonProfiles {
     return this.deps.store.get(profileId);
   }
 
+  /**
+   * Collect from every source and compose the Profile the evidence supports,
+   * without writing it. `resolve` saves what this returns; the typed-identifier
+   * lookup shows it as a proposal first, so a bad match costs nothing.
+   */
+  async preview(input: PersonIdentitySignals): Promise<PersonProfile> {
+    return await this.build(input);
+  }
+
   async resolve(input: PersonIdentitySignals): Promise<PersonProfile> {
+    const profile = await this.build(input);
+    this.deps.store.save(profile);
+    return profile;
+  }
+
+  private async build(input: PersonIdentitySignals): Promise<PersonProfile> {
     const signals = normalizedSignals(input);
     if (
       signals.emails.length === 0 &&
@@ -342,7 +357,6 @@ export class PersonProfileResolver implements PersonProfiles {
       evidence,
       sourceDiagnostics: results.map((result) => result.diagnostic),
     };
-    this.deps.store.save(profile);
     return profile;
   }
 }

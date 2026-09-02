@@ -7,6 +7,7 @@ import type { HubSpotApi } from "../modules/meeting-brief-generator/hubspot/clie
 import { matchPersonEvidence, type PersonProfileSource } from "./resolver.js";
 import type { PublicSearch, PublicSearchResult } from "../source-adapters/search.js";
 import type { FeedDiscoverer } from "../source-adapters/feeds.js";
+import { MAX_CLAIM_EXTRACTIONS, type PersonClaimExtractor } from "./claims.js";
 
 function clean(value: string | undefined): string | null {
   const trimmed = value?.trim() ?? "";
@@ -43,7 +44,7 @@ function socialPlatform(value: string): string | null {
   }
 }
 
-function socialUrl(value: string): {
+export function socialUrl(value: string): {
   platform: string;
   kind: "profile" | "publication";
   handle: string | null;
@@ -159,6 +160,10 @@ export function createHubSpotPersonProfileSource(
 function publicQueries(signals: PersonIdentitySignals): string[] {
   const queries: string[] = [];
   for (const email of signals.emails.slice(0, 2)) queries.push(`"${email}"`);
+  /* A typed profile address is often the only signal there is; the address
+     itself is the query, and the page it names is reached through the search
+     index rather than fetched. */
+  for (const url of signals.profileUrls.slice(0, 2)) queries.push(`"${url}"`);
   for (const name of signals.fullNames.slice(0, 2)) {
     queries.push(`"${name}" site:linkedin.com`);
     queries.push(`"${name}" blog OR newsletter OR podcast`);
@@ -222,6 +227,9 @@ function kindOfPublicResult(result: PublicSearchResult): PersonEvidenceKind {
 export function createPublicWebPersonProfileSource(input: {
   search: PublicSearch;
   discoverFeeds: FeedDiscoverer;
+  /** What each result claims about the person. Absent, results carry no
+   *  claims and the Profile holds evidence without summary fields. */
+  extractClaims?: PersonClaimExtractor;
 }): PersonProfileSource {
   return {
     id: "public-web",
@@ -236,14 +244,32 @@ export function createPublicWebPersonProfileSource(input: {
             .map((result) => [`${result.url}\n${result.title}`, result]),
         ).values(),
       ];
-      const candidates: PersonEvidenceCandidate[] = results.map((result) => ({
+      const extractor = input.extractClaims;
+      /* Claims are proposed per result and only for the first few: a model
+         call each is worth it for the results a person will actually read,
+         and a failed extraction costs the result its claims, never the
+         evidence itself. */
+      const claimed = await Promise.all(
+        results.map(async (result, index) => {
+          if (!extractor || index >= MAX_CLAIM_EXTRACTIONS) return {};
+          try {
+            return await extractor(
+              { title: result.title, summary: result.snippet, url: result.url },
+              signals,
+            );
+          } catch {
+            return {};
+          }
+        }),
+      );
+      const candidates: PersonEvidenceCandidate[] = results.map((result, index) => ({
         source: "public-web",
         kind: kindOfPublicResult(result),
         title: result.title.slice(0, 200),
         summary: result.snippet.slice(0, 500),
         url: result.url,
         identitySignals: signalsObservedIn(result, signals),
-        claims: {},
+        claims: claimed[index] ?? {},
       }));
       const ownedSiteCandidates = candidates
         .filter((candidate) => candidate.kind !== "social-profile")

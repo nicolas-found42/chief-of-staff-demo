@@ -16,6 +16,7 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import { registerPeopleApi } from "../../../apps/server/src/api/people";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { PersonProfileResolver } from "../../../apps/server/src/person-profile/resolver";
 import { WorkspacePersonProfileReferences } from "../../../apps/server/src/person-profile/references";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { openRuns } from "../../../apps/server/src/runs";
@@ -60,7 +61,10 @@ beforeEach(() => {
     ],
   });
   app = fastify();
-  registerPeopleApi(app, { people: profiles });
+  registerPeopleApi(app, {
+    people: profiles,
+    resolver: new PersonProfileResolver({ store, sources: [] }),
+  });
   return app.ready();
 });
 
@@ -679,7 +683,10 @@ describe("/api/people/:profileId lifecycle over the production registry", () => 
       lifecycle: [registry],
     });
     registryApp = fastify();
-    registerPeopleApi(registryApp, { people: registryProfiles });
+    registerPeopleApi(registryApp, {
+      people: registryProfiles,
+      resolver: new PersonProfileResolver({ store: registryStore, sources: [] }),
+    });
     return registryApp.ready();
   });
 

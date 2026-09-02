@@ -12,8 +12,17 @@ services:
       # `docker compose up` reaches the bundled relay without a manual install
       # step. An address stored in the Workspace always wins (issue #109).
       RELAY_BASE_URL: http://relay:4318
+      # Seeds the SearXNG address the same way (ADR-0049); a value stored in
+      # the Workspace's config wins over this default.
+      SEARXNG_URL: http://searxng:8080
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -56,8 +65,28 @@ services:
       - "127.0.0.1:4318:4318"
     restart: "no"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4318/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4318/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 5s
+  searxng:
+    # Self-hosted metasearch backing the PublicSearch fan-out (ADR-0049). The
+    # 127.0.0.1 on the left is the same load-bearing loopback-only rule as the
+    # app above: SearXNG has no authentication of its own, so it must not be
+    # reachable from the network.
+    image: docker.io/searxng/searxng:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:Z
+  valkey:
+    # SearXNG's limiter and rate limiter store; required by the official
+    # compose template even when only the app's own calls hit the instance.
+    image: docker.io/valkey/valkey:9-alpine

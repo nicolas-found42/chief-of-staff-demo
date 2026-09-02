@@ -62,6 +62,10 @@ export interface MeetingBriefEnrichmentProviders {
    *  resolved and pinned through it (issue #124), never through the legacy
    *  broad resolver. */
   attendeeProfiles?: WorkspacePersonProfiles | null;
+  /** Public-web enrichment for an attendee met for the first time. Absent, a
+   *  new attendee stays the shell Calendar minted, which is what the Brief
+   *  consumed before this existed. */
+  resolveNewAttendee?: ((email: string) => Promise<unknown>) | null;
   getHubSpotApi?: (() => HubSpotApi | null) | null;
   publicIntelligenceProvider?: PublicIntelligenceProvider | null;
   proposeEmployer?:
@@ -128,12 +132,13 @@ interface AttendeeProfilePin {
  * overwriting Profiles. The pins are persisted as the Run's
  * `attendee-profiles.json` artifact, the consumer's exact-revision record.
  */
-function pinAttendeeProfiles(
+async function pinAttendeeProfiles(
   profiles: WorkspacePersonProfiles,
   event: MeetingBriefEvent,
   occurrenceKey: string,
   ctx: Pick<RunContext, "writeFile" | "event">,
-): AttendeeProfilePin[] {
+  resolveNewAttendee?: ((email: string) => Promise<unknown>) | null,
+): Promise<AttendeeProfilePin[]> {
   const provenance = `occurrence ${occurrenceKey} version ${event.version}`;
   const byEmail = new Map<string, AttendeeProfilePin>();
   for (const attendee of event.attendees) {
@@ -159,10 +164,34 @@ function pinAttendeeProfiles(
       email,
       provenance,
     });
+    /* An attendee met for the first time is a bare shell — an email and
+       nothing else. Enrich it from the public web before the revision is
+       pinned, so the Brief consumes the enriched revision rather than one
+       already stale. Only newly created shells search: a reused Profile has
+       been through this once already, and a failed search leaves the shell
+       standing rather than failing the Brief. */
+    let pinned = profile;
+    if (created && resolveNewAttendee) {
+      try {
+        await resolveNewAttendee(email);
+        pinned = profiles.get(profile.id) ?? profile;
+        ctx.event("attendee_profile_enriched", {
+          email,
+          profileId: pinned.id,
+          revision: pinned.revision,
+        });
+      } catch (error) {
+        ctx.event("attendee_profile_enrichment_failed", {
+          email,
+          profileId: profile.id,
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     byEmail.set(email, {
       email,
-      profileId: profile.id,
-      profileRevision: profile.revision,
+      profileId: pinned.id,
+      profileRevision: pinned.revision,
       origin: created ? "shell" : "reused",
     });
   }
@@ -442,7 +471,13 @@ export async function enrichUnified(
   let attendeePins: AttendeeProfilePin[] | null = null;
   if (providers.attendeeProfiles) {
     try {
-      attendeePins = pinAttendeeProfiles(providers.attendeeProfiles, event, occurrenceKey, ctx);
+      attendeePins = await pinAttendeeProfiles(
+        providers.attendeeProfiles,
+        event,
+        occurrenceKey,
+        ctx,
+        providers.resolveNewAttendee,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // An archived Profile holding an attendee email is its own classified
