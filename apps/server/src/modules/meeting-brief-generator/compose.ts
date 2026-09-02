@@ -45,7 +45,10 @@ const CompanyWireSchema = z.strictObject({
 
 const ModelOutputSchema = z.strictObject({
   summary: boundedString(300),
-  guests: z.array(GuestWireSchema).min(1).max(20),
+  /* No `.min(1)`: eligibility covers internal-only meetings (issue #136), and
+     validateGuestsAndCompanies then requires exactly zero guests for one. A
+     minimum here made that case unsatisfiable for any model. */
+  guests: z.array(GuestWireSchema).max(20),
   companies: z.array(CompanyWireSchema).max(20),
   conversationStarters: z.array(boundedString(300)).min(2).max(3),
   sourceReferences: z.array(z.string().min(1).max(500)).max(50),
@@ -71,6 +74,7 @@ Rules you must follow:
 - Keep bullets concise and bounded: each bullet <= 300 characters, at most 3 per section (relationshipHistory, talkingPoints, docs, news, industry). Conversation starters: 2-3, each <= 300 characters, evidence-based.
 - Logistics (title, time, location, conference link, organizer) will be rendered deterministically from the frozen Calendar snapshot — do not generate logistics.
 - Guests: one section per External Guest (retain every guest even if no company match). Include identity, current role, relevant background, relationship history, CRM context, useful talking points, evidence references, and uncertainty.
+- The guests array is exactly the External Guests named in trusted context — no more, no fewer. Evidence is also collected for internal attendees and for the workspace owner; that is context only. Never emit a guest section for an internal attendee, and when there are no External Guests return an empty guests array.
 - Company sections: only for an accepted Employer Match. Do not invent a company when no employer match is accepted. If no match, leave companies empty and note the gap.
 - Do not add presentation coaching, objection scripts, pacing, audio, stakeholder strategy, or other Briefing Preparation Assistant adjacent workflows.
 - Source references: list every distinct source identifier you relied on. Missing evidence: name gaps by guest/company/source. Uncertainty: list explicit unknowns.
@@ -119,7 +123,9 @@ function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
   trustedLines.push(`Event version: ${snapshot.version}`);
   trustedLines.push(`Generation time (use as context, not output): ${now.toISOString()}`);
   trustedLines.push(
-    `External Guests (${externalGuestEmails.length}): ${externalGuestEmails.join(", ")}`,
+    externalGuestEmails.length > 0
+      ? `External Guests (${externalGuestEmails.length}) — emit exactly one guest section for each of these addresses and no others: ${externalGuestEmails.join(", ")}`
+      : "External Guests (0): this meeting has no External Guest. Return an empty guests array and record the absence in missingEvidence/uncertainty.",
   );
   if (acceptedEmployerMatches.length > 0) {
     trustedLines.push(`Accepted Employer Matches (company evidence allowed only for these):`);
@@ -155,8 +161,19 @@ function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
     arr.push(s);
     byGuest.set(key, arr);
   }
+  const externalSet = new Set(externalGuestEmails.map((e) => e.toLowerCase()));
   for (const [guest, list] of byGuest) {
-    untrustedLines.push(`Guest: ${guest}`);
+    /* Enrichment collects evidence for internal attendees and the owner too.
+       Labelling those `Guest:` is what made a cheap model emit a section per
+       attendee and fail validateGuestsAndCompanies — say which role each
+       group plays instead. */
+    untrustedLines.push(
+      guest === "_all"
+        ? "Meeting-wide evidence (not attributable to one guest):"
+        : externalSet.has(guest.toLowerCase())
+          ? `External Guest: ${guest}`
+          : `Internal attendee — context only, never emit a guest section for this address: ${guest}`,
+    );
     for (const sec of list) {
       untrustedLines.push(
         `- source: ${sec.source} | status: ${sec.status} | company: ${sec.company ?? "none"}`,
@@ -181,7 +198,9 @@ function buildComposeMessages(input: ComposePromptInput): ComposeMessages {
   untrustedLines.push("</untrusted-evidence>");
   untrustedLines.push("");
   untrustedLines.push(
-    "Task: produce the Meeting Brief JSON for the external guests listed above, using only the frozen evidence. Keep sections concise. Cite only allowed identifiers. If evidence missing, record it explicitly.",
+    externalGuestEmails.length > 0
+      ? `Task: produce the Meeting Brief JSON using only the frozen evidence. The guests array must hold exactly ${externalGuestEmails.length} entr${externalGuestEmails.length === 1 ? "y" : "ies"} — one per External Guest (${externalGuestEmails.join(", ")}) and no internal attendee. Keep sections concise. Cite only allowed identifiers. If evidence missing, record it explicitly.`
+      : "Task: produce the Meeting Brief JSON using only the frozen evidence. This meeting has no External Guest, so the guests array must be empty. Keep sections concise. Cite only allowed identifiers. If evidence missing, record it explicitly.",
   );
 
   const user = [...trustedLines, "", ...untrustedLines].join("\n");
