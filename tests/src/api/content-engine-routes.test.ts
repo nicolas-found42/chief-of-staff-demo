@@ -156,18 +156,18 @@ describe("Content Engine refusals", () => {
     expect(body.missingGates.length).toBeGreaterThan(0);
   });
 
-  it("refuses an Outline Brief that does not belong to the revision with 404", async () => {
+  it("refuses an Outline Charter that does not belong to the revision with 404", async () => {
     const started = startProject();
 
     const response = await app.inject({
       method: "POST",
-      url: `/api/content-engine/projects/${started.id}/outline-briefs/brief_nope/approve`,
+      url: `/api/content-engine/projects/${started.id}/outline-charters/brief_nope/approve`,
       payload: {},
     });
 
     expect([404, 409]).toContain(response.statusCode);
     expect(response.json<{ error: string }>().error).toMatch(
-      /outline-brief-not-found|outline-brief-blocked/,
+      /outline-charter-not-found|outline-charter-blocked/,
     );
   });
 

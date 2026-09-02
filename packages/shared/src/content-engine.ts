@@ -139,7 +139,7 @@ export type ContentProjectSubjectInput =
  * The source Content Opportunity (#133) one Project revision was seeded from.
  * The relationship is recorded at creation and carried through revisions; it
  * is an input lineage, never a generation trigger: the Project still needs its
- * own evidence review and an approved Outline Brief.
+ * own evidence review and an approved Outline Charter.
  */
 export interface ContentProjectSourceOpportunity {
   opportunityId: string;
@@ -285,8 +285,8 @@ export interface ContentProjectRevision {
   researchRequest: ResearchRequest | null;
   evidenceReview: ContentProjectEvidenceReview | null;
   frozenEvidence: ContentProjectEvidenceFreeze | null;
-  outlineBriefs: OutlineBrief[];
-  outlineBriefApprovals: OutlineBriefApproval[];
+  outlineCharters: OutlineCharter[];
+  outlineCharterApprovals: OutlineCharterApproval[];
   platformOutlines: PlatformOutline[];
   platformOutlineApprovals: PlatformOutlineApproval[];
   drafts: ContentEngineDraft[];
@@ -301,7 +301,7 @@ export interface ContentProject {
 
 /**
  * One Content Project as a list reads it (spec #147). A Project carries every
- * revision, and each revision carries its evidence freeze, Outline Briefs,
+ * revision, and each revision carries its evidence freeze, Outline Charters,
  * Platform Outlines and Drafts; a list that rendered whole Projects would read
  * all of that to draw a table of subjects. This is the current revision's
  * identity and standing, and nothing else.
@@ -434,20 +434,20 @@ export interface ContentProjectReadiness {
   missingGates: ContentProjectGate[];
 }
 
-export interface OutlineBriefEvidenceMapEntry {
+export interface OutlineCharterEvidenceMapEntry {
   claim: string;
   sourceItemIds: string[];
 }
 
-export interface OutlineBriefProposalInput {
+export interface OutlineCharterProposalInput {
   thesis: string;
   angle: string;
   claims: string[];
-  evidenceMap: OutlineBriefEvidenceMapEntry[];
+  evidenceMap: OutlineCharterEvidenceMapEntry[];
   ctaIntent: string | null;
 }
 
-export interface OutlineBrief extends OutlineBriefProposalInput {
+export interface OutlineCharter extends OutlineCharterProposalInput {
   id: string;
   projectId: string;
   projectRevision: number;
@@ -463,8 +463,8 @@ export interface OutlineBrief extends OutlineBriefProposalInput {
 }
 
 /** Approval is a separate immutable decision so the proposed Brief never changes in place. */
-export interface OutlineBriefApproval {
-  outlineBriefId: string;
+export interface OutlineCharterApproval {
+  outlineCharterId: string;
   approvedAt: string;
 }
 
@@ -476,7 +476,7 @@ export interface OutlineBriefApproval {
 export interface PlatformOutlineBeat {
   position: number;
   direction: string;
-  evidence: OutlineBriefEvidenceMapEntry;
+  evidence: OutlineCharterEvidenceMapEntry;
   examples: string[];
 }
 
@@ -485,15 +485,15 @@ export interface PlatformOutline {
   projectId: string;
   projectRevision: number;
   target: ContentProjectTarget;
-  outlineBriefId: string;
-  outlineBriefVersion: number;
+  outlineCharterId: string;
+  outlineCharterVersion: number;
   version: number;
   generatedAt: string;
   /** The bounded regeneration instruction that produced this version, if any. */
   instruction: string | null;
   title: string;
   hookDirection: string;
-  /** Pinned from the approved Outline Brief; regeneration cannot alter it. */
+  /** Pinned from the approved Outline Charter; regeneration cannot alter it. */
   thesis: string;
   beats: PlatformOutlineBeat[];
   ctaIntent: string | null;
@@ -534,10 +534,10 @@ export interface ContentEngineDraft {
   /** The bounded regeneration instruction that produced this version, if any. */
   instruction: string | null;
   copy: string;
-  /** Pinned from the approved Outline Brief; regeneration cannot alter it. */
+  /** Pinned from the approved Outline Charter; regeneration cannot alter it. */
   thesis: string;
-  /** Pinned from the approved Outline Brief; regeneration cannot alter it. */
-  evidence: OutlineBriefEvidenceMapEntry[];
+  /** Pinned from the approved Outline Charter; regeneration cannot alter it. */
+  evidence: OutlineCharterEvidenceMapEntry[];
   claims: ContentEngineDraftClaim[];
   unsupportedClaimPolicy: typeof CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY;
   productionNotes: string[];
@@ -568,8 +568,8 @@ export interface OutlineSetFailure {
  * same call will regenerate.
  */
 export interface OutlineSetOutcome {
-  outlineBriefId: string;
-  outlineBriefVersion: number;
+  outlineCharterId: string;
+  outlineCharterVersion: number;
   generated: PlatformOutline[];
   failures: OutlineSetFailure[];
 }

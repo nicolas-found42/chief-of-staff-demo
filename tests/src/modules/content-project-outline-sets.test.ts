@@ -11,7 +11,7 @@ import {
   type ContentEngineDraft,
   type ContentProject,
   type ContentProjectTarget,
-  type OutlineBrief,
+  type OutlineCharter,
   type OutlineSetOutcome,
 } from "@chief-of-staff-demo/shared";
 import { DIAGNOSTIC, NOW, SOURCE_ITEM, SOURCE_ITEM_2 } from "./content-project-fixtures";
@@ -198,7 +198,7 @@ function setupWorkspace(providers: {
 interface ApprovedSetup {
   projects: WorkspaceContentProjects;
   project: ContentProject;
-  brief: OutlineBrief;
+  brief: OutlineCharter;
 }
 
 /** A ready Project revision: gates present, evidence frozen, Brief proposed and approved. */
@@ -230,14 +230,14 @@ function setupApprovedProject(
     includedSourceItemIds: [SOURCE_ITEM.id, SOURCE_ITEM_2.id],
     noExternalResearchAcknowledged: false,
   });
-  const brief = projects.proposeOutlineBrief(project.id, {
+  const brief = projects.proposeOutlineCharter(project.id, {
     thesis: "Immutable approved inputs make generated content reproducible.",
     angle: "Treat evidence review as product state, not workflow discipline.",
     claims: ["Frozen inputs preserve lineage."],
     evidenceMap: [{ claim: "Frozen inputs preserve lineage.", sourceItemIds: [SOURCE_ITEM.id] }],
     ctaIntent: "Approve the Brief before generating.",
   });
-  projects.approveOutlineBrief(project.id, brief.id);
+  projects.approveOutlineCharter(project.id, brief.id);
   return { projects, project, brief };
 }
 
@@ -302,16 +302,16 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     });
 
     const outcome: OutlineSetOutcome = await projects.generateOutlineSet(project.id);
-    expect(outcome.outlineBriefId).toBe(brief.id);
-    expect(outcome.outlineBriefVersion).toBe(brief.version);
+    expect(outcome.outlineCharterId).toBe(brief.id);
+    expect(outcome.outlineCharterVersion).toBe(brief.version);
     expect(outcome.failures).toEqual([]);
     expect(outcome.generated.map((outline) => outline.target)).toEqual(selected);
     for (const outline of outcome.generated) {
       expect(outline).toMatchObject({
         projectId: project.id,
         projectRevision: 1,
-        outlineBriefId: brief.id,
-        outlineBriefVersion: brief.version,
+        outlineCharterId: brief.id,
+        outlineCharterVersion: brief.version,
         version: 1,
         instruction: null,
       });
@@ -373,7 +373,7 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     await defaultPending;
   });
 
-  it("refuses to generate a set until an Outline Brief is approved", async () => {
+  it("refuses to generate a set until an Outline Charter is approved", async () => {
     const harness = fakeOutlineSetProviders(["linkedin-standard-post"]);
     const { projects } = setupWorkspace({ outline: harness.providers, draft: [] });
     const project = projects.create({
@@ -390,7 +390,7 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
       includedSourceItemIds: [],
       noExternalResearchAcknowledged: true,
     });
-    projects.proposeOutlineBrief(project.id, {
+    projects.proposeOutlineCharter(project.id, {
       thesis: "Unapproved Briefs cannot start a set.",
       angle: "Prove the approval gate.",
       claims: [],
@@ -426,12 +426,12 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     const survivors = new Map(first.generated.map((outline) => [outline.target, outline.id]));
 
     const retry: OutlineSetOutcome = await projects.generateOutlineSet(project.id);
-    expect(retry.outlineBriefId).toBe(brief.id);
+    expect(retry.outlineCharterId).toBe(brief.id);
     expect(retry.failures).toEqual([]);
     expect(retry.generated.map((outline) => outline.target)).toEqual([failing]);
     // The healed target joins the same Outline Set: same approved Brief, first version.
     expect(retry.generated[0]).toMatchObject({
-      outlineBriefId: brief.id,
+      outlineCharterId: brief.id,
       version: 1,
       projectRevision: 1,
     });
@@ -498,7 +498,7 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     expect(regenerated.instruction).toBe(
       "Lead with the approval gate, then the reproducibility payoff.",
     );
-    expect(regenerated.outlineBriefId).toBe(brief.id);
+    expect(regenerated.outlineCharterId).toBe(brief.id);
     expect(firstVersion).toEqual(set.generated);
 
     // A set retry after regeneration creates nothing: every selected target

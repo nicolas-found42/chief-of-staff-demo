@@ -22,9 +22,9 @@ import {
   type ContentProjectSummary,
   type ContentProjectTarget,
   type ContentVoiceRevision,
-  type OutlineBrief,
-  type OutlineBriefApproval,
-  type OutlineBriefProposalInput,
+  type OutlineCharter,
+  type OutlineCharterApproval,
+  type OutlineCharterProposalInput,
   type OutlineSetFailure,
   type OutlineSetOutcome,
   type PlatformOutline,
@@ -57,8 +57,8 @@ type ContentProjectRevisionSeed = Omit<
   ContentProjectRevision,
   | "researchRequest"
   | "frozenEvidence"
-  | "outlineBriefs"
-  | "outlineBriefApprovals"
+  | "outlineCharters"
+  | "outlineCharterApprovals"
   | "platformOutlines"
   | "platformOutlineApprovals"
   | "drafts"
@@ -82,8 +82,8 @@ export class ContentProjectError extends Error {
       | "project-not-found"
       | "evidence-freeze-blocked"
       | "invalid-evidence-selection"
-      | "outline-brief-blocked"
-      | "outline-brief-not-found"
+      | "outline-charter-blocked"
+      | "outline-charter-not-found"
       | "outline-generation-blocked"
       | "outline-not-found"
       | "outline-not-supported"
@@ -275,8 +275,8 @@ export class WorkspaceContentProjects {
     let revision = currentRevision(project);
     if (
       revision.frozenEvidence !== null ||
-      revision.outlineBriefs.length > 0 ||
-      revision.outlineBriefApprovals.length > 0
+      revision.outlineCharters.length > 0 ||
+      revision.outlineCharterApprovals.length > 0
     ) {
       revision = nextRevision(revision, this.now().toISOString());
       project.revisions.push(revision);
@@ -467,8 +467,8 @@ export class WorkspaceContentProjects {
       revision.researchRequest !== null ||
       revision.frozenEvidence !== null ||
       revision.evidenceReview !== null ||
-      revision.outlineBriefs.length > 0 ||
-      revision.outlineBriefApprovals.length > 0
+      revision.outlineCharters.length > 0 ||
+      revision.outlineCharterApprovals.length > 0
     ) {
       revision = nextRevision(revision, this.now().toISOString());
       project.revisions.push(revision);
@@ -542,15 +542,15 @@ export class WorkspaceContentProjects {
     return { ready: missing.length === 0, missingGates: missing };
   }
 
-  proposeOutlineBrief(projectId: string, input: OutlineBriefProposalInput): OutlineBrief {
+  proposeOutlineCharter(projectId: string, input: OutlineCharterProposalInput): OutlineCharter {
     const state = this.readState();
     const project = requireProject(state, projectId);
     const revision = currentRevision(project);
     const missing = this.missingGates(revision);
     if (missing.length > 0) {
       throw new ContentProjectError(
-        "outline-brief-blocked",
-        `An Outline Brief cannot be proposed until these gates are present: ${missing.join(", ")}.`,
+        "outline-charter-blocked",
+        `An Outline Charter cannot be proposed until these gates are present: ${missing.join(", ")}.`,
         missing,
       );
     }
@@ -559,14 +559,14 @@ export class WorkspaceContentProjects {
     if (input.evidenceMap.some((entry) => entry.sourceItemIds.some((id) => !selectedIds.has(id)))) {
       throw new ContentProjectError(
         "invalid-evidence-selection",
-        "The Outline Brief may cite only Source Items in the frozen evidence selection.",
+        "The Outline Charter may cite only Source Items in the frozen evidence selection.",
       );
     }
-    const brief: OutlineBrief = {
+    const brief: OutlineCharter = {
       id: identifier("brief", this.now()),
       projectId,
       projectRevision: revision.revision,
-      version: revision.outlineBriefs.length + 1,
+      version: revision.outlineCharters.length + 1,
       proposedAt: this.now().toISOString(),
       subject: clone(revision.subject),
       author: clone(revision.author),
@@ -581,36 +581,36 @@ export class WorkspaceContentProjects {
       brandVoiceRevisionId: frozen.brandVoice.id,
       targets: clone(revision.targets),
     };
-    revision.outlineBriefs.push(brief);
+    revision.outlineCharters.push(brief);
     this.touch(project);
     this.writeState(state);
     return clone(brief);
   }
 
-  approveOutlineBrief(projectId: string, outlineBriefId: string): OutlineBriefApproval {
+  approveOutlineCharter(projectId: string, outlineCharterId: string): OutlineCharterApproval {
     const state = this.readState();
     const project = requireProject(state, projectId);
     const revision = currentRevision(project);
     const missing = this.missingGates(revision);
     if (missing.length > 0) {
       throw new ContentProjectError(
-        "outline-brief-blocked",
-        `An Outline Brief cannot be approved until these gates are present: ${missing.join(", ")}.`,
+        "outline-charter-blocked",
+        `An Outline Charter cannot be approved until these gates are present: ${missing.join(", ")}.`,
         missing,
       );
     }
-    if (!revision.outlineBriefs.some((brief) => brief.id === outlineBriefId)) {
+    if (!revision.outlineCharters.some((brief) => brief.id === outlineCharterId)) {
       throw new ContentProjectError(
-        "outline-brief-not-found",
-        "The Outline Brief does not belong to the current Project revision.",
+        "outline-charter-not-found",
+        "The Outline Charter does not belong to the current Project revision.",
       );
     }
-    const existing = revision.outlineBriefApprovals.find(
-      (approval) => approval.outlineBriefId === outlineBriefId,
+    const existing = revision.outlineCharterApprovals.find(
+      (approval) => approval.outlineCharterId === outlineCharterId,
     );
     if (existing) return clone(existing);
-    const approval = { outlineBriefId, approvedAt: this.now().toISOString() };
-    revision.outlineBriefApprovals.push(approval);
+    const approval = { outlineCharterId, approvedAt: this.now().toISOString() };
+    revision.outlineCharterApprovals.push(approval);
     this.touch(project);
     this.writeState(state);
     return clone(approval);
@@ -618,7 +618,7 @@ export class WorkspaceContentProjects {
 
   /**
    * Generate one immutable Platform Outline version for one target from the
-   * current revision's latest approved Outline Brief. Only an explicitly
+   * current revision's latest approved Outline Charter. Only an explicitly
    * approved Brief can start generation, and a regeneration instruction is
    * bounded prose that appends a version rather than editing a prior one.
    */
@@ -662,7 +662,7 @@ export class WorkspaceContentProjects {
 
   /**
    * Generate the Outline Set for the current revision's latest approved
-   * Outline Brief: the sibling Platform Outlines for every selected target
+   * Outline Charter: the sibling Platform Outlines for every selected target
    * that does not yet hold Outline work citing that Brief, started
    * concurrently within a configured bound. Successful siblings persist when
    * a target fails, so a repeat of this same call is the missing-only retry:
@@ -694,7 +694,7 @@ export class WorkspaceContentProjects {
     const landedState = this.readState();
     const landedProject = requireProject(landedState, projectId);
     const landedRevision = currentRevision(landedProject);
-    const landedBrief = latestApprovedOutlineBrief(landedRevision);
+    const landedBrief = latestApprovedOutlineCharter(landedRevision);
     if (landedBrief?.id !== planned.brief.id) {
       throw new ContentProjectError(
         "outline-generation-blocked",
@@ -731,8 +731,8 @@ export class WorkspaceContentProjects {
       this.writeState(landedState);
     }
     return clone({
-      outlineBriefId: landedBrief.id,
-      outlineBriefVersion: landedBrief.version,
+      outlineCharterId: landedBrief.id,
+      outlineCharterVersion: landedBrief.version,
       generated,
       failures,
     });
@@ -861,7 +861,7 @@ export class WorkspaceContentProjects {
    * The gates and the approved Brief every Platform Outline generation — one
    * target or the whole set — is planned from.
    */
-  private plannedBrief(revision: ContentProjectRevision): OutlineBrief {
+  private plannedBrief(revision: ContentProjectRevision): OutlineCharter {
     const missing = this.missingGates(revision);
     if (missing.length > 0) {
       throw new ContentProjectError(
@@ -870,11 +870,11 @@ export class WorkspaceContentProjects {
         missing,
       );
     }
-    const brief = latestApprovedOutlineBrief(revision);
+    const brief = latestApprovedOutlineCharter(revision);
     if (!brief) {
       throw new ContentProjectError(
         "outline-generation-blocked",
-        "Only an approved immutable Outline Brief can start Platform Outline generation.",
+        "Only an approved immutable Outline Charter can start Platform Outline generation.",
       );
     }
     return brief;
@@ -895,7 +895,7 @@ export class WorkspaceContentProjects {
     revision: ContentProjectRevision,
     target: ContentProjectTarget,
   ): {
-    brief: OutlineBrief;
+    brief: OutlineCharter;
     provider: PlatformOutlineProvider;
     version: number;
     approvedEvidenceIds: Set<string>;
@@ -922,7 +922,7 @@ export class WorkspaceContentProjects {
    * missing-only rule lives here, not with callers.
    */
   private plannedOutlineSet(revision: ContentProjectRevision): {
-    brief: OutlineBrief;
+    brief: OutlineCharter;
     providers: Map<ContentProjectTarget, PlatformOutlineProvider>;
     pending: ContentProjectTarget[];
   } {
@@ -934,7 +934,7 @@ export class WorkspaceContentProjects {
     const pending = brief.targets.filter(
       (target) =>
         !revision.platformOutlines.some(
-          (outline) => outline.target === target && outline.outlineBriefId === brief.id,
+          (outline) => outline.target === target && outline.outlineCharterId === brief.id,
         ),
     );
     return { brief, providers, pending };
@@ -944,7 +944,7 @@ export class WorkspaceContentProjects {
     revision: ContentProjectRevision,
     target: ContentProjectTarget,
   ): {
-    brief: OutlineBrief;
+    brief: OutlineCharter;
     outline: PlatformOutline;
     provider: ContentEngineDraftProvider;
     version: number;
@@ -978,13 +978,13 @@ export class WorkspaceContentProjects {
         `No Draft provider is configured for the ${target} target.`,
       );
     }
-    const brief = revision.outlineBriefs.find(
-      (candidate) => candidate.id === outline.outlineBriefId,
+    const brief = revision.outlineCharters.find(
+      (candidate) => candidate.id === outline.outlineCharterId,
     );
     if (!brief) {
       throw new ContentProjectError(
         "draft-generation-blocked",
-        "The approved Platform Outline no longer names its Outline Brief.",
+        "The approved Platform Outline no longer names its Outline Charter.",
       );
     }
     return {
@@ -1249,10 +1249,10 @@ function latestApproved<T>(
   return [...items].reverse().find((item) => matches(item) && approvedIds.has(idOf(item))) ?? null;
 }
 
-function latestApprovedOutlineBrief(revision: ContentProjectRevision): OutlineBrief | null {
+function latestApprovedOutlineCharter(revision: ContentProjectRevision): OutlineCharter | null {
   return latestApproved(
-    revision.outlineBriefs,
-    new Set(revision.outlineBriefApprovals.map((approval) => approval.outlineBriefId)),
+    revision.outlineCharters,
+    new Set(revision.outlineCharterApprovals.map((approval) => approval.outlineCharterId)),
     () => true,
     (brief) => brief.id,
   );
@@ -1348,7 +1348,7 @@ function providerText(value: string, label: string): string {
 
 function buildOutline(input: {
   projectId: string;
-  brief: OutlineBrief;
+  brief: OutlineCharter;
   target: ContentProjectTarget;
   version: number;
   instruction: string | null;
@@ -1384,8 +1384,8 @@ function buildOutline(input: {
     projectId: input.projectId,
     projectRevision: input.brief.projectRevision,
     target: input.target,
-    outlineBriefId: input.brief.id,
-    outlineBriefVersion: input.brief.version,
+    outlineCharterId: input.brief.id,
+    outlineCharterVersion: input.brief.version,
     version: input.version,
     generatedAt: input.now.toISOString(),
     instruction: input.instruction,
@@ -1403,7 +1403,7 @@ function buildOutline(input: {
 
 function buildDraft(input: {
   projectId: string;
-  brief: OutlineBrief;
+  brief: OutlineCharter;
   outline: PlatformOutline;
   target: ContentProjectTarget;
   version: number;
@@ -1452,8 +1452,8 @@ function buildRevision(seed: ContentProjectRevisionSeed): ContentProjectRevision
     evidenceReview: clone(seed.evidenceReview),
     researchRequest: null,
     frozenEvidence: null,
-    outlineBriefs: [],
-    outlineBriefApprovals: [],
+    outlineCharters: [],
+    outlineCharterApprovals: [],
     platformOutlines: [],
     platformOutlineApprovals: [],
     drafts: [],

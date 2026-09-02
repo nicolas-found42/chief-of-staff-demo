@@ -181,14 +181,14 @@ export function ContentProjectDetailPage() {
           </div>
 
           <div className="card">
-            <h2>Outline Briefs</h2>
-            {revision.outlineBriefs.length === 0 ? (
-              <p className="muted">No Outline Brief has been proposed on this revision.</p>
+            <h2>Outline Charters</h2>
+            {revision.outlineCharters.length === 0 ? (
+              <p className="muted">No Outline Charter has been proposed on this revision.</p>
             ) : (
               <ul>
-                {revision.outlineBriefs.map((brief) => {
-                  const approved = revision.outlineBriefApprovals.some(
-                    (approval) => approval.outlineBriefId === brief.id,
+                {revision.outlineCharters.map((brief) => {
+                  const approved = revision.outlineCharterApprovals.some(
+                    (approval) => approval.outlineCharterId === brief.id,
                   );
                   return (
                     <li key={brief.id}>
@@ -203,13 +203,13 @@ export function ContentProjectDetailPage() {
                             void act(
                               () =>
                                 api
-                                  .contentProjectApproveOutlineBrief(projectId, brief.id)
+                                  .contentProjectApproveOutlineCharter(projectId, brief.id)
                                   .then(() => undefined),
-                              "The Outline Brief is approved and can no longer change.",
+                              "The Outline Charter is approved and can no longer change.",
                             )
                           }
                         >
-                          Approve Outline Brief
+                          Approve Outline Charter
                         </button>
                       )}
                     </li>

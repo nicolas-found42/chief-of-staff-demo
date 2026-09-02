@@ -269,10 +269,10 @@ describe("Selecting a Content Opportunity starts a Content Project (#133)", () =
     expect(detail.result).toMatchObject({
       projects: [{ opportunityId: opportunity.id, projectId: project!.id, created: true }],
     });
-    /* Nothing is generated at selection time: no Outline Brief, no Outline, no Draft. */
+    /* Nothing is generated at selection time: no Outline Charter, no Outline, no Draft. */
     expect(project!.revisions[0]).toMatchObject({
-      outlineBriefs: [],
-      outlineBriefApprovals: [],
+      outlineCharters: [],
+      outlineCharterApprovals: [],
       platformOutlines: [],
       drafts: [],
     });
@@ -281,7 +281,7 @@ describe("Selecting a Content Opportunity starts a Content Project (#133)", () =
     );
   });
 
-  it("keeps every governed gate: the Project still requires evidence review and an approved Outline Brief", async () => {
+  it("keeps every governed gate: the Project still requires evidence review and an approved Outline Charter", async () => {
     const { host, projects } = makeWorkspace({});
     const { runId, shortlist } = await rankedShortlist(host);
     const opportunity = shortlist.opportunities[0];
@@ -296,7 +296,7 @@ describe("Selecting a Content Opportunity starts a Content Project (#133)", () =
       expect.arrayContaining(["content-voice", "evidence-review"]),
     );
     await expect(projects.generateOutline(project.id, "linkedin-standard-post")).rejects.toThrow(
-      /needs these gates first|approved immutable Outline Brief/,
+      /needs these gates first|approved immutable Outline Charter/,
     );
   });
 

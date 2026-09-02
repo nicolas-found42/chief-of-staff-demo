@@ -477,7 +477,7 @@ function ShortlistView({
           </ul>
           <p className="muted">
             The Projects hold the Opportunity relationship and still require evidence review, an
-            approved Outline Brief, and every other Content Engine gate before generation.
+            approved Outline Charter, and every other Content Engine gate before generation.
           </p>
         </div>
       )}
@@ -490,7 +490,7 @@ function ShortlistView({
           <p className="muted">
             Each selected Opportunity becomes exactly one governed Content Project. Nothing is
             generated here: the Project still requires author, audience, objective, evidence,
-            targets, Brand Voice, and an approved Outline Brief.
+            targets, Brand Voice, and an approved Outline Charter.
           </p>
           <div className="form-grid">
             <label className="field">

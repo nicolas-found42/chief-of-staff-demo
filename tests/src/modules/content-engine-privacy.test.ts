@@ -451,7 +451,7 @@ describe("Content Engine transcript-evidence boundary (issue #143, AC 3)", () =>
       includedSourceItemIds: [SOURCE_ITEM.id, SOURCE_ITEM_2.id],
       noExternalResearchAcknowledged: false,
     });
-    const brief = ws.projects.proposeOutlineBrief(project.id, {
+    const brief = ws.projects.proposeOutlineCharter(project.id, {
       thesis: "Frozen public evidence makes generated content reproducible.",
       angle: "Treat evidence review as product state, not workflow discipline.",
       claims: ["Frozen public evidence preserves lineage."],
@@ -460,7 +460,7 @@ describe("Content Engine transcript-evidence boundary (issue #143, AC 3)", () =>
       ],
       ctaIntent: "Approve the Brief before generating.",
     });
-    ws.projects.approveOutlineBrief(project.id, brief.id);
+    ws.projects.approveOutlineCharter(project.id, brief.id);
 
     /* The exact prompt-evidence projection a generator is handed: it holds the
        public material it is supposed to hold — and nothing transcript-shaped. */

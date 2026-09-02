@@ -5,7 +5,7 @@ import type {
   ContentProjectReadiness,
   ContentProjectRevision,
   ContentProjectSummary,
-  OutlineBriefApproval,
+  OutlineCharterApproval,
   OutlineSetOutcome,
   PlatformOutline,
   PlatformOutlineApproval,
@@ -488,9 +488,9 @@ export const api = {
       `/api/content-engine/projects/${encodeURIComponent(projectId)}/revisions`,
       { method: "POST", body: JSON.stringify(patch) },
     ),
-  contentProjectApproveOutlineBrief: (projectId: string, outlineBriefId: string) =>
-    request<OutlineBriefApproval>(
-      `/api/content-engine/projects/${encodeURIComponent(projectId)}/outline-briefs/${encodeURIComponent(outlineBriefId)}/approve`,
+  contentProjectApproveOutlineCharter: (projectId: string, outlineCharterId: string) =>
+    request<OutlineCharterApproval>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/outline-charters/${encodeURIComponent(outlineCharterId)}/approve`,
       { method: "POST" },
     ),
   contentProjectGenerateOutline: (projectId: string, target: string, instruction?: string) =>

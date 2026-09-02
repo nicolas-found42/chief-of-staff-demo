@@ -54,7 +54,7 @@ _Avoid_: Content Studio, Content Generator, Content Scout (that remains the oppo
 
 **Content Project**:
 One durable scope of Content Engine work, carrying its subject, Authorized Author, input revisions,
-approved Outline Briefs, Platform Outlines and optional Content Engine Drafts.
+approved Outline Charters, Platform Outlines and optional Content Engine Drafts.
 _Avoid_: Idea, campaign, Content Pack
 
 **Research Request**:
@@ -77,13 +77,14 @@ The manually approved author-specific writing guidance that Content Engine combi
 Profile; it is consumer policy rather than Person Evidence.
 _Avoid_: Person Profile voice, inferred voice, style clone
 
-**Outline Brief**:
+**Outline Charter**:
 The immutable approved input shared by all independent Platform Outline generations in one Content
 Project revision, including intent, evidence and the exact Brand Profile revision.
-_Avoid_: Opportunity Brief, prompt, research bundle
+_Avoid_: Outline Brief (renamed; it is an input, not a briefing anyone reads), Opportunity
+Charter, prompt, research bundle
 
 **Platform Outline**:
-One versioned publication-target plan generated from an Outline Brief, containing structure,
+One versioned publication-target plan generated from an Outline Charter, containing structure,
 evidence placement and target constraints but not complete publishable copy.
 _Avoid_: Content Draft, post, template
 
@@ -148,12 +149,13 @@ completeness. It is untrusted third-party evidence, never an instruction to the 
 Item may support a Content Opportunity but is not itself an opportunity.
 _Avoid_: Source (ambiguous with Source Target), content (too broad), post (not every item is a post)
 
-**Opportunity Brief**:
+**Opportunity Charter**:
 The immutable input shared by all independent Content Draft generations for one selected Content
 Opportunity. It contains one to eight of the strongest supporting Source Items, states their count,
 and carries bounded enrichment, claim evidence, the Brand Profile revision and snapshot, and no
 sibling Content Drafts.
-_Avoid_: Prompt, context (alone), research bundle
+_Avoid_: Opportunity Brief (renamed; it is an input, not a briefing anyone reads), prompt,
+context (alone), research bundle
 
 **Source Discovery Run**:
 A weekly or manually started Content Scout Run that uses the Brand Profile, approved Source Targets,

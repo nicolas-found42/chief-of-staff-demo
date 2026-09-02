@@ -5,7 +5,7 @@ import {
   type ContentProjectEvidenceSelection,
   type ContentProjectIntentPatch,
   type ContentProjectTarget,
-  type OutlineBriefProposalInput,
+  type OutlineCharterProposalInput,
   type ResearchRequestInput,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -27,7 +27,7 @@ export interface ContentEngineApiContext {
 const NOT_FOUND_CODES = new Set<ContentProjectError["code"]>([
   "project-not-found",
   "profile-not-found",
-  "outline-brief-not-found",
+  "outline-charter-not-found",
   "outline-not-found",
 ]);
 const GATE_CODES = new Set<ContentProjectError["code"]>([
@@ -35,7 +35,7 @@ const GATE_CODES = new Set<ContentProjectError["code"]>([
   "author-forbidden",
   "opportunity-already-linked",
   "evidence-freeze-blocked",
-  "outline-brief-blocked",
+  "outline-charter-blocked",
   "outline-generation-blocked",
   "draft-generation-blocked",
   "research-request-blocked",
@@ -165,12 +165,12 @@ export function registerContentEngineApi(app: FastifyInstance, ctx: ContentEngin
     }
   });
 
-  app.post("/api/content-engine/projects/:projectId/outline-briefs", async (request, reply) => {
+  app.post("/api/content-engine/projects/:projectId/outline-charters", async (request, reply) => {
     const { projectId } = request.params as { projectId: string };
     try {
-      return projects.proposeOutlineBrief(
+      return projects.proposeOutlineCharter(
         projectId,
-        (request.body ?? {}) as OutlineBriefProposalInput,
+        (request.body ?? {}) as OutlineCharterProposalInput,
       );
     } catch (error) {
       return projectFailure(reply, error);
@@ -178,14 +178,14 @@ export function registerContentEngineApi(app: FastifyInstance, ctx: ContentEngin
   });
 
   app.post(
-    "/api/content-engine/projects/:projectId/outline-briefs/:outlineBriefId/approve",
+    "/api/content-engine/projects/:projectId/outline-charters/:outlineCharterId/approve",
     async (request, reply) => {
-      const { projectId, outlineBriefId } = request.params as {
+      const { projectId, outlineCharterId } = request.params as {
         projectId: string;
-        outlineBriefId: string;
+        outlineCharterId: string;
       };
       try {
-        return projects.approveOutlineBrief(projectId, outlineBriefId);
+        return projects.approveOutlineCharter(projectId, outlineCharterId);
       } catch (error) {
         return projectFailure(reply, error);
       }

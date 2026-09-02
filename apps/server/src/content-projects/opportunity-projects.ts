@@ -26,7 +26,7 @@ export interface OpportunityProjectInput {
  * Opportunity starts exactly one governed Content Project and records the
  * relationship on it. The call is idempotent per Opportunity: re-selection
  * returns the same Project and creates nothing. Nothing is generated here —
- * the Project's own evidence review and Outline Brief approval remain the only
+ * the Project's own evidence review and Outline Charter approval remain the only
  * route to generation.
  */
 export interface OpportunityProjects {

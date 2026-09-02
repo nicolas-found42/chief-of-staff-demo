@@ -1124,7 +1124,7 @@ describe("Content Scout frontier contracts", () => {
     ).toEqual({ retained: false });
     host.retainEvidenceTranscript({
       id: "brief-transcript",
-      text: "Durable derived transcript used by an immutable Opportunity Brief.",
+      text: "Durable derived transcript used by an immutable Opportunity Charter.",
     });
 
     nowMs = Date.parse("2026-07-31T12:00:01.000Z");

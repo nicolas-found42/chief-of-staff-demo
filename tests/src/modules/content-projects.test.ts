@@ -232,7 +232,7 @@ describe("WorkspaceContentProjects creation and author policy", () => {
   });
 });
 
-describe("WorkspaceContentProjects Outline Brief gate", () => {
+describe("WorkspaceContentProjects Outline Charter gate", () => {
   it("freezes reviewed evidence and permits a separately approved immutable Brief only when every gate is present", () => {
     const { projects, owner, brandProfiles } = setup();
     projects.approveContentVoice(owner.id, "Clear, practical, and evidence-led.");
@@ -255,7 +255,7 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
     });
 
     expect(() =>
-      projects.proposeOutlineBrief(project.id, {
+      projects.proposeOutlineCharter(project.id, {
         thesis: "Approval gates make generated work reproducible.",
         angle: "Treat evidence review as product state.",
         claims: ["Frozen inputs preserve lineage."],
@@ -264,7 +264,7 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
       }),
     ).toThrowError(
       expect.objectContaining<Partial<ContentProjectError>>({
-        code: "outline-brief-blocked",
+        code: "outline-charter-blocked",
         missingGates: ["evidence-review"],
       }),
     );
@@ -282,7 +282,7 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
       userMaterial: ["A frozen input should survive later changes."],
     });
 
-    const proposal = projects.proposeOutlineBrief(project.id, {
+    const proposal = projects.proposeOutlineCharter(project.id, {
       thesis: "Approval gates make generated work reproducible.",
       angle: "Treat evidence review as product state.",
       claims: ["Frozen inputs preserve lineage."],
@@ -305,8 +305,11 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
       brandVoiceRevisionId: brand.id,
       targets: ["linkedin-standard-post", "email-newsletter"],
     });
-    const approval = projects.approveOutlineBrief(project.id, proposal.id);
-    expect(approval).toMatchObject({ outlineBriefId: proposal.id, approvedAt: NOW.toISOString() });
+    const approval = projects.approveOutlineCharter(project.id, proposal.id);
+    expect(approval).toMatchObject({
+      outlineCharterId: proposal.id,
+      approvedAt: NOW.toISOString(),
+    });
     expect(projects.readiness(project.id)).toEqual({ ready: true, missingGates: [] });
   });
 
@@ -361,7 +364,7 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
         }),
       );
       expect(() =>
-        projects.proposeOutlineBrief(project.id, {
+        projects.proposeOutlineCharter(project.id, {
           thesis: "Empty research cannot support a Brief.",
           angle: "Select evidence or explicitly choose no research.",
           claims: [],
@@ -370,7 +373,7 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
         }),
       ).toThrowError(
         expect.objectContaining<Partial<ContentProjectError>>({
-          code: "outline-brief-blocked",
+          code: "outline-charter-blocked",
           missingGates: ["evidence-review"],
         }),
       );
@@ -482,7 +485,7 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
       includedSourceItemIds: [],
       noExternalResearchAcknowledged: true,
     });
-    const proposal = projects.proposeOutlineBrief(project.id, {
+    const proposal = projects.proposeOutlineCharter(project.id, {
       thesis: "Approval must retain author authority.",
       angle: "Recheck at the durable decision.",
       claims: [],
@@ -491,13 +494,13 @@ describe("WorkspaceContentProjects Outline Brief gate", () => {
     });
 
     ownerOnboarding.setConnectedIdentity(null);
-    expect(() => projects.approveOutlineBrief(project.id, proposal.id)).toThrowError(
+    expect(() => projects.approveOutlineCharter(project.id, proposal.id)).toThrowError(
       expect.objectContaining<Partial<ContentProjectError>>({
-        code: "outline-brief-blocked",
+        code: "outline-charter-blocked",
         missingGates: ["canonical-owner", "author-authority"],
       }),
     );
-    expect(projects.get(project.id)?.revisions[0]?.outlineBriefApprovals).toEqual([]);
+    expect(projects.get(project.id)?.revisions[0]?.outlineCharterApprovals).toEqual([]);
   });
 });
 
@@ -526,14 +529,14 @@ describe("WorkspaceContentProjects revisions", () => {
       includedSourceItemIds: [],
       noExternalResearchAcknowledged: true,
     });
-    const firstBrief = projects.proposeOutlineBrief(project.id, {
+    const firstBrief = projects.proposeOutlineCharter(project.id, {
       thesis: "Approval gates make generated work reproducible.",
       angle: "Treat evidence review as product state.",
       claims: ["This is an author-supplied claim."],
       evidenceMap: [],
       ctaIntent: null,
     });
-    projects.approveOutlineBrief(project.id, firstBrief.id);
+    projects.approveOutlineCharter(project.id, firstBrief.id);
 
     const revised = projects.reviseIntent(project.id, {
       audience: "Product and engineering leaders",
@@ -545,8 +548,8 @@ describe("WorkspaceContentProjects revisions", () => {
       targets: ["email-newsletter"],
       evidenceReview: null,
       frozenEvidence: null,
-      outlineBriefs: [],
-      outlineBriefApprovals: [],
+      outlineCharters: [],
+      outlineCharterApprovals: [],
     });
     expect(projects.readiness(project.id)).toEqual({
       ready: false,
@@ -559,8 +562,8 @@ describe("WorkspaceContentProjects revisions", () => {
       revision: 1,
       audience: "Workflow builders",
       targets: ["linkedin-standard-post"],
-      outlineBriefs: [{ id: firstBrief.id }],
-      outlineBriefApprovals: [{ outlineBriefId: firstBrief.id }],
+      outlineCharters: [{ id: firstBrief.id }],
+      outlineCharterApprovals: [{ outlineCharterId: firstBrief.id }],
     });
   });
 
@@ -606,14 +609,14 @@ describe("WorkspaceContentProjects revisions", () => {
       includedSourceItemIds: [firstSource.id],
       noExternalResearchAcknowledged: false,
     });
-    const firstBrief = projects.proposeOutlineBrief(project.id, {
+    const firstBrief = projects.proposeOutlineCharter(project.id, {
       thesis: "The first selection has its own lineage.",
       angle: "Start from the first source.",
       claims: ["The first source was reviewed."],
       evidenceMap: [{ claim: "The first source was reviewed.", sourceItemIds: [firstSource.id] }],
       ctaIntent: null,
     });
-    projects.approveOutlineBrief(project.id, firstBrief.id);
+    projects.approveOutlineCharter(project.id, firstBrief.id);
 
     brandProfiles.accept({
       markdown: "# Brand Profile\n\n## Voice\nSecond approved Brand Voice.",
@@ -638,13 +641,13 @@ describe("WorkspaceContentProjects revisions", () => {
 
     const reread = projects.get(project.id)!;
     expect(reread.revisions[0]?.frozenEvidence).toEqual(firstFreeze);
-    expect(reread.revisions[0]?.outlineBriefApprovals).toEqual([
-      { outlineBriefId: firstBrief.id, approvedAt: NOW.toISOString() },
+    expect(reread.revisions[0]?.outlineCharterApprovals).toEqual([
+      { outlineCharterId: firstBrief.id, approvedAt: NOW.toISOString() },
     ]);
     expect(reread.revisions[1]).toMatchObject({
       revision: 2,
-      outlineBriefs: [],
-      outlineBriefApprovals: [],
+      outlineCharters: [],
+      outlineCharterApprovals: [],
       frozenEvidence: {
         sourceItems: [{ id: secondSource.id }],
         diagnostics: [{ adapterVersion: "2" }],
@@ -719,7 +722,7 @@ describe("WorkspaceContentProjects revisions", () => {
     expect(reread.revisions[1]?.frozenEvidence?.sourceItems.map((item) => item.id)).toEqual([
       secondSource.id,
     ]);
-    expect(reread.revisions[1]?.outlineBriefApprovals).toEqual([]);
+    expect(reread.revisions[1]?.outlineCharterApprovals).toEqual([]);
   });
 });
 
@@ -755,7 +758,7 @@ describe("WorkspaceContentProjects opportunity relationship (#133)", () => {
       brandProfileRevisionId: "brand_1",
       recordedAt: NOW.toISOString(),
     });
-    expect(revision.outlineBriefs).toEqual([]);
+    expect(revision.outlineCharters).toEqual([]);
     expect(revision.platformOutlines).toEqual([]);
     expect(revision.drafts).toEqual([]);
   });

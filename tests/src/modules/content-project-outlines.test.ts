@@ -7,7 +7,7 @@ import {
   CONTENT_ENGINE_UNSUPPORTED_CLAIM_POLICY,
   type ContentEngineDraft,
   type ContentProjectPromptEvidence,
-  type OutlineBrief,
+  type OutlineCharter,
   type PlatformOutline,
 } from "@chief-of-staff-demo/shared";
 import { DIAGNOSTIC, NOW, SOURCE_ITEM, SOURCE_ITEM_2 } from "./content-project-fixtures";
@@ -92,14 +92,14 @@ function setupApprovedProject(options: SetupOptions = {}) {
     includedSourceItemIds: [SOURCE_ITEM.id, SOURCE_ITEM_2.id],
     noExternalResearchAcknowledged: false,
   });
-  const brief = projects.proposeOutlineBrief(project.id, {
+  const brief = projects.proposeOutlineCharter(project.id, {
     thesis: "Immutable approved inputs make generated content reproducible.",
     angle: "Treat evidence review as product state, not workflow discipline.",
     claims: ["Frozen inputs preserve lineage."],
     evidenceMap: [{ claim: "Frozen inputs preserve lineage.", sourceItemIds: [SOURCE_ITEM.id] }],
     ctaIntent: "Approve the Brief before generating.",
   });
-  projects.approveOutlineBrief(project.id, brief.id);
+  projects.approveOutlineCharter(project.id, brief.id);
   return { ...ctx, project, brief };
 }
 
@@ -182,7 +182,7 @@ function fakeDraftProvider(
 }
 
 describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
-  it("refuses to generate until an Outline Brief is explicitly approved, then records every approved input", async () => {
+  it("refuses to generate until an Outline Charter is explicitly approved, then records every approved input", async () => {
     const outline = fakeOutlineProvider();
     const { projects, project, brief } = setupApprovedProject({
       outlineProviders: [outline.provider],
@@ -215,7 +215,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       includedSourceItemIds: [],
       noExternalResearchAcknowledged: true,
     });
-    gated.projects.proposeOutlineBrief(gatedProject.id, {
+    gated.projects.proposeOutlineCharter(gatedProject.id, {
       thesis: "Unapproved Briefs cannot start generation.",
       angle: "Prove the approval gate.",
       claims: [],
@@ -235,8 +235,8 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       projectId: project.id,
       projectRevision: 1,
       target: "linkedin-standard-post",
-      outlineBriefId: brief.id,
-      outlineBriefVersion: brief.version,
+      outlineCharterId: brief.id,
+      outlineCharterVersion: brief.version,
       version: 1,
       instruction: null,
       title: "A grounded case for immutable inputs",
@@ -590,7 +590,7 @@ describe("Model-backed generation adapters (#131)", () => {
       };
     };
     const provider = createModelOutlineProvider(() => completeJson, "linkedin-standard-post");
-    const brief = fromPartial<OutlineBrief>({ thesis: "T", evidenceMap: [], version: 1 });
+    const brief = fromPartial<OutlineCharter>({ thesis: "T", evidenceMap: [], version: 1 });
     const result = await provider.generate({
       brief,
       evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
@@ -624,7 +624,7 @@ describe("Model-backed generation adapters (#131)", () => {
     };
     const provider = createModelDraftProvider(() => completeJson, "linkedin-standard-post");
     const result = await provider.generate({
-      brief: fromPartial<OutlineBrief>({ thesis: "T", evidenceMap: [] }),
+      brief: fromPartial<OutlineCharter>({ thesis: "T", evidenceMap: [] }),
       outline: fromPartial<PlatformOutline>({ id: "outline_1", thesis: "T", version: 2 }),
       evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
       instruction: "Tighten the hook.",
