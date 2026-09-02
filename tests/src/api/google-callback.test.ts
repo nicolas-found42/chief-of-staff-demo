@@ -9,6 +9,7 @@ import { registerApi } from "../../../apps/server/src/api/router";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { PersonProfileResolver } from "../../../apps/server/src/person-profile/resolver";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
+import { WorkspaceMeetings } from "../../../apps/server/src/meetings/store.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { openGoogleConnection } from "../../../apps/server/src/google/connection";
@@ -51,6 +52,7 @@ beforeEach(async () => {
     lifecycle: [],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
+  const meetings = new WorkspaceMeetings(workspaceDir);
   await registerApi(app, {
     runs: openRuns(workspaceDir),
     port: 4317,
@@ -59,6 +61,7 @@ beforeEach(async () => {
     google,
     people: peopleProfiles,
     peopleResolver: new PersonProfileResolver({ store: peopleStore, sources: [] }),
+    meetings,
     onboarding: ownerOnboarding,
     /* No Content Engine route is exercised here, so the interface behind
        them is never reached. */

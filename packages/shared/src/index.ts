@@ -4,6 +4,7 @@ export * from "./transcript.js";
 export * from "./youtube.js";
 export * from "./source-items.js";
 export * from "./content-scout.js";
+export * from "./meeting.js";
 export * from "./meeting-brief.js";
 export * from "./meeting-debrief.js";
 export * from "./content-research.js";

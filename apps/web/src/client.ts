@@ -20,7 +20,9 @@ import type {
   GoogleStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
+  Meeting,
   MeetingBriefIndex,
+  MeetingIndex,
   MeetingBriefPersonProfileReadModel,
   MeetingDebriefDetail,
   MeetingDebriefField,
@@ -461,6 +463,9 @@ export const api = {
   hubspotCheck: () =>
     request<HubSpotSetupCheck>("/api/meeting-brief/hubspot/check", { method: "POST" }),
   meetingsOverview: () => request<MeetingBriefIndex>("/api/meetings/overview"),
+  meetings: () => request<MeetingIndex>("/api/meetings/list"),
+  meeting: (meetingId: string) =>
+    request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}`),
   meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
   saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
     request<{ internalDomains: string[] }>("/api/meeting-brief/config", {

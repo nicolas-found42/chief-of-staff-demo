@@ -6,6 +6,7 @@ import { HomePage } from "./pages/HomePage";
 import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
 import { ContentProjectDetailPage } from "./pages/ContentProjectDetailPage";
+import { MeetingPage } from "./pages/MeetingPage";
 import { MeetingsOverviewPage } from "./pages/MeetingsOverviewPage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
 import { MeetingDebriefDetailPage } from "./pages/MeetingDebriefDetailPage";
@@ -218,6 +219,7 @@ export function App() {
       journey; Brief and Debrief lifecycle state stays separate. The
       legacy /meeting-brief product route is gone — not-found. */}
           <Route path="/meetings" element={<MeetingsOverviewPage />} />
+          <Route path="/meetings/:meetingId" element={<MeetingPage />} />
           <Route path="/meetings/brief" element={<MeetingBriefPage />} />
           <Route path="/meetings/brief/:occurrenceKey" element={<MeetingBriefPage />} />
           <Route path="/meeting-debrief" element={<MeetingDebriefPage />} />

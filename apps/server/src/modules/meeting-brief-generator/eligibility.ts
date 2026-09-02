@@ -1,3 +1,4 @@
+import type { MeetingParticipant } from "@chief-of-staff-demo/shared";
 import type { CalendarAttendee, CalendarEvent } from "./calendar.js";
 
 /**
@@ -119,4 +120,45 @@ export function eligibilityReason(event: CalendarEvent, ownerEmail: string | nul
   }
   if (!hasOtherAttendee) return "no_other_attendee";
   return "eligible";
+}
+
+/**
+ * Which occurrences the Workspace records as Meetings (ADR-0050).
+ *
+ * Deliberately broader than eligibility, and asking a different question.
+ * Eligibility asks "should a Meeting Brief be prepared?"; this asks "did a
+ * meeting happen, or is one going to?". A meeting the owner declined and
+ * attended anyway still happened, and a cancelled occurrence still deserves
+ * the record that says so — so `owner_declined` and `cancelled` do not
+ * disqualify here. Only the three tests that mean "this is not a meeting"
+ * do: no clock time, no end, and nobody else in the room.
+ */
+export function isRecordableMeeting(event: CalendarEvent, ownerEmail: string | null): boolean {
+  if (event.isAllDay === true) return false;
+  if (!event.startAt || !event.endAt) return false;
+  const normalizedOwner = ownerEmail?.trim().toLowerCase() ?? null;
+  return event.attendees.some((attendee) => {
+    if (isResourceAttendee(attendee)) return false;
+    if (normalizedOwner && attendee.email.trim().toLowerCase() === normalizedOwner) return false;
+    return true;
+  });
+}
+
+/** Calendar attendees as the Meeting record keeps them: people only, no rooms. */
+export function meetingParticipants(
+  event: CalendarEvent,
+  ownerEmail: string | null,
+): MeetingParticipant[] {
+  const normalizedOwner = ownerEmail?.trim().toLowerCase() ?? null;
+  return event.attendees
+    .filter((attendee) => !isResourceAttendee(attendee))
+    .map((attendee) => ({
+      email: attendee.email,
+      displayName: attendee.displayName ?? null,
+      responseStatus: attendee.responseStatus,
+      organizer: attendee.organizer === true,
+      self:
+        attendee.self === true ||
+        (normalizedOwner !== null && attendee.email.trim().toLowerCase() === normalizedOwner),
+    }));
 }

@@ -10,6 +10,7 @@ import { seedRelayBaseUrlFromEnv } from "../relay/state.js";
 import { registerMeetingBriefHubSpotRoutes } from "../modules/meeting-brief-generator/hubspot/routes.js";
 import { contentScoutTestPorts, registerTestSeed } from "../api/testSeed.js";
 import { PersonProfileStore } from "../person-profile/store.js";
+import { WorkspaceMeetings } from "../meetings/store.js";
 import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "../person-profile/references.js";
 import { TranscriptCatalogStore } from "../transcript-catalog/store.js";
@@ -253,6 +254,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     ],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
+  /* The Workspace's Meetings (ADR-0050). The Meeting Brief Generator's host
+     builds its own reader over the same file; the store keeps no memory, so
+     the two never hold competing caches. */
+  const meetings = new WorkspaceMeetings(workspaceDir, () => new Date());
   /* The public-web identity resolver, wired here for the first time: the seam
      and its source existed but nothing in production built them, so a Profile
      could only ever start from a name a Module already held. The typed
@@ -657,6 +662,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     google: googleConnection,
     people: peopleProfiles,
     peopleResolver,
+    meetings,
     onboarding: ownerOnboarding,
     contentProjects,
     onConfigChanged: async () => {

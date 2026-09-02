@@ -2,8 +2,15 @@ import {
   MEETING_BRIEF_MODULE_ID,
   meetingBriefOccurrenceIdentity,
 } from "@chief-of-staff-demo/shared";
+import type { MeetingIneligibility } from "@chief-of-staff-demo/shared";
 import type { DurableClock } from "../../engine/durableClock.js";
-import { isEligibleMeeting } from "./eligibility.js";
+import type { WorkspaceMeetings } from "../../meetings/store.js";
+import {
+  eligibilityReason,
+  isEligibleMeeting,
+  isRecordableMeeting,
+  meetingParticipants,
+} from "./eligibility.js";
 import {
   type CalendarEvent,
   type CalendarProvider,
@@ -22,6 +29,19 @@ const PREPARATION_LEAD_MS = 4 * 60 * 60 * 1000;
 /** Occurrence key for deduplication and durableClock key (ADR-0033). */
 export function occurrenceKeyFor(event: Pick<CalendarEvent, "eventId" | "occurrenceId">): string {
   return meetingBriefOccurrenceIdentity(event.eventId, event.occurrenceId).occurrenceKey;
+}
+
+const INELIGIBILITY: readonly MeetingIneligibility[] = [
+  "all_day_excluded",
+  "missing_time",
+  "cancelled",
+  "owner_declined",
+  "no_other_attendee",
+];
+
+/** Narrow `eligibilityReason`'s diagnostic string; `eligible` becomes null. */
+function ineligibilityOf(reason: string): MeetingIneligibility | null {
+  return INELIGIBILITY.find((value) => value === reason) ?? null;
 }
 
 /** Compute due time: 4h before start, or immediate if inside window. */
@@ -86,6 +106,8 @@ export async function reconcileCalendar(args: {
   store: MeetingBriefCalendarStore;
   clock: DurableClock;
   ownerEmail: string | null | (() => string | null);
+  /** The Workspace's Meetings (ADR-0050). Absent in callers that only schedule. */
+  meetings?: WorkspaceMeetings;
   now: Date;
   calendarId?: string;
   forceFullSync?: boolean;
@@ -188,6 +210,24 @@ export async function reconcileCalendar(args: {
     const key = occurrenceKeyFor(event);
     seenKeys.add(key);
     const eligible = isEligibleMeeting(event, ownerEmail);
+
+    /* ADR-0050: the Workspace records the meeting whether or not it earns a
+       Meeting Brief, and keeps it once Calendar's forward window has moved
+       past it. Eligibility below still decides only what gets prepared. */
+    if (args.meetings && isRecordableMeeting(event, ownerEmail)) {
+      args.meetings.upsertFromCalendar({
+        occurrenceKey: key,
+        calendarEventId: event.eventId,
+        occurrenceId: event.occurrenceId,
+        title: event.summary,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        participants: meetingParticipants(event, ownerEmail),
+        cancelled: event.status === "cancelled",
+        ineligibleReason: ineligibilityOf(eligibilityReason(event, ownerEmail)),
+      });
+    }
+
     const startMs = Date.parse(event.startAt);
     const isFuture = !Number.isNaN(startMs) && startMs > args.now.getTime();
 

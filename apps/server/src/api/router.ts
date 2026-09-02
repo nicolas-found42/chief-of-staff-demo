@@ -11,9 +11,11 @@ import {
 import type { HostedModule } from "../engine/host.js";
 import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
+import { registerMeetingsApi } from "./meetings.js";
 import { registerPeopleApi } from "./people.js";
 import { registerContentEngineApi } from "./content-engine.js";
 import { registerOnboardingApi } from "./onboarding.js";
+import type { WorkspaceMeetings } from "../meetings/store.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import type { WorkspaceContentProjects } from "../content-projects/projects.js";
 import type { PersonProfileResolver } from "../person-profile/resolver.js";
@@ -31,6 +33,8 @@ export interface ApiContext {
   modules: HostedModule[];
   /** The Person Profiles product area's Workspace-owned interface (spec #117). */
   people: WorkspacePersonProfiles;
+  /** The Workspace's Meetings, which the Meeting Wizard presents (ADR-0050). */
+  meetings: WorkspaceMeetings;
   /** Public-web identity resolution behind the typed-identifier lookup. */
   peopleResolver: PersonProfileResolver;
   /** Owner onboarding (issue #123): the proposal/confirmation namespace. */
@@ -233,6 +237,9 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   /* The Person Profiles product area is a Workspace resource, not a hosted
      Module: its routes hang off the Shell under /api/people (ADR-0043). */
   registerPeopleApi(app, { people: ctx.people, resolver: ctx.peopleResolver });
+  /* Meetings are a Workspace resource too: the Meeting Wizard presents them,
+     but the Brief and Debrief Modules only consume them (ADR-0050). */
+  registerMeetingsApi(app, { meetings: ctx.meetings });
   /* Owner onboarding (issue #123): the proposal/confirmation namespace, also
      a Workspace resource rather than a hosted Module. */
   registerOnboardingApi(app, { onboarding: ctx.onboarding });

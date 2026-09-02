@@ -49,6 +49,7 @@ import { materialFingerprint } from "./revision.js";
 import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
+import { WorkspaceMeetings } from "../../meetings/store.js";
 /** The versioned explicit provider policy actions recorded in module config (#137). */
 type MeetingBriefProviderPolicy = ModuleConfigs["meeting-brief-generator"]["providerPolicy"];
 
@@ -194,12 +195,17 @@ export class MeetingBriefHost implements HostedModule {
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   private readonly profileRegenerations = new Map<string, Promise<string>>();
+  private readonly meetings: WorkspaceMeetings;
   /** Explicit policy actions when no ConfigStore backs this host (tests). */
   private providerPolicyInMemory: MeetingBriefProviderPolicy = {};
   constructor(private readonly deps: MeetingBriefHostDeps) {
     this.now = deps.now ?? (() => new Date());
     this.clock = new DurableClock(deps.workspaceDir, this.now);
     this.calendarStore = new MeetingBriefCalendarStore(deps.workspaceDir);
+    /* The Workspace's Meetings (ADR-0050). Constructed from the same directory
+       rather than injected: the store holds nothing in memory, so the API's
+       instance and this one are two readers of one file, never two caches. */
+    this.meetings = new WorkspaceMeetings(deps.workspaceDir, this.now);
     this.calendarProvider = deps.calendarProvider ?? new FakeCalendarProvider();
     // HubSpot wiring — per-user private-app token, Shell stores secret (issue://86)
     if (deps.hubSpotConnection) {
@@ -510,6 +516,7 @@ export class MeetingBriefHost implements HostedModule {
       store: this.calendarStore,
       clock: this.clock,
       ownerEmail: () => this.getOwnerEmail(),
+      meetings: this.meetings,
       now: this.now(),
       calendarId: MEETING_BRIEF_CALENDAR_ID,
       forceFullSync: options.forceFullSync ?? false,
