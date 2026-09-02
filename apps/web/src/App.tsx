@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { AllRunsPage } from "./pages/AllRunsPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
@@ -23,6 +23,30 @@ import { migrationApi, type MigrationStatus } from "./client";
 import { PRODUCT_AREAS } from "./productAreas";
 import { useIsLoadedEntry } from "./usePageFocus";
 
+/* The one width the Shell changes shape at, shared with the stylesheet's
+   reflow block so the disclosure and the layout cannot disagree. */
+const COMPACT_NAV = "(max-width: 640px)";
+
+/* Routes that are mostly table. They read better than the 1080px prose measure
+   allows, so they opt out of it (see .app-main-wide). Exact paths only — a Run
+   or a Profile detail page is prose and keeps the measure. */
+const WIDE_ROUTES = ["/runs", "/people", "/people/review", "/meeting-debrief"];
+
+/** True while the viewport is narrow enough that the tab bar is disclosed
+    rather than always present. Read from the same media query the stylesheet
+    uses, not from a width comparison that could drift from it. */
+function useCompactNav(): boolean {
+  const [compact, setCompact] = useState(() => window.matchMedia(COMPACT_NAV).matches);
+  useEffect(() => {
+    const query = window.matchMedia(COMPACT_NAV);
+    const sync = (event: MediaQueryListEvent) => setCompact(event.matches);
+    setCompact(query.matches);
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return compact;
+}
+
 /**
  * The Shell. Before any route renders, the boot gate asks /api/migration/status
  * once: a pre-cutover Workspace renders the migration gate instead of the whole
@@ -38,6 +62,13 @@ export function App() {
 
   const [status, setStatus] = useState<MigrationStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+
+  const { pathname } = useLocation();
+  const compactNav = useCompactNav();
+  const [navOpen, setNavOpen] = useState(false);
+  /* Following a link is the end of the menu's job. Without this the disclosed
+     panel stays over the page the tap just navigated to. */
+  useEffect(() => setNavOpen(false), [pathname]);
 
   useEffect(() => {
     let live = true;
@@ -105,23 +136,47 @@ export function App() {
         <Link className="app-title" to="/">
           Found42 — Chief of Staff
         </Link>
-        {/* Product areas are explicit (spec: Navigation and onboarding #1;
-            ADR-0043), not derived from the Module registry: Person Profiles is
-            a Workspace resource with its own surface, not a Module, and the
-            four areas name ownership, not backend registration. Nav and Home's
-            cards read the same list, so the two cannot disagree. */}
-        <nav aria-label="Products">
-          {PRODUCT_AREAS.map((area) => (
-            <NavLink key={area.id} to={area.path}>
-              {area.label}
-            </NavLink>
-          ))}
-        </nav>
-        <nav aria-label="Settings">
-          <NavLink to="/settings">Settings</NavLink>
-        </nav>
+        {/* Below 640px the five links cost three rows of the first screen, so
+            they are disclosed rather than always drawn. The button only exists
+            at that width — a hidden control the layout never uses would still
+            be in the tab order, and `hidden` overridden by a media query is a
+            state assistive technology and CSS can disagree about. */}
+        {compactNav && (
+          <button
+            type="button"
+            className="nav-toggle"
+            aria-expanded={navOpen}
+            aria-controls="app-nav"
+            onClick={() => setNavOpen((open) => !open)}
+          >
+            Menu
+          </button>
+        )}
+        {(!compactNav || navOpen) && (
+          <div className="app-nav" id="app-nav">
+            {/* Product areas are explicit (spec: Navigation and onboarding #1;
+                ADR-0043), not derived from the Module registry: Person Profiles
+                is a Workspace resource with its own surface, not a Module, and
+                the four areas name ownership, not backend registration. Nav and
+                Home's cards read the same list, so the two cannot disagree. */}
+            <nav aria-label="Products">
+              {PRODUCT_AREAS.map((area) => (
+                <NavLink key={area.id} to={area.path}>
+                  {area.label}
+                </NavLink>
+              ))}
+            </nav>
+            <nav aria-label="Settings">
+              <NavLink to="/settings">Settings</NavLink>
+            </nav>
+          </div>
+        )}
       </header>
-      <main className="app-main" id="main" tabIndex={-1}>
+      <main
+        className={WIDE_ROUTES.includes(pathname) ? "app-main app-main-wide" : "app-main"}
+        id="main"
+        tabIndex={-1}
+      >
         {/* Inside <main>, above the outlet: the skip link targets #main, so a
             banner here is the first thing a keyboard user meets after skipping,
             where one in a new row above <main> would be jumped straight over.

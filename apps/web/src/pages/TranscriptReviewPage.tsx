@@ -240,7 +240,7 @@ export function TranscriptReviewPage() {
               </option>
             ))}
           </select>
-          <Link className="linklike" to="/people">
+          <Link className="back-link" to="/people">
             Back to Person Profiles
           </Link>
         </div>

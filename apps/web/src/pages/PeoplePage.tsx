@@ -78,9 +78,11 @@ export function PeoplePage() {
         </p>
       ) : (
         <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
+          {/* Stacks below 640px (.stacked-sm); the roles are stated because
+              that rule changes `display`, and each cell names its column. */}
+          <table className="stacked-sm" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
                 <th scope="col">Name</th>
                 <th scope="col">Email</th>
                 <th scope="col">Role</th>
@@ -89,19 +91,27 @@ export function PeoplePage() {
                 <th scope="col">State</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {profiles.map((profile) => (
-                <tr key={profile.id}>
-                  <td>
+                <tr role="row" key={profile.id}>
+                  <td role="cell" data-label="Name">
                     <Link to={`/people/${encodeURIComponent(profile.id)}`}>
                       {profile.fullName ?? "(unnamed)"}
                     </Link>
                   </td>
-                  <td>{profile.primaryEmail ?? "—"}</td>
-                  <td>{profile.role ?? "—"}</td>
-                  <td>{profile.currentEmployer ?? "—"}</td>
-                  <td>{profile.revision}</td>
-                  <td>
+                  <td role="cell" data-label="Email">
+                    {profile.primaryEmail ?? "—"}
+                  </td>
+                  <td role="cell" data-label="Role">
+                    {profile.role ?? "—"}
+                  </td>
+                  <td role="cell" data-label="Current employer">
+                    {profile.currentEmployer ?? "—"}
+                  </td>
+                  <td role="cell" data-label="Revision">
+                    {profile.revision}
+                  </td>
+                  <td role="cell" data-label="State">
                     {/* Archive state is a classified state, not a word in a
                         cell: an archived Profile reads as one at a glance. */}
                     <span

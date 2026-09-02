@@ -125,10 +125,14 @@ export function MeetingDebriefPage() {
       )}
       {index && index.entries.length > 0 && (
         <div className="table-scroll">
-          <table>
+          {/* Seven columns, so it stacks below 640px (.stacked-sm). The roles
+              are stated because that rule changes `display`, which would
+              otherwise drop the table semantics; each cell names its own
+              column for the stacked reading. */}
+          <table className="stacked-sm" role="table">
             <caption className="visually-hidden">Meeting Debriefs</caption>
-            <thead>
-              <tr>
+            <thead role="rowgroup">
+              <tr role="row">
                 <th scope="col">Meeting</th>
                 <th scope="col">Date</th>
                 <th scope="col">Calendar</th>
@@ -138,24 +142,30 @@ export function MeetingDebriefPage() {
                 <th scope="col">Review</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {index.entries.map((entry) => (
-                <tr key={entry.runId}>
-                  <td>
+                <tr role="row" key={entry.runId}>
+                  <td role="cell" data-label="Meeting">
                     <Link to={`/meeting-debrief/${encodeURIComponent(entry.runId)}`}>
                       {entry.fileName ?? entry.transcriptId}
                     </Link>
                   </td>
-                  <td>{entry.meetingDate ?? "—"}</td>
-                  <td>{entry.linked ? "Linked" : "Not linked"}</td>
-                  <td>
+                  <td role="cell" data-label="Date">
+                    {entry.meetingDate ?? "—"}
+                  </td>
+                  <td role="cell" data-label="Calendar">
+                    {entry.linked ? "Linked" : "Not linked"}
+                  </td>
+                  <td role="cell" data-label="Roster">
                     <RosterBadge entry={entry} />
                   </td>
-                  <td>
+                  <td role="cell" data-label="Identity">
                     <IdentityBadge entry={entry} />
                   </td>
-                  <td>{entry.recipientCount}</td>
-                  <td>
+                  <td role="cell" data-label="Recipients">
+                    {entry.recipientCount}
+                  </td>
+                  <td role="cell" data-label="Review">
                     <ReviewStateBadge entry={entry} />
                   </td>
                 </tr>

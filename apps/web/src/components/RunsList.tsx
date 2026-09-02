@@ -180,9 +180,11 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
       ) : (
         <>
           <div className="table-scroll" tabIndex={0}>
-            <table className="runs-table" data-testid="runs-table">
-              <thead>
-                <tr>
+            {/* Stacks below 640px (.stacked-sm); the roles are stated because
+                that rule changes `display`, and each cell names its column. */}
+            <table className="runs-table stacked-sm" role="table" data-testid="runs-table">
+              <thead role="rowgroup">
+                <tr role="row">
                   <th scope="col">Run</th>
                   {showModule ? <th scope="col">Module</th> : <th scope="col">Source</th>}
                   <th scope="col">Outcome</th>
@@ -190,9 +192,10 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                   <th scope="col">When</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {runs.map((run) => (
                   <tr
+                    role="row"
                     key={run.id}
                     className="run-row"
                     onMouseDown={(event) => {
@@ -218,7 +221,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                         legacy runs read the same way, and the raw filename is
                         demoted to metadata (D4). The link stays the keyboard and
                         screen-reader route into the run. */}
-                    <td className="run-file-name">
+                    <td role="cell" data-label="Run" className="run-file-name">
                       <Link
                         to={`/runs/${run.id}`}
                         className="run-link"
@@ -234,23 +237,25 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
                       /* The tab bar's own words, not an identifier from disk —
                          except for a Run whose Module is gone, which keeps its
                          raw id rather than disappearing. */
-                      <td className="muted">{moduleLabel(run.module)}</td>
+                      <td role="cell" data-label="Module" className="muted">
+                        {moduleLabel(run.module)}
+                      </td>
                     ) : (
-                      <td>
+                      <td role="cell" data-label="Source">
                         <IntakeBadge intake={run.intake} />
                       </td>
                     )}
-                    <td>
+                    <td role="cell" data-label="Outcome">
                       <StatusPill status={run.status} connectionState={run.connectionState} />
                     </td>
-                    <td className="muted run-summary-cell">
+                    <td role="cell" data-label="What it did" className="muted run-summary-cell">
                       {run.status === "skipped" && run.skipReason
                         ? run.skipReason
                         : run.status === "blocked" && run.wait?.reason
                           ? run.wait.reason
                           : (run.summary ?? "")}
                     </td>
-                    <td>
+                    <td role="cell" data-label="When">
                       <time dateTime={run.createdAt} title={formatTime(run.createdAt)}>
                         {relativeTime(run.createdAt)}
                       </time>

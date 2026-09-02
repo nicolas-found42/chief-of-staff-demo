@@ -124,6 +124,21 @@ body {
   text-decoration: none;
 }
 
+/* Holds the two navs so the header has one wrapping child rather than two that
+   each claim a row of their own. Below 640px the button below discloses it. */
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 2rem;
+}
+
+/* Only rendered below 640px, where the four product links plus Settings cost
+   three rows of a phone's first screen. */
+.nav-toggle {
+  min-height: 2.75rem;
+}
+
 .app-header nav {
   display: flex;
   flex-wrap: wrap;
@@ -149,9 +164,17 @@ body {
 
 .app-main {
   width: 100%;
-  max-width: 1080px;
+  max-width: var(--main-measure, 1080px);
   margin: 0 auto;
   padding: 1.5rem;
+}
+
+/* 1080px is a reading measure, and the pages that are mostly table are not
+   read that way: they were being squeezed into a prose column while a wide
+   display had hundreds of pixels going spare either side. App names the
+   routes (ADR-0043's pattern — an explicit list, not a derived one). */
+.app-main-wide {
+  --main-measure: 1600px;
 }
 
 .app-footer {
@@ -445,6 +468,11 @@ body {
   border-radius: 8px;
   padding: 1rem 1.25rem;
   margin: 1rem 0;
+  /* Cards are where the app prints raw event ids, occurrence keys and feed
+     URLs. Those have no spaces to break at, so without this one of them widens
+     the card, then <main>, then the document, and the whole page scrolls
+     sideways — the same reasoning .run-file-name already carries. */
+  overflow-wrap: anywhere;
 }
 
 .card h2 {
@@ -456,6 +484,22 @@ body {
   align-items: center;
   gap: 1rem;
   margin: 0.75rem 0;
+  /* What constrains this row is the width of the column it sits in, not the
+     width of the window, so folding is unconditional rather than keyed to a
+     breakpoint: .form-grid hands out ~250px columns as soon as two of them
+     fit, and an unwrapped row needs ~290px. */
+  flex-wrap: wrap;
+}
+
+/* The same min-width: auto trap as .app-shell and .form-grid, one level
+   deeper: an <input> keeps its intrinsic ~180px unless told it may shrink. */
+.field-row > * {
+  min-width: 0;
+}
+
+.field-row input,
+.field-row select {
+  flex: 1 1 12rem;
 }
 
 .form-grid {
@@ -470,7 +514,11 @@ body {
   min-width: 0;
 }
 
-.form-grid .field {
+/* A labelled field stacks its label above its control, whether or not it is a
+   cell of a .form-grid. Scoped to the grid, a field in a plain card laid its
+   label and input out inline instead, and at 375px the label wrapped to a
+   second line that ran underneath the input. */
+.field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -1608,6 +1656,14 @@ code {
     flex-wrap: wrap;
     gap: 0.5rem 1rem;
     padding: 0.75rem 1rem;
+    /* The wordmark and the disclosure button share the first row. */
+    justify-content: space-between;
+  }
+
+  /* Disclosed, the nav owns the row under them rather than sharing it. */
+  .app-nav {
+    flex: 0 0 100%;
+    gap: 0.25rem 0.5rem;
   }
 
   .app-main {
@@ -1624,10 +1680,6 @@ code {
     padding-top: 0;
   }
 
-  .field-row {
-    flex-wrap: wrap;
-  }
-
   .card {
     padding: 1rem;
   }
@@ -1635,6 +1687,65 @@ code {
   .run-file-name,
   .tasks-table td {
     max-width: 220px;
+  }
+
+  /* The first screen of a 320px viewport was 63% navigation and footer. The
+     footer's disclaimer is the smaller half of that. */
+  .app-footer {
+    padding: 0.5rem 1rem;
+    font-size: 0.78rem;
+  }
+
+  /* A seven-column table below 640px is a horizontal scroll per row, and the
+     cell naming the row is the first one to leave the screen. Each row becomes
+     its own block and each cell carries its column name. The markup states the
+     table roles explicitly, so the display change cannot drop them. */
+  .table-scroll .stacked-sm {
+    min-width: 0;
+  }
+
+  .stacked-sm,
+  .stacked-sm tbody,
+  .stacked-sm tr,
+  .stacked-sm td {
+    display: block;
+  }
+
+  /* The column names are carried by each cell now; a header row repeating them
+     above the stack would be read twice. */
+  .stacked-sm thead {
+    display: none;
+  }
+
+  .stacked-sm tr {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .stacked-sm td {
+    display: grid;
+    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.35rem 0;
+    border: 0;
+    /* Cells hold addresses, filenames and ids: at this width the value column
+       is ~150px and an email has nowhere else to break. */
+    overflow-wrap: anywhere;
+  }
+
+  .stacked-sm td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  /* The 220px cap above keeps a filename from widening a narrow column; a
+     stacked cell has the row's whole width and no column to widen. */
+  .stacked-sm .run-file-name {
+    max-width: none;
   }
 }
 
