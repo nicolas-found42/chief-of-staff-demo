@@ -200,7 +200,9 @@ view counts" names the Google surface (ADR-0016), never this Module.
 
 **Run**:
 One scope of work owned by one Module, with a status and an append-only event log. Its result is
-the Module's own shape, and it may wait rather than reach an end.
+the Module's own shape, and it may wait rather than reach an end. It is an engine concept: no
+product surface names a Run or links to one, and a Module's result is reached from the surface that
+owns it (ADR-0051).
 _Avoid_: Job, task (a Task is a Google Task), execution
 
 **Stage**:
@@ -343,10 +345,22 @@ Profile, is not a person, or remains unresolved.
 _Avoid_: Match score, candidate, guess
 
 **Meeting Wizard**:
-The product area that presents Calendar occurrences, Meeting Briefs, Transcripts and Meeting
-Debriefs together while their prospective and retrospective Runs remain separate.
-_Status_: planned (ADR-0043)
+The product area that presents Meetings: the day ahead, the week ahead, and one page per Meeting
+carrying that meeting's Meeting Brief before it and its Meeting Debrief afterwards. It is the
+product surface of the Workspace's Meeting record. The prospective and retrospective workflows
+behind it stay separate (ADR-0050); the product area presents them together, it does not merge them.
+_Status_: live
 _Avoid_: Meeting Module, combined meeting workflow, Meeting Brief Generator
+
+**Meeting**:
+The Workspace's durable record of one meeting: the Calendar occurrence facts, the participants, and
+what a person adds to it. It survives after the meeting is past and after Calendar stops reporting
+the event, and it may exist with no Calendar occurrence at all, when only a Transcript attests that
+the meeting happened. Its identity is its own; the Calendar occurrence key is an attribute it
+carries, never its address. A Meeting holds no workflow state — the Meeting Brief and the Meeting
+Debrief stay the results of their own separate Runs (ADR-0050).
+_Avoid_: Calendar event (that is Calendar's record, not the Workspace's), occurrence (alone),
+Eligible Meeting (that is a test a Meeting passes, not another word for this)
 
 **Meeting Brief**:
 The structured result one Meeting Brief Generator Run prepares for an Eligible Meeting. It combines
@@ -375,6 +389,18 @@ Output Adapter renders this same result.
 _Avoid_: Meeting Brief (that one is prospective, prepared from Calendar before a meeting; a Meeting
 Debrief is retrospective, extracted from a transcript afterwards), debrief email, meeting notes
 
+**Daily Briefing**:
+The structured result prepared each morning for the day ahead: what the workspace owner should know
+about the day's Meetings, and the order in which their open action items matter. It is the Meeting
+Wizard's front page and the one message the owner receives each day.
+_Avoid_: Daily digest, morning summary, Meeting Brief (that one prepares a single meeting)
+
+**Weekly Briefing**:
+The structured result prepared for the week ahead, read from that week's Meeting Briefs: what the
+week holds and which Meetings matter most. It is a section of the Meeting Wizard's front page
+rather than a page of its own.
+_Avoid_: Weekly digest, week ahead (alone), weekly report
+
 **Internal Domain**:
 An email domain configured as belonging to the workspace owner's organization.
 _Avoid_: Company email domain, owner domain
@@ -385,9 +411,11 @@ Domains. An External Guest with a Consumer Domain remains external and is enrich
 _Avoid_: External attendee, outsider
 
 **Eligible Meeting**:
-A timed, non-cancelled Calendar event that the workspace owner has not declined and that includes at
-least one other attendee who has not declined; the attendee may be internal or external.
-_Avoid_: Qualifying event, trigger event, candidate meeting
+A Meeting that qualifies for a Meeting Brief: timed, not cancelled, not declined by the workspace
+owner, and including at least one other attendee who has not declined; the attendee may be internal
+or external. It is a test a Meeting passes, not a kind of thing (ADR-0050). An ineligible Meeting is
+still a Meeting, and its page names the test it failed.
+_Avoid_: Qualifying event, trigger event, candidate meeting, Meeting (one need not be eligible)
 
 **Consumer Domain**:
 An email domain belonging to a personal mailbox provider rather than identifying the External
