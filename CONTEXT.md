@@ -252,6 +252,15 @@ _Avoid_: Google auth, login, OAuth (the protocol is not the connection)
 The directory holding all state — configuration, secrets, and every Run. There is no database.
 _Avoid_: Data dir, store
 
+**Generated data**:
+The half of the Workspace the products produced — every Run, Person Profile, processed Transcript,
+Brand Profile, Content Research record and Content Project, plus the checkpoints tracking what was
+already ingested or scheduled. Not "everything in the Workspace": credentials, pointers and
+settings are the other half, and the line between them is one explicit table both the one-time
+migration reset and the repeatable clear read (ADR-0046, ADR-0048).
+_Avoid_: Workspace data, user data, app data (each reads as "everything", which is the misreading
+that would delete credentials)
+
 **Relay**:
 The third-party workflow tool Found42 is migrating off. Its export is the source list of
 candidate Modules.

@@ -176,6 +176,19 @@ workspace/
 ```
 3. Drop any non-transcript PDF → run `skipped` with a `skipReason`, nothing created.
 
+### Clearing generated data
+
+**Settings → Danger zone → Clear all generated data** puts the app back to empty and can be run as
+often as you like — it is the repeatable successor to the one-time migration reset, bounded by the
+same classification tables (ADR-0046, ADR-0048). It deletes everything the products generated —
+Runs, Person Profiles, processed Transcripts, Brand Profiles, Content Research, Content Projects —
+plus the checkpoints that track what was already ingested or scheduled, and it empties the data
+rows of the two Google Sheets this app writes (YouTube Trends and the Resonance Ledger), keeping
+their headers and the spreadsheets themselves. Your sign-ins, the relay address, the Drive
+transcript folder and its files, Google Tasks, Gmail drafts and every setting are untouched. The
+disclosure names what would go, counted from the current Workspace; the action runs only after you
+type `CLEAR ALL DATA` exactly, and a mistyped phrase sends nothing.
+
 ## Tests
 
 ```bash
