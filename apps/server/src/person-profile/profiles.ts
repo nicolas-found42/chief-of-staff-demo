@@ -1,4 +1,5 @@
 import { identifier } from "./resolver.js";
+import { socialUrl } from "./sources.js";
 import type { PersonProfileStore } from "./store.js";
 import {
   PERSON_PROFILE_CALENDAR_SOURCE,
@@ -378,6 +379,47 @@ export class WorkspacePersonProfiles {
         if (primaryEmail !== null && !next.emails.includes(primaryEmail))
           next.emails = [...next.emails, primaryEmail];
       }
+    }
+
+    if (input.profileUrls !== undefined) {
+      stated += 1;
+      /* Identity Signals, not facts: a name-only Profile can never match public
+         evidence above "medium", and every projected field (role, employer,
+         social profiles) is drawn from "high" matches only. Correcting the URLs
+         is how the operator lifts a Profile out of that floor. */
+      const urls: string[] = [];
+      const handles: Record<string, string[]> = {};
+      for (const raw of input.profileUrls ?? []) {
+        const value = raw.trim();
+        if (!value) continue;
+        if (EMAIL_PATTERN.test(value))
+          throw new PersonProfileValidationError(
+            "invalid-identity-input",
+            `Not a profile URL: ${value}. Correct the canonical address with primaryEmail.`,
+          );
+        /* A bare "linkedin.com/in/someone" is what people paste; the scheme is
+           assumed rather than demanded, as it is for a typed identifier. */
+        const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+        let url: URL;
+        try {
+          url = new URL(candidate);
+        } catch {
+          throw new PersonProfileValidationError(
+            "invalid-identity-input",
+            `Not a profile URL: ${value}. Enter something like "linkedin.com/in/someone".`,
+          );
+        }
+        const normalized = url.toString();
+        if (!urls.includes(normalized)) urls.push(normalized);
+        const social = socialUrl(normalized);
+        if (social?.kind === "profile" && social.handle) {
+          const existing = handles[social.platform] ?? [];
+          if (!existing.includes(social.handle)) existing.push(social.handle);
+          handles[social.platform] = existing;
+        }
+      }
+      next.profileUrls = urls;
+      next.handles = handles;
     }
 
     if (stated === 0)

@@ -317,6 +317,7 @@ export function PersonProfileDetailPage() {
     role: "",
     currentEmployer: "",
     background: "",
+    profileUrls: "",
     note: "",
   });
   const [clearCorrection, setClearCorrection] = useState({
@@ -324,6 +325,7 @@ export function PersonProfileDetailPage() {
     role: false,
     currentEmployer: false,
     background: false,
+    profileUrls: false,
   });
   const [mergeForm, setMergeForm] = useState({
     duplicateId: "",
@@ -418,6 +420,16 @@ export function PersonProfileDetailPage() {
         : correction.background.trim() === ""
           ? {}
           : { background: correction.background }),
+      ...(clearCorrection.profileUrls
+        ? { profileUrls: null }
+        : correction.profileUrls.trim() === ""
+          ? {}
+          : {
+              profileUrls: correction.profileUrls
+                .split(/[\n,]/)
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0),
+            }),
       ...(correction.note.trim() === "" ? {} : { note: correction.note }),
     };
     void runRepair(() => api.correctPersonProfile(profileId, stated));
@@ -650,6 +662,36 @@ export function PersonProfileDetailPage() {
                 />
               );
             })}
+            <div className="field-row">
+              <label htmlFor="correct-profile-urls">Profile URLs</label>
+              <textarea
+                id="correct-profile-urls"
+                rows={3}
+                autoComplete="off"
+                placeholder="linkedin.com/in/someone, x.com/someone, their site"
+                aria-describedby="correct-profile-urls-hint"
+                value={correction.profileUrls}
+                onChange={(event) =>
+                  setCorrection({ ...correction, profileUrls: event.target.value })
+                }
+              />
+              <p id="correct-profile-urls-hint" className="muted">
+                One per line or comma-separated; a stated list replaces the current one. Public
+                evidence matches on a name alone only at medium confidence, and role, employer and
+                social profiles are drawn from high-confidence matches — so these are what let a
+                search populate the Profile. Handles are derived from the URLs.
+              </p>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={clearCorrection.profileUrls}
+                  onChange={(event) =>
+                    setClearCorrection({ ...clearCorrection, profileUrls: event.target.checked })
+                  }
+                />{" "}
+                Clear profile URLs
+              </label>
+            </div>
             <div className="field-row">
               <label htmlFor="correct-note">What was wrong?</label>
               <input

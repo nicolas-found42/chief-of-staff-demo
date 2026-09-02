@@ -406,6 +406,13 @@ export interface PersonProfileCorrectionInput {
   currentEmployer?: string | null;
   /** `null` explicitly removes a false fact; omission leaves it unchanged. */
   background?: string | null;
+  /**
+   * The person's profile URLs, replacing the current set; `null` or `[]` clears
+   * them. Handles are re-derived from the URLs, so correcting these is how a
+   * Profile gains the Identity Signals that let public evidence match at high
+   * confidence instead of on a name alone.
+   */
+  profileUrls?: string[] | null;
   /** Audit note recorded with the correction decision. */
   note?: string;
 }
