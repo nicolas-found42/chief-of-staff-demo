@@ -10,6 +10,7 @@ const ROUTES = [
   "/runs",
   "/content-research/trends",
   "/content-scout",
+  "/content-engine/projects/project_absent",
   "/meetings",
   "/meetings/brief",
   "/content-research",

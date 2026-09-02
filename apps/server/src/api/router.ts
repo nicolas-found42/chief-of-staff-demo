@@ -12,8 +12,10 @@ import type { HostedModule } from "../engine/host.js";
 import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
 import { registerPeopleApi } from "./people.js";
+import { registerContentEngineApi } from "./content-engine.js";
 import { registerOnboardingApi } from "./onboarding.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import type { WorkspaceContentProjects } from "../content-projects/projects.js";
 import type { PersonProfileResolver } from "../person-profile/resolver.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
 
@@ -33,6 +35,8 @@ export interface ApiContext {
   peopleResolver: PersonProfileResolver;
   /** Owner onboarding (issue #123): the proposal/confirmation namespace. */
   onboarding: OwnerOnboarding;
+  /** The Content Engine product area's Workspace-owned interface (spec #147). */
+  contentProjects: WorkspaceContentProjects;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void | Promise<void>;
@@ -232,4 +236,5 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   /* Owner onboarding (issue #123): the proposal/confirmation namespace, also
      a Workspace resource rather than a hosted Module. */
   registerOnboardingApi(app, { onboarding: ctx.onboarding });
+  registerContentEngineApi(app, { contentProjects: ctx.contentProjects });
 }

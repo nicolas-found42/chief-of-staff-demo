@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
@@ -49,6 +50,9 @@ beforeEach(async () => {
     people: peopleProfiles,
     peopleResolver: new PersonProfileResolver({ store: peopleStore, sources: [] }),
     onboarding: ownerOnboarding,
+    /* No Content Engine route is exercised here, so the interface behind
+       them is never reached. */
+    contentProjects: fromPartial({}),
     onConfigChanged: () => {},
   });
   await app.ready();

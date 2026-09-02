@@ -9,16 +9,19 @@ import {
   type BrandProfileRevisionSummary,
   type ContentScoutCleanupPreview,
   type ContentProjectResearchMode,
+  type ContentProjectSummary,
   type ContentProjectTarget,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ContentScoutState } from "../client";
+import { contentProjectReadinessLabel } from "../contentProjectGates";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
-type View = "shortlist" | "sources" | "brand" | "settings";
+type View = "shortlist" | "projects" | "sources" | "brand" | "settings";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "shortlist", label: "Shortlist" },
+  { id: "projects", label: "Content Projects" },
   { id: "sources", label: "Sources" },
   { id: "brand", label: "Brand Profile" },
   { id: "settings", label: "Settings & Health" },
@@ -189,6 +192,7 @@ export function ContentScoutPage() {
           }}
         />
       )}
+      {view === "projects" && <ProjectsView />}
       {view === "sources" && (
         <SourcesView
           state={state}
@@ -220,6 +224,94 @@ export function ContentScoutPage() {
         />
       )}
     </section>
+  );
+}
+
+/**
+ * Every Content Project the Workspace holds (spec #147). Selecting an
+ * Opportunity has always started one; until this list existed there was no way
+ * to find the Project it started, because `get` needs an id nothing showed.
+ */
+function ProjectsView() {
+  const [projects, setProjects] = useState<ContentProjectSummary[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .contentProjects()
+      .then((result) => {
+        if (live) setProjects(result.projects);
+      })
+      .catch((error: unknown) => {
+        if (live) setListError(errorMessage(error));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (listError)
+    return (
+      <div className="banner banner-error" role="alert">
+        {listError}
+      </div>
+    );
+  if (!projects)
+    return (
+      <p className="muted" role="status">
+        Loading Content Projects…
+      </p>
+    );
+  if (projects.length === 0)
+    return (
+      <p className="muted">
+        No Content Project yet. Selecting an Opportunity on the Shortlist starts exactly one.
+      </p>
+    );
+
+  return (
+    <div className="table-scroll">
+      <table className="stacked-sm" role="table">
+        <caption className="visually-hidden">Content Projects</caption>
+        <thead role="rowgroup">
+          <tr role="row">
+            <th scope="col">Subject</th>
+            <th scope="col">Revision</th>
+            <th scope="col">Audience</th>
+            <th scope="col">Targets</th>
+            <th scope="col">Standing</th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {projects.map((project) => (
+            <tr key={project.id} role="row">
+              <td>
+                <Link to={`/content-engine/projects/${encodeURIComponent(project.id)}`}>
+                  {project.subject.kind === "topic"
+                    ? project.subject.topic
+                    : project.subject.profileId}
+                </Link>
+              </td>
+              <td>{project.revision}</td>
+              <td>{project.audience}</td>
+              <td>{project.targets.length}</td>
+              <td>
+                <span
+                  className={
+                    project.readiness.ready
+                      ? "status-badge status-ok"
+                      : "status-badge status-attention"
+                  }
+                >
+                  {contentProjectReadinessLabel(project.readiness)}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

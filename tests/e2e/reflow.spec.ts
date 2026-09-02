@@ -24,6 +24,7 @@ const ROUTES = [
   "/content-research",
   "/content-research/trends",
   "/content-scout",
+  "/content-engine/projects/project_absent",
   "/people",
   "/people/new",
   "/people/review",

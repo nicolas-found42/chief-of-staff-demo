@@ -1,4 +1,14 @@
 import type {
+  ContentEngineDraft,
+  ContentProject,
+  ContentProjectIntentPatch,
+  ContentProjectReadiness,
+  ContentProjectRevision,
+  ContentProjectSummary,
+  OutlineBriefApproval,
+  OutlineSetOutcome,
+  PlatformOutline,
+  PlatformOutlineApproval,
   BrandProfileRevision,
   BrandProfileRevisionSummary,
   BrandProfileProposal,
@@ -467,6 +477,42 @@ export const api = {
       body: JSON.stringify({ disabled }),
     }),
   meetingBriefIndex: () => request<MeetingBriefIndex>("/api/meeting-brief/index"),
+  contentProjects: () =>
+    request<{ projects: ContentProjectSummary[] }>("/api/content-engine/projects"),
+  contentProject: (projectId: string) =>
+    request<{ project: ContentProject; readiness: ContentProjectReadiness }>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}`,
+    ),
+  contentProjectRevise: (projectId: string, patch: ContentProjectIntentPatch) =>
+    request<ContentProjectRevision>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/revisions`,
+      { method: "POST", body: JSON.stringify(patch) },
+    ),
+  contentProjectApproveOutlineBrief: (projectId: string, outlineBriefId: string) =>
+    request<OutlineBriefApproval>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/outline-briefs/${encodeURIComponent(outlineBriefId)}/approve`,
+      { method: "POST" },
+    ),
+  contentProjectGenerateOutline: (projectId: string, target: string, instruction?: string) =>
+    request<PlatformOutline>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/outlines/${encodeURIComponent(target)}`,
+      { method: "POST", body: JSON.stringify(instruction === undefined ? {} : { instruction }) },
+    ),
+  contentProjectGenerateOutlineSet: (projectId: string) =>
+    request<OutlineSetOutcome>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/outlines`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  contentProjectApproveOutline: (projectId: string, target: string) =>
+    request<PlatformOutlineApproval>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/outlines/${encodeURIComponent(target)}/approve`,
+      { method: "POST" },
+    ),
+  contentProjectGenerateDraft: (projectId: string, target: string, instruction?: string) =>
+    request<ContentEngineDraft>(
+      `/api/content-engine/projects/${encodeURIComponent(projectId)}/drafts/${encodeURIComponent(target)}`,
+      { method: "POST", body: JSON.stringify(instruction === undefined ? {} : { instruction }) },
+    ),
   meetingDebriefIndex: () => request<MeetingDebriefIndex>("/api/meeting-debrief/index"),
   meetingDebriefDetail: (runId: string) =>
     request<MeetingDebriefDetail>(`/api/meeting-debrief/${encodeURIComponent(runId)}`),

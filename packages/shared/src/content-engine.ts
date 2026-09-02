@@ -299,6 +299,28 @@ export interface ContentProject {
   revisions: ContentProjectRevision[];
 }
 
+/**
+ * One Content Project as a list reads it (spec #147). A Project carries every
+ * revision, and each revision carries its evidence freeze, Outline Briefs,
+ * Platform Outlines and Drafts; a list that rendered whole Projects would read
+ * all of that to draw a table of subjects. This is the current revision's
+ * identity and standing, and nothing else.
+ */
+export interface ContentProjectSummary {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The current revision's number, so a list shows what has moved. */
+  revision: number;
+  subject: ContentProjectSubject;
+  objective: string;
+  audience: string;
+  targets: ContentProjectTarget[];
+  researchMode: ContentProjectResearchMode | null;
+  sourceOpportunity: ContentProjectSourceOpportunity | null;
+  readiness: ContentProjectReadiness;
+}
+
 export interface AuthorizedAuthorPolicy {
   profileId: string;
   authorizedAt: string;

@@ -19,6 +19,7 @@ import {
   type ContentProjectReadiness,
   type ContentProjectRevision,
   type ContentProjectSubject,
+  type ContentProjectSummary,
   type ContentProjectTarget,
   type ContentVoiceRevision,
   type OutlineBrief,
@@ -184,6 +185,34 @@ export class WorkspaceContentProjects {
     state.projects.push(project);
     this.writeState(state);
     return clone(project);
+  }
+
+  /**
+   * Every Content Project, newest first, as a summary (#147). `get` needs an id
+   * the owner has no way to discover, so a surface that lists Projects had to
+   * exist before one could be opened at all.
+   */
+  list(): ContentProjectSummary[] {
+    const state = this.readState();
+    return state.projects
+      .map((project) => {
+        const revision = currentRevision(project);
+        const missing = this.missingGates(revision);
+        return clone({
+          id: project.id,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+          revision: revision.revision,
+          subject: revision.subject,
+          objective: revision.objective,
+          audience: revision.audience,
+          targets: revision.targets,
+          researchMode: revision.researchMode,
+          sourceOpportunity: revision.sourceOpportunity,
+          readiness: { ready: missing.length === 0, missingGates: missing },
+        });
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   get(projectId: string): ContentProject | null {

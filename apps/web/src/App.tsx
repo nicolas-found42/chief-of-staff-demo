@@ -5,6 +5,7 @@ import { ConnectionBanner } from "./components/ConnectionBanner";
 import { HomePage } from "./pages/HomePage";
 import { ContentResearchPage } from "./pages/ContentResearchPage";
 import { ContentScoutPage } from "./pages/ContentScoutPage";
+import { ContentProjectDetailPage } from "./pages/ContentProjectDetailPage";
 import { MeetingsOverviewPage } from "./pages/MeetingsOverviewPage";
 import { MeetingBriefPage } from "./pages/MeetingBriefPage";
 import { MeetingDebriefDetailPage } from "./pages/MeetingDebriefDetailPage";
@@ -209,6 +210,10 @@ export function App() {
               /content-research/trends); the legacy top-level route is gone. */}
           <Route path="/content-research/trends" element={<YoutubePage />} />
           <Route path="/content-scout" element={<ContentScoutPage />} />
+          <Route
+            path="/content-engine/projects/:projectId"
+            element={<ContentProjectDetailPage />}
+          />
           {/* Meeting Wizard (ADR-0043): Overview plus the sibling Brief
       journey; Brief and Debrief lifecycle state stays separate. The
       legacy /meeting-brief product route is gone — not-found. */}

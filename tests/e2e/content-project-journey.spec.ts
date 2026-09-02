@@ -11,18 +11,15 @@ import { expect, test, type Page } from "@playwright/test";
  * is covered by ui.spec's Content Scout journey; this one pins the Project
  * inputs themselves, so Brand Voice is authored and versioned manually.
  *
- * Two steps stop at the product boundary rather than fake a surface:
- * - Project versioning (reviseIntent, freezeEvidence, Outline Brief approval)
- *   has no product surface yet — the only Content Project route into the
- *   product is the shortlist select seam, and no Content Engine page exists —
- *   so a browser journey cannot drive a second Project version. That contract
- *   is proved at the module interface
- *   (tests/src/modules/content-projects.test.ts, "WorkspaceContentProjects
- *   revisions"). The one immutable version the UI does own — the Brand Profile
- *   revision a Project later freezes — is asserted here: every acceptance
- *   appends a revision and the UI names the current one.
- * - Idempotent re-selection (#133) cannot be driven through the UI either: a
- *   selected Opportunity enters the seven-day same-angle cooldown
+ * Project versioning is now driven here rather than parked: the Content
+ * Projects tab lists the Project the selection started and its page appends a
+ * revision, which spec #147 built the surface for. Brand Profile revisions are
+ * still asserted along the way — every acceptance appends one and the UI names
+ * the current one.
+ *
+ * One step still stops at the product boundary rather than fake a surface:
+ * - Idempotent re-selection (#133) cannot be driven through the UI: a selected
+ *   Opportunity enters the seven-day same-angle cooldown
  *   (ContentScoutStore.opportunityCooldownDisposition), so a later Scout Run
  *   deliberately never re-presents it. The same-Project re-selection contract
  *   stays at the module interface (content-projects.test.ts, "WorkspaceContent
@@ -174,4 +171,39 @@ test("content project journey — brand voice revisions → scout → select →
   expect(runDetail.result.projects).toEqual([
     { opportunityId: expect.stringMatching(/^opportunity-/), projectId, created: true },
   ]);
+
+  // 7. The Project is reachable from the product area rather than only from the
+  //    Run receipt: the Content Projects tab lists it, and its page opens.
+  await page.getByRole("button", { name: "Content Projects" }).click();
+  await page.getByRole("link", { name: /Explain what the verified change/ }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Intent" })).toBeVisible();
+  await expect(page.getByText("Operations leads")).toBeVisible();
+
+  // 8. Generation stays closed, and the page names what is missing rather than
+  //    refusing blankly — the whole point of the readiness surface.
+  await expect(page.getByRole("heading", { level: 2, name: "Readiness" })).toBeVisible();
+  await expect(page.getByText(/Generation stays closed until each of these/)).toBeVisible();
+  await expect(page.getByText(/has not been reviewed and frozen/)).toBeVisible();
+
+  // 9. Revising intent appends a version rather than editing the last one —
+  //    the contract that previously had no surface to be driven through.
+  const beforeRevision = (await (
+    await page.request.get(`/api/content-engine/projects/${projectId}`)
+  ).json()) as { project: { revisions: unknown[] } };
+  expect(beforeRevision.project.revisions).toHaveLength(1);
+
+  const revised = await page.request.post(`/api/content-engine/projects/${projectId}/revisions`, {
+    data: { audience: "Heads of operations" },
+  });
+  expect(revised.ok()).toBe(true);
+
+  const afterRevision = (await (
+    await page.request.get(`/api/content-engine/projects/${projectId}`)
+  ).json()) as { project: { revisions: { audience: string }[] } };
+  expect(afterRevision.project.revisions).toHaveLength(2);
+  expect(afterRevision.project.revisions[0]?.audience).toBe("Operations leads");
+  expect(afterRevision.project.revisions[1]?.audience).toBe("Heads of operations");
+
+  await page.reload();
+  await expect(page.getByText("Heads of operations")).toBeVisible();
 });

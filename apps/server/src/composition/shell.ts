@@ -658,6 +658,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     people: peopleProfiles,
     peopleResolver,
     onboarding: ownerOnboarding,
+    contentProjects,
     onConfigChanged: async () => {
       meetingBriefProduction?.invalidateGoogleIdentity();
       await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
