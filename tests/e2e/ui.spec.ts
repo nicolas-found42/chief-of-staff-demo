@@ -754,3 +754,34 @@ test("choosing a work account drops the test-user step", async ({ page }) => {
   await expect(page.locator(".setup-steps > li")).toHaveCount(7);
   await expect(page.locator(".wizard-progress")).toHaveText("Step 4 of 7");
 });
+
+/* Last of all, because it empties the Workspace: the danger zone's repeatable
+   generated-data clear (issue #144), the successor to the one-time migration
+   gate. Everything above seeded state this deletes, so it runs after them and
+   puts the Workspace back to empty rather than to demo data. */
+test("the danger zone clears all generated data behind a typed phrase", async ({ page }) => {
+  const seed = await page.request.post("/api/test/seed");
+  if (!seed.ok()) throw new Error(`seed failed: ${seed.status()} ${await seed.text()}`);
+  const { runId } = (await seed.json()) as { runId: string };
+
+  await page.goto("/runs");
+  await expect(page.locator(`a[href="/runs/${runId}"]`)).toBeVisible();
+
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Danger zone" })).toBeVisible();
+  const card = page.getByRole("group", { name: "Clear all generated data" });
+  await card.getByText("Show what this deletes, and run it").click();
+  // The disclosure names what would go, counted from the live Workspace.
+  await expect(card.getByText(/currently \d+ records/)).toBeVisible();
+
+  // The phrase gates the button: a mistyped phrase leaves it disabled.
+  await page.getByLabel(/Type .* to confirm/).fill("clear all data");
+  await expect(page.getByRole("button", { name: "Delete all generated data" })).toBeDisabled();
+
+  await page.getByLabel(/Type .* to confirm/).fill("CLEAR ALL DATA");
+  await page.getByRole("button", { name: "Delete all generated data" }).click();
+
+  await expect(page.getByText("Directories removed")).toBeVisible();
+  await page.goto("/runs");
+  await expect(page.getByText("No runs yet")).toBeVisible();
+});

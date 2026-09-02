@@ -148,3 +148,54 @@ export async function updateRow(
     requestBody: { values: [values] },
   });
 }
+
+/** One tab's cleared tail: how many data rows the delete removed, header excluded. */
+export interface ClearedTab {
+  tab: string;
+  rowsRemoved: number;
+}
+
+/**
+ * Physically delete every row below the header row, in every tab, keeping
+ * row 1. Deleting — not blanking — is the point: the grid shrinks back to the
+ * header, so the next append lands on row 2 instead of under a thousand
+ * emptied cells. Every tab is cleared, not only the tabs the configuration
+ * still names: a channel removed from tracking leaves its tab behind, and its
+ * rows are generated data all the same.
+ */
+export async function clearSpreadsheetDataRows(
+  auth: GoogleAuth,
+  spreadsheetId: string,
+): Promise<ClearedTab[]> {
+  const sheets = google.sheets({ version: "v4", auth });
+  const found = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(title,sheetId,gridProperties.rowCount)",
+  });
+  const cleared: ClearedTab[] = [];
+  for (const sheet of found.data.sheets ?? []) {
+    const properties = sheet.properties;
+    const sheetId = properties?.sheetId;
+    const title = properties?.title;
+    if (!properties || typeof sheetId !== "number" || typeof title !== "string") continue;
+    const rowCount = properties.gridProperties?.rowCount ?? 0;
+    if (rowCount <= 1) {
+      cleared.push({ tab: title, rowsRemoved: 0 });
+      continue;
+    }
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: rowCount },
+            },
+          },
+        ],
+      },
+    });
+    cleared.push({ tab: title, rowsRemoved: rowCount - 1 });
+  }
+  return cleared;
+}

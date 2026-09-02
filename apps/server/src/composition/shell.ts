@@ -93,6 +93,7 @@ import {
   registerMigrationRoutes,
   type MigrationGate,
 } from "../api/migration.js";
+import { registerClearDataApi } from "../api/clear-data.js";
 import { readMigrationState } from "../migration/workspace.js";
 
 /** The module id fixture Runs are attributed to in the browser suite only. */
@@ -567,6 +568,29 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     brandProfiles,
   });
 
+  /* The repeatable generated-data clear (Settings' danger zone): deletes the
+     generated Workspace state the migration's tables name, empties the two
+     app-written Sheets, and leaves every configuration key and credential in
+     place. Mounted behind the migration gate's hold like every other route:
+     a pre-cutover Workspace holds no generated data of this shape to clear. */
+  const drainModules = async (): Promise<void> => {
+    await transcriptCatalogRuntime.drain();
+    if (meetingBriefProduction) {
+      await meetingBriefProduction.relayPoller.drain();
+    }
+    await Promise.all(modules.map((module) => module.idle?.() ?? Promise.resolve()));
+  };
+  registerClearDataApi(app, {
+    workspaceDir,
+    configStore,
+    google: googleConnection,
+    contentResearch: contentResearchStore,
+    modulesRunning: () => modulesRunning,
+    stopModules,
+    startModules,
+    drain: drainModules,
+  });
+
   /* One level deeper than main.ts was: apps/server/dist/composition → apps/web/dist. */
   const webDist = fileURLToPath(new URL("../../../web/dist", import.meta.url));
   await registerStaticServing(app, { webDist });
@@ -693,17 +717,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
             weeklyDiscoveryTime: "23:59",
           });
         },
-        /* Arm quiesces the runtime before it returns: the catalog pass first —
-           it may enqueue Module Runs — then the relay poller's wake-up, then
-           every Module's enqueued Runs. Confirm deletes runs/ only over a
-           settled engine (issue #144). */
-        drainModules: async () => {
-          await transcriptCatalogRuntime.drain();
-          if (meetingBriefProduction) {
-            await meetingBriefProduction.relayPoller.drain();
-          }
-          await Promise.all(modules.map((module) => module.idle?.() ?? Promise.resolve()));
-        },
+        /* Arm quiesces the runtime before it returns (issue #144): the same
+           drain the generated-data clear waits on. */
+        drainModules,
       },
       ...(meetingBriefTest
         ? { upsertMeetingBriefEvent: (event) => meetingBriefTest.upsertEvent(event) }
@@ -714,7 +730,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   /* The boot-time startup sequence, named so the migration gate's in-process
      cutover performs exactly it (gate.complete) — and so the boot path can skip
      it while the gate holds the Workspace pre-cutover. */
-  async function startModules(): Promise<void> {
+  async function startModules(options: { seedV1Watchlist?: boolean } = {}): Promise<void> {
     /* Both writes the gate withholds, and both idempotent, so the boot path and
        the in-process cutover reach the same Workspace: a cutover confirmed in
        this process must leave what a restart after the same cutover would, not a
@@ -722,7 +738,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
        watchlist until the next restart. The seed no-ops once anyone is watched,
        and reads the reset's empty state from disk rather than a stale cache. */
     mkdirSync(layout.runsDir, { recursive: true });
-    seedContentResearchV1(contentResearch, peopleProfiles);
+    /* The V1 seed is the boot path's starting watchlist; the generated-data
+       clear resumes with seedV1Watchlist: false — a cleared Workspace holds no
+       data, not demo data. */
+    if (options.seedV1Watchlist !== false) {
+      seedContentResearchV1(contentResearch, peopleProfiles);
+    }
     /* A fresh Workspace adopts the relay address the deployment declares, so the
        bundled relay is reachable before anyone opens Settings. A stored address
        wins, so this never overrides an operator's own choice (issue #109). It

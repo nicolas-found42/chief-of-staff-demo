@@ -108,7 +108,8 @@ export type WorkspaceMigrationPreview =
     }
   | { outcome: "unsafe-mixed-state"; findings: UnsafeMixedStateFinding[] };
 
-type CategoryName =
+/** One category in the Workspace boundary tables. Shared with the repeatable generated-data clear. */
+export type CategoryName =
   | "provider-api-keys"
   | "oauth-client-registrations"
   | "provider-tokens"
@@ -210,8 +211,9 @@ const REMOTE_RECORDS: readonly RemoteRecordName[] = [
   "notion-databases",
 ];
 
-/** Directories whose every file belongs to one category. */
-const DIRECTORIES: Record<string, CategoryName> = {
+/** Directories whose every file belongs to one category. The migration's delete side and the
+    repeatable generated-data clear both act on exactly this table — one boundary, two consumers. */
+export const DIRECTORIES: Readonly<Record<string, CategoryName>> = {
   runs: "runs-and-artifacts",
   "person-profiles": "person-profiles",
   "person-profile-tombstones": "person-profiles",
@@ -223,8 +225,9 @@ const DIRECTORIES: Record<string, CategoryName> = {
   onboarding: "owner-onboarding-state",
 };
 
-/** Files that hold no authentication material, so the whole file is one record. */
-const WHOLE_FILES: Record<string, CategoryName> = {
+/** Files that hold no authentication material, so the whole file is one record. Shared with the
+    repeatable generated-data clear, same as DIRECTORIES. */
+export const WHOLE_FILES: Readonly<Record<string, CategoryName>> = {
   // Drive Intake's ingested transcript ids, YouTube Trends' last run day, Idea Engine's ingested ids.
   "state.json": "module-state-and-checkpoints",
   "intake-schedules.json": "intake-schedules",

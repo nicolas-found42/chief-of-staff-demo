@@ -806,3 +806,46 @@ export const migrationApi = {
     }),
   receipt: () => request<MigrationReceipt>("/api/migration/receipt"),
 };
+
+/* ---------------------------------------------------------------------------
+ * Generated-data clear (issue #144): the Settings danger zone's read-only
+ * inventory and the one confirmed action that empties the Workspace.
+ * ------------------------------------------------------------------------- */
+
+/** One inventoried Workspace entry the clear deletes, names and counts only. */
+interface GeneratedDataInventoryEntry {
+  name: string;
+  kind: "directory" | "file";
+  fileCount: number | null;
+}
+
+export interface GeneratedDataInventory {
+  entries: GeneratedDataInventoryEntry[];
+}
+
+interface ClearedSheetOutcome {
+  destination: "youtube-trends" | "content-research-ledger";
+  outcome: "cleared" | "skipped" | "missing" | "failed";
+  tabs?: number;
+  rows?: number;
+  reason?: string;
+}
+
+/** The content-free record of one clear: names and counts, never stored values. */
+export interface ClearDataReceipt {
+  schemaVersion: number;
+  clearedAt: string;
+  durationMs: number;
+  local: { directories: { name: string; files: number }[]; files: string[] };
+  sheets: ClearedSheetOutcome[];
+}
+
+export const clearDataApi = {
+  inventory: () => request<GeneratedDataInventory>("/api/clear-data/inventory"),
+  confirm: (typedConfirmation: string) =>
+    request<ClearDataReceipt>("/api/clear-data/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ typedConfirmation }),
+    }),
+};

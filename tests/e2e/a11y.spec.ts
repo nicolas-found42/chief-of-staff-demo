@@ -249,7 +249,9 @@ test("a busy control is styled, not dimmed, and only the pressed one is busy", a
 
   // dispatchEvent, not click(): click() on a submit button does not resolve
   // until the stalled request finishes, by which time the state is gone.
-  const save = page.locator('button[type="submit"]');
+  // Positional, not by name: the label becomes "Saving…" the moment it goes
+  // busy, and the danger zone below adds a second submit button to the page.
+  const save = page.locator('button[type="submit"]').first();
   await save.focus();
   await save.dispatchEvent("click");
   await expect(save).toHaveAttribute("aria-disabled", "true");

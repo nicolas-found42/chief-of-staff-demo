@@ -7,6 +7,7 @@ import { OwnerOnboardingCard } from "../components/OwnerOnboardingCard";
 import { MeetingBriefSettings } from "../components/MeetingBriefSettings";
 import { SpreadsheetCard } from "../modules/youtube/SpreadsheetCard";
 import { pickDriveFolder } from "../googlePicker";
+import { ClearGeneratedDataCard } from "../components/ClearGeneratedDataCard";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -743,6 +744,11 @@ export function SettingsPage() {
       <section className="settings-section" aria-labelledby="section-youtube">
         <h2 id="section-youtube">YouTube Trends</h2>
         <SpreadsheetCard />
+      </section>
+
+      <section className="settings-section" aria-labelledby="section-danger">
+        <h2 id="section-danger">Danger zone</h2>
+        <ClearGeneratedDataCard />
       </section>
     </div>
   );
