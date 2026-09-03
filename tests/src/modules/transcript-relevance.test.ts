@@ -55,6 +55,7 @@ function record(spec: RecordSpec): TranscriptRecord {
     speakers: [],
     speakerIdentityMappings: [],
     roster: [],
+    meetingId: null,
   };
 }
 

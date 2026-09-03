@@ -52,6 +52,7 @@ beforeEach(async () => {
     people: peopleProfiles,
     peopleResolver: new PersonProfileResolver({ store: peopleStore, sources: [] }),
     meetings,
+    transcriptsFor: () => [],
     onboarding: ownerOnboarding,
     /* No Content Engine route is exercised here, so the interface behind
        them is never reached. */

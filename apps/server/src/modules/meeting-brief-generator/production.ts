@@ -59,6 +59,8 @@ export interface MeetingBriefProductionRuntimeOptions {
   ownerReference?: () => ConfirmedOwnerReference | null;
   /** The one backward read's bound (issue #152); see MeetingBriefHostDeps. */
   oldestTranscriptAt?: () => string | null;
+  /** The standing Transcript ↔ Meeting join (issue #153); see MeetingBriefHostDeps. */
+  associateTranscripts?: () => Promise<void> | void;
 }
 
 export interface MeetingBriefProductionRuntime {
@@ -195,6 +197,7 @@ export function createMeetingBriefProductionRuntime(
     gmailDeliveryProvider,
     personProfiles,
     ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
+    ...(options.associateTranscripts ? { associateTranscripts: options.associateTranscripts } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

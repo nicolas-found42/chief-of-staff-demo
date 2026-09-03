@@ -11,6 +11,7 @@ import { registerMeetingBriefHubSpotRoutes } from "../modules/meeting-brief-gene
 import { contentScoutTestPorts, registerTestSeed } from "../api/testSeed.js";
 import { PersonProfileStore } from "../person-profile/store.js";
 import { WorkspaceMeetings } from "../meetings/store.js";
+import { associateTranscriptsWithMeetings } from "../meetings/matching.js";
 import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "../person-profile/references.js";
 import { TranscriptCatalogStore } from "../transcript-catalog/store.js";
@@ -503,6 +504,19 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     );
   };
   const meetingBriefLog = (message: string) => console.log(`[meeting-brief] ${message}`);
+  /* The standing Transcript ↔ Meeting join (issue #153). The Catalog owns the
+     record and its Debrief/identity processing; the matching reads both sides.
+     transcriptCatalogRuntime is composed below — the closure reads it only
+     once a reconcile runs, never during composition. */
+  const associateTranscripts = async () => {
+    await associateTranscriptsWithMeetings({
+      transcripts: transcriptCatalogStore.listTranscripts(),
+      meetings: meetings.list(),
+      attach: (transcriptId, matched) =>
+        transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched),
+      log: meetingBriefLog,
+    });
+  };
   const meetingBriefTest =
     process.env.ENABLE_TEST_SEED === "1"
       ? createMeetingBriefTestRuntime({
@@ -512,6 +526,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           initialNow: new Date("2026-08-28T10:00:00.000Z"),
           personProfiles: peopleProfiles,
           oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
+          associateTranscripts,
         })
       : null;
   const meetingBriefProduction = meetingBriefTest
@@ -535,6 +550,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         /* Meeting history (issue #152): the backward read reaches as far as
      the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
+        associateTranscripts,
         transcriptRelevance,
         log: meetingBriefLog,
       });
@@ -667,6 +683,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     people: peopleProfiles,
     peopleResolver,
     meetings,
+    transcriptsFor: (meetingId) =>
+      transcriptCatalogStore
+        .listTranscripts()
+        .filter((transcript) => transcript.meetingId === meetingId)
+        .map((transcript) => ({ id: transcript.id, title: transcript.source.fileName })),
     onboarding: ownerOnboarding,
     contentProjects,
     onConfigChanged: async () => {

@@ -465,6 +465,10 @@ export const api = {
   meetings: () => request<MeetingIndex>("/api/meetings/list"),
   meeting: (meetingId: string) =>
     request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}`),
+  meetingTranscripts: (meetingId: string) =>
+    request<{ transcripts: { id: string; title: string }[] }>(
+      `/api/meetings/${encodeURIComponent(meetingId)}/transcripts`,
+    ),
   meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
   saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
     request<{ internalDomains: string[] }>("/api/meeting-brief/config", {

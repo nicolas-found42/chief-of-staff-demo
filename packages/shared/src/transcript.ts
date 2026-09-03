@@ -231,6 +231,12 @@ export interface TranscriptRecord {
   speakerIdentityMappings: TranscriptSpeakerIdentityMapping[];
   /** Calendar roster persisted with the association for candidate context. */
   roster: TranscriptRosterPerson[];
+  /**
+   * The Meeting this Transcript belongs to (issue #153), or null until the
+   * matching pass places it. Association metadata: the artifact stays
+   * immutable while this is corrected by a better match.
+   */
+  meetingId: string | null;
 }
 
 export type TranscriptLedgerState = "pending" | "failed" | "skipped" | "processed";

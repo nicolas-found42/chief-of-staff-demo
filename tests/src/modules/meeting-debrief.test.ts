@@ -43,6 +43,7 @@ function makeRecord(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord
     speakers: ["Alice", "Bob"],
     speakerIdentityMappings: [],
     roster: [],
+    meetingId: null,
     ...overrides,
   };
 }

@@ -724,6 +724,7 @@ describe("/api/people/:profileId lifecycle over the production registry", () => 
       speakers: [],
       speakerIdentityMappings: [],
       roster: [],
+      meetingId: null,
     };
     catalog.saveTranscript(record);
   }

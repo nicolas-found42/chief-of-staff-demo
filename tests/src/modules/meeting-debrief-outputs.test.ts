@@ -45,6 +45,7 @@ function makeRecord(): TranscriptRecord {
     },
     speakers: ["Alice"],
     speakerIdentityMappings: [],
+    meetingId: null,
     roster: [
       { displayName: "Owner", email: OWNER_EMAIL },
       { displayName: "Alice", email: "alice@example.com" },

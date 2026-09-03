@@ -475,6 +475,7 @@ describe("Transcript Catalog restart, pause, and revisions", () => {
       occurrence: null,
       speakers: ["Dana"],
       speakerIdentityMappings: [],
+      meetingId: null,
       roster: [],
     };
     store.saveTranscript(record);

@@ -285,6 +285,34 @@ export class TranscriptCatalog {
     return updated;
   }
 
+  /**
+   * Attach a Transcript to the Meeting it belongs to (issue #153). The
+   * matching itself lives outside the Catalog; this is the sole write path
+   * for the association, and it feeds the same identity and Debrief
+   * processing an occurrence association does.
+   */
+  async attachMeeting(
+    id: string,
+    meeting: { id: string; occurrenceKey: string | null; calendarEventId: string | null },
+  ): Promise<TranscriptRecord> {
+    const record = this.store.readTranscript(id);
+    if (!record) {
+      throw new Error(`Unknown transcript: ${id}`);
+    }
+    const updated: TranscriptRecord = {
+      ...record,
+      meetingId: meeting.id,
+      occurrence:
+        meeting.occurrenceKey !== null
+          ? { occurrenceKey: meeting.occurrenceKey, calendarEventId: meeting.calendarEventId }
+          : record.occurrence,
+    };
+    this.store.updateTranscript(updated);
+    await this.identity.process(updated);
+    if (this.debrief) await this.debrief.process(updated);
+    return updated;
+  }
+
   private startPass(): Promise<TranscriptProcessingPass> {
     if (this.inFlight) return this.inFlight;
     const pass = this.runPass();
@@ -412,6 +440,7 @@ export class TranscriptCatalog {
         normalizedText,
         meetingDate: meetingDateFromFileName(file.fileName),
         occurrence: null,
+        meetingId: null,
         speakers: collectSpeakerLabels(normalizedText),
         speakerIdentityMappings: [],
         roster: [],

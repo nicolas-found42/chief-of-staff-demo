@@ -29,6 +29,7 @@ const RESPONSE_LABELS: Record<Meeting["participants"][number]["responseStatus"],
 export function MeetingPage() {
   const { meetingId } = useParams<{ meetingId: string }>();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [transcripts, setTranscripts] = useState<{ id: string; title: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const headingRef = usePageFocus<HTMLHeadingElement>();
   useTitle(meeting ? meeting.title : "Meeting");
@@ -43,6 +44,14 @@ export function MeetingPage() {
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(errorMessage(cause));
+      });
+    api
+      .meetingTranscripts(meetingId)
+      .then((result) => {
+        if (!cancelled) setTranscripts(result.transcripts);
+      })
+      .catch(() => {
+        if (!cancelled) setTranscripts([]);
       });
     return () => {
       cancelled = true;
@@ -115,6 +124,24 @@ export function MeetingPage() {
                   {participant.organizer ? " · Organizer" : ""}
                   {participant.self ? " · You" : ""}
                 </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section aria-labelledby="meeting-transcripts-heading">
+        <h2 id="meeting-transcripts-heading">Transcripts</h2>
+        {!transcripts ? (
+          <p className="muted" role="status">
+            Loading transcripts…
+          </p>
+        ) : transcripts.length === 0 ? (
+          <p className="muted">No transcript matched yet.</p>
+        ) : (
+          <ul className="card-list">
+            {transcripts.map((transcript) => (
+              <li key={transcript.id} className="card">
+                <h3>{transcript.title}</h3>
               </li>
             ))}
           </ul>

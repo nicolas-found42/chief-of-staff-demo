@@ -31,6 +31,7 @@ function transcript(overrides: Partial<TranscriptRecord> & { id: string }): Tran
     speakers: [],
     speakerIdentityMappings: [],
     roster: [],
+    meetingId: null,
     ...overrides,
   };
 }

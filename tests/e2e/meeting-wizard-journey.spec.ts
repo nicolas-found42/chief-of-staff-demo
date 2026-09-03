@@ -226,3 +226,67 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
   const legacyStatus = await request.get("/api/meeting-brief/guest-profile/status");
   expect(legacyStatus.status()).toBe(404);
 });
+
+test("meeting page — shows the Transcript matched to its Meeting (issue #153)", async ({
+  page,
+  request,
+}) => {
+  const summary = "Transcript link sync";
+  const startAt = atTodayLocal(14);
+  const event = fixtureEvent({
+    eventId: "evt_link_1",
+    occurrenceId: startAt,
+    summary,
+    startAt,
+    endAt: new Date(Date.parse(startAt) + 60 * 60 * 1000).toISOString(),
+  });
+  expect((await request.post("/api/test/meeting-brief/schedule", { data: { event } })).ok()).toBe(
+    true,
+  );
+  const fileName = `${summary} notes.txt`;
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/seed-transcript", {
+        data: {
+          record: {
+            id: "drive_link_r1",
+            source: {
+              sourceSystem: "drive",
+              externalFileId: "link",
+              fileName,
+              sourceUrl: null,
+              checksum: "link-checksum",
+              observedRevision: 1,
+              modifiedAt: null,
+            },
+            ingestedAt: new Date().toISOString(),
+            extractorVersion: 1,
+            normalizedText: "Bob agreed to own the follow-up.",
+            meetingDate: startAt.slice(0, 10),
+            occurrence: null,
+            speakers: ["Bob"],
+            speakerIdentityMappings: [],
+            roster: [],
+            meetingId: null,
+          },
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+
+  const store = (await (await request.get("/api/meetings/list")).json()) as {
+    meetings: { id: string; title: string }[];
+  };
+  const linked = store.meetings.find((m) => m.title === summary);
+  if (!linked) throw new Error("the linked Meeting was not recorded");
+  const transcriptsRes = await request.get(`/api/meetings/${linked.id}/transcripts`);
+  expect(transcriptsRes.ok()).toBe(true);
+  const body = (await transcriptsRes.json()) as { transcripts: { id: string; title: string }[] };
+  expect(body.transcripts.some((t) => t.id === "drive_link_r1")).toBe(true);
+
+  await page.goto(`/meetings/${linked.id}`);
+  await expect(page.getByRole("heading", { level: 1, name: summary })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Transcripts" })).toBeVisible();
+  await expect(page.getByText(fileName)).toBeVisible();
+});

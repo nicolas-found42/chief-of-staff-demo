@@ -88,6 +88,12 @@ export interface MeetingBriefHostDeps {
    * date (issue #152). Absent or null: no history collection.
    */
   oldestTranscriptAt?: () => string | null;
+  /**
+   * The standing pass that joins catalogued Transcripts to their Meetings
+   * (issue #153). Composed by the Shell, which owns both seams. Absent: the
+   * pass does not run.
+   */
+  associateTranscripts?: () => Promise<void> | void;
 }
 /**
  * The one place snapshot.json is turned into a value. Null means the Run has no
@@ -197,12 +203,13 @@ export class MeetingBriefHost implements HostedModule {
   private timer: NodeJS.Timeout | undefined;
   private lastFullSyncAt: Date | null = null;
   private maintenanceInProgress = false;
+  private historyCollectionInFlight = false;
+  private associationInFlight = false;
   private readonly fullSyncIntervalMs = 6 * 60 * 60 * 1000;
   private readonly hubSpotConnection: HubSpotConnection | null;
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   private readonly profileRegenerations = new Map<string, Promise<string>>();
   private readonly meetings: WorkspaceMeetings;
-  private historyCollectionInFlight = false;
   /** Explicit policy actions when no ConfigStore backs this host (tests). */
   private providerPolicyInMemory: MeetingBriefProviderPolicy = {};
   constructor(private readonly deps: MeetingBriefHostDeps) {
@@ -528,12 +535,32 @@ export class MeetingBriefHost implements HostedModule {
       calendarId: MEETING_BRIEF_CALENDAR_ID,
       forceFullSync: options.forceFullSync ?? false,
     };
-    if (this.deps.log) args.log = this.deps.log;
     const result = await reconcileCalendar(args);
-    // The one backward read (issue #152) rides every reconcile: marker-guarded,
-    // so a completed history never reads again, and a failed one retries here.
+    // The one backward read (issue #152) and the standing Transcript ↔
+    // Meeting join (issue #153) ride every reconcile: both are guarded, so a
+    // completed history never reads again and matched transcripts stay put.
     await this.collectMeetingHistory();
+    await this.associateTranscriptsPass();
     return result;
+  }
+
+  /**
+   * The standing Transcript ↔ Meeting join (issue #153). Rides every
+   * reconcile so transcripts already in the Catalog are matched, not only
+   * newly ingested ones. Never throws into the caller's reconcile path.
+   */
+  private async associateTranscriptsPass(): Promise<void> {
+    if (!this.deps.associateTranscripts || this.associationInFlight) return;
+    this.associationInFlight = true;
+    try {
+      await this.deps.associateTranscripts();
+    } catch (error) {
+      this.deps.log?.(
+        `transcript association failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.associationInFlight = false;
+    }
   }
 
   /**

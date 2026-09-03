@@ -22,6 +22,8 @@ export interface MeetingBriefTestRuntimeOptions {
   personProfiles?: WorkspacePersonProfiles;
   /** The one backward read's bound (issue #152); see MeetingBriefHostDeps. */
   oldestTranscriptAt?: () => string | null;
+  /** The standing Transcript ↔ Meeting join (issue #153); see MeetingBriefHostDeps. */
+  associateTranscripts?: () => Promise<void> | void;
 }
 
 export function fixtureGmailDeliveryProvider(
@@ -120,8 +122,8 @@ export function createMeetingBriefTestRuntime(
     calendarUse: "snapshot",
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",
-    hubSpotConnection,
     ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
+    ...(options.associateTranscripts ? { associateTranscripts: options.associateTranscripts } : {}),
     enrich: async (input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });
       const personProfileLinks = options.personProfiles

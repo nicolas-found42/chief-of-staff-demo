@@ -4,6 +4,8 @@ import type { WorkspaceMeetings } from "../meetings/store.js";
 export interface MeetingsApiContext {
   /** The Workspace's Meetings (ADR-0050); routes stay thin over the store. */
   meetings: WorkspaceMeetings;
+  /** The catalogued Transcripts of one Meeting, for its page (issue #153). */
+  transcriptsFor: (meetingId: string) => { id: string; title: string }[];
 }
 
 /**
@@ -25,5 +27,11 @@ export function registerMeetingsApi(app: FastifyInstance, ctx: MeetingsApiContex
       return;
     }
     return meeting;
+  });
+
+  /* The Transcripts the Catalog has matched to this Meeting (issue #153). */
+  app.get("/api/meetings/:meetingId/transcripts", async (request) => {
+    const { meetingId } = request.params as { meetingId: string };
+    return { transcripts: ctx.transcriptsFor(meetingId) };
   });
 }
