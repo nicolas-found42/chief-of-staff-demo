@@ -15,3 +15,6 @@ test-results/
 playwright-report/
 package-lock.json
 p/
+
+# Raw transcript exports from the meeting provider; not ours to reformat.
+tests/fixtures/debrief-golden/transcripts/

@@ -24,3 +24,7 @@ ACCESSIBILITY-AUDIT.md
 # email. This repo is public.
 screenshots/
 /workspace.backup-*/
+
+# Debrief eval fixtures: real meeting transcripts with named participants, and
+# the hand-written goldens over them. Local-only — this repo is public.
+tests/fixtures/debrief-golden/

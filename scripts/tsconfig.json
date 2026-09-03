@@ -1,0 +1,13 @@
+{
+  // The eval harness is TypeScript run under tsx, so ESLint's typed rules need
+  // a project that lists it. The other scripts here are plain .mjs and need none.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["golden.mts", "lint-golden.mts", "run-debrief-eval.mts", "score-debrief-eval.mts"]
+}
