@@ -57,6 +57,8 @@ export interface MeetingBriefProductionRuntimeOptions {
       onboarding. The main root always passes a shared `personProfiles` that
       already carries it, so this stays unset there. */
   ownerReference?: () => ConfirmedOwnerReference | null;
+  /** The one backward read's bound (issue #152); see MeetingBriefHostDeps. */
+  oldestTranscriptAt?: () => string | null;
 }
 
 export interface MeetingBriefProductionRuntime {
@@ -192,6 +194,7 @@ export function createMeetingBriefProductionRuntime(
       : {}),
     gmailDeliveryProvider,
     personProfiles,
+    ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
   const relayPoller = new RelayWakeUpPoller({

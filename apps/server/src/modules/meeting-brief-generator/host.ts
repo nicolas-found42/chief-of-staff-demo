@@ -44,6 +44,7 @@ import {
   occurrenceKeyFor,
   reconcileCalendar,
 } from "./intake.js";
+import { collectMeetingHistory } from "./history.js";
 import { materialFingerprint } from "./revision.js";
 
 import { type StoredSnapshot } from "./snapshot.js";
@@ -82,6 +83,11 @@ export interface MeetingBriefHostDeps {
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
   personProfiles?: Pick<WorkspacePersonProfiles, "consumerState">;
+  /**
+   * The date Calendar history is collected back to — the oldest Transcript's
+   * date (issue #152). Absent or null: no history collection.
+   */
+  oldestTranscriptAt?: () => string | null;
 }
 /**
  * The one place snapshot.json is turned into a value. Null means the Run has no
@@ -196,6 +202,7 @@ export class MeetingBriefHost implements HostedModule {
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   private readonly profileRegenerations = new Map<string, Promise<string>>();
   private readonly meetings: WorkspaceMeetings;
+  private historyCollectionInFlight = false;
   /** Explicit policy actions when no ConfigStore backs this host (tests). */
   private providerPolicyInMemory: MeetingBriefProviderPolicy = {};
   constructor(private readonly deps: MeetingBriefHostDeps) {
@@ -522,7 +529,37 @@ export class MeetingBriefHost implements HostedModule {
       forceFullSync: options.forceFullSync ?? false,
     };
     if (this.deps.log) args.log = this.deps.log;
-    return reconcileCalendar(args);
+    const result = await reconcileCalendar(args);
+    // The one backward read (issue #152) rides every reconcile: marker-guarded,
+    // so a completed history never reads again, and a failed one retries here.
+    await this.collectMeetingHistory();
+    return result;
+  }
+
+  /**
+   * The one backward read of Calendar (issue #152). Marker-guarded, so repeat
+   * calls are cheap no-ops; a failed read writes no mark and retries on the
+   * next reconcile. Never throws into the caller's reconcile path.
+   */
+  private async collectMeetingHistory(): Promise<void> {
+    if (!this.deps.oldestTranscriptAt || this.historyCollectionInFlight) return;
+    this.historyCollectionInFlight = true;
+    try {
+      await collectMeetingHistory({
+        provider: this.calendarProvider,
+        meetings: this.meetings,
+        oldestTranscriptAt: this.deps.oldestTranscriptAt(),
+        ownerEmail: () => this.getOwnerEmail(),
+        now: this.now(),
+        ...(this.deps.log ? { log: this.deps.log } : {}),
+      });
+    } catch (error) {
+      this.deps.log?.(
+        `meeting history collection failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.historyCollectionInFlight = false;
+    }
   }
 
   /**

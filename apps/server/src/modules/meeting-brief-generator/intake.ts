@@ -40,7 +40,7 @@ const INELIGIBILITY: readonly MeetingIneligibility[] = [
 ];
 
 /** Narrow `eligibilityReason`'s diagnostic string; `eligible` becomes null. */
-function ineligibilityOf(reason: string): MeetingIneligibility | null {
+export function ineligibilityOf(reason: string): MeetingIneligibility | null {
   return INELIGIBILITY.find((value) => value === reason) ?? null;
 }
 

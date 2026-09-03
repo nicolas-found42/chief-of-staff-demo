@@ -511,6 +511,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           configStore,
           initialNow: new Date("2026-08-28T10:00:00.000Z"),
           personProfiles: peopleProfiles,
+          oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         })
       : null;
   const meetingBriefProduction = meetingBriefTest
@@ -522,15 +523,18 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
-       confirmed owner reference; eligibility keeps the raw identity. */
+     confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
-       before the Brief pins its revision, so a Calendar shell is not the
-       whole of what the Brief knows about a new person. */
+     before the Brief pins its revision, so a Calendar shell is not the
+     whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
-       Catalog's confirmed links and its reviewed relevance decisions. */
+     Catalog's confirmed links and its reviewed relevance decisions. */
+        /* Meeting history (issue #152): the backward read reaches as far as
+     the oldest Transcript. */
+        oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         transcriptRelevance,
         log: meetingBriefLog,
       });

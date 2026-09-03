@@ -83,6 +83,21 @@ export class TranscriptCatalogStore {
     );
   }
 
+  /**
+   * The date Meeting history is collected back to (issue #152): the oldest
+   * Transcript's meeting date, falling back to its ingestion date when the
+   * meeting date is unknown. Null when the Workspace holds no Transcripts.
+   */
+  oldestRecordedDate(): string | null {
+    let oldest: string | null = null;
+    for (const record of this.listTranscripts()) {
+      const at = typeof record.meetingDate === "string" ? record.meetingDate : record.ingestedAt;
+      if (typeof at !== "string") continue;
+      if (oldest === null || at < oldest) oldest = at;
+    }
+    return oldest;
+  }
+
   readTranscript(id: string): TranscriptRecord | null {
     return this.read(join(this.transcriptsDir, `${id}.json`)) as TranscriptRecord | null;
   }

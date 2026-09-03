@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Meeting, MeetingIndex, MeetingParticipant } from "@chief-of-staff-demo/shared";
 import { atomicWriteJson } from "../engine/atomic.js";
@@ -17,13 +17,17 @@ import { atomicWriteJson } from "../engine/atomic.js";
  * writes.
  */
 export class WorkspaceMeetings {
+  private readonly dirPath: string;
   private readonly filePath: string;
+  private readonly historyPath: string;
 
   constructor(
     workspaceDir: string,
     private readonly now: () => Date = () => new Date(),
   ) {
-    this.filePath = join(workspaceDir, "meetings", "meetings.json");
+    this.dirPath = join(workspaceDir, "meetings");
+    this.filePath = join(this.dirPath, "meetings.json");
+    this.historyPath = join(this.dirPath, "history.json");
   }
 
   list(): Meeting[] {
@@ -41,6 +45,16 @@ export class WorkspaceMeetings {
 
   findByOccurrenceKey(occurrenceKey: string): Meeting | null {
     return this.read().find((meeting) => meeting.occurrenceKey === occurrenceKey) ?? null;
+  }
+
+  /** The one-time mark that Calendar history has been collected (issue #152). */
+  historyMark(): MeetingHistoryMark | null {
+    return readMarkFile(this.historyPath);
+  }
+
+  writeHistoryMark(mark: MeetingHistoryMark): void {
+    mkdirSync(this.dirPath, { recursive: true });
+    atomicWriteJson(this.historyPath, mark);
   }
 
   /**
@@ -91,6 +105,28 @@ export class WorkspaceMeetings {
     } catch {
       return [];
     }
+  }
+}
+
+/** The one-time mark that the backward Calendar read has run (issue #152). */
+export interface MeetingHistoryMark {
+  /** When the read ran. */
+  collectedAt: string;
+  /** The oldest Transcript date the read reached back to. */
+  from: string;
+}
+
+function readMarkFile(path: string): MeetingHistoryMark | null {
+  if (!existsSync(path)) return null;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!parsed || typeof parsed !== "object") return null;
+    const mark = parsed as Partial<MeetingHistoryMark>;
+    return typeof mark.collectedAt === "string" && typeof mark.from === "string"
+      ? { collectedAt: mark.collectedAt, from: mark.from }
+      : null;
+  } catch {
+    return null;
   }
 }
 

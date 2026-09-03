@@ -3,6 +3,7 @@ import type {
   MeetingBrief,
   MeetingBriefEvent,
   MeetingBriefProviderOutcome,
+  TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../../config.js";
 import type { Runs } from "../../runs.js";
@@ -10,6 +11,7 @@ import { FakeCalendarProvider, type CalendarEvent } from "./calendar.js";
 import { FakeGmailDeliveryProvider, type GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { MeetingBriefHost } from "./host.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
+import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 
 export interface MeetingBriefTestRuntimeOptions {
@@ -18,6 +20,8 @@ export interface MeetingBriefTestRuntimeOptions {
   configStore: ConfigStore;
   initialNow: Date;
   personProfiles?: WorkspacePersonProfiles;
+  /** The one backward read's bound (issue #152); see MeetingBriefHostDeps. */
+  oldestTranscriptAt?: () => string | null;
 }
 
 export function fixtureGmailDeliveryProvider(
@@ -117,7 +121,7 @@ export function createMeetingBriefTestRuntime(
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",
     hubSpotConnection,
-    ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
+    ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
     enrich: async (input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });
       const personProfileLinks = options.personProfiles
@@ -202,6 +206,7 @@ export function createMeetingBriefTestRuntime(
     calendar,
     gmailDelivery,
     hubSpotConnection,
+    workspaceDir: options.workspaceDir,
     setNow(value: Date) {
       now = new Date(value);
     },
@@ -224,6 +229,7 @@ export interface MeetingBriefTestRuntime {
   calendar: FakeCalendarProvider;
   gmailDelivery: FakeGmailDeliveryProvider;
   hubSpotConnection: HubSpotConnection;
+  workspaceDir: string;
   setNow(value: Date): void;
   advance(ms: number): Date;
   upsertEvent(event: MeetingBriefEvent): void;
@@ -247,6 +253,24 @@ export function registerMeetingBriefTestRoutes(
     runtime.upsertEvent(event);
     host.scheduleOccurrence(event, dueAt);
     return { scheduled: true };
+  });
+  /* Meeting history (issue #152): a Calendar occurrence the fake provider
+     holds without scheduling it — how a past occurrence reaches a read. */
+  app.post("/api/test/meeting-brief/calendar-event", async (request) => {
+    const body = request.body as { event?: MeetingBriefEvent };
+    if (!body.event || typeof body.event !== "object") return { error: "event required" };
+    runtime.upsertEvent(body.event);
+    return { upserted: true };
+  });
+  /* Meeting history (issue #152): the Transcript whose meetingDate bounds the
+     backward read. Writes the immutable record straight into the Catalog
+     store — the record the intake would have registered. */
+  app.post("/api/test/meeting-brief/seed-transcript", async (request) => {
+    const body = request.body as { record?: Record<string, unknown> };
+    if (!body.record || typeof body.record !== "object") return { error: "record required" };
+    const record = body.record as unknown as TranscriptRecord;
+    new TranscriptCatalogStore(runtime.workspaceDir).saveTranscript(record);
+    return { seeded: record.id };
   });
   app.post("/api/test/meeting-brief/process-due", async (request) => {
     const body = request.body as { now?: string };

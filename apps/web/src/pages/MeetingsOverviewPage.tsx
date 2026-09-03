@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Meeting } from "@chief-of-staff-demo/shared";
+import type { MeetingIndex } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
 import { todaysMeetings } from "../todaysMeetings";
 import { usePageFocus } from "../usePageFocus";
@@ -18,7 +18,7 @@ const fetchMeetings = () => api.meetings();
 export function MeetingsOverviewPage() {
   useTitle("Meeting Wizard");
   const headingRef = usePageFocus<HTMLHeadingElement>();
-  const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [index, setIndex] = useState<MeetingIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,7 +26,7 @@ export function MeetingsOverviewPage() {
     setBusy(true);
     setError(null);
     try {
-      setMeetings((await fetchMeetings()).meetings);
+      setIndex(await fetchMeetings());
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -38,6 +38,7 @@ export function MeetingsOverviewPage() {
     void refresh();
   }, [refresh]);
 
+  const meetings = index?.meetings ?? null;
   const todays = meetings ? todaysMeetings(meetings, new Date()) : null;
 
   return (
@@ -49,6 +50,16 @@ export function MeetingsOverviewPage() {
         Today's Meetings, read from the Workspace's own record. Each Meeting links to its page; the
         Brief and Debrief journeys stay separate workflows.
       </p>
+
+      {index?.historyBeginsAt ? (
+        <p className="muted">
+          Meeting history begins{" "}
+          <time dateTime={index.historyBeginsAt}>
+            {new Date(index.historyBeginsAt).toLocaleDateString()}
+          </time>
+          .
+        </p>
+      ) : null}
 
       {error ? (
         <div className="banner banner-error" role="alert">

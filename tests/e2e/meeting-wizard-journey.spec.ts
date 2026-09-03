@@ -47,6 +47,83 @@ test("meeting wizard home — a day with no meetings says so", async ({ page }) 
   await expect(page.getByText("No meetings today.")).toBeVisible();
 });
 
+test("meeting history — collected back to the oldest Transcript, the home says where it begins", async ({
+  page,
+  request,
+}) => {
+  // A month-old meeting, and a Transcript whose meetingDate is a day older —
+  // the bound the one backward read reaches back to (issue #152).
+  const historyDay = new Date();
+  historyDay.setHours(15, 0, 0, 0);
+  historyDay.setDate(historyDay.getDate() - 30);
+  const startAt = historyDay.toISOString();
+  const boundDay = new Date(historyDay.getTime() - 24 * 60 * 60 * 1000);
+  const transcript = {
+    id: "drive_history_r1",
+    source: {
+      sourceSystem: "drive",
+      externalFileId: "history",
+      fileName: "Old planning notes",
+      sourceUrl: null,
+      checksum: "history-checksum",
+      observedRevision: 1,
+      modifiedAt: null,
+    },
+    ingestedAt: new Date().toISOString(),
+    extractorVersion: 1,
+    normalizedText: "Old planning transcript text.",
+    meetingDate: boundDay.toISOString(),
+    occurrence: null,
+    speakers: [],
+    speakerIdentityMappings: [],
+    roster: [],
+  };
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/seed-transcript", {
+        data: { record: transcript },
+      })
+    ).ok(),
+  ).toBe(true);
+  expect(
+    (
+      await request.post("/api/test/meeting-brief/calendar-event", {
+        data: {
+          event: {
+            calendarId: "primary",
+            eventId: "evt_history_1",
+            occurrenceId: startAt,
+            version: "v1",
+            summary: "Old planning",
+            startAt,
+            endAt: new Date(historyDay.getTime() + 60 * 60 * 1000).toISOString(),
+            attendees: [
+              { email: "owner@example.com", responseStatus: "accepted", self: true },
+              { email: "alice@external.co", responseStatus: "accepted" },
+            ],
+          },
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+
+  // The reconcile pass runs the one backward read beside the forward one.
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+
+  const store = (await (await request.get("/api/meetings/list")).json()) as {
+    meetings: { id: string; title: string; startAt: string }[];
+    historyBeginsAt: string | null;
+  };
+  const oldMeeting = store.meetings.find((meeting) => meeting.title === "Old planning");
+  if (!oldMeeting) throw new Error("the history read did not record the old Meeting");
+  expect(store.historyBeginsAt).toBe(startAt);
+
+  // The home states where history begins; the old Meeting is not today's.
+  await page.goto("/meetings");
+  await expect(page.getByText(/Meeting history begins/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Old planning" })).toHaveCount(0);
+});
+
 test("meeting wizard journey — home lists today's Meetings from the store, Brief journey, legacy surface gone", async ({
   page,
   request,
