@@ -462,7 +462,6 @@ export const api = {
     request<HubSpotStatus>("/api/meeting-brief/hubspot/disconnect", { method: "POST" }),
   hubspotCheck: () =>
     request<HubSpotSetupCheck>("/api/meeting-brief/hubspot/check", { method: "POST" }),
-  meetingsOverview: () => request<MeetingBriefIndex>("/api/meetings/overview"),
   meetings: () => request<MeetingIndex>("/api/meetings/list"),
   meeting: (meetingId: string) =>
     request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}`),
