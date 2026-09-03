@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixture";
 
 test("owner onboarding journey — propose → create → confirm → correct → disconnect", async ({
   page,

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixture";
 
 const START_AT = "2026-08-28T15:00:00.000Z";
 const DUE_AT = "2026-08-28T11:00:00.000Z";

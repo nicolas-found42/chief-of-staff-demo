@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import { expect, test } from "./fixture";
 
 const LINKED_RUN_FILE = "Linked sync - 2026-08-17T13-00-00.000Z.md";
 

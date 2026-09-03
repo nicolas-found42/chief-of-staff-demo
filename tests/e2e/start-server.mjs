@@ -47,6 +47,17 @@ if (!process.env.MIGRATION_TEST_WORKSPACE_DIR) {
             weeklyDiscoveryDay: 7,
             weeklyDiscoveryTime: "23:59",
           },
+          /* Same parking as the Scout clock: with the production-default
+             schedule (08:00 UTC, Mondays) the 30-second scheduler tick fires a
+             real public-web Research and People Discovery Run as soon as the
+             Workspace holds people — network-bound, minutes-long, and racing
+             the same APIs from every parallel worker. Journeys visit the
+             Content Research pages but never depend on a scheduled Run. */
+          "content-research": {
+            dailyTime: "23:59",
+            weeklyDiscoveryDay: 7,
+            weeklyDiscoveryTime: "23:59",
+          },
         },
       },
       null,

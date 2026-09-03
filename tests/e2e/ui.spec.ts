@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, serverPort, test } from "./fixture";
 import AxeBuilder from "@axe-core/playwright";
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
@@ -79,12 +79,11 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
     page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true }),
   ).toBeVisible();
 
-  // The redirect URI is built from the port the server is actually on. This
-  // suite runs on 4319, so a value hardcoded to 4317 — as the UI used to carry —
-  // fails here.
+  // The redirect URI is built from the port the server is actually on, so a
+  // value hardcoded to another port — as the UI used to carry — fails here.
   await toggle(5).click();
   await expect(page.locator(".setup-copy > code")).toHaveText([
-    "http://localhost:4319/api/google/callback",
+    `http://localhost:${serverPort}/api/google/callback`,
   ]);
   await expect(page.getByRole("button", { name: "Copy Redirect URI", exact: true })).toBeVisible();
 

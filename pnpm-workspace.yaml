@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "tests"
+  - "relay"
+allowBuilds:
+  esbuild: true
+  simple-git-hooks: true
+minimumReleaseAgeExclude:
+  - eslint-plugin-react-refresh@0.5.6

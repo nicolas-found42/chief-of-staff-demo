@@ -4,7 +4,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, serverOrigin, test } from "./fixture";
 
 /**
  * The one-time Workspace migration at the browser level (issue #144, spec
@@ -17,12 +17,12 @@ import { expect, test } from "@playwright/test";
  * again once onboarding is under way.
  *
  * Two hermetic servers are in play:
- * - The shared browser-suite server (playwright.config webServer, port 4319)
- *   boots post-cutover; this journey arms its gate through
+ * - This worker's own server (e2e/fixture.ts, port derived from the worker
+ *   index) boots post-cutover; this journey arms its gate through
  *   /api/test/migration/arm, drives the whole confirm path, and disarms
  *   through /api/test/migration/disarm — in the test AND unconditionally in
- *   afterAll, so a mid-journey failure can never leave the shared server
- *   holding the gate for the rest of the serial suite.
+ *   afterAll, so a mid-journey failure can never leave the server holding the
+ *   gate for the files that follow it on this worker.
  * - A second instance (port 4410) boots a pre-cutover Workspace with NO
  *   migration marker, spawned from e2e/start-server.mjs with
  *   MIGRATION_TEST_WORKSPACE_DIR. On it, the Cancel proof spans the gated
@@ -59,7 +59,7 @@ const ONBOARDING_STEP_IDS = [
   "workflow-bundles",
 ] as const;
 
-const SHARED_ORIGIN = "http://127.0.0.1:4319";
+const SHARED_ORIGIN = serverOrigin;
 const SECOND_PORT = 4410;
 const SECOND_ORIGIN = `http://127.0.0.1:${SECOND_PORT}`;
 
@@ -361,7 +361,7 @@ test("migration cutover journey — gate holds, Cancel touches nothing, the phra
   const runsLive = await page.request.get("/api/runs");
   expect(runsLive.status()).toBe(200);
 
-  // Restore the hermetic post-cutover state for the rest of the serial suite.
+  // Restore the hermetic post-cutover state for the rest of this worker's files.
   const disarm = await page.request.post("/api/test/migration/disarm");
   expect(disarm.ok(), `disarm failed: ${disarm.status()}`).toBe(true);
   expect(await disarm.json()).toEqual({ state: "completed" });
@@ -385,7 +385,7 @@ test("a gated boot leaves the pre-cutover Workspace byte-for-byte unchanged thro
   // A second hermetic instance on its own port, over a pre-cutover Workspace
   // with no migration marker. The snapshot is taken BEFORE the process exists,
   // so the proof spans the gated boot itself — not just the armed hold on the
-  // already-running shared server.
+  // already-running worker server.
   secondWorkspace = join(tmpdir(), `tf-migration-gated-${process.pid}`);
   buildPreCutoverWorkspace(secondWorkspace);
   const before = snapshotWorkspace(secondWorkspace);

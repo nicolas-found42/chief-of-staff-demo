@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixture";
 
 /**
  * The Content Project browser journey (spec #143, AC 1): the creation path the
@@ -153,7 +154,7 @@ test("content project journey — brand voice revisions → scout → select →
   const projectId = (await projectBadge.textContent())!;
   expect(projectId).toMatch(/^project_/);
   await expect(
-    page.getByText(/still require evidence review, an approved Outline Brief/),
+    page.getByText(/still require evidence review, an approved Outline Charter/),
   ).toBeVisible();
 
   // 6. The durable Run receipt carries the same Opportunity → Project

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixture";
 
 /**
  * Reflow (WCAG 1.4.10): no route may scroll the page sideways, and no layout

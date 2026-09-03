@@ -8,25 +8,24 @@
   "engines": {
     "node": ">=20"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "tests"
-  ],
   "scripts": {
-    "build": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && npm run build --workspace @chief-of-staff-demo/web",
-    "typecheck": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && tsc -p tests --noEmit",
-    "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run knip && npm test",
-    "check:all": "npm run check && npm run test:e2e",
+    "build": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && pnpm --filter @chief-of-staff-demo/web build",
+    "typecheck": "run-p --print-label typecheck:build typecheck:web typecheck:tests",
+    "typecheck:build": "tsc -b packages/shared apps/server",
+    "typecheck:web": "tsc -p apps/web --noEmit",
+    "typecheck:tests": "tsc -p tests --noEmit",
+    "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint --cache --concurrency auto .",
+    "format": "prettier --write --cache .",
+    "format:check": "prettier --check --cache .",
+    "check": "run-p check:static test",
+    "check:static": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run knip",
+    "check:all": "pnpm run check && pnpm run test:e2e",
     "knip": "knip",
-    "dev:server": "npm run build --workspace @chief-of-staff-demo/shared && tsx watch apps/server/src/main.ts",
-    "dev:web": "npm run dev --workspace @chief-of-staff-demo/web",
+    "dev:server": "pnpm --filter @chief-of-staff-demo/shared build && tsx watch apps/server/src/main.ts",
+    "dev:web": "pnpm --filter @chief-of-staff-demo/web dev",
     "start": "node apps/server/dist/main.js",
-    "test": "npm run test --workspace @chief-of-staff-demo/tests",
-    "test:e2e": "npm run build && npm run test:e2e --workspace @chief-of-staff-demo/tests"
+    "test": "pnpm --filter @chief-of-staff-demo/tests test",
+    "test:e2e": "pnpm run build && pnpm --filter @chief-of-staff-demo/tests test:e2e"
   },
   "simple-git-hooks": {
     "pre-commit": "npx lint-staged"
@@ -44,21 +43,19 @@
     "@eslint/js": "^10.0.1",
     "@types/jsdom": "^30.0.0",
     "@types/luxon": "^3.7.5",
-    "@types/node": "^24.10.0",
-    "eslint": "^10.9.0",
+    "@types/node": "^26.4.1",
+    "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.4",
-    "globals": "^17.11.0",
-    "knip": "^6.32.2",
-    "lint-staged": "^16.4.0",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "globals": "^17.12.0",
+    "knip": "^6.34.0",
+    "lint-staged": "^17.4.1",
+    "npm-run-all2": "^9.0.3",
     "prettier": "^3.9.6",
-    "simple-git-hooks": "^2.13.1",
-    "tsx": "^4.23.12",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.67.0"
-  },
-  "allowScripts": {
-    "esbuild@0.28.2": true
+    "simple-git-hooks": "^2.14.0",
+    "tsx": "^4.23.13",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.69.0"
   }
 }

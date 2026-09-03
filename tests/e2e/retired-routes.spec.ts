@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixture";
 
 /**
  * The post-cutover product boundary (#143 AC 5).

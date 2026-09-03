@@ -6,6 +6,8 @@ dist/
 /workspace/
 .DS_Store
 *.tsbuildinfo
+.eslintcache
+.prettiercache
 playwright-report/
 test-results/
 coverage/
