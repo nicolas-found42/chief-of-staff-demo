@@ -119,6 +119,7 @@ export type CategoryName =
   | "runs-and-artifacts"
   | "person-profiles"
   | "content-state"
+  | "meeting-state"
   | "research-state"
   | "transcript-catalog"
   | "module-state-and-checkpoints"
@@ -221,6 +222,10 @@ export const DIRECTORIES: Readonly<Record<string, CategoryName>> = {
   "content-scout": "content-state",
   "content-engine": "content-state",
   "content-research": "research-state",
+  /* ADR-0050: the durable Meeting store the Meeting Wizard and Brief read.
+     Without this row the migration preview fails closed on every Workspace
+     that has recorded a Meeting, and the generated-data clear leaves it. */
+  meetings: "meeting-state",
   "transcript-catalog": "transcript-catalog",
   onboarding: "owner-onboarding-state",
 };
