@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { MeetingBriefIndexEntry } from "@chief-of-staff-demo/shared";
-import { api } from "../client";
+import { api, errorMessage } from "../client";
 import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -44,6 +44,8 @@ export function MeetingBriefPage() {
   const { occurrenceKey } = useParams();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   useTitle("Meeting Brief");
+  const [sendRunId, setSendRunId] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const { index, error, busy, refresh, prepareNow } = useMeetingIndex(fetchIndex);
 
   const groups = useMemo(() => {
@@ -105,16 +107,19 @@ export function MeetingBriefPage() {
       ) : null}
       <p className="muted">
         Upcoming Eligible Meetings from Intake schedules; current briefs are latest per occurrence.
-        History preserves revision chain and cancellation state. Briefs are derived from Runs — no
-        live Gmail/HubSpot/Docs reads for history.
+        History preserves revision chain and cancellation state. No live Gmail/HubSpot/Docs reads
+        for history.
       </p>
-
       {error ? (
         <div className="banner banner-error" role="alert">
           {error}
         </div>
       ) : null}
-
+      {sendError ? (
+        <div className="banner banner-error" role="alert">
+          {sendError}
+        </div>
+      ) : null}
       <div className="field-row">
         <button
           type="button"
@@ -124,9 +129,6 @@ export function MeetingBriefPage() {
         >
           {busy ? "Refreshing…" : "Refresh"}
         </button>
-        <Link to="/runs?module=meeting-brief-generator" className="action-button">
-          View all runs
-        </Link>
       </div>
 
       <section aria-labelledby="upcoming-heading">
@@ -171,7 +173,7 @@ export function MeetingBriefPage() {
         <h2 id="current-heading">Current briefs</h2>
         {currentByOccurrence.size === 0 ? (
           <p className="muted">
-            No Meeting Briefs yet — due meetings create Runs with 4 Stages: snapshot → enrich →
+            No Meeting Briefs yet — due meetings are prepared in 4 stages: snapshot → enrich →
             compose → deliver.
           </p>
         ) : (
@@ -180,12 +182,7 @@ export function MeetingBriefPage() {
               const brief = entry.meetingBrief;
               return (
                 <li key={occurrenceKey} className="card">
-                  <h3>
-                    {brief ? brief.logistics.title : entry.eventId} ·{" "}
-                    <Link to={`/runs/${entry.runId}`} className="step-link">
-                      Run {entry.runId}
-                    </Link>
-                  </h3>
+                  <h3>{brief ? brief.logistics.title : entry.eventId}</h3>
                   <p className="muted">
                     Occurrence {entry.occurrenceId} · version {entry.eventVersion} ·{" "}
                     <time dateTime={entry.createdAt}>
@@ -195,7 +192,8 @@ export function MeetingBriefPage() {
                   </p>
                   {entry.supersedes ? (
                     <p className="muted">
-                      Supersedes <Link to={`/runs/${entry.supersedes}`}>{entry.supersedes}</Link>
+                      Supersedes a previous revision —{" "}
+                      <a href="#history-heading">see revision history</a>.
                     </p>
                   ) : null}
                   <p>
@@ -287,13 +285,41 @@ export function MeetingBriefPage() {
                       {/* Show at least one source link name for a11y */}
                     </>
                   ) : (
-                    <p className="muted">No structured brief (run {entry.status})</p>
+                    <>
+                      <p className="muted">No structured brief — preparation {entry.status}.</p>
+                      <p>
+                        <Link to={`/runs/${entry.runId}`} className="action-button">
+                          Technical details
+                        </Link>
+                      </p>
+                    </>
                   )}
-                  <p>
-                    <Link to={`/runs/${entry.runId}`} className="action-button">
-                      Open Run detail
-                    </Link>
-                  </p>
+                  {/* Owner-only manual send: preparation never emails (issue
+                      #163); this button retries the Run's deliver stage, which
+                      is the explicit send. The server fixes the recipient to
+                      the owner. */}
+                  {brief && entry.delivery?.status !== "sent" ? (
+                    <div className="field-row">
+                      <button
+                        type="button"
+                        className="action-button"
+                        aria-disabled={busy || sendRunId !== null}
+                        onClick={() => {
+                          if (busy || sendRunId !== null) return;
+                          setSendRunId(entry.runId);
+                          setSendError(null);
+                          api
+                            .retry(entry.runId)
+                            .then(() => refresh())
+                            .catch((cause: unknown) => setSendError(errorMessage(cause)))
+                            .finally(() => setSendRunId(null));
+                        }}
+                      >
+                        {sendRunId === entry.runId ? "Sending…" : "Send brief email"}
+                      </button>
+                      <span className="muted">Sends to the owner only.</span>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -315,7 +341,7 @@ export function MeetingBriefPage() {
                   {cancellation.occurrenceId} · version {cancellation.version}
                 </p>
                 <p className="muted">
-                  Completed Runs remain in revision history, but this occurrence is no longer a
+                  Completed briefs remain in revision history, but this occurrence is no longer a
                   current brief.
                 </p>
               </li>
@@ -339,8 +365,7 @@ export function MeetingBriefPage() {
                 return (
                   <li key={entry.runId} className="card">
                     <p>
-                      <Link to={`/runs/${entry.runId}`}>{entry.runId}</Link> · occurrence{" "}
-                      {entry.occurrenceKey} · version {entry.eventVersion} ·{" "}
+                      Occurrence {entry.occurrenceKey} · version {entry.eventVersion} ·{" "}
                       {new Date(entry.createdAt).toLocaleString()} ·{" "}
                       <span
                         className={`status-badge ${isCurrent ? "status-done" : "status-active"}`}
@@ -350,9 +375,7 @@ export function MeetingBriefPage() {
                       <DeliveryBadge delivery={entry.delivery} />
                     </p>
                     {entry.supersedes ? (
-                      <p className="muted">
-                        Supersedes <Link to={`/runs/${entry.supersedes}`}>{entry.supersedes}</Link>
-                      </p>
+                      <p className="muted">Supersedes a previous revision.</p>
                     ) : null}
                     {entry.delivery && deliveryPresentation(entry.delivery.status).explanation ? (
                       <p className="muted">
@@ -363,10 +386,13 @@ export function MeetingBriefPage() {
                       <p className="muted">{entry.meetingBrief.summary}</p>
                     ) : null}
                     <p>
-                      Status: {entry.status} ·{" "}
-                      <Link to={`/runs/${entry.runId}`}>
-                        Run detail (Stages, attempts, files, timeline)
-                      </Link>
+                      Status: {entry.status}
+                      {!entry.meetingBrief || entry.status !== "done" ? (
+                        <>
+                          {" · "}
+                          <Link to={`/runs/${entry.runId}`}>Technical details</Link>
+                        </>
+                      ) : null}
                     </p>
                   </li>
                 );
@@ -378,8 +404,8 @@ export function MeetingBriefPage() {
       <div className="card">
         <h3>How this page is built</h3>
         <p className="muted">
-          Upcoming derived from Intake DurableClock schedules (Module-owned). Briefs derived from
-          Runs on read — Cross-Run index invalidated only by Meeting Brief Generator writes. No live
+          Upcoming derived from Intake DurableClock schedules (Module-owned). Briefs derived on read
+          — the brief index is invalidated only by Meeting Brief Generator writes. No live
           Gmail/HubSpot/Docs reads for history.
         </p>
         <p className="muted">Stages: snapshot | enrich | compose | deliver (fixed 4)</p>

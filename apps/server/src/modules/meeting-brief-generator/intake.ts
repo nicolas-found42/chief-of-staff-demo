@@ -1,3 +1,4 @@
+import { DateTime } from "luxon";
 import {
   MEETING_BRIEF_MODULE_ID,
   meetingBriefOccurrenceIdentity,
@@ -23,8 +24,35 @@ import {
 
 export const MEETING_BRIEF_CALENDAR_ID = "primary" as const;
 
-/** Four hours preparation lead time (issue://80). Fixed, no setting. */
-const PREPARATION_LEAD_MS = 4 * 60 * 60 * 1000;
+/**
+ * The Sunday sweep window covering `now` (issue://157): Sunday 00:00
+ * inclusive through the following Sunday 00:00 exclusive, in the owner's
+ * calendar timezone, returned as UTC instants. Weekend included, so a Monday
+ * plan can see Friday. An unknown timezone falls back to UTC.
+ */
+export interface SweepWindow {
+  windowStart: Date;
+  windowEnd: Date;
+}
+
+export function sweepWindowFor(now: Date, timezone: string): SweepWindow {
+  let local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(timezone);
+  if (!local.isValid) local = DateTime.fromJSDate(now, { zone: "utc" });
+  // Luxon weekdays run Monday (1) through Sunday (7); days since Sunday is weekday % 7.
+  const windowStart = local.startOf("day").minus({ days: local.weekday % 7 });
+  return {
+    windowStart: windowStart.toJSDate(),
+    windowEnd: windowStart.plus({ days: 7 }).toJSDate(),
+  };
+}
+
+/** Whether a meeting start falls inside the sweep window covering `now`. */
+function isInSweepWindow(startAt: string, now: Date, timezone: string): boolean {
+  const startMs = Date.parse(startAt);
+  if (Number.isNaN(startMs)) return false;
+  const { windowStart, windowEnd } = sweepWindowFor(now, timezone);
+  return startMs >= windowStart.getTime() && startMs < windowEnd.getTime();
+}
 
 /** Occurrence key for deduplication and durableClock key (ADR-0033). */
 export function occurrenceKeyFor(event: Pick<CalendarEvent, "eventId" | "occurrenceId">): string {
@@ -44,12 +72,25 @@ export function ineligibilityOf(reason: string): MeetingIneligibility | null {
   return INELIGIBILITY.find((value) => value === reason) ?? null;
 }
 
-/** Compute due time: 4h before start, or immediate if inside window. */
-function computeDueTime(startAt: string, now: Date): Date {
-  const startMs = Date.parse(startAt);
-  if (Number.isNaN(startMs)) return now;
-  const dueMs = startMs - PREPARATION_LEAD_MS;
-  return dueMs <= now.getTime() ? now : new Date(dueMs);
+/** Record what Calendar currently says about one occurrence in the Workspace's Meetings (ADR-0050). */
+function recordMeeting(
+  meetings: WorkspaceMeetings | undefined,
+  event: CalendarEvent,
+  ownerEmail: string | null,
+): void {
+  if (!meetings || !isRecordableMeeting(event, ownerEmail)) return;
+  const key = occurrenceKeyFor(event);
+  meetings.upsertFromCalendar({
+    occurrenceKey: key,
+    calendarEventId: event.eventId,
+    occurrenceId: event.occurrenceId,
+    title: event.summary,
+    startAt: event.startAt,
+    endAt: event.endAt,
+    participants: meetingParticipants(event, ownerEmail),
+    cancelled: event.status === "cancelled",
+    ineligibleReason: ineligibilityOf(eligibilityReason(event, ownerEmail)),
+  });
 }
 
 /** Ensure the primary Calendar push channel exists and is durable before expiration (issue://83). */
@@ -95,10 +136,12 @@ export async function ensureCalendarWatch(args: {
 }
 
 /**
- * Reconcile Calendar current state against Intake schedules (issue://83).
+ * Reconcile Calendar current state against Intake schedules (issue://83, weekly sweep per issue://157).
  * Header-only wake-ups never mistaken for data — we fetch Calendar after each wake-up.
- * Classifies Eligible Meetings and durably schedules 4h before start (immediate if inside window),
- * moved outside replaces schedule, moved inside starts immediately, ineligible removes schedule.
+ * Classifies Eligible Meetings: in-window ones schedule for immediate preparation while
+ * beyond-window ones wait for the sweep that covers them, moved inside starts immediately,
+ * ineligible removes schedule. A revised event still regenerates its Brief — the new
+ * version replaces the schedule and the Run path supersedes.
  * Duplicate wake-ups are harmless (idempotent replace). Bounded reconciliation on invalid sync.
  */
 export async function reconcileCalendar(args: {
@@ -109,11 +152,14 @@ export async function reconcileCalendar(args: {
   /** The Workspace's Meetings (ADR-0050). Absent in callers that only schedule. */
   meetings?: WorkspaceMeetings;
   now: Date;
+  /** IANA timezone the sweep window is computed in (issue://157). Defaults to UTC. */
+  timezone?: string;
   calendarId?: string;
   forceFullSync?: boolean;
   log?: (msg: string) => void;
 }): Promise<{ scheduled: number; removed: number; invalidSyncRecovered: boolean }> {
   const calendarId = args.calendarId ?? MEETING_BRIEF_CALENDAR_ID;
+  const timezone = args.timezone ?? "UTC";
   let syncToken: string | null = args.forceFullSync ? null : args.store.getSyncToken();
   let events: CalendarEvent[];
   let nextSyncToken: string | null;
@@ -214,19 +260,7 @@ export async function reconcileCalendar(args: {
     /* ADR-0050: the Workspace records the meeting whether or not it earns a
        Meeting Brief, and keeps it once Calendar's forward window has moved
        past it. Eligibility below still decides only what gets prepared. */
-    if (args.meetings && isRecordableMeeting(event, ownerEmail)) {
-      args.meetings.upsertFromCalendar({
-        occurrenceKey: key,
-        calendarEventId: event.eventId,
-        occurrenceId: event.occurrenceId,
-        title: event.summary,
-        startAt: event.startAt,
-        endAt: event.endAt,
-        participants: meetingParticipants(event, ownerEmail),
-        cancelled: event.status === "cancelled",
-        ineligibleReason: ineligibilityOf(eligibilityReason(event, ownerEmail)),
-      });
-    }
+    recordMeeting(args.meetings, event, ownerEmail);
 
     const startMs = Date.parse(event.startAt);
     const isFuture = !Number.isNaN(startMs) && startMs > args.now.getTime();
@@ -249,19 +283,26 @@ export async function reconcileCalendar(args: {
       continue;
     }
 
-    // Eligible future → schedule 4h before or immediate
+    // Eligible future inside the sweep window prepares immediately (seen after
+    // the sweep starts at once); beyond the window it waits for the sweep that
+    // covers it (issue://157). A revised event still regenerates its Brief —
+    // the new version replaces the schedule below and the Run path supersedes.
+    if (!isInSweepWindow(event.startAt, args.now, timezone)) {
+      const before = args.clock.list(MEETING_BRIEF_MODULE_ID).some((s) => s.key === key);
+      args.clock.remove(MEETING_BRIEF_MODULE_ID, key);
+      if (before) removed += 1;
+      continue;
+    }
     args.store.clearCancellation(key);
-    const dueAt = computeDueTime(event.startAt, args.now);
-    // Durably schedule (atomic replace)
+    // Durably schedule for immediate preparation (atomic replace)
     args.clock.schedule({
       module: MEETING_BRIEF_MODULE_ID,
       key,
-      dueAt: dueAt.toISOString(),
+      dueAt: args.now.toISOString(),
       input: event,
     });
     scheduled += 1;
   }
-
   // A missing occurrence in a full sync was deleted or is no longer eligible.
   if (syncToken === null) {
     const currentKeys = args.clock.list(MEETING_BRIEF_MODULE_ID).map((s) => s.key);
@@ -275,4 +316,65 @@ export async function reconcileCalendar(args: {
 
   args.log?.(`reconcile: ${scheduled} scheduled, ${removed} removed, token ${nextSyncToken}`);
   return { scheduled, removed, invalidSyncRecovered };
+}
+
+/**
+ * The Sunday sweep (issue://157): enumerate the Meetings starting inside the
+ * sweep window covering `now` (Sunday 00:00 through Saturday end, weekend
+ * included) and enqueue Brief preparation for each eligible one missing a
+ * current Brief. Same-version schedules and current Briefs are left alone; a
+ * revised event still regenerates its Brief — the new version replaces the
+ * schedule and the Run path supersedes.
+ */
+export async function prepareWeekSweep(args: {
+  provider: CalendarProvider;
+  store: MeetingBriefCalendarStore;
+  clock: DurableClock;
+  ownerEmail: string | null | (() => string | null);
+  /** The Workspace's Meetings (ADR-0050). Absent in callers that only schedule. */
+  meetings?: WorkspaceMeetings;
+  /** True when the occurrence already has a Brief current for this event version. */
+  hasCurrentBrief?: (occurrenceKey: string, event: CalendarEvent) => boolean;
+  now: Date;
+  /** IANA timezone the sweep window is computed in. Defaults to UTC. */
+  timezone?: string;
+  calendarId?: string;
+  log?: (msg: string) => void;
+}): Promise<{ scheduled: number; windowStart: string; windowEnd: string }> {
+  const calendarId = args.calendarId ?? MEETING_BRIEF_CALENDAR_ID;
+  const timezone = args.timezone ?? "UTC";
+  const { windowStart, windowEnd } = sweepWindowFor(args.now, timezone);
+  // Bounded read over exactly the week the sweep covers. Providers that
+  // ignore the window still converge: the window filter below applies.
+  const { events } = await args.provider.listEvents({
+    calendarId,
+    syncToken: null,
+    timeMin: windowStart.toISOString(),
+    timeMax: windowEnd.toISOString(),
+  });
+  const ownerEmail = typeof args.ownerEmail === "function" ? args.ownerEmail() : args.ownerEmail;
+  let scheduled = 0;
+  for (const event of events) {
+    recordMeeting(args.meetings, event, ownerEmail);
+    const key = occurrenceKeyFor(event);
+    if (!isEligibleMeeting(event, ownerEmail)) continue;
+    const startMs = Date.parse(event.startAt);
+    if (Number.isNaN(startMs) || startMs <= args.now.getTime()) continue;
+    if (startMs < windowStart.getTime() || startMs >= windowEnd.getTime()) continue;
+    const existing = args.clock.list(MEETING_BRIEF_MODULE_ID).find((s) => s.key === key);
+    if (existing && (existing.input as CalendarEvent | null)?.version === event.version) continue;
+    if (args.hasCurrentBrief?.(key, event) === true) continue;
+    args.store.clearCancellation(key);
+    args.clock.schedule({
+      module: MEETING_BRIEF_MODULE_ID,
+      key,
+      dueAt: args.now.toISOString(),
+      input: event,
+    });
+    scheduled += 1;
+  }
+  args.log?.(
+    `week sweep: ${scheduled} scheduled for ${windowStart.toISOString()}–${windowEnd.toISOString()}`,
+  );
+  return { scheduled, windowStart: windowStart.toISOString(), windowEnd: windowEnd.toISOString() };
 }

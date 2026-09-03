@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
+import { findNearMatches, type MatchedMeeting } from "../meetings/matching.js";
 import type { WorkspaceMeetings } from "../meetings/store.js";
 
 export interface MeetingsApiContext {
@@ -6,6 +8,11 @@ export interface MeetingsApiContext {
   meetings: WorkspaceMeetings;
   /** The catalogued Transcripts of one Meeting, for its page (issue #153). */
   transcriptsFor: (meetingId: string) => { id: string; title: string }[];
+  /** First catalogued Transcript on a Meeting, for near-match scoring (issue #154). */
+  transcriptForMeeting?: ((meetingId: string) => TranscriptRecord | null) | undefined;
+  /** Move a Transcript's Meeting link; the merge route carries orphans across (issue #154). */
+  attachTranscript?:
+    ((transcriptId: string, meeting: MatchedMeeting) => Promise<unknown>) | undefined;
 }
 
 /**
@@ -33,5 +40,62 @@ export function registerMeetingsApi(app: FastifyInstance, ctx: MeetingsApiContex
   app.get("/api/meetings/:meetingId/transcripts", async (request) => {
     const { meetingId } = request.params as { meetingId: string };
     return { transcripts: ctx.transcriptsFor(meetingId) };
+  });
+
+  /* Nearest Meetings for a transcript-owned Meeting, for the merge UI (issue #154). */
+  app.get("/api/meetings/:meetingId/near-matches", async (request, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const meeting = ctx.meetings.get(meetingId);
+    if (!meeting) {
+      reply.code(404).send({ error: "meeting-not-found" });
+      return;
+    }
+    const transcript = ctx.transcriptForMeeting?.(meetingId) ?? null;
+    if (!transcript) return { nearMatches: [] };
+    const candidates = ctx.meetings.list().filter((candidate) => candidate.id !== meeting.id);
+    return { nearMatches: findNearMatches(transcript, candidates) };
+  });
+
+  /*
+   * Carry a transcript-owned Meeting's Transcripts across to the Calendar
+   * Meeting they belong to, then forget the transcript-owned shell, so
+   * exactly one Meeting remains (issue #154). The source must be
+   * transcript-owned: a Calendar Meeting is never deleted by a merge.
+   */
+  app.post("/api/meetings/:meetingId/merge", async (request, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const { targetOccurrenceKey } = (request.body ?? {}) as { targetOccurrenceKey?: unknown };
+    const source = ctx.meetings.get(meetingId);
+    if (!source) {
+      reply.code(404).send({ error: "meeting-not-found" });
+      return;
+    }
+    if (source.occurrenceKey !== null) {
+      reply.code(400).send({ error: "merge-source-has-occurrence" });
+      return;
+    }
+    if (typeof targetOccurrenceKey !== "string" || targetOccurrenceKey === "") {
+      reply.code(400).send({ error: "target-occurrence-key-required" });
+      return;
+    }
+    const target = ctx.meetings.findByOccurrenceKey(targetOccurrenceKey);
+    if (!target) {
+      reply.code(404).send({ error: "target-meeting-not-found" });
+      return;
+    }
+    if (!ctx.attachTranscript) {
+      reply.code(500).send({ error: "merge-unavailable" });
+      return;
+    }
+    const matched: MatchedMeeting = {
+      id: target.id,
+      occurrenceKey: target.occurrenceKey,
+      calendarEventId: target.calendarEventId,
+    };
+    for (const transcript of ctx.transcriptsFor(source.id)) {
+      await ctx.attachTranscript(transcript.id, matched);
+    }
+    ctx.meetings.remove(source.id);
+    return ctx.meetings.get(target.id) ?? target;
   });
 }

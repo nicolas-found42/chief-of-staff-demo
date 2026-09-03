@@ -100,6 +100,7 @@ describe("Spec regression — PR 93 findings", () => {
       runs,
       workspaceDir,
       now: () => new Date(now),
+      getTimezone: () => "UTC",
       calendarProvider: filteringProvider,
       enrichmentProviders: {
         gmailProvider: new FakeGmailProvider(),
@@ -122,13 +123,19 @@ describe("Spec regression — PR 93 findings", () => {
     });
     // Initial recover with now=2026-08-28, distant event is 104 days away (>90), so full sync should not schedule it
     await host.recover();
-    expect(host.listUpcoming()).toHaveLength(0);
-    // Advance time to 2026-09-20 (so distant event is now ~81 days away, within 90)
-    now = new Date("2026-09-20T09:00:00.000Z");
-    // Incremental wake would still not see it (since no incremental change), but periodic full look-ahead should
+    // The covering week's sweep enqueues it: Sunday Dec 6 window covers Dec 10.
+    // 2026-12-06 is a Sunday (verified via Date#getUTCDay() === 0); the
+    // automatic Sunday maintenanceTick path must enqueue it — no direct sweep call.
+    // The sweep enqueues due-immediately, so the same tick processes it into a
+    // Run: assert the Run (not a lingering schedule) as proof of the automatic path.
+    now = new Date("2026-12-06T09:00:00.000Z");
+    expect(new Date("2026-12-06T09:00:00.000Z").getUTCDay()).toBe(0);
     await host.maintenanceTick(new Date(now));
-    expect(host.listUpcoming()).toHaveLength(1);
-    expect(host.listUpcoming()[0]?.eventId).toBe("evt_distant");
+    await host.idle();
+    const briefRuns = runs.list({ module: "meeting-brief-generator" }).runs;
+    expect(briefRuns).toHaveLength(1);
+    expect(briefRuns[0]?.status).toBe("done");
+    expect(host.index().briefs).toHaveLength(1);
   });
 
   it("1. maintenanceTick periodically ensures watch and does full reconcile on cadence", async () => {
@@ -174,18 +181,23 @@ describe("Spec regression — PR 93 findings", () => {
       gmailDeliveryProvider: fixtureGmailDeliveryProvider(),
       completeBrief: completeFixtureBrief,
     });
-    // First recover should establish full look-ahead (forceFullSync)
+    // First recover prepares immediately (in-window sweep semantics): the schedule becomes a Run at once.
     await host.recover();
-    expect(host.listUpcoming()).toHaveLength(1);
-    // Advance time beyond full-sync interval (6h) and call maintenanceTick — should still ensure watch and keep schedule
+    await host.idle();
+    expect(host.listUpcoming()).toHaveLength(0);
+    expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(1);
+    // Advance time beyond full-sync interval (6h) and call maintenanceTick — still exactly one Run, no duplicate.
     now = new Date(now.getTime() + 7 * 60 * 60 * 1000);
     await host.maintenanceTick(new Date(now));
-    expect(host.listUpcoming()).toHaveLength(1);
+    await host.idle();
+    expect(host.listUpcoming()).toHaveLength(0);
+    expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(1);
     // Ensure overlapping ticks are avoided (call twice concurrently)
     const p1 = host.maintenanceTick(new Date(now));
     const p2 = host.maintenanceTick(new Date(now));
     await Promise.all([p1, p2]);
-    expect(host.listUpcoming()).toHaveLength(1);
+    await host.idle();
+    expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(1);
   });
 
   it("3. duplicate notification does not create another Run when prior Run failed on same version", async () => {

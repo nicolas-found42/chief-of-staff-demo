@@ -78,4 +78,10 @@ export interface DebriefOutputsDeps {
    * which is the same shape as a Workspace that never granted Tasks scope.
    */
   createTask?: (task: DebriefTask) => Promise<string>;
+  /**
+   * Reads one Task's completion from Google Tasks (issue #158). Optional:
+   * absent, a Task-backed item falls back to the review store's local done.
+   * Null when Google no longer holds the Task — also a local-fallback case.
+   */
+  getTaskStatus?: (taskId: string) => Promise<{ completed: boolean } | null>;
 }

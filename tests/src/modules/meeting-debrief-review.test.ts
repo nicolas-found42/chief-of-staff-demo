@@ -429,6 +429,63 @@ describe("Meeting Debrief dropping action items (#140, ADR-0037)", () => {
   });
 });
 
+describe("Meeting Debrief done vs dismiss lifecycle (#158)", () => {
+  it("holds done and dismiss as separate persisted states that clear each other", async () => {
+    const runId = await startRun(makeRecord());
+
+    const done = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/done`,
+    });
+    expect(done.statusCode).toBe(200);
+    expect(done.json()).toEqual({ completed: [0] });
+    let state = reviewStateOf(runId);
+    expect(state.review.completedActionItems).toEqual([0]);
+    expect(state.review.droppedActionItems).toEqual([]);
+
+    const duplicate = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/done`,
+    });
+    expect(duplicate.statusCode).toBe(409);
+
+    const dismissed = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/dismiss`,
+    });
+    expect(dismissed.statusCode).toBe(200);
+    expect(dismissed.json()).toEqual({ dismissed: [0] });
+    state = reviewStateOf(runId);
+    expect(state.review.droppedActionItems).toEqual([0]);
+    expect(state.review.completedActionItems).toEqual([]);
+
+    const detail = await (
+      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
+    ).json();
+    expect(detail.review.droppedActionItems).toEqual([0]);
+    expect(detail.review.completedActionItems).toEqual([]);
+    expect(detail.review.actionItemTasks).toEqual([]);
+  });
+
+  it("keeps the legacy drop route as a dismiss alias", async () => {
+    const runId = await startRun(makeRecord());
+
+    const dropped = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
+    });
+    expect(dropped.statusCode).toBe(200);
+    expect(dropped.json()).toEqual({ dropped: [0] });
+    expect(reviewStateOf(runId).review.droppedActionItems).toEqual([0]);
+
+    const again = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
+    });
+    expect(again.statusCode).toBe(409);
+  });
+});
+
 const LINKED = {
   occurrence: { occurrenceKey: "evt1::2026-08-17T13:00:00Z", calendarEventId: "evt1" },
 };
@@ -883,7 +940,7 @@ describe("approvalBlockers (#140) — the pure gate", () => {
         ],
       },
       recipients: { additional: [] },
-      review: { droppedActionItems: [] },
+      review: { droppedActionItems: [], completedActionItems: [] },
       request: null,
       approval: null,
     };

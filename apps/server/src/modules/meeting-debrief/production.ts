@@ -26,6 +26,11 @@ export interface MeetingDebriefProductionRuntimeOptions {
   google?: GoogleConnection;
   /** The Tasks list owner Tasks are filed under. */
   tasklistName?: () => string;
+  /**
+   * Staleness hand-off to the Brief side (issue #162): fired after a review
+   * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
+   */
+  onActionItemsChanged?: () => void;
   log?: (message: string) => void;
 }
 
@@ -77,6 +82,7 @@ export function createMeetingDebriefProductionRuntime(
           ),
         }
       : {}),
+    ...(options.onActionItemsChanged ? { onActionItemsChanged: options.onActionItemsChanged } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
   return { host };

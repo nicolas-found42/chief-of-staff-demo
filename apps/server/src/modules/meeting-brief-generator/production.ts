@@ -191,6 +191,11 @@ export function createMeetingBriefProductionRuntime(
         : {}),
     },
     getOwnerEmail: () => ownerEmail,
+    /* Single-email policy (issue #163): preparation never emails per-Brief —
+       the Brief stays available in-app and the owner sends it explicitly.
+       The Daily and Weekly Briefings each email the owner once per period. */
+    perBriefAutoSend: false,
+    briefingEmails: true,
     ...(options.isOwnerProfileConfirmed
       ? { isOwnerProfileConfirmed: options.isOwnerProfileConfirmed }
       : {}),

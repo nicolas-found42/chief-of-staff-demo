@@ -20,9 +20,11 @@ import type {
   GoogleStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
+  DailyBriefingState,
+  WeeklyBriefingState,
   Meeting,
-  MeetingBriefIndex,
   MeetingIndex,
+  MeetingBriefIndex,
   MeetingBriefPersonProfileReadModel,
   MeetingDebriefDetail,
   MeetingDebriefField,
@@ -469,6 +471,16 @@ export const api = {
     request<{ transcripts: { id: string; title: string }[] }>(
       `/api/meetings/${encodeURIComponent(meetingId)}/transcripts`,
     ),
+  meetingNearMatches: (meetingId: string) =>
+    request<{ nearMatches: Meeting[] }>(
+      `/api/meetings/${encodeURIComponent(meetingId)}/near-matches`,
+    ),
+  mergeMeeting: (meetingId: string, input: { targetOccurrenceKey: string }) =>
+    request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}/merge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
   meetingBriefConfig: () => request<{ internalDomains: string[] }>("/api/meeting-brief/config"),
   saveMeetingBriefConfig: (input: string[] | { internalDomains?: string[] }) =>
     request<{ internalDomains: string[] }>("/api/meeting-brief/config", {
@@ -485,6 +497,12 @@ export const api = {
       body: JSON.stringify({ disabled }),
     }),
   meetingBriefIndex: () => request<MeetingBriefIndex>("/api/meeting-brief/index"),
+  dailyBriefing: () => request<DailyBriefingState>("/api/meeting-brief/daily"),
+  retryDailyBriefing: () =>
+    request<DailyBriefingState>("/api/meeting-brief/daily/retry", { method: "POST" }),
+  weeklyBriefing: () => request<WeeklyBriefingState>("/api/meeting-brief/weekly"),
+  retryWeeklyBriefing: () =>
+    request<WeeklyBriefingState>("/api/meeting-brief/weekly/retry", { method: "POST" }),
   contentProjects: () =>
     request<{ projects: ContentProjectSummary[] }>("/api/content-engine/projects"),
   contentProject: (projectId: string) =>
@@ -533,6 +551,16 @@ export const api = {
   meetingDebriefDropActionItem: (runId: string, index: number) =>
     request<{ dropped: number[] }>(
       `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/drop`,
+      { method: "POST" },
+    ),
+  meetingDebriefDoneActionItem: (runId: string, index: number) =>
+    request<{ completed: number[] }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/done`,
+      { method: "POST" },
+    ),
+  meetingDebriefDismissActionItem: (runId: string, index: number) =>
+    request<{ dismissed: number[] }>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/dismiss`,
       { method: "POST" },
     ),
   meetingDebriefConfirmRoster: (

@@ -291,7 +291,7 @@ describe("eligibility table via host — timed/all-day, cancelled/confirmed, own
     await host.reconcileCalendar();
     const upcoming = host.listUpcoming();
     expect(upcoming).toHaveLength(1);
-    expect(upcoming[0]?.dueAt).toBe("2026-08-28T11:00:00.000Z");
+    expect(upcoming[0]?.dueAt).toBe("2026-08-28T09:00:00.000Z");
     expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(0);
     // No placeholder Runs before due
     for (const r of runs.list({ module: "meeting-brief-generator" }).runs) {
@@ -422,35 +422,38 @@ describe("Eligible Meeting — internal and external, owner participation (issue
   });
 });
 
-describe("Intake reconciliation against Calendar current state (issue://83) — 4h/immediate/replace/remove, duplicate harmless, upcoming vs Runs", () => {
-  it("schedules 4h before start", async () => {
+describe("Intake reconciliation against Calendar current state (issue://83) — sweep-window/immediate/replace/remove, duplicate harmless, upcoming vs Runs", () => {
+  it("in-window meeting schedules for immediate preparation (sweep semantics)", async () => {
     const ev = calEvent({ startAt: "2026-08-28T15:00:00.000Z" });
     fakeCal.setEvents([ev]);
     await host.reconcileCalendar();
-    expect(host.listUpcoming()[0]?.dueAt).toBe("2026-08-28T11:00:00.000Z");
+    expect(host.listUpcoming()[0]?.dueAt).toBe(now.toISOString());
   });
 
-  it("immediate if inside window (start within 4h)", async () => {
+  it("immediate if inside sweep window", async () => {
     const ev = calEvent({ startAt: "2026-08-28T11:00:00.000Z" }); // 2h away at 09:00
     fakeCal.setEvents([ev]);
     await host.reconcileCalendar();
     expect(host.listUpcoming()[0]?.dueAt).toBe(now.toISOString());
   });
 
-  it("moved outside replaces schedule", async () => {
+  it("moved beyond sweep window removes schedule until covering sweep", async () => {
     const ev1 = calEvent({ startAt: "2026-08-28T15:00:00.000Z", version: "v1" });
     fakeCal.setEvents([ev1]);
     await host.reconcileCalendar();
-    expect(host.listUpcoming()[0]?.dueAt).toBe("2026-08-28T11:00:00.000Z");
+    expect(host.listUpcoming()[0]?.dueAt).toBe(now.toISOString());
     const ev2 = calEvent({
-      startAt: "2026-08-28T18:00:00.000Z",
-      endAt: "2026-08-28T19:00:00.000Z",
+      startAt: "2026-09-05T18:00:00.000Z",
+      endAt: "2026-09-05T19:00:00.000Z",
       version: "v2",
     });
     fakeCal.setEvents([ev2]);
     await host.reconcileCalendar();
+    // Beyond the window covering now: waits for its covering sweep.
+    expect(host.listUpcoming()).toHaveLength(0);
+    // The covering week's sweep enqueues it for immediate preparation.
+    await host.prepareWeekSweep(new Date("2026-09-05T09:00:00.000Z"), "UTC");
     expect(host.listUpcoming()).toHaveLength(1);
-    expect(host.listUpcoming()[0]?.dueAt).toBe("2026-08-28T14:00:00.000Z");
     expect(host.listUpcoming()[0]?.version).toBe("v2");
   });
 
@@ -503,13 +506,12 @@ describe("Intake reconciliation against Calendar current state (issue://83) — 
     const upcoming = host.listUpcoming();
     expect(upcoming).toHaveLength(1);
     expect(upcoming[0]?.startAt).toBe(ev.startAt);
-    expect(upcoming[0]?.dueAt).toBe("2026-08-28T11:00:00.000Z");
+    expect(upcoming[0]?.dueAt).toBe(now.toISOString());
     const index = host.index();
     expect(index.upcoming).toHaveLength(1);
     expect(index.briefs).toHaveLength(0);
     expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(0);
-    // At due time, Run created, upcoming cleared, no blocked before
-    now = new Date("2026-08-28T11:00:00.000Z");
+    // In-window preparation is immediate: processing at reconcile time creates the Run.
     const created = await host.processDueSchedules(now);
     expect(created).toHaveLength(1);
     await host.idle();
@@ -618,7 +620,11 @@ describe("Calendar push channel persistence + sync/renewal/recovery/dedup via ho
     // Before recover, upcoming should already be loaded from durableClock (file-backed)
     expect(host2.listUpcoming()).toHaveLength(1);
     await host2.recover();
-    expect(host2.listUpcoming()).toHaveLength(1);
+    await host2.idle();
+    // In-window preparation is immediate: recovery prepares at once instead of holding a schedule.
+    expect(host2.listUpcoming()).toHaveLength(0);
+    expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(1);
+    expect(host2.index().briefs).toHaveLength(1);
   });
 
   it("invalid-sync recovery triggers bounded reconciliation", async () => {
@@ -654,16 +660,14 @@ describe("Calendar push channel persistence + sync/renewal/recovery/dedup via ho
     void watchCallsBefore;
   });
 
-  it("no blocked Runs are created before due (ADR-0032)", async () => {
+  it("in-window preparation is due immediately", async () => {
     const ev = calEvent({ startAt: "2026-08-29T15:00:00.000Z" });
     fakeCal.setEvents([ev]);
     await host.reconcileCalendar();
     expect(host.listUpcoming()).toHaveLength(1);
     expect(runs.list({ module: "meeting-brief-generator" }).runs).toHaveLength(0);
-    // Ensure due processing only at due time
+    // In-window preparation is immediate: the schedule is due at reconcile time.
     now = new Date("2026-08-28T10:00:00.000Z");
-    expect(await host.processDueSchedules(now)).toHaveLength(0);
-    now = new Date("2026-08-29T11:00:00.000Z");
     const created = await host.processDueSchedules(now);
     expect(created).toHaveLength(1);
     await host.idle();

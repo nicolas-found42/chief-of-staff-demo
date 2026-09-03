@@ -1,4 +1,9 @@
-import type { MeetingBrief } from "@chief-of-staff-demo/shared";
+import type {
+  DailyBriefing,
+  DailyBriefingBriefStatus,
+  MeetingBrief,
+  WeeklyBriefing,
+} from "@chief-of-staff-demo/shared";
 /**
  * Gmail Output Adapter — Meeting Brief rendering (ADR-0034).
  *
@@ -284,4 +289,89 @@ export function renderMeetingBriefEmail(
   const html = htmlLines.join("\n");
 
   return { subject, text, html };
+}
+
+/** Said the way a person would say it: what the Brief state means for the day. */
+function briefingStatusLabel(status: DailyBriefingBriefStatus): string {
+  if (status === "ready") return "Brief ready";
+  if (status === "pending") return "Brief pending";
+  return "No brief yet";
+}
+
+function formatMeetingWhen(startAt: string): string {
+  const ms = Date.parse(startAt);
+  if (Number.isNaN(ms)) return startAt;
+  return new Date(ms).toLocaleString();
+}
+
+/**
+ * Render the Daily Briefing as owner-only email (issue #163). Deterministic
+ * rollup of the day's Meetings and their Brief state — the same read model
+ * the home surface shows. No recipient field: the caller sends owner-only
+ * through the Gmail delivery adapter, never to External Guests.
+ */
+export function renderDailyBriefingEmail(briefing: DailyBriefing): RenderedMeetingBriefEmail {
+  const subject = `Daily Briefing: ${briefing.date}`;
+  const lines: string[] = [subject, "", briefing.summary, "", "Today's meetings:"];
+  for (const meeting of briefing.meetings) {
+    lines.push(
+      `- ${meeting.title} · ${formatMeetingWhen(meeting.startAt)} · ${briefingStatusLabel(meeting.briefStatus)}`,
+    );
+  }
+  const text = lines.join("\n");
+
+  const htmlLines: string[] = [];
+  htmlLines.push(
+    `<div style="font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; line-height:1.5; color:#111; max-width:640px">`,
+  );
+  htmlLines.push(`<h2 style="margin:0 0 8px 0">${escapeHtml(subject)}</h2>`);
+  htmlLines.push(`<p>${escapeHtml(briefing.summary)}</p>`);
+  htmlLines.push(`<h3 style="margin:16px 0 8px 0">Today's meetings</h3><ul>`);
+  for (const meeting of briefing.meetings) {
+    htmlLines.push(
+      `<li><strong>${escapeHtml(meeting.title)}</strong> · ${escapeHtml(formatMeetingWhen(meeting.startAt))} · ${escapeHtml(briefingStatusLabel(meeting.briefStatus))}</li>`,
+    );
+  }
+  htmlLines.push(`</ul>`);
+  htmlLines.push(
+    `<hr style="margin:16px 0; border:none; border-top:1px solid #eee" /><div style="color:#888; font-size:12px">Daily Briefing for ${escapeHtml(briefing.date)}</div>`,
+  );
+  htmlLines.push(`</div>`);
+  return { subject, text, html: htmlLines.join("\n") };
+}
+
+/**
+ * Render the Weekly Briefing as owner-only email (issue #163). Deterministic
+ * rollup of the week's Meetings in rank order — the same read model the home
+ * surface shows. No recipient field: the caller sends owner-only through the
+ * Gmail delivery adapter, never to External Guests.
+ */
+export function renderWeeklyBriefingEmail(briefing: WeeklyBriefing): RenderedMeetingBriefEmail {
+  const subject = `Weekly Briefing: week of ${briefing.weekStart}`;
+  const lines: string[] = [subject, "", briefing.ranking, "", "This week's meetings:"];
+  for (const meeting of briefing.meetings) {
+    lines.push(
+      `- ${meeting.title} · ${formatMeetingWhen(meeting.startAt)} · ${briefingStatusLabel(meeting.briefStatus)}`,
+    );
+  }
+  const text = lines.join("\n");
+
+  const htmlLines: string[] = [];
+  htmlLines.push(
+    `<div style="font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; line-height:1.5; color:#111; max-width:640px">`,
+  );
+  htmlLines.push(`<h2 style="margin:0 0 8px 0">${escapeHtml(subject)}</h2>`);
+  htmlLines.push(`<p>${escapeHtml(briefing.ranking)}</p>`);
+  htmlLines.push(`<h3 style="margin:16px 0 8px 0">This week's meetings</h3><ul>`);
+  for (const meeting of briefing.meetings) {
+    htmlLines.push(
+      `<li><strong>${escapeHtml(meeting.title)}</strong> · ${escapeHtml(formatMeetingWhen(meeting.startAt))} · ${escapeHtml(briefingStatusLabel(meeting.briefStatus))}</li>`,
+    );
+  }
+  htmlLines.push(`</ul>`);
+  htmlLines.push(
+    `<hr style="margin:16px 0; border:none; border-top:1px solid #eee" /><div style="color:#888; font-size:12px">Weekly Briefing for the week of ${escapeHtml(briefing.weekStart)}</div>`,
+  );
+  htmlLines.push(`</div>`);
+  return { subject, text, html: htmlLines.join("\n") };
 }

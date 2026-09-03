@@ -94,7 +94,10 @@ describe("Home's sentence", () => {
 describe("Home's activity feed", () => {
   it("shows finished Runs newest first, capped, with humanized titles", () => {
     const runs = [
-      run("r1", "done", "Stand-up - 2026-06-18T13-00-00.000Z.json"),
+      {
+        ...run("r1", "done", "Stand-up - 2026-06-18T13-00-00.000Z.json"),
+        module: "meeting-debrief",
+      },
       run("r2", "skipped"),
       run("r3", "failed"),
       run("r4", "running"),
@@ -104,7 +107,27 @@ describe("Home's activity feed", () => {
       ["Stand-up — Jun 18", "Completed"],
       ["r2", "Skipped"],
     ]);
-    expect(feed.every((entry) => entry.to === `/runs/${entry.id}`)).toBe(true);
+    expect(feed.map((entry) => entry.to)).toEqual(["/meeting-debrief/r1", "/people/review"]);
+  });
+
+  it("links each entry to the surface that owns the result, never a Run", () => {
+    const cases: Array<[string, string]> = [
+      ["meeting-brief-generator", "/meetings/brief"],
+      ["content-scout", "/content-scout"],
+      ["content-research", "/content-research"],
+      ["youtube-trends", "/content-research/trends"],
+      ["transcript", "/people/review"],
+    ];
+    for (const [module, to] of cases) {
+      const { feed } = homeStatus([{ ...run("r1", "done"), module }], REAL, false);
+      expect(feed.map((entry) => entry.to)).toEqual([to]);
+    }
+    // Meeting Debrief deep-links: its detail page is addressed by the Run id.
+    const debrief = homeStatus([{ ...run("r1", "done"), module: "meeting-debrief" }], REAL, false);
+    expect(debrief.feed.map((entry) => entry.to)).toEqual(["/meeting-debrief/r1"]);
+    // A Module with no product surface left falls back to the diagnostics list.
+    const retired = homeStatus([{ ...run("r1", "done"), module: "idea-engine" }], REAL, false);
+    expect(retired.feed.map((entry) => entry.to)).toEqual(["/runs/r1"]);
   });
 
   it("carries the line the Module wrote, and never derives one of its own", () => {

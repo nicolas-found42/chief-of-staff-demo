@@ -190,7 +190,9 @@ export function HomePage() {
           )}
 
           {/* Attention ≠ activity (ADR-0014): even a quiet Home says what happened.
-              Omitted entirely when nothing has ever finished — no zeroes, ever. */}
+              Omitted entirely when nothing has ever finished — no zeroes, ever. Each
+              entry links to the surface that owns the result (ADR-0051); the Runs
+              behind them live on the diagnostics list Settings links to. */}
           {feed.length > 0 && (
             <section className="card home-feed-card">
               <h2>Recent activity</h2>
@@ -208,13 +210,6 @@ export function HomePage() {
                     </span>
                   </li>
                 ))}
-                <li>
-                  {/* The feed is capped (ADR-0014), so what has scrolled past it
-                      needs somewhere to be — the Shell's cross-Module list. */}
-                  <Link to="/runs" className="muted">
-                    All runs
-                  </Link>
-                </li>
               </ul>
             </section>
           )}

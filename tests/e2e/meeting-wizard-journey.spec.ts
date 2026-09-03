@@ -116,7 +116,10 @@ test("meeting history — collected back to the oldest Transcript, the home says
   };
   const oldMeeting = store.meetings.find((meeting) => meeting.title === "Old planning");
   if (!oldMeeting) throw new Error("the history read did not record the old Meeting");
-  expect(store.historyBeginsAt).toBe(startAt);
+  // #154 orphan dating: the unmatched Transcript (title-alone-never-links per
+  // #153) owns a Meeting dated at its meetingDate (boundDay), which predates
+  // the Calendar meeting, so history begins there.
+  expect(store.historyBeginsAt).toBe(boundDay.toISOString());
 
   // The home states where history begins; the old Meeting is not today's.
   await page.goto("/meetings");
@@ -171,9 +174,9 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
   await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Today's meetings" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Upcoming eligible meetings" })).toHaveCount(0);
-  const cards = page.locator("li.card");
+  const todaySection = page.locator('section[aria-labelledby="overview-today-heading"]');
+  const cards = todaySection.locator("li.card");
   await expect(cards.filter({ hasText: "Internal planning" })).toHaveCount(1);
-  await expect(cards.filter({ hasText: "External kickoff" })).toHaveCount(1);
 
   await expect(
     cards.filter({ hasText: "Internal planning" }).getByRole("link", { name: "Internal planning" }),

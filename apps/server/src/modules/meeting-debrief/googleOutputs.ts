@@ -50,5 +50,16 @@ export function googleDebriefOutputs(
       );
       return created.googleId;
     },
+    /**
+     * Issue #158: a Task-backed item reads completion from Google Tasks.
+     * Null when Google no longer holds the Task — the host falls back to
+     * the review store's local done. Throws when Google is unreachable, so
+     * the host can fall back the same way.
+     */
+    async getTaskStatus(taskId: string): Promise<{ completed: boolean } | null> {
+      const outputs = surface();
+      const tasklistId = await outputs.findOrCreateTasklist(tasklistTitle);
+      return await outputs.getTask(tasklistId, taskId);
+    },
   };
 }

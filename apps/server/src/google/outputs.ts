@@ -1,7 +1,12 @@
 import type { AppConfig, DraftItem, ExtractionResult, TaskItem } from "@chief-of-staff-demo/shared";
 import { buildGoogleAuth, type GoogleAuth } from "./oauth.js";
 import { createGmailDraft, gmailDraftInput } from "./gmail.js";
-import { createGoogleTask, findOrCreateTasklist, type CreatedTask } from "./tasks.js";
+import {
+  createGoogleTask,
+  findOrCreateTasklist,
+  getGoogleTaskStatus,
+  type CreatedTask,
+} from "./tasks.js";
 
 /**
  * The only Google surface a Run talks to. Reached through the Google
@@ -15,6 +20,8 @@ export interface GoogleOutputs {
     item: TaskItem,
     source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">,
   ): Promise<CreatedTask>;
+  /** Reads one Task's completion; null when Google no longer holds it. */
+  getTask(tasklistId: string, taskId: string): Promise<{ completed: boolean } | null>;
   createDraft(draft: DraftItem): Promise<string>;
 }
 
@@ -27,6 +34,7 @@ export function googleOutputs(config: AppConfig, port: number): GoogleOutputs {
       item: TaskItem,
       source: Pick<ExtractionResult, "sourceFileName" | "sourceUrl">,
     ) => createGoogleTask(auth, tasklistId, item, source),
+    getTask: (tasklistId: string, taskId: string) => getGoogleTaskStatus(auth, tasklistId, taskId),
     createDraft: (draft: DraftItem) => createGmailDraft(auth, gmailDraftInput(draft)),
   };
 }

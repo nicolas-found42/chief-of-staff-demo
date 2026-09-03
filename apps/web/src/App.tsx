@@ -193,8 +193,9 @@ export function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           {/* A Shell page, not a tab: the bar renders product areas (spec:
-              Navigation and onboarding #1), and Home's capped feed links in
-              here for everything older. */}
+              Navigation and onboarding #1), and no product surface links here —
+              the list stays reachable from Settings' Diagnostics and from a
+              failure's technical details, for diagnosis only (ADR-0051). */}
           <Route path="/runs" element={<AllRunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           {/* The migration gate, reachable by URL when not gated: the page

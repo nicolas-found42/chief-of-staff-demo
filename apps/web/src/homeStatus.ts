@@ -19,6 +19,34 @@ interface FeedEntry {
   at: string;
   to: string;
 }
+/**
+ * Where a finished Run's result lives in the product (ADR-0051): the surface
+ * that owns it, never the Run. Each arm mirrors the owning Module's `path` in
+ * useModules.ts, with two exceptions. Meeting Debrief deep-links: its detail
+ * page is addressed by the Run id, so the feed can name the debrief itself
+ * where the Module path can only name the index. Transcript falls back to its
+ * review queue, the surface that still owns the retained corpus now the
+ * Transcript Module is retired. A Module with no product surface left at all
+ * falls back to the Shell's diagnostics list, which Settings links to.
+ */
+function owningSurfaceForRun(run: RunSummary): string {
+  switch (run.module) {
+    case "meeting-brief-generator":
+      return "/meetings/brief";
+    case "meeting-debrief":
+      return `/meeting-debrief/${encodeURIComponent(run.id)}`;
+    case "content-scout":
+      return "/content-scout";
+    case "content-research":
+      return "/content-research";
+    case "youtube-trends":
+      return "/content-research/trends";
+    case "transcript":
+      return "/people/review";
+    default:
+      return `/runs/${run.id}`;
+  }
+}
 
 export interface HomeStatus {
   /** One line stating where you stand. Always present, whatever the state. */
@@ -151,7 +179,7 @@ export function homeStatus(
       title: runTitle(run.fileName ?? run.id),
       outcome: detail ? `${statusLabel(run.status)} — ${detail}` : statusLabel(run.status),
       at: run.createdAt,
-      to: `/runs/${run.id}`,
+      to: owningSurfaceForRun(run),
     };
   });
 

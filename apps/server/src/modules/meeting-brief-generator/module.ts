@@ -57,6 +57,12 @@ export interface MeetingBriefModuleDeps {
   getDisabledProviders?: () => readonly string[];
   completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
   isOwnerProfileConfirmed?: () => boolean;
+  /**
+   * Manual-send intent for the deliver Stage (issue #163). The host returns
+   * true for an explicit owner retry (and whenever per-Brief auto-send is
+   * enabled); absent, the Stage sends — the historical behavior.
+   */
+  isManualSend?: (runId: string) => boolean;
   calendarProvider?: CalendarProvider;
   calendarSnapshotRequired?: boolean;
   personProfileConsumerState?: (
@@ -507,6 +513,9 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
           calendarProvider: deps.calendarProvider ?? null,
           gmailDeliveryProvider: gmailDeliveryProvider ?? null,
           getOwnerEmail: () => resolveOwner(),
+          // Absent, the Stage sends (historical behavior); the host passes its
+          // explicit manual-send intent once per-Brief auto-send is disabled.
+          manualSend: deps.isManualSend ? deps.isManualSend(ctx.runId) : true,
           ...(deps.isOwnerProfileConfirmed
             ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
             : {}),
@@ -516,7 +525,6 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         };
         return executeDeliver(deliverArgs);
       });
-
       if (deliverOutcome.skipped) {
         return {
           status: "skipped",

@@ -20,6 +20,11 @@ export interface MeetingDebriefTestRuntimeOptions {
   workspaceDir: string;
   /** The confirmed owner identity's email, as the Shell holds it. */
   ownerEmail?: () => string | null;
+  /**
+   * Staleness hand-off to the Brief side (issue #162): fired after a review
+   * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
+   */
+  onActionItemsChanged?: () => void;
   log?: (message: string) => void;
 }
 
@@ -177,6 +182,7 @@ export function createMeetingDebriefTestRuntime(
     now: () => new Date(nowMs),
     profiles: workspaceProfileDirectory(people),
     ...(options.ownerEmail ? { ownerEmail: options.ownerEmail } : {}),
+    ...(options.onActionItemsChanged ? { onActionItemsChanged: options.onActionItemsChanged } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
 

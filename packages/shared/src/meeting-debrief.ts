@@ -84,8 +84,10 @@ export interface MeetingDebriefReviewState {
     additional: MeetingDebriefRecipient[];
   };
   review: {
-    /** Action-item indexes the owner dropped. Regenerating action items clears them (ADR-0037). */
+    /** Action-item indexes the owner dismissed. Never become Google Tasks (issue #158). */
     droppedActionItems: number[];
+    /** Action-item indexes the owner marked done. Local until a Google Task exists (issue #158). */
+    completedActionItems: number[];
   };
   /** The pending owner action the Run resumes for; null while it simply waits. */
   request: { kind: "regenerate"; field: MeetingDebriefField } | { kind: "approve" } | null;
@@ -106,9 +108,17 @@ export interface MeetingDebriefReviewView {
   automaticRecipients: MeetingDebriefRecipient[];
   /** Explicit non-attendee recipients, each an explicit confirmed Profile selection. */
   additionalRecipients: MeetingDebriefRecipient[];
+  /** Action-item indexes the owner dismissed. Dismissed items never become Google Tasks. */
+  droppedActionItems: number[];
   /** What the extraction suggested from follow-up context; each needs explicit confirmation. */
   suggestedRecipients: Array<{ name: string; email: string | null }>;
-  droppedActionItems: number[];
+  /** What the owner marked done locally — Google Tasks take over once a Task exists. */
+  completedActionItems: number[];
+  /**
+   * One entry per action item already created as a Google Task. `completed`
+   * is read from Google Tasks with a local-done fallback (issue #158).
+   */
+  actionItemTasks: Array<{ index: number; taskId: string; completed: boolean }>;
   /** Why approval is blocked right now; empty when ready. */
   approvalBlockers: MeetingDebriefApprovalBlocker[];
   /** Set when this Run re-extracts a transcript that already has an approved Debrief. */
@@ -230,6 +240,8 @@ export interface MeetingDebriefIdentitySummary {
 export interface MeetingDebriefIndexEntry {
   runId: string;
   transcriptId: string;
+  /** The Meeting the Transcript belongs to (issue #153); null until placed. */
+  meetingId: string | null;
   status: "pending" | "running" | "blocked" | "done" | "failed" | "skipped";
   summary: string | null;
   meetingDate: string | null;
@@ -255,6 +267,8 @@ export interface MeetingDebriefIndex {
 export interface MeetingDebriefDetail {
   runId: string;
   transcriptId: string;
+  /** The Meeting the Transcript belongs to (issue #153); null until placed. */
+  meetingId: string | null;
   status: MeetingDebriefIndexEntry["status"];
   summary: string | null;
   skipReason: string | null;

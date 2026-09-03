@@ -97,6 +97,56 @@ export class WorkspaceMeetings {
     return meeting;
   }
 
+  /**
+   * Record a Meeting attested only by a Transcript (issue #154). Calendar
+   * keys stay null until a merge carries the Transcript across to a Calendar
+   * Meeting. The id derives from the Transcript id, so re-running the
+   * association pass returns the same record instead of duplicating it.
+   */
+  createFromTranscript(input: {
+    transcriptId: string;
+    title: string;
+    speakers: string[];
+    modifiedAt: string | null;
+    meetingDate?: string | null;
+  }): Meeting {
+    const meetings = this.read();
+    const id = transcriptMeetingId(input.transcriptId);
+    const existing = meetings.find((meeting) => meeting.id === id);
+    if (existing) return existing;
+    const at = this.now().toISOString();
+    const startAt = input.modifiedAt ?? input.meetingDate ?? at;
+    const participants = participantsFromSpeakers(input.speakers);
+    const meeting: Meeting = {
+      id,
+      occurrenceKey: null,
+      calendarEventId: null,
+      occurrenceId: null,
+      title: input.title,
+      startAt,
+      endAt: startAt,
+      participants,
+      cancelled: false,
+      ineligibleReason: participants.length >= 2 ? null : "no_other_attendee",
+      createdAt: at,
+      updatedAt: at,
+    };
+    atomicWriteJson(this.filePath, [...meetings, meeting]);
+    return meeting;
+  }
+
+  /**
+   * Forget a Meeting by id (issue #154: merging a transcript-owned Meeting
+   * into its Calendar Meeting). Returns false when nothing carried the id.
+   */
+  remove(id: string): boolean {
+    const meetings = this.read();
+    const next = meetings.filter((meeting) => meeting.id !== id);
+    if (next.length === meetings.length) return false;
+    atomicWriteJson(this.filePath, next);
+    return true;
+  }
+
   private read(): Meeting[] {
     if (!existsSync(this.filePath)) return [];
     try {
@@ -106,6 +156,36 @@ export class WorkspaceMeetings {
       return [];
     }
   }
+}
+
+/** Deterministic id for a Transcript-owned Meeting, keyed on the Transcript (issue #154). */
+function transcriptMeetingId(transcriptId: string): string {
+  return `meeting_transcript_${transcriptId}`;
+}
+
+/**
+ * Speaker labels as the Meeting record keeps them: people only, no mailbox
+ * facts a Transcript never supplies. Two distinct voices make the Meeting
+ * eligible; a lone label does not evidence another attendee.
+ */
+function participantsFromSpeakers(speakers: string[]): MeetingParticipant[] {
+  const seen = new Set<string>();
+  const participants: MeetingParticipant[] = [];
+  for (const speaker of speakers) {
+    const displayName = speaker.trim();
+    if (displayName === "") continue;
+    const key = displayName.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    participants.push({
+      email: "",
+      displayName,
+      responseStatus: "needsAction",
+      organizer: false,
+      self: false,
+    });
+  }
+  return participants;
 }
 
 /** The one-time mark that the backward Calendar read has run (issue #152). */

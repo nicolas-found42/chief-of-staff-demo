@@ -22,7 +22,16 @@ export function serializeReviewState(state: MeetingDebriefReviewState): string {
 export function parseReviewState(raw: string | null): MeetingDebriefReviewState | null {
   if (raw === null) return null;
   try {
-    return JSON.parse(raw) as MeetingDebriefReviewState;
+    const parsed = JSON.parse(raw) as MeetingDebriefReviewState;
+    /* Records written before done/dismiss split (issue #158) carry no local
+       done list — backfill it so every reader sees both persisted states. */
+    if (!Array.isArray(parsed.review.completedActionItems)) {
+      parsed.review.completedActionItems = [];
+    }
+    if (!Array.isArray(parsed.review.droppedActionItems)) {
+      parsed.review.droppedActionItems = [];
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -50,7 +59,7 @@ export function initialReviewState(
       })),
     },
     recipients: { additional: [] },
-    review: { droppedActionItems: [] },
+    review: { droppedActionItems: [], completedActionItems: [] },
     request: null,
     approval: null,
   };

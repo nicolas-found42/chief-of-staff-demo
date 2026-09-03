@@ -414,7 +414,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         storeResult(ctx, merged, transcriptId);
         const next: MeetingDebriefReviewState = {
           ...state,
-          review: request.field === "actionItems" ? { droppedActionItems: [] } : state.review,
+          review:
+            request.field === "actionItems"
+              ? { droppedActionItems: [], completedActionItems: [] }
+              : state.review,
           request: null,
         };
         ctx.writeFile("review.json", serializeReviewState(next));

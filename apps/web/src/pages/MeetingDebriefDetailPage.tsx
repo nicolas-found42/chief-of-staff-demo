@@ -37,7 +37,7 @@ function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
     return (
       <section aria-labelledby="debrief-extraction">
         <h2 id="debrief-extraction">Extraction</h2>
-        <p className="muted">No extraction yet — the Run is {detail.status}.</p>
+        <p className="muted">No extraction yet — the debrief is {detail.status}.</p>
       </section>
     );
   }
@@ -65,7 +65,9 @@ function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
       ) : (
         <ul>
           {debrief.actionItems.map((item, index) => {
-            const dropped = detail.review?.droppedActionItems.includes(index) ?? false;
+            const dismissed = detail.review?.droppedActionItems.includes(index) ?? false;
+            const task = detail.review?.actionItemTasks.find((entry) => entry.index === index);
+            const doneLocal = detail.review?.completedActionItems.includes(index) ?? false;
             return (
               <li key={index}>
                 {item.title} — owner: {item.owner ?? "unassigned"}
@@ -81,7 +83,16 @@ function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
                   <span className="muted"> (identity not confirmed)</span>
                 )}
                 {item.dueDate && <span className="muted"> — due {item.dueDate}</span>}
-                {dropped && <span className="status-badge status-attention"> Dropped</span>}
+                {dismissed && <span className="status-badge status-attention"> Dismissed</span>}
+                {!dismissed && task?.completed && (
+                  <span className="status-badge status-ok"> Done in Google Tasks</span>
+                )}
+                {!dismissed && task && !task.completed && (
+                  <span className="muted"> (Google Task open)</span>
+                )}
+                {!dismissed && !task && doneLocal && (
+                  <span className="status-badge status-ok"> Done</span>
+                )}
               </li>
             );
           })}
@@ -321,7 +332,8 @@ function ReviewSection({
           <h3>Regenerate a field</h3>
           <p className="muted">
             Regeneration re-extracts from the immutable transcript — the rejected value is never
-            shown to the model again. Regenerating action items clears earlier drop decisions.
+            shown to the model again. Regenerating action items clears earlier done and dismiss
+            decisions.
           </p>
           <ul>
             {(Object.keys(FIELD_LABELS) as MeetingDebriefField[]).map((field) => (
@@ -335,27 +347,44 @@ function ReviewSection({
               </li>
             ))}
           </ul>
-
-          <h3>Drop action items</h3>
+          <h3>Action items</h3>
           <p className="muted">
-            Dropping removes one action item from the Debrief. It cannot be undone except by
-            regenerating action items.
+            Done marks an item complete — its Google Task takes over once one exists. Dismiss
+            removes it: a dismissed item never becomes a Google Task, even when the Debrief is
+            approved later. Marking one clears the other; regenerating action items clears both.
           </p>
           <ul>
-            {detail.extraction?.actionItems.map((item, index) =>
-              review.droppedActionItems.includes(index) ? null : (
+            {detail.extraction?.actionItems.map((item, index) => {
+              const dismissed = review.droppedActionItems.includes(index);
+              const done = review.completedActionItems.includes(index);
+              return (
                 <li key={index}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void act(() => api.meetingDebriefDropActionItem(detail.runId, index))
-                    }
-                  >
-                    Drop “{item.title}”
-                  </button>
+                  <span className={dismissed ? "muted" : done ? "status-ok" : undefined}>
+                    “{item.title}”{dismissed ? " — dismissed" : done ? " — done" : ""}
+                  </span>{" "}
+                  {!done && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void act(() => api.meetingDebriefDoneActionItem(detail.runId, index))
+                      }
+                    >
+                      Done
+                    </button>
+                  )}{" "}
+                  {!dismissed && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void act(() => api.meetingDebriefDismissActionItem(detail.runId, index))
+                      }
+                    >
+                      Dismiss
+                    </button>
+                  )}
                 </li>
-              ),
-            )}
+              );
+            })}
           </ul>
         </>
       )}
@@ -497,7 +526,7 @@ function ReviewSection({
       {review.state === "approved" ? (
         <p>
           Approved and locked{review.approvedAt ? ` at ${review.approvedAt}` : ""}. The Debrief,
-          roster, recipients, and review decisions cannot change; redo starts a separate Run.
+          roster, recipients, and review decisions cannot change; redo starts a separate debrief.
         </p>
       ) : review.state === "expired" ? null : review.approvalBlockers.length > 0 ? (
         <div>
@@ -525,7 +554,7 @@ function ReviewSection({
           disabled={busy}
           onClick={() => void act(() => api.meetingDebriefRedo(detail.runId))}
         >
-          Redo (start a new Debrief Run)
+          Redo (start a new debrief)
         </button>
       )}
     </section>
@@ -537,7 +566,7 @@ function StatusLine({ detail }: { detail: MeetingDebriefDetail }) {
   const badge = state === "approved" ? "status-ok" : state === "expired" ? "status-attention" : "";
   return (
     <p className="muted">
-      Transcript {detail.transcriptId} · {detail.meetingDate ?? "no meeting date"} · Run{" "}
+      Transcript {detail.transcriptId} · {detail.meetingDate ?? "no meeting date"} · Debrief{" "}
       {detail.status}
       {state && (
         <>

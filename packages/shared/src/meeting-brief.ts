@@ -248,6 +248,89 @@ export interface MeetingBriefIndexEntry {
   /** Per-provider enrichment outcomes when the Run recorded a ledger (#137). */
   providerOutcomes: MeetingBriefProviderOutcome[] | null;
 }
+
+// ---------------------------------------------------------------------------
+// Daily Briefing (issue #160) — the morning read model for the day ahead,
+// derived on read from the day's Meetings and their Meeting Briefs
+// (ADR-0005). A Meeting Brief prepares a single meeting; the Daily Briefing
+// is the Meeting Wizard front-page section covering the whole day.
+// ---------------------------------------------------------------------------
+
+/** Whether the day's Meeting already has a Meeting Brief. */
+export type DailyBriefingBriefStatus = "ready" | "pending" | "missing";
+
+/** One of the day's Meetings as the Daily Briefing presents it. */
+export interface DailyBriefingMeeting {
+  /** The Meeting's own id (never the Calendar occurrence key, ADR-0050). */
+  meetingId: string;
+  title: string;
+  startAt: string;
+  briefStatus: DailyBriefingBriefStatus;
+}
+
+/** GET /api/meeting-brief/daily — the morning read model, or null when the day holds no Meetings. */
+export interface DailyBriefing {
+  /** The owner-timezone calendar day covered, `YYYY-MM-DD`. */
+  date: string;
+  meetings: DailyBriefingMeeting[];
+  summary: string;
+}
+
+/** GET /api/meeting-brief/daily and POST /api/meeting-brief/daily/retry envelope. */
+export interface DailyBriefingState {
+  /** Null when the day holds no Meetings; a failed build keeps the last good value. */
+  briefing: DailyBriefing | null;
+  /** The failed build's message; null when the last build succeeded. */
+  error: string | null;
+  /**
+   * True while a touching change (new/revised Brief, cancellation, new action
+   * item) is waiting out its quiet period (issue #162). The previous briefing
+   * is still served; it rebuilds once the quiet period expires.
+   */
+  stale: boolean;
+}
+// ---------------------------------------------------------------------------
+// Weekly Briefing (issue #161) — the week-ahead read model for the Meeting
+// Wizard home, derived on read from the coming week's Meetings and their
+// Meeting Briefs (ADR-0005), which exist by the Sunday sweep. A Meeting Brief
+// prepares a single meeting; the Weekly Briefing ranks the whole week so the
+// owner sees which meetings matter most. No separate weekly page.
+// ---------------------------------------------------------------------------
+
+/** One of the week's Meetings as the Weekly Briefing presents it, in rank order. */
+export interface WeeklyBriefingMeeting {
+  /** The Meeting's own id (never the Calendar occurrence key, ADR-0050). */
+  meetingId: string;
+  title: string;
+  startAt: string;
+  /** Deterministic rank score from headcount, external guests, and Brief readiness. Higher matters more. */
+  importance: number;
+  briefStatus: DailyBriefingBriefStatus;
+}
+
+/** GET /api/meeting-brief/weekly — the week-ahead read model, or null when the week holds no Meetings. */
+export interface WeeklyBriefing {
+  /** The Sunday opening the covered week, `YYYY-MM-DD` in the owner timezone. */
+  weekStart: string;
+  /** The week's Meetings, most important first. */
+  meetings: WeeklyBriefingMeeting[];
+  /** One line naming the week's load and its top meeting. */
+  ranking: string;
+}
+
+/** GET /api/meeting-brief/weekly and POST /api/meeting-brief/weekly/retry envelope. */
+export interface WeeklyBriefingState {
+  /** Null when the week holds no Meetings; a failed build keeps the last good value. */
+  briefing: WeeklyBriefing | null;
+  /** The failed build's message; null when the last build succeeded. */
+  error: string | null;
+  /**
+   * True while a touching change is waiting out its quiet period (issue #162).
+   * The previous briefing is still served; it rebuilds once the quiet period
+   * expires.
+   */
+  stale: boolean;
+}
 // ---------------------------------------------------------------------------
 // HubSpot CRM — per-user private-app token, read-only contact/company/deal
 // (issue://86, Spec #80). Shell stores secret + classifies state, Module owns

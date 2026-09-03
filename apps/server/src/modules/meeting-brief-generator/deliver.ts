@@ -65,6 +65,13 @@ export interface DeliverBriefArgs {
     profileId: string,
     profileRevision: number,
   ) => PersonProfileConsumerState | null;
+  /**
+   * Manual-send gate (issue #163): preparation composes the Brief and keeps it
+   * available in-app, but the outward Gmail write happens only on an explicit
+   * manual send. Omitted/false defers after the rechecks: delivery stays
+   * pending, the Run completes, and nothing is emailed.
+   */
+  manualSend?: boolean;
 }
 
 export interface DeliverResult {
@@ -124,6 +131,9 @@ function persistDeliveryFailure(
  * - Reconciles Gmail sent state before retry (lost ack converges to one message)
  * - Failure preserves Meeting Brief and allows retry of deliver only
  * - Owner-only recipient, never External Guest, no recipient field from model/event
+ * - No automatic per-Brief email (issue #163): without manualSend the Stage
+ *   defers after the rechecks — delivery stays pending, the Run completes
+ *   with the Brief available in-app, and only an explicit manual send emails.
  */
 export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverResult> {
   const {
@@ -137,6 +147,7 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
     getOwnerEmail,
     isOwnerProfileConfirmed,
     personProfileConsumerState,
+    manualSend = false,
   } = args;
   const resolveOwner = (): string | null => (getOwnerEmail ? getOwnerEmail() : null);
   let isProfileRefresh = Boolean(input.profileRefreshOf);
@@ -439,6 +450,21 @@ export async function executeDeliver(args: DeliverBriefArgs): Promise<DeliverRes
         "Refresh or regenerate the Meeting Brief before delivering Profile-derived claims.",
       );
     }
+  }
+  // ---- Manual-send gate (issue #163) ----
+  // Automatic preparation stops here: every recheck above still ran, so a
+  // cancelled, ineligible, or superseded Brief never lingers as pending — but
+  // no Gmail write happens without the owner's explicit manual send. Delivery
+  // stays pending with the same stable identity, the Run completes, and the
+  // composed Brief stays available in-app. The manual send (Run retry through
+  // the host, which records the owner's intent) re-enters above and sends.
+  if (!manualSend) {
+    const deferred = deliveryState("pending", deliveryId, {
+      attempts: existingDelivery?.attempts ?? 0,
+    });
+    persistDelivery(ctx, deferred, { deliveryDeferred: true });
+    ctx.event("brief_delivery_deferred", { deliveryId, reason: "manual_send_required" });
+    return { skipped: false, superseded: false, skipReason: null, delivery: deferred };
   }
 
   // ---- Render concise plain-text/HTML email ----

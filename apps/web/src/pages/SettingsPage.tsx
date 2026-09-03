@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, type ConfigPayload } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
@@ -766,6 +766,21 @@ export function SettingsPage() {
       <section className="settings-section" aria-labelledby="section-youtube">
         <h2 id="section-youtube">YouTube Trends</h2>
         <SpreadsheetCard />
+      </section>
+
+      <section className="settings-section" aria-labelledby="section-diagnostics">
+        <h2 id="section-diagnostics">Diagnostics</h2>
+        <div className="card">
+          <p className="muted">
+            The technical record of every run, kept for diagnosis. Product surfaces link to the
+            surface that owns a result; this list is the way back to the run behind it.
+          </p>
+          <p>
+            <Link to="/runs" className="action-button">
+              View all runs
+            </Link>
+          </p>
+        </div>
       </section>
 
       <section className="settings-section" aria-labelledby="section-danger">

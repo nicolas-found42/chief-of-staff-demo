@@ -6,12 +6,16 @@ import {
   type RunMeta,
   MEETING_BRIEF_MODULE_VERSION,
   type MeetingBriefEvent,
-  type MeetingBriefIndex,
-  type MeetingBriefIndexEntry,
+  type DailyBriefing,
+  type DailyBriefingState,
+  type WeeklyBriefing,
+  type WeeklyBriefingState,
   type MeetingBriefPersonProfileReadModel,
   type MeetingBriefProviderOutcomes,
   MEETING_BRIEF_PROVIDER_OUTCOMES_VERSION,
   type MeetingBriefRunResult,
+  type MeetingBriefIndex,
+  type MeetingBriefIndexEntry,
   type MeetingBriefUpcoming,
   meetingBriefOccurrenceIdentity,
   normalizeInternalDomains,
@@ -24,6 +28,7 @@ import type { HostedModule } from "../../engine/host.js";
 import { Runner, RunNotRetryableError } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
 import { DurableClock, type DurableSchedule } from "../../engine/durableClock.js";
+import { DateTime } from "luxon";
 import {
   meetingBriefModule,
   type MeetingBriefInput,
@@ -34,6 +39,7 @@ import type { HubSpotApi } from "./hubspot/client.js";
 import type { MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
 import {
   MeetingBriefCalendarStore,
+  type CalendarEvent,
   type CalendarProvider,
   type MeetingBriefCalendarState,
   FakeCalendarProvider,
@@ -42,15 +48,22 @@ import {
   ensureCalendarWatch,
   MEETING_BRIEF_CALENDAR_ID,
   occurrenceKeyFor,
+  prepareWeekSweep as prepareWeekSweepIntake,
   reconcileCalendar,
+  sweepWindowFor,
 } from "./intake.js";
 import { collectMeetingHistory } from "./history.js";
 import { materialFingerprint } from "./revision.js";
+import { buildDailyBriefing, dayBoundsFor } from "./dailyBriefing.js";
+import { buildWeeklyBriefing, weekBoundsFor } from "./weeklyBriefing.js";
 
 import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { WorkspaceMeetings } from "../../meetings/store.js";
+import type { RunContext } from "../../engine/module.js";
+import { executeDeliver } from "./deliver.js";
+import { renderDailyBriefingEmail, renderWeeklyBriefingEmail } from "./output.js";
 /** The versioned explicit provider policy actions recorded in module config (#137). */
 type MeetingBriefProviderPolicy = ModuleConfigs["meeting-brief-generator"]["providerPolicy"];
 
@@ -79,6 +92,8 @@ export interface MeetingBriefHostDeps {
   configStore?: ConfigStore;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  /** IANA timezone the weekly sweep window is computed in (issue://157). Defaults to the host timezone. */
+  getTimezone?: () => string | null;
   isOwnerProfileConfirmed?: () => boolean;
   enrichmentProviders?: MeetingBriefEnrichmentProviders;
   hubSpotConnection?: HubSpotConnection;
@@ -94,6 +109,19 @@ export interface MeetingBriefHostDeps {
    * pass does not run.
    */
   associateTranscripts?: () => Promise<void> | void;
+  /**
+   * Single-email policy (issue #163). False: preparation composes the Brief
+   * and keeps it in-app but never emails per-Brief automatically; the owner
+   * sends explicitly (Run retry). Defaults true — the historical behavior —
+   * so existing harnesses keep exercising the delivery machinery.
+   */
+  perBriefAutoSend?: boolean;
+  /**
+   * Daily/Weekly briefing emails (issue #163). True: the built Daily Briefing
+   * emails the owner once per day and the Weekly once per week, both
+   * owner-only through the Gmail delivery adapter. Defaults false.
+   */
+  briefingEmails?: boolean;
 }
 /**
  * The one place snapshot.json is turned into a value. Null means the Run has no
@@ -202,6 +230,39 @@ export class MeetingBriefHost implements HostedModule {
   private readonly now: () => Date;
   private timer: NodeJS.Timeout | undefined;
   private lastFullSyncAt: Date | null = null;
+  /** Window start the Sunday sweep last covered — in-memory guard so the sweep runs once per week (issue://157). */
+  private lastSweepWeek: string | null = null;
+  /** Owner-timezone day the Daily Briefing was last built for — the idempotent day guard (issue #160). */
+  private lastDailyBriefingDay: string | null = null;
+  /** Last good Daily Briefing; null when the day holds no Meetings. A failed build keeps this value. */
+  private dailyBriefingCache: DailyBriefing | null = null;
+  /** The failed Daily Briefing build's message; null when the last build succeeded. */
+  private dailyBriefingError: string | null = null;
+  /**
+   * Dirty flag keyed by day (issue #162): a touching change (new/revised Brief,
+   * cancellation, new action item) marks the day's briefing stale instead of
+   * rebuilding at once. The previous briefing keeps serving with stale:true
+   * until one quiet-period rebuild fires regenAtMs after the last touch, so a
+   * burst of changes coalesces into a single rebuild. Null when fresh.
+   */
+  private dailyBriefingDirty: { date: string; touchedAtMs: number; regenAtMs: number } | null =
+    null;
+  /** Owner-timezone day the Daily Briefing email last sent — the one/day guard (issue #163). */
+  private lastDailyEmailDay: string | null = null;
+  /** Sweep-week start the Weekly Briefing email last sent — the one/week guard (issue #163). */
+  private lastWeeklyEmailWeek: string | null = null;
+  /** Sweep-week start the Weekly Briefing was last built for — the idempotent week guard (issue #161). */
+  private lastWeeklyBriefingWeek: string | null = null;
+  /** Last good Weekly Briefing; null when the week holds no Meetings. A failed build keeps this value. */
+  private weeklyBriefingCache: WeeklyBriefing | null = null;
+  /** The failed Weekly Briefing build's message; null when the last build succeeded. */
+  private weeklyBriefingError: string | null = null;
+  /** Dirty flag keyed by weekStart (issue #162) — the weekly half of the daily dirty flag above. */
+  private weeklyBriefingDirty: {
+    weekStart: string;
+    touchedAtMs: number;
+    regenAtMs: number;
+  } | null = null;
   private maintenanceInProgress = false;
   private historyCollectionInFlight = false;
   private associationInFlight = false;
@@ -263,11 +324,12 @@ export class MeetingBriefHost implements HostedModule {
             personProfileConsumerState: deps.personProfiles.consumerState.bind(deps.personProfiles),
           }
         : {}),
+      isManualSend: (runId: string) => this.isManualSendAllowed(runId),
     });
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
   }
 
-  retryRun(id: string): Promise<RunMeta> {
+  async retryRun(id: string): Promise<RunMeta> {
     const detail = this.deps.runs.detail(id);
     const requiresRegeneration = detail?.events.some(
       (event) =>
@@ -286,11 +348,194 @@ export class MeetingBriefHost implements HostedModule {
         ),
       );
     }
+    // Manual per-Brief send (issue #163): a completed Run whose Brief was
+    // composed but never emailed sends on explicit retry without reopening
+    // the Run — the retry itself is the owner's send intent. Anything else
+    // keeps the historical failed-Run path below.
+    const manual = await this.sendDeferredBriefEmail(id);
+    if (manual) return manual;
+
+    // Failed-Run path: record the owner's explicit intent so the deliver
+    // Stage sends when the retried Run reaches it. Only when per-Brief
+    // auto-send is off; otherwise the Stage sends unconditionally and the
+    // timeline stays free of marker events.
+    const meta = this.deps.runs.open(id)?.read();
+    if (meta?.status === "failed" && (this.deps.perBriefAutoSend ?? true) === false) {
+      this.deps.runs.open(id)?.appendEvent("brief_manual_send_requested", {
+        at: this.now().toISOString(),
+      });
+    }
     return this.runner.retryRun(id);
   }
 
   idle(): Promise<void> {
     return this.runner.idle();
+  }
+
+  /**
+   * Whether the deliver Stage may send for this Run (issue #163). With
+   * per-Brief auto-send on (the default) it always may — the historical
+   * behavior. With it off, only an explicit owner retry recorded on the
+   * timeline may send; automatic continuations (recovery, quiet-period
+   * resume) keep deferring.
+   */
+  private isManualSendAllowed(runId: string): boolean {
+    if ((this.deps.perBriefAutoSend ?? true) === true) return true;
+    return (
+      this.deps.runs
+        .detail(runId)
+        ?.events.some((event) => event.type === "brief_manual_send_requested") ?? false
+    );
+  }
+
+  /**
+   * The explicit manual send (issue #163): a completed Run whose Brief was
+   * composed but never emailed (delivery pending/failed after deferral)
+   * sends here, in place, without reopening the Run. Null when there is
+   * nothing sendable — the caller falls through to the historical retry
+   * path. Send failures throw, after the delivery artifacts record them,
+   * so a transient failure stays retryable through this same path.
+   */
+  private async sendDeferredBriefEmail(id: string): Promise<RunMeta | null> {
+    const handle = this.deps.runs.open(id);
+    const meta = handle?.read();
+    if (!handle || !meta || meta.module !== MEETING_BRIEF_MODULE_ID || meta.status !== "done") {
+      return null;
+    }
+    const result = this.deps.runs.detail(id)?.result as MeetingBriefRunResult | null | undefined;
+    const brief = result?.meetingBrief ?? null;
+    if (!brief) return null;
+    if (result?.delivery?.status !== "pending" && result?.delivery?.status !== "failed") {
+      return null;
+    }
+    const snapshotRaw = handle.readArtifact("snapshot.json");
+    let snapshot: unknown;
+    try {
+      snapshot = snapshotRaw ? (JSON.parse(snapshotRaw) as unknown) : null;
+    } catch {
+      snapshot = null;
+    }
+    if (!isMeetingBriefEvent(snapshot)) return null;
+    const occurrenceKey = result.occurrenceKey;
+    const input: MeetingBriefInput = { ...snapshot, occurrenceKey };
+    const ctx: RunContext = {
+      runId: id,
+      meta: () => handle.read(),
+      stage: (_name, fn) => fn(),
+      event: (type, detail) => {
+        handle.appendEvent(type, detail);
+      },
+      attempt: () => 0,
+      readFile: (name) => handle.readArtifact(name),
+      writeFile: (name, text) => handle.writeArtifact(name, text),
+      // An explicit manual send is the owner's "now": a revision quiet
+      // period never delays it, so the wait is recorded and skipped.
+      wait: ((request: { reason: string }) => {
+        handle.appendEvent("brief_manual_send_wait_skipped", { reason: request.reason });
+      }) as unknown as RunContext["wait"],
+    };
+    await executeDeliver({
+      ctx,
+      brief,
+      input,
+      occurrenceKey,
+      now: this.now,
+      ...(this.deps.calendarProvider && this.deps.calendarUse
+        ? { calendarProvider: this.calendarProvider }
+        : {}),
+      ...(this.deps.gmailDeliveryProvider
+        ? { gmailDeliveryProvider: this.deps.gmailDeliveryProvider }
+        : {}),
+      getOwnerEmail: () => this.getOwnerEmail(),
+      ...(this.deps.isOwnerProfileConfirmed
+        ? { isOwnerProfileConfirmed: this.deps.isOwnerProfileConfirmed }
+        : {}),
+      ...(this.deps.personProfiles
+        ? {
+            personProfileConsumerState: this.deps.personProfiles.consumerState.bind(
+              this.deps.personProfiles,
+            ),
+          }
+        : {}),
+      manualSend: true,
+    });
+    return handle.read();
+  }
+
+  /**
+   * Email the built Daily Briefing to the owner, at most once per day
+   * (issue #163). Only after a successful build with Meetings, only with a
+   * known owner, and never twice for the day — the day guard makes morning
+   * build, retry, and any repeat tick converge to one email. Never throws:
+   * a failed send logs and stays retryable instead of breaking the build.
+   */
+  private async sendDailyBriefingEmailIfDue(
+    now = this.now(),
+    timezone = this.getTimezone(),
+  ): Promise<void> {
+    try {
+      const provider = this.deps.gmailDeliveryProvider;
+      if ((this.deps.briefingEmails ?? false) !== true || !provider) return;
+      const date = dayBoundsFor(now, timezone).date;
+      if (this.lastDailyEmailDay === date) return;
+      const state = this.getDailyBriefing(now, timezone);
+      if (state.error !== null || state.briefing === null) return;
+      if (!this.getOwnerEmail()) return;
+      if (this.deps.isOwnerProfileConfirmed && !this.deps.isOwnerProfileConfirmed()) return;
+      const deliveryId = `mb-daily-${date}`;
+      const reconciled = await provider.findByDeliveryId(deliveryId);
+      if (!reconciled) {
+        const rendered = renderDailyBriefingEmail(state.briefing);
+        await provider.send({
+          subject: rendered.subject,
+          text: rendered.text,
+          html: rendered.html,
+          deliveryId,
+        });
+      }
+      this.lastDailyEmailDay = date;
+    } catch (error) {
+      this.deps.log?.(
+        `daily briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Email the built Weekly Briefing to the owner, at most once per week
+   * (issue #163) — the weekly half of the daily sender above, guarded by
+   * the covered week start instead of the day.
+   */
+  private async sendWeeklyBriefingEmailIfDue(
+    now = this.now(),
+    timezone = this.getTimezone(),
+  ): Promise<void> {
+    try {
+      const provider = this.deps.gmailDeliveryProvider;
+      if ((this.deps.briefingEmails ?? false) !== true || !provider) return;
+      const weekStart = weekBoundsFor(now, timezone).weekStart;
+      if (this.lastWeeklyEmailWeek === weekStart) return;
+      const state = this.getWeeklyBriefing(now, timezone);
+      if (state.error !== null || state.briefing === null) return;
+      if (!this.getOwnerEmail()) return;
+      if (this.deps.isOwnerProfileConfirmed && !this.deps.isOwnerProfileConfirmed()) return;
+      const deliveryId = `mb-weekly-${weekStart}`;
+      const reconciled = await provider.findByDeliveryId(deliveryId);
+      if (!reconciled) {
+        const rendered = renderWeeklyBriefingEmail(state.briefing);
+        await provider.send({
+          subject: rendered.subject,
+          text: rendered.text,
+          html: rendered.html,
+          deliveryId,
+        });
+      }
+      this.lastWeeklyEmailWeek = weekStart;
+    } catch (error) {
+      this.deps.log?.(
+        `weekly briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -317,6 +562,17 @@ export class MeetingBriefHost implements HostedModule {
   getOwnerEmail(): string | null {
     if (this.deps.getOwnerEmail) return this.deps.getOwnerEmail();
     return null;
+  }
+
+  /** IANA timezone the weekly sweep window is computed in (issue://157). */
+  getTimezone(): string {
+    const configured = this.deps.getTimezone?.();
+    if (configured) return configured;
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+    } catch {
+      return "UTC";
+    }
   }
 
   /** Persist normalized Internal Domains via ConfigStore (issue://83). */
@@ -518,6 +774,8 @@ export class MeetingBriefHost implements HostedModule {
   /**
    * Reconcile Calendar current state against Intake schedules.
    * Header-only wake-ups never mistaken for data — we fetch Calendar after each wake-up.
+   * In-window meetings schedule for immediate preparation; beyond-window ones
+   * wait for the sweep that covers them (issue://157).
    * Bounded reconciliation on invalid sync.
    */
   async reconcileCalendar(options: { forceFullSync?: boolean } = {}): Promise<{
@@ -532,16 +790,110 @@ export class MeetingBriefHost implements HostedModule {
       ownerEmail: () => this.getOwnerEmail(),
       meetings: this.meetings,
       now: this.now(),
+      timezone: this.getTimezone(),
       calendarId: MEETING_BRIEF_CALENDAR_ID,
       forceFullSync: options.forceFullSync ?? false,
     };
+    // Change-sensitive staleness (issue #162): snapshot the Meetings the
+    // briefings derive from plus the Intake schedule keys/versions before and
+    // after. A no-op tick (same meetings, same schedules) touches nothing, so
+    // the routine 6-hour full sync cannot keep the briefings permanently
+    // stale; a new, revised, or cancelled meeting marks the day/week stale.
+    const meetingsBefore = JSON.stringify(
+      this.meetings
+        .list()
+        .map((meeting) => [
+          meeting.id,
+          meeting.startAt,
+          meeting.endAt,
+          meeting.title,
+          meeting.occurrenceKey,
+          meeting.cancelled,
+        ])
+        .sort(),
+    );
+    const schedulesBefore = JSON.stringify(
+      this.clock
+        .list(MEETING_BRIEF_MODULE_ID)
+        .map((schedule) => [
+          schedule.key,
+          (schedule.input as { version?: unknown } | null)?.version ?? null,
+        ])
+        .sort(),
+    );
     const result = await reconcileCalendar(args);
+    const meetingsAfter = JSON.stringify(
+      this.meetings
+        .list()
+        .map((meeting) => [
+          meeting.id,
+          meeting.startAt,
+          meeting.endAt,
+          meeting.title,
+          meeting.occurrenceKey,
+          meeting.cancelled,
+        ])
+        .sort(),
+    );
+    const schedulesAfter = JSON.stringify(
+      this.clock
+        .list(MEETING_BRIEF_MODULE_ID)
+        .map((schedule) => [
+          schedule.key,
+          (schedule.input as { version?: unknown } | null)?.version ?? null,
+        ])
+        .sort(),
+    );
+    if (meetingsAfter !== meetingsBefore || schedulesAfter !== schedulesBefore) {
+      this.touchBriefings(args.now, args.timezone ?? this.getTimezone());
+    }
     // The one backward read (issue #152) and the standing Transcript ↔
     // Meeting join (issue #153) ride every reconcile: both are guarded, so a
     // completed history never reads again and matched transcripts stay put.
     await this.collectMeetingHistory();
     await this.associateTranscriptsPass();
     return result;
+  }
+
+  /**
+   * The Sunday sweep (issue://157): enqueue Brief preparation for every
+   * eligible Meeting in the coming week (Sunday 00:00 through Saturday end in
+   * the owner's calendar timezone) that is missing a current Brief. Meetings
+   * seen after the sweep but starting inside its window prepare immediately
+   * through reconcile; beyond-window ones wait for their covering sweep.
+   */
+  async prepareWeekSweep(
+    now = this.now(),
+    timezone = this.getTimezone(),
+  ): Promise<{ scheduled: number; windowStart: string; windowEnd: string }> {
+    const args: Parameters<typeof prepareWeekSweepIntake>[0] = {
+      provider: this.calendarProvider,
+      store: this.calendarStore,
+      clock: this.clock,
+      ownerEmail: () => this.getOwnerEmail(),
+      meetings: this.meetings,
+      hasCurrentBrief: (occurrenceKey, event) => this.hasCurrentBrief(occurrenceKey, event),
+      now,
+      timezone,
+      calendarId: MEETING_BRIEF_CALENDAR_ID,
+    };
+    if (this.deps.log) args.log = this.deps.log;
+    return prepareWeekSweepIntake(args);
+  }
+
+  /**
+   * True when a done Run already holds a Brief current for this event version.
+   * Active or failed Runs are not current — the due path still decides those.
+   */
+  private hasCurrentBrief(occurrenceKey: string, event: CalendarEvent): boolean {
+    for (const summary of this.deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs) {
+      const meta = this.deps.runs.open(summary.id)?.read();
+      if (meta?.externalId !== occurrenceKey || meta.status !== "done") continue;
+      if (this.readSnapshot(summary.id)?.version === event.version) return true;
+      const result = this.deps.runs.detail(summary.id)?.result as MeetingBriefRunResult | null;
+      if (result?.eventVersion === event.version) return true;
+    }
+    return false;
   }
 
   /**
@@ -622,6 +974,10 @@ export class MeetingBriefHost implements HostedModule {
       const runId = await this.startBriefForSchedule(record);
       if (runId) created.push(runId);
     }
+    // A new or revised Brief Run moves its meeting's briefStatus — the
+    // day/week briefings covering it go stale (issue #162), one quiet rebuild
+    // no matter how many Runs start in the burst.
+    if (created.length > 0) this.touchBriefings(now, this.getTimezone());
     return created;
   }
 
@@ -772,7 +1128,10 @@ export class MeetingBriefHost implements HostedModule {
       .list(MEETING_BRIEF_MODULE_ID)
       .find((schedule) => schedule.key === occurrenceKey);
     if (!record) throw new Error(`Meeting occurrence is not scheduled: ${occurrenceKey}`);
-    return this.startBriefForSchedule(record);
+    const runId = await this.startBriefForSchedule(record);
+    // A manually prepared Brief moves briefStatus the same way a due one does.
+    if (runId) this.touchBriefings(this.now(), this.getTimezone());
+    return runId;
   }
 
   /**
@@ -844,7 +1203,10 @@ export class MeetingBriefHost implements HostedModule {
     );
     this.profileRegenerations.set(runId, regeneration);
     try {
-      return await regeneration;
+      const regeneratedId = await regeneration;
+      // A regenerated (revised) Brief moves briefStatus — day/week go stale.
+      this.touchBriefings(this.now(), this.getTimezone());
+      return regeneratedId;
     } catch (error) {
       if (this.profileRegenerations.get(runId) === regeneration)
         this.profileRegenerations.delete(runId);
@@ -884,12 +1246,17 @@ export class MeetingBriefHost implements HostedModule {
     return runsRecovered;
   }
 
-  /** Periodic maintenance: watch renewal, bounded full reconcile on cadence, and due schedules. Avoids overlapping ticks. */
+  /** Periodic maintenance: watch renewal, Sunday sweep, bounded full reconcile on cadence, and due schedules. Avoids overlapping ticks. */
   async maintenanceTick(now = this.now()): Promise<void> {
     if (this.maintenanceInProgress) return;
     this.maintenanceInProgress = true;
     try {
       await this.ensureCalendarWatch().catch(() => {});
+      await this.sweepIfSunday(now);
+      await this.refreshDailyBriefingIfMorning(now);
+      await this.refreshWeeklyBriefingIfMonday(now);
+      // One coalesced rebuild per stale briefing whose quiet period expired.
+      this.refreshStaleBriefingsIfDue(now);
       const shouldFullSync =
         this.lastFullSyncAt === null ||
         now.getTime() - this.lastFullSyncAt.getTime() >= this.fullSyncIntervalMs;
@@ -905,6 +1272,287 @@ export class MeetingBriefHost implements HostedModule {
     } finally {
       this.maintenanceInProgress = false;
     }
+  }
+
+  /**
+   * Run the weekly sweep once per week, on Sunday in the owner's calendar
+   * timezone (issue://157). Guarded by the covered window start, so restarts
+   * re-sweep harmlessly — scheduling is idempotent and current Briefs are
+   * skipped. Never throws into the caller's tick path.
+   */
+  private async sweepIfSunday(now: Date): Promise<void> {
+    const timezone = this.getTimezone();
+    const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(timezone);
+    if (!local.isValid || local.weekday !== 7) return;
+    const windowStart = sweepWindowFor(now, timezone).windowStart.toISOString();
+    if (this.lastSweepWeek === windowStart) return;
+    try {
+      await this.prepareWeekSweep(now, timezone);
+      this.lastSweepWeek = windowStart;
+    } catch (error) {
+      this.deps.log?.(
+        `week sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Quiet period between the last touching change and the one coalesced
+   * briefing rebuild (issue #162): 15 minutes, mirroring the Brief's own
+   * quiet-period wait that lets a burst of revisions settle before delivery.
+   * Several changes inside the window move regenAt out — still one rebuild.
+   */
+  private readonly briefingRegenQuietMs = 15 * 60 * 1000;
+
+  /**
+   * Mark the current day/week briefings stale after a touching change (issue
+   * #162): a new or revised Brief, a cancellation, or a new action item. Keys
+   * the dirty flags by day/weekStart and (re)starts the quiet period from
+   * `now`; repeat touches only move the rebuild later. No Run starts here.
+   */
+  private touchBriefings(now: Date, timezone: string): void {
+    const nowMs = now.getTime();
+    const regenAtMs = nowMs + this.briefingRegenQuietMs;
+    this.dailyBriefingDirty = {
+      date: dayBoundsFor(now, timezone).date,
+      touchedAtMs: nowMs,
+      regenAtMs,
+    };
+    this.weeklyBriefingDirty = {
+      weekStart: weekBoundsFor(now, timezone).weekStart,
+      touchedAtMs: nowMs,
+      regenAtMs,
+    };
+  }
+
+  /**
+   * Debrief action-item hook (issue #162): a new action item touches the
+   * current day/week briefings the same way a Brief or calendar change does.
+   * The Shell calls this when the Debrief side records action items; the
+   * previous briefings keep serving with stale:true until the quiet rebuild.
+   */
+  notifyActionItemsChanged(now = this.now(), timezone = this.getTimezone()): void {
+    // Only touch when a briefing exists to go stale — a day/week with no
+    // Meetings rebuilds from null on its next scheduled read either way.
+    if (this.dailyBriefingCache !== null || this.weeklyBriefingCache !== null) {
+      this.touchBriefings(now, timezone);
+    }
+  }
+
+  /**
+   * Rebuild each stale briefing whose quiet period has expired (issue #162).
+   * Runs on the maintenance tick; the matching getter also rebuilds lazily,
+   * so either path fires the one coalesced rebuild and clears the flag.
+   */
+  private refreshStaleBriefingsIfDue(now: Date): void {
+    const timezone = this.getTimezone();
+    const nowMs = now.getTime();
+    if (
+      this.dailyBriefingDirty !== null &&
+      this.dailyBriefingDirty.date === dayBoundsFor(now, timezone).date &&
+      nowMs >= this.dailyBriefingDirty.regenAtMs
+    ) {
+      this.dailyBriefingDirty = null;
+      this.refreshDailyBriefing(now, timezone);
+    } else if (
+      this.dailyBriefingDirty !== null &&
+      this.dailyBriefingDirty.date !== dayBoundsFor(now, timezone).date
+    ) {
+      this.dailyBriefingDirty = null;
+    }
+    if (
+      this.weeklyBriefingDirty !== null &&
+      this.weeklyBriefingDirty.weekStart === weekBoundsFor(now, timezone).weekStart &&
+      nowMs >= this.weeklyBriefingDirty.regenAtMs
+    ) {
+      this.weeklyBriefingDirty = null;
+      this.refreshWeeklyBriefing(now, timezone);
+    } else if (
+      this.weeklyBriefingDirty !== null &&
+      this.weeklyBriefingDirty.weekStart !== weekBoundsFor(now, timezone).weekStart
+    ) {
+      this.weeklyBriefingDirty = null;
+    }
+  }
+
+  /**
+   * The Daily Briefing build (issue #160): derive the day ahead from the
+   * day's Meetings and their Meeting Briefs. Never throws — a failed build
+   * records its message for the home surface instead. Sets the day guard
+   * either way, so one bad morning does not retry every 30 seconds; the
+   * owner retries explicitly from the home surface. An explicit refresh (the
+   * morning tick, the retry button, or an expired quiet period) always serves
+   * fresh and clears the dirty flag.
+   */
+  refreshDailyBriefing(now = this.now(), timezone = this.getTimezone()): DailyBriefingState {
+    const date = dayBoundsFor(now, timezone).date;
+    this.lastDailyBriefingDay = date;
+    this.dailyBriefingDirty = null;
+    try {
+      this.dailyBriefingCache = buildDailyBriefing(
+        { meetings: this.meetings, runs: this.deps.runs },
+        now,
+        timezone,
+      );
+      this.dailyBriefingError = null;
+    } catch (error) {
+      this.dailyBriefingError = error instanceof Error ? error.message : String(error);
+    }
+    return { briefing: this.dailyBriefingCache, error: this.dailyBriefingError, stale: false };
+  }
+
+  /**
+   * The stored Daily Briefing state, building it on first read for the day
+   * so the home surface answers before the morning tick has run. Pure
+   * derivation (ADR-0005): no Run starts here. While the day's briefing is
+   * stale (issue #162) the previous value keeps serving with stale:true; the
+   * rebuild fires once the quiet period expires. A touching change the host
+   * did not directly observe (e.g. a Brief Run completing) is caught by the
+   * version compare below, which marks stale but never serves fresh early.
+   */
+  getDailyBriefing(now = this.now(), timezone = this.getTimezone()): DailyBriefingState {
+    const date = dayBoundsFor(now, timezone).date;
+    if (this.lastDailyBriefingDay !== date) {
+      return this.refreshDailyBriefing(now, timezone);
+    }
+    if (
+      this.dailyBriefingDirty !== null &&
+      this.dailyBriefingDirty.date === date &&
+      now.getTime() >= this.dailyBriefingDirty.regenAtMs
+    ) {
+      this.dailyBriefingDirty = null;
+      return this.refreshDailyBriefing(now, timezone);
+    }
+    if (this.dailyBriefingDirty !== null && this.dailyBriefingDirty.date !== date) {
+      this.dailyBriefingDirty = null;
+    }
+    if (this.dailyBriefingDirty?.date !== date) {
+      let fresh: DailyBriefing | null | undefined;
+      try {
+        fresh = buildDailyBriefing(
+          { meetings: this.meetings, runs: this.deps.runs },
+          now,
+          timezone,
+        );
+      } catch {
+        fresh = undefined;
+      }
+      if (
+        fresh !== undefined &&
+        JSON.stringify(fresh) !== JSON.stringify(this.dailyBriefingCache) &&
+        (this.dailyBriefingCache !== null || fresh !== null)
+      ) {
+        this.touchBriefings(now, timezone);
+      }
+    }
+    const stale = this.dailyBriefingDirty?.date === date;
+    return { briefing: this.dailyBriefingCache, error: this.dailyBriefingError, stale };
+  }
+
+  /**
+   * The morning trigger (issue #160): once per day, at or after 06:00 in the
+   * owner's calendar timezone — the same timezone pattern as the Sunday
+   * sweep. Guarded by the covered day, so restarts rebuild harmlessly and a
+   * failed morning waits for the owner's explicit retry.
+   */
+  private async refreshDailyBriefingIfMorning(now: Date): Promise<void> {
+    const timezone = this.getTimezone();
+    const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(timezone);
+    if (!local.isValid || local.hour < 6) return;
+    if (this.lastDailyBriefingDay === dayBoundsFor(now, timezone).date) return;
+    this.refreshDailyBriefing(now, timezone);
+    await this.sendDailyBriefingEmailIfDue(now, timezone);
+  }
+
+  /**
+   * The Weekly Briefing build (issue #161): derive the week ahead from the
+   * coming week's Meetings and their Meeting Briefs. Never throws — a failed
+   * build records its message for the home surface instead. Sets the week
+   * guard either way, so one bad Monday does not retry every 30 seconds; the
+   * owner retries explicitly from the home surface. An explicit refresh always
+   * serves fresh and clears the dirty flag.
+   */
+  refreshWeeklyBriefing(now = this.now(), timezone = this.getTimezone()): WeeklyBriefingState {
+    const weekStart = weekBoundsFor(now, timezone).weekStart;
+    this.lastWeeklyBriefingWeek = weekStart;
+    this.weeklyBriefingDirty = null;
+    try {
+      this.weeklyBriefingCache = buildWeeklyBriefing(
+        { meetings: this.meetings, runs: this.deps.runs },
+        now,
+        timezone,
+        this.getInternalDomains(),
+      );
+      this.weeklyBriefingError = null;
+    } catch (error) {
+      this.weeklyBriefingError = error instanceof Error ? error.message : String(error);
+    }
+    return { briefing: this.weeklyBriefingCache, error: this.weeklyBriefingError, stale: false };
+  }
+
+  /**
+   * The stored Weekly Briefing state, building it on first read for the week
+   * so the home surface answers before the Monday tick has run. Pure
+   * derivation (ADR-0005): no Run starts here. While the week's briefing is
+   * stale (issue #162) the previous value keeps serving with stale:true; the
+   * rebuild fires once the quiet period expires. Unobserved touching changes
+   * are caught by the version compare, which marks stale but never serves
+   * fresh early.
+   */
+  getWeeklyBriefing(now = this.now(), timezone = this.getTimezone()): WeeklyBriefingState {
+    const weekStart = weekBoundsFor(now, timezone).weekStart;
+    if (this.lastWeeklyBriefingWeek !== weekStart) {
+      return this.refreshWeeklyBriefing(now, timezone);
+    }
+    if (
+      this.weeklyBriefingDirty !== null &&
+      this.weeklyBriefingDirty.weekStart === weekStart &&
+      now.getTime() >= this.weeklyBriefingDirty.regenAtMs
+    ) {
+      this.weeklyBriefingDirty = null;
+      return this.refreshWeeklyBriefing(now, timezone);
+    }
+    if (this.weeklyBriefingDirty !== null && this.weeklyBriefingDirty.weekStart !== weekStart) {
+      this.weeklyBriefingDirty = null;
+    }
+    if (this.weeklyBriefingDirty?.weekStart !== weekStart) {
+      let fresh: WeeklyBriefing | null | undefined;
+      try {
+        fresh = buildWeeklyBriefing(
+          { meetings: this.meetings, runs: this.deps.runs },
+          now,
+          timezone,
+          this.getInternalDomains(),
+        );
+      } catch {
+        fresh = undefined;
+      }
+      if (
+        fresh !== undefined &&
+        JSON.stringify(fresh) !== JSON.stringify(this.weeklyBriefingCache) &&
+        (this.weeklyBriefingCache !== null || fresh !== null)
+      ) {
+        this.touchBriefings(now, timezone);
+      }
+    }
+    const stale = this.weeklyBriefingDirty?.weekStart === weekStart;
+    return { briefing: this.weeklyBriefingCache, error: this.weeklyBriefingError, stale };
+  }
+
+  /**
+   * The Monday trigger (issue #161): once per week, at or after 06:00 on
+   * Monday in the owner's calendar timezone — the same timezone pattern as
+   * the morning Daily Briefing and the Sunday sweep. Guarded by the covered
+   * week start, so restarts rebuild harmlessly and a failed Monday waits for
+   * the owner's explicit retry.
+   */
+  private async refreshWeeklyBriefingIfMonday(now: Date): Promise<void> {
+    const timezone = this.getTimezone();
+    const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(timezone);
+    if (!local.isValid || local.weekday !== 1 || local.hour < 6) return;
+    if (this.lastWeeklyBriefingWeek === weekBoundsFor(now, timezone).weekStart) return;
+    this.refreshWeeklyBriefing(now, timezone);
+    await this.sendWeeklyBriefingEmailIfDue(now, timezone);
   }
 
   start(): void {
@@ -960,6 +1608,36 @@ export class MeetingBriefHost implements HostedModule {
     // GET /api/meeting-brief/index — Cross-Run index derived on read (ADR-0005)
     app.get("/api/meeting-brief/index", async () => {
       return this.index();
+    });
+
+    // GET /api/meeting-brief/daily — the Daily Briefing for the day ahead,
+    // derived on read from the day's Meetings and their Meeting Briefs
+    // (issue #160). Null briefing when the day holds no Meetings; a failed
+    // build surfaces its message here (not on the general page) with the
+    // last good value kept.
+    app.get("/api/meeting-brief/daily", async () => {
+      return this.getDailyBriefing();
+    });
+
+    app.post("/api/meeting-brief/daily/retry", async () => {
+      const state = this.refreshDailyBriefing();
+      await this.sendDailyBriefingEmailIfDue();
+      return state;
+    });
+
+    // GET /api/meeting-brief/weekly — the Weekly Briefing for the week ahead,
+    // derived on read from the coming week's Meetings and their Meeting
+    // Briefs (issue #161). Null briefing when the week holds no Meetings; a
+    // failed build surfaces its message here (not on the general page) with
+    // the last good value kept.
+    app.get("/api/meeting-brief/weekly", async () => {
+      return this.getWeeklyBriefing();
+    });
+
+    app.post("/api/meeting-brief/weekly/retry", async () => {
+      const state = this.refreshWeeklyBriefing();
+      await this.sendWeeklyBriefingEmailIfDue();
+      return state;
     });
 
     // GET /api/meetings/overview — the Meeting Wizard read projection (spec
@@ -1100,6 +1778,22 @@ export class MeetingBriefHost implements HostedModule {
       const forceFullSync = body.forceFullSync === true;
       try {
         const result = await this.reconcileCalendar({ forceFullSync });
+        return { ...result, upcoming: this.listUpcoming() };
+      } catch (err) {
+        return {
+          error: err instanceof Error ? err.message : String(err),
+          upcoming: this.listUpcoming(),
+        };
+      }
+    });
+
+    // POST /api/meeting-brief/sweep — manual Sunday-sweep trigger (issue://157)
+    app.post("/api/meeting-brief/sweep", async (request) => {
+      const body = (request.body as { timezone?: unknown } | undefined) ?? {};
+      const timezone =
+        typeof body.timezone === "string" && body.timezone ? body.timezone : this.getTimezone();
+      try {
+        const result = await this.prepareWeekSweep(this.now(), timezone);
         return { ...result, upcoming: this.listUpcoming() };
       } catch (err) {
         return {

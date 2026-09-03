@@ -11,6 +11,8 @@ import {
 import type { HostedModule } from "../engine/host.js";
 import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
+import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
+import type { MatchedMeeting } from "../meetings/matching.js";
 import { registerMeetingsApi } from "./meetings.js";
 import { registerPeopleApi } from "./people.js";
 import { registerContentEngineApi } from "./content-engine.js";
@@ -37,6 +39,10 @@ export interface ApiContext {
   meetings: WorkspaceMeetings;
   /** The catalogued Transcripts of one Meeting, for its page (issue #153). */
   transcriptsFor: (meetingId: string) => { id: string; title: string }[];
+  /** First catalogued Transcript on a Meeting, for near-match scoring (issue #154). */
+  transcriptForMeeting?: (meetingId: string) => TranscriptRecord | null;
+  /** Move a Transcript's Meeting link, for the orphan merge (issue #154). */
+  attachTranscript?: (transcriptId: string, meeting: MatchedMeeting) => Promise<unknown>;
   /** Public-web identity resolution behind the typed-identifier lookup. */
   peopleResolver: PersonProfileResolver;
   /** Owner onboarding (issue #123): the proposal/confirmation namespace. */
@@ -241,7 +247,12 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   registerPeopleApi(app, { people: ctx.people, resolver: ctx.peopleResolver });
   /* Meetings are a Workspace resource too: the Meeting Wizard presents them,
      and their Transcripts follow them (issue #153). */
-  registerMeetingsApi(app, { meetings: ctx.meetings, transcriptsFor: ctx.transcriptsFor });
+  registerMeetingsApi(app, {
+    meetings: ctx.meetings,
+    transcriptsFor: ctx.transcriptsFor,
+    transcriptForMeeting: ctx.transcriptForMeeting,
+    attachTranscript: ctx.attachTranscript,
+  });
   /* Owner onboarding (issue #123): the proposal/confirmation namespace, also
      a Workspace resource rather than a hosted Module. */
   registerOnboardingApi(app, { onboarding: ctx.onboarding });

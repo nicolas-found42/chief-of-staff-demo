@@ -126,8 +126,10 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   // Re-open tab and assert current brief rendering, evidence warnings, delivery state
   await page.goto("/meetings/brief");
   const currentBriefs = page.getByLabel("Current briefs");
-  await expect(currentBriefs.getByRole("heading", { name: /Initial Meeting · Run/ })).toBeVisible();
-  // Current brief section shows linked Run and delivery sent
+  await expect(
+    currentBriefs.getByRole("heading", { name: "Initial Meeting", exact: true }),
+  ).toBeVisible();
+  // Current brief section shows the Brief journey rendering and delivery sent
   await expect(currentBriefs.getByText("Brief for Initial Meeting", { exact: true })).toBeVisible();
   // Source links (at least one)
   const sourceLink = currentBriefs.getByRole("link", { name: /https:\/\/example.com\/alice/ });
@@ -148,28 +150,10 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   expect(gmail1.messages[0].subject).toBe("Meeting Brief: Initial Meeting");
   expect(gmail1.messages[0].deliveryId).toContain("v1");
 
-  // Verify Run detail linkage and Stages/timeline/files visible
-  const runLink = page.getByRole("link", { name: /Run / }).first();
-  await expect(runLink).toBeVisible();
-  const href = await runLink.getAttribute("href");
-  expect(href).toMatch(/\/runs\//);
-  await runLink.click();
-  await expect(page).toHaveURL(/\/runs\/run_/);
-  await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
-  // 4 Stages snapshot|enrich|compose|deliver
-  await expect(page.getByText("snapshot", { exact: true })).toBeVisible();
-  await expect(page.getByText("enrich", { exact: true })).toBeVisible();
-  await expect(page.getByText("compose", { exact: true })).toBeVisible();
-  await expect(page.getByText("deliver", { exact: true })).toBeVisible();
-  // Meeting Brief result view shows logistics, guests, companies, starters, sources, gaps, warnings, delivery identity
-  await expect(page.getByRole("heading", { name: "Meeting Brief" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Logistics" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Delivery" })).toBeVisible();
-  await expect(page.getByText("Recipient: owner@example.com", { exact: true })).toBeVisible();
-  await expect(page.getByText(/^Message ID:/)).toBeVisible();
-
-  // Back to tab for revision
-  await page.goto("/meetings/brief");
+  // #164: the success path stays on the owning Brief journey surface — a
+  // delivered Brief links nowhere near /runs/ (Technical details is the
+  // failure path's link only).
+  await expect(currentBriefs.locator('a[href^="/runs/"]')).toHaveCount(0);
 
   // 4. Change event to new material version — then one more rapid revision to test coalescing
   // First revision v2 (material: title changed) scheduled at same due time (already past) → will go to quiet wait
@@ -262,7 +246,7 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   // Tab shows updated revision as current, and superseded explain
   await page.goto("/meetings/brief");
   await expect(
-    currentBriefs.getByRole("heading", { name: /Final revised title · Run/ }),
+    currentBriefs.getByRole("heading", { name: "Final revised title", exact: true }),
   ).toBeVisible();
   await expect(currentBriefs.getByText(/Updated Meeting Brief/)).not.toBeVisible(); // subject is email, not tab — tab shows Brief for ...
   await expect(
@@ -345,15 +329,17 @@ test("meeting brief hermetic journey — incomplete provider blocks until cutoff
   await page.goto("/meetings/brief");
   const currentBriefs = page.getByLabel("Current briefs");
   // Without a composed Brief the entry titles itself by its eventId.
-  await expect(currentBriefs.getByText("evt_journey_cutoff · Run")).toBeVisible();
-  await expect(currentBriefs.getByText("status failed")).toBeVisible();
+  await expect(currentBriefs.getByText("evt_journey_cutoff", { exact: true })).toBeVisible();
+  await expect(currentBriefs.getByText(/status failed/)).toBeVisible();
   await expect(
     currentBriefs.getByText("Provider outcomes: crm alice@external.co — failed"),
   ).toBeVisible();
-  await expect(currentBriefs.getByText(/No structured brief \(run failed\)/)).toBeVisible();
+  await expect(currentBriefs.getByText(/No structured brief — preparation failed/)).toBeVisible();
 
-  // 5. The Run detail shows the cutoff failure and no composed Brief.
-  await page.goto(`/runs/${runId}`);
+  // 5. Technical details links the failed preparation to its Run detail,
+  // which shows the cutoff failure and no composed Brief.
+  await currentBriefs.getByRole("link", { name: "Technical details" }).click();
+  await expect(page).toHaveURL(/\/runs\/.+/);
   await expect(page.getByText(/cutoff/i).first()).toBeVisible();
 
   // 6. Explicit policy action: disable the failing provider on the Run.

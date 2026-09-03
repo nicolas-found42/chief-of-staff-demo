@@ -270,7 +270,7 @@ async function confirmOwner(request: APIRequestContext): Promise<void> {
   throw new Error("Owner identity could not be confirmed for the review journey");
 }
 
-test("meeting debrief review journey — regenerate, drop, roster, recipients, approval lock, redo", async ({
+test("meeting debrief review journey — regenerate, dismiss, roster, recipients, approval lock, redo", async ({
   page,
   request,
 }) => {
@@ -322,9 +322,10 @@ test("meeting debrief review journey — regenerate, drop, roster, recipients, a
     1,
   );
 
-  // 2. Drop the action item; it is marked on the surface.
-  await page.getByRole("button", { name: /Drop “I will own/ }).click();
-  await expect(page.getByText("Dropped").first()).toBeVisible();
+  // 2. Dismiss the action item; it is marked on the surface and never
+  //    becomes a Google Task, even after the later approval.
+  await page.getByRole("button", { name: "Dismiss", exact: true }).first().click();
+  await expect(page.getByText("Dismissed").first()).toBeVisible();
 
   // 3. Confirm the roster through the Calendar seam; the owner is excluded.
   await page
@@ -387,7 +388,7 @@ test("meeting debrief review journey — regenerate, drop, roster, recipients, a
   //    The redo Run is identified through the API — the one Run of this
   //    transcript that is not the approved original — never by diffing the
   //    whole index, which other journeys' Runs also populate.
-  await page.getByRole("button", { name: /Redo \(start a new Debrief Run\)/ }).click();
+  await page.getByRole("button", { name: /Redo \(start a new debrief\)/i }).click();
   let redoRunId: string | null = null;
   await expect
     .poll(async () => {

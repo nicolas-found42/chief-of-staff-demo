@@ -11,7 +11,7 @@ import { registerMeetingBriefHubSpotRoutes } from "../modules/meeting-brief-gene
 import { contentScoutTestPorts, registerTestSeed } from "../api/testSeed.js";
 import { PersonProfileStore } from "../person-profile/store.js";
 import { WorkspaceMeetings } from "../meetings/store.js";
-import { associateTranscriptsWithMeetings } from "../meetings/matching.js";
+import { associateTranscriptsWithMeetings, type MatchedMeeting } from "../meetings/matching.js";
 import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "../person-profile/references.js";
 import { TranscriptCatalogStore } from "../transcript-catalog/store.js";
@@ -509,11 +509,16 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      transcriptCatalogRuntime is composed below — the closure reads it only
      once a reconcile runs, never during composition. */
   const associateTranscripts = async () => {
+    /* The Catalog owns the Transcript record; the Meetings store owns the
+       transcript-owned shell. One shared attach carries both directions of
+       the join: the standing pass and the orphan merge (issues #153, #154). */
+    const attach = (transcriptId: string, matched: MatchedMeeting) =>
+      transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched);
     await associateTranscriptsWithMeetings({
       transcripts: transcriptCatalogStore.listTranscripts(),
       meetings: meetings.list(),
-      attach: (transcriptId, matched) =>
-        transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched),
+      attach,
+      createMeeting: (input) => meetings.createFromTranscript(input),
       log: meetingBriefLog,
     });
   };
@@ -538,23 +543,29 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
-     confirmed owner reference; eligibility keeps the raw identity. */
+   confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
-     before the Brief pins its revision, so a Calendar shell is not the
-     whole of what the Brief knows about a new person. */
+   before the Brief pins its revision, so a Calendar shell is not the
+   whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
-     Catalog's confirmed links and its reviewed relevance decisions. */
+   Catalog's confirmed links and its reviewed relevance decisions. */
         /* Meeting history (issue #152): the backward read reaches as far as
-     the oldest Transcript. */
+   the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,
         log: meetingBriefLog,
       });
   const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
+  /* Debrief action-item mutations mark the derived briefings stale (#162):
+     the thin shell seam beside the associateTranscripts wiring above — done /
+     dismissed items touch day/week staleness instead of rebuilding at once. */
+  const notifyBriefActionItemsChanged = (): void => {
+    meetingBrief.notifyActionItemsChanged();
+  };
   /* Meeting Debrief (issue #139): the retrospective sibling of Meeting Brief.
      It consumes the Transcript Catalog's immutable records and identity review
      state, and has no outward-write capability at all. The test runtime keeps
@@ -566,6 +577,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           runs,
           workspaceDir,
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
+          onActionItemsChanged: notifyBriefActionItemsChanged,
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
       : null;
@@ -595,6 +607,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         const current = configStore.get();
         return { provider: current.provider, model: current.model };
       },
+      onActionItemsChanged: notifyBriefActionItemsChanged,
       log: (message) => console.log(`[meeting-debrief] ${message}`),
     }).host;
 
@@ -688,6 +701,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         .listTranscripts()
         .filter((transcript) => transcript.meetingId === meetingId)
         .map((transcript) => ({ id: transcript.id, title: transcript.source.fileName })),
+    transcriptForMeeting: (meetingId) =>
+      transcriptCatalogStore
+        .listTranscripts()
+        .find((transcript) => transcript.meetingId === meetingId) ?? null,
+    attachTranscript: (transcriptId, matched) =>
+      transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched),
     onboarding: ownerOnboarding,
     contentProjects,
     onConfigChanged: async () => {

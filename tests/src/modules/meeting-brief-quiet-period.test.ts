@@ -638,8 +638,11 @@ describe("Quiet period — initial immediate; revisions 5-min quiet via Runner w
       startAt: startFar.toISOString(),
       endAt: new Date(startFar.getTime() + 30 * 60000).toISOString(),
     });
-    fakeCal.setEvents([calFromFixture(v3)]);
+    // Advance past the quiet wait before introducing the revision: under
+    // immediate preparation a reconcile during the advance would already
+    // prepare v3, leaving nothing for the manual schedule below.
     await advance(2 * 60 * 1000);
+    fakeCal.setEvents([calFromFixture(v3)]);
     host.scheduleOccurrence(v3, new Date(getNow()));
     created = await host.processDueSchedules(new Date(getNow()));
     const run3Id = created[0] as string;

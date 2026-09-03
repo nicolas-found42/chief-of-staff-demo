@@ -82,3 +82,24 @@ export async function createGoogleTask(
   }
   return { googleId: res.data.id, webViewLink: res.data.webViewLink ?? null };
 }
+
+/**
+ * Reads one Task's completion from Google Tasks (issue #158). Null when
+ * Google no longer holds the Task — the caller falls back to local state.
+ */
+export async function getGoogleTaskStatus(
+  auth: GoogleAuth,
+  tasklistId: string,
+  taskId: string,
+): Promise<{ completed: boolean } | null> {
+  const tasks = google.tasks({ version: "v1", auth });
+  try {
+    const res = await tasks.tasks.get({ tasklist: tasklistId, task: taskId });
+    return { completed: res.data.status === "completed" };
+  } catch (error) {
+    if (error !== null && typeof error === "object" && "code" in error && error.code === 404) {
+      return null;
+    }
+    throw error;
+  }
+}

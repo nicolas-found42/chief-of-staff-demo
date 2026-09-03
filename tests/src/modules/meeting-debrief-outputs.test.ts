@@ -151,15 +151,23 @@ function recordingOutputs(): {
   drafts: DebriefDraft[];
   tasks: DebriefTask[];
   failTasks: boolean;
+  /** Google Tasks answers per task id; missing ids read as open. */
+  googleCompleted: Map<string, boolean>;
+  /** When true Google no longer holds the Task — the host falls back local. */
+  googleMissing: boolean;
   createDraft: (d: DebriefDraft) => Promise<string>;
   createTask: (t: DebriefTask) => Promise<string>;
+  getTaskStatus: (taskId: string) => Promise<{ completed: boolean } | null>;
 } {
   const drafts: DebriefDraft[] = [];
   const tasks: DebriefTask[] = [];
+  const googleCompleted = new Map<string, boolean>();
   const surface = {
     drafts,
     tasks,
     failTasks: false,
+    googleCompleted,
+    googleMissing: false,
     createDraft: (draft: DebriefDraft) => {
       drafts.push(draft);
       return Promise.resolve(`draft_${drafts.length}`);
@@ -168,6 +176,10 @@ function recordingOutputs(): {
       if (surface.failTasks) return Promise.reject(new Error("tasks unavailable"));
       tasks.push(task);
       return Promise.resolve(`task_${tasks.length}`);
+    },
+    getTaskStatus: (taskId: string) => {
+      if (surface.googleMissing) return Promise.resolve(null);
+      return Promise.resolve({ completed: surface.googleCompleted.get(taskId) ?? false });
     },
   };
   return surface;
@@ -201,7 +213,11 @@ beforeEach(() => {
     extract: (input) => Promise.resolve(fakeExtraction(input)),
     profiles: workspaceProfileDirectory(people),
     ownerEmail: () => OWNER_EMAIL,
-    outputs: { createDraft: outputs.createDraft, createTask: outputs.createTask },
+    outputs: {
+      createDraft: outputs.createDraft,
+      createTask: outputs.createTask,
+      getTaskStatus: outputs.getTaskStatus,
+    },
     log: () => {},
   });
   const app = fastify({ logger: false });
@@ -318,5 +334,101 @@ describe("Meeting Debrief approval outputs — Tasks and retry (#141)", () => {
 
     expect(h.outputs.drafts).toHaveLength(1);
     expect(h.outputs.tasks.map((task) => task.title)).toEqual(["Send the release note"]);
+  });
+});
+
+describe("Meeting Debrief action-item lifecycle (#158)", () => {
+  /** Roster-confirm helper: everything up to, but not including, approval. */
+  async function readyToApprove(): Promise<string> {
+    const { profile } = h.people.ensureCalendarAttendeeProfile({
+      email: OWNER_EMAIL,
+      provenance: "unit test — Calendar attendee",
+    });
+    h.people.correct(profile.id, { fullName: "Owner" });
+    const alice = h.people.ensureCalendarAttendeeProfile({
+      email: "alice@example.com",
+      provenance: "unit test — Calendar attendee",
+    });
+    h.people.correct(alice.profile.id, { fullName: "Alice" });
+    identityReview = ownerLinkedIdentity(profile.id);
+    const runId = await startRun(makeRecord());
+    const roster = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: {
+        entries: [
+          { email: OWNER_EMAIL, displayName: "Owner" },
+          { email: "alice@example.com", displayName: "Alice" },
+        ],
+      },
+    });
+    expect(roster.statusCode).toBe(200);
+    return runId;
+  }
+
+  function approve(runId: string): Promise<{ statusCode: number }> {
+    return h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
+  }
+
+  async function detail(runId: string): Promise<{
+    review: { droppedActionItems: number[]; actionItemTasks: unknown[] };
+  }> {
+    const res = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
+    const body: unknown = res.json();
+    return body as {
+      review: { droppedActionItems: number[]; actionItemTasks: unknown[] };
+    };
+  }
+
+  it("never creates a Google Task for a dismissed item, even when approved later", async () => {
+    const runId = await readyToApprove();
+    const dismissed = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/dismiss`,
+    });
+    expect(dismissed.statusCode).toBe(200);
+    await approve(runId);
+    await h.host.idle();
+
+    /* The filter holds at Task-creation time, not just in the UI: the one
+       owner action was dismissed, so no Task reaches the outward surface. */
+    expect(h.outputs.tasks).toEqual([]);
+    const served = await detail(runId);
+    expect(served.review.droppedActionItems).toEqual([0]);
+    expect(served.review.actionItemTasks).toEqual([]);
+  });
+
+  it("reads Task-backed completion from Google Tasks, falling back to local done", async () => {
+    const runId = await readyToApprove();
+    const done = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/action-items/0/done`,
+    });
+    expect(done.statusCode).toBe(200);
+    await approve(runId);
+    await h.host.idle();
+
+    /* A locally-done owner action still becomes a Task; Google takes over
+       once the Task exists. */
+    expect(h.outputs.tasks.map((task) => task.title)).toEqual(["Send the release note"]);
+
+    /* Google open beats local done while the Task stands. */
+    let served = await detail(runId);
+    expect(served.review.actionItemTasks).toEqual([
+      { index: 0, taskId: "task_1", completed: false },
+    ]);
+
+    h.outputs.googleCompleted.set("task_1", true);
+    served = await detail(runId);
+    expect(served.review.actionItemTasks).toEqual([
+      { index: 0, taskId: "task_1", completed: true },
+    ]);
+
+    /* Google no longer holds the Task — the local done stands. */
+    h.outputs.googleMissing = true;
+    served = await detail(runId);
+    expect(served.review.actionItemTasks).toEqual([
+      { index: 0, taskId: "task_1", completed: true },
+    ]);
   });
 });
