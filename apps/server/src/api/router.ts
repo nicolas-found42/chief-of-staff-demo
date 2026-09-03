@@ -11,8 +11,7 @@ import {
 import type { HostedModule } from "../engine/host.js";
 import { RunNotFoundError, RunNotRetryableError } from "../engine/runner.js";
 import type { Runs } from "../runs.js";
-import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
-import type { MatchedMeeting } from "../meetings/matching.js";
+import type { WorkspaceMeetingJoin } from "../meetings/join.js";
 import { registerMeetingsApi } from "./meetings.js";
 import { registerPeopleApi } from "./people.js";
 import { registerContentEngineApi } from "./content-engine.js";
@@ -37,12 +36,8 @@ export interface ApiContext {
   people: WorkspacePersonProfiles;
   /** The Workspace's Meetings, which the Meeting Wizard presents (ADR-0050). */
   meetings: WorkspaceMeetings;
-  /** The catalogued Transcripts of one Meeting, for its page (issue #153). */
-  transcriptsFor: (meetingId: string) => { id: string; title: string }[];
-  /** First catalogued Transcript on a Meeting, for near-match scoring (issue #154). */
-  transcriptForMeeting?: (meetingId: string) => TranscriptRecord | null;
-  /** Move a Transcript's Meeting link, for the orphan merge (issue #154). */
-  attachTranscript?: (transcriptId: string, meeting: MatchedMeeting) => Promise<unknown>;
+  /** The Meeting join owning match, attach, and merge (issue #165). */
+  meetingJoin: WorkspaceMeetingJoin;
   /** Public-web identity resolution behind the typed-identifier lookup. */
   peopleResolver: PersonProfileResolver;
   /** Owner onboarding (issue #123): the proposal/confirmation namespace. */
@@ -249,9 +244,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
      and their Transcripts follow them (issue #153). */
   registerMeetingsApi(app, {
     meetings: ctx.meetings,
-    transcriptsFor: ctx.transcriptsFor,
-    transcriptForMeeting: ctx.transcriptForMeeting,
-    attachTranscript: ctx.attachTranscript,
+    join: ctx.meetingJoin,
   });
   /* Owner onboarding (issue #123): the proposal/confirmation namespace, also
      a Workspace resource rather than a hosted Module. */

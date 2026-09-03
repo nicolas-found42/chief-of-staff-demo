@@ -1,8 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Meeting, TranscriptRecord } from "@chief-of-staff-demo/shared";
 import {
   MEETING_MATCH_TOLERANCE_MS,
-  associateTranscriptsWithMeetings,
   findMatchingMeeting,
 } from "../../../apps/server/src/meetings/matching";
 /**
@@ -175,29 +174,5 @@ describe("findMatchingMeeting", () => {
   });
 });
 
-describe("associateTranscriptsWithMeetings", () => {
-  it("links the unmatched back-catalog and skips already-linked records", async () => {
-    const meetings = [meeting()];
-    const transcripts = [
-      transcript({ id: "t_match" }),
-      transcript({ id: "t_linked", meetingId: "meeting_a" }),
-      transcript({
-        id: "t_nomatch",
-        source: {
-          sourceSystem: "drive",
-          externalFileId: "file_nomatch",
-          fileName: "Unrelated 2026-06-10.txt",
-          sourceUrl: null,
-          checksum: "sum_nomatch",
-          observedRevision: 1,
-          modifiedAt: null,
-        },
-      }),
-    ];
-    const attach = vi.fn(async () => undefined);
-    const result = await associateTranscriptsWithMeetings({ transcripts, meetings, attach });
-    expect(result).toEqual({ linked: 1 });
-    expect(attach).toHaveBeenCalledTimes(1);
-    expect(attach).toHaveBeenCalledWith("t_match", expect.objectContaining({ id: "meeting_a" }));
-  });
-});
+/* The standing pass lives behind the Meeting join (issue #165); its behavior
+   is covered through WorkspaceMeetingJoin in meeting-join.test.ts. */

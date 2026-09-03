@@ -9,6 +9,7 @@ import { PersonProfileStore } from "../../../apps/server/src/person-profile/stor
 import { PersonProfileResolver } from "../../../apps/server/src/person-profile/resolver";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspaceMeetings } from "../../../apps/server/src/meetings/store.js";
+import { WorkspaceMeetingJoin } from "../../../apps/server/src/meetings/join.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { ConfigStore } from "../../../apps/server/src/config";
 import { openGoogleConnection } from "../../../apps/server/src/google/connection";
@@ -52,7 +53,11 @@ beforeEach(async () => {
     people: peopleProfiles,
     peopleResolver: new PersonProfileResolver({ store: peopleStore, sources: [] }),
     meetings,
-    transcriptsFor: () => [],
+    meetingJoin: new WorkspaceMeetingJoin({
+      meetings,
+      listTranscripts: () => [],
+      attachMeeting: async () => undefined,
+    }),
     onboarding: ownerOnboarding,
     /* No Content Engine route is exercised here, so the interface behind
        them is never reached. */
