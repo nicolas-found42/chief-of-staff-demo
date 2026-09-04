@@ -268,6 +268,74 @@ describe("materializing Action Items from a Debrief", () => {
       state: "pending",
     });
   });
+  it("preserves a dismissed decision across regeneration and stages the newcomer", async () => {
+    const runId = await debrief();
+    const [first] = await queue();
+    const dismissed = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${first.id}/dismiss`,
+    });
+    expect(dismissed.statusCode).toBe(200);
+    proposed = [proposal(), proposal({ title: "Book the follow-up session" })];
+    const regenerated = await app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/regenerate`,
+      payload: { field: "actionItems" },
+    });
+    expect(regenerated.statusCode).toBe(200);
+    await host.idle();
+    const after = await queue();
+    expect(after).toHaveLength(2);
+    expect(after.find((item) => item.id === first.id)).toMatchObject({
+      state: "dismissed",
+      extractionRevision: 1,
+    });
+    expect(
+      after.find((item) => item.proposal.title === "Book the follow-up session"),
+    ).toMatchObject({
+      state: "pending",
+      extractionRevision: 2,
+    });
+    const tasks = await app.inject({ method: "GET", url: "/api/tasks" });
+    expect(tasks.json<{ tasks: unknown[] }>().tasks).toEqual([]);
+  });
+
+  it("preserves a promoted decision across regeneration without touching its Task", async () => {
+    const runId = await debrief();
+    const [first] = await queue();
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${first.id}/promote`,
+      payload: { title: "Accepted billing follow-up", notes: "Owner edited notes" },
+    });
+    expect(promoted.statusCode).toBe(201);
+    const taskId = promoted.json<{ task: { id: string } }>().task.id;
+    proposed = [proposal(), proposal({ title: "Book the follow-up session" })];
+    const regenerated = await app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/regenerate`,
+      payload: { field: "actionItems" },
+    });
+    expect(regenerated.statusCode).toBe(200);
+    await host.idle();
+    const after = await queue();
+    expect(after.find((item) => item.id === first.id)).toMatchObject({
+      state: "promoted",
+      promotedTaskId: taskId,
+    });
+    expect(
+      after.find((item) => item.proposal.title === "Book the follow-up session"),
+    ).toMatchObject({
+      state: "pending",
+    });
+    const task = await app.inject({ method: "GET", url: `/api/tasks/${taskId}` });
+    expect(task.json<{ title: string; notes: string }>()).toMatchObject({
+      title: "Accepted billing follow-up",
+      notes: "Owner edited notes",
+    });
+    const allTasks = await app.inject({ method: "GET", url: "/api/tasks" });
+    expect(allTasks.json<{ tasks: unknown[] }>().tasks).toHaveLength(1);
+  });
 
   it("keeps the records and their identities across a restart of the application", async () => {
     const runId = await debrief();

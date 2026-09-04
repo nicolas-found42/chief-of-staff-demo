@@ -95,8 +95,13 @@ export const tasksApi = {
     request<{ deleted: string }>(`/api/tasks/${encodeURIComponent(taskId)}?confirm=true`, {
       method: "DELETE",
     }),
-  actionItems: (state: ActionItemState = "pending") =>
-    request<ActionItemIndex>(`/api/action-items?state=${state}`),
+  actionItems: (query: { state?: ActionItemState; debriefRunId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (query.state) params.set("state", query.state);
+    if (query.debriefRunId) params.set("debriefRunId", query.debriefRunId);
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return request<ActionItemIndex>(`/api/action-items${suffix}`);
+  },
   promoteActionItem: (actionItemId: string, input: TaskUpdateInput & { completed?: boolean }) =>
     request<{ task: Task; actionItem: ActionItem }>(
       `/api/action-items/${encodeURIComponent(actionItemId)}/promote`,
@@ -105,6 +110,16 @@ export const tasksApi = {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       },
+    ),
+  dismissActionItem: (actionItemId: string) =>
+    request<{ actionItem: ActionItem }>(
+      `/api/action-items/${encodeURIComponent(actionItemId)}/dismiss`,
+      { method: "POST" },
+    ),
+  restoreActionItem: (actionItemId: string) =>
+    request<{ actionItem: ActionItem }>(
+      `/api/action-items/${encodeURIComponent(actionItemId)}/restore`,
+      { method: "POST" },
     ),
   googleDestination: () => request<GoogleTasksDestination>("/api/tasks/google-destination"),
   googleLists: () => request<{ lists: { id: string; title: string }[] }>("/api/tasks/google-lists"),

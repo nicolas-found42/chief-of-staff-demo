@@ -37,7 +37,10 @@ export class TaskValidationError extends Error {
       | "task-not-found"
       | "task-not-in-trash"
       | "confirmation-required"
-      | "task-already-linked",
+      | "task-already-linked"
+      | "action-item-not-found"
+      | "action-item-already-promoted"
+      | "action-item-dismissed",
     message: string,
   ) {
     super(message);

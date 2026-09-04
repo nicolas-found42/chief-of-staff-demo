@@ -54,6 +54,12 @@ export function promoteActionItem(
   if (!item) {
     throw new TaskValidationError("task-not-found", `No Action Item with id ${actionItemId}`);
   }
+  if (item.state === "dismissed") {
+    throw new TaskValidationError(
+      "action-item-dismissed",
+      "That Action Item was dismissed. Restore it to pending before creating a Task.",
+    );
+  }
   if (item.state === "promoted" && item.promotedTaskId !== null) {
     const existing = deps.tasks.get(item.promotedTaskId);
     /* A promoted Action Item stays promoted even when its Task has been

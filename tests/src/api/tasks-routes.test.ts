@@ -789,3 +789,125 @@ describe("promoting one reviewed Action Item", () => {
     expect(again.statusCode).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dismissal (issue #179)
+// ---------------------------------------------------------------------------
+
+describe("dismissing and restoring a reviewed Action Item", () => {
+  const PROPOSED = {
+    debriefRunId: "run_1",
+    transcriptId: "transcript_1",
+    meetingId: "meeting_1",
+    actionItems: [
+      {
+        title: "Send the pricing sheet",
+        owner: "Dana",
+        ownerMentionId: null,
+        ownerProfileId: null,
+        dueDate: "2026-09-10",
+      },
+    ],
+  };
+
+  function materialize(): ActionItem {
+    const items = new WorkspaceActionItems({ store, now: () => clock });
+    return items.materialize(PROPOSED)[0];
+  }
+
+  async function actionQueue(query = ""): Promise<ActionItem[]> {
+    const response = await app.inject({ method: "GET", url: `/api/action-items${query}` });
+    expect(response.statusCode).toBe(200);
+    return response.json<{ items: ActionItem[] }>().items;
+  }
+
+  it("dismisses a pending Action Item without creating a Task", async () => {
+    const item = materialize();
+
+    const dismissed = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/dismiss`,
+    });
+
+    expect(dismissed.statusCode).toBe(200);
+    expect(dismissed.json<{ actionItem: ActionItem }>().actionItem).toMatchObject({
+      id: item.id,
+      state: "dismissed",
+      promotedTaskId: null,
+    });
+    expect(dismissed.json<{ actionItem: ActionItem }>().actionItem.decidedAt).not.toBeNull();
+    expect((await index()).tasks).toEqual([]);
+    expect(await actionQueue("?state=pending")).toEqual([]);
+    expect(await actionQueue("?state=dismissed")).toHaveLength(1);
+  });
+
+  it("restores a dismissed Action Item to pending", async () => {
+    const item = materialize();
+    await app.inject({ method: "POST", url: `/api/action-items/${item.id}/dismiss` });
+
+    const restored = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/restore`,
+    });
+
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json<{ actionItem: ActionItem }>().actionItem).toMatchObject({
+      id: item.id,
+      state: "pending",
+      promotedTaskId: null,
+      decidedAt: null,
+    });
+    expect(await actionQueue("?state=pending")).toHaveLength(1);
+    expect(await actionQueue("?state=dismissed")).toEqual([]);
+  });
+
+  it("refuses to dismiss a promoted Action Item", async () => {
+    const item = materialize();
+    await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+
+    const dismissed = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/dismiss`,
+    });
+
+    expect(dismissed.statusCode).toBe(409);
+    expect(await actionQueue("?state=promoted")).toHaveLength(1);
+  });
+
+  it("refuses to promote a dismissed Action Item until it is restored", async () => {
+    const item = materialize();
+    await app.inject({ method: "POST", url: `/api/action-items/${item.id}/dismiss` });
+
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+
+    expect(promoted.statusCode).toBe(409);
+    expect((await index()).tasks).toEqual([]);
+
+    await app.inject({ method: "POST", url: `/api/action-items/${item.id}/restore` });
+    const retry = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    expect(retry.statusCode).toBe(201);
+  });
+
+  it("answers 404 when dismissing or restoring an unknown Action Item", async () => {
+    expect(
+      (await app.inject({ method: "POST", url: "/api/action-items/no_such_item/dismiss" }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "POST", url: "/api/action-items/no_such_item/restore" }))
+        .statusCode,
+    ).toBe(404);
+  });
+});

@@ -153,3 +153,116 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
   };
   expect(tasks.tasks.map((task) => task.title)).not.toContain("own the pricing page rewrite");
 });
+
+test("tasks journey — dismissing an Action Item offers Undo and later restore", async ({
+  page,
+  request,
+}) => {
+  const fileName = "Tasks dismiss - 2026-08-20T13-00-00.000Z.md";
+  const seeded = await request.post("/api/test/meeting-debrief/seed", {
+    data: {
+      transcript: {
+        id: "drive_tasks_dismiss_r1",
+        source: {
+          sourceSystem: "drive",
+          externalFileId: "tasks-dismiss",
+          fileName,
+          sourceUrl: null,
+          checksum: "tasks-dismiss-checksum",
+          observedRevision: 1,
+          modifiedAt: "2026-08-20T13:05:00.000Z",
+        },
+        ingestedAt: "2026-08-31T12:00:00.000Z",
+        extractorVersion: 1,
+        normalizedText: [
+          "Dana: We decided to rotate the archive keys on Friday.",
+          "Dana: I will own the archive rotation.",
+        ].join("\n"),
+        meetingDate: "2026-08-20",
+        occurrence: null,
+        speakers: ["Dana"],
+        speakerIdentityMappings: [],
+        roster: [],
+      },
+    },
+  });
+  expect(seeded.ok(), `seed failed: ${seeded.status()}`).toBe(true);
+  const { runId } = (await seeded.json()) as { runId: string };
+
+  await expect
+    .poll(async () => {
+      const detail = await request.get(`/api/meeting-debrief/${encodeURIComponent(runId)}`);
+      return ((await detail.json()) as { status: string }).status;
+    })
+    .toBe("done");
+
+  const pendingRow = () =>
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "archive rotation" })
+      .filter({ has: page.getByRole("button", { name: "Dismiss" }) });
+  const dismissedRow = () =>
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "archive rotation" })
+      .filter({ has: page.getByRole("button", { name: "Restore to pending" }) });
+
+  await page.goto("/tasks");
+  await expect(pendingRow().first()).toBeVisible();
+
+  // Dismissing is immediate and local-only: no Task appears, and Undo does.
+  await pendingRow().first().getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await expect(pendingRow()).toHaveCount(0);
+  await expect(dismissedRow().first()).toBeVisible();
+
+  const tasks = (await (await request.get("/api/tasks")).json()) as {
+    tasks: Array<{ title: string }>;
+  };
+  expect(tasks.tasks.map((task) => task.title)).not.toContain("I will own the archive rotation.");
+  const dismissed = (await (await request.get("/api/action-items?state=dismissed")).json()) as {
+    items: Array<{ proposal: { title: string } }>;
+  };
+  expect(dismissed.items.map((item) => item.proposal.title)).toContain(
+    "I will own the archive rotation.",
+  );
+
+  await scanForViolations(page);
+
+  // Undo returns the proposal to pending.
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(pendingRow().first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+
+  // Dismissing again and restoring from the Dismissed history does the same.
+  await pendingRow().first().getByRole("button", { name: "Dismiss" }).click();
+  await expect(dismissedRow().first()).toBeVisible();
+  await dismissedRow().first().getByRole("button", { name: "Restore to pending" }).click();
+  await expect(pendingRow().first()).toBeVisible();
+
+  // A dismissal can also be restored from the Debrief's own history.
+  const queue = (await (
+    await request.get(`/api/action-items?debriefRunId=${encodeURIComponent(runId)}`)
+  ).json()) as { items: Array<{ id: string }> };
+  expect(queue.items).toHaveLength(1);
+  const dismissResponse = await request.post(`/api/action-items/${queue.items[0].id}/dismiss`);
+  expect(dismissResponse.ok()).toBe(true);
+
+  await page.goto(`/meeting-debrief/${runId}`);
+  await expect(page.getByRole("heading", { name: "Action Item history" })).toBeVisible();
+  const historyRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "archive rotation" })
+    .filter({ has: page.getByRole("button", { name: "Restore to pending" }) });
+  await expect(historyRow).toBeVisible();
+  await historyRow.getByRole("button", { name: "Restore to pending" }).click();
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "archive rotation" })
+      .filter({ has: page.getByRole("link", { name: "Review in Tasks" }) }),
+  ).toBeVisible();
+
+  await page.goto("/tasks");
+  await expect(pendingRow().first()).toBeVisible();
+});

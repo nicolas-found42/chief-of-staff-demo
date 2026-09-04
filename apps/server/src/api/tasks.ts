@@ -46,6 +46,9 @@ const REFUSAL_STATUS: Record<TaskValidationError["code"], number> = {
   "inbox-is-permanent": 409,
   "task-not-in-trash": 409,
   "task-already-linked": 409,
+  "action-item-not-found": 404,
+  "action-item-already-promoted": 409,
+  "action-item-dismissed": 409,
   /* 428: the request is well-formed and the Task is deletable — what is
      missing is the person saying so. */
   "confirmation-required": 428,
@@ -374,6 +377,42 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
         );
         reply.code(result.created ? 201 : 200);
         return { task: result.task, actionItem: result.actionItem };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /**
+   * Dismiss one pending Action Item (issue #179). Immediate and local-only:
+   * no Task is created and no provider is reached. Idempotent, so a repeated
+   * Dismiss answers with the same dismissed record. A promoted Action Item
+   * cannot be dismissed.
+   */
+  app.post(
+    "/api/action-items/:actionItemId/dismiss",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { actionItemId } = request.params as { actionItemId: string };
+      try {
+        return { actionItem: ctx.actionItems.dismiss(actionItemId) };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /**
+   * Restore one dismissed Action Item to pending (issue #179). This is both
+   * the temporary Undo after a dismissal and the later restore from Debrief
+   * history: identity, source, revision and proposal are kept, only the
+   * decision is cleared. Idempotent while pending; promoted stays promoted.
+   */
+  app.post(
+    "/api/action-items/:actionItemId/restore",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { actionItemId } = request.params as { actionItemId: string };
+      try {
+        return { actionItem: ctx.actionItems.restore(actionItemId) };
       } catch (error) {
         return refuse(reply, error);
       }

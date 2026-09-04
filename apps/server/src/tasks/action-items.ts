@@ -6,6 +6,7 @@ import type {
   TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
 import type { TaskStore } from "./store.js";
+import { TaskValidationError } from "./tasks.js";
 
 /** One extraction's proposed commitments, as the Meeting Debrief hands them over. */
 export interface ActionItemMaterialization {
@@ -159,6 +160,66 @@ export class WorkspaceActionItems {
       promotedTaskId: taskId,
       updatedAt: at,
       decidedAt: at,
+    };
+    this.store.writeActionItems(stored.map((item) => (item.id === actionItemId ? next : item)));
+    return next;
+  }
+
+  /**
+   * Dismiss one pending Action Item (issue #179). Immediate and local-only:
+   * no Task is created and no provider is reached — the proposal simply stops
+   * being pending. Idempotent, so a double-clicked Dismiss is the same answer
+   * rather than a second decision. A promoted Action Item is history and
+   * cannot be dismissed.
+   */
+  dismiss(actionItemId: string): ActionItem {
+    return this.decide(
+      actionItemId,
+      "dismissed",
+      "That Action Item was already promoted and cannot be dismissed.",
+    );
+  }
+
+  /**
+   * Return one dismissed Action Item to pending (issue #179). This is both the
+   * temporary Undo after a dismissal and the later restore from Debrief
+   * history: the record keeps its identity, source, revision and proposal, and
+   * only the decision is cleared. Idempotent while pending; a promoted Action
+   * Item cannot be unpromoted.
+   */
+  restore(actionItemId: string): ActionItem {
+    return this.decide(
+      actionItemId,
+      "pending",
+      "That Action Item was already promoted and cannot be restored to pending.",
+    );
+  }
+
+  /**
+   * Move one Action Item between the two undecided states. Dismissal records
+   * the decision time; restoration clears it. Already there is the same answer
+   * rather than a second decision, and a promoted Action Item is history that
+   * neither direction may rewrite.
+   */
+  private decide(actionItemId: string, to: "pending" | "dismissed", refused: string): ActionItem {
+    const stored = this.store.readActionItems();
+    const current = stored.find((item) => item.id === actionItemId);
+    if (!current) {
+      throw new TaskValidationError(
+        "action-item-not-found",
+        `No Action Item with id ${actionItemId}`,
+      );
+    }
+    if (current.state === to) return current;
+    if (current.state === "promoted") {
+      throw new TaskValidationError("action-item-already-promoted", refused);
+    }
+    const at = this.now().toISOString();
+    const next: ActionItem = {
+      ...current,
+      state: to,
+      updatedAt: at,
+      decidedAt: to === "dismissed" ? at : null,
     };
     this.store.writeActionItems(stored.map((item) => (item.id === actionItemId ? next : item)));
     return next;

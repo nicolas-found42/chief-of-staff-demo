@@ -339,12 +339,14 @@ function TaskRow({
 }
 
 /**
- * One pending Action Item, and the review that promotes it (issue #178).
+ * One pending Action Item, and the review that promotes or dismisses it
+ * (issues #178, #179).
  *
  * The panel is where a proposal becomes accepted work: every field is editable
  * before anything is created, and both buttons open the same panel — creating
  * a completed Task is the same decision about the same fields, made about work
- * the meeting already finished.
+ * the meeting already finished. Dismissal is the other decision: immediate and
+ * local-only, with an Undo on the page that dismissed it.
  */
 function ActionItemRow({
   item,
@@ -352,12 +354,14 @@ function ActionItemRow({
   profiles,
   busy,
   onPromote,
+  onDismiss,
 }: {
   item: ActionItem;
   lists: TaskList[];
   profiles: PersonProfile[];
   busy: boolean;
   onPromote: (values: TaskFormValues, completed: boolean) => Promise<boolean>;
+  onDismiss: () => Promise<void>;
 }) {
   const [reviewing, setReviewing] = useState<"open" | "completed" | null>(null);
   const [values, setValues] = useState<TaskFormValues>({
@@ -406,6 +410,14 @@ function ActionItemRow({
             onClick={() => setReviewing(reviewing === "completed" ? null : "completed")}
           >
             Create completed Task
+          </button>
+          <button
+            type="button"
+            className="action-button"
+            aria-disabled={busy}
+            onClick={() => void onDismiss()}
+          >
+            Dismiss
           </button>
         </div>
       )}
@@ -520,6 +532,10 @@ export function TasksPage({
   const [today, setToday] = useState("");
   const [lists, setLists] = useState<TaskList[]>([]);
   const [pending, setPending] = useState<ActionItem[]>([]);
+  const [dismissed, setDismissed] = useState<ActionItem[]>([]);
+  /** The most recently dismissed proposal, while its Undo stays available. */
+  const [lastDismissed, setLastDismissed] = useState<ActionItem | null>(null);
+  const undoRef = useRef<HTMLButtonElement>(null);
   const [destination, setDestination] = useState<GoogleTasksDestination | null>(null);
   const [googleLists, setGoogleLists] = useState<{ id: string; title: string }[]>([]);
   /* The filters, held as one value so the load below is a function of them
@@ -552,7 +568,7 @@ export function TasksPage({
 
   /** What the page shows: the filtered Tasks, Trash, and the Action Items. */
   const load = useCallback(async () => {
-    const [index, trashed, queue] = await Promise.all([
+    const [index, trashed, queue, dismissedQueue] = await Promise.all([
       client.tasks({
         ...(filters.search ? { search: filters.search } : {}),
         ...(filters.listId ? { listId: filters.listId } : {}),
@@ -561,7 +577,8 @@ export function TasksPage({
         ...(filters.linked ? { linked: filters.linked === "linked" } : {}),
       }),
       client.tasks({ trashed: true }),
-      client.actionItems(),
+      client.actionItems({ state: "pending" }),
+      client.actionItems({ state: "dismissed" }),
     ]);
     setTasks(index.tasks);
     setLists(index.lists);
@@ -569,6 +586,7 @@ export function TasksPage({
     setUnavailableSources(index.unavailableSources);
     setTrash(trashed.tasks);
     setPending(queue.items);
+    setDismissed(dismissedQueue.items);
   }, [client, filters]);
 
   useEffect(() => {
@@ -595,6 +613,12 @@ export function TasksPage({
       live = false;
     };
   }, [client, people, load]);
+
+  /* Dismissal moves its row out of the pending queue, so focus moves to the
+     Undo that reverses it — the one control that can bring the row back. */
+  useEffect(() => {
+    if (lastDismissed !== null) undoRef.current?.focus();
+  }, [lastDismissed]);
 
   /* A saved edit can move a Task into a different due-date group, which
      re-parents its row and replaces the button that was focused. Focus is
@@ -630,6 +654,18 @@ export function TasksPage({
     },
     [busy, load],
   );
+
+  /**
+   * Restore one dismissed Action Item to pending, whether from the temporary
+   * Undo or from the Dismissed history. A spent Undo goes away with the item
+   * it remembered.
+   */
+  const restoreItem = (item: ActionItem): Promise<void> =>
+    act(`Restored ${item.proposal.title}.`, () => client.restoreActionItem(item.id)).then(
+      (restored) => {
+        if (restored && lastDismissed?.id === item.id) setLastDismissed(null);
+      },
+    );
 
   async function quickAdd(event: React.FormEvent) {
     event.preventDefault();
@@ -876,6 +912,20 @@ export function TasksPage({
         accepted.
       </p>
       {!loading && pending.length === 0 && <p className="muted">No Action Items are waiting.</p>}
+      {lastDismissed && (
+        <p className="card" role="status">
+          Dismissed {lastDismissed.proposal.title}.{" "}
+          <button
+            ref={undoRef}
+            type="button"
+            className="action-button"
+            aria-disabled={busy}
+            onClick={() => void restoreItem(lastDismissed)}
+          >
+            Undo
+          </button>
+        </p>
+      )}
       <ul className="card-list">
         {pending.map((item) => (
           <ActionItemRow
@@ -897,9 +947,48 @@ export function TasksPage({
                 }),
               )
             }
+            onDismiss={() =>
+              act(`Dismissed ${item.proposal.title}.`, () =>
+                client.dismissActionItem(item.id),
+              ).then((dismissedOk) => {
+                if (dismissedOk) setLastDismissed(item);
+              })
+            }
           />
         ))}
       </ul>
+      {dismissed.length > 0 && (
+        <section aria-labelledby="dismissed-action-items-heading">
+          <h3 id="dismissed-action-items-heading">Dismissed</h3>
+          <p className="muted">
+            Proposals the owner set aside. Nothing here became a Task, and restoring returns one to
+            pending.
+          </p>
+          <ul className="card-list">
+            {dismissed.map((item) => (
+              <li key={item.id} className="card">
+                <h3>{item.proposal.title}</h3>
+                <p className="muted">
+                  Dismissed ·{" "}
+                  <Link to={`/meeting-debrief/${encodeURIComponent(item.source.debriefRunId)}`}>
+                    Open full Debrief
+                  </Link>
+                </p>
+                <div className="toolbar">
+                  <button
+                    type="button"
+                    className="action-button"
+                    aria-disabled={busy}
+                    onClick={() => void restoreItem(item)}
+                  >
+                    Restore to pending
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <h2>Trash</h2>
       <p className="muted">

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { MeetingDebriefDetail, MeetingDebriefField } from "@chief-of-staff-demo/shared";
+import type {
+  ActionItem,
+  MeetingDebriefDetail,
+  MeetingDebriefField,
+} from "@chief-of-staff-demo/shared";
 import { MEETING_DEBRIEF_FIELDS } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { peopleApi } from "../clients/people";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
+import { tasksApi, type TasksClient } from "../clients/tasks";
 import { formatMeetingTime, statusLabel } from "../display";
 import { meetingDebriefDetailName } from "../modules/meeting-debrief/naming";
 import { usePageFocus } from "../usePageFocus";
@@ -649,6 +654,94 @@ function ReviewSection({
 }
 
 /**
+ * The durable Action Items this Debrief proposed (issue #179): the Debrief's
+ * own history of what was pending, promoted or dismissed. A dismissed proposal
+ * can be restored to pending here, long after the Undo on the Tasks page is
+ * gone; promotion itself stays on Tasks, where the review panel lives.
+ */
+function ActionItemHistorySection({
+  runId,
+  tasksClient,
+}: {
+  runId: string;
+  tasksClient: Pick<TasksClient, "actionItems" | "restoreActionItem">;
+}) {
+  const [items, setItems] = useState<ActionItem[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setItems((await tasksClient.actionItems({ debriefRunId: runId })).items);
+    } catch {
+      /* History is secondary: the extraction above stays usable when it fails. */
+      setItems([]);
+    }
+  }, [tasksClient, runId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (items === null || items.length === 0) return null;
+  return (
+    <section aria-labelledby="debrief-action-item-history">
+      <h2 id="debrief-action-item-history">Action Item history</h2>
+      {failure && (
+        <p className="banner-error" role="alert">
+          {failure}
+        </p>
+      )}
+      <ul>
+        {items.map((item) => (
+          <li key={item.id}>
+            {item.proposal.title}{" "}
+            {item.state === "dismissed" && (
+              <span className="status-badge status-attention"> Dismissed</span>
+            )}
+            {item.state === "promoted" && <span className="status-badge status-ok"> Promoted</span>}
+            {item.state === "pending" && <span className="muted"> (pending review)</span>}
+            {item.state === "promoted" && item.promotedTaskId && (
+              <>
+                {" "}
+                <Link to={`/tasks#task-${item.promotedTaskId}`}>Open the Task</Link>
+              </>
+            )}
+            {item.state === "pending" && (
+              <>
+                {" "}
+                <Link to="/tasks">Review in Tasks</Link>
+              </>
+            )}
+            {item.state === "dismissed" && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  aria-disabled={busy}
+                  onClick={() => {
+                    if (busy) return;
+                    setBusy(true);
+                    setFailure(null);
+                    tasksClient
+                      .restoreActionItem(item.id)
+                      .then(() => load())
+                      .catch((err: unknown) => setFailure(errorMessage(err)))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Restore to pending
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
  * When the meeting was, and — only when there is something to say — what the
  * Debrief is still doing. A finished Debrief says nothing here: the engine's
  * own words for a Run ("Waiting", "Completed") described the Run, not the
@@ -673,7 +766,13 @@ function StatusLine({ detail }: { detail: MeetingDebriefDetail }) {
   );
 }
 
-export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: MeetingsClient }) {
+export function MeetingDebriefDetailPage({
+  client = meetingsApi,
+  tasksClient = tasksApi,
+}: {
+  client?: MeetingsClient;
+  tasksClient?: Pick<TasksClient, "actionItems" | "restoreActionItem">;
+}) {
   const { runId } = useParams<{ runId: string }>();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [detail, setDetail] = useState<MeetingDebriefDetail | null>(null);
@@ -761,6 +860,7 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
             client={client}
           />
           <ReviewSection detail={detail} actions={actions} client={client} />
+          <ActionItemHistorySection runId={detail.runId} tasksClient={tasksClient} />
           <IdentitySection detail={detail} />
         </>
       )}
