@@ -15,12 +15,15 @@ import type { WorkspaceMeetingJoin } from "../meetings/join.js";
 import { registerMeetingsApi } from "./meetings.js";
 import { registerPeopleApi } from "./people.js";
 import { registerContentEngineApi } from "./content-engine.js";
+import { registerTasksApi } from "./tasks.js";
 import { registerOnboardingApi } from "./onboarding.js";
 import type { WorkspaceMeetings } from "../meetings/store.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import type { WorkspaceContentProjects } from "../content-projects/projects.js";
 import type { PersonProfileResolver } from "../person-profile/resolver.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
+import type { WorkspaceTasks } from "../tasks/tasks.js";
+import type { WorkspaceActionItems } from "../tasks/action-items.js";
 
 export interface ApiContext {
   runs: Runs;
@@ -44,6 +47,10 @@ export interface ApiContext {
   onboarding: OwnerOnboarding;
   /** The Content Engine product area's Workspace-owned interface (spec #147). */
   contentProjects: WorkspaceContentProjects;
+  /** The Tasks product area's Workspace-owned interface (ADR-0052). */
+  tasks: WorkspaceTasks;
+  /** The Action Items a Meeting Debrief proposed, which Tasks presents (issue #177). */
+  actionItems: WorkspaceActionItems;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void | Promise<void>;
@@ -250,4 +257,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
      a Workspace resource rather than a hosted Module. */
   registerOnboardingApi(app, { onboarding: ctx.onboarding });
   registerContentEngineApi(app, { contentProjects: ctx.contentProjects });
+  /* Tasks (ADR-0052): the fifth product area, a Workspace resource like Person
+     Profiles rather than a hosted Module. Its routes reach no provider at all. */
+  registerTasksApi(app, { tasks: ctx.tasks, actionItems: ctx.actionItems });
 }

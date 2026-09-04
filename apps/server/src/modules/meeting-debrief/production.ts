@@ -3,7 +3,7 @@ import type { Runs } from "../../runs.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
-import { MeetingDebriefHost } from "./host.js";
+import { MeetingDebriefHost, type MeetingDebriefHostDeps } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
 import { googleDebriefOutputs } from "./googleOutputs.js";
 import type { GoogleConnection } from "../../google/connection.js";
@@ -28,6 +28,12 @@ export interface MeetingDebriefProductionRuntimeOptions {
   google?: GoogleConnection;
   /** The Tasks list owner Tasks are filed under. */
   tasklistName?: () => string;
+  /**
+   * Where a successful extraction's proposed commitments become durable
+   * Workspace Action Items (issue #177). The Debrief produces them; the Tasks
+   * product owns them.
+   */
+  materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
   /**
    * Staleness hand-off to the Brief side (issue #162): fired after a review
    * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
@@ -84,6 +90,9 @@ export function createMeetingDebriefProductionRuntime(
             options.tasklistName?.() ?? "Meeting Debrief",
           ),
         }
+      : {}),
+    ...(options.materializeActionItems
+      ? { materializeActionItems: options.materializeActionItems }
       : {}),
     ...(options.onActionItemsChanged ? { onActionItemsChanged: options.onActionItemsChanged } : {}),
     ...(options.log ? { log: options.log } : {}),

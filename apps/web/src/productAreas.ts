@@ -1,10 +1,11 @@
 /**
- * The four top-level product areas (spec: Navigation and onboarding #1;
+ * The five top-level product areas (spec: Navigation and onboarding #1;
  * Implementation Decision 1), as an explicit list rather than something
- * derived from the Module registry (ADR-0043): Person Profiles is a Workspace
- * resource with its own product surface, not a Module, and Meeting Wizard
- * presents two Modules under one tab. The header nav and Home's cards both
- * render from here, so the two cannot disagree about what exists.
+ * derived from the Module registry (ADR-0043, ADR-0052): Person Profiles and
+ * Tasks are Workspace resources with their own product surfaces, not Modules,
+ * and Meeting Wizard presents two Modules under one tab. The header nav and
+ * Home's cards both render from here, so the two cannot disagree about what
+ * exists.
  */
 export interface ProductArea {
   /** Stable identity. Survives a route rename; never derived from `path`. */
@@ -52,6 +53,13 @@ export const PRODUCT_AREAS: readonly ProductArea[] = [
     label: "Meeting Wizard",
     description: "Prospective Brief and retrospective Debrief, presented as sibling workflows.",
     alsoOwns: ["/meeting-debrief"],
+  },
+  {
+    id: "tasks",
+    path: "/tasks",
+    label: "Tasks",
+    description:
+      "The canonical record of accepted work, and the Action Items a Meeting Debrief proposed.",
   },
 ];
 

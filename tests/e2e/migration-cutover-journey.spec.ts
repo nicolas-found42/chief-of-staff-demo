@@ -63,11 +63,12 @@ const SHARED_ORIGIN = serverOrigin;
 const SECOND_PORT = 4410;
 const SECOND_ORIGIN = `http://127.0.0.1:${SECOND_PORT}`;
 
-const FOUR_AREAS = [
+const PRODUCT_AREAS = [
   ["Content Engine", "/content-scout"],
   ["Content Research", "/content-research"],
   ["Person Profiles", "/people"],
   ["Meeting Wizard", "/meetings"],
+  ["Tasks", "/tasks"],
 ] as const;
 
 let secondServer: ChildProcess | null = null;
@@ -352,7 +353,7 @@ test("migration cutover journey — gate holds, Cancel touches nothing, the phra
 
   // AC 8: the product is live again the moment the cutover completed.
   const productsNav = page.locator('nav[aria-label="Products"]');
-  for (const [name, href] of FOUR_AREAS) {
+  for (const [name, href] of PRODUCT_AREAS) {
     await expect(
       productsNav.getByRole("link", { name }),
       `${name} must be a nav area again`,

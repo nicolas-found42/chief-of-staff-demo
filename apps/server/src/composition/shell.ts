@@ -24,6 +24,9 @@ import { convertToText } from "../text/convert.js";
 import { conversionStageFailure } from "../text/failure.js";
 
 import { OwnerOnboarding } from "../onboarding/owner.js";
+import { TaskStore } from "../tasks/store.js";
+import { WorkspaceTasks } from "../tasks/tasks.js";
+import { WorkspaceActionItems } from "../tasks/action-items.js";
 import type { HostedModule } from "../engine/host.js";
 import { makeCompleteJson } from "../llm/providers.js";
 import { openGoogleConnection } from "../google/connection.js";
@@ -169,6 +172,8 @@ interface ShellWorkspace {
   onboarding: OwnerOnboarding;
   brandProfiles: WorkspaceBrandProfileStore;
   contentProjects: WorkspaceContentProjects;
+  tasks: WorkspaceTasks;
+  actionItems: WorkspaceActionItems;
   transcripts: TranscriptCatalogStore;
   transcriptIdentity: TranscriptIdentityStore;
   transcriptRelevance: TranscriptRelevanceService;
@@ -258,6 +263,24 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      builds its own reader over the same file; the store keeps no memory, so
      the two never hold competing caches. */
   const meetings = new WorkspaceMeetings(workspaceDir, () => new Date());
+  /* Tasks (ADR-0052, ADR-0058): the canonical record of accepted work, and the
+     Action Items a Meeting Debrief proposes. One file-backed store under both,
+     so a Debrief materializing proposals and an owner completing a Task write
+     the same Workspace directory rather than two copies of it. Responsibility
+     resolves against canonical identity: the workspace owner, or a Person
+     Profile that is neither archived nor merged away. */
+  const taskStore = new TaskStore(workspaceDir);
+  const tasks = new WorkspaceTasks({
+    store: taskStore,
+    isConfirmedPerson: (profileId) => {
+      const profile = peopleProfiles.get(profileId);
+      return profile !== null && profile.archivedAt === null && profile.mergedInto === undefined;
+    },
+  });
+  const actionItems = new WorkspaceActionItems({
+    store: taskStore,
+    ownerProfileId: () => ownerOnboarding.confirmed()?.profileId ?? null,
+  });
   /* The public-web identity resolver, wired here for the first time: the seam
      and its source existed but nothing in production built them, so a Profile
      could only ever start from a name a Module already held. The typed
@@ -577,6 +600,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           workspaceDir,
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
           onActionItemsChanged: notifyBriefActionItemsChanged,
+          materializeActionItems: (handover) => actionItems.materialize(handover),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
       : null;
@@ -609,6 +633,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         return { provider: current.provider, model: current.model };
       },
       onActionItemsChanged: notifyBriefActionItemsChanged,
+      /* Issue #177: a successful extraction's proposals become durable
+         Workspace Action Items. The Debrief produces them; Tasks owns them. */
+      materializeActionItems: (handover) => actionItems.materialize(handover),
       log: (message) => console.log(`[meeting-debrief] ${message}`),
     }).host;
 
@@ -700,6 +727,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     meetingJoin,
     onboarding: ownerOnboarding,
     contentProjects,
+    tasks,
+    actionItems,
     onConfigChanged: async () => {
       meetingBriefProduction?.invalidateGoogleIdentity();
       await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
@@ -884,6 +913,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       onboarding: ownerOnboarding,
       brandProfiles,
       contentProjects,
+      tasks,
+      actionItems,
       transcripts: transcriptCatalogStore,
       transcriptIdentity: transcriptIdentityStore,
       transcriptRelevance,

@@ -57,23 +57,24 @@ test("every retired product route falls to the Shell's normal not-found", async 
   }
 });
 
-test("the complete product surface is reachable — four areas, Shell Runs, Settings", async ({
+test("the complete product surface is reachable — five areas, Shell Runs, Settings", async ({
   page,
 }) => {
   await page.goto("/");
 
   // The nav bars are the explicit product map (ADR-0043: "Product navigation
   // is therefore explicit rather than derived from the Module registry"):
-  // exactly four top-level product areas, then Settings. There is no Modules
+  // exactly five top-level product areas, then Settings. There is no Modules
   // bar any more — the registry is not a navigation contract.
   const productsNav = page.locator('nav[aria-label="Products"]');
-  await expect(productsNav.getByRole("link")).toHaveCount(4);
+  await expect(productsNav.getByRole("link")).toHaveCount(5);
   await expect(page.locator('nav[aria-label="Modules"]')).toHaveCount(0);
   for (const [name, href] of [
     ["Content Engine", "/content-scout"],
     ["Content Research", "/content-research"],
     ["Person Profiles", "/people"],
     ["Meeting Wizard", "/meetings"],
+    ["Tasks", "/tasks"],
   ] as const) {
     await expect(
       productsNav.getByRole("link", { name }),
@@ -92,6 +93,7 @@ test("the complete product surface is reachable — four areas, Shell Runs, Sett
     ["/content-research", "Content Research — what is resonating, for whom, and why"],
     ["/meetings", "Meeting Wizard"],
     ["/people", "Person Profiles"],
+    ["/tasks", "Tasks"],
     ["/runs", "All runs"],
     ["/settings", "Settings"],
   ] as const) {

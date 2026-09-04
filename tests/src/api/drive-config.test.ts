@@ -59,9 +59,11 @@ beforeEach(async () => {
       attachMeeting: async () => undefined,
     }),
     onboarding: ownerOnboarding,
-    /* No Content Engine route is exercised here, so the interface behind
-       them is never reached. */
+    /* No Content Engine or Tasks route is exercised here, so the interfaces
+       behind them are never reached. */
     contentProjects: fromPartial({}),
+    tasks: fromPartial({}),
+    actionItems: fromPartial({}),
     onConfigChanged: () => {},
   });
   await app.ready();

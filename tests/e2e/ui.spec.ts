@@ -262,11 +262,12 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
   const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
-  await expect(tiles).toHaveCount(4);
+  await expect(tiles).toHaveCount(5);
   await expect(tiles.filter({ hasText: "Content Engine" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Content Research" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Person Profiles" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Meeting Wizard" })).not.toContainText("Planned");
+  await expect(tiles.filter({ hasText: "Tasks" })).not.toContainText("Planned");
 
   /* The card links bind to the product grid, not all of main: a finished
      scheduled Run can land a feed link naming the same area ("Content
@@ -277,21 +278,23 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
     ["Content Research", "/content-research"],
     ["Person Profiles", "/people"],
     ["Meeting Wizard", "/meetings"],
+    ["Tasks", "/tasks"],
   ] as const) {
     await expect(areaTiles.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }
 
-  // The header nav carries exactly the four product areas (spec: Navigation
-  // and onboarding #1; ADR-0043) — explicit, never derived from the Module
-  // registry — so there is no Modules bar to enumerate.
+  // The header nav carries exactly the five product areas (spec: Navigation
+  // and onboarding #1; ADR-0043, ADR-0052) — explicit, never derived from the
+  // Module registry — so there is no Modules bar to enumerate.
   const productsNav = page.locator('.app-header nav[aria-label="Products"]');
-  await expect(productsNav.getByRole("link")).toHaveCount(4);
+  await expect(productsNav.getByRole("link")).toHaveCount(5);
   await expect(page.locator('.app-header nav[aria-label="Modules"]')).toHaveCount(0);
   for (const [label, path] of [
     ["Content Engine", "/content-scout"],
     ["Content Research", "/content-research"],
     ["Person Profiles", "/people"],
     ["Meeting Wizard", "/meetings"],
+    ["Tasks", "/tasks"],
   ] as const) {
     await expect(productsNav.getByRole("link", { name: label })).toHaveAttribute("href", path);
   }

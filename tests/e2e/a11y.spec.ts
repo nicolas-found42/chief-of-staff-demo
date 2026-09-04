@@ -453,13 +453,15 @@ test("a direct load of a run leaves the header in front of the user", async ({ p
 
   // Everything the old behaviour skipped past, still in front of the user —
   // starting with the wordmark, which is the link to Home.
-  // The bar lists the four product areas explicitly (ADR-0043), then Settings.
+  // The bar lists the five product areas explicitly (ADR-0043, ADR-0052), then
+  // Settings.
   for (const name of [
     "Found42 — Chief of Staff",
     "Content Engine",
     "Content Research",
     "Person Profiles",
     "Meeting Wizard",
+    "Tasks",
     "Settings",
   ]) {
     await page.keyboard.press("Tab");

@@ -29,7 +29,9 @@ _Avoid_: Tab, section, module (a product area is not one)
 The product area in which the workspace owner reviews Action Items and manages Tasks from every
 source, including Tasks created manually. It is not owned by Meeting Wizard because a Task need not
 come from a Meeting.
-_Status_: planned (ADR-0052)
+_Status_: live at `/tasks` — manual capture, editing, completion, Task Lists, and the pending
+Action Item queue (issues #173, #174, #177). Trash, grouping and filters, promotion, and External
+Task Links are planned (ADR-0052).
 _Avoid_: Task dashboard, Google Tasks
 
 **Task**:
@@ -492,8 +494,9 @@ The Module that reads a mined transcript from the Transcript Catalog and produce
 for the workspace owner. It is named for the role it plays rather than for the one artifact it
 produces today, so further retrospective work can join it without renaming the role: the role names
 the Run, and the hosted `meeting-debrief` Module is the artifact host of that Run's Meeting Debrief.
-_Status_: retrospective extraction live (issue #139); durable Action Items and independent
-email-draft creation planned (ADR-0053, ADR-0061)
+_Status_: retrospective extraction live (issue #139); a successful extraction now materializes
+durable Action Items the Workspace owns (issue #177). Independent email-draft creation is planned
+(ADR-0053, ADR-0061)
 _Avoid_: Executive Coach (the Relay original's framing, and the voice the model is cast in, not the
 Module), Meeting Debrief Generator, Coach Module
 

@@ -20,6 +20,7 @@ import { PersonProfileDetailPage } from "./pages/PersonProfileDetailPage";
 import { TranscriptReviewPage } from "./pages/TranscriptReviewPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TasksPage } from "./pages/TasksPage";
 import { YoutubePage } from "./pages/YoutubePage";
 import { migrationApi, type MigrationStatus } from "./clients/workspace";
 import { isCurrentArea, PRODUCT_AREAS } from "./productAreas";
@@ -157,10 +158,11 @@ export function App() {
         {(!compactNav || navOpen) && (
           <div className="app-nav" id="app-nav">
             {/* Product areas are explicit (spec: Navigation and onboarding #1;
-                ADR-0043), not derived from the Module registry: Person Profiles
-                is a Workspace resource with its own surface, not a Module, and
-                the four areas name ownership, not backend registration. Nav and
-                Home's cards read the same list, so the two cannot disagree. */}
+                ADR-0043, ADR-0052), not derived from the Module registry:
+                Person Profiles and Tasks are Workspace resources with their own
+                surfaces, not Modules, and the five areas name ownership, not
+                backend registration. Nav and Home's cards read the same list,
+                so the two cannot disagree. */}
             {/* A plain Link with the current state stated here, rather than a
                 NavLink: a product area owns routes outside its own path prefix
                 — Meeting Wizard presents the Debrief journey at
@@ -241,6 +243,9 @@ export function App() {
           <Route path="/people/new" element={<NewPersonProfilePage />} />
           <Route path="/people/:profileId" element={<PersonProfileDetailPage />} />
           <Route path="/people/review" element={<TranscriptReviewPage />} />
+          {/* Tasks (ADR-0052): the canonical record of accepted work, and the
+              queue of Action Items a Meeting Debrief proposed. */}
+          <Route path="/tasks" element={<TasksPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>

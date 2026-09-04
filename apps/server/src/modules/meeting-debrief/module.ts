@@ -82,6 +82,24 @@ export interface MeetingDebriefModuleDeps {
    * outward — the Module has no other way to reach Gmail or Tasks.
    */
   outputs?: DebriefOutputsDeps;
+  /**
+   * Where a successful extraction's proposed commitments become durable
+   * Action Items (issue #177). The Debrief produces them and owns none of
+   * them: this is a hand-over to the Workspace, and it is part of the extract
+   * Stage, so a Run that reports done has materialized what it extracted.
+   * Absent — as in an extraction-only harness — nothing is materialized and
+   * the Run still finishes.
+   */
+  materializeActionItems?: (input: DebriefActionItemHandover) => void;
+}
+
+/** What the Debrief hands the Workspace after one successful extraction. */
+interface DebriefActionItemHandover {
+  debriefRunId: string;
+  transcriptId: string;
+  /** The Meeting the Transcript belongs to; null until one is placed. */
+  meetingId: string | null;
+  actionItems: MeetingDebriefExtraction["actionItems"];
 }
 
 /**
@@ -339,6 +357,17 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         const debrief = await extract(ctx, record);
         const merged = mergeRegeneratedField(currentDebrief(ctx), request.field, debrief);
         storeResult(ctx, merged, transcriptId);
+        /* A regeneration is an extraction, so its proposals reach the queue
+           the same way (issue #177). Materialization is idempotent and adds
+           only what is new, so a decision already made on an unchanged
+           proposal survives — a regenerated Debrief showing a commitment the
+           queue never received would be the worse outcome. */
+        deps.materializeActionItems?.({
+          debriefRunId: ctx.runId,
+          transcriptId,
+          meetingId: record.meetingId,
+          actionItems: merged.actionItems,
+        });
         const next: MeetingDebriefReviewState = {
           ...state,
           review:
@@ -554,7 +583,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         return { status: "skipped", reason: "transcript_not_in_catalog" };
       }
 
-      // extract — the structured retrospective, from the stored artifact.
+      // extract — the structured retrospective, from the stored artifact,
+      // then the durable Action Items it proposed. Both inside the Stage: a
+      // Run reports done once its proposals exist as Workspace records, not
+      // once its text does (issue #177).
       await ctx.stage("extract", async () => {
         const debrief = await extract(ctx, record);
         storeResult(ctx, debrief, transcriptId);
@@ -562,6 +594,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           decisions: debrief.decisions.length,
           actionItems: debrief.actionItems.length,
           openQuestions: debrief.openQuestions.length,
+        });
+        deps.materializeActionItems?.({
+          debriefRunId: ctx.runId,
+          transcriptId,
+          meetingId: record.meetingId,
+          actionItems: debrief.actionItems,
         });
         return debrief;
       });

@@ -10,7 +10,7 @@ import type { Runs } from "../../runs.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
 import { MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
-import { MeetingDebriefHost } from "./host.js";
+import { MeetingDebriefHost, type MeetingDebriefHostDeps } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
 import { PersonProfileStore } from "../../person-profile/store.js";
 import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
@@ -25,6 +25,8 @@ export interface MeetingDebriefTestRuntimeOptions {
    * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
    */
   onActionItemsChanged?: () => void;
+  /** Where extracted proposals become durable Workspace Action Items (issue #177). */
+  materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
   log?: (message: string) => void;
 }
 
@@ -182,6 +184,9 @@ export function createMeetingDebriefTestRuntime(
     now: () => new Date(nowMs),
     profiles: workspaceProfileDirectory(people),
     ...(options.ownerEmail ? { ownerEmail: options.ownerEmail } : {}),
+    ...(options.materializeActionItems
+      ? { materializeActionItems: options.materializeActionItems }
+      : {}),
     ...(options.onActionItemsChanged ? { onActionItemsChanged: options.onActionItemsChanged } : {}),
     ...(options.log ? { log: options.log } : {}),
   });

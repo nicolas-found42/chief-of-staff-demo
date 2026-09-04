@@ -68,6 +68,8 @@ export interface MeetingDebriefHostDeps {
   ownerEmail?: () => string | null;
   /** The outward-write surface terminal approval reaches (issue #141). */
   outputs?: MeetingDebriefModuleDeps["outputs"];
+  /** Where extracted proposals become durable Action Items (issue #177). */
+  materializeActionItems?: MeetingDebriefModuleDeps["materializeActionItems"];
   /**
    * Staleness hand-off to the Brief side (issue #162): fired after a review
    * action-item mutation (done/dismissed) persists, so the Daily/Weekly
@@ -191,6 +193,9 @@ export class MeetingDebriefHost implements HostedModule {
         ...(deps.getLlmInfo ? { getLlmInfo: deps.getLlmInfo } : {}),
         gate: this.gate,
         ...(deps.outputs ? { outputs: deps.outputs } : {}),
+        ...(deps.materializeActionItems
+          ? { materializeActionItems: deps.materializeActionItems }
+          : {}),
         ...(deps.now ? { now: deps.now } : {}),
       }),
       log: deps.log,
