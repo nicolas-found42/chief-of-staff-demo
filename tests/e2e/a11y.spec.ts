@@ -42,17 +42,6 @@ async function openRun(page: Page, scenario?: "ordinary-failure"): Promise<void>
   });
 }
 
-/** Reports the element that currently holds focus, or a marker if it was dropped. */
-function activeDescription(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const el = document.activeElement;
-    if (!el || el === document.body) {
-      return "<body — focus lost>";
-    }
-    return `${el.tagName.toLowerCase()}:${el.textContent.trim().slice(0, 24)}`;
-  });
-}
-
 /**
  * Rendered contrast for every control currently marked busy: label against its
  * own fill, border and focus ring against whatever paints behind it. axe cannot
@@ -352,10 +341,13 @@ test("retrying a run hands focus to the heading when the button unmounts", async
   await retry.focus();
   await retry.click();
 
-  // The fixture has no retry plan, so the banner survives and focus should
-  // still be on the button it started on.
-  await expect(retry).toBeFocused();
-  expect(await activeDescription(page)).not.toBe("<body — focus lost>");
+  // A seeded run's Module is not hosted, so the retry is refused and the
+  // error state replaces the run view — the button unmounts. The heading
+  // must take focus so a keyboard user is never dropped on <body>
+  // (WCAG 2.4.3). Await the refusal banner first: the replacement, not the
+  // click, is the event this test is written against.
+  await expect(page.getByRole("alert")).toContainText(/not retryable/i);
+  await expect(page.getByRole("heading", { name: "Run", exact: true })).toBeFocused();
 });
 
 test("focus is visible wherever it lands, including the run heading", async ({ page }) => {
