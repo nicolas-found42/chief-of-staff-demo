@@ -9,5 +9,11 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["golden.mts", "lint-golden.mts", "run-debrief-eval.mts", "score-debrief-eval.mts"]
+  "include": [
+    "golden.mts",
+    "lint-golden.mts",
+    "run-debrief-eval-all.mts",
+    "run-debrief-eval.mts",
+    "score-debrief-eval.mts"
+  ]
 }

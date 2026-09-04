@@ -251,6 +251,31 @@ transcripts are private and Source Items are untrusted evidence, so no field of 
 text.
 _Avoid_: LLM error, provider error, extraction error (that is the Run event, not the failure)
 
+**Prompt Eval Gate**:
+The check that a prompt still earns its result. The Gate Model answers every fixture transcript,
+and each answer is matched against that transcript's Golden by intent rather than by wording. A
+Golden the Gate Model cannot meet is evidence that the prompt needs work, never a reason to loosen
+the Golden.
+_Status_: live for the Executive Assistant's extraction prompt, the only prompt with Goldens; it
+spends API budget and so sits outside `npm run check` (docs/agents/verification.md)
+_Avoid_: Eval harness, golden test, regression suite, benchmark, LLM-as-judge
+
+**Golden**:
+The hand-written expectation for one transcript: the decisions, action items and open questions a
+careful reader takes out of that meeting, the work the meeting already finished and must not
+propose again, and the owners and dates it will accept. A person writes one by reading the
+transcript, never by copying a model's answer.
+_Status_: 20, one per fixture transcript. The corpus stays out of git because the transcripts name
+real people and this repo is public; its format and authoring method sit beside it in
+`GOLDEN_FORMAT.md`.
+_Avoid_: Fixture, expected output, ground truth, snapshot, test case
+
+**Gate Model**:
+The one model the Prompt Eval Gate holds fixed, so a change in the score is a change in the prompt
+and not in the model. Other models may answer the same Goldens as data points, never as the gate.
+_Status_: `upstage/solar-pro4`
+_Avoid_: Eval model, judge (the Gate Model is the model under test, not one grading another)
+
 **Google connection**:
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —

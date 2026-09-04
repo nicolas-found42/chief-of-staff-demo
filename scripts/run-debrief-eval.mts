@@ -1,5 +1,11 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { buildDebriefMessages } from "../apps/server/src/modules/meeting-debrief/extraction.js";
+import {
+  actionItemEvidence,
+  buildDebriefMessages,
+  clampDueDates,
+  dropActionItemEvidence,
+  stripFulfilledActionItems,
+} from "../apps/server/src/modules/meeting-debrief/extraction.js";
 import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
 import { MeetingDebriefExtractionSchema } from "../packages/shared/src/meeting-debrief.js";
 import type { TranscriptRecord } from "../packages/shared/src/transcript.js";
@@ -11,6 +17,10 @@ if (files.length === 0) {
   process.exit(1);
 }
 const model = process.argv[2];
+if (!model) {
+  console.error("usage: tsx scripts/run-debrief-eval.mts <model> <outdir> <files...>");
+  process.exit(1);
+}
 const apiKey = process.env.OPENROUTER_API_KEY;
 if (!apiKey) {
   console.error("OPENROUTER_API_KEY missing");
@@ -45,11 +55,36 @@ for (const file of files) {
       system: messages.system,
       user: messages.user,
       schema: messages.schema,
+      temperature: 0,
     });
     const ms = Date.now() - t0;
-    const parsed = MeetingDebriefExtractionSchema.safeParse(raw);
+    const checked = MeetingDebriefExtractionSchema.safeParse(dropActionItemEvidence(raw));
+    const parsed = checked.success
+      ? {
+          success: true as const,
+          data: stripFulfilledActionItems(
+            clampDueDates(checked.data, record),
+            actionItemEvidence(raw),
+            record,
+          ),
+        }
+      : checked;
     const outFile = `${OUT}/${name}.debrief.json`;
-    await writeFile(outFile, JSON.stringify({ model, ms, valid: parsed.success, raw }, null, 2));
+    await writeFile(
+      outFile,
+      JSON.stringify(
+        {
+          model,
+          ms,
+          valid: parsed.success,
+          /* What the production pipeline would store: post-clamp. */
+          raw: parsed.success ? parsed.data : raw,
+          modelRaw: raw,
+        },
+        null,
+        2,
+      ),
+    );
     if (!parsed.success) {
       console.log(
         `INVALID after ${ms}ms:`,

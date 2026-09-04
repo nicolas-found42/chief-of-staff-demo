@@ -7,7 +7,11 @@
  *
  * `--all` scores every golden in tests/fixtures/debrief-golden/ against
  * <runDir>/<transcript>.debrief.json (default runDir: /tmp/debrief-gate/solar)
- * in filename order and prints a pass/fail summary. It spends no API budget;
+ * in filename order and prints a pass/fail summary. The runner's
+ * <transcript>.error.json (every attempt failed) fails the golden with the
+ * recorded error, and takes precedence over a .debrief.json sitting beside it:
+ * a run removes the file its outcome did not write, so a debrief next to an
+ * error is a leftover from an earlier run. It spends no API budget;
  * produce runs with scripts/run-debrief-eval.mts. Either form accepts `--json`,
  * which prints one machine-readable report per run instead of the human log.
  *
@@ -19,7 +23,10 @@
  * — never write a bare one- or two-digit number as a keyword. One produced item
  * satisfies at most one golden item, in one bucket, so a vague title cannot
  * cover two expectations, and the per-item date and owner rules run against
- * that one assigned item.
+ * that one assigned item. Which item that is is not left to the draw: where
+ * two expectations match the same titles and differ only by owner, the
+ * assignment is repaired toward the owners the golden names, never changing
+ * how much the run covers.
  *
  * Hard rules are absolute — a wrong date, a wrong owner, a must-not-appear item,
  * more unexplained produced items than the bucket's ceiling, a decision that
@@ -82,6 +89,12 @@ interface RunFile {
     openQuestions?: { question?: string }[];
     suggestedRecipients?: { name?: string; email?: string | null }[];
   } | null;
+}
+/** What run-debrief-eval-all.mts records when every attempt for a run failed. */
+interface ErrorFile {
+  model?: string;
+  attempts?: number;
+  error?: string;
 }
 
 /** Where a golden item found its evidence: a bucket and an index into it. */
@@ -264,6 +277,76 @@ function scoreRun(goldenPath: string, golden: Golden, runPath: string): Report {
     });
   }
 
+  // An action item's owner is half its identity, and `assign` above sees only
+  // keywords: where two expectations share their keyword groups and differ by
+  // owner — eval:lint calls these out, "no group is unique in this bucket" —
+  // which produced item each one gets is arbitrary, and a run that named both
+  // owners correctly can still be scored on the wrong pairing. Repair the
+  // assignment toward the named owners using moves that cover exactly as much:
+  // re-home onto a produced item no bucket claimed, or swap two assignments
+  // both expectations still match.
+  const roster = new Set(
+    golden.actionItems.flatMap((group) =>
+      (acceptedOwners(group.owner) ?? []).flatMap((name) => (name ? nameTokens(name) : [])),
+    ),
+  );
+  const ownerFits = (group: Group | undefined, index: number | null): boolean => {
+    const accepted = group ? acceptedOwners(group.owner) : null;
+    const action = index === null ? undefined : actions[index];
+    if (!accepted || !action) return true;
+    if (!ownerMatches(accepted, action.owner)) return false;
+    const mine = new Set(accepted.flatMap((name) => (name ? nameTokens(name) : [])));
+    const low = (action.owner ?? "").toLowerCase();
+    return ![...roster].some((token) => !mine.has(token) && new RegExp(`\\b${token}\\b`).test(low));
+  };
+  {
+    const own = golden.actionItems.map((_, i) => {
+      const match = found.actionItems[i];
+      return match && match.bucket === "actionItems" ? match.index : null;
+    });
+    const canTake = (i: number, index: number): boolean =>
+      matches(produced.actionItems[index] ?? "", golden.actionItems[i]!);
+    for (let pass = 0; pass <= golden.actionItems.length; pass++) {
+      let improved = false;
+      for (let i = 0; i < own.length && !improved; i++) {
+        const here = own[i] ?? null;
+        if (here === null || ownerFits(golden.actionItems[i], here)) continue;
+        const free = produced.actionItems.findIndex(
+          (_, pi) =>
+            !consumed.actionItems.has(pi) && canTake(i, pi) && ownerFits(golden.actionItems[i], pi),
+        );
+        if (free === -1) continue;
+        consumed.actionItems.delete(here);
+        consumed.actionItems.add(free);
+        own[i] = free;
+        improved = true;
+      }
+      for (let i = 0; i < own.length && !improved; i++) {
+        for (let j = i + 1; j < own.length; j++) {
+          const mine = own[i] ?? null;
+          const theirs = own[j] ?? null;
+          if (mine === null || theirs === null) continue;
+          if (!canTake(i, theirs) || !canTake(j, mine)) continue;
+          const before =
+            Number(ownerFits(golden.actionItems[i], mine)) +
+            Number(ownerFits(golden.actionItems[j], theirs));
+          const after =
+            Number(ownerFits(golden.actionItems[i], theirs)) +
+            Number(ownerFits(golden.actionItems[j], mine));
+          if (after <= before) continue;
+          own[i] = theirs;
+          own[j] = mine;
+          improved = true;
+          break;
+        }
+      }
+      if (!improved) break;
+    }
+    own.forEach((index, i) => {
+      if (index !== null) found.actionItems[i] = { bucket: "actionItems", index };
+    });
+  }
+
   const failures = report.failures;
 
   for (const bucket of BUCKETS) {
@@ -368,11 +451,6 @@ function scoreRun(goldenPath: string, golden: Golden, runPath: string): Report {
   // Hard rules on the one produced item each expectation was assigned: its date
   // must be one a careful reader would accept, and its owner must be the person
   // the transcript put on the hook — and nobody else.
-  const roster = new Set(
-    golden.actionItems.flatMap((group) =>
-      (acceptedOwners(group.owner) ?? []).flatMap((name) => (name ? nameTokens(name) : [])),
-    ),
-  );
   golden.actionItems.forEach((group, i) => {
     const match = found.actionItems[i] ?? null;
     if (!match || match.bucket !== "actionItems") return;
@@ -517,12 +595,13 @@ if (first === "--all") {
   for (const file of goldenFiles) {
     const goldenPath = join(FIXTURES_DIR, file);
     // One unreadable golden must not cost the other nineteen their results.
-    const skip = (message: string, runPath = "—"): void => {
+    const skip = (message: string, runPath = "—"): Report => {
       const report = emptyReport(goldenPath, runPath);
       report.failures.push(message);
       reports.push(report);
       if (!asJson) console.log(`  ❌ ${message}`);
       failed.push(file);
+      return report;
     };
     try {
       const golden = loadGolden(goldenPath);
@@ -532,6 +611,20 @@ if (first === "--all") {
         continue;
       }
       const runPath = join(runDir, `${golden.transcript}.debrief.json`);
+      const errPath = join(runDir, `${golden.transcript}.error.json`);
+      /* The error file wins over a debrief file beside it. Each run removes the
+         file its outcome did not write, so the pair can only mean the debrief
+         is an earlier run's output — scoring it would report results the last
+         run never produced. */
+      if (existsSync(errPath)) {
+        const err = JSON.parse(readFileSync(errPath, "utf8")) as ErrorFile;
+        const report = skip(
+          `run errored after ${err.attempts ?? "?"} attempt(s): ${err.error ?? "unknown error"}`,
+          errPath,
+        );
+        report.model = err.model ?? null;
+        continue;
+      }
       if (!existsSync(runPath)) {
         skip(`no run file: ${runPath}`, runPath);
         continue;

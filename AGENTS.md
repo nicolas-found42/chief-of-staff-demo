@@ -85,4 +85,4 @@ Single-context: one root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/domain.
 
 ### Verification
 
-Verification gates and their granularity live in `docs/agents/verification.md`.
+Verification gates and their granularity — including how to run the debrief eval — live in `docs/agents/verification.md`.
