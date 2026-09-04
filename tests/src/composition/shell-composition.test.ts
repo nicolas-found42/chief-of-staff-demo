@@ -161,10 +161,15 @@ describe("the mock provider follows the process posture, not the config (#198)",
     });
   });
 
+  it("admits mock where the process runs as a test", async () => {
+    await withPosture({ test: "1" }, async () => {
+      const shell = await compose(workspaceDirectory(true));
+      const get = await shell.app.inject({ method: "GET", url: "/api/config" });
+      expect(get.json<{ mockAvailable: boolean }>().mockAvailable).toBe(true);
+    });
+  });
+
   it("admits mock where the process itself declares an explicit demo", async () => {
-    /* DEMO_MODE, not the test seed: the seed arms the whole test-runtime
-       graph, and this in-process Shell needs only the posture switch. The
-       seed-enabled composition is the browser suite's own boot. */
     await withPosture({ demo: "1" }, async () => {
       const shell = await compose(workspaceDirectory(true));
       const get = await shell.app.inject({ method: "GET", url: "/api/config" });
