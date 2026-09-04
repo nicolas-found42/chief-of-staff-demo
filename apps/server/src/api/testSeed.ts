@@ -318,7 +318,7 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
             return entry ? Buffer.from(entry.body) : null;
           },
         },
-        disclosure: { provider: "seed", model: "seed" },
+        disclosure: () => ({ provider: "seed", model: "seed" }),
         identity,
       });
       await catalog.grantConsent();

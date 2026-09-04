@@ -6,6 +6,7 @@ import type { DriveFileClient } from "../../../apps/server/src/intake/drive";
 import {
   TranscriptCatalog,
   TRANSCRIPT_CATALOG_EXTRACTOR_VERSION,
+  type TranscriptCatalogDisclosure,
   type TranscriptCatalogSource,
 } from "../../../apps/server/src/transcript-catalog/catalog";
 import { createDriveCatalogSource } from "../../../apps/server/src/transcript-catalog/drive-source";
@@ -58,6 +59,10 @@ function fakeSource(files: Record<string, FakeFile>): TranscriptCatalogSource & 
 function makeCatalog(
   source: TranscriptCatalogSource,
   workspaceDir: string = mkdtempSync(join(tmpdir(), "transcript-catalog-")),
+  disclosure: () => TranscriptCatalogDisclosure = () => ({
+    provider: "test-provider",
+    model: "test-model",
+  }),
 ): TranscriptCatalog {
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
@@ -66,7 +71,7 @@ function makeCatalog(
   return new TranscriptCatalog({
     workspaceDir,
     source,
-    disclosure: { provider: "test-provider", model: "test-model" },
+    disclosure,
     identity: new TranscriptIdentityService({
       store: new TranscriptIdentityStore(workspaceDir),
       people,
@@ -115,6 +120,33 @@ describe("Transcript Catalog inventory (before consent)", () => {
     expect(source.fetchCount("fileA")).toBe(0);
     expect(source.fetchCount("fileB")).toBe(0);
     expect(source.fetchCount("fileC")).toBe(0);
+  });
+
+  it("discloses the provider and model of the moment, not the ones from construction (#198)", async () => {
+    const source = fakeSource({
+      fileA: { name: "Weekly sync - 2026-08-17T13-00-00.000Z.md", body: "# Weekly sync" },
+    });
+    let configured = { provider: "openrouter", model: "inception/mercury-2.5-preview" };
+    const catalog = makeCatalog(source, undefined, () => configured);
+
+    const before = await catalog.inventory();
+    expect(before.providerExposure).toEqual({
+      sendsTranscriptTextToConfiguredModel: true,
+      provider: "openrouter",
+      model: "inception/mercury-2.5-preview",
+    });
+
+    /* The owner edited the model in Settings after the runtime was composed;
+       the next consent decision must name what would receive transcript text
+       now, not what the boot-time snapshot said. */
+    configured = { provider: "anthropic", model: "claude-sonnet-5" };
+
+    const after = await catalog.inventory();
+    expect(after.providerExposure).toEqual({
+      sendsTranscriptTextToConfiguredModel: true,
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+    });
   });
 
   it("refuses to process before the owner has consented", async () => {

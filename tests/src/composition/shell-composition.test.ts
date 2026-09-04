@@ -134,11 +134,15 @@ async function waitFor(condition: () => boolean, label: string): Promise<void> {
 describe("the mock provider follows the process posture, not the config (#198)", () => {
   /* Both switches the posture reads are pinned, so an operator's exported
      DEMO_MODE cannot flip these assertions. */
-  async function withPosture(posture: { test?: "1" }, run: () => Promise<void>): Promise<void> {
+  async function withPosture(
+    posture: { test?: "1"; demo?: "1" },
+    run: () => Promise<void>,
+  ): Promise<void> {
     const prior = { test: process.env.ENABLE_TEST_SEED, demo: process.env.DEMO_MODE };
     delete process.env.ENABLE_TEST_SEED;
     delete process.env.DEMO_MODE;
     if (posture.test !== undefined) process.env.ENABLE_TEST_SEED = posture.test;
+    if (posture.demo !== undefined) process.env.DEMO_MODE = posture.demo;
     try {
       await run();
     } finally {
@@ -157,8 +161,11 @@ describe("the mock provider follows the process posture, not the config (#198)",
     });
   });
 
-  it("admits mock only where the process itself is a test or explicit demo", async () => {
-    await withPosture({ test: "1" }, async () => {
+  it("admits mock where the process itself declares an explicit demo", async () => {
+    /* DEMO_MODE, not the test seed: the seed arms the whole test-runtime
+       graph, and this in-process Shell needs only the posture switch. The
+       seed-enabled composition is the browser suite's own boot. */
+    await withPosture({ demo: "1" }, async () => {
       const shell = await compose(workspaceDirectory(true));
       const get = await shell.app.inject({ method: "GET", url: "/api/config" });
       expect(get.json<{ mockAvailable: boolean }>().mockAvailable).toBe(true);

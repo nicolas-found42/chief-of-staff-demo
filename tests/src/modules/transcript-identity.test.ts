@@ -106,7 +106,7 @@ function catalogFor(h: Harness, body: string): TranscriptCatalog {
         return Buffer.from(body);
       },
     },
-    disclosure: { provider: "test-provider", model: "test-model" },
+    disclosure: () => ({ provider: "test-provider", model: "test-model" }),
     identity: h.service,
     now: NOW,
   });
@@ -136,7 +136,7 @@ describe("Transcript Catalog identity processing", () => {
           return Buffer.from(SYNC_TEXT);
         },
       },
-      disclosure: { provider: "test-provider", model: "test-model" },
+      disclosure: () => ({ provider: "test-provider", model: "test-model" }),
       identity: h.service,
       now: NOW,
     });
@@ -199,7 +199,7 @@ describe("Transcript Catalog identity processing", () => {
     const firstEra = new TranscriptCatalog({
       workspaceDir: h.workspaceDir,
       source,
-      disclosure: { provider: "test-provider", model: "test-model" },
+      disclosure: () => ({ provider: "test-provider", model: "test-model" }),
       identity: h.service,
       now: NOW,
     });
@@ -219,7 +219,7 @@ describe("Transcript Catalog identity processing", () => {
     const secondEra = new TranscriptCatalog({
       workspaceDir: h.workspaceDir,
       source,
-      disclosure: { provider: "test-provider", model: "test-model" },
+      disclosure: () => ({ provider: "test-provider", model: "test-model" }),
       identity: restartedIdentity,
       now: NOW,
     });

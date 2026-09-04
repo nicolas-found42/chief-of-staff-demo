@@ -72,7 +72,12 @@ export interface TranscriptIdentityProcessor {
 export interface TranscriptCatalogDeps {
   workspaceDir: string;
   source: TranscriptCatalogSource;
-  disclosure: TranscriptCatalogDisclosure;
+  /**
+   * Who would receive transcript text, read when the inventory is built —
+   * not when the Catalog is constructed — so a provider or model the owner
+   * edits after boot is what consent names (issue #198).
+   */
+  disclosure: () => TranscriptCatalogDisclosure;
   identity: TranscriptIdentityProcessor;
   /**
    * The Meeting Debrief hand-off (issue #139): the Catalog calls it whenever
@@ -163,7 +168,7 @@ function dayOf(value: string | null): string | null {
 export class TranscriptCatalog {
   private readonly store: TranscriptCatalogStore;
   private readonly source: TranscriptCatalogSource;
-  private readonly disclosure: TranscriptCatalogDisclosure;
+  private readonly disclosure: () => TranscriptCatalogDisclosure;
   private readonly identity: TranscriptIdentityProcessor;
   private readonly debrief: TranscriptDebriefProcessor | null;
   private readonly now: () => Date;
@@ -212,8 +217,7 @@ export class TranscriptCatalog {
       localRetention: LOCAL_RETENTION,
       providerExposure: {
         sendsTranscriptTextToConfiguredModel: true,
-        provider: this.disclosure.provider,
-        model: this.disclosure.model,
+        ...this.disclosure(),
       },
       externalQueryBehavior: "none",
       files,

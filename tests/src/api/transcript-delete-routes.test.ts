@@ -66,7 +66,7 @@ beforeEach(async () => {
   const catalog = new TranscriptCatalog({
     workspaceDir,
     source: sourceOf(files),
-    disclosure: { provider: "test-provider", model: "test-model" },
+    disclosure: () => ({ provider: "test-provider", model: "test-model" }),
     identity,
     now: NOW,
   });

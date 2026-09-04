@@ -81,7 +81,7 @@ function makeCatalog(
   return new TranscriptCatalog({
     workspaceDir,
     source,
-    disclosure: { provider: "test-provider", model: "test-model" },
+    disclosure: () => ({ provider: "test-provider", model: "test-model" }),
     identity: new TranscriptIdentityService({
       store: new TranscriptIdentityStore(workspaceDir),
       people,

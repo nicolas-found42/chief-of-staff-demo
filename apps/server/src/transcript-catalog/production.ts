@@ -72,14 +72,20 @@ export function createTranscriptCatalogRuntime(
   });
 
   const config = options.getConfig();
-  const llm = options.getLlmInfo();
+  /* The disclosure is read per inventory, so a provider or model edited in
+     Settings is what the next consent decision names (#198). The Drive client
+     and folder stay composition-time: they change through consent, which is
+     this runtime's own restart seam. */
   const catalog = new TranscriptCatalog({
     workspaceDir: options.workspaceDir,
     source: createDriveCatalogSource(buildDriveClient(config, options.port), {
       folderId: config.drive.folderId,
       folderName: config.drive.folderName || null,
     }),
-    disclosure: { provider: llm.provider, model: llm.model },
+    disclosure: () => {
+      const llm = options.getLlmInfo();
+      return { provider: llm.provider, model: llm.model };
+    },
     identity,
     ...(options.debrief ? { debrief: options.debrief } : {}),
     log,

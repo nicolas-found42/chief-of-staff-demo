@@ -101,7 +101,7 @@ function makeHarness(
   const catalog = new TranscriptCatalog({
     workspaceDir,
     source,
-    disclosure: { provider: "test-provider", model: "test-model" },
+    disclosure: () => ({ provider: "test-provider", model: "test-model" }),
     identity,
     now: NOW,
     log: () => {},
@@ -195,7 +195,7 @@ describe("Transcript deletion tombstone (issue #128)", () => {
     const restarted = new TranscriptCatalog({
       workspaceDir: h.workspaceDir,
       source: h.source,
-      disclosure: { provider: "test-provider", model: "test-model" },
+      disclosure: () => ({ provider: "test-provider", model: "test-model" }),
       identity: new TranscriptIdentityService({
         store: h.identityStore,
         people: h.people,
@@ -264,7 +264,7 @@ describe("Transcript deletion tombstone (issue #128)", () => {
     const restarted = new TranscriptCatalog({
       workspaceDir: h.workspaceDir,
       source: h.source,
-      disclosure: { provider: "test-provider", model: "test-model" },
+      disclosure: () => ({ provider: "test-provider", model: "test-model" }),
       identity: new TranscriptIdentityService({
         store: h.identityStore,
         people: h.people,

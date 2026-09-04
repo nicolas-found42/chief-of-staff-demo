@@ -309,7 +309,7 @@ async function makeWorkspace(): Promise<Workspace> {
     source: fakeSource({
       fileA: { name: "Board prep - 2026-08-19T10-00-00.000Z.md", body: BOARD_TEXT },
     }),
-    disclosure: { provider: "test-provider", model: "test-model" },
+    disclosure: () => ({ provider: "test-provider", model: "test-model" }),
     identity,
     now: NOW,
     log: () => {},
