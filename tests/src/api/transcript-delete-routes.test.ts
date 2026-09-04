@@ -57,10 +57,6 @@ beforeEach(async () => {
   const identity = new TranscriptIdentityService({
     store: new TranscriptIdentityStore(workspaceDir),
     people,
-    extractor: {
-      version: "test-empty-v1",
-      extract: () => ({ version: 1, mentions: [], organizations: [] }),
-    },
     now: NOW,
   });
   const files = {

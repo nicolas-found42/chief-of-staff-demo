@@ -92,7 +92,6 @@ import {
   type TranscriptConsumerRegistry,
 } from "../transcript-catalog/deletion.js";
 import { WorkspacePersonProfileTranscriptEvidence } from "../person-profile/transcript-evidence.js";
-import { createLexicalTranscriptRelevanceIndex } from "../transcript-catalog/relevance-index.js";
 import { registerTranscriptRelevanceApi } from "../api/transcript-review.js";
 import { registerTranscriptDeletionApi } from "../api/transcript-delete.js";
 import {
@@ -306,14 +305,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      over the Transcript Catalog's retained corpus. Like the Catalog itself it
      is a Workspace resource behind a library seam; the Drive ingestion
      composition remains with the integrating ticket (#126 hand-forward). The
-     local lexical index keeps every judgment in-process (ADR-0001); a model- or
-     embedding-backed searcher replaces it at the same seam. */
+     local lexical index keeps every judgment in-process (ADR-0001). */
   const transcriptRelevanceStore = new TranscriptRelevanceStore(workspaceDir);
   const transcriptIdentityStore = new TranscriptIdentityStore(workspaceDir);
   const transcriptRelevance = new TranscriptRelevanceService({
     corpus: transcriptCatalogStore,
     store: transcriptRelevanceStore,
-    searcher: createLexicalTranscriptRelevanceIndex(),
   });
 
   /* Transcript deletion with local cascades and reingestion tombstones (issue
@@ -541,17 +538,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
- confirmed owner reference; eligibility keeps the raw identity. */
+         confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
- before the Brief pins its revision, so a Calendar shell is not the
- whole of what the Brief knows about a new person. */
+         before the Brief pins its revision, so a Calendar shell is not the
+         whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
- Catalog's confirmed links and its reviewed relevance decisions. */
+         Catalog's confirmed links and its reviewed relevance decisions. */
         /* Meeting history (issue #152): the backward read reaches as far as
- the oldest Transcript. */
+         the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,

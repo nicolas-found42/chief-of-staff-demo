@@ -24,10 +24,7 @@ import {
   extractMentions as extractMentionsWithModel,
   IDENTITY_MINING_ALGORITHM_VERSION,
 } from "../../../apps/server/src/transcript-catalog/identity-extraction";
-import {
-  TranscriptIdentityService,
-  type TranscriptIdentityExtractor,
-} from "../../../apps/server/src/transcript-catalog/identity";
+import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
 
 const EMPTY_EXTRACTION: TranscriptIdentityExtractionResult = {
   version: 1,
@@ -70,14 +67,7 @@ interface Harness {
   store: TranscriptIdentityStore;
 }
 
-function makeHarness(
-  extractor: TranscriptIdentityExtractor = {
-    version: "test-empty-v1",
-    extract() {
-      return EMPTY_EXTRACTION;
-    },
-  },
-): Harness {
+function makeHarness(): Harness {
   const workspaceDir = mkdtempSync(join(tmpdir(), "transcript-identity-"));
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
@@ -85,12 +75,7 @@ function makeHarness(
     lifecycle: [],
   });
   const store = new TranscriptIdentityStore(workspaceDir);
-  const service = new TranscriptIdentityService({
-    store,
-    people,
-    extractor,
-    now: NOW,
-  });
+  const service = new TranscriptIdentityService({ store, people, now: NOW });
   return { workspaceDir, service, people, store };
 }
 
@@ -229,7 +214,6 @@ describe("Transcript Catalog identity processing", () => {
     const restartedIdentity = new TranscriptIdentityService({
       store: new TranscriptIdentityStore(h.workspaceDir),
       people: h.people,
-      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
       now: NOW,
     });
     const secondEra = new TranscriptCatalog({
@@ -268,7 +252,6 @@ describe("Transcript Catalog identity processing", () => {
     const restartedIdentity = new TranscriptIdentityService({
       store: new TranscriptIdentityStore(h.workspaceDir),
       people: h.people,
-      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
       now: NOW,
     });
     const secondEra = catalogFor({ ...h, service: restartedIdentity }, body);
@@ -279,49 +262,6 @@ describe("Transcript Catalog identity processing", () => {
         mention: expect.objectContaining({ profileUrls: ["https://about.me/grace"] }),
         decision: expect.objectContaining({ profileId: profile.id, decidedBy: "policy" }),
       }),
-    );
-  });
-
-  it("reprocesses an unchanged Transcript when the strict extractor version changes", async () => {
-    const body = "operator";
-    const h = makeHarness({ version: "strict-v1", extract: () => EMPTY_EXTRACTION });
-    const profile = h.people.create({ fullName: "Grace Hopper" });
-    const firstEra = catalogFor(h, body);
-    await firstEra.grantConsent();
-    await firstEra.whenIdle();
-    expect(h.service.reviewQueue().items).toEqual([]);
-
-    const restartedIdentity = new TranscriptIdentityService({
-      store: new TranscriptIdentityStore(h.workspaceDir),
-      people: h.people,
-      extractor: {
-        version: "strict-v2",
-        extract() {
-          return {
-            version: 1,
-            mentions: [
-              {
-                spanStart: 0,
-                spanEnd: body.length,
-                kind: "person",
-                confidence: "high",
-                titles: [],
-                roles: [],
-                aliases: ["Grace Hopper"],
-                relationshipAssertions: [],
-              },
-            ],
-            organizations: [],
-          } satisfies TranscriptIdentityExtractionResult;
-        },
-      },
-      now: NOW,
-    });
-    const secondEra = catalogFor({ ...h, service: restartedIdentity }, body);
-
-    expect(await secondEra.processAvailable()).toMatchObject({ unchanged: 1 });
-    expect(restartedIdentity.reviewQueue().items[0]?.candidates).toContainEqual(
-      expect.objectContaining({ profileId: profile.id }),
     );
   });
 
@@ -396,54 +336,43 @@ describe("Transcript Catalog identity processing", () => {
     ).toMatchObject({ matched: true });
   });
 
-  it("supplements deterministic spans with a strict extraction Result Shape", async () => {
+  it("supplements deterministic spans with a strict extraction Result Shape", () => {
     const body = "Grace Hopper from Acme Corp joined the review.";
     const graceStart = body.indexOf("Grace Hopper");
     const acmeStart = body.indexOf("Acme Corp");
-    const h = makeHarness({
-      version: "test-strict-v1",
-      extract() {
-        return {
-          version: 1,
-          mentions: [
-            {
-              spanStart: graceStart,
-              spanEnd: graceStart + "Grace Hopper".length,
-              kind: "person",
-              confidence: "high",
-              titles: ["Rear Admiral"],
-              roles: ["technical advisor"],
-              aliases: ["Amazing Grace"],
-              relationshipAssertions: [
-                { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
-              ],
-            },
+    const { mentions, organizations } = extractMentionsWithModel(makeRecord(body), {
+      version: 1,
+      mentions: [
+        {
+          spanStart: graceStart,
+          spanEnd: graceStart + "Grace Hopper".length,
+          kind: "person",
+          confidence: "high",
+          titles: ["Rear Admiral"],
+          roles: ["technical advisor"],
+          aliases: ["Amazing Grace"],
+          relationshipAssertions: [
+            { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
           ],
-          organizations: [
-            {
-              spanStart: acmeStart,
-              spanEnd: acmeStart + "Acme Corp".length,
-              confidence: "high",
-              aliases: ["Acme"],
-              domains: ["acme.example"],
-              externalCompanyIds: [{ system: "HubSpot", externalId: "company-7" }],
-              relationshipAssertions: [
-                { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
-              ],
-            },
+        },
+      ],
+      organizations: [
+        {
+          spanStart: acmeStart,
+          spanEnd: acmeStart + "Acme Corp".length,
+          confidence: "high",
+          aliases: ["Acme"],
+          domains: ["acme.example"],
+          externalCompanyIds: [{ system: "HubSpot", externalId: "company-7" }],
+          relationshipAssertions: [
+            { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
           ],
-        } satisfies TranscriptIdentityExtractionResult;
-      },
-    });
-    const catalog = catalogFor(h, body);
+        },
+      ],
+    } satisfies TranscriptIdentityExtractionResult);
 
-    await catalog.grantConsent();
-    await catalog.whenIdle();
-
-    const grace = h.service
-      .reviewQueue()
-      .items.find((item) => item.mention.surfaceText === "Grace Hopper")!;
-    expect(grace.mention).toMatchObject({
+    const grace = mentions.find((mention) => mention.surfaceText === "Grace Hopper")!;
+    expect(grace).toMatchObject({
       titles: ["Rear Admiral"],
       roles: ["technical advisor"],
       aliases: ["Amazing Grace"],
@@ -451,7 +380,7 @@ describe("Transcript Catalog identity processing", () => {
         { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
       ],
     });
-    expect(h.service.reviewQueue().organizations[0]?.organization).toMatchObject({
+    expect(organizations[0]).toMatchObject({
       aliases: ["Acme"],
       domains: ["acme.example"],
       externalCompanyIds: [{ system: "hubspot", externalId: "company-7" }],
@@ -461,37 +390,15 @@ describe("Transcript Catalog identity processing", () => {
     });
   });
 
-  it("retrieves candidates from aliases, titles, roles, and Calendar roster context", async () => {
+  it("retrieves candidates from deterministic extraction and Calendar roster context", async () => {
     const body = "Grace Hopper: Ready for review.";
-    const start = body.indexOf("Grace Hopper");
-    const h = makeHarness({
-      version: "test-strict-v1",
-      extract() {
-        return {
-          version: 1,
-          mentions: [
-            {
-              spanStart: start,
-              spanEnd: start + "Grace Hopper".length,
-              kind: "person",
-              confidence: "high",
-              titles: ["Rear Admiral"],
-              roles: ["technical advisor"],
-              aliases: ["Amazing Grace"],
-              relationshipAssertions: [],
-            },
-          ],
-          organizations: [],
-        } satisfies TranscriptIdentityExtractionResult;
-      },
-    });
+    const h = makeHarness();
     const preferred = h.people.create({
-      fullName: "Amazing Grace",
+      fullName: "Grace Hopper",
       primaryEmail: "grace@example.com",
-      role: "Rear Admiral and technical advisor",
     });
     const namesake = h.people.create({
-      fullName: "Amazing Grace",
+      fullName: "Grace Hopper",
       primaryEmail: "other@example.com",
     });
     const catalog = catalogFor(h, body);
@@ -512,9 +419,7 @@ describe("Transcript Catalog identity processing", () => {
     )!;
     expect(preferredCandidate.signals).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ signal: "alias", matched: true }),
-        expect.objectContaining({ signal: "title", matched: true }),
-        expect.objectContaining({ signal: "role", matched: true }),
+        expect.objectContaining({ signal: "normalized-full-name", matched: true }),
         expect.objectContaining({ signal: "roster-context", matched: true }),
       ]),
     );
@@ -527,45 +432,12 @@ describe("Transcript Catalog identity processing", () => {
     expect(item.decision).toBeNull();
   });
 
-  it("derives durable organization context from validated strict relationship assertions", async () => {
-    const body = "ada works at engine works.";
-    const personStart = body.indexOf("ada");
-    const organizationStart = body.indexOf("engine works");
-    const assertion = { subject: "ada", relationship: "works at", object: "engine works" };
-    const h = makeHarness({
-      version: "test-relationships-v1",
-      extract() {
-        return {
-          version: 1,
-          mentions: [
-            {
-              spanStart: personStart,
-              spanEnd: personStart + "ada".length,
-              kind: "person",
-              confidence: "high",
-              titles: [],
-              roles: [],
-              aliases: ["Ada Lovelace"],
-              relationshipAssertions: [],
-            },
-          ],
-          organizations: [
-            {
-              spanStart: organizationStart,
-              spanEnd: organizationStart + "engine works".length,
-              confidence: "high",
-              aliases: ["Engine Works"],
-              domains: [],
-              externalCompanyIds: [],
-              relationshipAssertions: [assertion],
-            },
-          ],
-        } satisfies TranscriptIdentityExtractionResult;
-      },
-    });
+  it("derives durable organization context from deterministic extraction", async () => {
+    const body = "Ada Lovelace at Acme Corp joined the review.";
+    const h = makeHarness();
     const profile = h.people.create({
       fullName: "Ada Lovelace",
-      currentEmployer: "Engine Works",
+      currentEmployer: "Acme Corp",
     });
     const catalog = catalogFor(h, body);
 
@@ -574,45 +446,19 @@ describe("Transcript Catalog identity processing", () => {
 
     const item = h.service
       .reviewQueue()
-      .items.find((candidate) => candidate.mention.surfaceText === "ada")!;
-    expect(item.mention.organizationContext).toBe("engine works");
+      .items.find((candidate) => candidate.mention.surfaceText === "Ada Lovelace")!;
+    expect(item.mention.organizationContext).toBe("acme corp");
     expect(
       item.candidates.find((candidate) => candidate.profileId === profile.id)?.signals,
     ).toContainEqual(expect.objectContaining({ signal: "employer-hint", matched: true }));
     expect(h.service.reviewQueue().organizations[0]?.relatedPeople).toEqual([
-      { mentionId: item.mention.id, surfaceText: "ada" },
+      { mentionId: item.mention.id, surfaceText: "Ada Lovelace" },
     ]);
   });
 
   it("persists versioned Organization merge decisions with provenance and audit history", async () => {
     const body = "Acme Corp met Acme Incorporated.";
-    const first = body.indexOf("Acme Corp");
-    const second = body.indexOf("Acme Incorporated");
-    const extraction: TranscriptIdentityExtractionResult = {
-      version: 1,
-      mentions: [],
-      organizations: [
-        {
-          spanStart: first,
-          spanEnd: first + "Acme Corp".length,
-          confidence: "high",
-          aliases: ["Acme"],
-          domains: ["acme.example"],
-          externalCompanyIds: [],
-          relationshipAssertions: [],
-        },
-        {
-          spanStart: second,
-          spanEnd: second + "Acme Incorporated".length,
-          confidence: "high",
-          aliases: ["Acme"],
-          domains: [],
-          externalCompanyIds: [],
-          relationshipAssertions: [],
-        },
-      ],
-    };
-    const h = makeHarness({ version: "test-strict-v1", extract: () => extraction });
+    const h = makeHarness();
     const catalog = catalogFor(h, body);
     await catalog.grantConsent();
     await catalog.whenIdle();
@@ -652,7 +498,6 @@ describe("Transcript Catalog identity processing", () => {
     const restarted = new TranscriptIdentityService({
       store: new TranscriptIdentityStore(h.workspaceDir),
       people: h.people,
-      extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
       now: NOW,
     });
     expect(restarted.organizationDecisions()).toEqual([decision]);
@@ -662,27 +507,6 @@ describe("Transcript Catalog identity processing", () => {
         .organizations.find((item) => item.organization.id === source.organization.id)
         ?.mergeDecision,
     ).toEqual(decision);
-  });
-
-  it("rejects non-strict extraction adapter output before persisting identity", async () => {
-    const h = makeHarness({
-      version: "invalid-test-v1",
-      extract() {
-        return {
-          version: 1,
-          mentions: [],
-          organizations: [],
-          unexpected: true,
-        } as unknown as TranscriptIdentityExtractionResult;
-      },
-    });
-    const catalog = catalogFor(h, "Grace Hopper: Ready.");
-
-    await catalog.grantConsent();
-    await catalog.whenIdle();
-
-    expect(catalog.status()).toMatchObject({ failed: 1 });
-    expect(h.service.reviewQueue()).toEqual({ items: [], organizations: [] });
   });
 });
 

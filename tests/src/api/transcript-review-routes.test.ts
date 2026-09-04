@@ -7,10 +7,7 @@ import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { registerTranscriptRelevanceApi } from "../../../apps/server/src/api/transcript-review";
 import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
-import {
-  TRANSCRIPT_RELEVANCE_INDEX_VERSION,
-  createLexicalTranscriptRelevanceIndex,
-} from "../../../apps/server/src/transcript-catalog/relevance-index";
+import { TRANSCRIPT_RELEVANCE_INDEX_VERSION } from "../../../apps/server/src/transcript-catalog/relevance-index";
 
 /**
  * The semantic relevance Review surface (issue #127): the owner searches the
@@ -73,7 +70,6 @@ beforeEach(() => {
   service = new TranscriptRelevanceService({
     corpus: { listTranscripts: () => CORPUS },
     store: new TranscriptRelevanceStore(workspaceDir),
-    searcher: createLexicalTranscriptRelevanceIndex(),
     now: NOW,
   });
   app = fastify();

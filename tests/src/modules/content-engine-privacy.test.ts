@@ -2,10 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type {
-  PersonEvidence,
-  TranscriptIdentityExtractionResult,
-} from "@chief-of-staff-demo/shared";
+import type { PersonEvidence } from "@chief-of-staff-demo/shared";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import { WorkspaceContentProjects } from "../../../apps/server/src/content-projects/projects";
 import {
@@ -27,14 +24,10 @@ import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { TranscriptCatalog } from "../../../apps/server/src/transcript-catalog/catalog";
 import type { TranscriptCatalogSource } from "../../../apps/server/src/transcript-catalog/catalog";
-import {
-  TranscriptIdentityService,
-  type TranscriptIdentityExtractor,
-} from "../../../apps/server/src/transcript-catalog/identity";
+import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
 import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
-import { createLexicalTranscriptRelevanceIndex } from "../../../apps/server/src/transcript-catalog/relevance-index";
 import { DIAGNOSTIC, SOURCE_ITEM, SOURCE_ITEM_2 } from "./content-project-fixtures";
 
 const AT = new Date("2026-08-31T18:00:00.000Z");
@@ -77,19 +70,6 @@ function assertNoTranscriptEvidence(serialized: string): void {
     expect(serialized).not.toContain(needle);
   }
 }
-
-const EMPTY_EXTRACTION: TranscriptIdentityExtractionResult = {
-  version: 1,
-  mentions: [],
-  organizations: [],
-};
-
-const EMPTY_EXTRACTOR: TranscriptIdentityExtractor = {
-  version: "test-empty-v1",
-  extract() {
-    return EMPTY_EXTRACTION;
-  },
-};
 
 function fakeSource(
   files: Record<string, { name: string; body: string }>,
@@ -323,12 +303,7 @@ async function makeWorkspace(): Promise<Workspace> {
      policy makes a confirmed identity decision for this Profile. */
   const subject = people.create({ fullName: "Grace Hopper", primaryEmail: "grace@example.com" });
 
-  const identity = new TranscriptIdentityService({
-    store: identityStore,
-    people,
-    extractor: EMPTY_EXTRACTOR,
-    now: NOW,
-  });
+  const identity = new TranscriptIdentityService({ store: identityStore, people, now: NOW });
   const catalog = new TranscriptCatalog({
     workspaceDir,
     source: fakeSource({
@@ -342,7 +317,6 @@ async function makeWorkspace(): Promise<Workspace> {
   const relevance = new TranscriptRelevanceService({
     corpus: catalog,
     store: relevanceStore,
-    searcher: createLexicalTranscriptRelevanceIndex(),
     now: NOW,
   });
 

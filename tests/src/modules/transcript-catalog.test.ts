@@ -9,7 +9,6 @@ import {
 } from "../../../apps/server/src/transcript-catalog/catalog";
 import { createDriveCatalogSource } from "../../../apps/server/src/transcript-catalog/drive-source";
 import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
-import type { TranscriptIdentityExtractor } from "../../../apps/server/src/transcript-catalog/identity";
 import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
@@ -58,12 +57,6 @@ function fakeSource(files: Record<string, FakeFile>): TranscriptCatalogSource & 
 function makeCatalog(
   source: TranscriptCatalogSource,
   workspaceDir: string = mkdtempSync(join(tmpdir(), "transcript-catalog-")),
-  extractor: TranscriptIdentityExtractor = {
-    version: "test-empty-v1",
-    extract() {
-      return { version: 1, mentions: [], organizations: [] };
-    },
-  },
 ): TranscriptCatalog {
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
@@ -76,7 +69,6 @@ function makeCatalog(
     identity: new TranscriptIdentityService({
       store: new TranscriptIdentityStore(workspaceDir),
       people,
-      extractor,
     }),
     now: () => new Date("2026-08-31T12:00:00.000Z"),
     log: () => {},

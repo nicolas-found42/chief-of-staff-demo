@@ -9,21 +9,17 @@ import type {
   TranscriptRelevanceSourceContext,
 } from "@chief-of-staff-demo/shared";
 import type { TranscriptRelevanceStore } from "./relevance-store.js";
+import { TRANSCRIPT_RELEVANCE_INDEX_VERSION, searchLexicalIndex } from "./relevance-index.js";
 
 /**
- * What the semantic searcher needs from the Catalog: the retained corpus. The
+ * What the relevance service needs from the Catalog: the retained corpus. The
  * Catalog is the sole writer for Transcript records; relevance only reads.
  */
 export interface TranscriptRelevanceCorpus {
   listTranscripts(): TranscriptRecord[];
 }
 
-interface TranscriptRelevanceSearchInput {
-  query: TranscriptRelevanceQuery;
-  records: TranscriptRecord[];
-}
-
-/** One candidate similarity judgment from the external seam, before grounding. */
+/** One lexical similarity judgment from the internal index, before grounding. */
 export interface TranscriptSemanticHit {
   transcriptId: string;
   excerpt: string;
@@ -31,24 +27,9 @@ export interface TranscriptSemanticHit {
   explanation: string;
 }
 
-/**
- * The true-external model or index seam. Implementations may resolve
- * asynchronously; the service grounds every hit against the retained
- * Transcript text before it is persisted or shown, so only a real, located
- * excerpt can be cited.
- */
-export interface TranscriptRelevanceSearcher {
-  /** Changes whenever the adapter's similarity judgments can change. */
-  version: string;
-  search(
-    input: TranscriptRelevanceSearchInput,
-  ): TranscriptSemanticHit[] | Promise<TranscriptSemanticHit[]>;
-}
-
 export interface TranscriptRelevanceDeps {
   corpus: TranscriptRelevanceCorpus;
   store: TranscriptRelevanceStore;
-  searcher: TranscriptRelevanceSearcher;
   now?: () => Date;
   /** The bound one search returns and persists; bounded by design (AC #127). */
   maxResults?: number;
@@ -101,14 +82,12 @@ interface GroundedHit {
 export class TranscriptRelevanceService {
   private readonly corpus: TranscriptRelevanceCorpus;
   private readonly store: TranscriptRelevanceStore;
-  private readonly searcher: TranscriptRelevanceSearcher;
   private readonly now: () => Date;
   private readonly maxResults: number;
 
   constructor(deps: TranscriptRelevanceDeps) {
     this.corpus = deps.corpus;
     this.store = deps.store;
-    this.searcher = deps.searcher;
     this.now = deps.now ?? (() => new Date());
     this.maxResults = deps.maxResults ?? DEFAULT_RELEVANCE_MAX_RESULTS;
   }
@@ -132,7 +111,7 @@ export class TranscriptRelevanceService {
       .filter((record) => record.normalizedText.trim().length > 0);
     const byId = new Map(records.map((record) => [record.id, record] as const));
 
-    const hits = await this.searcher.search({ query: { ...query, text }, records });
+    const hits = searchLexicalIndex({ query: { ...query, text }, records });
     const grounded: GroundedHit[] = [];
     for (const hit of hits) {
       const record = byId.get(hit.transcriptId);
@@ -169,7 +148,7 @@ export class TranscriptRelevanceService {
         excerpt: { text: hit.text, spanStart: hit.spanStart, spanEnd: hit.spanEnd },
         score: hit.score,
         explanation: hit.explanation,
-        relevanceVersion: this.searcher.version,
+        relevanceVersion: String(TRANSCRIPT_RELEVANCE_INDEX_VERSION),
         createdAt: existing?.createdAt ?? createdAt,
         sourceContext: this.sourceContextOf(hit.record),
       } satisfies TranscriptRelevanceCandidate;

@@ -10,10 +10,7 @@ import type {
   TranscriptRecord,
   TranscriptReviewQueue,
 } from "@chief-of-staff-demo/shared";
-import {
-  isDerivedIdentityDecision,
-  TranscriptIdentityExtractionResultSchema,
-} from "@chief-of-staff-demo/shared";
+import { isDerivedIdentityDecision } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import {
   extractMentions,
@@ -32,20 +29,20 @@ import { type TranscriptIdentityMeta, TranscriptIdentityStore } from "./identity
 export interface TranscriptIdentityDeps {
   store: TranscriptIdentityStore;
   people: WorkspacePersonProfiles;
-  extractor: TranscriptIdentityExtractor;
   now?: () => Date;
 }
 
-/** True-external model seam. Implementations may resolve asynchronously; the
- * service still validates the value against the strict shared Result Shape at
- * the trust boundary before using it. */
-export interface TranscriptIdentityExtractor {
-  /** Changes whenever the strict extraction adapter's classifications can change. */
-  version: string;
-  extract(
-    record: TranscriptRecord,
-  ): TranscriptIdentityExtractionResult | Promise<TranscriptIdentityExtractionResult>;
-}
+/**
+ * The deterministic mining supplement: no model-backed supplement adapter
+ * exists, so mining runs on the immutable Transcript alone. A second
+ * extraction source reintroduces an extractor seam; until then the empty
+ * supplement is an implementation detail, not a caller-provided adapter.
+ */
+const EMPTY_SUPPLEMENT: TranscriptIdentityExtractionResult = {
+  version: 1,
+  mentions: [],
+  organizations: [],
+};
 
 class UnknownMentionError extends Error {
   constructor(mentionId: string) {
@@ -79,22 +76,22 @@ export interface MergeOrganizationsInput {
 
 /**
  * Identity mining over the Transcript Catalog (issue #126). Deterministic
- * recognition is supplemented by one validated strict extraction Result
- * Shape; the service persists mentions, Organization Mentions, and explainable
- * candidates. Only a non-conflicting exact stable identifier may auto-link to
- * an EXISTING Profile. Remembered mappings apply as explicit owner authority,
- * and no processing path creates a Person Profile; explicit review does.
+ * recognition over the immutable Transcript is the whole of mining: no
+ * supplement adapter exists, so the strict extraction Result Shape merges an
+ * empty supplement and the service persists mentions, Organization Mentions,
+ * and explainable candidates. Only a non-conflicting exact stable identifier
+ * may auto-link to an EXISTING Profile. Remembered mappings apply as explicit
+ * owner authority, and no processing path creates a Person Profile; explicit
+ * review does.
  */
 export class TranscriptIdentityService {
   private readonly store: TranscriptIdentityStore;
   private readonly people: WorkspacePersonProfiles;
-  private readonly extractor: TranscriptIdentityExtractor;
   private readonly now: () => Date;
 
   constructor(deps: TranscriptIdentityDeps) {
     this.store = deps.store;
     this.people = deps.people;
-    this.extractor = deps.extractor;
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -110,8 +107,7 @@ export class TranscriptIdentityService {
   async process(record: TranscriptRecord): Promise<void> {
     const extractionVersion = this.extractionVersion(record);
     if (!this.store.wasProcessed(record.id, IDENTITY_MINING_ALGORITHM_VERSION, extractionVersion)) {
-      const extracted = await this.extractor.extract(record);
-      this.extract(record, extractionVersion, extracted);
+      this.extract(record, extractionVersion);
     }
     this.rematchTranscript(record.id);
   }
@@ -133,7 +129,7 @@ export class TranscriptIdentityService {
    * Derived-input version for the extraction ledger: exactly what
    * `extractMentions` consumes. A Profile's known URLs belong here because
    * canonicalization consults them; every other Profile fact drives matching,
-   * not extraction, and must not cost a fresh model call.
+   * not extraction, and must not cost re-mining.
    */
   private extractionVersion(record: TranscriptRecord): string {
     return createHash("sha256")
@@ -143,14 +139,9 @@ export class TranscriptIdentityService {
           speakerIdentityMappings: record.speakerIdentityMappings,
           roster: record.roster,
           knownProfileUrls: this.knownProfileUrls(),
-          extractorVersion: this.extractor.version,
         }),
       )
       .digest("hex");
-  }
-
-  private knownProfileUrls(): string[] {
-    return [...new Set(this.matchableProfiles().flatMap((profile) => profile.profileUrls))].sort();
   }
 
   /**
@@ -164,10 +155,12 @@ export class TranscriptIdentityService {
       .filter((profile) => profile.mergedInto === undefined);
   }
 
-  private extract(record: TranscriptRecord, extractionVersion: string, rawResult: unknown): void {
-    const supplement: TranscriptIdentityExtractionResult =
-      TranscriptIdentityExtractionResultSchema.parse(rawResult);
-    const { mentions, organizations } = extractMentions(record, supplement, {
+  private knownProfileUrls(): string[] {
+    return [...new Set(this.matchableProfiles().flatMap((profile) => profile.profileUrls))].sort();
+  }
+
+  private extract(record: TranscriptRecord, extractionVersion: string): void {
+    const { mentions, organizations } = extractMentions(record, EMPTY_SUPPLEMENT, {
       knownProfileUrls: this.knownProfileUrls(),
     });
     this.store.saveTranscriptMeta(record.id, {

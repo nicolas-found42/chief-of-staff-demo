@@ -25,8 +25,6 @@ import { TranscriptIdentityStore } from "../transcript-catalog/identity-store.js
 import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import type { MigrationGate } from "./migration.js";
 import { readMigrationState } from "../migration/workspace.js";
-import type { TranscriptIdentityExtractionResult } from "@chief-of-staff-demo/shared";
-
 export interface TestSeedContext {
   /** The Workspace directory, so seeded product areas write the same store. */
   workspaceDir: string;
@@ -289,21 +287,14 @@ export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContex
   /* Semantic transcript relevance (issue #127): register a small, real
      Transcript corpus through the real Catalog so the Review surface journey
      exercises discovery, citations, and decisions over produced records. The
-     identity extractor is a deterministic empty supplement — the corpus is
-     the point, not the mined mentions. Idempotent: a second call re-runs the
-     Catalog's exactly-once ledger and changes nothing. */
+     corpus is the point, not the mined mentions. Idempotent: a second call
+     re-runs the Catalog's exactly-once ledger and changes nothing. */
   app.post("/api/test/seed-transcript-corpus", async (_request, reply) => {
     try {
       const people = new WorkspacePersonProfiles({ store: ctx.personStore, lifecycle: [] });
       const identity = new TranscriptIdentityService({
         store: new TranscriptIdentityStore(ctx.workspaceDir),
         people,
-        extractor: {
-          version: "seed-empty-v1",
-          extract(): TranscriptIdentityExtractionResult {
-            return { version: 1, mentions: [], organizations: [] };
-          },
-        },
       });
       const catalog = new TranscriptCatalog({
         workspaceDir: ctx.workspaceDir,

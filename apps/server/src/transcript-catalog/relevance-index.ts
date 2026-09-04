@@ -1,12 +1,12 @@
-import type { TranscriptRelevanceQuery } from "@chief-of-staff-demo/shared";
-import type { TranscriptRelevanceSearcher, TranscriptSemanticHit } from "./relevance.js";
+import type { TranscriptRecord, TranscriptRelevanceQuery } from "@chief-of-staff-demo/shared";
+import type { TranscriptSemanticHit } from "./relevance.js";
 
 /**
  * Index version 1: a deterministic local lexical index. No transcript text
  * leaves the Workspace (ADR-0001 local-first; the Catalog's disclosure names
- * the configured model only for extraction, not for this lane). A model- or
- * embedding-backed searcher can replace this at the same seam without
- * touching the service, the Review surface, or any decision.
+ * the configured model only for extraction, not for this lane). A second
+ * searcher reintroduces the seam; until then the index stays internal to the
+ * relevance service.
  */
 export const TRANSCRIPT_RELEVANCE_INDEX_VERSION = 1;
 
@@ -86,52 +86,53 @@ function countTerm(chunk: string, term: string): number {
 /**
  * The production relevance index: deterministic, explainable, in-process.
  * One best excerpt per retained Transcript; phrase matches outrank scattered
- * single-term matches; the explanation names exactly what matched.
+ * single-term matches; the explanation names exactly what matched. This is an
+ * internal seam with its own tests, not an injected adapter: a second
+ * searcher reintroduces the seam, until then callers use the service.
  */
-export function createLexicalTranscriptRelevanceIndex(): TranscriptRelevanceSearcher {
-  return {
-    version: String(TRANSCRIPT_RELEVANCE_INDEX_VERSION),
-    search({ query, records }): TranscriptSemanticHit[] {
-      const prepared = prepareQuery(query);
-      if (prepared.terms.length === 0) return [];
-      const hits: TranscriptSemanticHit[] = [];
-      for (const record of records) {
-        let best: {
-          chunk: string;
-          score: number;
-          matched: [string, number][];
-          phrase: boolean;
-        } | null = null;
-        for (const chunk of chunksOf(record.normalizedText)) {
-          const lower = chunk.toLowerCase();
-          const matched: [string, number][] = [];
-          for (const term of prepared.terms) {
-            const count = countTerm(lower, term);
-            if (count > 0) matched.push([term, count]);
-          }
-          if (matched.length === 0) continue;
-          const phraseHit = prepared.phrase !== null && lower.includes(prepared.phrase);
-          const score =
-            matched.reduce((total, [, count]) => total + count, 0) + (phraseHit ? PHRASE_BONUS : 0);
-          if (best === null || score > best.score) {
-            best = { chunk, score, matched, phrase: phraseHit };
-          }
-        }
-        if (best === null) continue;
-        const matchedText = best.matched
-          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-          .map(([term, count]) => `${term} ×${count}`)
-          .join(", ");
-        hits.push({
-          transcriptId: record.id,
-          excerpt: best.chunk,
-          score: best.score,
-          explanation: best.phrase
-            ? `Matched the phrase "${prepared.phrase}"; terms: ${matchedText}.`
-            : `Matched terms: ${matchedText}.`,
-        });
+export function searchLexicalIndex(input: {
+  query: TranscriptRelevanceQuery;
+  records: TranscriptRecord[];
+}): TranscriptSemanticHit[] {
+  const { query, records } = input;
+  const prepared = prepareQuery(query);
+  if (prepared.terms.length === 0) return [];
+  const hits: TranscriptSemanticHit[] = [];
+  for (const record of records) {
+    let best: {
+      chunk: string;
+      score: number;
+      matched: [string, number][];
+      phrase: boolean;
+    } | null = null;
+    for (const chunk of chunksOf(record.normalizedText)) {
+      const lower = chunk.toLowerCase();
+      const matched: [string, number][] = [];
+      for (const term of prepared.terms) {
+        const count = countTerm(lower, term);
+        if (count > 0) matched.push([term, count]);
       }
-      return hits.sort((left, right) => right.score - left.score);
-    },
-  };
+      if (matched.length === 0) continue;
+      const phraseHit = prepared.phrase !== null && lower.includes(prepared.phrase);
+      const score =
+        matched.reduce((total, [, count]) => total + count, 0) + (phraseHit ? PHRASE_BONUS : 0);
+      if (best === null || score > best.score) {
+        best = { chunk, score, matched, phrase: phraseHit };
+      }
+    }
+    if (best === null) continue;
+    const matchedText = best.matched
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .map(([term, count]) => `${term} ×${count}`)
+      .join(", ");
+    hits.push({
+      transcriptId: record.id,
+      excerpt: best.chunk,
+      score: best.score,
+      explanation: best.phrase
+        ? `Matched the phrase "${prepared.phrase}"; terms: ${matchedText}.`
+        : `Matched terms: ${matchedText}.`,
+    });
+  }
+  return hits.sort((left, right) => right.score - left.score);
 }

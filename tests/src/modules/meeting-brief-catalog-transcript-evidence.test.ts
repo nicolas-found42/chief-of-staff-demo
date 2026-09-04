@@ -69,22 +69,6 @@ describe("Catalog-backed transcript evidence (#138)", () => {
     const relevance = new TranscriptRelevanceService({
       corpus: { listTranscripts: () => records },
       store: new TranscriptRelevanceStore(mkdtempSync(join(tmpdir(), "mb-cat-relevance-"))),
-      searcher: {
-        version: "test-1",
-        /* A searcher that likes every Transcript mentioning the word, so the
-           linked ones would come back too if the provider did not exclude
-           them. */
-        search({ records: corpus }) {
-          return corpus
-            .filter((record) => record.normalizedText.includes("migration"))
-            .map((record) => ({
-              transcriptId: record.id,
-              excerpt: record.normalizedText,
-              score: 0.8,
-              explanation: "mentions migration",
-            }));
-        },
-      },
       now: () => new Date("2026-08-28T11:00:00.000Z"),
     });
 
@@ -107,10 +91,10 @@ describe("Catalog-backed transcript evidence (#138)", () => {
       ["t_series", "meeting-series"],
     ]);
 
-    /* t_person is linked and mentions "migration", so the searcher returned
-       it — but it arrives as evidence through its link, not as a second
-       review item. Only the genuinely unlinked hit is a suggestion, and it is
-       pending until the owner says otherwise. */
+    /* t_person is linked and matches the meeting vocabulary, so the index
+       returned it — but it arrives as evidence through its link, not as a
+       second review item. Only the genuinely unlinked hit is a suggestion,
+       and it is pending until the owner says otherwise. */
     expect(collected.semantic.map((item) => item.transcriptId)).toEqual(["t_unrelated"]);
     expect(collected.semantic[0]?.reviewState).toBe("pending");
   });

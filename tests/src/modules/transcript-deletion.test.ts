@@ -2,11 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type {
-  PersonEvidence,
-  TranscriptIdentityExtractionResult,
-  TranscriptRelevanceDecision,
-} from "@chief-of-staff-demo/shared";
+import type { PersonEvidence, TranscriptRelevanceDecision } from "@chief-of-staff-demo/shared";
 import { openRuns } from "../../../apps/server/src/runs";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -15,11 +11,9 @@ import { TranscriptCatalog } from "../../../apps/server/src/transcript-catalog/c
 import type { TranscriptCatalogSource } from "../../../apps/server/src/transcript-catalog/catalog";
 import { TranscriptDeletionService } from "../../../apps/server/src/transcript-catalog/deletion";
 import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
-import type { TranscriptIdentityExtractor } from "../../../apps/server/src/transcript-catalog/identity";
 import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
-import { createLexicalTranscriptRelevanceIndex } from "../../../apps/server/src/transcript-catalog/relevance-index";
 import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
 import {
   TRANSCRIPT_DELETE_CONFIRMATION,
@@ -68,12 +62,6 @@ function fakeSource(files: Record<string, FakeFile>): CountingSource {
   };
 }
 
-const EMPTY_EXTRACTION: TranscriptIdentityExtractionResult = {
-  version: 1,
-  mentions: [],
-  organizations: [],
-};
-
 interface Harness {
   workspaceDir: string;
   catalog: TranscriptCatalog;
@@ -104,16 +92,9 @@ function makeHarness(
     now: NOW,
     lifecycle: [],
   });
-  const extractor: TranscriptIdentityExtractor = {
-    version: "test-empty-v1",
-    extract() {
-      return EMPTY_EXTRACTION;
-    },
-  };
   const identity = new TranscriptIdentityService({
     store: identityStore,
     people,
-    extractor,
     now: NOW,
   });
   const source = fakeSource(files);
@@ -128,7 +109,6 @@ function makeHarness(
   const relevance = new TranscriptRelevanceService({
     corpus: catalog,
     store: relevanceStore,
-    searcher: createLexicalTranscriptRelevanceIndex(),
     now: NOW,
   });
   const deletion = new TranscriptDeletionService({
@@ -219,7 +199,6 @@ describe("Transcript deletion tombstone (issue #128)", () => {
       identity: new TranscriptIdentityService({
         store: h.identityStore,
         people: h.people,
-        extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
         now: NOW,
       }),
       now: NOW,
@@ -289,7 +268,6 @@ describe("Transcript deletion tombstone (issue #128)", () => {
       identity: new TranscriptIdentityService({
         store: h.identityStore,
         people: h.people,
-        extractor: { version: "test-empty-v1", extract: () => EMPTY_EXTRACTION },
         now: NOW,
       }),
       now: NOW,

@@ -9,7 +9,6 @@ import {
   type TranscriptDebriefProcessor,
 } from "../../../apps/server/src/transcript-catalog/catalog";
 import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
-import type { TranscriptIdentityExtractor } from "../../../apps/server/src/transcript-catalog/identity";
 import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-catalog/identity-store";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
@@ -79,12 +78,6 @@ function makeCatalog(
     store: new PersonProfileStore(workspaceDir),
     lifecycle: [],
   });
-  const identity: TranscriptIdentityExtractor = {
-    version: "test-empty-v1",
-    extract() {
-      return { version: 1, mentions: [], organizations: [] };
-    },
-  };
   return new TranscriptCatalog({
     workspaceDir,
     source,
@@ -92,7 +85,6 @@ function makeCatalog(
     identity: new TranscriptIdentityService({
       store: new TranscriptIdentityStore(workspaceDir),
       people,
-      extractor: identity,
     }),
     ...(debrief ? { debrief } : {}),
     now: () => new Date("2026-08-31T12:00:00.000Z"),

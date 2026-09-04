@@ -5,15 +5,11 @@ import { describe, expect, it } from "vitest";
 import type { PersonProfile, TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
-import {
-  TranscriptRelevanceService,
-  type TranscriptRelevanceSearcher,
-  type TranscriptSemanticHit,
-} from "../../../apps/server/src/transcript-catalog/relevance";
+import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
 import {
   TRANSCRIPT_RELEVANCE_INDEX_VERSION,
-  createLexicalTranscriptRelevanceIndex,
+  searchLexicalIndex,
 } from "../../../apps/server/src/transcript-catalog/relevance-index";
 
 const NOW = () => new Date("2026-08-31T12:00:00.000Z");
@@ -83,20 +79,6 @@ const CORPUS: TranscriptRecord[] = [
   }),
 ];
 
-interface FakeSearcherSpec {
-  hits: TranscriptSemanticHit[];
-}
-
-/** A deterministic trust-boundary probe: exactly the hits the test names. */
-function fakeSearcher(spec: FakeSearcherSpec): TranscriptRelevanceSearcher {
-  return {
-    version: "fake-index-v7",
-    search() {
-      return spec.hits;
-    },
-  };
-}
-
 interface Harness {
   workspaceDir: string;
   service: TranscriptRelevanceService;
@@ -105,10 +87,7 @@ interface Harness {
   corpus: TranscriptRecord[];
 }
 
-function makeHarness(
-  searcher: TranscriptRelevanceSearcher = createLexicalTranscriptRelevanceIndex(),
-  corpus: TranscriptRecord[] = CORPUS,
-): Harness {
+function makeHarness(corpus: TranscriptRecord[] = CORPUS): Harness {
   const workspaceDir = mkdtempSync(join(tmpdir(), "transcript-relevance-"));
   const store = new TranscriptRelevanceStore(workspaceDir);
   const people = new WorkspacePersonProfiles({
@@ -119,7 +98,6 @@ function makeHarness(
   const service = new TranscriptRelevanceService({
     corpus: { listTranscripts: () => corpus },
     store,
-    searcher,
     now: NOW,
   });
   return { workspaceDir, service, store, people, corpus };
@@ -162,26 +140,9 @@ describe("Transcript semantic relevance discovery", () => {
     });
   });
 
-  it("drops a hit whose excerpt is not grounded in the retained text", async () => {
-    const h = makeHarness(
-      fakeSearcher({
-        hits: [
-          {
-            transcriptId: "drive_sync_r1",
-            excerpt: "Priya confirmed the migration is already finished.",
-            score: 9,
-            explanation: "Hallucinated citation.",
-          },
-          {
-            transcriptId: "drive_unknown_r1",
-            excerpt: "Ghost transcript text.",
-            score: 5,
-            explanation: "Unknown record.",
-          },
-        ],
-      }),
-    );
-    const results = await h.service.search({ text: "anything at all" });
+  it("grounds every candidate in the retained text and persists nothing it cannot ground", async () => {
+    const h = makeHarness();
+    const results = await h.service.search({ text: "quantum entanglement calibration" });
     expect(results).toEqual([]);
     expect(h.store.readCandidates()).toEqual([]);
   });
@@ -204,18 +165,36 @@ describe("Transcript semantic relevance discovery", () => {
   });
 
   it("returns bounded results with a caller-set limit over the whole corpus", async () => {
-    const h = makeHarness(
-      fakeSearcher({
-        hits: [
-          { transcriptId: "drive_sync_r1", excerpt: "background job", score: 9, explanation: "a" },
-          { transcriptId: "drive_sync_r1", excerpt: "Acme renewal", score: 7, explanation: "b" },
-          { transcriptId: "drive_board_r1", excerpt: "churn numbers", score: 3, explanation: "c" },
-        ],
+    const h = makeHarness([
+      record({
+        id: "drive_renewal_high_r1",
+        fileName: "Renewal High.md",
+        meetingDate: null,
+        sourceUrl: null,
+        text: "The Acme renewal renewal renewal is holding at the current tier.",
       }),
-    );
-    const results = await h.service.search({ text: "renewal numbers" }, { limit: 2 });
-    expect(results.map((candidate) => candidate.score)).toEqual([9, 7]);
-    // Two hits inside one record are two candidates: the id separates by span.
+      record({
+        id: "drive_renewal_mid_r1",
+        fileName: "Renewal Mid.md",
+        meetingDate: null,
+        sourceUrl: null,
+        text: "The renewal discussion continued into the afternoon.",
+      }),
+      record({
+        id: "drive_renewal_low_r1",
+        fileName: "Renewal Low.md",
+        meetingDate: null,
+        sourceUrl: null,
+        text: "A brief renewal note.",
+      }),
+    ]);
+    const results = await h.service.search({ text: "renewal" }, { limit: 2 });
+    expect(results.map((candidate) => candidate.transcriptId)).toEqual([
+      "drive_renewal_high_r1",
+      "drive_renewal_low_r1",
+    ]);
+    expect(results.map((candidate) => candidate.score)).toEqual([3, 1]);
+    // Every candidate id is distinct: the id separates by revision and span.
     expect(new Set(results.map((candidate) => candidate.id)).size).toBe(results.length);
   });
 });
@@ -307,7 +286,6 @@ describe("Relevance state survives an index rebuild and a restart", () => {
     const restarted = new TranscriptRelevanceService({
       corpus: { listTranscripts: () => h.corpus },
       store: restartedStore,
-      searcher: createLexicalTranscriptRelevanceIndex(),
       now: NOW,
     });
     const again = await restarted.search({ text: "export button timing out" });
@@ -331,10 +309,8 @@ describe("Relevance state survives an index rebuild and a restart", () => {
     expect(restartedStore.readDecisions().length).toBe(decisionsBefore);
   });
 });
-
 describe("The local relevance index", () => {
   it("ranks phrase matches above scattered term matches and explains itself", () => {
-    const index = createLexicalTranscriptRelevanceIndex();
     const records = [
       record({
         id: "drive_phrase_r1",
@@ -351,10 +327,10 @@ describe("The local relevance index", () => {
         text: "We discussed a background, and later a job.",
       }),
     ];
-    const hits = index.search({
+    const hits = searchLexicalIndex({
       query: { text: "background job" },
       records,
-    }) as TranscriptSemanticHit[];
+    });
     const byId = new Map(hits.map((hit) => [hit.transcriptId, hit.score] as const));
     expect(byId.get("drive_phrase_r1")).toBeGreaterThan(byId.get("drive_scatter_r1")!);
     const phrase = hits.find((hit) => hit.transcriptId === "drive_phrase_r1")!;
@@ -363,8 +339,7 @@ describe("The local relevance index", () => {
   });
 
   it("finds nothing when the query shares no vocabulary with the corpus", () => {
-    const index = createLexicalTranscriptRelevanceIndex();
-    const hits = index.search({
+    const hits = searchLexicalIndex({
       query: { text: "quantum entanglement calibration" },
       records: [
         record({
@@ -375,7 +350,7 @@ describe("The local relevance index", () => {
           text: CORPUS_TEXT,
         }),
       ],
-    }) as TranscriptSemanticHit[];
+    });
     expect(hits).toEqual([]);
   });
 });

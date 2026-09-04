@@ -1,8 +1,4 @@
-import type {
-  AppConfig,
-  DriveIntakeStatus,
-  TranscriptIdentityExtractionResult,
-} from "@chief-of-staff-demo/shared";
+import type { AppConfig, DriveIntakeStatus } from "@chief-of-staff-demo/shared";
 import { buildDriveClient } from "../intake/drive.js";
 import type { GoogleConnection } from "../google/connection.js";
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
@@ -64,19 +60,6 @@ export interface TranscriptCatalogRuntime {
   drain(): Promise<void>;
 }
 
-/**
- * The identity supplement seam (ADR-0043). Deterministic extraction runs
- * inside the identity service regardless; this is the optional model-backed
- * addition to it, and no adapter for it has been built. An empty supplement
- * is therefore the truthful production value — deterministic mining, plus
- * nothing — rather than a prompt invented here to fill the slot.
- */
-const EMPTY_SUPPLEMENT: TranscriptIdentityExtractionResult = {
-  version: 1,
-  mentions: [],
-  organizations: [],
-};
-
 export function createTranscriptCatalogRuntime(
   options: TranscriptCatalogRuntimeOptions,
 ): TranscriptCatalogRuntime {
@@ -84,10 +67,6 @@ export function createTranscriptCatalogRuntime(
   const identity = new TranscriptIdentityService({
     store: new TranscriptIdentityStore(options.workspaceDir),
     people: options.people,
-    extractor: {
-      version: "deterministic-v1",
-      extract: () => EMPTY_SUPPLEMENT,
-    },
   });
 
   const config = options.getConfig();

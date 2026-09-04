@@ -341,10 +341,38 @@ One preserved transcript span and normalized identifiers that may refer to an or
 creating a canonical Organization Profile.
 _Avoid_: Organization Profile, employer fact, company record
 
+**Match Candidate**:
+One explainable proposal that a Transcript Mention refers to a particular Person Profile, carrying
+every signal considered, every conflict, its score and its lead over the next-best proposal. It is
+never a conclusion; an Identity Decision is.
+_Avoid_: Candidate (alone — a Relevance Candidate is a different thing), match, profile match
+
 **Identity Decision**:
 The durable reviewed or policy-made conclusion that a Transcript Mention refers to one Person
 Profile, is not a person, or remains unresolved.
 _Avoid_: Match score, candidate, guess
+
+**Identity Supplement**:
+The optional model-backed addition to deterministic mention extraction: further titles, roles,
+aliases or relationships on a span the patterns found, or on one they missed. It supplements
+recognition and concludes nothing; an Identity Decision stays the owner's.
+_Status_: not built. Deterministic mining is the whole of mining.
+_Avoid_: Extractor, identity model, entity extraction
+
+**Relevance Index**:
+What proposes Relevance Candidates for a query over the Transcript Catalog's retained corpus.
+_Status_: a local lexical index, version 1; no transcript text leaves the Workspace (ADR-0001).
+_Avoid_: Semantic search, semantic index, embedding search
+
+**Relevance Candidate**:
+One proposed, unconfirmed connection between a query and an excerpt of one Transcript, carrying the
+excerpt it cites and why it was proposed. It is evidence to review rather than fact: until the owner
+confirms it, no Meeting Brief, Person Profile or other factual consumer may read it.
+_Avoid_: Semantic result, match, hit, search result
+
+**Relevance Decision**:
+The owner's durable resolution of one Relevance Candidate as confirmed, rejected or unresolved.
+_Avoid_: Identity Decision (that one resolves a Transcript Mention), relevance score, confirmation
 
 **Meeting Wizard**:
 The product area that presents Meetings: the day ahead, the week ahead, and one page per Meeting
