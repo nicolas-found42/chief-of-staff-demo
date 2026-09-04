@@ -334,6 +334,15 @@ function ReviewSection({
   /* The speakers the transcript recorded, in the roster field's own syntax and
      awaiting their emails. */
   const speakerDraft = detail.speakers.map((speaker) => `${speaker} <>`).join(", ");
+  /* What to show as the roster: the confirmed one, else Calendar's prefill. */
+  const rosterShown: { email: string; displayName: string | null; profileId?: string | null }[] =
+    review.roster.entries.length > 0 ? review.roster.entries : detail.roster;
+  /* The prefill the owner would be confirming, in the field's own syntax. */
+  const prefillDraft = detail.roster
+    .map((person) =>
+      person.displayName ? `${person.displayName} <${person.email}>` : person.email,
+    )
+    .join(", ");
   const entryDraft = rosterDraft
     .split(",")
     .map((part) => part.trim())
@@ -404,9 +413,9 @@ function ReviewSection({
           the moment either changed. */}
       <h3 id="debrief-roster">Roster confirmation</h3>
       <p className="muted">
-        {detail.linked
-          ? "Prefilled from the meeting's calendar attendees."
-          : "No calendar event is linked to this transcript, so the attendees have to be named here."}
+        {detail.roster.length > 0
+          ? "Prefilled from the meeting's calendar attendees, and waiting to be confirmed."
+          : "No calendar attendees to start from, so the roster has to be named here."}
       </p>
       {review.roster.status === "confirmed" ? (
         <p className="status-badge status-ok" role="status">
@@ -418,13 +427,19 @@ function ReviewSection({
           Confirm the roster to publish the draft and Tasks.
         </p>
       )}
-      {review.roster.entries.length === 0 ? (
+      {/* The confirmed roster if there is one, else what Calendar gave the
+          record. Reading only the review's own entries, the section announced
+          a prefilled roster and then said none was recorded — the prefill
+          lives on the Transcript until the owner confirms it. */}
+      {rosterShown.length === 0 ? (
         <p className="muted">No roster recorded.</p>
       ) : (
         <ul>
-          {review.roster.entries.map((entry) => (
+          {rosterShown.map((entry) => (
             <li key={entry.email}>
-              {entry.displayName ?? entry.email} &lt;{entry.email}&gt;
+              {/* Calendar often gives no display name, and "x@y <x@y>" is the
+                  same address twice. */}
+              {entry.displayName ? `${entry.displayName} <${entry.email}>` : entry.email}
               {entry.profileId ? (
                 <>
                   {" "}
@@ -462,7 +477,15 @@ function ReviewSection({
           {/* The transcript already names who spoke. Retyping them was busywork
               the page could do itself; the emails still have to be supplied,
               because a spoken name is not a mailbox. */}
-          {speakerDraft !== "" && rosterDraft === "" && (
+          {rosterDraft === "" && prefillDraft !== "" && (
+            <p className="muted">
+              From the calendar:{" "}
+              <button type="button" onClick={() => setRosterDraft(prefillDraft)}>
+                Start from these {detail.roster.length} attendees
+              </button>
+            </p>
+          )}
+          {rosterDraft === "" && prefillDraft === "" && speakerDraft !== "" && (
             <p className="muted">
               Heard in the transcript:{" "}
               <button type="button" onClick={() => setRosterDraft(speakerDraft)}>

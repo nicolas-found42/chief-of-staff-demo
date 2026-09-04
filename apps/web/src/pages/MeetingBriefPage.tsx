@@ -8,6 +8,15 @@ import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 import { deliveryPresentation } from "../modules/meeting-brief/deliveryStatus";
 
+/**
+ * The Calendar ETag as a version a reader can compare. Calendar hands it over
+ * quoted — `"3575507876827966"` — and printed raw the quotes read as though
+ * the page were quoting somebody.
+ */
+function calendarVersionLabel(version: string): string {
+  return version.replace(/^"|"$/g, "");
+}
+
 /** Stable fetcher: the Brief journey reads the module's Cross-Run index. */
 const fetchIndex = () => api.meetingBriefIndex();
 
@@ -434,7 +443,8 @@ export function MeetingBriefPage() {
                       {/* The Calendar version stays here and only here: it is
                           what tells one revision from the next. On a current
                           brief it is a raw ETag beside a meeting's name. */}
-                      version {entry.eventVersion} · {formatMeetingTime(entry.createdAt)} ·{" "}
+                      version {calendarVersionLabel(entry.eventVersion)} ·{" "}
+                      {formatMeetingTime(entry.createdAt)} ·{" "}
                       <span
                         className={`status-badge ${isCurrent ? "status-done" : "status-active"}`}
                       >
