@@ -122,6 +122,7 @@ export function createMeetingBriefTestRuntime(
     calendarUse: "snapshot",
     gmailDeliveryProvider: gmailDelivery,
     getOwnerEmail: () => "owner@example.com",
+    ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
     ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
     ...(options.associateTranscripts ? { associateTranscripts: options.associateTranscripts } : {}),
     enrich: async (input, ctx) => {
