@@ -63,6 +63,15 @@ function withToken(): void {
   configStore.setGoogleRefreshToken("stored-refresh-token");
 }
 
+/** Google Tasks enabled as a Task Destination, which is what puts it in scope. */
+function withGoogleTasks(): void {
+  configStore.setGoogleTasksDestination({
+    enabled: true,
+    taskListId: "list-1",
+    taskListTitle: "Work",
+  });
+}
+
 describe("state — the states decided before a token is spent", () => {
   it("reports unconfigured until both client credentials are stored", async () => {
     const google = signedIn();
@@ -378,9 +387,9 @@ describe("verifySetup — asking Google what is missing", () => {
     const check = await checking(() => {}).verifySetup();
     expect(check.state).toBe("connected");
     /* YouTube is probed like the rest (ADR-0016): unlike the Picker it has a
-       server-side surface, so no step is exempt. */
+       server-side surface, so no step is exempt. Google Tasks is the one
+       exception, because it is the one optional surface (issue #184). */
     expect(check.items.map((item) => [item.label, item.ok])).toEqual([
-      ["Google Tasks", true],
       ["Gmail drafts", true],
       ["Gmail history", true],
       ["Gmail delivery", true],
@@ -390,8 +399,25 @@ describe("verifySetup — asking Google what is missing", () => {
     ]);
   });
 
+  it("leaves Google Tasks unchecked until it is enabled, and checks it once it is", async () => {
+    withToken();
+    const probed: GoogleSurface[] = [];
+    const record = (surface: GoogleSurface) => {
+      probed.push(surface);
+    };
+
+    await checking(record).verifySetup();
+    expect(probed).not.toContain("tasks");
+
+    withGoogleTasks();
+    const check = await checking(record).verifySetup();
+    expect(probed).toContain("tasks");
+    expect(check.items.at(-1)).toMatchObject({ label: "Google Tasks", ok: true });
+  });
+
   it("names the API that was never enabled, and stays connected", async () => {
     withToken();
+    withGoogleTasks();
     const check = await checking((surface) => {
       if (surface === "tasks") {
         throw API_DISABLED;
@@ -402,13 +428,14 @@ describe("verifySetup — asking Google what is missing", () => {
     // problems, and calling this a broken connection would send the user to the
     // wrong step.
     expect(check.state).toBe("connected");
-    expect(check.items[0]).toMatchObject({ label: "Google Tasks", ok: false });
-    expect(check.items[0].detail).toContain("Tasks API is not enabled");
-    expect(check.items[1]).toMatchObject({ label: "Gmail drafts", ok: true });
+    expect(check.items.at(-1)).toMatchObject({ label: "Google Tasks", ok: false });
+    expect(check.items.at(-1)?.detail).toContain("Tasks API is not enabled");
+    expect(check.items[0]).toMatchObject({ label: "Gmail drafts", ok: true });
   });
 
   it("names the project Google named, and allows for the propagation delay", async () => {
     withToken();
+    withGoogleTasks();
     const check = await checking((surface) => {
       if (surface === "tasks") {
         throw API_DISABLED;
@@ -418,9 +445,9 @@ describe("verifySetup — asking Google what is missing", () => {
     /* The console does not switch to a project it has just created, so enabling
        the APIs somewhere else is easy and otherwise invisible. Echoing back the
        project Google named is the only way anyone catches it. */
-    expect(check.items[0].detail).toContain("project 123");
+    expect(check.items.at(-1)?.detail).toContain("project 123");
     // And a correct setup that is merely too new looks identical to a broken one.
-    expect(check.items[0].detail).toMatch(/few minutes/i);
+    expect(check.items.at(-1)?.detail).toMatch(/few minutes/i);
   });
 
   it("treats a stale saved sign-in as the first insufficient-scope remedy", async () => {
@@ -431,7 +458,7 @@ describe("verifySetup — asking Google what is missing", () => {
       }
     }).verifySetup();
 
-    const detail = check.items[1].detail;
+    const detail = check.items[0].detail;
     expect(detail).toContain("gmail.compose");
     expect(detail).toMatch(/sign in again first/i);
     expect(detail).toContain("If that does not fix it");

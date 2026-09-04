@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
 import type {
+  ExternalTaskLink,
   Task,
   TaskCreateInput,
   TaskDestination,
   TaskList,
   TaskPriority,
   TaskResponsiblePerson,
+  TaskSource,
   TaskStatus,
   TaskUpdateInput,
 } from "@chief-of-staff-demo/shared";
@@ -14,6 +16,7 @@ import {
   INBOX_TASK_LIST_NAME,
   LOCAL_TASK_DESTINATION,
   TASK_PRIORITIES,
+  compareTasks,
 } from "@chief-of-staff-demo/shared";
 import type { TaskStore } from "./store.js";
 
@@ -31,7 +34,10 @@ export class TaskValidationError extends Error {
       | "task-list-not-found"
       | "task-list-not-empty"
       | "inbox-is-permanent"
-      | "task-not-found",
+      | "task-not-found"
+      | "task-not-in-trash"
+      | "confirmation-required"
+      | "task-already-linked",
     message: string,
   ) {
     super(message);
@@ -49,12 +55,41 @@ export interface WorkspaceTasksDeps {
    * which is what a Workspace with no Profile directory can honestly offer.
    */
   isConfirmedPerson?: (profileId: string) => boolean;
+  /**
+   * The Workspace timezone, read live. Due dates are calendar dates, so which
+   * day "today" is has to be decided somewhere — and it is decided here, once,
+   * rather than in every surface that draws a group.
+   */
+  timezone?: () => string;
+  /**
+   * Whether Google Tasks is enabled as a Task Destination right now (issue
+   * #184). Read live rather than captured, so disabling it stops new Tasks
+   * being filed outward without restarting anything. Absent — the honest
+   * default — local is the only destination there is.
+   */
+  isGoogleTasksEnabled?: () => boolean;
 }
+
+/**
+ * Which Responsible Person a query narrows to: the owner, nobody, or one
+ * Person Profile. A separate union rather than `TaskResponsiblePerson | null`,
+ * because "nobody" is a filter value here and an absent filter is not.
+ */
+export type ResponsibleFilter =
+  { kind: "owner" } | { kind: "nobody" } | { kind: "person-profile"; profileId: string };
 
 /** What a Task query narrows on. Everything is optional; nothing is required. */
 export interface TaskQuery {
   listId?: string;
   status?: TaskStatus;
+  /** Trashed Tasks are excluded unless this asks for them, and then only them. */
+  trashed?: boolean;
+  /** Case-insensitive, over title and notes. */
+  search?: string;
+  priority?: TaskPriority;
+  responsible?: ResponsibleFilter;
+  /** Whether the Task carries an External Task Link. */
+  linked?: boolean;
 }
 
 /**
@@ -70,11 +105,15 @@ export class WorkspaceTasks {
   private readonly store: TaskStore;
   private readonly now: () => Date;
   private readonly isConfirmedPerson: (profileId: string) => boolean;
+  private readonly timezone: () => string;
+  private readonly isGoogleTasksEnabled: () => boolean;
 
   constructor(deps: WorkspaceTasksDeps) {
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
     this.isConfirmedPerson = deps.isConfirmedPerson ?? (() => false);
+    this.timezone = deps.timezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+    this.isGoogleTasksEnabled = deps.isGoogleTasksEnabled ?? (() => false);
   }
 
   // ---------------------------------------------------------------------------
@@ -105,7 +144,7 @@ export class WorkspaceTasks {
     const list: TaskList = {
       id: newId("list", this.now()),
       name: requireName(input.name),
-      defaultDestination: normalizeDestination(input.defaultDestination),
+      defaultDestination: this.normalizeDestination(input.defaultDestination),
     };
     /* `lists()` carries Inbox, synthesized or not, so the first list the owner
        creates is also what persists Inbox for the first time. */
@@ -141,7 +180,7 @@ export class WorkspaceTasks {
       ...(input.name === undefined ? {} : { name: requireName(input.name) }),
       ...(input.defaultDestination === undefined
         ? {}
-        : { defaultDestination: normalizeDestination(input.defaultDestination) }),
+        : { defaultDestination: this.normalizeDestination(input.defaultDestination) }),
     };
     this.store.writeLists(lists.map((list) => (list.id === listId ? next : list)));
     return next;
@@ -174,11 +213,45 @@ export class WorkspaceTasks {
   // Tasks
   // ---------------------------------------------------------------------------
 
+  /**
+   * The Tasks a query selects, in the default order: due date, then
+   * high/medium/low/no priority, then oldest first (issue #175).
+   *
+   * Trash is opt-in and exclusive. A trashed Task is not a Task with an extra
+   * flag to be remembered at every call site — it is out of the ordinary
+   * results until something asks for Trash by name.
+   */
   list(query: TaskQuery = {}): Task[] {
+    const term = query.search?.trim().toLowerCase() ?? "";
     return this.store
       .readTasks()
-      .filter((task) => matches(query.listId, task.listId) && matches(query.status, task.status))
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+      .filter(
+        (task) =>
+          (query.trashed === true) === (task.deletedAt !== null) &&
+          matches(query.listId, task.listId) &&
+          matches(query.status, task.status) &&
+          matches(query.priority, task.priority) &&
+          matches(query.linked, task.externalLink !== null) &&
+          responsibleMatches(query.responsible, task.responsiblePerson) &&
+          (term === "" ||
+            task.title.toLowerCase().includes(term) ||
+            task.notes.toLowerCase().includes(term)),
+      )
+      .sort(compareTasks);
+  }
+
+  /**
+   * Today as a calendar date in the Workspace timezone. `en-CA` because it
+   * formats as `YYYY-MM-DD`, which is the same shape a due date is stored in
+   * and therefore comparable as a string.
+   */
+  today(now = this.now()): string {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: this.timezone(),
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
   }
 
   get(taskId: string): Task | null {
@@ -191,10 +264,11 @@ export class WorkspaceTasks {
    * priority, with the destination taken from the Task List unless this
    * creation overrides it.
    *
-   * Nothing captured here has a source: a source is what a promotion records,
-   * and promotion does not exist yet.
+   * A source is supplied only by a promotion (issue #178), which is the one
+   * caller that has one: a Task captured by hand has nothing to be a snapshot
+   * of, and no route lets a request name a source of its own.
    */
-  create(input: TaskCreateInput): Task {
+  create(input: TaskCreateInput, source: TaskSource | null = null): Task {
     const title = requireTitle(input.title);
     const listId = input.listId ?? INBOX_TASK_LIST_ID;
     const list = this.getList(listId);
@@ -213,11 +287,13 @@ export class WorkspaceTasks {
       responsiblePerson: this.requireResponsiblePerson(
         input.responsiblePerson === undefined ? { kind: "owner" } : input.responsiblePerson,
       ),
-      destination: normalizeDestination(input.destination ?? list.defaultDestination),
-      source: null,
+      destination: this.normalizeDestination(input.destination ?? list.defaultDestination),
+      source: source,
+      externalLink: null,
       createdAt: at,
       updatedAt: at,
       completedAt: null,
+      deletedAt: null,
     };
     this.store.writeTasks([...this.store.readTasks(), task]);
     return task;
@@ -267,6 +343,73 @@ export class WorkspaceTasks {
     );
   }
 
+  /**
+   * Move a Task to Trash. Recoverable by construction: nothing is removed and
+   * `status` is left exactly as it was, which is what lets a restore return
+   * the Task to the open or completed state it already had (ADR-0054).
+   */
+  trash(taskId: string): Task {
+    return this.edit(taskId, (task) =>
+      task.deletedAt === null ? { ...task, deletedAt: this.now().toISOString() } : task,
+    );
+  }
+
+  /** The reverse, and idempotent: a Task not in Trash is already restored. */
+  restore(taskId: string): Task {
+    return this.edit(taskId, (task) =>
+      task.deletedAt === null ? task : { ...task, deletedAt: null },
+    );
+  }
+
+  /**
+   * Remove a Task for good. Only from Trash, and only when the caller says so
+   * in as many words: this is the one Task operation with nothing behind it,
+   * so an accidental one has to be impossible rather than merely unlikely.
+   */
+  deleteForever(taskId: string, options: { confirmed: boolean }): void {
+    const tasks = this.store.readTasks();
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    if (!task) {
+      throw new TaskValidationError("task-not-found", `No Task with id ${taskId}`);
+    }
+    if (task.deletedAt === null) {
+      throw new TaskValidationError(
+        "task-not-in-trash",
+        "Only a Task in Trash can be permanently deleted. Move it to Trash first.",
+      );
+    }
+    if (!options.confirmed) {
+      throw new TaskValidationError(
+        "confirmation-required",
+        "Permanent deletion cannot be undone and has to be confirmed explicitly.",
+      );
+    }
+    this.store.writeTasks(tasks.filter((candidate) => candidate.id !== taskId));
+  }
+
+  /**
+   * Record the one External Task Link a Task may have (ADR-0056). Refused
+   * when the Task already carries a link that reached the provider — a second
+   * link would make two external records answer for one piece of accepted
+   * work. A `waiting` or `failed` link reached nothing the provider kept, so
+   * writing over one is the attempt it was recording, not a second link.
+   *
+   * Only the link changes, and only through here: the outward write happens
+   * after the local commit, so this is always an update to a Task that already
+   * exists and is already usable.
+   */
+  recordExternalLink(taskId: string, link: Omit<ExternalTaskLink, "updatedAt">): Task {
+    return this.edit(taskId, (task) => {
+      if (task.externalLink !== null && task.externalLink.state === "synchronized") {
+        throw new TaskValidationError(
+          "task-already-linked",
+          "That Task already has an External Task Link.",
+        );
+      }
+      return { ...task, externalLink: { ...link, updatedAt: this.now().toISOString() } };
+    });
+  }
+
   // ---------------------------------------------------------------------------
 
   private edit(taskId: string, change: (task: Task) => Task): Task {
@@ -304,11 +447,58 @@ export class WorkspaceTasks {
       "A Responsible Person is the workspace owner or a confirmed Person Profile.",
     );
   }
+
+  /**
+   * Local only until the owner enables Google Tasks as a Task Destination
+   * (issue #184): an outward write is a decision, and a request naming a
+   * provider the Workspace is not connected to is refused rather than
+   * downgraded silently to local.
+   */
+  private normalizeDestination(value: unknown): TaskDestination {
+    if (value === undefined) return LOCAL_TASK_DESTINATION;
+    const candidate = (typeof value === "object" && value !== null ? value : {}) as {
+      provider?: unknown;
+      googleTaskListId?: unknown;
+      googleTaskListTitle?: unknown;
+    };
+    if (candidate.provider === "local") return LOCAL_TASK_DESTINATION;
+    if (
+      candidate.provider === "google-tasks" &&
+      typeof candidate.googleTaskListId === "string" &&
+      candidate.googleTaskListId !== "" &&
+      typeof candidate.googleTaskListTitle === "string"
+    ) {
+      if (!this.isGoogleTasksEnabled()) {
+        throw new TaskValidationError(
+          "invalid-destination",
+          "Google Tasks is not enabled as a Task Destination.",
+        );
+      }
+      return {
+        provider: "google-tasks",
+        googleTaskListId: candidate.googleTaskListId,
+        googleTaskListTitle: candidate.googleTaskListTitle,
+      };
+    }
+    throw new TaskValidationError("invalid-destination", "That is not a Task Destination.");
+  }
 }
 
 /** An unset filter matches everything; a set one has to be equal. */
 function matches<T>(expected: T | undefined, actual: T): boolean {
   return expected === undefined || expected === actual;
+}
+
+/** An unset Responsible Person filter matches everything; "nobody" matches null. */
+function responsibleMatches(
+  expected: ResponsibleFilter | undefined,
+  actual: TaskResponsiblePerson | null,
+): boolean {
+  if (expected === undefined) return true;
+  if (expected.kind === "nobody") return actual === null;
+  if (actual === null) return false;
+  if (expected.kind === "owner") return actual.kind === "owner";
+  return actual.kind === "person-profile" && actual.profileId === expected.profileId;
 }
 
 function requireTitle(value: unknown): string {
@@ -356,19 +546,6 @@ function requirePriority(value: unknown): TaskPriority {
     "invalid-priority",
     `Task Priority is one of ${TASK_PRIORITIES.join(", ")}.`,
   );
-}
-
-/** Local only is the whole supported set today; a provider name is refused. */
-function normalizeDestination(value: unknown): TaskDestination {
-  if (value === undefined) return LOCAL_TASK_DESTINATION;
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { provider?: unknown }).provider === "local"
-  ) {
-    return { provider: "local" };
-  }
-  throw new TaskValidationError("invalid-destination", "Local only is the supported destination.");
 }
 
 function newId(prefix: "task" | "list", now: Date): string {

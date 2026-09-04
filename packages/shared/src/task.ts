@@ -33,11 +33,58 @@ export const INBOX_TASK_LIST_NAME = "Inbox" as const;
  * by accident. Google Tasks and Asana widen this union with their own
  * container fields when those destinations arrive.
  */
-export interface TaskDestination {
-  provider: "local";
-}
+export type TaskDestination =
+  | { provider: "local" }
+  | {
+      /**
+       * Google Tasks, which is enabled independently of the rest of the Google
+       * connection (issue #184). The container is one Google Task List the
+       * owner selected; nothing is ever read back out of it.
+       */
+      provider: "google-tasks";
+      googleTaskListId: string;
+      googleTaskListTitle: string;
+    };
 
 export const LOCAL_TASK_DESTINATION: TaskDestination = { provider: "local" };
+
+/**
+ * How far one Task's outward representation has got. A local Task commits
+ * before any external write, so `waiting` and `failed` are ordinary states of
+ * a Task that is entirely usable — never a reason to refuse the local work.
+ */
+export type ExternalTaskLinkState = "waiting" | "synchronized" | "failed";
+
+/**
+ * The one representation a Task may have in an external system (ADR-0056).
+ * Provider-neutral by construction: the Workspace record is the source of
+ * truth, and this is a pointer to a copy of it.
+ */
+export interface ExternalTaskLink {
+  state: ExternalTaskLinkState;
+  destination: TaskDestination;
+  /** The external system's own id; null while waiting or after a failure. */
+  remoteId: string | null;
+  /** A link a person can open; null when the provider returned none. */
+  url: string | null;
+  /**
+   * What the Workspace last sent outward. Synchronization compares against
+   * this rather than against the live Task, which is how an external edit is
+   * told apart from a local one.
+   */
+  baseline: ExternalTaskBaseline | null;
+  /** Why the last attempt failed; null when it did not. */
+  failure: string | null;
+  updatedAt: string;
+}
+
+/** The fields the Workspace sends outward, as they were last sent. */
+export interface ExternalTaskBaseline {
+  title: string;
+  notes: string;
+  dueDate: string | null;
+  status: TaskStatus;
+}
 
 /**
  * Who is expected to perform a Task: the workspace owner, or one confirmed
@@ -74,10 +121,21 @@ export interface Task {
   /** Resolved once at creation from the list default or an explicit override. */
   destination: TaskDestination;
   source: TaskSource | null;
+  /**
+   * At most one external representation, ever (ADR-0056). Null for a Task that
+   * has none, which is every Task filed to a local destination.
+   */
+  externalLink: ExternalTaskLink | null;
   createdAt: string;
   updatedAt: string;
   /** Set while `status` is completed, cleared when the Task is reopened. */
   completedAt: string | null;
+  /**
+   * When the Task was moved to Trash; null while it is not. Orthogonal to
+   * `status`, which is what lets a restore return a Task to the open or
+   * completed state it already had rather than guessing one.
+   */
+  deletedAt: string | null;
 }
 
 /**
@@ -120,4 +178,16 @@ export interface TaskUpdateInput {
 export interface TaskIndex {
   tasks: Task[];
   lists: TaskList[];
+  /**
+   * Today as a calendar date in the Workspace timezone. Served rather than
+   * computed by the surface, so a date-only Task near a UTC boundary lands in
+   * the group the owner's own day puts it in.
+   */
+  today: string;
+  /**
+   * The ids of Tasks whose source no longer exists. A Task survives the
+   * deletion of what it came from (ADR-0054), and this is how a surface says
+   * so out loud instead of offering a link into nothing.
+   */
+  unavailableSources: string[];
 }

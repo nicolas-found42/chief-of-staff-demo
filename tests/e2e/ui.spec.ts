@@ -64,9 +64,10 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
   // cost of that decision: every existing connection consents once more.
   // Gmail send joined them for the Meeting Brief owner-only auto-send
   // (ADR-0034), with the same consent cost.
+  // Google Tasks is not among them: it is the one optional surface, asked for
+  // only once the owner enables it as a Task Destination (issue #184).
   await toggle(4).click();
   await expect(page.locator(".setup-copy > code")).toHaveText([
-    "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
@@ -74,10 +75,10 @@ test("an unconfigured workspace gets the setup wizard, not two bare fields", asy
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/youtube.readonly",
   ]);
-  await expect(page.locator(".copy-button")).toHaveCount(7);
+  await expect(page.locator(".copy-button")).toHaveCount(6);
   await expect(
     page.getByRole("button", { name: "Copy https://www.googleapis.com/auth/tasks", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 
   // The redirect URI is built from the port the server is actually on, so a
   // value hardcoded to another port — as the UI used to carry — fails here.

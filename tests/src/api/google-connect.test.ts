@@ -115,7 +115,7 @@ describe("GET /api/google/connect", () => {
     expect(response.json().error).toBe(googleFailureHint("unconfigured"));
   });
 
-  it("hands back a Google consent URL carrying the redirect URI and both scopes", async () => {
+  it("hands back a Google consent URL carrying the redirect URI and the scopes in use", async () => {
     configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
     const response = await app.inject({ method: "GET", url: "/api/google/connect" });
     expect(response.statusCode).toBe(200);
@@ -131,7 +131,25 @@ describe("GET /api/google/connect", () => {
     expect(authUrl.searchParams.get("access_type")).toBe("offline");
     expect(authUrl.searchParams.get("prompt")).toBe("consent");
     expect(authUrl.searchParams.get("scope")).toContain("gmail.compose");
-    expect(authUrl.searchParams.get("scope")).toContain("tasks");
+    /* Least privilege (issue #184): the Tasks scope is not part of a grant
+       nobody has asked for, and every other capability is reachable without
+       it. */
+    expect(authUrl.searchParams.get("scope")).not.toContain("auth/tasks");
+  });
+
+  it("asks for the Tasks scope once Google Tasks is enabled as a Task Destination", async () => {
+    configStore.update({ google: { clientId: "id.apps", clientSecret: "secret" } });
+    configStore.setGoogleTasksDestination({
+      enabled: true,
+      taskListId: "list-1",
+      taskListTitle: "Work",
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/google/connect" });
+
+    const scope = new URL(response.json().authUrl).searchParams.get("scope");
+    expect(scope).toContain("https://www.googleapis.com/auth/tasks");
+    expect(scope).toContain("gmail.compose");
   });
 });
 

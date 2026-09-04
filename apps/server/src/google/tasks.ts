@@ -55,6 +55,47 @@ export async function findOrCreateTasklist(auth: GoogleAuth, title: string): Pro
   return created.data.id;
 }
 
+/**
+ * Create one Google Task from a Workspace Task (issue #184). Deliberately not
+ * `createGoogleTask` above: that one composes the routine's parity notes from
+ * an extraction, while a Workspace Task carries its own title and notes and
+ * must not have anything appended to them.
+ */
+export async function insertGoogleTask(
+  auth: GoogleAuth,
+  tasklistId: string,
+  task: { title: string; notes: string; dueDate: string | null },
+): Promise<CreatedTask> {
+  const tasks = google.tasks({ version: "v1", auth });
+  const res = await tasks.tasks.insert({
+    tasklist: tasklistId,
+    requestBody: {
+      title: task.title,
+      notes: task.notes,
+      ...(task.dueDate ? { due: normalizeDue(task.dueDate) } : {}),
+    },
+  });
+  if (!res.data.id) {
+    throw new Error(`task insert returned no id for "${task.title}"`);
+  }
+  return { googleId: res.data.id, webViewLink: res.data.webViewLink ?? null };
+}
+
+/**
+ * The Google Task Lists this account holds, by id and title. Listing the
+ * containers is not importing their contents: nothing here reads a single
+ * Google Task, and nothing ever brings one into the Workspace.
+ */
+export async function listGoogleTaskLists(
+  auth: GoogleAuth,
+): Promise<{ id: string; title: string }[]> {
+  const tasks = google.tasks({ version: "v1", auth });
+  const res = await tasks.tasklists.list({ maxResults: 100 });
+  return (res.data.items ?? [])
+    .filter((item): item is { id: string; title: string | null } => Boolean(item.id))
+    .map((item) => ({ id: item.id, title: item.title ?? item.id }));
+}
+
 export interface CreatedTask {
   googleId: string;
   /** Absolute link to the task in Google's Tasks Web UI, as Google returned it. */

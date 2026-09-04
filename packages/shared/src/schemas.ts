@@ -60,6 +60,24 @@ export const ConfigSchema = z.strictObject({
     folderName: z.string().default(""),
     pollIntervalMinutes: z.number().int().positive().default(2),
   }),
+  /**
+   * The Tasks product area's own configuration (issue #184). Google Tasks is
+   * enabled here and nowhere else: the Google connection is one authorization,
+   * but the Tasks scope is asked for only when the owner has chosen to file
+   * work outward, so every other Google capability stays usable without it.
+   */
+  tasks: z
+    .strictObject({
+      googleTasks: z
+        .strictObject({
+          enabled: z.boolean().default(false),
+          /** The Google Task List new Tasks are created in; "" until chosen. */
+          taskListId: z.string().default(""),
+          taskListTitle: z.string().default(""),
+        })
+        .default({ enabled: false, taskListId: "", taskListTitle: "" }),
+    })
+    .default({ googleTasks: { enabled: false, taskListId: "", taskListTitle: "" } }),
   ollama: z.strictObject({
     baseUrl: z.string().default(DEFAULT_OLLAMA_BASE_URL),
   }),

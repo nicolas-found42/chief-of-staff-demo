@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Task, TaskIndex, TaskList } from "@chief-of-staff-demo/shared";
+import type { ActionItem, Task, TaskIndex, TaskList } from "@chief-of-staff-demo/shared";
 import { registerTasksApi } from "../../../apps/server/src/api/tasks";
 import { TaskStore, TaskStoreCorruptionError } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
@@ -20,15 +20,19 @@ let workspaceDir: string;
 /** Profile ids this Workspace treats as confirmed; set per test. */
 let confirmedProfiles: Set<string>;
 let clock: Date;
+let store: TaskStore;
 
 function compose(): FastifyInstance {
-  const store = new TaskStore(workspaceDir);
+  store = new TaskStore(workspaceDir);
   const instance = fastify();
   registerTasksApi(instance, {
     tasks: new WorkspaceTasks({
       store,
       now: () => clock,
       isConfirmedPerson: (profileId) => confirmedProfiles.has(profileId),
+      /* Auckland, deliberately: a Workspace whose local date is ahead of UTC
+         is where a date-only due date is easiest to get wrong. */
+      timezone: () => "Pacific/Auckland",
     }),
     actionItems: new WorkspaceActionItems({ store, now: () => clock }),
   });
@@ -410,5 +414,378 @@ describe("a Workspace whose Task file cannot be read", () => {
 
   it("reads a Workspace that has simply never written one as empty", () => {
     expect(new TaskStore(workspaceDir).readTasks()).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reading the open Tasks (issue #175)
+// ---------------------------------------------------------------------------
+
+/** Capture a Task and immediately give it the fields the query is about. */
+async function capture(fields: {
+  title: string;
+  dueDate?: string | null;
+  priority?: string;
+  notes?: string;
+  listId?: string;
+  responsiblePerson?: unknown;
+}): Promise<Task> {
+  const response = await app.inject({ method: "POST", url: "/api/tasks", payload: fields });
+  expect(response.statusCode).toBe(201);
+  return response.json<Task>();
+}
+
+describe("grouping, searching and filtering open Tasks", () => {
+  it("serves today as a calendar date in the Workspace timezone", async () => {
+    /* 09:00 UTC on the 4th is already the 4th in Auckland; 21:00 UTC is the
+       5th there while UTC still says the 4th. The group a date-only Task lands
+       in follows the owner's day, not the server's. */
+    expect((await index()).today).toBe("2026-09-04");
+
+    clock = new Date("2026-09-04T21:00:00.000Z");
+    expect((await index()).today).toBe("2026-09-05");
+  });
+
+  it("orders by due date, then priority, then oldest first", async () => {
+    await capture({ title: "Someday", priority: "high" });
+    await capture({ title: "Later", dueDate: "2026-09-09" });
+    clock = new Date("2026-09-04T09:00:01.000Z");
+    await capture({ title: "Today low", dueDate: "2026-09-04", priority: "low" });
+    await capture({ title: "Today high", dueDate: "2026-09-04", priority: "high" });
+
+    expect((await index()).tasks.map((task) => task.title)).toEqual([
+      "Today high",
+      "Today low",
+      "Later",
+      "Someday",
+    ]);
+  });
+
+  it("matches a search over title and notes", async () => {
+    await capture({ title: "Send the billing follow-up" });
+    await capture({ title: "Draft the agenda", notes: "Mention BILLING before the demo" });
+    await capture({ title: "Book the room" });
+
+    const found = await index("?search=billing");
+    expect(found.tasks.map((task) => task.title).sort()).toEqual([
+      "Draft the agenda",
+      "Send the billing follow-up",
+    ]);
+  });
+
+  it("combines the Task List, priority, Responsible Person and link filters", async () => {
+    confirmedProfiles.add("profile_dana");
+    const listed = await app.inject({
+      method: "POST",
+      url: "/api/task-lists",
+      payload: { name: "Client work" },
+    });
+    const listId = listed.json<TaskList>().id;
+
+    await capture({ title: "Inbox high owner", priority: "high" });
+    await capture({ title: "Client high owner", priority: "high", listId });
+    await capture({ title: "Client low owner", priority: "low", listId });
+    await capture({
+      title: "Client high Dana",
+      priority: "high",
+      listId,
+      responsiblePerson: { kind: "person-profile", profileId: "profile_dana" },
+    });
+
+    /* Each filter alone, then all three together: combining them narrows,
+       rather than one quietly replacing another. */
+    expect((await index(`?listId=${listId}`)).tasks).toHaveLength(3);
+    expect((await index("?priority=high")).tasks).toHaveLength(3);
+    expect((await index("?responsible=profile_dana")).tasks).toHaveLength(1);
+    expect(
+      (await index(`?listId=${listId}&priority=high&responsible=owner`)).tasks.map((t) => t.title),
+    ).toEqual(["Client high owner"]);
+    /* Nothing here has been sent anywhere, so the link filter answers with
+       every Task on one side and none on the other. */
+    expect((await index("?linked=false")).tasks).toHaveLength(4);
+    expect((await index("?linked=true")).tasks).toEqual([]);
+  });
+
+  it("keeps completed and trashed Tasks out of the open groups", async () => {
+    const completed = await capture({ title: "Already done" });
+    const trashed = await capture({ title: "Never mind" });
+    await capture({ title: "Still open" });
+    await app.inject({ method: "POST", url: `/api/tasks/${completed.id}/complete` });
+    await app.inject({ method: "POST", url: `/api/tasks/${trashed.id}/trash` });
+
+    expect((await index("?status=open")).tasks.map((task) => task.title)).toEqual(["Still open"]);
+    expect((await index()).tasks.map((task) => task.title).sort()).toEqual([
+      "Already done",
+      "Still open",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trash (issue #176)
+// ---------------------------------------------------------------------------
+
+describe("trashing, restoring and permanently deleting a Task", () => {
+  it("keeps a trashed Task out of ordinary results and in Trash", async () => {
+    const task = await quickAdd("Cancel the venue");
+
+    const trashed = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/trash` });
+    expect(trashed.statusCode).toBe(200);
+    expect(trashed.json<Task>().deletedAt).toBe("2026-09-04T09:00:00.000Z");
+
+    expect((await index()).tasks).toEqual([]);
+    expect((await index("?status=completed")).tasks).toEqual([]);
+    expect((await index("?trashed=true")).tasks.map((entry) => entry.id)).toEqual([task.id]);
+  });
+
+  it("restores a Task with its prior open or completed state intact", async () => {
+    const task = await quickAdd("Sign the contract");
+    await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
+    await app.inject({ method: "POST", url: `/api/tasks/${task.id}/trash` });
+
+    const restored = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/restore` });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json<Task>()).toMatchObject({ status: "completed", deletedAt: null });
+    expect(restored.json<Task>().completedAt).not.toBeNull();
+    expect((await index("?trashed=true")).tasks).toEqual([]);
+  });
+
+  it("permanently deletes only from Trash, and only when confirmed", async () => {
+    const task = await quickAdd("A mistake");
+
+    const notTrashed = await app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${task.id}?confirm=true`,
+    });
+    expect(notTrashed.statusCode).toBe(409);
+    expect(notTrashed.json<{ error: string }>().error).toBe("task-not-in-trash");
+
+    await app.inject({ method: "POST", url: `/api/tasks/${task.id}/trash` });
+    const unconfirmed = await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}` });
+    expect(unconfirmed.statusCode).toBe(428);
+    expect(unconfirmed.json<{ error: string }>().error).toBe("confirmation-required");
+    expect((await index("?trashed=true")).tasks).toHaveLength(1);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${task.id}?confirm=true`,
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect((await index("?trashed=true")).tasks).toEqual([]);
+  });
+
+  it("keeps a Task whose Meeting, Debrief and Transcript are gone, and reports the source honestly", async () => {
+    /* A Task is a snapshot (ADR-0054). Everything it came from is removed here
+       — the harshest version of "the Meeting, Debrief and Transcript were
+       deleted" — and the Task has to survive intact, still naming what it came
+       from so a surface can say that source is unavailable rather than
+       pretending the Task was captured by hand. */
+    const promoted = new WorkspaceTasks({ store, now: () => clock }).create(
+      { title: "Send the pricing sheet" },
+      {
+        kind: "action-item",
+        actionItemId: "action_item_gone",
+        debriefRunId: "run_gone",
+        transcriptId: "transcript_gone",
+        meetingId: "meeting_gone",
+      },
+    );
+    store.writeActionItems([]);
+
+    const read = await app.inject({ method: "GET", url: `/api/tasks/${promoted.id}` });
+    expect(read.statusCode).toBe(200);
+    expect(read.json<Task>()).toMatchObject({
+      title: "Send the pricing sheet",
+      source: { kind: "action-item", actionItemId: "action_item_gone" },
+    });
+    const queue = await app.inject({ method: "GET", url: "/api/action-items" });
+    expect(queue.json<{ items: ActionItem[] }>().items).toEqual([]);
+  });
+
+  it("reports an unavailable source rather than deleting or corrupting the Task", async () => {
+    const items = new WorkspaceActionItems({ store, now: () => clock });
+    const item = items.materialize({
+      debriefRunId: "run_1",
+      transcriptId: "transcript_1",
+      meetingId: "meeting_1",
+      actionItems: [
+        {
+          title: "Send the pricing sheet",
+          owner: null,
+          ownerMentionId: null,
+          ownerProfileId: null,
+          dueDate: null,
+        },
+      ],
+    })[0];
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    const taskId = promoted.json<{ task: Task }>().task.id;
+    expect((await index()).unavailableSources).toEqual([]);
+
+    /* Everything the Task came from is deleted underneath it. */
+    store.writeActionItems([]);
+
+    const after = await index();
+    expect(after.tasks.map((task) => task.id)).toEqual([taskId]);
+    expect(after.unavailableSources).toEqual([taskId]);
+  });
+
+  it("keeps the previous valid Task store when a write is interrupted", async () => {
+    const kept = await quickAdd("Survives the crash");
+    /* Writes are atomic (ADR-0058): a torn temporary file is not the store,
+       and the store is whatever the last completed write left behind. */
+    writeFileSync(join(workspaceDir, "tasks", "tasks.json.tmp"), '[{"id":', "utf8");
+
+    expect(new TaskStore(workspaceDir).readTasks().map((task) => task.id)).toEqual([kept.id]);
+    expect((await index()).tasks.map((task) => task.id)).toEqual([kept.id]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Promotion (issue #178)
+// ---------------------------------------------------------------------------
+
+describe("promoting one reviewed Action Item", () => {
+  const PROPOSED = {
+    debriefRunId: "run_1",
+    transcriptId: "transcript_1",
+    meetingId: "meeting_1",
+    actionItems: [
+      {
+        title: "Send the pricing sheet",
+        owner: "Dana",
+        ownerMentionId: null,
+        ownerProfileId: null,
+        dueDate: "2026-09-10",
+      },
+    ],
+  };
+
+  function materialize(): ActionItem {
+    const items = new WorkspaceActionItems({ store, now: () => clock });
+    return items.materialize(PROPOSED)[0];
+  }
+
+  it("creates one open canonical Task that snapshots the accepted proposal", async () => {
+    const item = materialize();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: { title: "Send the pricing sheet to Dana", priority: "high" },
+    });
+    expect(response.statusCode).toBe(201);
+
+    const { task, actionItem } = response.json<{ task: Task; actionItem: ActionItem }>();
+    expect(task).toMatchObject({
+      title: "Send the pricing sheet to Dana",
+      status: "open",
+      priority: "high",
+      dueDate: "2026-09-10",
+      source: {
+        kind: "action-item",
+        actionItemId: item.id,
+        debriefRunId: "run_1",
+        transcriptId: "transcript_1",
+        meetingId: "meeting_1",
+      },
+    });
+    expect(actionItem).toMatchObject({ state: "promoted", promotedTaskId: task.id });
+    /* The proposal is what the meeting said, and stays that way however the
+       Task is edited afterwards. */
+    expect(actionItem.proposal.title).toBe("Send the pricing sheet");
+  });
+
+  it("creates a completed Task when the review says the work is already done", async () => {
+    const item = materialize();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: { completed: true },
+    });
+
+    expect(response.json<{ task: Task }>().task).toMatchObject({
+      status: "completed",
+      completedAt: "2026-09-04T09:00:00.000Z",
+    });
+  });
+
+  it("cannot promote the same Action Item twice, however often it is retried", async () => {
+    const item = materialize();
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    const retry = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: { title: "A different title entirely" },
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json<{ task: Task }>().task.id).toBe(first.json<{ task: Task }>().task.id);
+    expect((await index()).tasks).toHaveLength(1);
+  });
+
+  it("adopts the Task an interrupted promotion left behind rather than making a second", async () => {
+    const item = materialize();
+    /* Exactly what an interruption between the two writes leaves: the Task
+       written and the relationship not. The two files cannot commit as one, so
+       the retry has to recognize the half that did. */
+    const orphan = new WorkspaceTasks({ store, now: () => clock }).create(
+      { title: "Send the pricing sheet" },
+      {
+        kind: "action-item",
+        actionItemId: item.id,
+        debriefRunId: item.source.debriefRunId,
+        transcriptId: item.source.transcriptId,
+        meetingId: item.source.meetingId,
+      },
+    );
+
+    const retry = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json<{ task: Task }>().task.id).toBe(orphan.id);
+    expect(retry.json<{ actionItem: ActionItem }>().actionItem).toMatchObject({
+      state: "promoted",
+      promotedTaskId: orphan.id,
+    });
+    expect((await index()).tasks).toHaveLength(1);
+  });
+
+  it("keeps the Action Item promoted after its Task is trashed and deleted", async () => {
+    const item = materialize();
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    const taskId = promoted.json<{ task: Task }>().task.id;
+
+    await app.inject({ method: "POST", url: `/api/tasks/${taskId}/trash` });
+    await app.inject({ method: "DELETE", url: `/api/tasks/${taskId}?confirm=true` });
+
+    const queue = await app.inject({ method: "GET", url: "/api/action-items?state=promoted" });
+    expect(queue.json<{ items: ActionItem[] }>().items).toHaveLength(1);
+    /* And promotion stays unavailable: the decision is history, not a slot
+       that opens up again because the work went away. */
+    const again = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    expect(again.statusCode).toBe(404);
   });
 });

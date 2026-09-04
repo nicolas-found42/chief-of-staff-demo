@@ -136,6 +136,34 @@ export class WorkspaceActionItems {
       );
   }
 
+  /**
+   * Record that this Action Item became that Task. The one write outside
+   * materialization, and deliberately narrow: the proposal, the evidence and
+   * the source are untouched, so the queue keeps saying what the meeting said
+   * while the Task goes on to say whatever the owner makes of it.
+   *
+   * Promotion is one-way. Nothing here unpromotes, because a decision the
+   * owner made is history rather than a toggle.
+   */
+  recordPromotion(actionItemId: string, taskId: string): ActionItem {
+    const stored = this.store.readActionItems();
+    const current = stored.find((item) => item.id === actionItemId);
+    if (!current) {
+      throw new Error(`No Action Item with id ${actionItemId}`);
+    }
+    if (current.state === "promoted") return current;
+    const at = this.now().toISOString();
+    const next: ActionItem = {
+      ...current,
+      state: "promoted",
+      promotedTaskId: taskId,
+      updatedAt: at,
+      decidedAt: at,
+    };
+    this.store.writeActionItems(stored.map((item) => (item.id === actionItemId ? next : item)));
+    return next;
+  }
+
   get(actionItemId: string): ActionItem | null {
     return this.store.readActionItems().find((item) => item.id === actionItemId) ?? null;
   }

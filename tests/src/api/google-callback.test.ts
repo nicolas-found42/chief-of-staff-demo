@@ -74,6 +74,7 @@ beforeEach(async () => {
     contentProjects: fromPartial({}),
     tasks: fromPartial({}),
     actionItems: fromPartial({}),
+    taskLinking: fromPartial({}),
     onConfigChanged: () => {},
   });
   await app.ready();

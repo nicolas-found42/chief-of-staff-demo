@@ -282,6 +282,12 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "drive.folderId": "google-drive-folders",
   "drive.folderName": "google-drive-folders",
   "drive.pollIntervalMinutes": "non-auth-workflow-configuration",
+  /* The Google Tasks destination (issue #184): a choice about where work is
+     filed, and the id of a Google-owned Task List. Neither is a credential —
+     the grant itself lives in `google.refreshToken`. */
+  "tasks.googleTasks.enabled": "non-auth-workflow-configuration",
+  "tasks.googleTasks.taskListId": "google-tasklists",
+  "tasks.googleTasks.taskListTitle": "google-tasklists",
   "ollama.baseUrl": "non-auth-workflow-configuration",
   "search.searxngUrl": "non-auth-workflow-configuration",
   "modules.youtube-trends.channels": composite("youtube-channels", {

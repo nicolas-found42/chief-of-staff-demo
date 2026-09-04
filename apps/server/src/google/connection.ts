@@ -8,11 +8,11 @@ import type {
 import { GOOGLE_TESTING_TOKEN_DAYS } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
 import {
-  GOOGLE_SCOPES,
   type GoogleAuth,
   buildGoogleAuth,
   exchangeGoogleCode,
   googleAuthUrl,
+  googleScopes,
   mintAccessToken,
   redirectUriForPort,
 } from "./oauth.js";
@@ -45,13 +45,15 @@ export function isRejectedGrant(error: unknown): boolean {
  * setup** probes it exactly as it probes the others.
  */
 const GOOGLE_SURFACES = [
-  "tasks",
   "gmail",
   "gmail-read",
   "gmail-send",
   "calendar",
   "drive",
   "youtube",
+  /* Last, and only when enabled: an optional surface must not decide whether
+     the required ones report healthy. */
+  "tasks",
 ] as const;
 export type GoogleSurface = (typeof GOOGLE_SURFACES)[number];
 
@@ -81,12 +83,15 @@ const SCOPE_LABELS: Record<string, string> = {
  * responses omit the list entirely and rejecting that would lock the operator
  * out on an unusual but valid answer.
  */
-function findMissingScopes(grantedScopes: string[] | null | undefined): string[] {
+function findMissingScopes(
+  grantedScopes: string[] | null | undefined,
+  required: string[],
+): string[] {
   if (!grantedScopes || grantedScopes.length === 0) {
     return [];
   }
   const granted = new Set(grantedScopes);
-  return GOOGLE_SCOPES.filter((required) => !granted.has(required));
+  return required.filter((scope) => !granted.has(scope));
 }
 
 export class IncompleteGrantError extends Error {
@@ -427,7 +432,7 @@ export function openGoogleConnection(
     const predictable = lastConnectedAt !== null && config.google.hasExpiredBefore;
     return {
       redirectUri: redirectUriForPort(port),
-      scopes: [...GOOGLE_SCOPES],
+      scopes: googleScopes(config.tasks.googleTasks.enabled),
       lastConnectedAt,
       expiresAbout: predictable
         ? new Date(
@@ -531,7 +536,12 @@ export function openGoogleConnection(
       }
       const items: SetupCheck["items"] = [];
       let rejected = false;
-      for (const surface of GOOGLE_SURFACES) {
+      /* Google Tasks is checked only when it is enabled. An unchecked optional
+         surface is not a failure — nothing in the app is asking for it. */
+      const surfaces = GOOGLE_SURFACES.filter(
+        (surface) => surface !== "tasks" || config.tasks.googleTasks.enabled,
+      );
+      for (const surface of surfaces) {
         try {
           await surfaceProbe(config, port, surface);
           items.push({
@@ -572,7 +582,10 @@ export function openGoogleConnection(
         }
         throw error;
       }
-      const missing = findMissingScopes(grant.grantedScopes);
+      const missing = findMissingScopes(
+        grant.grantedScopes,
+        googleScopes(configStore.get().tasks.googleTasks.enabled),
+      );
       if (missing.length > 0) {
         throw new IncompleteGrantError(missing);
       }

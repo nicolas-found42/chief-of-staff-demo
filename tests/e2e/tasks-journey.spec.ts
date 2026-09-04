@@ -58,7 +58,9 @@ test("tasks journey — nav → quick add → complete → reopen → edit → l
   await page.getByRole("button", { name: "Edit details" }).click();
   await page.getByLabel("Notes").fill("Include the Q3 numbers.");
   await page.getByLabel("Due date").fill("2026-09-11");
-  await page.getByLabel("Priority").selectOption("high");
+  /* Exact, like the Task List field beside it: the filters above the list
+     name the same concepts, and a substring match would reach either. */
+  await page.getByLabel("Priority", { exact: true }).selectOption("high");
   await page.getByLabel("Task List", { exact: true }).selectOption({ label: "Billing" });
   await page.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByText("Billing · due 2026-09-11 · high priority · You")).toBeVisible();
@@ -142,7 +144,10 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
 
   // A proposal is not accepted work: it carries no Task controls, and the
   // extraction created no Task of its own.
-  await expect(proposal.getByRole("button", { name: "Complete" })).toHaveCount(0);
+  /* Exactly "Complete": the review panel's own "Create completed Task" is a
+     different control, and it is the one thing on the row that may create a
+     Task — deliberately, and only after a review (issue #178). */
+  await expect(proposal.getByRole("button", { name: "Complete", exact: true })).toHaveCount(0);
   const tasks = (await (await request.get("/api/tasks")).json()) as {
     tasks: Array<{ title: string }>;
   };

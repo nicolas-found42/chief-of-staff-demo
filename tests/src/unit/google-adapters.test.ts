@@ -98,6 +98,7 @@ const config: AppConfig = {
   model: "mock-model",
   apiKey: "test-key",
   tasklistName: "Meeting Followups",
+  tasks: { googleTasks: { enabled: false, taskListId: "", taskListTitle: "" } },
   google: {
     clientId: "client.apps.googleusercontent.com",
     clientSecret: "secret",
@@ -475,7 +476,6 @@ describe("Google connection SDK probes", () => {
     await expect(google.verifySetup()).resolves.toMatchObject({
       state: "connected",
       items: [
-        { label: "Google Tasks", ok: true },
         { label: "Gmail drafts", ok: true },
         { label: "Gmail history", ok: true },
         { label: "Gmail delivery", ok: true },
@@ -484,7 +484,9 @@ describe("Google connection SDK probes", () => {
         { label: "YouTube view counts", ok: true },
       ],
     });
-    expect(sdk.tasks.tasklists.list).toHaveBeenCalledWith({ maxResults: 1 });
+    /* Google Tasks is optional (issue #184) and nothing has enabled it, so the
+       check does not probe a surface the app is not asking permission for. */
+    expect(sdk.tasks.tasklists.list).not.toHaveBeenCalled();
     expect(sdk.gmail.users.drafts.list).toHaveBeenCalledWith({ userId: "me", maxResults: 1 });
     expect(sdk.gmail.users.threads.list).toHaveBeenCalledWith({ userId: "me", maxResults: 1 });
     expect(sdk.oauth2.tokeninfo).toHaveBeenCalledWith({

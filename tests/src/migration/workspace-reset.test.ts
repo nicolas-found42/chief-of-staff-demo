@@ -290,7 +290,7 @@ describe("executeWorkspaceMigration", () => {
       directories: 4,
       files: 5,
       preservedConfigKeys: 6,
-      droppedConfigKeys: 31,
+      droppedConfigKeys: 34,
       preservedRelayKeys: 2,
       droppedRelayKeys: 3,
     };
@@ -456,7 +456,7 @@ describe("executeWorkspaceMigration", () => {
       directories: 2,
       files: 4,
       preservedConfigKeys: 6,
-      droppedConfigKeys: 31,
+      droppedConfigKeys: 34,
       preservedRelayKeys: 2,
       droppedRelayKeys: 3,
     });

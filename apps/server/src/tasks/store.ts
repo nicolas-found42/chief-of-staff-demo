@@ -31,8 +31,18 @@ export class TaskStore {
     this.actionItemsFile = join(dir, "action-items.json");
   }
 
+  /**
+   * Tasks written before Trash and External Task Links existed carry neither
+   * field. They are filled in on the way out rather than rejected: an absent
+   * field is a Task from an earlier version of this Workspace, not a damaged
+   * record, and reading never writes.
+   */
   readTasks(): Task[] {
-    return this.read<Task>(this.tasksFile, "Task", isTask);
+    return this.read<Task>(this.tasksFile, "Task", isTask).map((task) => ({
+      ...task,
+      externalLink: task.externalLink ?? null,
+      deletedAt: task.deletedAt ?? null,
+    }));
   }
 
   writeTasks(tasks: Task[]): void {

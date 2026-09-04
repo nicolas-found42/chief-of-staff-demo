@@ -27,9 +27,11 @@ import { OwnerOnboarding } from "../onboarding/owner.js";
 import { TaskStore } from "../tasks/store.js";
 import { WorkspaceTasks } from "../tasks/tasks.js";
 import { WorkspaceActionItems } from "../tasks/action-items.js";
+import { TaskLinking } from "../tasks/external-link.js";
+import { insertGoogleTask, listGoogleTaskLists } from "../google/tasks.js";
 import type { HostedModule } from "../engine/host.js";
 import { makeCompleteJson } from "../llm/providers.js";
-import { openGoogleConnection } from "../google/connection.js";
+import { googleFailureHint, openGoogleConnection } from "../google/connection.js";
 import { YoutubeHost } from "../modules/youtube/host.js";
 import { ContentScoutHost } from "../modules/content-scout/host.js";
 import { MeetingBriefHost } from "../modules/meeting-brief-generator/host.js";
@@ -174,6 +176,7 @@ interface ShellWorkspace {
   contentProjects: WorkspaceContentProjects;
   tasks: WorkspaceTasks;
   actionItems: WorkspaceActionItems;
+  taskLinking: TaskLinking;
   transcripts: TranscriptCatalogStore;
   transcriptIdentity: TranscriptIdentityStore;
   transcriptRelevance: TranscriptRelevanceService;
@@ -275,6 +278,38 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     isConfirmedPerson: (profileId) => {
       const profile = peopleProfiles.get(profileId);
       return profile !== null && profile.archivedAt === null && profile.mergedInto === undefined;
+    },
+    isGoogleTasksEnabled: () => configStore.get().tasks.googleTasks.enabled,
+    /* The Workspace timezone a due date is read in. The Workspace has one
+       configured timezone rather than a Tasks-specific one — the owner's day
+       is the owner's day whichever product asks — and the host's own zone is
+       the fallback, never a silent UTC. */
+    timezone: () =>
+      configStore.getModuleConfig("content-research").timeZone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+  /* Google Tasks as an optional Task Destination (issue #184). The Workspace
+     write always commits first; this only ever adds a representation of it,
+     and never reads a Google Task back. */
+  const taskLinking = new TaskLinking({
+    tasks,
+    settings: () => configStore.get().tasks.googleTasks,
+    save: (settings) => {
+      configStore.setGoogleTasksDestination(settings);
+      /* The Tasks scope is part of the grant only while this is enabled, so
+         the remembered connection state has to be asked again. */
+      googleConnection.invalidate();
+    },
+    listRemoteLists: async () => {
+      const access = googleConnection.auth();
+      if (!access.ok) throw new Error(googleFailureHint(access.state));
+      return listGoogleTaskLists(access.auth);
+    },
+    createRemote: async (taskListId, task) => {
+      const access = googleConnection.auth();
+      if (!access.ok) throw new Error(googleFailureHint(access.state));
+      const created = await insertGoogleTask(access.auth, taskListId, task);
+      return { remoteId: created.googleId, url: created.webViewLink };
     },
   });
   const actionItems = new WorkspaceActionItems({
@@ -729,6 +764,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     contentProjects,
     tasks,
     actionItems,
+    taskLinking,
     onConfigChanged: async () => {
       meetingBriefProduction?.invalidateGoogleIdentity();
       await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
@@ -915,6 +951,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       contentProjects,
       tasks,
       actionItems,
+      taskLinking,
       transcripts: transcriptCatalogStore,
       transcriptIdentity: transcriptIdentityStore,
       transcriptRelevance,

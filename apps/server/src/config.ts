@@ -47,6 +47,7 @@ function defaultConfig(): AppConfig {
     },
     notion: { token: "", lastVerifiedAt: null },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
+    tasks: { googleTasks: { enabled: false, taskListId: "", taskListTitle: "" } },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
     search: {},
     modules: {
@@ -185,6 +186,18 @@ export class ConfigStore {
         lastConnectedAt: token ? new Date().toISOString() : current.google.lastConnectedAt,
       },
     };
+    this.persist();
+  }
+
+  /**
+   * The Tasks product area's Google Tasks destination (issue #184). Its own
+   * method rather than a `PUT /api/config` field: enabling it changes which
+   * scopes a sign-in asks for, and that is a decision the Tasks product makes
+   * after validating a destination, not a settings field anyone can post.
+   */
+  setGoogleTasksDestination(next: AppConfig["tasks"]["googleTasks"]): void {
+    const current = this.get();
+    this.config = { ...current, tasks: { ...current.tasks, googleTasks: next } };
     this.persist();
   }
 

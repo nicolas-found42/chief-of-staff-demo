@@ -29,9 +29,11 @@ _Avoid_: Tab, section, module (a product area is not one)
 The product area in which the workspace owner reviews Action Items and manages Tasks from every
 source, including Tasks created manually. It is not owned by Meeting Wizard because a Task need not
 come from a Meeting.
-_Status_: live at `/tasks` — manual capture, editing, completion, Task Lists, and the pending
-Action Item queue (issues #173, #174, #177). Trash, grouping and filters, promotion, and External
-Task Links are planned (ADR-0052).
+_Status_: live at `/tasks` — manual capture, editing, completion, Task Lists, the pending Action
+Item queue, Task Groups with search and filters, Trash, promotion of a reviewed Action Item, and
+one External Task Link into Google Tasks (issues #173, #174, #175, #176, #177, #178, #184).
+Synchronizing an existing link — External Task Drift, Task Link Conflict, retries and the missing
+state — is planned (ADR-0056).
 _Avoid_: Task dashboard, Google Tasks
 
 **Task**:
@@ -65,6 +67,12 @@ The relationship between one Task and its representation in an external task sys
 Tasks or Asana. It sends Task content outward and carries open or completed state in both directions;
 the linked external record never replaces the Workspace's canonical Task.
 _Avoid_: Synced Task, external Task, receipt
+
+**Task Group**:
+One of the four bands the open Tasks are read in — Overdue, Today, Upcoming, No due date —
+decided by comparing a Task's date-only due date with today in the Workspace timezone. A grouping
+of what already exists, never a field on a Task.
+_Avoid_: Bucket, section, status, filter
 
 **Task Link Conflict**:
 The state in which a Task and its external representation both changed between successful

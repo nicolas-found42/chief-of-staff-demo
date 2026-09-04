@@ -2,8 +2,16 @@ import { google } from "googleapis";
 import type { OAuth2Client } from "googleapis-common";
 import type { AppConfig } from "@chief-of-staff-demo/shared";
 
+/** The Google Tasks scope, requested only when the owner enables that surface. */
+const GOOGLE_TASKS_SCOPE = "https://www.googleapis.com/auth/tasks";
+
+/**
+ * What every Google capability in this app needs. Google Tasks is deliberately
+ * absent (issue #184): filing work into someone's Google account is a choice,
+ * and asking for permission to do it before they have made that choice makes
+ * every other capability wait on a scope nothing is using.
+ */
 export const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/gmail.readonly",
   // Meeting Brief delivery owns send-only-to-owner (ADR-0034). This deliberate
@@ -19,6 +27,15 @@ export const GOOGLE_SCOPES = [
      issued. */
   "https://www.googleapis.com/auth/youtube.readonly",
 ];
+
+/**
+ * The scopes one sign-in asks for. A refresh token does not acquire scopes
+ * granted after it was issued, so enabling Google Tasks means consenting once
+ * more — which is the honest cost of a least-privilege grant.
+ */
+export function googleScopes(googleTasksEnabled: boolean): string[] {
+  return googleTasksEnabled ? [...GOOGLE_SCOPES, GOOGLE_TASKS_SCOPE] : [...GOOGLE_SCOPES];
+}
 
 /** The exact redirect URI that must be registered in Google Cloud Console. */
 export function redirectUriForPort(port: number): string {
@@ -47,7 +64,7 @@ export function googleAuthUrl(config: AppConfig, port: number): string {
   return client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: [...GOOGLE_SCOPES],
+    scope: googleScopes(config.tasks.googleTasks.enabled),
   });
 }
 

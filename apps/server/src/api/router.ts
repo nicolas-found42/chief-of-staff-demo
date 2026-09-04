@@ -24,6 +24,7 @@ import type { PersonProfileResolver } from "../person-profile/resolver.js";
 import type { OwnerOnboarding } from "../onboarding/owner.js";
 import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
+import type { TaskLinking } from "../tasks/external-link.js";
 
 export interface ApiContext {
   runs: Runs;
@@ -51,6 +52,8 @@ export interface ApiContext {
   tasks: WorkspaceTasks;
   /** The Action Items a Meeting Debrief proposed, which Tasks presents (issue #177). */
   actionItems: WorkspaceActionItems;
+  /** Google Tasks as an optional Task Destination (issue #184). */
+  taskLinking: TaskLinking;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   onConfigChanged: () => void | Promise<void>;
@@ -259,5 +262,9 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   registerContentEngineApi(app, { contentProjects: ctx.contentProjects });
   /* Tasks (ADR-0052): the fifth product area, a Workspace resource like Person
      Profiles rather than a hosted Module. Its routes reach no provider at all. */
-  registerTasksApi(app, { tasks: ctx.tasks, actionItems: ctx.actionItems });
+  registerTasksApi(app, {
+    tasks: ctx.tasks,
+    actionItems: ctx.actionItems,
+    linking: ctx.taskLinking,
+  });
 }
