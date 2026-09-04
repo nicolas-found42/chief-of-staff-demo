@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
 import { api, errorMessage, migrationApi, type OnboardingStatus } from "../client";
 import { connectionNotice } from "../connectionNotice";
@@ -9,6 +9,9 @@ import { formatTime, relativeTime } from "../display";
 import { PRODUCT_AREAS } from "../productAreas";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
+// PROTOTYPE — throwaway Home UI exploration (?variant=a|b|c). Delete with losers.
+import { PrototypeSwitcher } from "../components/PrototypeSwitcher";
+import { VariantA, VariantB, VariantC } from "./homePrototypeVariants";
 
 const TERMINAL = new Set(["done", "skipped", "failed"]);
 
@@ -28,6 +31,8 @@ export function HomePage() {
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const { status, refresh: refreshConnection } = useGoogleConnection();
   const areas = PRODUCT_AREAS;
+  // PROTOTYPE — read unconditionally; hooks cannot sit behind the loading gate.
+  const [searchParams] = useSearchParams();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [provider, setProvider] = useState<ProviderId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +123,30 @@ export function HomePage() {
 
   const notice = connectionNotice(status);
   const { sentence, rows, feed } = homeStatus(runs, provider, notice !== null);
+  // PROTOTYPE — sub-shape A: same data fetching above, only rendering swaps.
+  const variant = searchParams.get("variant") ?? "current";
+  if (variant === "a" || variant === "b" || variant === "c") {
+    const data = {
+      sentence,
+      identity:
+        status?.state === "connected"
+          ? `Google connected${status.email ? ` as ${status.email}` : ""}`
+          : null,
+      rows,
+      feed,
+      areas,
+      activeCount,
+      runCount: runs.length,
+    };
+    return (
+      <div className="page">
+        {variant === "a" && <VariantA data={data} />}
+        {variant === "b" && <VariantB data={data} />}
+        {variant === "c" && <VariantC data={data} />}
+        <PrototypeSwitcher current={variant} />
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -237,6 +266,8 @@ export function HomePage() {
           </div>
         </div>
       </div>
+      {/* PROTOTYPE — dev-only entry point to ?variant=a|b|c; null in prod builds. */}
+      <PrototypeSwitcher current={variant} />
     </div>
   );
 }
