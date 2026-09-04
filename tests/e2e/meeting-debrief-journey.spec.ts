@@ -156,7 +156,9 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
   /* The occurrence key is a diagnostic, not a fact about the meeting — the
      page says whether Calendar prefilled the roster, and the key lives on the
      Run detail page. */
-  await expect(page.getByText("Prefilled from the meeting's calendar attendees.")).toBeVisible();
+  await expect(
+    page.getByText("Prefilled from the meeting's calendar attendees, and waiting to be confirmed."),
+  ).toBeVisible();
   await expect(page.getByText("Confirm the roster to publish the draft and Tasks.")).toBeVisible();
   await expect(page.getByText("Extracted").first()).toBeVisible();
   // The gate's refusal surface, whatever the shared server's owner state is:

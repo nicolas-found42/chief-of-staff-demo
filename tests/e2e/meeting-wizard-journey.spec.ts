@@ -293,5 +293,5 @@ test("meeting page — shows the Transcript matched to its Meeting (issue #153)"
   await page.goto(`/meetings/${linked.id}`);
   await expect(page.getByRole("heading", { level: 1, name: summary })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Transcripts" })).toBeVisible();
-  await expect(page.getByText(fileName)).toBeVisible();
+  await expect(page.getByRole("heading", { name: fileName })).toBeVisible();
 });
