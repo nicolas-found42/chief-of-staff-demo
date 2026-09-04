@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -10,7 +11,7 @@ import { useTitle } from "../useTitle";
  * searchable list over active Profiles, with archived state one explicit
  * toggle away. Profiles open on their stable detail route.
  */
-export function PeoplePage() {
+export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
   useTitle("Person Profiles");
   const focusRef = usePageFocus<HTMLHeadingElement>();
   const [profiles, setProfiles] = useState<PersonProfile[] | null>(null);
@@ -20,12 +21,12 @@ export function PeoplePage() {
 
   const load = useCallback(async () => {
     try {
-      setProfiles(await api.people(query, includeArchived));
+      setProfiles(await client.people(query, includeArchived));
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [query, includeArchived]);
+  }, [client, includeArchived, query]);
 
   useEffect(() => {
     void load();

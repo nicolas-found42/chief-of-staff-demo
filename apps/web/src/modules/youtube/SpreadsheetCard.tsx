@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, errorMessage } from "../../client";
+import { errorMessage } from "../../client";
+import { contentApi, type ContentClient } from "../../clients/content";
 
 /**
  * YouTube Trends' own settings surface: the spreadsheet it keeps the operator's
@@ -9,14 +10,14 @@ import { api, errorMessage } from "../../client";
  * Setup belongs in the settings flow, and a link buried in a Run record scrolls
  * out of Home's feed — where this one stays findable weeks later.
  */
-export function SpreadsheetCard() {
+export function SpreadsheetCard({ client = contentApi }: { client?: ContentClient }) {
   const [spreadsheet, setSpreadsheet] = useState<{ id: string; url: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api
+    void client
       .youtubeTrends()
       .then((trends) => {
         setSpreadsheet(trends.spreadsheet);
@@ -26,7 +27,7 @@ export function SpreadsheetCard() {
         setError(errorMessage(err));
         setLoaded(true);
       });
-  }, []);
+  }, [client]);
 
   const create = async () => {
     if (creating) {
@@ -35,7 +36,7 @@ export function SpreadsheetCard() {
     setCreating(true);
     setError(null);
     try {
-      const { spreadsheet: made } = await api.createYoutubeSpreadsheet();
+      const { spreadsheet: made } = await client.createYoutubeSpreadsheet();
       setSpreadsheet(made);
     } catch (err) {
       setError(errorMessage(err));

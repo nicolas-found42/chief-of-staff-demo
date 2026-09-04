@@ -9,7 +9,9 @@ import {
   type PersonSuggestion,
   type ResonanceScoredItem,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { peopleApi } from "../clients/people";
+import { contentApi, type ContentClient } from "../clients/content";
 import { ContentResearchSubNav } from "../components/ContentResearchSubNav";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -65,7 +67,7 @@ function isOpenableEvidence(evidenceUrl: string): boolean {
   return /^https?:\/\//i.test(evidenceUrl);
 }
 
-export function ContentResearchPage() {
+export function ContentResearchPage({ client = contentApi }: { client?: ContentClient }) {
   useTitle("Content Research");
   const headingRef = usePageFocus<HTMLHeadingElement>();
 
@@ -92,11 +94,11 @@ export function ContentResearchPage() {
   const refresh = useCallback(async () => {
     try {
       const [idx, ppl, all, sug, prf] = await Promise.all([
-        api.contentResearchIndex(),
-        api.contentResearchPeople(),
-        api.contentResearchAllPeople(),
-        api.contentResearchSuggestions(),
-        api.people(),
+        client.contentResearchIndex(),
+        client.contentResearchPeople(),
+        client.contentResearchAllPeople(),
+        client.contentResearchSuggestions(),
+        peopleApi.people(),
       ]);
       setIndex(idx);
       setPeople(ppl);
@@ -107,7 +109,7 @@ export function ContentResearchPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void refresh();
@@ -172,7 +174,7 @@ export function ContentResearchPage() {
     const hasHint = site || youtubeChannelId || hnUsername;
     const profile = profiles?.find((candidate) => candidate.id === profileId);
     await act(
-      () => api.addContentResearchPerson(profileId, hasHint ? handleHints : undefined),
+      () => client.addContentResearchPerson(profileId, hasHint ? handleHints : undefined),
       `Watching ${profile?.fullName ?? profileId}.`,
     );
     setNewProfileId("");
@@ -248,7 +250,7 @@ export function ContentResearchPage() {
           aria-disabled={busy}
           onClick={() => {
             if (busy) return;
-            void act(() => api.runContentResearch(), "Content Research run started.");
+            void act(() => client.runContentResearch(), "Content Research run started.");
           }}
         >
           {busy ? "Working…" : "Run Now"}
@@ -258,7 +260,7 @@ export function ContentResearchPage() {
           aria-disabled={busy}
           onClick={() => {
             if (busy) return;
-            void act(() => api.backfillContentResearch(7), "Backfill 7d started.");
+            void act(() => client.backfillContentResearch(7), "Backfill 7d started.");
           }}
         >
           Backfill 7d
@@ -268,7 +270,7 @@ export function ContentResearchPage() {
           aria-disabled={busy}
           onClick={() => {
             if (busy) return;
-            void act(() => api.backfillContentResearch(30), "Backfill 30d started.");
+            void act(() => client.backfillContentResearch(30), "Backfill 30d started.");
           }}
         >
           Backfill 30d
@@ -278,7 +280,7 @@ export function ContentResearchPage() {
           aria-disabled={busy}
           onClick={() => {
             if (busy) return;
-            void act(() => api.backfillContentResearch(90), "Backfill 90d started.");
+            void act(() => client.backfillContentResearch(90), "Backfill 90d started.");
           }}
         >
           Backfill 90d
@@ -288,7 +290,7 @@ export function ContentResearchPage() {
           aria-disabled={busy}
           onClick={() => {
             if (busy) return;
-            void act(() => api.discoverContentResearchPeople(), "People discovery started.");
+            void act(() => client.discoverContentResearchPeople(), "People discovery started.");
           }}
         >
           Discover Now
@@ -330,7 +332,7 @@ export function ContentResearchPage() {
                     onClick={() => {
                       if (busy) return;
                       void act(
-                        () => api.resumeContentResearchPerson(person.id),
+                        () => client.resumeContentResearchPerson(person.id),
                         `Resumed watching ${person.name}.`,
                       );
                     }}
@@ -344,7 +346,7 @@ export function ContentResearchPage() {
                     onClick={() => {
                       if (busy) return;
                       void act(
-                        () => api.pauseContentResearchPerson(person.id),
+                        () => client.pauseContentResearchPerson(person.id),
                         `Paused watching ${person.name}.`,
                       );
                     }}
@@ -358,7 +360,7 @@ export function ContentResearchPage() {
                   onClick={() => {
                     if (busy) return;
                     void act(
-                      () => api.stopWatchingContentResearchPerson(person.id),
+                      () => client.stopWatchingContentResearchPerson(person.id),
                       `No longer watching ${person.name}.`,
                     );
                   }}
@@ -754,7 +756,7 @@ export function ContentResearchPage() {
                           if (busy) return;
                           void act(
                             () =>
-                              api.decideContentResearchSuggestion(
+                              client.decideContentResearchSuggestion(
                                 suggestion.id,
                                 "approved",
                                 suggestionProfiles[suggestion.id] || undefined,
@@ -771,7 +773,8 @@ export function ContentResearchPage() {
                         onClick={() => {
                           if (busy) return;
                           void act(
-                            () => api.decideContentResearchSuggestion(suggestion.id, "dismissed"),
+                            () =>
+                              client.decideContentResearchSuggestion(suggestion.id, "dismissed"),
                             `Dismissed ${suggestion.name}.`,
                           );
                         }}
@@ -787,7 +790,7 @@ export function ContentResearchPage() {
                       onClick={() => {
                         if (busy) return;
                         void act(
-                          () => api.decideContentResearchSuggestion(suggestion.id, "restore"),
+                          () => client.decideContentResearchSuggestion(suggestion.id, "restore"),
                           `Restored ${suggestion.name}.`,
                         );
                       }}

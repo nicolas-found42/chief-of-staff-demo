@@ -5,7 +5,9 @@ import type {
   HubSpotStatus,
   SetupCheck,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { relayApi } from "../clients/workspace";
+import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 
 interface RelayStatus {
   installationId: string | null;
@@ -32,9 +34,11 @@ const PROVIDER_LABELS: Record<string, string> = {
 export function MeetingBriefSettings({
   googleStatus,
   googleCheck,
+  client = meetingsApi,
 }: {
   googleStatus: GoogleStatus | null;
   googleCheck: SetupCheck | null;
+  client?: MeetingsClient;
 }) {
   const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(null);
   const [relayBaseUrl, setRelayBaseUrl] = useState("");
@@ -57,7 +61,7 @@ export function MeetingBriefSettings({
 
   const refreshRelay = async () => {
     try {
-      const status = await api.relayStatus();
+      const status = await relayApi.status();
       setRelayStatus(status);
       if (status.relayBaseUrl) setRelayBaseUrl(status.relayBaseUrl);
     } catch (error) {
@@ -67,7 +71,7 @@ export function MeetingBriefSettings({
 
   const refreshHubSpot = async () => {
     try {
-      setHubSpotStatus(await api.hubspotStatus());
+      setHubSpotStatus(await client.hubspotStatus());
     } catch (error) {
       setHubSpotError(errorMessage(error));
     }
@@ -75,12 +79,15 @@ export function MeetingBriefSettings({
 
   useEffect(() => {
     void refreshRelay();
-    void refreshHubSpot();
-    void api
+    void client
+      .hubspotStatus()
+      .then((status) => setHubSpotStatus(status))
+      .catch((error: unknown) => setHubSpotError(errorMessage(error)));
+    void client
       .meetingBriefConfig()
       .then((config) => setInternalDomains(config.internalDomains.join(", ")))
       .catch((error: unknown) => setDomainsNotice(errorMessage(error)));
-    void api
+    void client
       .meetingBriefProviderPolicy()
       .then((state) => {
         setBundleProviders(state.providers);
@@ -92,7 +99,7 @@ export function MeetingBriefSettings({
         setBundleRecorded(Object.keys(state.policy).length > 0);
       })
       .catch((error: unknown) => setBundleNotice(errorMessage(error)));
-  }, []);
+  }, [client]);
 
   const runRelayAction = async (action: () => Promise<unknown>) => {
     if (relayBusy) return;
@@ -113,7 +120,7 @@ export function MeetingBriefSettings({
     setBundleBusy(true);
     setBundleNotice(null);
     try {
-      const state = await api.saveMeetingBriefProviderPolicy(bundleDisabled);
+      const state = await client.saveMeetingBriefProviderPolicy(bundleDisabled);
       setBundleRecorded(Object.keys(state.policy).length > 0);
       setBundleNotice(
         bundleDisabled.length === 0
@@ -136,7 +143,7 @@ export function MeetingBriefSettings({
         .split(/[\n,]/)
         .map((domain) => domain.trim())
         .filter(Boolean);
-      const result = await api.saveMeetingBriefConfig({ internalDomains: domains });
+      const result = await client.saveMeetingBriefConfig({ internalDomains: domains });
       setInternalDomains(result.internalDomains.join(", "));
       setDomainsNotice("Internal domains saved.");
     } catch (error) {
@@ -151,7 +158,7 @@ export function MeetingBriefSettings({
     setHubSpotBusy(true);
     setHubSpotError(null);
     try {
-      setHubSpotStatus(await api.hubspotConnect(hubSpotToken.trim()));
+      setHubSpotStatus(await client.hubspotConnect(hubSpotToken.trim()));
       setHubSpotToken("");
     } catch (error) {
       setHubSpotError(errorMessage(error));
@@ -166,7 +173,7 @@ export function MeetingBriefSettings({
     setHubSpotError(null);
     setHubSpotCheck(null);
     try {
-      setHubSpotStatus(await api.hubspotDisconnect());
+      setHubSpotStatus(await client.hubspotDisconnect());
     } catch (error) {
       setHubSpotError(errorMessage(error));
     } finally {
@@ -179,7 +186,7 @@ export function MeetingBriefSettings({
     setCheckingHubSpot(true);
     setHubSpotError(null);
     try {
-      setHubSpotCheck(await api.hubspotCheck());
+      setHubSpotCheck(await client.hubspotCheck());
       await refreshHubSpot();
     } catch (error) {
       setHubSpotError(errorMessage(error));
@@ -248,7 +255,7 @@ export function MeetingBriefSettings({
               type="button"
               className="action-button"
               onClick={() =>
-                void runRelayAction(() => api.relayInstall(relayBaseUrl.trim() || undefined))
+                void runRelayAction(() => relayApi.install(relayBaseUrl.trim() || undefined))
               }
               aria-disabled={relayBusy}
             >
@@ -257,7 +264,7 @@ export function MeetingBriefSettings({
             <button
               type="button"
               className="action-button"
-              onClick={() => void runRelayAction(() => api.relayPoll())}
+              onClick={() => void runRelayAction(() => relayApi.poll())}
               aria-disabled={relayBusy}
             >
               Poll now

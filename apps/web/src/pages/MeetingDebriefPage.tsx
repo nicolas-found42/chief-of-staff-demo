@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { MeetingDebriefIndex, MeetingDebriefIndexEntry } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { meetingDebriefName } from "../modules/meeting-debrief/naming";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -96,7 +97,7 @@ function compareEntries(a: MeetingDebriefIndexEntry, b: MeetingDebriefIndexEntry
   return b.meetingDate.localeCompare(a.meetingDate);
 }
 
-export function MeetingDebriefPage() {
+export function MeetingDebriefPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   useTitle("Meeting Debrief");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [index, setIndex] = useState<MeetingDebriefIndex | null>(null);
@@ -111,13 +112,13 @@ export function MeetingDebriefPage() {
     setBusy(true);
     setError(null);
     try {
-      setIndex(await api.meetingDebriefIndex());
+      setIndex(await client.meetingDebriefIndex());
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void refresh();
@@ -125,7 +126,7 @@ export function MeetingDebriefPage() {
 
   useEffect(() => {
     let live = true;
-    void api
+    void client
       .meetings()
       .then((meetings) => {
         if (!live) return;
@@ -137,7 +138,7 @@ export function MeetingDebriefPage() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [client]);
 
   const entries = useMemo(() => (index ? [...index.entries].sort(compareEntries) : []), [index]);
 

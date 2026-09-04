@@ -7,7 +7,8 @@ import type {
   TranscriptDeletionTombstone,
   TranscriptConsumerDisclosure,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -26,7 +27,7 @@ const REVIEW_STATE_LABEL: Record<TranscriptRelevanceReviewState, string> = {
   unresolved: "Left unresolved",
 };
 
-export function TranscriptReviewPage() {
+export function TranscriptReviewPage({ client = peopleApi }: { client?: PeopleClient }) {
   useTitle("Transcript review");
   const focusRef = usePageFocus<HTMLHeadingElement>();
   const [items, setItems] = useState<TranscriptRelevanceReviewItem[] | null>(null);
@@ -43,22 +44,25 @@ export function TranscriptReviewPage() {
   const [previews, setPreviews] = useState<Record<string, TranscriptConsumerDisclosure[]>>({});
   const load = useCallback(async () => {
     try {
-      const queue = await api.transcriptRelevanceQueue();
+      const queue = await client.transcriptRelevanceQueue();
       setItems(queue.items);
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, []);
+  }, [client]);
 
   const loadCorpus = useCallback(async () => {
     try {
-      const [corpus, standing] = await Promise.all([api.transcripts(), api.transcriptTombstones()]);
+      const [corpus, standing] = await Promise.all([
+        client.transcripts(),
+        client.transcriptTombstones(),
+      ]);
       setTranscripts(corpus.transcripts);
       setTombstones(standing.tombstones);
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void load();
@@ -74,7 +78,7 @@ export function TranscriptReviewPage() {
         .split(",")
         .map((topic) => topic.trim())
         .filter((topic) => topic.length > 0);
-      const result = await api.searchTranscriptRelevance({
+      const result = await client.searchTranscriptRelevance({
         text: query,
         ...(meetingTitle.trim() || topicList.length > 0
           ? {
@@ -102,7 +106,7 @@ export function TranscriptReviewPage() {
     setError(null);
     setNotice(null);
     try {
-      const { item } = await api.decideTranscriptRelevance(candidateId, action);
+      const { item } = await client.decideTranscriptRelevance(candidateId, action);
       setItems((current) =>
         (current ?? []).map((entry) => (entry.candidate.id === candidateId ? item : entry)),
       );
@@ -126,7 +130,10 @@ export function TranscriptReviewPage() {
     setError(null);
     setNotice(null);
     try {
-      const receipt = await api.deleteTranscript(transcriptId, confirmations[transcriptId] ?? "");
+      const receipt = await client.deleteTranscript(
+        transcriptId,
+        confirmations[transcriptId] ?? "",
+      );
       const { removed } = receipt;
       const removedTotal =
         removed.transcriptRecords +
@@ -157,7 +164,7 @@ export function TranscriptReviewPage() {
     setError(null);
     setNotice(null);
     try {
-      await api.restoreTranscriptProcessing(externalFileId);
+      await client.restoreTranscriptProcessing(externalFileId);
       await loadCorpus();
       setNotice(
         `Processing permission restored for ${externalFileId}. The Catalog will process the file again on its next pass.`,
@@ -349,7 +356,7 @@ export function TranscriptReviewPage() {
                       /* The #122 confirmation pattern: what the cascade will
                          remove is disclosed before the irreversible action. */
                       if (previews[transcript.id] === undefined) {
-                        void api
+                        void client
                           .transcriptDeletionPreview(transcript.id)
                           .then((preview) =>
                             setPreviews((current) => ({

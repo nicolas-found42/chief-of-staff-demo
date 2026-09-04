@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { MeetingDebriefDetail, MeetingDebriefField } from "@chief-of-staff-demo/shared";
 import { MEETING_DEBRIEF_FIELDS } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { peopleApi } from "../clients/people";
+import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { formatMeetingTime, statusLabel } from "../display";
 import { meetingDebriefDetailName } from "../modules/meeting-debrief/naming";
 import { usePageFocus } from "../usePageFocus";
@@ -51,10 +53,12 @@ function ExtractionSection({
   detail,
   act,
   actionable,
+  client,
 }: {
   detail: MeetingDebriefDetail;
   act: (run: () => Promise<unknown>) => void;
   actionable: boolean;
+  client: MeetingsClient;
 }) {
   const debrief = detail.extraction;
   if (!debrief) {
@@ -123,7 +127,7 @@ function ExtractionSection({
                     <button
                       type="button"
                       onClick={() =>
-                        act(() => api.meetingDebriefDoneActionItem(detail.runId, index))
+                        act(() => client.meetingDebriefDoneActionItem(detail.runId, index))
                       }
                     >
                       Done
@@ -136,7 +140,7 @@ function ExtractionSection({
                     <button
                       type="button"
                       onClick={() =>
-                        act(() => api.meetingDebriefDismissActionItem(detail.runId, index))
+                        act(() => client.meetingDebriefDismissActionItem(detail.runId, index))
                       }
                     >
                       Dismiss
@@ -295,9 +299,11 @@ type DebriefActions = ReturnType<typeof useDebriefActions>;
 function ReviewSection({
   detail,
   actions,
+  client,
 }: {
   detail: MeetingDebriefDetail;
   actions: DebriefActions;
+  client: MeetingsClient;
 }) {
   const review = detail.review;
   const { busy, actionError, setActionError, act } = actions;
@@ -312,7 +318,7 @@ function ReviewSection({
       setActionError(null);
       try {
         setMatches(
-          (await api.people(query)).map((profile) => ({
+          (await peopleApi.people(query)).map((profile) => ({
             id: profile.id,
             fullName: profile.fullName,
             primaryEmail: profile.primaryEmail,
@@ -398,7 +404,7 @@ function ReviewSection({
               <li key={field}>
                 <button
                   type="button"
-                  onClick={() => act(() => api.meetingDebriefRegenerate(detail.runId, field))}
+                  onClick={() => act(() => client.meetingDebriefRegenerate(detail.runId, field))}
                 >
                   Regenerate {FIELD_LABELS[field]}
                 </button>
@@ -459,7 +465,7 @@ function ReviewSection({
           onSubmit={(event) => {
             event.preventDefault();
             if (entryDraft.length === 0) return;
-            act(() => api.meetingDebriefConfirmRoster(detail.runId, entryDraft));
+            act(() => client.meetingDebriefConfirmRoster(detail.runId, entryDraft));
           }}
         >
           <label htmlFor="debrief-roster-input">
@@ -519,7 +525,9 @@ function ReviewSection({
                 <button
                   type="button"
                   onClick={() =>
-                    act(() => api.meetingDebriefRemoveRecipient(detail.runId, recipient.profileId))
+                    act(() =>
+                      client.meetingDebriefRemoveRecipient(detail.runId, recipient.profileId),
+                    )
                   }
                 >
                   Remove
@@ -571,7 +579,7 @@ function ReviewSection({
                 onClick={() => {
                   if (profile.primaryEmail) {
                     act(() =>
-                      api.meetingDebriefAddRecipient(detail.runId, {
+                      client.meetingDebriefAddRecipient(detail.runId, {
                         profileId: profile.id,
                         email: profile.primaryEmail!,
                       }),
@@ -622,7 +630,7 @@ function ReviewSection({
         <button
           type="button"
           disabled={busy}
-          onClick={() => act(() => api.meetingDebriefApprove(detail.runId))}
+          onClick={() => act(() => client.meetingDebriefApprove(detail.runId))}
         >
           Publish draft and Tasks
         </button>
@@ -631,7 +639,7 @@ function ReviewSection({
         <button
           type="button"
           disabled={busy}
-          onClick={() => act(() => api.meetingDebriefRedo(detail.runId))}
+          onClick={() => act(() => client.meetingDebriefRedo(detail.runId))}
         >
           Redo (start a new debrief)
         </button>
@@ -665,7 +673,7 @@ function StatusLine({ detail }: { detail: MeetingDebriefDetail }) {
   );
 }
 
-export function MeetingDebriefDetailPage() {
+export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { runId } = useParams<{ runId: string }>();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [detail, setDetail] = useState<MeetingDebriefDetail | null>(null);
@@ -677,7 +685,7 @@ export function MeetingDebriefDetailPage() {
     if (!runId) return;
     setError(null);
     try {
-      setDetail(await api.meetingDebriefDetail(runId));
+      setDetail(await client.meetingDebriefDetail(runId));
       setNotFound(false);
     } catch (err) {
       if (/404|not found/i.test(errorMessage(err))) {
@@ -686,7 +694,7 @@ export function MeetingDebriefDetailPage() {
         setError(errorMessage(err));
       }
     }
-  }, [runId]);
+  }, [client, runId]);
 
   const actions = useDebriefActions(refresh);
 
@@ -696,7 +704,7 @@ export function MeetingDebriefDetailPage() {
 
   useEffect(() => {
     let live = true;
-    void api
+    void client
       .meetings()
       .then((meetings) => {
         if (!live) return;
@@ -708,7 +716,7 @@ export function MeetingDebriefDetailPage() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [client]);
 
   const name = detail ? meetingDebriefDetailName(detail, meetingTitles) : "Meeting Debrief";
   /* The tab carries the meeting, like every other Meeting Wizard page. A
@@ -750,8 +758,9 @@ export function MeetingDebriefDetailPage() {
             detail={detail}
             act={actions.act}
             actionable={detail.review !== null && detail.review.state !== "published"}
+            client={client}
           />
-          <ReviewSection detail={detail} actions={actions} />
+          <ReviewSection detail={detail} actions={actions} client={client} />
           <IdentitySection detail={detail} />
         </>
       )}

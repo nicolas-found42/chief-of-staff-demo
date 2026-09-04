@@ -9,7 +9,8 @@ import {
   formatTime,
   stageLabel,
 } from "../display";
-import { api, errorMessage } from "../client";
+import { runsApi } from "../clients/workspace";
+import { errorMessage } from "../client";
 import { useIsLoadedEntry } from "../usePageFocus";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { useModule, useModuleLabel } from "../useModules";
@@ -44,7 +45,7 @@ export function RunDetailPage() {
       return;
     }
     try {
-      const next = await api.getRun(id);
+      const next = await runsApi.getRun(id);
       setDetail(next);
       setError(null);
     } catch (err) {
@@ -90,7 +91,7 @@ export function RunDetailPage() {
     }
     setRetrying(true);
     try {
-      await api.retry(id);
+      await runsApi.retry(id);
       await load();
     } catch (err) {
       setError(errorMessage(err));

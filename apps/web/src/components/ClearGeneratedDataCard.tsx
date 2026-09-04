@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { CLEAR_GENERATED_DATA_CONFIRMATION } from "@chief-of-staff-demo/shared";
+import { errorMessage } from "../client";
 import {
   clearDataApi,
-  errorMessage,
   type ClearDataReceipt,
   type GeneratedDataInventory,
-} from "../client";
+} from "../clients/workspace";
 
 /**
  * The Settings danger zone's one action (issue #144): the repeatable successor

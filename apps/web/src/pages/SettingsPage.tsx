@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { DriveIntakeStatus, ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
-import { api, errorMessage, type ConfigPayload, type TranscriptIntakeInventory } from "../client";
+import { errorMessage } from "../client";
+import {
+  configApi,
+  googleApi,
+  intakeApi,
+  type ConfigPayload,
+  type TranscriptIntakeInventory,
+} from "../clients/workspace";
 import { GoogleConnect } from "../components/GoogleConnect";
 import { OwnerOnboardingCard } from "../components/OwnerOnboardingCard";
 import { MeetingBriefSettings } from "../components/MeetingBriefSettings";
@@ -99,7 +106,7 @@ export function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const fetched = await api.getConfig();
+        const fetched = await configApi.getConfig();
         setPayload(fetched);
         setForm({
           provider: fetched.config.provider,
@@ -134,7 +141,7 @@ export function SettingsPage() {
 
   /* Above the loading gate: hooks cannot sit behind an early return. */
   const loadIntake = useCallback(() => {
-    void api
+    void intakeApi
       .driveIntakeStatus()
       .then(setIntake)
       .catch(() => setIntake(null));
@@ -222,7 +229,7 @@ export function SettingsPage() {
       if (form.googleClientSecret !== "") {
         update.google = { clientId: form.googleClientId, clientSecret: form.googleClientSecret };
       }
-      const savedPayload = await api.saveConfig(update);
+      const savedPayload = await configApi.saveConfig(update);
       setPayload(savedPayload);
       setForm((current) =>
         current
@@ -262,14 +269,14 @@ export function SettingsPage() {
     setError(null);
     try {
       setPayload(
-        await api.saveConfig({
+        await configApi.saveConfig({
           google:
             form.googleClientSecret === ""
               ? { clientId: form.googleClientId }
               : { clientId: form.googleClientId, clientSecret: form.googleClientSecret },
         }),
       );
-      const { authUrl } = await api.googleConnect();
+      const { authUrl } = await googleApi.connect();
       window.location.assign(authUrl);
     } catch (err) {
       setError(errorMessage(err));
@@ -286,7 +293,7 @@ export function SettingsPage() {
     /* The old answer described a connection that no longer exists. */
     setGoogleCheck(null);
     try {
-      await api.googleDisconnect();
+      await googleApi.disconnect();
       await refreshGoogle();
     } catch (err) {
       setError(errorMessage(err));
@@ -304,7 +311,7 @@ export function SettingsPage() {
     setCheckingGoogle(true);
     setError(null);
     try {
-      const result = await api.googleCheck();
+      const result = await googleApi.check();
       setGoogleCheck(result);
       await refreshGoogle();
     } catch (err) {
@@ -319,7 +326,7 @@ export function SettingsPage() {
     setConsentBusy(true);
     setConsentError(null);
     try {
-      setInventory(await api.transcriptIntakeInventory());
+      setInventory(await intakeApi.transcriptIntakeInventory());
     } catch (err) {
       setConsentError(errorMessage(err));
     } finally {
@@ -331,7 +338,7 @@ export function SettingsPage() {
     setConsentBusy(true);
     setConsentError(null);
     try {
-      await api.grantTranscriptIntakeConsent();
+      await intakeApi.grantTranscriptIntakeConsent();
       setInventory(null);
       loadIntake();
     } catch (err) {
@@ -349,7 +356,7 @@ export function SettingsPage() {
     setSyncResult(null);
     setError(null);
     try {
-      const { processed } = await api.driveSync();
+      const { processed } = await intakeApi.driveSync();
       setSyncResult(`Synced — ${processed} new transcript(s) catalogued.`);
     } catch (err) {
       setError(errorMessage(err));
@@ -363,7 +370,7 @@ export function SettingsPage() {
     setPickerError(null);
     setPicking(true);
     try {
-      const { token } = await api.googlePickerToken();
+      const { token } = await googleApi.pickerToken();
       const picked = await pickDriveFolder(token);
       if (picked) {
         setField("driveFolderId", picked.id);

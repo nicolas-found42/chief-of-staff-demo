@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { MeetingBriefIndexEntry } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { meetingsApi, type MeetingsClient } from "../clients/meetings";
+import { runsApi } from "../clients/workspace";
+import { errorMessage } from "../client";
 import { formatMeetingTime, statusLabel } from "../display";
 import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
@@ -16,9 +18,6 @@ import { deliveryPresentation } from "../modules/meeting-brief/deliveryStatus";
 function calendarVersionLabel(version: string): string {
   return version.replace(/^"|"$/g, "");
 }
-
-/** Stable fetcher: the Brief journey reads the module's Cross-Run index. */
-const fetchIndex = () => api.meetingBriefIndex();
 
 function groupByOccurrence(
   briefs: MeetingBriefIndexEntry[],
@@ -50,13 +49,18 @@ function DeliveryBadge({ delivery }: { delivery: MeetingBriefIndexEntry["deliver
   );
 }
 
-export function MeetingBriefPage() {
+export function MeetingBriefPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { occurrenceKey } = useParams();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   useTitle("Meeting Brief");
   const [sendRunId, setSendRunId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
-  const { index, error, busy, refresh, prepareNow } = useMeetingIndex(fetchIndex);
+  /* Stable fetcher: the Brief journey reads the module's Cross-Run index. */
+  const fetchIndex = useCallback(() => client.meetingBriefIndex(), [client]);
+  const { index, error, busy, refresh, prepareNow } = useMeetingIndex(
+    fetchIndex,
+    client.prepareMeetingBriefNow,
+  );
   /* Meetings by occurrence key, so a Brief that failed before it could compose
      one still has a name to show instead of a Calendar event id — and so a
      cancelled occurrence can say when it was to be. */
@@ -69,7 +73,7 @@ export function MeetingBriefPage() {
   );
   useEffect(() => {
     let live = true;
-    void api
+    void client
       .meetings()
       .then((meetings) => {
         if (!live) return;
@@ -90,7 +94,7 @@ export function MeetingBriefPage() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [client]);
 
   const groups = useMemo(() => {
     if (!index) return new Map<string, MeetingBriefIndexEntry[]>();
@@ -367,7 +371,7 @@ export function MeetingBriefPage() {
                           if (busy || sendRunId !== null) return;
                           setSendRunId(entry.runId);
                           setSendError(null);
-                          api
+                          runsApi
                             .retry(entry.runId)
                             .then(() => refresh())
                             .catch((cause: unknown) => setSendError(errorMessage(cause)))

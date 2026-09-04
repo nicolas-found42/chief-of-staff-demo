@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MeetingBriefIndex } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "./client";
+import { errorMessage } from "./client";
+import { meetingsApi } from "./clients/meetings";
 
 /**
  * The read projection both Meeting Wizard surfaces render: one refresh /
@@ -11,7 +12,10 @@ import { api, errorMessage } from "./client";
  * Pass a stable fetcher (module-level or useCallback) so the initial refresh
  * effect does not re-run every render.
  */
-export function useMeetingIndex(fetch: () => Promise<MeetingBriefIndex>) {
+export function useMeetingIndex(
+  fetch: () => Promise<MeetingBriefIndex>,
+  prepare: (occurrenceKey: string) => Promise<unknown> = meetingsApi.prepareMeetingBriefNow,
+) {
   const [index, setIndex] = useState<MeetingBriefIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,7 +38,7 @@ export function useMeetingIndex(fetch: () => Promise<MeetingBriefIndex>) {
       setBusy(true);
       setError(null);
       try {
-        await api.prepareMeetingBriefNow(occurrenceKey);
+        await prepare(occurrenceKey);
         setIndex(await fetch());
       } catch (err) {
         setError(errorMessage(err));
@@ -42,7 +46,7 @@ export function useMeetingIndex(fetch: () => Promise<MeetingBriefIndex>) {
         setBusy(false);
       }
     },
-    [fetch],
+    [fetch, prepare],
   );
 
   useEffect(() => {

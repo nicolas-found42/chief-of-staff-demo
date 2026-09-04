@@ -6,7 +6,10 @@ import type {
   MeetingIndex,
   WeeklyBriefingState,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage, onboardingApi } from "../client";
+import { errorMessage } from "../client";
+import { onboardingApi } from "../clients/workspace";
+import { peopleApi } from "../clients/people";
+import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { formatMeetingDate, formatMeetingTime } from "../display";
 import { selectHomeActionItems, type HomeActionItem } from "../homeActionItems";
 import { todaysMeetings } from "../todaysMeetings";
@@ -33,9 +36,6 @@ function isOverdue(dueDate: string): boolean {
   ).padStart(2, "0")}`;
   return dueDate < local;
 }
-
-/** Stable fetcher: the home reads the Meeting store (ADR-0050). */
-const fetchMeetings = () => api.meetings();
 
 /**
  * What a Brief's state means, and whether it is something to act on. `failed`
@@ -86,7 +86,7 @@ function MeetingRow({
  * order, each linking to its page. The Brief and Debrief journeys stay
  * separate workflows (ADR-0043); their surfaces live at their own routes.
  */
-export function MeetingsOverviewPage() {
+export function MeetingsOverviewPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   useTitle("Meeting Wizard");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   // PROTOTYPE — reads `?variant=`; delete with the losing variants.
@@ -110,14 +110,14 @@ export function MeetingsOverviewPage() {
   const loadActionItems = useCallback(async () => {
     try {
       const [rollup, owner] = await Promise.all([
-        api.meetingDebriefActionItems(),
+        client.meetingDebriefActionItems(),
         onboardingApi.owner().catch(() => ({ proposal: null, confirmed: null })),
       ]);
       const profileId = owner.confirmed?.profileId ?? null;
       /* The owner's name, for items the Catalog left unresolved. A failed
          lookup only costs the name fallback, never the whole list. */
       const ownerName = profileId
-        ? await api
+        ? await peopleApi
             .personProfile(profileId)
             .then((profile) => profile.fullName)
             .catch(() => null)
@@ -127,41 +127,47 @@ export function MeetingsOverviewPage() {
     } catch (err) {
       setActionItemsError(errorMessage(err));
     }
-  }, []);
+  }, [client]);
 
-  const loadBriefing = useCallback(async (retry: boolean) => {
-    setBriefingBusy(true);
-    try {
-      setBriefing(await (retry ? api.retryDailyBriefing() : api.dailyBriefing()));
-    } catch (err) {
-      setBriefing({ briefing: null, error: errorMessage(err), stale: false });
-    } finally {
-      setBriefingBusy(false);
-    }
-  }, []);
+  const loadBriefing = useCallback(
+    async (retry: boolean) => {
+      setBriefingBusy(true);
+      try {
+        setBriefing(await (retry ? client.retryDailyBriefing() : client.dailyBriefing()));
+      } catch (err) {
+        setBriefing({ briefing: null, error: errorMessage(err), stale: false });
+      } finally {
+        setBriefingBusy(false);
+      }
+    },
+    [client],
+  );
 
-  const loadWeekly = useCallback(async (retry: boolean) => {
-    setWeeklyBusy(true);
-    try {
-      setWeekly(await (retry ? api.retryWeeklyBriefing() : api.weeklyBriefing()));
-    } catch (err) {
-      setWeekly({ briefing: null, error: errorMessage(err), stale: false });
-    } finally {
-      setWeeklyBusy(false);
-    }
-  }, []);
+  const loadWeekly = useCallback(
+    async (retry: boolean) => {
+      setWeeklyBusy(true);
+      try {
+        setWeekly(await (retry ? client.retryWeeklyBriefing() : client.weeklyBriefing()));
+      } catch (err) {
+        setWeekly({ briefing: null, error: errorMessage(err), stale: false });
+      } finally {
+        setWeeklyBusy(false);
+      }
+    },
+    [client],
+  );
 
   const refresh = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
-      setIndex(await fetchMeetings());
+      setIndex(await client.meetings());
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void refresh();

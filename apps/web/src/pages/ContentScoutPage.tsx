@@ -12,7 +12,9 @@ import {
   type ContentProjectSummary,
   type ContentProjectTarget,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage, type ContentScoutState } from "../client";
+import { runsApi } from "../clients/workspace";
+import { contentApi, type ContentClient, type ContentScoutState } from "../clients/content";
+import { errorMessage } from "../client";
 import { contentProjectReadinessLabel } from "../contentProjectGates";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -41,7 +43,7 @@ const BRAND_DIFF_BADGES: Record<
 
 async function waitForRun(runId: string): Promise<void> {
   for (let attempt = 0; attempt < 300; attempt += 1) {
-    const run = await api.getRun(runId);
+    const run = await runsApi.getRun(runId);
     if (["blocked", "done", "skipped"].includes(run.status)) return;
     if (run.status === "failed") {
       throw new Error(run.failureHint ?? "The Content Scout Run failed.");
@@ -51,7 +53,7 @@ async function waitForRun(runId: string): Promise<void> {
   throw new Error("Content Scout is still working. Open the Intake Run to follow its progress.");
 }
 
-export function ContentScoutPage() {
+export function ContentScoutPage({ client = contentApi }: { client?: ContentClient }) {
   useTitle("Content Scout");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [view, setView] = useState<View>("shortlist");
@@ -63,12 +65,12 @@ export function ContentScoutPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setState(await api.contentScout());
+      setState(await client.contentScout());
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void refresh();
@@ -134,7 +136,7 @@ export function ContentScoutPage() {
             if (busy) return;
             selectedBeforeBusy.current = event.currentTarget;
             void act(async () => {
-              const { runId } = await api.runContentScout();
+              const { runId } = await client.runContentScout();
               await waitForRun(runId);
             }, "The ranked shortlist is ready for your decision.");
           }}
@@ -187,17 +189,19 @@ export function ContentScoutPage() {
           state={state}
           busy={busy}
           act={act}
+          client={client}
           retainFocus={(button) => {
             selectedBeforeBusy.current = button;
           }}
         />
       )}
-      {view === "projects" && <ProjectsView />}
+      {view === "projects" && <ProjectsView client={client} />}
       {view === "sources" && (
         <SourcesView
           state={state}
           busy={busy}
           act={act}
+          client={client}
           retainFocus={(button) => {
             selectedBeforeBusy.current = button;
           }}
@@ -208,6 +212,7 @@ export function ContentScoutPage() {
           state={state}
           busy={busy}
           act={act}
+          client={client}
           retainFocus={(button) => {
             selectedBeforeBusy.current = button;
           }}
@@ -218,6 +223,7 @@ export function ContentScoutPage() {
           state={state}
           busy={busy}
           act={act}
+          client={client}
           retainFocus={(button) => {
             selectedBeforeBusy.current = button;
           }}
@@ -232,13 +238,13 @@ export function ContentScoutPage() {
  * Opportunity has always started one; until this list existed there was no way
  * to find the Project it started, because `get` needs an id nothing showed.
  */
-function ProjectsView() {
+function ProjectsView({ client }: { client: ContentClient }) {
   const [projects, setProjects] = useState<ContentProjectSummary[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    api
+    client
       .contentProjects()
       .then((result) => {
         if (live) setProjects(result.projects);
@@ -249,7 +255,7 @@ function ProjectsView() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [client]);
 
   if (listError)
     return (
@@ -319,11 +325,13 @@ function ShortlistView({
   state,
   busy,
   act,
+  client,
   retainFocus,
 }: {
   state: ContentScoutState;
   busy: boolean;
   act: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  client: ContentClient;
   retainFocus: (button: HTMLButtonElement) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -419,7 +427,7 @@ function ShortlistView({
                   retainFocus(event.currentTarget);
                   void act(
                     () =>
-                      api.decideContentOpportunity(
+                      client.decideContentOpportunity(
                         shortlist.runId,
                         opportunity.id,
                         "dismiss_angle",
@@ -436,7 +444,11 @@ function ShortlistView({
                   retainFocus(event.currentTarget);
                   void act(
                     () =>
-                      api.decideContentOpportunity(shortlist.runId, opportunity.id, "not_relevant"),
+                      client.decideContentOpportunity(
+                        shortlist.runId,
+                        opportunity.id,
+                        "not_relevant",
+                      ),
                     "The opportunity was marked Not relevant.",
                   );
                 }}
@@ -449,7 +461,7 @@ function ShortlistView({
                   retainFocus(event.currentTarget);
                   void act(
                     () =>
-                      api.decideContentOpportunity(
+                      client.decideContentOpportunity(
                         shortlist.runId,
                         opportunity.id,
                         "already_covered",
@@ -567,7 +579,7 @@ function ShortlistView({
             if (busy || !canStart) return;
             retainFocus(event.currentTarget);
             void act(async () => {
-              const response = await api.selectContentScout(shortlist.runId, selected, {
+              const response = await client.selectContentScout(shortlist.runId, selected, {
                 objective: resolvedObjective,
                 audience,
                 targets,
@@ -588,7 +600,7 @@ function ShortlistView({
           onClick={(event) => {
             if (busy) return;
             retainFocus(event.currentTarget);
-            void act(() => api.skipContentScout(shortlist.runId), "The shortlist was skipped.");
+            void act(() => client.skipContentScout(shortlist.runId), "The shortlist was skipped.");
           }}
         >
           Skip shortlist
@@ -599,7 +611,7 @@ function ShortlistView({
   );
 }
 
-function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
+function SourcesView({ state, busy, act, client, retainFocus }: ViewProps) {
   const configurable = state.adapters.filter((adapter) => adapter.state !== "coming_later");
   const [adapterId, setAdapterId] = useState(configurable[0]?.id ?? "rss");
   const [label, setLabel] = useState("");
@@ -618,7 +630,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
             if (busy) return;
             retainFocus(event.currentTarget);
             void act(async () => {
-              const { runId } = await api.runSourceDiscovery();
+              const { runId } = await client.runSourceDiscovery();
               await waitForRun(runId);
             }, "Source Discovery finished.");
           }}
@@ -635,7 +647,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
             event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]');
           if (button) retainFocus(button);
           void act(
-            () => api.addContentSource({ adapterId, label, url }),
+            () => client.addContentSource({ adapterId, label, url }),
             "Source Target approved.",
           ).then(() => {
             setLabel("");
@@ -713,7 +725,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
                           retainFocus(event.currentTarget);
                           void act(
                             () =>
-                              api.setContentSourceState(
+                              client.setContentSourceState(
                                 target.id,
                                 target.state === "active" ? "archived" : "active",
                               ),
@@ -745,7 +757,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
                                 if (busy || !supported) return;
                                 retainFocus(event.currentTarget);
                                 void act(async () => {
-                                  const { runId } = await api.backfillContentSource(
+                                  const { runId } = await client.backfillContentSource(
                                     target.id,
                                     windowDays,
                                   );
@@ -807,7 +819,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
                       onClick={(event) => {
                         retainFocus(event.currentTarget);
                         void act(
-                          () => api.decideSourceSuggestion(suggestion.id, "approved"),
+                          () => client.decideSourceSuggestion(suggestion.id, "approved"),
                           "Suggestion approved as a Source Target.",
                         );
                       }}
@@ -820,7 +832,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
                         retainFocus(event.currentTarget);
                         void act(
                           () =>
-                            api.decideSourceSuggestion(
+                            client.decideSourceSuggestion(
                               suggestion.id,
                               "dismissed",
                               "Dismissed in Sources",
@@ -838,7 +850,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
                     onClick={(event) => {
                       retainFocus(event.currentTarget);
                       void act(
-                        () => api.decideSourceSuggestion(suggestion.id, "proposed"),
+                        () => client.decideSourceSuggestion(suggestion.id, "proposed"),
                         "Suggestion restored for review.",
                       );
                     }}
@@ -854,7 +866,7 @@ function SourcesView({ state, busy, act, retainFocus }: ViewProps) {
   );
 }
 
-function BrandView({ state, busy, act, retainFocus }: ViewProps) {
+function BrandView({ state, busy, act, client, retainFocus }: ViewProps) {
   const revision = state.brandProfile;
   const proposal = state.brandProfileProposal;
   const [websiteUrl, setWebsiteUrl] = useState(revision?.sourceScan.websiteUrl ?? "");
@@ -890,7 +902,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
 
   const openRevisionBody = (entry: BrandProfileRevisionSummary, open: boolean) => {
     if (!open || revisionBodies[entry.id] !== undefined) return;
-    void api
+    void client
       .brandProfileRevision(entry.id)
       .then(({ revision: loaded }) =>
         setRevisionBodies((current) => ({ ...current, [entry.id]: loaded.markdown })),
@@ -922,7 +934,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
             event.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]');
           if (button) retainFocus(button);
           void act(async () => {
-            const { runId } = await api.scanBrandProfile(websiteUrl);
+            const { runId } = await client.scanBrandProfile(websiteUrl);
             await waitForRun(runId);
           }, "Brand Profile proposal is ready for review.");
         }}
@@ -1040,7 +1052,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
               retainFocus(event.currentTarget);
               void act(
                 () =>
-                  api.acceptBrandProfileProposal(proposal.id, {
+                  client.acceptBrandProfileProposal(proposal.id, {
                     acceptedSections,
                     includedUrls,
                     excludedUrls: proposal.pages
@@ -1077,7 +1089,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
           if (button) retainFocus(button);
           void act(
             () =>
-              api.saveBrandProfile({
+              client.saveBrandProfile({
                 markdown,
                 websiteUrl,
                 includedUrls: [websiteUrl],
@@ -1158,7 +1170,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
                         if (busy) return;
                         retainFocus(event.currentTarget);
                         void act(
-                          () => api.restoreBrandProfileRevision(entry.id),
+                          () => client.restoreBrandProfileRevision(entry.id),
                           `Revision ${entry.id} is the current Brand Profile again.`,
                         );
                       }}
@@ -1176,7 +1188,7 @@ function BrandView({ state, busy, act, retainFocus }: ViewProps) {
   );
 }
 
-function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
+function SettingsView({ state, busy, act, client, retainFocus }: ViewProps) {
   const [cleanupPreview, setCleanupPreview] = useState<ContentScoutCleanupPreview | null>(null);
   const initial = state.settings ?? {
     timeZone: "UTC",
@@ -1221,7 +1233,7 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
               if (button) retainFocus(button);
               void act(
                 () =>
-                  api.saveContentScoutSchedule({
+                  client.saveContentScoutSchedule({
                     timeZone,
                     dailyTime,
                     weeklyDiscoveryDay,
@@ -1377,7 +1389,7 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
                 if (busy) return;
                 retainFocus(event.currentTarget);
                 void act(async () => {
-                  setCleanupPreview(await api.previewContentScoutCleanup());
+                  setCleanupPreview(await client.previewContentScoutCleanup());
                 }, "Temporary-data cleanup preview is ready.");
               }}
             >
@@ -1392,7 +1404,7 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
                   if (busy) return;
                   retainFocus(event.currentTarget);
                   void act(async () => {
-                    await api.cleanupContentScoutTemporaryData();
+                    await client.cleanupContentScoutTemporaryData();
                     setCleanupPreview(null);
                   }, "Expired temporary data deleted. Durable records and evidence were preserved.");
                 }}
@@ -1477,7 +1489,7 @@ function SettingsView({ state, busy, act, retainFocus }: ViewProps) {
                 if (busy) return;
                 retainFocus(event.currentTarget);
                 void act(
-                  () => api.runCanaries(),
+                  () => client.runCanaries(),
                   "Canary batch finished. Health reflects the latest receipts.",
                 );
               }}
@@ -1607,5 +1619,6 @@ interface ViewProps {
   state: ContentScoutState;
   busy: boolean;
   act: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  client: ContentClient;
   retainFocus: (button: HTMLButtonElement) => void;
 }

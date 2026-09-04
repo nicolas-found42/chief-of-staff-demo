@@ -7,7 +7,9 @@ import type {
   MeetingDebriefIndexEntry,
   MeetingIneligibility,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { runsApi } from "../clients/workspace";
+import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { formatMeetingEndTime, formatMeetingTime } from "../display";
 import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
@@ -29,9 +31,6 @@ const RESPONSE_LABELS: Record<Meeting["participants"][number]["responseStatus"],
   needsAction: "No reply",
   declined: "Declined",
 };
-
-/** Stable fetcher: the Brief tab reads the module's Cross-Run index. */
-const fetchBriefIndex = () => api.meetingBriefIndex();
 
 type MeetingTab = "brief" | "debrief";
 
@@ -62,8 +61,13 @@ function compareBriefEntries(a: MeetingBriefIndexEntry, b: MeetingBriefIndexEntr
  * failed; a failed preparation renders the error with a retry into the
  * existing prepare endpoint.
  */
-function MeetingBriefTab({ meeting }: { meeting: Meeting }) {
-  const { index, error, busy, refresh, prepareNow } = useMeetingIndex(fetchBriefIndex);
+function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: MeetingsClient }) {
+  /* Stable fetcher: the Brief tab reads the module's Cross-Run index. */
+  const fetchIndex = useCallback(() => client.meetingBriefIndex(), [client]);
+  const { index, error, busy, refresh, prepareNow } = useMeetingIndex(
+    fetchIndex,
+    client.prepareMeetingBriefNow,
+  );
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const occurrenceKey = meeting.occurrenceKey;
@@ -198,7 +202,7 @@ function MeetingBriefTab({ meeting }: { meeting: Meeting }) {
                   if (busy || sendBusy) return;
                   setSendBusy(true);
                   setSendError(null);
-                  api
+                  runsApi
                     .retry(current.runId)
                     .then(() => refresh())
                     .catch((cause: unknown) => setSendError(errorMessage(cause)))
@@ -311,12 +315,14 @@ function MeetingDebriefTab({
   indexReady,
   indexError,
   refreshIndex,
+  client,
 }: {
   transcripts: { id: string; title: string }[] | null;
   entry: MeetingDebriefIndexEntry | undefined;
   indexReady: boolean;
   indexError: string | null;
   refreshIndex: () => void;
+  client: MeetingsClient;
 }) {
   const [detail, setDetail] = useState<MeetingDebriefDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -328,7 +334,7 @@ function MeetingDebriefTab({
     let cancelled = false;
     setDetail(null);
     setDetailError(null);
-    api
+    client
       .meetingDebriefDetail(runId)
       .then((result) => {
         if (!cancelled) setDetail(result);
@@ -339,7 +345,7 @@ function MeetingDebriefTab({
     return () => {
       cancelled = true;
     };
-  }, [runId, detailAttempt]);
+  }, [client, runId, detailAttempt]);
 
   if (transcripts === null || !indexReady) {
     return (
@@ -447,7 +453,13 @@ function MeetingDebriefTab({
  * is the stable anchor the tab work wraps around; merging navigates to the
  * surviving Meeting because this record is forgotten by the merge.
  */
-function TranscriptOrphanNotice({ meetingId }: { meetingId: string }) {
+function TranscriptOrphanNotice({
+  meetingId,
+  client,
+}: {
+  meetingId: string;
+  client: MeetingsClient;
+}) {
   const navigate = useNavigate();
   const [nearMatches, setNearMatches] = useState<Meeting[] | null>(null);
   const [mergingId, setMergingId] = useState<string | null>(null);
@@ -455,7 +467,7 @@ function TranscriptOrphanNotice({ meetingId }: { meetingId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    api
+    client
       .meetingNearMatches(meetingId)
       .then((result) => {
         if (!cancelled) setNearMatches(result.nearMatches);
@@ -466,14 +478,14 @@ function TranscriptOrphanNotice({ meetingId }: { meetingId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [meetingId]);
+  }, [client, meetingId]);
 
   async function merge(target: Meeting) {
     if (!target.occurrenceKey || mergingId) return;
     setMergingId(target.id);
     setMergeError(null);
     try {
-      const survivor = await api.mergeMeeting(meetingId, {
+      const survivor = await client.mergeMeeting(meetingId, {
         targetOccurrenceKey: target.occurrenceKey,
       });
       void navigate(`/meetings/${survivor.id}`);
@@ -534,7 +546,7 @@ function TranscriptOrphanNotice({ meetingId }: { meetingId: string }) {
  * Facts and participants sit on top; the Brief and Debrief tabs render
  * beneath. This component owns the tab shell.
  */
-export function MeetingPage() {
+export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { meetingId } = useParams<{ meetingId: string }>();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [transcripts, setTranscripts] = useState<{ id: string; title: string }[] | null>(null);
@@ -548,7 +560,7 @@ export function MeetingPage() {
   useEffect(() => {
     if (!meetingId) return;
     let cancelled = false;
-    api
+    client
       .meeting(meetingId)
       .then((result) => {
         if (!cancelled) setMeeting(result);
@@ -556,7 +568,7 @@ export function MeetingPage() {
       .catch((cause: unknown) => {
         if (!cancelled) setError(errorMessage(cause));
       });
-    api
+    client
       .meetingTranscripts(meetingId)
       .then((result) => {
         if (!cancelled) setTranscripts(result.transcripts);
@@ -567,9 +579,9 @@ export function MeetingPage() {
     return () => {
       cancelled = true;
     };
-  }, [meetingId]);
+  }, [client, meetingId]);
   const refreshDebriefIndex = useCallback(() => {
-    api
+    client
       .meetingDebriefIndex()
       .then((result) => {
         setDebriefEntries(result.entries);
@@ -578,7 +590,7 @@ export function MeetingPage() {
       .catch((cause: unknown) => {
         setDebriefIndexError(errorMessage(cause));
       });
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     refreshDebriefIndex();
@@ -720,7 +732,9 @@ export function MeetingPage() {
           </ul>
         )}
       </section>
-      {meeting.occurrenceKey === null ? <TranscriptOrphanNotice meetingId={meeting.id} /> : null}
+      {meeting.occurrenceKey === null ? (
+        <TranscriptOrphanNotice meetingId={meeting.id} client={client} />
+      ) : null}
       {/* --- transcript-orphan slot (issue #154) — end --- */}
 
       {/* The ARIA tabs pattern, kept whole: exactly one tab is in the tab
@@ -756,7 +770,7 @@ export function MeetingPage() {
 
       {tab === "brief" ? (
         <div role="tabpanel" id="meeting-tabpanel-brief" aria-labelledby="meeting-tab-brief">
-          <MeetingBriefTab meeting={meeting} />
+          <MeetingBriefTab meeting={meeting} client={client} />
         </div>
       ) : (
         <div role="tabpanel" id="meeting-tabpanel-debrief" aria-labelledby="meeting-tab-debrief">
@@ -766,6 +780,7 @@ export function MeetingPage() {
             indexReady={debriefEntries !== null}
             indexError={debriefIndexError}
             refreshIndex={refreshDebriefIndex}
+            client={client}
           />
         </div>
       )}

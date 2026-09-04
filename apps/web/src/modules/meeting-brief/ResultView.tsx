@@ -5,10 +5,17 @@ import type {
   RunDetail,
 } from "@chief-of-staff-demo/shared";
 import { Link, useNavigate } from "react-router-dom";
-import { api, errorMessage } from "../../client";
+import { errorMessage } from "../../client";
+import { meetingsApi, type MeetingsClient } from "../../clients/meetings";
 import { deliveryPresentation } from "./deliveryStatus";
 
-export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
+export function MeetingBriefResultView({
+  detail,
+  client = meetingsApi,
+}: {
+  detail: RunDetail;
+  client?: MeetingsClient;
+}) {
   const navigate = useNavigate();
   const [profileReadModel, setProfileReadModel] =
     useState<MeetingBriefPersonProfileReadModel | null>(null);
@@ -16,7 +23,7 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
   const [regenerationError, setRegenerationError] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
-    void api
+    void client
       .meetingBriefProfileConsumers(detail.id)
       .then((readModel) => {
         if (current) setProfileReadModel(readModel);
@@ -27,7 +34,7 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
     return () => {
       current = false;
     };
-  }, [detail.id]);
+  }, [client, detail.id]);
   const result = detail.result as MeetingBriefRunResult | null;
   if (!result) {
     if (detail.status === "skipped") {
@@ -55,7 +62,7 @@ export function MeetingBriefResultView({ detail }: { detail: RunDetail }) {
     setRegenerating(true);
     setRegenerationError(null);
     try {
-      const refreshed = await api.regenerateMeetingBrief(detail.id);
+      const refreshed = await client.regenerateMeetingBrief(detail.id);
       await navigate(`/runs/${refreshed.runId}`);
     } catch (error) {
       setRegenerationError(errorMessage(error));

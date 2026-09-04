@@ -21,7 +21,7 @@ import { TranscriptReviewPage } from "./pages/TranscriptReviewPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { YoutubePage } from "./pages/YoutubePage";
-import { migrationApi, type MigrationStatus } from "./client";
+import { migrationApi, type MigrationStatus } from "./clients/workspace";
 import { isCurrentArea, PRODUCT_AREAS } from "./productAreas";
 import { useIsLoadedEntry } from "./usePageFocus";
 

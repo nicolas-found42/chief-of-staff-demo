@@ -17,7 +17,8 @@ import {
   invalidationAffectsRevision,
 } from "@chief-of-staff-demo/shared";
 
-import { ApiError, api, errorMessage } from "../client";
+import { ApiError, errorMessage } from "../client";
+import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -227,7 +228,7 @@ function described(profile: PersonProfile): string {
  * any exact historical revision is one click away and clearly marked as
  * superseded.
  */
-export function PersonProfileDetailPage() {
+export function PersonProfileDetailPage({ client = peopleApi }: { client?: PeopleClient }) {
   const { profileId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const revisionParam = searchParams.get("revision");
@@ -251,24 +252,24 @@ export function PersonProfileDetailPage() {
 
   const loadLifecycle = useCallback(async () => {
     try {
-      setLifecycle(await api.personProfileLifecycle(profileId));
+      setLifecycle(await client.personProfileLifecycle(profileId));
     } catch {
       /* The lifecycle preview is a disclosure, not a precondition for reading
          the Profile: a failure to load it must not blank the detail page. */
     }
-  }, [profileId]);
+  }, [client, profileId]);
 
   useEffect(() => {
     let cancelled = false;
     /* Each .then body is its own closure, so every check reads the flag fresh
        rather than a narrowed snapshot taken before the awaits. */
-    void api
+    void client
       .personProfile(profileId)
       .then((profile) => {
         if (cancelled) return;
         setCurrent(profile);
         setError(null);
-        return api.personProfileRevisions(profileId).then((history) => {
+        return client.personProfileRevisions(profileId).then((history) => {
           if (cancelled) return;
           setRevisions(history.map((p) => p.revision));
         });
@@ -284,7 +285,7 @@ export function PersonProfileDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [profileId, loadLifecycle]);
+  }, [client, profileId, loadLifecycle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,7 +295,7 @@ export function PersonProfileDetailPage() {
     }
     async function loadRevision() {
       try {
-        const profile = await api.personProfileRevision(profileId, viewRevision!);
+        const profile = await client.personProfileRevision(profileId, viewRevision!);
         if (!cancelled) setViewed(profile);
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
@@ -304,7 +305,7 @@ export function PersonProfileDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [profileId, viewRevision]);
+  }, [client, profileId, viewRevision]);
 
   /* Identity repair (ticket #121): the owner's repair decisions. Every action
      goes through the product API, appends a revision, and refreshes the
@@ -344,7 +345,7 @@ export function PersonProfileDetailPage() {
       setActionError(null);
       try {
         setCurrent(await apply());
-        const history = await api.personProfileRevisions(profileId);
+        const history = await client.personProfileRevisions(profileId);
         setRevisions(history.map((profile) => profile.revision));
       } catch (err) {
         setActionError(errorMessage(err));
@@ -352,7 +353,7 @@ export function PersonProfileDetailPage() {
         setBusy(false);
       }
     },
-    [profileId],
+    [client, profileId],
   );
 
   /**
@@ -384,7 +385,7 @@ export function PersonProfileDetailPage() {
       setBusy(true);
       setActionError(null);
       try {
-        setReceipt(await api.privacyDeletePersonProfile(profileId, confirmation));
+        setReceipt(await client.privacyDeletePersonProfile(profileId, confirmation));
         setCurrent(null);
       } catch (err) {
         const refusal = lifecycleRefusal(err);
@@ -432,13 +433,13 @@ export function PersonProfileDetailPage() {
             }),
       ...(correction.note.trim() === "" ? {} : { note: correction.note }),
     };
-    void runRepair(() => api.correctPersonProfile(profileId, stated));
+    void runRepair(() => client.correctPersonProfile(profileId, stated));
   };
 
   const submitMerge = (event: FormEvent) => {
     event.preventDefault();
     void runRepair(() =>
-      api.mergePersonProfile(profileId, {
+      client.mergePersonProfile(profileId, {
         duplicateId: mergeForm.duplicateId.trim(),
         resolutions: {
           ...(mergeForm.fullName.trim() === "" ? {} : { fullName: mergeForm.fullName }),
@@ -457,7 +458,7 @@ export function PersonProfileDetailPage() {
   const submitDetach = (event: FormEvent) => {
     event.preventDefault();
     void runRepair(async () => {
-      const split = await api.detachPersonEvidence(profileId, {
+      const split = await client.detachPersonEvidence(profileId, {
         evidenceId: detachForm.evidenceId,
         ...(detachForm.toProfileId.trim() === "" ? {} : { toProfileId: detachForm.toProfileId }),
         ...(detachForm.note.trim() === "" ? {} : { note: detachForm.note }),
@@ -604,7 +605,7 @@ export function PersonProfileDetailPage() {
             type="button"
             className="action-button"
             aria-disabled={busy}
-            onClick={() => void runRepair(() => api.enrichPersonProfile(profileId))}
+            onClick={() => void runRepair(() => client.enrichPersonProfile(profileId))}
           >
             {busy ? "Searching…" : "Search again"}
           </button>
@@ -1031,8 +1032,8 @@ export function PersonProfileDetailPage() {
             onClick={() =>
               void runLifecycle(() =>
                 current.archivedAt
-                  ? api.restorePersonProfile(profileId)
-                  : api.archivePersonProfile(profileId),
+                  ? client.restorePersonProfile(profileId)
+                  : client.archivePersonProfile(profileId),
               )
             }
           >

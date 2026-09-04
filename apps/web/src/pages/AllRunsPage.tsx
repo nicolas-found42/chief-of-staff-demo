@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { DriveIntakeStatus } from "@chief-of-staff-demo/shared";
 import { RunsList } from "../components/RunsList";
-import { api } from "../client";
+import { intakeApi } from "../clients/workspace";
 import { relativeTime } from "../display";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
@@ -31,7 +31,7 @@ export function AllRunsPage() {
   const [intake, setIntake] = useState<DriveIntakeStatus | null>(null);
   const { status: googleStatus } = useGoogleConnection();
   const loadIntake = useCallback(() => {
-    void api
+    void intakeApi
       .driveIntakeStatus()
       .then((next) => setIntake(next))
       .catch(() => undefined);

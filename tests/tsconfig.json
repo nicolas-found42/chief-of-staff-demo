@@ -7,18 +7,17 @@
     // does.
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"],
     "noEmit": true,
     "incremental": true,
     "declaration": false,
     "sourceMap": false,
-
     // Same reason vitest.config.ts aliases it: one copy of shared, its source.
     "paths": {
       "@chief-of-staff-demo/shared": ["../packages/shared/src/index.ts"]
     },
-
     // The one flag the specs are exempt from. It exists to stop `undefined`
     // propagating silently into a Run or a render; a test that indexes past the
     // end of an array already fails, loudly, which is the outcome the flag is

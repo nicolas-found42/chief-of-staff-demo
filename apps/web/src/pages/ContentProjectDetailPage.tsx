@@ -7,7 +7,8 @@ import {
   type ContentProjectRevision,
   type ContentProjectTarget,
 } from "@chief-of-staff-demo/shared";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { contentApi, type ContentClient } from "../clients/content";
 import { contentProjectGateNotices } from "../contentProjectGates";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -30,7 +31,7 @@ function targetLabel(target: ContentProjectTarget): string {
  * gate, and that name is what the page shows — a refusal is never a bare
  * "not ready".
  */
-export function ContentProjectDetailPage() {
+export function ContentProjectDetailPage({ client = contentApi }: { client?: ContentClient }) {
   const { projectId } = useParams<{ projectId: string }>();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [project, setProject] = useState<ContentProject | null>(null);
@@ -48,7 +49,7 @@ export function ContentProjectDetailPage() {
     setBusy(true);
     setError(null);
     try {
-      const detail = await api.contentProject(projectId);
+      const detail = await client.contentProject(projectId);
       setProject(detail.project);
       setReadiness(detail.readiness);
     } catch (err) {
@@ -56,7 +57,7 @@ export function ContentProjectDetailPage() {
     } finally {
       setBusy(false);
     }
-  }, [projectId]);
+  }, [client, projectId]);
 
   useEffect(() => {
     void refresh();
@@ -202,7 +203,7 @@ export function ContentProjectDetailPage() {
                           onClick={() =>
                             void act(
                               () =>
-                                api
+                                client
                                   .contentProjectApproveOutlineCharter(projectId, brief.id)
                                   .then(() => undefined),
                               "The Outline Charter is approved and can no longer change.",
@@ -236,7 +237,7 @@ export function ContentProjectDetailPage() {
                 onClick={() =>
                   void act(
                     () =>
-                      api.contentProjectGenerateOutlineSet(projectId).then((outcome) => {
+                      client.contentProjectGenerateOutlineSet(projectId).then((outcome) => {
                         if (outcome.failures.length > 0) {
                           setError(
                             `Outline Set incomplete: ${outcome.failures
@@ -287,7 +288,7 @@ export function ContentProjectDetailPage() {
                                 onClick={() =>
                                   void act(
                                     () =>
-                                      api
+                                      client
                                         .contentProjectApproveOutline(projectId, outline.target)
                                         .then(() => undefined),
                                     `The ${outline.target} Outline is approved.`,
@@ -305,7 +306,7 @@ export function ContentProjectDetailPage() {
                               onClick={() =>
                                 void act(
                                   () =>
-                                    api
+                                    client
                                       .contentProjectGenerateDraft(
                                         projectId,
                                         outline.target,

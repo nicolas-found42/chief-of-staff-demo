@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, errorMessage, type PersonProfileLookup } from "../client";
+import { errorMessage } from "../client";
+import { peopleApi, type PeopleClient, type PersonProfileLookup } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -89,7 +90,7 @@ function LookupProposal({
  * Profile with its auditable first revision. Identity inputs are validated by
  * the Workspace interface; the form names the problem when they fail.
  */
-export function NewPersonProfilePage() {
+export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleClient }) {
   useTitle("New Person Profile");
   const focusRef = usePageFocus<HTMLHeadingElement>();
   const navigate = useNavigate();
@@ -111,7 +112,7 @@ export function NewPersonProfilePage() {
     setLookupError(null);
     setProposal(null);
     try {
-      setProposal(await api.lookupPersonProfile(identifier));
+      setProposal(await client.lookupPersonProfile(identifier));
     } catch (err) {
       setLookupError(errorMessage(err));
     } finally {
@@ -124,7 +125,7 @@ export function NewPersonProfilePage() {
     setLookupBusy(true);
     setLookupError(null);
     try {
-      const accepted = await api.acceptPersonProfileLookup(identifier);
+      const accepted = await client.acceptPersonProfileLookup(identifier);
       void navigate(`/people/${encodeURIComponent(accepted.profile.id)}`);
     } catch (err) {
       setLookupError(errorMessage(err));
@@ -158,7 +159,7 @@ export function NewPersonProfilePage() {
       if (submissionEmployer) input.currentEmployer = submissionEmployer;
       const submissionBackground = background.trim();
       if (submissionBackground) input.background = submissionBackground;
-      const created = await api.createPersonProfile(input);
+      const created = await client.createPersonProfile(input);
       void navigate(`/people/${encodeURIComponent(created.id)}`);
     } catch (err) {
       setError(errorMessage(err));

@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import type { ChannelTrend, YoutubeTrends } from "@chief-of-staff-demo/shared";
 import { LineChart } from "../components/LineChart";
 import { ContentResearchSubNav } from "../components/ContentResearchSubNav";
-import { api, errorMessage } from "../client";
+import { errorMessage } from "../client";
+import { contentApi, type ContentClient } from "../clients/content";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -36,7 +37,7 @@ function change(value: number | null): string {
  * live read — so a weekly re-consent does not blank a page of data already
  * measured.
  */
-export function YoutubePage() {
+export function YoutubePage({ client = contentApi }: { client?: ContentClient }) {
   useTitle("YouTube Trends");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [trends, setTrends] = useState<YoutubeTrends | null>(null);
@@ -56,12 +57,12 @@ export function YoutubePage() {
 
   const refresh = useCallback(async () => {
     try {
-      setTrends(await api.youtubeTrends());
+      setTrends(await client.youtubeTrends());
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void refresh();
@@ -94,7 +95,7 @@ export function YoutubePage() {
     try {
       /* Checked against YouTube while the operator is still looking at it: a
          typo is their problem now rather than a silent gap in tomorrow's data. */
-      const { channel } = await api.addYoutubeChannel(url.trim());
+      const { channel } = await client.addYoutubeChannel(url.trim());
       setUrl("");
       setNotice(`Now tracking ${channel.title}.`);
       setSelected(channel.id);
@@ -110,7 +111,7 @@ export function YoutubePage() {
     setNotice(null);
     setError(null);
     try {
-      await api.removeYoutubeChannel(channel.channelId);
+      await client.removeYoutubeChannel(channel.channelId);
       /* Stops future work and erases nothing: past Runs are immutable, and
          re-adding resumes with a visible gap. */
       setNotice(`Stopped tracking ${channel.title}. Its history is kept.`);
@@ -129,7 +130,7 @@ export function YoutubePage() {
     setNotice(null);
     setError(null);
     try {
-      await api.runYoutubeNow();
+      await client.runYoutubeNow();
       setNotice("Recording today's view counts — the run will appear below.");
       await refresh();
     } catch (err) {

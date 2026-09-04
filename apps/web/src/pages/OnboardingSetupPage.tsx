@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { errorMessage, migrationApi, type MigrationStatus } from "../client";
+import { errorMessage } from "../client";
+import { migrationApi, type MigrationStatus } from "../clients/workspace";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 

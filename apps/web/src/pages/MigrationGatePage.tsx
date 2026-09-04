@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { errorMessage } from "../client";
 import {
-  errorMessage,
   migrationApi,
   type MigrationInventory,
   type MigrationInventoryCategory,
   type MigrationReceipt,
-} from "../client";
+} from "../clients/workspace";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 /**

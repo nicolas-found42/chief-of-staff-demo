@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
-import { api, errorMessage, migrationApi, type OnboardingStatus } from "../client";
+import { errorMessage } from "../client";
+import { configApi, migrationApi, runsApi, type OnboardingStatus } from "../clients/workspace";
 import { connectionNotice } from "../connectionNotice";
 import { homeStatus } from "../homeStatus";
 import { useGoogleConnection } from "../useGoogleConnection";
@@ -39,7 +40,7 @@ export function HomePage() {
 
   const refresh = useCallback(async () => {
     try {
-      setRuns((await api.listRuns()).runs);
+      setRuns((await runsApi.listRuns()).runs);
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -76,7 +77,7 @@ export function HomePage() {
   useEffect(() => {
     const load = async () => {
       try {
-        setProvider((await api.getConfig()).config.provider);
+        setProvider((await configApi.getConfig()).config.provider);
       } catch (err) {
         setError(errorMessage(err));
       }

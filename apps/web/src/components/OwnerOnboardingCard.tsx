@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { GoogleConnectionState, PersonProfile } from "@chief-of-staff-demo/shared";
-import { api, errorMessage, onboardingApi, type OwnerOnboardingStatus } from "../client";
+import { errorMessage } from "../client";
+import { onboardingApi, type OwnerOnboardingStatus } from "../clients/workspace";
+import { peopleApi } from "../clients/people";
 
 /**
  * Owner onboarding (issue #123): the connected Google identity proposes the
@@ -22,7 +24,7 @@ export function OwnerOnboardingCard({
 
   const refresh = useCallback(async () => {
     try {
-      const [next, list] = await Promise.all([onboardingApi.owner(), api.people()]);
+      const [next, list] = await Promise.all([onboardingApi.owner(), peopleApi.people()]);
       setStatus(next);
       setProfiles(list);
       setSelectedId((current) => {

@@ -3,7 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { RUNS_PAGE_SIZE, type RunSummary } from "@chief-of-staff-demo/shared";
 import { IntakeBadge, StatusPill } from "./StatusPill";
 import { formatTime, relativeTime, runTitle } from "../display";
-import { api, errorMessage } from "../client";
+import { runsApi } from "../clients/workspace";
+import { errorMessage } from "../client";
 import { useGoogleConnection } from "../useGoogleConnection";
 import { useModuleLabel } from "../useModules";
 
@@ -51,7 +52,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
      older pages the reader asked for, nor claim to have re-checked them. */
   const refresh = useCallback(async () => {
     try {
-      const page = await api.listRuns({ ...(module ? { module } : {}), limit: RUNS_PAGE_SIZE });
+      const page = await runsApi.listRuns({ ...(module ? { module } : {}), limit: RUNS_PAGE_SIZE });
       setRuns((current) => {
         if (current === null || current.length <= page.runs.length) {
           return page.runs;
@@ -121,7 +122,7 @@ export function RunsList({ module, empty, onRefresh }: RunsListProps) {
     }
     setLoadingMore(true);
     try {
-      const page = await api.listRuns({
+      const page = await runsApi.listRuns({
         ...(module ? { module } : {}),
         limit: RUNS_PAGE_SIZE,
         cursor,
