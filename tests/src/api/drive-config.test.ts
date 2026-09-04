@@ -1,10 +1,10 @@
 import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fromPartial } from "@total-typescript/shoehorn";
+import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
+import { registerApi } from "../../../apps/server/src/api/router";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { PersonProfileResolver } from "../../../apps/server/src/person-profile/resolver";
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
@@ -41,7 +41,7 @@ beforeEach(async () => {
     open: () => null,
   };
   await registerApi(app, {
-    runs: dummyRuns as unknown as ApiContext["runs"],
+    runs: fromAny(dummyRuns),
     port: PORT,
     configStore,
     modules: [],

@@ -2,6 +2,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 import {
@@ -389,7 +390,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
   });
 
   it("a persistently failed provider blocks the Brief; successful siblings and their artifacts survive", async () => {
-    const failingGmail = {
+    const failingGmail = fromPartial<FakeGmailProvider>({
       async listExactThreads(guestEmail: string, _max: number) {
         if (guestEmail.toLowerCase() === "alice@external.co")
           throw Object.assign(new Error("transient"), { status: 500 });
@@ -398,7 +399,7 @@ describe("Google enrichment via host seam — bounded, keyed, diagnostics, untru
       async listCompanyThreads(_domain: string, _max: number) {
         return [];
       },
-    } as unknown as FakeGmailProvider;
+    });
 
     const calendar = new FakeCalendarHistoryProvider();
     calendar.setPastMeetings("alice@external.co", []);

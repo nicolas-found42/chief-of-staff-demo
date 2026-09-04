@@ -1,11 +1,11 @@
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { YoutubeChannel } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../../../apps/server/src/config";
-import type { GoogleConnection } from "../../../apps/server/src/google/connection";
 import type { YouTubeClient } from "../../../apps/server/src/modules/youtube/client";
 import { YoutubeHost } from "../../../apps/server/src/modules/youtube/host";
 import { YOUTUBE_MODULE_ID } from "../../../apps/server/src/modules/youtube/module";
@@ -120,10 +120,10 @@ beforeEach(async () => {
     configStore,
     workspaceDir,
     port: PORT,
-    google: {
+    google: fromPartial({
       auth: () => ({ ok: true, auth: {} }),
       observe: () => null,
-    } as unknown as GoogleConnection,
+    }),
     log: () => {},
     now: () => new Date("2026-09-01T09:00:00"),
     getClient: () => client,

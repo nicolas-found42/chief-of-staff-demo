@@ -1,0 +1,1091 @@
+/* PROTOTYPE — throwaway styles for the `?variant=` Meeting Wizard exploration.
+   "Three design-system directions for the Shell's pages, switchable via
+   `?variant=`, on the existing `/meetings` route."
+
+   Everything is scoped under .mtg-proto / .mproto-{a,b,c} so nothing leaks into
+   production CSS. Each variant redefines the whole vocabulary — link, row,
+   chip, button, section header — because the question is "what is the system",
+   not "what does this page look like". The specimen strip at the top of each
+   variant draws that vocabulary on its own so it can be judged directly.
+
+   Delete with the losing variants when one wins. */
+
+/* ===========================================================================
+   Shared prototype chrome (NOT part of any variant's design)
+   =========================================================================== */
+
+.mtg-proto {
+  border: 2px dashed #a855f7;
+  border-radius: 14px;
+  overflow: hidden;
+  /* The variants set their own page ground, and it must reach the dashed edge. */
+  margin: 0 0 5rem;
+}
+
+/* The design-system specimen: the vocabulary drawn on its own, above the page.
+   Deliberately unstyled by the variants except through their own tokens. */
+.spec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.spec-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.55;
+}
+
+/* ===========================================================================
+   A — QUIET RAIL
+   Lineage: Linear, Vercel. Density with almost no visual noise. Hairlines
+   instead of borders, rows instead of cards, one accent, everything else
+   greyscale. A sticky left rail carries the section names so the content
+   column is uninterrupted.
+   =========================================================================== */
+
+.mproto-a {
+  --a-ink: #0d0f12;
+  --a-dim: #6b7280;
+  --a-faint: #9aa1ac;
+  --a-page: #fbfbfc;
+  --a-surface: #ffffff;
+  --a-hair: rgba(13, 15, 18, 0.07);
+  --a-hair-strong: rgba(13, 15, 18, 0.13);
+  --a-accent: #5b5bd6;
+  --a-tint: rgba(91, 91, 214, 0.07);
+  --a-ok: #0f7b4f;
+  --a-ok-tint: rgba(15, 123, 79, 0.09);
+  --a-warn: #9a6700;
+  --a-warn-tint: rgba(154, 103, 0, 0.1);
+  --a-bad: #b42318;
+  --a-bad-tint: rgba(180, 35, 24, 0.09);
+
+  background: var(--a-page);
+  color: var(--a-ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  letter-spacing: -0.006em;
+  padding: 0 0 2rem;
+}
+
+.mproto-a .spec-strip {
+  border-bottom: 1px solid var(--a-hair);
+  background: var(--a-surface);
+}
+
+/* --- header ---------------------------------------------------------------- */
+
+.a-head {
+  padding: 1.75rem 1.5rem 1.25rem;
+  background: var(--a-surface);
+  border-bottom: 1px solid var(--a-hair);
+}
+
+.a-title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.a-head p {
+  margin: 0.3rem 0 0;
+  color: var(--a-dim);
+  max-width: 62ch;
+}
+
+.a-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* The button system: one filled primary, the rest are quiet outlines that only
+   gain a border on hover. Boxes everywhere is what made the old page loud. */
+.a-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0 0.7rem;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--a-ink);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.a-btn:hover {
+  background: rgba(13, 15, 18, 0.045);
+  border-color: var(--a-hair-strong);
+}
+
+.a-btn-primary {
+  background: var(--a-ink);
+  color: #fff;
+}
+
+.a-btn-primary:hover {
+  background: #24272d;
+  border-color: transparent;
+}
+
+.a-btn svg {
+  opacity: 0.7;
+}
+
+.a-btn-primary svg {
+  opacity: 0.85;
+}
+
+/* --- the rail layout ------------------------------------------------------- */
+
+.a-railgrid {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0 1.5rem;
+  padding: 1.5rem 1.5rem 0;
+  align-items: start;
+}
+
+/* Sticky so the section you are reading names itself while you scroll. */
+.a-railgrid-label {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--a-faint);
+}
+
+.a-railgrid-label h2 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+
+.a-railgrid-body {
+  min-width: 0;
+  padding-bottom: 1.5rem;
+}
+
+.a-note {
+  margin: 0 0 0.75rem;
+  color: var(--a-dim);
+}
+
+/* --- rows ------------------------------------------------------------------ */
+
+/* The unit of the whole system. No card, no border — one hairline between
+   rows, and the row itself is the target. */
+.a-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--a-surface);
+  border: 1px solid var(--a-hair);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.a-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.25rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--a-hair);
+}
+
+.a-row:first-child {
+  border-top: 0;
+}
+
+.a-row:hover {
+  background: rgba(13, 15, 18, 0.025);
+}
+
+.a-row-icon {
+  display: grid;
+  place-items: center;
+  color: var(--a-faint);
+}
+
+.a-row-main {
+  min-width: 0;
+}
+
+/* THE LINK PRIMITIVE, direction A: ink-coloured, no underline at rest, the
+   whole row is clickable via the stretched ::after, and the underline appears
+   only on hover. This is what replaces the raw blue anchors. */
+.a-link {
+  color: var(--a-ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.a-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.a-link:hover {
+  color: var(--a-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.a-link:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* An inline link, where the row treatment does not apply — underlined, because
+   inside a sentence nothing else marks it. */
+.a-link-inline {
+  color: var(--a-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(91, 91, 214, 0.4);
+}
+
+.a-link-inline:hover {
+  text-decoration-color: currentColor;
+}
+
+.a-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--a-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.a-row-sub {
+  font-size: 0.78rem;
+  color: var(--a-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The chevron only resolves on hover: an affordance that is there when you
+   look for it and silent when you are scanning. */
+.a-row-chev {
+  color: var(--a-faint);
+  opacity: 0;
+  transform: translateX(-2px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.a-row:hover .a-row-chev {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* --- chips ----------------------------------------------------------------- */
+
+.a-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(13, 15, 18, 0.05);
+  color: var(--a-dim);
+}
+
+.a-chip-ok {
+  background: var(--a-ok-tint);
+  color: var(--a-ok);
+}
+
+.a-chip-warn {
+  background: var(--a-warn-tint);
+  color: var(--a-warn);
+}
+
+.a-chip-bad {
+  background: var(--a-bad-tint);
+  color: var(--a-bad);
+}
+
+.a-blank {
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px dashed var(--a-hair-strong);
+  border-radius: 10px;
+  color: var(--a-faint);
+  text-align: center;
+}
+
+/* ===========================================================================
+   B — DAY SPINE
+   Time-first, not section-first. The day is a vertical spine; meetings are
+   nodes pinned to it at their hour, and a "now" marker cuts across. Action
+   items are not a third section — they dock alongside, sticky, because they
+   are the thing you act on while reading the day.
+   =========================================================================== */
+
+.mproto-b {
+  --b-ink: #0f172a;
+  --b-dim: #64748b;
+  --b-page: #f6f7fb;
+  --b-surface: #ffffff;
+  --b-line: #e2e8f0;
+  --b-accent: #4338ca;
+  --b-ok: #059669;
+  --b-warn: #d97706;
+  --b-bad: #e11d48;
+
+  background: var(--b-page);
+  color: var(--b-ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 0.9rem;
+  padding: 0 0 2rem;
+}
+
+.mproto-b .spec-strip {
+  background: var(--b-surface);
+  border-bottom: 1px solid var(--b-line);
+}
+
+/* --- header: a coloured slab, so the page has a lid ------------------------ */
+
+.b-head {
+  padding: 1.75rem 1.75rem 1.5rem;
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 55%, #4338ca 100%);
+  color: #fff;
+}
+
+.b-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.b-head p {
+  margin: 0.35rem 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  max-width: 60ch;
+}
+
+.b-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  margin-top: 1.25rem;
+}
+
+.b-stat-n {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: 650;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.b-stat-l {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.b-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.b-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.15rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-weight: 550;
+  text-decoration: none;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 130ms ease;
+}
+
+.b-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.b-btn-primary {
+  background: #fff;
+  color: #312e81;
+  border-color: #fff;
+}
+
+.b-btn-primary:hover {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+/* --- the two-column body --------------------------------------------------- */
+
+.b-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 19rem;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .b-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.b-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+}
+
+.b-section-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.b-section-head span {
+  font-size: 0.78rem;
+  color: var(--b-dim);
+}
+
+.b-block + .b-block {
+  margin-top: 1.75rem;
+}
+
+/* --- the spine ------------------------------------------------------------- */
+
+.b-spine {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 4.25rem;
+  position: relative;
+}
+
+/* The line itself. It runs behind the nodes, inset to sit under the dots. */
+.b-spine::before {
+  content: "";
+  position: absolute;
+  left: 3.55rem;
+  top: 0.6rem;
+  bottom: 0.6rem;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--b-line) 8%,
+    var(--b-line) 92%,
+    transparent
+  );
+}
+
+.b-node {
+  position: relative;
+  padding: 0 0 0.85rem;
+}
+
+.b-node:last-child {
+  padding-bottom: 0;
+}
+
+/* The hour, in the gutter to the left of the spine. */
+.b-node-time {
+  position: absolute;
+  left: -4.4rem;
+  top: 0.65rem;
+  width: 3.1rem;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  color: var(--b-ink);
+}
+
+.b-node-day {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--b-dim);
+}
+
+/* The dot on the spine. Its fill carries the brief state — redundantly with
+   the chip in the card, never on its own. */
+.b-node-dot {
+  position: absolute;
+  left: -0.78rem;
+  top: 0.95rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--b-surface);
+  border: 2px solid var(--b-line);
+  box-shadow: 0 0 0 3px var(--b-page);
+}
+
+.b-node-dot.is-ok {
+  background: var(--b-ok);
+  border-color: var(--b-ok);
+}
+
+.b-node-dot.is-warn {
+  background: var(--b-warn);
+  border-color: var(--b-warn);
+}
+
+.b-node-dot.is-bad {
+  background: var(--b-bad);
+  border-color: var(--b-bad);
+}
+
+.b-card {
+  position: relative;
+  background: var(--b-surface);
+  border: 1px solid var(--b-line);
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.b-card:hover {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.09);
+  transform: translateY(-1px);
+}
+
+.b-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* THE LINK PRIMITIVE, direction B: weight and colour carry it, the card is the
+   target, and an underline appears on hover in the accent. */
+.b-link {
+  color: var(--b-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.b-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+}
+
+.b-link:hover {
+  color: var(--b-accent);
+}
+
+.b-link:focus-visible {
+  outline: 2px solid var(--b-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.b-link-inline {
+  color: var(--b-accent);
+  font-weight: 550;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.b-card-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--b-dim);
+}
+
+/* --- pills ----------------------------------------------------------------- */
+
+.b-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: var(--b-dim);
+  white-space: nowrap;
+}
+
+.b-pill-ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.b-pill-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.b-pill-bad {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+/* --- the dock -------------------------------------------------------------- */
+
+.b-dock {
+  position: sticky;
+  top: 1rem;
+  background: var(--b-surface);
+  border: 1px solid var(--b-line);
+  border-radius: 14px;
+  padding: 0.9rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.b-dock h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--b-dim);
+}
+
+.b-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.b-task {
+  position: relative;
+  padding: 0.5rem 0.6rem;
+  border-radius: 9px;
+  background: #f8fafc;
+  border-left: 3px solid var(--b-line);
+}
+
+.b-task:hover {
+  background: #f1f5f9;
+}
+
+.b-task.is-overdue {
+  border-left-color: var(--b-bad);
+  background: #fff1f2;
+}
+
+.b-task-title {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--b-ink);
+  text-decoration: none;
+}
+
+.b-task-title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.b-task:hover .b-task-title {
+  color: var(--b-accent);
+}
+
+.b-task-meta {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--b-dim);
+}
+
+.b-empty {
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+  color: var(--b-dim);
+  font-size: 0.82rem;
+  background: #f8fafc;
+  border-radius: 10px;
+}
+
+/* ===========================================================================
+   C — EDITORIAL LEDGER
+   Swiss/print lineage: typography does every job, so there is not one card,
+   pill or shadow on the page. Sections are numbered like a printed brief;
+   meetings are ledger lines with dot leaders and right-aligned times; state is
+   said in words, in small caps, rather than drawn in a coloured pill.
+   The serif stack is deliberately system-local — this app runs offline.
+   =========================================================================== */
+
+.mproto-c {
+  --c-ink: #1b1a17;
+  --c-dim: #6f6a61;
+  --c-faint: #a49d92;
+  --c-paper: #faf7f2;
+  --c-rule: #ded7ca;
+  --c-accent: #9c3226;
+
+  background: var(--c-paper);
+  color: var(--c-ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 0.9rem;
+  padding: 0 0 3rem;
+}
+
+.mproto-c .spec-strip {
+  border-bottom: 1px solid var(--c-rule);
+}
+
+.c-serif {
+  font-family:
+    "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", ui-serif, Georgia, serif;
+}
+
+/* --- masthead -------------------------------------------------------------- */
+
+.c-head {
+  padding: 2.5rem 2rem 1.5rem;
+  border-bottom: 3px double var(--c-ink);
+  margin: 0 2rem;
+}
+
+.c-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--c-accent);
+}
+
+.c-title {
+  margin: 0.5rem 0 0;
+  font-size: 2.4rem;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.c-standfirst {
+  margin: 0.75rem 0 0;
+  max-width: 54ch;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--c-dim);
+}
+
+.c-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+/* The button system: no boxes. A rule under the label, thickening on hover —
+   the page's only interactive decoration. */
+.c-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0;
+  border: 0;
+  border-bottom: 2px solid var(--c-rule);
+  background: transparent;
+  color: var(--c-ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 130ms ease;
+}
+
+.c-btn:hover {
+  border-bottom-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.c-btn-primary {
+  border-bottom-color: var(--c-ink);
+}
+
+/* --- numbered sections ------------------------------------------------------ */
+
+.c-body {
+  padding: 0 2rem;
+}
+
+.c-section {
+  margin-top: 2.5rem;
+}
+
+.c-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--c-ink);
+}
+
+.c-num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--c-accent);
+}
+
+.c-section-head h2 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.c-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.c-note {
+  margin: 0.75rem 0 0;
+  max-width: 62ch;
+  color: var(--c-dim);
+  font-style: italic;
+}
+
+/* --- ledger lines ----------------------------------------------------------- */
+
+.c-ledger {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.c-line {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--c-rule);
+}
+
+.c-line:hover {
+  background: rgba(156, 50, 38, 0.035);
+}
+
+/* THE LINK PRIMITIVE, direction C: serif, ink, sized up — the link IS the
+   content, so it needs no colour to be found. The accent is reserved for
+   hover and for the section numerals. */
+.c-link {
+  font-size: 1.05rem;
+  color: var(--c-ink);
+  text-decoration: none;
+}
+
+.c-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.c-line:hover .c-link {
+  color: var(--c-accent);
+}
+
+.c-link:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 3px;
+}
+
+.c-link-inline {
+  color: var(--c-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--c-accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.c-link-inline:hover {
+  color: var(--c-accent);
+}
+
+/* Dot leaders: the printed-index device that carries the eye from the title to
+   the time without a table's rules. */
+/* Dot leaders. A dotted border renders as near-nothing at this size, so the
+   dots are drawn as a repeating radial gradient instead — evenly spaced, and
+   dense enough to actually carry the eye across. */
+.c-leader {
+  flex: 1;
+  min-width: 1.5rem;
+  align-self: center;
+  height: 4px;
+  background-image: radial-gradient(circle, var(--c-dim) 1.15px, transparent 1.15px);
+  background-size: 5px 4px;
+  background-repeat: repeat-x;
+  background-position: center;
+}
+
+.c-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--c-dim);
+  white-space: nowrap;
+}
+
+/* State said in words, not drawn in a pill. */
+.c-state {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--c-faint);
+  white-space: nowrap;
+}
+
+.c-state-ok {
+  color: #3f6b4a;
+}
+
+.c-state-warn {
+  color: #8a6212;
+}
+
+.c-state-bad {
+  color: var(--c-accent);
+}
+
+.c-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--c-dim);
+}
+
+.c-empty {
+  margin: 1rem 0 0;
+  font-style: italic;
+  color: var(--c-faint);
+}
+
+/* ===========================================================================
+   Shared: loading / error, drawn per-variant by class only
+   =========================================================================== */
+
+.proto-error {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 0.85rem;
+}
+
+/* The state read-out the prototype rules ask for: what each variant is being
+   handed, printed under it so a switch shows what changed. */
+.mproto-state {
+  margin: 1.5rem 1.5rem 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px dashed rgba(168, 85, 247, 0.4);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  line-height: 1.6;
+  color: #581c87;
+  overflow-wrap: anywhere;
+}
+
+/* The host page's real <h1> stays in the DOM as the focus target and the
+   heading; each variant draws its own decorative title. */
+.visually-hidden-proto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -6,9 +6,7 @@ import {
   type RunMeta,
   MEETING_BRIEF_MODULE_VERSION,
   type MeetingBriefEvent,
-  type DailyBriefing,
   type DailyBriefingState,
-  type WeeklyBriefing,
   type WeeklyBriefingState,
   type MeetingBriefPersonProfileReadModel,
   type MeetingBriefProviderOutcomes,
@@ -29,11 +27,8 @@ import { Runner, RunNotRetryableError } from "../../engine/runner.js";
 import type { Runs } from "../../runs.js";
 import { DurableClock, type DurableSchedule } from "../../engine/durableClock.js";
 import { DateTime } from "luxon";
-import {
-  meetingBriefModule,
-  type MeetingBriefInput,
-  type MeetingBriefModuleDeps,
-} from "./module.js";
+import { meetingBriefModule, type MeetingBriefInput } from "./module.js";
+import { createMeetingBriefGenerator, type MeetingBriefGeneratorOptions } from "./generator.js";
 import { HubSpotConnection } from "./hubspot/connection.js";
 import type { HubSpotApi } from "./hubspot/client.js";
 import type { MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
@@ -54,8 +49,7 @@ import {
 } from "./intake.js";
 import { collectMeetingHistory } from "./history.js";
 import { materialFingerprint } from "./revision.js";
-import { buildDailyBriefing, dayBoundsFor } from "./dailyBriefing.js";
-import { buildWeeklyBriefing, weekBoundsFor } from "./weeklyBriefing.js";
+import { MeetingBriefingCoordinator } from "./briefingCoordinator.js";
 
 import { type StoredSnapshot } from "./snapshot.js";
 import type { ConfigStore } from "../../config.js";
@@ -63,7 +57,7 @@ import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { WorkspaceMeetings } from "../../meetings/store.js";
 import type { RunContext } from "../../engine/module.js";
 import { executeDeliver } from "./deliver.js";
-import { renderDailyBriefingEmail, renderWeeklyBriefingEmail } from "./output.js";
+import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
 /** The versioned explicit provider policy actions recorded in module config (#137). */
 type MeetingBriefProviderPolicy = ModuleConfigs["meeting-brief-generator"]["providerPolicy"];
 
@@ -72,10 +66,10 @@ export interface MeetingBriefHostDeps {
   workspaceDir: string;
   now?: () => Date;
   log?: (message: string) => void;
-  enrich?: MeetingBriefModuleDeps["enrich"];
-  completeBrief?: MeetingBriefModuleDeps["completeBrief"];
-  getCompleteJson?: MeetingBriefModuleDeps["getCompleteJson"];
-  gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
+  enrich?: MeetingBriefGeneratorOptions["enrich"];
+  completeBrief?: MeetingBriefGeneratorOptions["completeBrief"];
+  getCompleteJson?: MeetingBriefGeneratorOptions["getCompleteJson"];
+  gmailDeliveryProvider?: GmailDeliveryProvider | null;
   calendarProvider?: CalendarProvider;
   /**
    * What a Run does with Calendar. The provider above always drives Intake
@@ -232,37 +226,6 @@ export class MeetingBriefHost implements HostedModule {
   private lastFullSyncAt: Date | null = null;
   /** Window start the Sunday sweep last covered — in-memory guard so the sweep runs once per week (issue://157). */
   private lastSweepWeek: string | null = null;
-  /** Owner-timezone day the Daily Briefing was last built for — the idempotent day guard (issue #160). */
-  private lastDailyBriefingDay: string | null = null;
-  /** Last good Daily Briefing; null when the day holds no Meetings. A failed build keeps this value. */
-  private dailyBriefingCache: DailyBriefing | null = null;
-  /** The failed Daily Briefing build's message; null when the last build succeeded. */
-  private dailyBriefingError: string | null = null;
-  /**
-   * Dirty flag keyed by day (issue #162): a touching change (new/revised Brief,
-   * cancellation, new action item) marks the day's briefing stale instead of
-   * rebuilding at once. The previous briefing keeps serving with stale:true
-   * until one quiet-period rebuild fires regenAtMs after the last touch, so a
-   * burst of changes coalesces into a single rebuild. Null when fresh.
-   */
-  private dailyBriefingDirty: { date: string; touchedAtMs: number; regenAtMs: number } | null =
-    null;
-  /** Owner-timezone day the Daily Briefing email last sent — the one/day guard (issue #163). */
-  private lastDailyEmailDay: string | null = null;
-  /** Sweep-week start the Weekly Briefing email last sent — the one/week guard (issue #163). */
-  private lastWeeklyEmailWeek: string | null = null;
-  /** Sweep-week start the Weekly Briefing was last built for — the idempotent week guard (issue #161). */
-  private lastWeeklyBriefingWeek: string | null = null;
-  /** Last good Weekly Briefing; null when the week holds no Meetings. A failed build keeps this value. */
-  private weeklyBriefingCache: WeeklyBriefing | null = null;
-  /** The failed Weekly Briefing build's message; null when the last build succeeded. */
-  private weeklyBriefingError: string | null = null;
-  /** Dirty flag keyed by weekStart (issue #162) — the weekly half of the daily dirty flag above. */
-  private weeklyBriefingDirty: {
-    weekStart: string;
-    touchedAtMs: number;
-    regenAtMs: number;
-  } | null = null;
   private maintenanceInProgress = false;
   private historyCollectionInFlight = false;
   private associationInFlight = false;
@@ -271,6 +234,7 @@ export class MeetingBriefHost implements HostedModule {
   private readonly getHubSpotApi: (() => HubSpotApi | null) | null;
   private readonly profileRegenerations = new Map<string, Promise<string>>();
   private readonly meetings: WorkspaceMeetings;
+  private readonly briefings: MeetingBriefingCoordinator;
   /** Explicit policy actions when no ConfigStore backs this host (tests). */
   private providerPolicyInMemory: MeetingBriefProviderPolicy = {};
   constructor(private readonly deps: MeetingBriefHostDeps) {
@@ -281,6 +245,20 @@ export class MeetingBriefHost implements HostedModule {
        rather than injected: the store holds nothing in memory, so the API's
        instance and this one are two readers of one file, never two caches. */
     this.meetings = new WorkspaceMeetings(deps.workspaceDir, this.now);
+    this.briefings = new MeetingBriefingCoordinator({
+      runs: deps.runs,
+      meetings: this.meetings,
+      now: this.now,
+      getTimezone: () => this.getTimezone(),
+      getInternalDomains: () => this.getInternalDomains(),
+      getOwnerEmail: () => this.getOwnerEmail(),
+      ...(deps.isOwnerProfileConfirmed
+        ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
+        : {}),
+      ...(deps.gmailDeliveryProvider ? { gmailDeliveryProvider: deps.gmailDeliveryProvider } : {}),
+      briefingEmails: deps.briefingEmails ?? false,
+      ...(deps.log ? { log: deps.log } : {}),
+    });
     this.calendarProvider = deps.calendarProvider ?? new FakeCalendarProvider();
     // HubSpot wiring — per-user private-app token, Shell stores secret (issue://86)
     if (deps.hubSpotConnection) {
@@ -304,14 +282,19 @@ export class MeetingBriefHost implements HostedModule {
     };
     const module = meetingBriefModule({
       now: this.now,
-      ...(deps.enrich ? { enrich: deps.enrich } : {}),
-      ...(deps.completeBrief ? { completeBrief: deps.completeBrief } : {}),
-      ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
+      createBriefGenerator: (context) =>
+        createMeetingBriefGenerator({
+          context,
+          now: this.now,
+          ...(deps.enrich ? { enrich: deps.enrich } : {}),
+          ...(deps.completeBrief ? { completeBrief: deps.completeBrief } : {}),
+          ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
+          enrichmentProviders,
+          getInternalDomains: () => this.getInternalDomains(),
+          getDisabledProviders: () => this.getDisabledProviders(),
+        }),
       ...(deps.gmailDeliveryProvider ? { gmailDeliveryProvider: deps.gmailDeliveryProvider } : {}),
-      enrichmentProviders,
-      getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
-      getDisabledProviders: () => this.getDisabledProviders(),
       ...(deps.isOwnerProfileConfirmed
         ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
         : {}),
@@ -460,82 +443,6 @@ export class MeetingBriefHost implements HostedModule {
       manualSend: true,
     });
     return handle.read();
-  }
-
-  /**
-   * Email the built Daily Briefing to the owner, at most once per day
-   * (issue #163). Only after a successful build with Meetings, only with a
-   * known owner, and never twice for the day — the day guard makes morning
-   * build, retry, and any repeat tick converge to one email. Never throws:
-   * a failed send logs and stays retryable instead of breaking the build.
-   */
-  private async sendDailyBriefingEmailIfDue(
-    now = this.now(),
-    timezone = this.getTimezone(),
-  ): Promise<void> {
-    try {
-      const provider = this.deps.gmailDeliveryProvider;
-      if ((this.deps.briefingEmails ?? false) !== true || !provider) return;
-      const date = dayBoundsFor(now, timezone).date;
-      if (this.lastDailyEmailDay === date) return;
-      const state = this.getDailyBriefing(now, timezone);
-      if (state.error !== null || state.briefing === null) return;
-      if (!this.getOwnerEmail()) return;
-      if (this.deps.isOwnerProfileConfirmed && !this.deps.isOwnerProfileConfirmed()) return;
-      const deliveryId = `mb-daily-${date}`;
-      const reconciled = await provider.findByDeliveryId(deliveryId);
-      if (!reconciled) {
-        const rendered = renderDailyBriefingEmail(state.briefing);
-        await provider.send({
-          subject: rendered.subject,
-          text: rendered.text,
-          html: rendered.html,
-          deliveryId,
-        });
-      }
-      this.lastDailyEmailDay = date;
-    } catch (error) {
-      this.deps.log?.(
-        `daily briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  /**
-   * Email the built Weekly Briefing to the owner, at most once per week
-   * (issue #163) — the weekly half of the daily sender above, guarded by
-   * the covered week start instead of the day.
-   */
-  private async sendWeeklyBriefingEmailIfDue(
-    now = this.now(),
-    timezone = this.getTimezone(),
-  ): Promise<void> {
-    try {
-      const provider = this.deps.gmailDeliveryProvider;
-      if ((this.deps.briefingEmails ?? false) !== true || !provider) return;
-      const weekStart = weekBoundsFor(now, timezone).weekStart;
-      if (this.lastWeeklyEmailWeek === weekStart) return;
-      const state = this.getWeeklyBriefing(now, timezone);
-      if (state.error !== null || state.briefing === null) return;
-      if (!this.getOwnerEmail()) return;
-      if (this.deps.isOwnerProfileConfirmed && !this.deps.isOwnerProfileConfirmed()) return;
-      const deliveryId = `mb-weekly-${weekStart}`;
-      const reconciled = await provider.findByDeliveryId(deliveryId);
-      if (!reconciled) {
-        const rendered = renderWeeklyBriefingEmail(state.briefing);
-        await provider.send({
-          subject: rendered.subject,
-          text: rendered.text,
-          html: rendered.html,
-          deliveryId,
-        });
-      }
-      this.lastWeeklyEmailWeek = weekStart;
-    } catch (error) {
-      this.deps.log?.(
-        `weekly briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -845,7 +752,7 @@ export class MeetingBriefHost implements HostedModule {
         .sort(),
     );
     if (meetingsAfter !== meetingsBefore || schedulesAfter !== schedulesBefore) {
-      this.touchBriefings(args.now, args.timezone ?? this.getTimezone());
+      this.briefings.markBriefingsStale(args.now, args.timezone ?? this.getTimezone());
     }
     // The one backward read (issue #152) and the standing Transcript ↔
     // Meeting join (issue #153) ride every reconcile: both are guarded, so a
@@ -977,7 +884,7 @@ export class MeetingBriefHost implements HostedModule {
     // A new or revised Brief Run moves its meeting's briefStatus — the
     // day/week briefings covering it go stale (issue #162), one quiet rebuild
     // no matter how many Runs start in the burst.
-    if (created.length > 0) this.touchBriefings(now, this.getTimezone());
+    if (created.length > 0) this.briefings.markBriefingsStale(now, this.getTimezone());
     return created;
   }
 
@@ -1130,7 +1037,7 @@ export class MeetingBriefHost implements HostedModule {
     if (!record) throw new Error(`Meeting occurrence is not scheduled: ${occurrenceKey}`);
     const runId = await this.startBriefForSchedule(record);
     // A manually prepared Brief moves briefStatus the same way a due one does.
-    if (runId) this.touchBriefings(this.now(), this.getTimezone());
+    if (runId) this.briefings.markBriefingsStale(this.now(), this.getTimezone());
     return runId;
   }
 
@@ -1205,7 +1112,7 @@ export class MeetingBriefHost implements HostedModule {
     try {
       const regeneratedId = await regeneration;
       // A regenerated (revised) Brief moves briefStatus — day/week go stale.
-      this.touchBriefings(this.now(), this.getTimezone());
+      this.briefings.markBriefingsStale(this.now(), this.getTimezone());
       return regeneratedId;
     } catch (error) {
       if (this.profileRegenerations.get(runId) === regeneration)
@@ -1253,10 +1160,10 @@ export class MeetingBriefHost implements HostedModule {
     try {
       await this.ensureCalendarWatch().catch(() => {});
       await this.sweepIfSunday(now);
-      await this.refreshDailyBriefingIfMorning(now);
-      await this.refreshWeeklyBriefingIfMonday(now);
+      await this.briefings.refreshDailyIfMorning(now);
+      await this.briefings.refreshWeeklyIfMonday(now);
       // One coalesced rebuild per stale briefing whose quiet period expired.
-      this.refreshStaleBriefingsIfDue(now);
+      this.briefings.refreshStaleIfDue(now);
       const shouldFullSync =
         this.lastFullSyncAt === null ||
         now.getTime() - this.lastFullSyncAt.getTime() >= this.fullSyncIntervalMs;
@@ -1297,82 +1204,13 @@ export class MeetingBriefHost implements HostedModule {
   }
 
   /**
-   * Quiet period between the last touching change and the one coalesced
-   * briefing rebuild (issue #162): 15 minutes, mirroring the Brief's own
-   * quiet-period wait that lets a burst of revisions settle before delivery.
-   * Several changes inside the window move regenAt out — still one rebuild.
-   */
-  private readonly briefingRegenQuietMs = 15 * 60 * 1000;
-
-  /**
-   * Mark the current day/week briefings stale after a touching change (issue
-   * #162): a new or revised Brief, a cancellation, or a new action item. Keys
-   * the dirty flags by day/weekStart and (re)starts the quiet period from
-   * `now`; repeat touches only move the rebuild later. No Run starts here.
-   */
-  private touchBriefings(now: Date, timezone: string): void {
-    const nowMs = now.getTime();
-    const regenAtMs = nowMs + this.briefingRegenQuietMs;
-    this.dailyBriefingDirty = {
-      date: dayBoundsFor(now, timezone).date,
-      touchedAtMs: nowMs,
-      regenAtMs,
-    };
-    this.weeklyBriefingDirty = {
-      weekStart: weekBoundsFor(now, timezone).weekStart,
-      touchedAtMs: nowMs,
-      regenAtMs,
-    };
-  }
-
-  /**
    * Debrief action-item hook (issue #162): a new action item touches the
    * current day/week briefings the same way a Brief or calendar change does.
    * The Shell calls this when the Debrief side records action items; the
    * previous briefings keep serving with stale:true until the quiet rebuild.
    */
   notifyActionItemsChanged(now = this.now(), timezone = this.getTimezone()): void {
-    // Only touch when a briefing exists to go stale — a day/week with no
-    // Meetings rebuilds from null on its next scheduled read either way.
-    if (this.dailyBriefingCache !== null || this.weeklyBriefingCache !== null) {
-      this.touchBriefings(now, timezone);
-    }
-  }
-
-  /**
-   * Rebuild each stale briefing whose quiet period has expired (issue #162).
-   * Runs on the maintenance tick; the matching getter also rebuilds lazily,
-   * so either path fires the one coalesced rebuild and clears the flag.
-   */
-  private refreshStaleBriefingsIfDue(now: Date): void {
-    const timezone = this.getTimezone();
-    const nowMs = now.getTime();
-    if (
-      this.dailyBriefingDirty !== null &&
-      this.dailyBriefingDirty.date === dayBoundsFor(now, timezone).date &&
-      nowMs >= this.dailyBriefingDirty.regenAtMs
-    ) {
-      this.dailyBriefingDirty = null;
-      this.refreshDailyBriefing(now, timezone);
-    } else if (
-      this.dailyBriefingDirty !== null &&
-      this.dailyBriefingDirty.date !== dayBoundsFor(now, timezone).date
-    ) {
-      this.dailyBriefingDirty = null;
-    }
-    if (
-      this.weeklyBriefingDirty !== null &&
-      this.weeklyBriefingDirty.weekStart === weekBoundsFor(now, timezone).weekStart &&
-      nowMs >= this.weeklyBriefingDirty.regenAtMs
-    ) {
-      this.weeklyBriefingDirty = null;
-      this.refreshWeeklyBriefing(now, timezone);
-    } else if (
-      this.weeklyBriefingDirty !== null &&
-      this.weeklyBriefingDirty.weekStart !== weekBoundsFor(now, timezone).weekStart
-    ) {
-      this.weeklyBriefingDirty = null;
-    }
+    this.briefings.notifyActionItemsChanged(now, timezone);
   }
 
   /**
@@ -1385,20 +1223,7 @@ export class MeetingBriefHost implements HostedModule {
    * fresh and clears the dirty flag.
    */
   refreshDailyBriefing(now = this.now(), timezone = this.getTimezone()): DailyBriefingState {
-    const date = dayBoundsFor(now, timezone).date;
-    this.lastDailyBriefingDay = date;
-    this.dailyBriefingDirty = null;
-    try {
-      this.dailyBriefingCache = buildDailyBriefing(
-        { meetings: this.meetings, runs: this.deps.runs },
-        now,
-        timezone,
-      );
-      this.dailyBriefingError = null;
-    } catch (error) {
-      this.dailyBriefingError = error instanceof Error ? error.message : String(error);
-    }
-    return { briefing: this.dailyBriefingCache, error: this.dailyBriefingError, stale: false };
+    return this.briefings.refreshDaily(now, timezone);
   }
 
   /**
@@ -1411,57 +1236,7 @@ export class MeetingBriefHost implements HostedModule {
    * version compare below, which marks stale but never serves fresh early.
    */
   getDailyBriefing(now = this.now(), timezone = this.getTimezone()): DailyBriefingState {
-    const date = dayBoundsFor(now, timezone).date;
-    if (this.lastDailyBriefingDay !== date) {
-      return this.refreshDailyBriefing(now, timezone);
-    }
-    if (
-      this.dailyBriefingDirty !== null &&
-      this.dailyBriefingDirty.date === date &&
-      now.getTime() >= this.dailyBriefingDirty.regenAtMs
-    ) {
-      this.dailyBriefingDirty = null;
-      return this.refreshDailyBriefing(now, timezone);
-    }
-    if (this.dailyBriefingDirty !== null && this.dailyBriefingDirty.date !== date) {
-      this.dailyBriefingDirty = null;
-    }
-    if (this.dailyBriefingDirty?.date !== date) {
-      let fresh: DailyBriefing | null | undefined;
-      try {
-        fresh = buildDailyBriefing(
-          { meetings: this.meetings, runs: this.deps.runs },
-          now,
-          timezone,
-        );
-      } catch {
-        fresh = undefined;
-      }
-      if (
-        fresh !== undefined &&
-        JSON.stringify(fresh) !== JSON.stringify(this.dailyBriefingCache) &&
-        (this.dailyBriefingCache !== null || fresh !== null)
-      ) {
-        this.touchBriefings(now, timezone);
-      }
-    }
-    const stale = this.dailyBriefingDirty?.date === date;
-    return { briefing: this.dailyBriefingCache, error: this.dailyBriefingError, stale };
-  }
-
-  /**
-   * The morning trigger (issue #160): once per day, at or after 06:00 in the
-   * owner's calendar timezone — the same timezone pattern as the Sunday
-   * sweep. Guarded by the covered day, so restarts rebuild harmlessly and a
-   * failed morning waits for the owner's explicit retry.
-   */
-  private async refreshDailyBriefingIfMorning(now: Date): Promise<void> {
-    const timezone = this.getTimezone();
-    const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(timezone);
-    if (!local.isValid || local.hour < 6) return;
-    if (this.lastDailyBriefingDay === dayBoundsFor(now, timezone).date) return;
-    this.refreshDailyBriefing(now, timezone);
-    await this.sendDailyBriefingEmailIfDue(now, timezone);
+    return this.briefings.getDaily(now, timezone);
   }
 
   /**
@@ -1473,21 +1248,7 @@ export class MeetingBriefHost implements HostedModule {
    * serves fresh and clears the dirty flag.
    */
   refreshWeeklyBriefing(now = this.now(), timezone = this.getTimezone()): WeeklyBriefingState {
-    const weekStart = weekBoundsFor(now, timezone).weekStart;
-    this.lastWeeklyBriefingWeek = weekStart;
-    this.weeklyBriefingDirty = null;
-    try {
-      this.weeklyBriefingCache = buildWeeklyBriefing(
-        { meetings: this.meetings, runs: this.deps.runs },
-        now,
-        timezone,
-        this.getInternalDomains(),
-      );
-      this.weeklyBriefingError = null;
-    } catch (error) {
-      this.weeklyBriefingError = error instanceof Error ? error.message : String(error);
-    }
-    return { briefing: this.weeklyBriefingCache, error: this.weeklyBriefingError, stale: false };
+    return this.briefings.refreshWeekly(now, timezone);
   }
 
   /**
@@ -1500,59 +1261,7 @@ export class MeetingBriefHost implements HostedModule {
    * fresh early.
    */
   getWeeklyBriefing(now = this.now(), timezone = this.getTimezone()): WeeklyBriefingState {
-    const weekStart = weekBoundsFor(now, timezone).weekStart;
-    if (this.lastWeeklyBriefingWeek !== weekStart) {
-      return this.refreshWeeklyBriefing(now, timezone);
-    }
-    if (
-      this.weeklyBriefingDirty !== null &&
-      this.weeklyBriefingDirty.weekStart === weekStart &&
-      now.getTime() >= this.weeklyBriefingDirty.regenAtMs
-    ) {
-      this.weeklyBriefingDirty = null;
-      return this.refreshWeeklyBriefing(now, timezone);
-    }
-    if (this.weeklyBriefingDirty !== null && this.weeklyBriefingDirty.weekStart !== weekStart) {
-      this.weeklyBriefingDirty = null;
-    }
-    if (this.weeklyBriefingDirty?.weekStart !== weekStart) {
-      let fresh: WeeklyBriefing | null | undefined;
-      try {
-        fresh = buildWeeklyBriefing(
-          { meetings: this.meetings, runs: this.deps.runs },
-          now,
-          timezone,
-          this.getInternalDomains(),
-        );
-      } catch {
-        fresh = undefined;
-      }
-      if (
-        fresh !== undefined &&
-        JSON.stringify(fresh) !== JSON.stringify(this.weeklyBriefingCache) &&
-        (this.weeklyBriefingCache !== null || fresh !== null)
-      ) {
-        this.touchBriefings(now, timezone);
-      }
-    }
-    const stale = this.weeklyBriefingDirty?.weekStart === weekStart;
-    return { briefing: this.weeklyBriefingCache, error: this.weeklyBriefingError, stale };
-  }
-
-  /**
-   * The Monday trigger (issue #161): once per week, at or after 06:00 on
-   * Monday in the owner's calendar timezone — the same timezone pattern as
-   * the morning Daily Briefing and the Sunday sweep. Guarded by the covered
-   * week start, so restarts rebuild harmlessly and a failed Monday waits for
-   * the owner's explicit retry.
-   */
-  private async refreshWeeklyBriefingIfMonday(now: Date): Promise<void> {
-    const timezone = this.getTimezone();
-    const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(timezone);
-    if (!local.isValid || local.weekday !== 1 || local.hour < 6) return;
-    if (this.lastWeeklyBriefingWeek === weekBoundsFor(now, timezone).weekStart) return;
-    this.refreshWeeklyBriefing(now, timezone);
-    await this.sendWeeklyBriefingEmailIfDue(now, timezone);
+    return this.briefings.getWeekly(now, timezone);
   }
 
   start(): void {
@@ -1621,7 +1330,7 @@ export class MeetingBriefHost implements HostedModule {
 
     app.post("/api/meeting-brief/daily/retry", async () => {
       const state = this.refreshDailyBriefing();
-      await this.sendDailyBriefingEmailIfDue();
+      await this.briefings.sendDailyEmailIfDue();
       return state;
     });
 
@@ -1636,7 +1345,7 @@ export class MeetingBriefHost implements HostedModule {
 
     app.post("/api/meeting-brief/weekly/retry", async () => {
       const state = this.refreshWeeklyBriefing();
-      await this.sendWeeklyBriefingEmailIfDue();
+      await this.briefings.sendWeeklyEmailIfDue();
       return state;
     });
 

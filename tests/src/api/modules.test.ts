@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunMeta } from "@chief-of-staff-demo/shared";
@@ -65,16 +66,19 @@ beforeEach(async () => {
     lifecycle: [],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
-  await registerApi(app, {
-    runs,
-    port: PORT,
-    configStore,
-    modules: [fakeHost("alpha", "/api/alpha/thing"), fakeHost("beta", "/api/beta/thing")],
-    google: { state: async () => ({ state: "unconfigured" }) },
-    people: peopleProfiles,
-    onboarding: ownerOnboarding,
-    onConfigChanged: () => {},
-  } as unknown as ApiContext);
+  await registerApi(
+    app,
+    fromPartial<ApiContext>({
+      runs,
+      port: PORT,
+      configStore,
+      modules: [fakeHost("alpha", "/api/alpha/thing"), fakeHost("beta", "/api/beta/thing")],
+      google: { state: async () => ({ state: "unconfigured" }) },
+      people: peopleProfiles,
+      onboarding: ownerOnboarding,
+      onConfigChanged: () => {},
+    }),
+  );
   await app.ready();
 });
 

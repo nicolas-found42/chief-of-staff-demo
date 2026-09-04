@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type {
@@ -29,7 +30,7 @@ describe("Meeting Brief-owned Person Profile consumer read model", () => {
       sourceUrl: null,
       externalId: "evt::occurrence",
     });
-    const stored = {
+    const stored = fromPartial<MeetingBriefRunResult>({
       version: 1,
       personProfileLinks: [
         {
@@ -38,7 +39,7 @@ describe("Meeting Brief-owned Person Profile consumer read model", () => {
           profileRevision: 1,
         },
       ],
-    } as unknown as MeetingBriefRunResult;
+    });
     run.writeArtifact("result.json", `${JSON.stringify(stored, null, 2)}\n`);
     people.correct(profile.id, { role: "Professor" });
     const host = new MeetingBriefHost({ runs, workspaceDir, personProfiles: people });

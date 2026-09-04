@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
+import { fromPartial } from "@total-typescript/shoehorn";
 import type { MeetingBriefEvent, PersonProfile } from "@chief-of-staff-demo/shared";
 import { PERSON_PROFILE_CALENDAR_SOURCE } from "@chief-of-staff-demo/shared";
 import { StageFailure } from "../../../apps/server/src/engine/module";
@@ -337,7 +338,7 @@ function makeEnrichCtx() {
   return {
     files,
     events,
-    ctx: ctx as unknown as Parameters<typeof enrichUnified>[1],
+    ctx: fromPartial<Parameters<typeof enrichUnified>[1]>(ctx),
   };
 }
 

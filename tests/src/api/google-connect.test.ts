@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AppConfig, GoogleStatus } from "@chief-of-staff-demo/shared";
@@ -35,26 +36,28 @@ beforeEach(async () => {
     lifecycle: [],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
-  await registerApi(app, {
-    workspaceDir,
-    port: PORT,
-    configStore,
-    modules: [],
-    /* The real module, so the states below are the ones the server derives
-       rather than ones the test asserts into existence. Its probe never runs:
-       every state here is decided before a token is spent. */
-    google: openGoogleConnection(configStore, PORT, {
-      probe: async () => {
-        throw new Error("no test reaches Google");
+  await registerApi(
+    app,
+    fromPartial<ApiContext>({
+      port: PORT,
+      configStore,
+      modules: [],
+      /* The real module, so the states below are the ones the server derives
+         rather than ones the test asserts into existence. Its probe never runs:
+         every state here is decided before a token is spent. */
+      google: openGoogleConnection(configStore, PORT, {
+        probe: async () => {
+          throw new Error("no test reaches Google");
+        },
+      }),
+      people: peopleProfiles,
+      onboarding: ownerOnboarding,
+      onConfigChanged: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        configChangeCompleted = true;
       },
     }),
-    people: peopleProfiles,
-    onboarding: ownerOnboarding,
-    onConfigChanged: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      configChangeCompleted = true;
-    },
-  } as unknown as ApiContext);
+  );
   await app.ready();
 });
 

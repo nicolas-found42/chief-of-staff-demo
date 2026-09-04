@@ -1,6 +1,6 @@
 # Found42 Chief of Staff
 
-A local application that hosts Found42's meeting and content workflows as four product areas in
+A local application that hosts Found42's meeting, content and task workflows as five product areas in
 one app. It replaces Relay, which is being retired; each Relay workflow worth keeping is rebuilt
 here as a Module.
 
@@ -17,20 +17,82 @@ linking into the product areas. Not a Module: it has no workflow of its own.
 _Avoid_: Dashboard, landing page
 
 **Product area**:
-One of the four things the app is for — Content Engine, Content Research, Person Profiles, Meeting
-Wizard. A product area names ownership, not backend registration: it may present one Module, two
-(Meeting Wizard), or a Workspace resource that is no Module at all (Person Profiles). The four are
-an explicit list the header nav and Home's cards both render, never derived from the Module
-registry (ADR-0043), so a Module can be added, retired or re-parented without the app appearing to
-gain or lose a product.
+One of the five things the app is for — Content Engine, Content Research, Person Profiles, Meeting
+Wizard and Tasks. A product area names ownership, not backend registration: it may present one
+Module, two (Meeting Wizard), or a Workspace resource that is no Module at all (Person Profiles and
+Tasks). The five are an explicit list the header nav and Home's cards both render, never derived
+from the Module registry (ADR-0043, ADR-0052), so a Module can be added, retired or re-parented
+without the app appearing to gain or lose a product.
 _Avoid_: Tab, section, module (a product area is not one)
+
+**Tasks**:
+The product area in which the workspace owner reviews Action Items and manages Tasks from every
+source, including Tasks created manually. It is not owned by Meeting Wizard because a Task need not
+come from a Meeting.
+_Status_: planned (ADR-0052)
+_Avoid_: Task dashboard, Google Tasks
+
+**Task**:
+One durable record of work owned by the Workspace, created manually or promoted from an Action
+Item. It is open or completed, belongs to one Task List, and remains the canonical record whether
+or not it has an External Task Link.
+_Avoid_: Google Task, action item, to-do
+
+**Task Priority**:
+The workspace owner's local ranking of a Task as none, low, medium or high. It is not urgency and
+is not synchronized to provider-specific priority fields.
+_Avoid_: Urgency, external priority, rank
+
+**Task List**:
+One named collection of Tasks. Every Task belongs to exactly one Task List, and Inbox is the
+default when a person does not choose another.
+_Avoid_: Project, tag, queue
+
+**Responsible Person**:
+The workspace owner or confirmed Person Profile expected to perform a Task. This records
+responsibility only; it grants no access and sends no notification.
+_Avoid_: Assignee, owner (the workspace owner still owns every Task)
+
+**Action Item**:
+One proposed commitment extracted into a Meeting Debrief for the workspace owner to review. It may
+be pending, promoted to an open or completed Task, or dismissed without creating a Task.
+_Avoid_: Task, suggestion (alone), proposed Task
+
+**External Task Link**:
+The relationship between one Task and its representation in an external task system such as Google
+Tasks or Asana. It sends Task content outward and carries open or completed state in both directions;
+the linked external record never replaces the Workspace's canonical Task.
+_Avoid_: Synced Task, external Task, receipt
+
+**Task Link Conflict**:
+The state in which a Task and its external representation both changed between successful
+synchronizations and the app cannot preserve both choices. The workspace owner resolves which
+open or completed state wins; the conflict never makes the Task unusable.
+_Avoid_: Task conflict, sync error, merge conflict
+
+**External Task Drift**:
+An observed external edit to a linked Task's title, notes or due date. The Workspace keeps its
+canonical values until the owner explicitly restores them outward, accepts the external values, or
+removes the External Task Link.
+_Avoid_: Task Link Conflict (that one is competing state changes), sync error
+
+**Task Destination**:
+The optional external system and container that receive a new Task. A Task List may supply a default
+Task Destination, and Local only means that no External Task Link is created.
+_Avoid_: Provider, integration, sync target
+
+**Action Item Policy**:
+The Meeting Debrief rule that either stages every Action Item or automatically promotes an Action
+Item whose Responsible Person is the confirmed workspace owner. It never decides for an unassigned
+or other-person Action Item.
+_Avoid_: Automation, auto-approve, confidence threshold
 
 **Module**:
 One workflow. A Module contributes what is specific to its workflow and relies on the Shell for
 everything generic. It is **planned** until its Runs, Intakes and Output Adapters exist and
 **live** once they do; independently of that, it either has something for a person to look at,
 reached inside the product area that presents it, or it is **headless**. No Module holds a
-navigation entry of its own: navigation is the four product areas (ADR-0043).
+navigation entry of its own: navigation is the five product areas (ADR-0043, ADR-0052).
 _Avoid_: Plugin, tab, feature, workflow (reserve "workflow" for the Relay original)
 
 **Headless Module**:
@@ -205,7 +267,7 @@ One scope of work owned by one Module, with a status and an append-only event lo
 the Module's own shape, and it may wait rather than reach an end. It is an engine concept: no
 product surface names a Run or links to one, and a Module's result is reached from the surface that
 owns it (ADR-0051).
-_Avoid_: Job, task (a Task is a Google Task), execution
+_Avoid_: Job, task (a Task is a Workspace resource), execution
 
 **Stage**:
 A named span of a Run that the Module opens and the Shell records. What a partial failure inside a
@@ -213,8 +275,8 @@ Stage means is the Module's to decide.
 _Avoid_: Step, phase, status
 
 **Cross-Run index**:
-A read-only view over every Run's result — for example, every extracted Task with the Run it came
-from, or a channel's view counts over time. Derived on read; nothing writes to it. It may be
+A read-only view over every Run's result — for example, every extracted Action Item with the Run it
+came from, or a channel's view counts over time. Derived on read; nothing writes to it. It may be
 cached, provided one thing invalidates it and that thing is the only writer.
 _Avoid_: Table, store, database
 
@@ -280,9 +342,10 @@ _Avoid_: Eval model, judge (the Gate Model is the model under test, not one grad
 The Shell's authorization to act on one person's Google account. Each person registers their own
 OAuth client, so the connection is either unconfigured, disconnected, connected, or expired —
 expiry being a weekly event rather than a fault. It is the only route to a Google surface
-(Tasks, Calendar, Gmail, Drive, YouTube, Sheets) and the only holder of client credentials and refresh
-tokens; a Module's Intake or Output Adapter reaches Google with credentials from the connection
-or not at all.
+(Tasks, Calendar, Gmail, Drive, YouTube, Sheets) and the only holder of client credentials and
+refresh tokens; a Module's Intake or Output Adapter reaches Google with credentials from the
+connection or not at all. Google Tasks is an optional surface: its absence does not disconnect or
+disable any other granted Google surface.
 _Avoid_: Google auth, login, OAuth (the protocol is not the connection)
 
 **Workspace**:
@@ -294,7 +357,8 @@ The half of the Workspace the products produced — every Run, Person Profile, p
 Brand Profile, Content Research record and Content Project, plus the checkpoints tracking what was
 already ingested or scheduled. Not "everything in the Workspace": credentials, pointers and
 settings are the other half, and the line between them is one explicit table both the one-time
-migration reset and the repeatable clear read (ADR-0046, ADR-0048).
+migration reset and the repeatable clear read (ADR-0046, ADR-0048). A Task is not Generated data,
+even when promoted from an Action Item: it is the workspace owner's accepted record of work.
 _Avoid_: Workspace data, user data, app data (each reads as "everything", which is the misreading
 that would delete credentials)
 
@@ -428,33 +492,40 @@ The Module that reads a mined transcript from the Transcript Catalog and produce
 for the workspace owner. It is named for the role it plays rather than for the one artifact it
 produces today, so further retrospective work can join it without renaming the role: the role names
 the Run, and the hosted `meeting-debrief` Module is the artifact host of that Run's Meeting Debrief.
-_Status_: retrospective extraction live (issue #139); review wait, expiry, and approval-gated
-outward writes planned (ADR-0038)
+_Status_: retrospective extraction live (issue #139); durable Action Items and independent
+email-draft creation planned (ADR-0053, ADR-0061)
 _Avoid_: Executive Coach (the Relay original's framing, and the voice the model is cast in, not the
 Module), Meeting Debrief Generator, Coach Module
 
 **Meeting Debrief**:
 The structured result one Executive Assistant Run extracts from a transcript after a meeting: the
-firm decisions taken, action items carrying an inferred owner and an optional due date, the
+firm decisions taken, Action Items carrying an inferred owner and an optional due date, the
 questions left open, a short summary, an effectiveness assessment with the specific evidence behind
 it, and coaching advice. The role names the Run; the `meeting-debrief` Module is its artifact host
 — it reads the Transcript Catalog's immutable records and review state and holds the Debrief for
 the workspace owner's review, and it decides no identity and writes nothing outward itself. Every
-Output Adapter renders this same result.
+Output Adapter renders this same result. It is available when extraction succeeds and does not
+expire while its Action Items await review.
 _Avoid_: Meeting Brief (that one is prospective, prepared from Calendar before a meeting; a Meeting
 Debrief is retrospective, extracted from a transcript afterwards), debrief email, meeting notes
 
 **Daily Briefing**:
 The structured result prepared each morning for the day ahead: what the workspace owner should know
-about the day's Meetings, and the order in which their open action items matter. It is the Meeting
-Wizard's front page and the one message the owner receives each day.
+about the day's Meetings, which open Tasks matter, and which pending Action Items need review. It is
+the Meeting Wizard's front page and the one message the owner receives each day.
 _Avoid_: Daily digest, morning summary, Meeting Brief (that one prepares a single meeting)
 
 **Weekly Briefing**:
-The structured result prepared for the week ahead, read from that week's Meeting Briefs: what the
-week holds and which Meetings matter most. It is a section of the Meeting Wizard's front page
-rather than a page of its own.
+The structured current-week view of completed, in-progress and upcoming Meetings, the week's open
+Tasks, and pending Action Items. It has its own Meeting Wizard tab and carries a Weekly Summary
+generated from individual Meeting Briefs and Meeting Debriefs.
 _Avoid_: Weekly digest, week ahead (alone), weekly report
+
+**Weekly Summary**:
+The short model-generated paragraph at the head of a Weekly Briefing. It synthesizes only selected
+Meeting Brief fields for in-progress or upcoming Meetings and selected Meeting Debrief fields
+for completed Meetings; Tasks and raw Transcripts never enter its prompt.
+_Avoid_: Weekly Briefing (that is the whole view), recap, model ranking
 
 **Internal Domain**:
 An email domain configured as belonging to the workspace owner's organization.

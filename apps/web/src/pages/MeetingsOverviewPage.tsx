@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type {
   DailyBriefingBriefStatus,
   DailyBriefingState,
@@ -12,6 +12,18 @@ import { selectHomeActionItems, type HomeActionItem } from "../homeActionItems";
 import { todaysMeetings } from "../todaysMeetings";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
+// PROTOTYPE — throwaway design-system exploration (?variant=a|b|c). Delete with losers.
+import { PrototypeSwitcher } from "../components/PrototypeSwitcher";
+import { ProtoState, VariantA, VariantB, VariantC } from "./meetingsPrototypeVariants";
+import "./meetingsPrototype.css";
+
+/* PROTOTYPE — the three design-system directions on offer here. */
+const PROTO_VARIANTS = [
+  { key: "current", name: "Current" },
+  { key: "a", name: "Quiet Rail" },
+  { key: "b", name: "Day Spine" },
+  { key: "c", name: "Editorial Ledger" },
+];
 
 /** Past today, in the reader's own timezone. Dates are plain `YYYY-MM-DD`. */
 function isOverdue(dueDate: string): boolean {
@@ -77,6 +89,8 @@ function MeetingRow({
 export function MeetingsOverviewPage() {
   useTitle("Meeting Wizard");
   const headingRef = usePageFocus<HTMLHeadingElement>();
+  // PROTOTYPE — reads `?variant=`; delete with the losing variants.
+  const [searchParams] = useSearchParams();
   const [index, setIndex] = useState<MeetingIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,6 +178,41 @@ export function MeetingsOverviewPage() {
     () => new Map((meetings ?? []).map((meeting) => [meeting.id, meeting.title])),
     [meetings],
   );
+
+  /* PROTOTYPE — sub-shape A: all the fetching above is untouched, only the
+     rendering swaps. `?variant=a|b|c`; anything else renders the real page. */
+  const variant = searchParams.get("variant") ?? "current";
+  if (variant === "a" || variant === "b" || variant === "c") {
+    const protoData = {
+      index,
+      briefing,
+      weekly,
+      actionItems,
+      actionItemsError,
+      meetingTitles,
+      busy,
+      onRefresh: () => {
+        void refresh();
+        void loadBriefing(false);
+        void loadWeekly(false);
+        void loadActionItems();
+      },
+    };
+    return (
+      <div className="page">
+        <h1 ref={headingRef} tabIndex={-1} className="visually-hidden-proto">
+          Meeting Wizard
+        </h1>
+        <div className="mtg-proto">
+          {variant === "a" && <VariantA data={protoData} />}
+          {variant === "b" && <VariantB data={protoData} />}
+          {variant === "c" && <VariantC data={protoData} />}
+        </div>
+        <ProtoState data={protoData} variant={variant} />
+        <PrototypeSwitcher current={variant} variants={PROTO_VARIANTS} />
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -379,6 +428,8 @@ export function MeetingsOverviewPage() {
           )}
         </section>
       ) : null}
+      {/* PROTOTYPE — dev-only entry point to ?variant=a|b|c; null in prod builds. */}
+      <PrototypeSwitcher current={variant} variants={PROTO_VARIANTS} />
     </div>
   );
 }

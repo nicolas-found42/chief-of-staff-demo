@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 import { ConfigStore } from "../../../apps/server/src/config.js";
 import type { GoogleConnection } from "../../../apps/server/src/google/connection.js";
@@ -16,12 +17,12 @@ describe("Meeting Brief production composition — issue #92", () => {
     new RelayStateStore(join(workspaceDir, "relay.json")).setRelayBaseUrl(
       "https://relay.example.com",
     );
-    const google = {
+    const google = fromPartial<GoogleConnection>({
       state: async () => {
         throw new Error("production composition must not automatically prove Google");
       },
       auth: () => ({ ok: false, state: "unconfigured" }),
-    } as unknown as GoogleConnection;
+    });
 
     createMeetingBriefProductionRuntime({
       runs: openRuns(workspaceDir),
@@ -42,10 +43,10 @@ describe("Meeting Brief production owner identity — ADR-0034, issue #112", () 
     const workspaceDir = mkdtempSync(join(tmpdir(), "meeting-brief-owner-"));
     const configStore = new ConfigStore(join(workspaceDir, "config.json"));
     configStore.load();
-    const google = {
+    const google = fromPartial<GoogleConnection>({
       state,
       auth: () => ({ ok: false, state: "unconfigured" }),
-    } as unknown as GoogleConnection;
+    });
     return createMeetingBriefProductionRuntime({
       runs: openRuns(workspaceDir),
       workspaceDir,

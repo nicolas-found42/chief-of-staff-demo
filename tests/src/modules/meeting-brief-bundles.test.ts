@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { fromPartial } from "@total-typescript/shoehorn";
 import type { MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 import { StageFailure } from "../../../apps/server/src/engine/module";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
@@ -141,11 +142,11 @@ function makeCtx() {
   return {
     files,
     events,
-    ctx: {
+    ctx: fromPartial<Parameters<typeof enrichUnified>[1]>({
       readFile: (name: string) => files.get(name) ?? null,
       writeFile: (name: string, value: string) => void files.set(name, value),
       event: (name: string, data?: unknown) => void events.push({ name, data }),
-    } as unknown as Parameters<typeof enrichUnified>[1],
+    }),
   };
 }
 

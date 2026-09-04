@@ -1,11 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- module orchestrates optional stage deps and snapshot fields that may be absent on retry */
-import type { CompleteJson } from "../../llm/providers.js";
 import type {
   MeetingBrief,
   MeetingBriefEvent,
-  MeetingBriefEnrichmentSection,
-  MeetingBriefPersonProfileLink,
-  MeetingBriefProviderOutcome,
   MeetingBriefRunResult,
   PersonProfileConsumerState,
 } from "@chief-of-staff-demo/shared";
@@ -18,18 +14,9 @@ import type { RunOutcome } from "../../runs.js";
 import type { RunContext, ShellModule } from "../../engine/module.js";
 import { snapshotEligibility, buildFrozenSnapshot } from "./snapshot.js";
 import { occurrenceLookupWindow, type CalendarProvider } from "./calendar.js";
-import { composeBrief } from "./compose.js";
 import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
-import { executeDeliver, deliveryIdFor, deliveryState } from "./deliver.js";
-import { enrichUnified, type MeetingBriefEnrichmentProviders } from "./enrichment/enrich.js";
-import {
-  briefCutoffAt,
-  buildProviderOutcomesLedger,
-  enrichmentVerdict,
-  providerRetryDelayMs,
-  readProviderOutcomes,
-} from "./completeness.js";
-import { StageFailure } from "../../engine/module.js";
+import { executeDeliver } from "./deliver.js";
+import { type FrozenMeetingOccurrence, type MeetingBriefGenerator } from "./generator.js";
 export type MeetingBriefInput = MeetingBriefEvent & {
   occurrenceKey: string;
   supersedesRunId?: string | null;
@@ -37,25 +24,9 @@ export type MeetingBriefInput = MeetingBriefEvent & {
 };
 export interface MeetingBriefModuleDeps {
   now?: () => Date;
-  enrich?: (
-    input: MeetingBriefInput,
-    ctx: RunContext,
-  ) => Promise<{
-    sections: unknown[];
-    evidence: string[];
-    personProfileLinks?: MeetingBriefPersonProfileLink[];
-    /** Versioned per-provider outcome ledger (#137); absent on legacy fixtures. */
-    outcomes?: MeetingBriefProviderOutcome[];
-    bundleVersion?: number;
-  }>;
-  getCompleteJson?: () => CompleteJson;
+  createBriefGenerator?: (context: RunContext) => MeetingBriefGenerator;
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
-  enrichmentProviders?: MeetingBriefEnrichmentProviders;
-  getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
-  /** Providers excluded from the required set by an explicit policy action (#137). */
-  getDisabledProviders?: () => readonly string[];
-  completeBrief?: (input: MeetingBriefInput, enrichResult: unknown) => Promise<MeetingBrief>;
   isOwnerProfileConfirmed?: () => boolean;
   /**
    * Manual-send intent for the deliver Stage (issue #163). The host returns
@@ -172,19 +143,23 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
     async run(ctx: RunContext, input: MeetingBriefInput): Promise<RunOutcome> {
       const frozenSnapshotRaw = ctx.readFile("snapshot.json");
       let hasFrozenSnapshot = false;
+      let frozenOccurrence: FrozenMeetingOccurrence | null = null;
       if (frozenSnapshotRaw) {
         try {
-          const frozen = JSON.parse(frozenSnapshotRaw) as MeetingBriefInput;
+          const frozen = JSON.parse(frozenSnapshotRaw) as FrozenMeetingOccurrence;
           if (
             typeof frozen.calendarId === "string" &&
             typeof frozen.eventId === "string" &&
             typeof frozen.occurrenceId === "string" &&
             typeof frozen.occurrenceKey === "string" &&
             typeof frozen.version === "string" &&
+            typeof frozen.capturedAt === "string" &&
+            typeof frozen.materialFingerprint === "string" &&
             ["confirmed", "cancelled", "tentative"].includes(frozen.status) &&
             Array.isArray(frozen.attendees)
           ) {
             input = frozen;
+            frozenOccurrence = frozen;
             hasFrozenSnapshot = true;
           }
         } catch {
@@ -302,27 +277,24 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
             version: current.version,
             startAt: current.startAt,
           });
-          const frozen = buildFrozenSnapshot(current, snapshotAt);
+          const frozen: FrozenMeetingOccurrence = {
+            ...buildFrozenSnapshot(current, snapshotAt),
+            supersedesRunId: input.supersedesRunId ?? null,
+            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
+          };
           ctx.writeFile(
             "snapshot.json",
             JSON.stringify(
               {
                 ...frozen,
                 eligible: true,
-                capturedAt: snapshotAt,
-                supersedesRunId: input.supersedesRunId ?? null,
-                ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
               },
               null,
               2,
             ) + "\n",
           );
-          input = {
-            ...current,
-            occurrenceKey,
-            supersedesRunId: input.supersedesRunId ?? null,
-            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
-          };
+          frozenOccurrence = frozen;
+          input = frozen;
         });
 
         if (snapshotSkipped) {
@@ -332,173 +304,18 @@ export function meetingBriefModule(deps: MeetingBriefModuleDeps): ShellModule<Me
         }
       }
 
-      // enrich — unified evidence via Google, HubSpot, Person Profiles, Public Intelligence
-      let enrichResult: {
-        sections: unknown[];
-        evidence: string[];
-        personProfileLinks?: MeetingBriefPersonProfileLink[];
-        outcomes?: MeetingBriefProviderOutcome[];
-        bundleVersion?: number;
-      } = {
-        sections: [],
-        evidence: [],
-      };
-      const hasFrozenEnrichment = ctx.readFile("enrich.json") !== null;
-      if (!shouldSkipToDeliver && !hasFrozenEnrichment) {
-        await ctx.stage("enrich", async () => {
-          if (deps.enrich) {
-            enrichResult = await deps.enrich(input, ctx);
-          } else if (deps.enrichmentProviders) {
-            const internalDomainsForEnrich = deps.getInternalDomains?.() ?? [];
-            const result = await enrichUnified(input, ctx, {
-              providers: deps.enrichmentProviders,
-              internalDomains: internalDomainsForEnrich,
-              occurrenceKey,
-              ...(deps.getDisabledProviders
-                ? { disabledProviders: deps.getDisabledProviders() }
-                : {}),
-            });
-            enrichResult = result;
-          } else {
-            throw new Error("Meeting Brief enrichment providers are unavailable");
-          }
-
-          // Completeness gate (#137, spec #82/Decision 19): every selected
-          // provider's versioned outcome is recorded; a failed one blocks
-          // composition and delivery while successful siblings' artifacts are
-          // retained for the retry that reruns only the missing work.
-          const outcomes = enrichResult.outcomes;
-          if (outcomes) {
-            const disabled = deps.getDisabledProviders?.() ?? [];
-            const verdict = enrichmentVerdict(outcomes, disabled);
-            const prior = readProviderOutcomes(ctx.readFile("provider-outcomes.json"));
-            const ledger = buildProviderOutcomesLedger({
-              occurrenceKey,
-              eventVersion: input.version,
-              bundleVersion: enrichResult.bundleVersion ?? prior?.bundleVersion ?? 1,
-              outcomes,
-              prior,
-              incomplete: !verdict.complete,
-            });
-            ctx.writeFile("provider-outcomes.json", JSON.stringify(ledger, null, 2) + "\n");
-            ctx.event("enrich_provider_outcomes", {
-              complete: verdict.complete,
-              retryCount: ledger.retryCount,
-              failed: verdict.failed.map((outcome) => ({
-                provider: outcome.provider,
-                attendee: outcome.attendee,
-                diagnostics: outcome.diagnostics,
-              })),
-              disabled: outcomes
-                .filter((outcome) => outcome.outcome === "disabled")
-                .map((outcome) => outcome.provider),
-            });
-            if (!verdict.complete) {
-              const cutoff = briefCutoffAt(input.startAt);
-              const nowMs = now().getTime();
-              const failedNames = verdict.failed
-                .map((outcome) => `${outcome.provider} (${outcome.attendee})`)
-                .join(", ");
-              if (cutoff !== null && nowMs >= cutoff) {
-                throw new StageFailure(
-                  `brief_cutoff: automatic enrichment retries stopped 30 minutes before the occurrence start; failed providers: ${failedNames}. No Brief was composed or delivered.`,
-                  "Enrichment stopped at the cutoff. Repair or disable the failed provider, then retry the Run explicitly.",
-                );
-              }
-              const waitUntil = Math.min(
-                nowMs + providerRetryDelayMs(ledger.retryCount),
-                cutoff ?? Infinity,
-              );
-              ctx.event("enrich_retry_scheduled", {
-                attempt: ledger.retryCount + 1,
-                retryAt: new Date(waitUntil).toISOString(),
-                cutoffAt: cutoff === null ? null : new Date(cutoff).toISOString(),
-                failed: failedNames,
-              });
-              ctx.wait({
-                reason: "provider_retry_backoff",
-                timeout: { kind: "at", at: new Date(waitUntil).toISOString() },
-              });
-            }
-          }
-
-          ctx.writeFile("enrich.json", JSON.stringify(enrichResult, null, 2) + "\n");
-          ctx.event("enrich_completed", {
-            sections: enrichResult.sections.length,
-          });
-        });
-      } else if (!shouldSkipToDeliver) {
-        // Compose retry reuses the completed enrichment artifact.
-        const enrichRaw = ctx.readFile("enrich.json");
-        if (enrichRaw) {
-          try {
-            const parsed = JSON.parse(enrichRaw) as {
-              sections?: unknown[];
-              evidence?: string[];
-              personProfileLinks?: MeetingBriefPersonProfileLink[];
-            };
-            enrichResult = {
-              sections: (parsed.sections as unknown[]) ?? [],
-              evidence: (parsed.evidence as string[]) ?? [],
-              personProfileLinks: parsed.personProfileLinks ?? [],
-            };
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      // compose — structured Meeting Brief via LLM seam (Result Shape Binding, ADR-0029/0030)
+      // Generate one Brief through the deep content interface (issue #168).
+      // Bundle selection, evidence collection, completeness, and prompt
+      // assembly are all implementation detail behind generate(occurrence).
       let brief: MeetingBrief | null = existingBrief;
       if (!shouldSkipToDeliver) {
-        await ctx.stage("compose", async () => {
-          let composed: MeetingBrief;
-          if (deps.completeBrief) {
-            composed = await deps.completeBrief(input, enrichResult);
-          } else if (deps.getCompleteJson) {
-            const sections = (enrichResult.sections as MeetingBriefEnrichmentSection[]) ?? [];
-            const internalDomainsForCompose = deps.getInternalDomains?.() ?? [];
-            composed = await composeBrief({
-              now,
-              getCompleteJson: deps.getCompleteJson,
-              snapshot: input,
-              sections,
-              internalDomains: internalDomainsForCompose,
-            });
-          } else {
-            throw new Error("Meeting Brief composition provider is unavailable");
-          }
-          brief = composed;
-          const supersedes = input.supersedesRunId ?? null;
-          const partial: MeetingBriefRunResult = {
-            version: 1,
-            eventId: input.eventId,
-            occurrenceId: input.occurrenceId,
-            eventVersion: input.version,
-            occurrenceKey,
-            snapshotAt,
-            enrichAt: now().toISOString(),
-            composeAt: now().toISOString(),
-            meetingBrief: composed,
-            delivery: deliveryState(
-              "pending",
-              deliveryIdFor(
-                occurrenceKey,
-                composed.eventVersion,
-                input.profileRefreshOf ? ctx.runId : undefined,
-              ),
-            ),
-            personProfileLinks: enrichResult.personProfileLinks ?? [],
-            supersedes,
-            ...(input.profileRefreshOf ? { profileRefreshOf: input.profileRefreshOf } : {}),
-          };
-          ctx.writeFile("result.json", JSON.stringify(partial, null, 2) + "\n");
-          ctx.event("brief_composed", {
-            eventVersion: input.version,
-            guests: composed.guests.length,
-            supersedes,
-          });
-        });
+        if (!deps.createBriefGenerator) {
+          throw new Error("Meeting Brief Generator is unavailable");
+        }
+        if (!frozenOccurrence) {
+          throw new Error("Meeting Brief Generator requires a frozen occurrence");
+        }
+        brief = await deps.createBriefGenerator(ctx).generate(frozenOccurrence);
       }
       if (!brief) throw new Error("Deliver requires a composed Meeting Brief");
       const composedBrief = brief;

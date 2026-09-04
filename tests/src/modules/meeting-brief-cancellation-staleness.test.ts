@@ -10,7 +10,7 @@ import {
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
 import { FakeGmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmailDelivery";
-import type { MeetingBriefModuleDeps } from "../../../apps/server/src/modules/meeting-brief-generator/module";
+import type { MeetingBriefGeneratorOptions } from "../../../apps/server/src/modules/meeting-brief-generator/generator";
 
 /**
  * Late cancellation marks the day/week briefings stale (issue #162 AC1).
@@ -66,7 +66,7 @@ function calFromFixture(f: MeetingBriefEvent): CalendarEvent {
   };
 }
 
-function defaultEnrich(): MeetingBriefModuleDeps["enrich"] {
+function defaultEnrich(): MeetingBriefGeneratorOptions["enrich"] {
   return async (_input, ctx) => {
     ctx.event("fixture_enrich", {});
     return {
@@ -84,7 +84,7 @@ function defaultEnrich(): MeetingBriefModuleDeps["enrich"] {
   };
 }
 
-function defaultCompleteBrief(nowRef: () => Date): MeetingBriefModuleDeps["completeBrief"] {
+function defaultCompleteBrief(nowRef: () => Date): MeetingBriefGeneratorOptions["completeBrief"] {
   return async (input: MeetingBriefEvent) => {
     return {
       version: 1 as const,

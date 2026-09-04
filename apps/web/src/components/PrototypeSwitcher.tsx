@@ -1,34 +1,54 @@
 /**
  * PROTOTYPE — throwaway variant switcher, not production UI.
- * "Three variants of Home, switchable via `?variant=`, on the existing `/` route."
+ * Shared by every `?variant=` exploration, so each host page passes its own
+ * variant list rather than forking the bar:
+ *   Home       `/`         current | a | b | c   (Airy Bento / Command Deck / Editorial Warmth)
+ *   Meetings   `/meetings` current | a | b | c   (Quiet Rail / Day Spine / Editorial Ledger)
  * Delete with the losing variants when one wins; never ship to prod
  * (returns null under Vite production builds).
  */
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 
-const PROTOTYPE_VARIANTS = [
+export interface PrototypeVariant {
+  key: string;
+  name: string;
+}
+
+/** Home's set, kept as the default so its call sites stay unchanged. */
+const HOME_VARIANTS: PrototypeVariant[] = [
   { key: "current", name: "Current" },
   { key: "a", name: "Airy Bento" },
   { key: "b", name: "Command Deck" },
   { key: "c", name: "Editorial Warmth" },
 ];
 
-export function PrototypeSwitcher({ current }: { current: string }) {
+export function PrototypeSwitcher({
+  current,
+  variants = HOME_VARIANTS,
+}: {
+  current: string;
+  variants?: PrototypeVariant[];
+}) {
   // Hidden in production builds so a stray merge can't ship the bar.
   if (import.meta.env.PROD) return null;
-  return <PrototypeSwitcherInner current={current} />;
+  return <PrototypeSwitcherInner current={current} variants={variants} />;
 }
 
-function PrototypeSwitcherInner({ current }: { current: string }) {
+function PrototypeSwitcherInner({
+  current,
+  variants,
+}: {
+  current: string;
+  variants: PrototypeVariant[];
+}) {
   const [, setSearchParams] = useSearchParams();
   const index = Math.max(
     0,
-    PROTOTYPE_VARIANTS.findIndex((v) => v.key === current),
+    variants.findIndex((v) => v.key === current),
   );
   const go = (dir: 1 | -1) => {
-    const next =
-      PROTOTYPE_VARIANTS[(index + dir + PROTOTYPE_VARIANTS.length) % PROTOTYPE_VARIANTS.length]!;
+    const next = variants[(index + dir + variants.length) % variants.length]!;
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev);
@@ -53,7 +73,7 @@ function PrototypeSwitcherInner({ current }: { current: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
-  const label = PROTOTYPE_VARIANTS[index]!;
+  const label = variants[index]!;
   return (
     <div
       className="prototype-switcher"

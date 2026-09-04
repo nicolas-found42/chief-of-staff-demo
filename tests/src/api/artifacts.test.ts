@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerApi, type ApiContext } from "../../../apps/server/src/api/router";
@@ -36,16 +37,19 @@ beforeEach(async () => {
     disconnect: () => {},
     pickerToken: async () => ({}),
   };
-  await registerApi(app, {
-    runs,
-    port: PORT,
-    configStore,
-    modules: [],
-    google: dummyGoogle,
-    people: peopleProfiles,
-    onboarding: ownerOnboarding,
-    onConfigChanged: () => {},
-  } as unknown as ApiContext);
+  await registerApi(
+    app,
+    fromPartial<ApiContext>({
+      runs,
+      port: PORT,
+      configStore,
+      modules: [],
+      google: fromAny(dummyGoogle),
+      people: peopleProfiles,
+      onboarding: ownerOnboarding,
+      onConfigChanged: () => {},
+    }),
+  );
   await app.ready();
 });
 

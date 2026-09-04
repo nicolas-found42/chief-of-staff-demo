@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 import { MEETING_BRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
 import type { Runs } from "../../../apps/server/src/runs";
@@ -15,11 +16,11 @@ import {
 const NOW = new Date("2026-08-31T12:00:00.000Z");
 
 function emptyRuns(): Runs {
-  return {
+  return fromPartial<Runs>({
     list: () => ({ runs: [] }),
     open: () => null,
     detail: () => null,
-  } as unknown as Runs;
+  });
 }
 
 function seedMeetings(): WorkspaceMeetings {
@@ -138,7 +139,7 @@ describe("weeklyBriefing", () => {
   });
 
   it("marks ready and pending Brief state from the Runs index", () => {
-    const runs = {
+    const runs = fromPartial<Runs>({
       list: () => ({ runs: [{ id: "run-a" }, { id: "run-b" }] }),
       open: (id: string) => ({
         read: () => ({
@@ -148,7 +149,7 @@ describe("weeklyBriefing", () => {
       }),
       detail: (id: string) =>
         id === "run-a" ? { result: { meetingBrief: { id: "brief-a" } } } : { result: null },
-    } as unknown as Runs;
+    });
     const briefing = buildWeeklyBriefing({ meetings: seedMeetings(), runs }, NOW, "UTC", [
       "example.com",
     ]);

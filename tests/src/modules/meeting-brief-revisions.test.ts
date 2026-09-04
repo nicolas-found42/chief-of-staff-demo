@@ -14,7 +14,8 @@ import {
   FakeCalendarProvider,
   type CalendarEvent,
 } from "../../../apps/server/src/modules/meeting-brief-generator/calendar";
-import type { MeetingBriefModuleDeps } from "../../../apps/server/src/modules/meeting-brief-generator/module";
+import type { MeetingBriefGeneratorOptions } from "../../../apps/server/src/modules/meeting-brief-generator/generator";
+import type { GmailDeliveryProvider } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmailDelivery";
 
 function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
@@ -73,13 +74,13 @@ let fakeCal: FakeCalendarProvider;
 
 function makeHost(
   opts: {
-    enrich?: MeetingBriefModuleDeps["enrich"];
-    completeBrief?: MeetingBriefModuleDeps["completeBrief"];
+    enrich?: MeetingBriefGeneratorOptions["enrich"];
+    completeBrief?: MeetingBriefGeneratorOptions["completeBrief"];
     getInternalDomains?: () => string[];
     ownerEmail?: string | null;
     calendarProvider?: FakeCalendarProvider;
     calendarUse?: "snapshot" | "recheck";
-    gmailDeliveryProvider?: MeetingBriefModuleDeps["gmailDeliveryProvider"];
+    gmailDeliveryProvider?: GmailDeliveryProvider | null;
   } = {},
 ) {
   workspaceDir = mkdtempSync(join(tmpdir(), "mbr-"));
@@ -615,7 +616,7 @@ describe("Rapid two versions and in-flight vs completed", () => {
         releaseEnrich();
       }
     };
-    const enrichDeferred: MeetingBriefModuleDeps["enrich"] = async (_input, ctx) => {
+    const enrichDeferred: MeetingBriefGeneratorOptions["enrich"] = async (_input, ctx) => {
       ctx.event("enrich_start", {});
       await enrichGate;
       ctx.event("enrich_end", {});
@@ -728,7 +729,7 @@ describe("Cancellation — removes future candidate, skips active before deliver
   it("active Run rechecks Calendar before delivery and ends skipped when cancelled", async () => {
     const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     const fake = new FakeCalendarProvider([calFromFixture(fixtureEvent({ version: "v1" }))]);
-    const enrichDeferred: MeetingBriefModuleDeps["enrich"] = async (_input, ctx) => {
+    const enrichDeferred: MeetingBriefGeneratorOptions["enrich"] = async (_input, ctx) => {
       ctx.event("enrich_start", {});
       await gate;
       return { sections: [], evidence: [] };

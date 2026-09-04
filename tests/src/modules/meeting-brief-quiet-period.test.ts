@@ -19,7 +19,7 @@ import {
   type GmailDeliveryProvider,
 } from "../../../apps/server/src/modules/meeting-brief-generator/google/gmailDelivery";
 import { deliveryIdFor } from "../../../apps/server/src/modules/meeting-brief-generator/deliver";
-import type { MeetingBriefModuleDeps } from "../../../apps/server/src/modules/meeting-brief-generator/module";
+import type { MeetingBriefGeneratorOptions } from "../../../apps/server/src/modules/meeting-brief-generator/generator";
 
 function fixtureEvent(overrides: Partial<MeetingBriefEvent> = {}): MeetingBriefEvent {
   return {
@@ -63,7 +63,7 @@ function calFromFixture(f: MeetingBriefEvent): CalendarEvent {
   };
 }
 
-function defaultEnrich(): MeetingBriefModuleDeps["enrich"] {
+function defaultEnrich(): MeetingBriefGeneratorOptions["enrich"] {
   return async (_input: any, ctx: any) => {
     ctx.event("fixture_enrich", {});
     return {
@@ -80,7 +80,7 @@ function defaultEnrich(): MeetingBriefModuleDeps["enrich"] {
     };
   };
 }
-function defaultCompleteBrief(nowRef: () => Date): MeetingBriefModuleDeps["completeBrief"] {
+function defaultCompleteBrief(nowRef: () => Date): MeetingBriefGeneratorOptions["completeBrief"] {
   return async (input: MeetingBriefEvent) => {
     return {
       version: 1 as const,

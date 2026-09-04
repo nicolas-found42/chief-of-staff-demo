@@ -26,16 +26,16 @@ export interface FrozenSnapshot {
   version: string;
   materialFingerprint: string;
   summary: string;
-  description?: string | undefined;
+  description?: string;
   startAt: string;
   endAt: string;
   location: string | null;
   conferenceLink: string | null;
-  organizer?: { email: string; displayName?: string } | undefined;
+  organizer?: { email: string; displayName?: string };
   attendees: SnapshotSource["attendees"];
   status: MeetingBriefEvent["status"];
-  isAllDay?: boolean | undefined;
-  attachments?: string[] | undefined;
+  isAllDay?: boolean;
+  attachments?: string[];
   capturedAt: string;
 }
 
