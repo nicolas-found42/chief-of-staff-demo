@@ -131,6 +131,40 @@ async function waitFor(condition: () => boolean, label: string): Promise<void> {
   }
   throw new Error(`timed out waiting for ${label}`);
 }
+describe("the mock provider follows the process posture, not the config (#198)", () => {
+  /* Both switches the posture reads are pinned, so an operator's exported
+     DEMO_MODE cannot flip these assertions. */
+  async function withPosture(posture: { test?: "1" }, run: () => Promise<void>): Promise<void> {
+    const prior = { test: process.env.ENABLE_TEST_SEED, demo: process.env.DEMO_MODE };
+    delete process.env.ENABLE_TEST_SEED;
+    delete process.env.DEMO_MODE;
+    if (posture.test !== undefined) process.env.ENABLE_TEST_SEED = posture.test;
+    try {
+      await run();
+    } finally {
+      if (prior.test === undefined) delete process.env.ENABLE_TEST_SEED;
+      else process.env.ENABLE_TEST_SEED = prior.test;
+      if (prior.demo === undefined) delete process.env.DEMO_MODE;
+      else process.env.DEMO_MODE = prior.demo;
+    }
+  }
+
+  it("keeps mock out of a production-composed Shell", async () => {
+    await withPosture({}, async () => {
+      const shell = await compose(workspaceDirectory(true));
+      const get = await shell.app.inject({ method: "GET", url: "/api/config" });
+      expect(get.json<{ mockAvailable: boolean }>().mockAvailable).toBe(false);
+    });
+  });
+
+  it("admits mock only where the process itself is a test or explicit demo", async () => {
+    await withPosture({ test: "1" }, async () => {
+      const shell = await compose(workspaceDirectory(true));
+      const get = await shell.app.inject({ method: "GET", url: "/api/config" });
+      expect(get.json<{ mockAvailable: boolean }>().mockAvailable).toBe(true);
+    });
+  });
+});
 
 describe("composition writes nothing while the gate holds a pre-cutover Workspace (#144)", () => {
   it("leaves the Workspace byte-for-byte unchanged, under the deployment's own environment", async () => {

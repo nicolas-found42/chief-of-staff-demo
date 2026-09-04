@@ -39,6 +39,29 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
   await expect(page.getByText("Not connected", { exact: false })).toBeVisible();
 });
 
+test("Ollama is an advanced choice, and OpenRouter is the recommendation", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("heading", { name: "Connections" }).waitFor();
+  const manage = page.getByText("Manage provider", { exact: true });
+  if (await manage.isVisible()) {
+    await manage.click();
+  }
+  const provider = page.getByLabel("Provider", { exact: true });
+  /* Issue #198: OpenRouter leads the choices as the recommendation, and this
+     test-mode server is one of the two places mock may appear at all. */
+  await expect(provider.locator("option").first()).toHaveText("OpenRouter (recommended)");
+  await expect(provider.getByRole("option", { name: /^mock/ })).toHaveCount(1);
+  /* Ollama is not offered beside the cloud providers; it lives under Advanced. */
+  await expect(provider.getByRole("option", { name: /Ollama/ })).toHaveCount(0);
+  await page.getByText("Advanced local-model settings", { exact: true }).click();
+  await page.getByRole("button", { name: "Use Ollama (local model)" }).click();
+  await expect(provider).toHaveValue("ollama");
+  await expect(page.getByLabel("Ollama base URL")).toBeVisible();
+  /* Leave the shared Workspace's form state as it was found. */
+  await provider.selectOption("mock");
+  await expect(provider).toHaveValue("mock");
+});
+
 test("an unconfigured workspace gets the setup wizard, not two bare fields", async ({ page }) => {
   await page.goto("/settings");
 

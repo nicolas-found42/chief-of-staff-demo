@@ -75,6 +75,9 @@ beforeEach(async () => {
     tasks: fromPartial({}),
     actionItems: fromPartial({}),
     taskLinking: fromPartial({}),
+    /* No mock is admitted here: these tests exercise the Google surface under
+       the production posture (issue #198). */
+    mockProviderAvailable: false,
     onConfigChanged: () => {},
   });
   await app.ready();

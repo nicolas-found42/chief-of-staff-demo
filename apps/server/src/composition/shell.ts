@@ -747,6 +747,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const webDist = fileURLToPath(new URL("../../../web/dist", import.meta.url));
   await registerStaticServing(app, { webDist });
 
+  /* The mock provider is a posture of the process, decided once here: tests
+     (the seed seam) and an explicit demo run get it, a production boot does
+     not (issue #198). */
+  const mockProviderAvailable =
+    process.env.ENABLE_TEST_SEED === "1" || process.env.DEMO_MODE === "1";
   if (meetingDebriefTest) {
     registerMeetingDebriefTestRoutes(app, meetingDebriefTest);
   }
@@ -754,6 +759,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     runs,
     port,
     configStore,
+    mockProviderAvailable,
     modules,
     google: googleConnection,
     people: peopleProfiles,

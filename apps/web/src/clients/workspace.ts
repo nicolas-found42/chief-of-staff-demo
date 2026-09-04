@@ -22,6 +22,9 @@ import { request, requestText } from "../client";
 export interface ConfigPayload {
   config: RedactedConfig;
   defaults: Record<string, string>;
+  /** Whether the mock provider exists in this process: tests and explicit
+   *  demo mode only (issue #198). The UI offers mock exactly when this holds. */
+  mockAvailable: boolean;
 }
 
 /** What the Runs list asks for: one Module's Runs or every Module's, a page at a time. */

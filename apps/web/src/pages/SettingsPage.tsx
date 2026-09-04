@@ -19,14 +19,21 @@ import { useGoogleConnection } from "../useGoogleConnection";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
+/* Issue #198: the cloud providers a customer chooses between, with OpenRouter
+   first because it is the recommendation — one key reaches models from many
+   providers. Ollama is offered under Advanced local-model settings below, and
+   mock only where the server admits it: tests and explicit demo mode. */
 const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
-  { value: "mock", label: "mock (test/demo — reads workspace/mock-result.json)" },
+  { value: "openrouter", label: "OpenRouter (recommended)" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
-  { value: "openrouter", label: "OpenRouter" },
   { value: "gemini", label: "Google Gemini" },
-  { value: "ollama", label: "Ollama (local model)" },
 ];
+const MOCK_OPTION = {
+  value: "mock",
+  label: "mock (test/demo — reads workspace/mock-result.json)",
+} as const;
+const OLLAMA_OPTION = { value: "ollama", label: "Ollama (local model)" } as const;
 
 /** Compact one-word names for the settled-connection line (D11). */
 const PROVIDER_SHORT: Record<ProviderId, string> = {
@@ -437,7 +444,14 @@ export function SettingsPage() {
             value={form.provider}
             onChange={(event) => changeProvider(event.target.value as ProviderId)}
           >
-            {PROVIDER_OPTIONS.map((option) => (
+            {/* A provider the owner can no longer choose is still the truth
+                about this Workspace, so a current mock or Ollama stays listed
+                even where the server would refuse it fresh (issue #198). */}
+            {[
+              ...PROVIDER_OPTIONS,
+              ...(payload.mockAvailable || form.provider === "mock" ? [MOCK_OPTION] : []),
+              ...(form.provider === "ollama" ? [OLLAMA_OPTION] : []),
+            ].map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -485,24 +499,46 @@ export function SettingsPage() {
           )}
         </div>
       </div>
-      {form.provider === "ollama" && (
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="ollama-base-url">Ollama base URL</label>
-            <input
-              id="ollama-base-url"
-              aria-describedby="ollama-base-url-hint"
-              value={form.ollamaBaseUrl}
-              placeholder="http://127.0.0.1:11434"
-              onChange={(event) => setField("ollamaBaseUrl", event.target.value)}
-            />
-            <p id="ollama-base-url-hint" className="muted field-hint">
-              Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in a
-              container and Ollama runs on the host. No API key needed.
-            </p>
-          </div>
+      {/* Local models are a deliberate, advanced choice (issue #198): they
+          never crowd the first-run decision between cloud providers. */}
+      <details className="disclosure" open={form.provider === "ollama"}>
+        <summary>Advanced local-model settings</summary>
+        <div className="disclosure-body">
+          <p className="muted">
+            Run extraction on a local Ollama server instead of a cloud provider — transcripts never
+            leave this machine, and no API key is needed.
+          </p>
+          {form.provider !== "ollama" && (
+            <div className="field-row">
+              <button
+                type="button"
+                className="action-button"
+                onClick={() => changeProvider("ollama")}
+              >
+                Use Ollama (local model)
+              </button>
+            </div>
+          )}
+          {form.provider === "ollama" && (
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="ollama-base-url">Ollama base URL</label>
+                <input
+                  id="ollama-base-url"
+                  aria-describedby="ollama-base-url-hint"
+                  value={form.ollamaBaseUrl}
+                  placeholder="http://127.0.0.1:11434"
+                  onChange={(event) => setField("ollamaBaseUrl", event.target.value)}
+                />
+                <p id="ollama-base-url-hint" className="muted field-hint">
+                  Where Ollama listens. Use http://host.docker.internal:11434 when this app runs in
+                  a container and Ollama runs on the host. No API key needed.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </details>
       <div className="form-grid">
         <div className="field">
           <label htmlFor="searxng-url">SearXNG URL</label>

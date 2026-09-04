@@ -95,20 +95,25 @@ Two things worth knowing before you start:
 
 
 In Settings, pick a provider and paste its API key; the card links straight to that provider's key
-page. Defaults: `gpt-5.2` (OpenAI), `claude-sonnet-5` (Anthropic), `google/gemini-3.7-flash`
-(OpenRouter / Gemini). The model field is free text — correct it there if a default 404s.
+page. A fresh workspace recommends **OpenRouter** and prefills `inception/mercury-2.5-preview` —
+one key reaches models from many providers. Per-provider defaults: `gpt-5.2` (OpenAI),
+`claude-sonnet-5` (Anthropic), `gemini-3.7-flash` (Google Gemini). The model field is free text —
+edit it there if a default 404s. Transcript-derived processing stays gated: the folder-consent
+card names the exact provider and model before anything is read, and model failures surface as
+errors — the app never falls back to another provider or model on its own.
 
-`mock` returns `workspace/mock-result.json` and needs no key. It backs the hermetic test suite and
-is the default in a fresh workspace, so an upload before any configuration produces a harmless
-skip rather than an authentication error. It is not part of the onboarding path.
+`mock` returns `workspace/mock-result.json` and needs no key. It exists only in tests and explicit
+demo mode: the hermetic suite boots with it, a demo boot can opt in with `DEMO_MODE=1`, and a
+production server refuses to select it (a workspace that already has it stored keeps working, but
+the Settings card shows it plainly instead of hiding it).
 
 `ollama` runs the extraction against a model served locally, through Ollama's OpenAI-compatible
-endpoint. Set the base URL in Settings (`http://127.0.0.1:11434` on the host,
-`http://host.docker.internal:11434` when this app runs in a container and Ollama runs on the host);
-no API key is needed. The default model id is `nemotron` — free text, so set whatever tag you have
-pulled. **Untested against a live Ollama server:** the request shape is covered by unit tests, but
-no local model has been run through it yet, and a 30B model needs more memory than a 16 GB machine
-has.
+endpoint. It lives under **Advanced local-model settings** in Settings (`http://127.0.0.1:11434`
+on the host, `http://host.docker.internal:11434` when this app runs in a container and Ollama
+runs on the host); no API key is needed. The default model id is `nemotron` — free text, so set
+whatever tag you have pulled. **Untested against a live Ollama server:** the request shape is
+covered by unit tests, but no local model has been run through it yet, and a 30B model needs more
+memory than a 16 GB machine has.
 
 ### Intake
 

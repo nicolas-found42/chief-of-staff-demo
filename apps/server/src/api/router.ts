@@ -56,6 +56,12 @@ export interface ApiContext {
   taskLinking: TaskLinking;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
+  /**
+   * Whether the mock provider exists in this process at all (issue #198). It
+   * is a test and explicit-demo posture decided once at composition, never a
+   * settings choice: production cannot silently run on fabricated output.
+   */
+  mockProviderAvailable: boolean;
   onConfigChanged: () => void | Promise<void>;
 }
 
@@ -153,6 +159,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   app.get("/api/config", async () => ({
     config: redactConfig(ctx.configStore.get()),
     defaults: DEFAULT_MODELS,
+    mockAvailable: ctx.mockProviderAvailable,
   }));
 
   app.put("/api/config", async (request, reply) => {
@@ -162,12 +169,29 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
       return;
     }
     const update = parsed.data;
+    /* The mock posture is the composition's, not the caller's: outside tests
+       and explicit demo mode there is no mock provider to switch into, whatever
+       the request asks for. A workspace that already runs mock (carried from a
+       test or demo run) keeps saving — the Settings card and Home show that
+       state plainly instead of stranding every unrelated edit (#198). */
+    if (
+      update.provider === "mock" &&
+      !ctx.mockProviderAvailable &&
+      ctx.configStore.get().provider !== "mock"
+    ) {
+      reply.code(400).send({ error: "mock-provider-unavailable" });
+      return;
+    }
     const next = ctx.configStore.update(update);
     /* Credentials may have changed under the connection, so what it remembers
        about Google is no longer evidence of anything. */
     ctx.google.invalidate();
     await ctx.onConfigChanged();
-    return { config: redactConfig(next), defaults: DEFAULT_MODELS };
+    return {
+      config: redactConfig(next),
+      defaults: DEFAULT_MODELS,
+      mockAvailable: ctx.mockProviderAvailable,
+    };
   });
 
   app.get("/api/google/status", async () => ctx.google.state());

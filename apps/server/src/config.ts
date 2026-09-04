@@ -34,7 +34,12 @@ function deepMerge(base: unknown, patch: unknown): unknown {
 
 function defaultConfig(): AppConfig {
   return {
-    provider: "mock",
+    /* Fresh customer configuration (issue #198): OpenRouter is the
+       recommendation — one key reaches models from many providers — and the
+       model prefills below from DEFAULT_MODELS. A key is still required
+       before the provider is usable, so a fresh Workspace runs nothing until
+       the owner consents to the exact provider and model in Settings. */
+    provider: "openrouter",
     model: "",
     apiKey: "",
     tasklistName: "Meeting Followups",
