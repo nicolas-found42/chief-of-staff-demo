@@ -654,6 +654,28 @@ describe("deterministic mention extraction", () => {
     }
   });
 
+  it("does not propose the capital that starts a sentence as somebody to identify", async () => {
+    /* Transcribed speech is one long run of sentences, so every "In", "As",
+       "Another", "Secondly" was mined as a person candidate: the stand-up
+       corpus produced 4,843 unresolved mentions and buried the two people who
+       actually spoke. A real name in the same position is still mined
+       everywhere else it is said, and a multi-word run is untouched. */
+    const { mentions } = extractMentions(
+      makeRecord(
+        [
+          "[00:01] Sam: In the meantime, Adejoke Olaosebikan will lead.",
+          "[00:02] Sam: Secondly, Grace Hopper has the ticket numbers.",
+        ].join("\n"),
+      ),
+    );
+    const surfaces = mentions.map((mention) => mention.surfaceText);
+
+    expect(surfaces).not.toContain("In");
+    expect(surfaces).not.toContain("Secondly");
+    expect(surfaces).toContain("Adejoke Olaosebikan");
+    expect(surfaces).toContain("Grace Hopper");
+  });
+
   it("captures emails as exact stable identifiers on person mentions", async () => {
     const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
     const email = mentions.find((m) => m.emails.includes("grace@example.com"));

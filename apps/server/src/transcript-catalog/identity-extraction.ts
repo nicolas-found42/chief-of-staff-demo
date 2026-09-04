@@ -9,10 +9,21 @@ import type {
 } from "@chief-of-staff-demo/shared";
 
 /** Bumped whenever extraction, scoring, or link policy changes meaning. */
-export const IDENTITY_MINING_ALGORITHM_VERSION = 4;
+export const IDENTITY_MINING_ALGORITHM_VERSION = 6;
 
 const LINE_TIMESTAMP = /^\s*\[?(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[APap][Mm])?)\]?\s*/;
 const SPEAKER_COLON = /^([^\s:][^:\n]{0,79}):\s+/;
+/**
+ * The Markdown speaker line Fireflies exports write:
+ * `**Richard Achee** *[00:05]*: utterance`. SPEAKER_COLON cannot reach the
+ * separating colon here — `[^:\n]` refuses to cross the one inside the
+ * `00:05` timestamp — so without this the speaker path never fires and every
+ * name is re-mined from the body as ordinary capitalized text, once per line.
+ * The bracketed timestamp is optional: the same emphasis style appears
+ * without one.
+ */
+const MARKDOWN_SPEAKER =
+  /^(\*\*|__)([^*_\n]{1,80}?)\1\s*(?:[*_]{0,2}\[?(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[APap][Mm])?)\]?[*_]{0,2})?\s*:\s+/;
 const PERSON_LIKE_LABEL = /^\p{Lu}[\p{L}\p{M}]*(?:'[\p{L}\p{M}]+)?(?:\s\p{Lu}[\p{L}\p{M}]*){0,2}$/u;
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PROFILE_URL = /https?:\/\/[^\s<>()]+/gi;
@@ -201,6 +212,188 @@ const NON_NAME_WORDS = new Set([
   "how",
   "which",
   "one",
+  /* Conversational filler and sentence openers. Every one of these was mined
+     as a person candidate from the Found42 stand-up corpus. */
+  "oh",
+  "ah",
+  "um",
+  "uh",
+  "hmm",
+  "huh",
+  "wow",
+  "cool",
+  "nope",
+  "nah",
+  "yup",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "am",
+  "pm",
+  "have",
+  "has",
+  "had",
+  "can",
+  "could",
+  "will",
+  "would",
+  "shall",
+  "should",
+  "may",
+  "might",
+  "must",
+  "go",
+  "goes",
+  "going",
+  "got",
+  "get",
+  "gets",
+  "hit",
+  "see",
+  "saw",
+  "look",
+  "looks",
+  "think",
+  "thought",
+  "know",
+  "knew",
+  "mean",
+  "means",
+  "say",
+  "says",
+  "said",
+  "tell",
+  "told",
+  "make",
+  "makes",
+  "made",
+  "take",
+  "takes",
+  "took",
+  "come",
+  "comes",
+  "came",
+  "want",
+  "wants",
+  "need",
+  "needs",
+  "use",
+  "uses",
+  "used",
+  "add",
+  "adds",
+  "put",
+  "keep",
+  "give",
+  "send",
+  "check",
+  "try",
+  "trying",
+  "work",
+  "works",
+  "working",
+  "start",
+  "started",
+  "stop",
+  "run",
+  "running",
+  "build",
+  "built",
+  "because",
+  "like",
+  "for",
+  "from",
+  "with",
+  "without",
+  "about",
+  "after",
+  "before",
+  "into",
+  "than",
+  "while",
+  "until",
+  "since",
+  "though",
+  "although",
+  "unless",
+  "whether",
+  "some",
+  "any",
+  "every",
+  "each",
+  "both",
+  "more",
+  "most",
+  "much",
+  "many",
+  "very",
+  "too",
+  "only",
+  "even",
+  "still",
+  "back",
+  "down",
+  "up",
+  "out",
+  "off",
+  "over",
+  "again",
+  "once",
+  "always",
+  "never",
+  "sometimes",
+  "usually",
+  "almost",
+  "already",
+  "sorry",
+  "exactly",
+  "absolutely",
+  "definitely",
+  "totally",
+  "obviously",
+  "literally",
+  "honestly",
+  "fine",
+  "perfect",
+  "awesome",
+  "interesting",
+  "something",
+  "nothing",
+  "anything",
+  "everything",
+  "somebody",
+  "nobody",
+  "anybody",
+  "everybody",
+  "whatever",
+  "anyways",
+  "morning",
+  "afternoon",
+  "evening",
+  "today",
+  "tomorrow",
+  "yesterday",
+  "week",
+  "month",
+  "year",
+  "meeting",
+  "meetings",
+  /* Left over after the sentence-opener rule: these landed mid-sentence, after
+     a comma or a colon, and were still proposed as people. */
+  "allow",
+  "bye",
+  "delete",
+  "enough",
+  "shoot",
+  "darn",
+  "oops",
+  "secondly",
+  "recommends",
+  "another",
 ]);
 
 interface ExtractedLine {
@@ -340,8 +533,114 @@ function organizationId(transcriptId: string, spanStart: number, form: string): 
   return `om_${digest.slice(0, 12)}`;
 }
 
+/**
+ * Contraction and possessive tails. CAPITALIZED_RUN admits `'` inside a token,
+ * so `I'm`, `That's` and `Don't` arrive whole and miss a stopword list that
+ * only holds their base words. Stripping the tail puts them back on it; the
+ * `n't` arm runs first, because `Don't` must reduce to `do` rather than to the
+ * given name `Don`.
+ */
+const NEGATION_TAIL = /n't$/i;
+const CONTRACTION_TAIL = /'(?:s|re|ll|ve|m|d)$/i;
+
+/**
+ * Tools, platforms and models named constantly in these transcripts. They are
+ * proper nouns, so nothing about their shape marks them out, and PRODUCT_CUE
+ * only catches the cued form ("our Atlas"). Left in, each is a person
+ * candidate the owner would have to reject by hand.
+ *
+ * Person lane only (`isToolName`). Several of these are also real companies,
+ * and the organization branch runs first — "OpenAI" stays an Organization
+ * Mention, it just stops being proposed as a person.
+ */
+const TOOL_WORDS = new Set([
+  "claude",
+  "chatgpt",
+  "gpt",
+  "openai",
+  "anthropic",
+  "gemini",
+  "copilot",
+  "docker",
+  "github",
+  "gitlab",
+  "linkedin",
+  "youtube",
+  "google",
+  "gmail",
+  "meta",
+  "facebook",
+  "instagram",
+  "twitter",
+  "slack",
+  "zoom",
+  "notion",
+  "figma",
+  "canva",
+  "jira",
+  "asana",
+  "trello",
+  "excel",
+  "powerpoint",
+  "word",
+  "sheets",
+  "docs",
+  "drive",
+  "calendar",
+  "outlook",
+  "teams",
+  "salesforce",
+  "hubspot",
+  "stripe",
+  "python",
+  "javascript",
+  "typescript",
+  "react",
+  "node",
+  "aws",
+  "azure",
+  "cursor",
+  "fireflies",
+  "loom",
+  "miro",
+  "airtable",
+  "zapier",
+  "pdf",
+  "csv",
+  "api",
+  "ai",
+  "llm",
+  "saas",
+  "crm",
+  "seo",
+  "kpi",
+  "roi",
+  "ceo",
+  "cto",
+  "coo",
+  "cfo",
+  "hr",
+  "it",
+  "qa",
+  "ui",
+  "ux",
+]);
+
 function isStopword(token: string): boolean {
-  return NON_NAME_WORDS.has(token.toLowerCase().replace(/\.$/, ""));
+  const bare = token.toLowerCase().replace(/\.$/, "");
+  if (NON_NAME_WORDS.has(bare)) return true;
+  const base = bare.replace(NEGATION_TAIL, "").replace(CONTRACTION_TAIL, "");
+  return base !== bare && NON_NAME_WORDS.has(base);
+}
+
+/**
+ * A run that names a tool rather than a person. Checked only in the person
+ * lane: the organization branch runs first, so "OpenAI" is still retained as
+ * an Organization Mention — this only stops it also being proposed as
+ * somebody to identify.
+ */
+function isToolName(run: string): boolean {
+  return TOOL_WORDS.has(run.trim().toLowerCase().replace(/\.$/, ""));
 }
 
 function lastToken(run: string): string {
@@ -365,22 +664,60 @@ function parseLines(text: string): ExtractedLine[] {
     let speakerLabelStart: number | null = null;
     let utteranceStart = position;
     let utterance = rest;
-    const labelMatch = rest.match(SPEAKER_COLON);
+    /* Markdown emphasis first: its line also ends in `: `, so SPEAKER_COLON
+       would otherwise claim a truncated label off the front of it. The label
+       offset skips the opening delimiter, because the span recorded for a
+       mention must be the name itself and nothing else. */
+    const markdownMatch = rest.match(MARKDOWN_SPEAKER);
+    const labelMatch = markdownMatch ?? rest.match(SPEAKER_COLON);
     if (labelMatch) {
-      const label = labelMatch[1]?.trim() ?? "";
+      const delimiterWidth = markdownMatch ? (markdownMatch[1]?.length ?? 0) : 0;
+      const label = (markdownMatch ? markdownMatch[2] : labelMatch[1])?.trim() ?? "";
       if (PERSON_LIKE_LABEL.test(label) || /^speaker/i.test(label)) {
         speakerLabel = label;
-        // SPEAKER_COLON forbids leading whitespace on the label, and the
+        // Both patterns forbid leading whitespace on the label, and the
         // separator after the colon may span any whitespace width.
-        speakerLabelStart = position;
+        speakerLabelStart = position + delimiterWidth;
         utteranceStart = position + labelMatch[0].length;
         utterance = rest.slice(labelMatch[0].length);
       }
+      /* A Markdown line carries its timestamp inside the label run rather
+         than at the head of the line, so LINE_TIMESTAMP never saw it. */
+      if (markdownMatch && timestamp === null) timestamp = markdownMatch[3] ?? null;
     }
     lines.push({ timestamp, speakerLabel, utteranceStart, utterance, speakerLabelStart });
     offset += rawLine.length + 1;
   }
   return lines;
+}
+
+/**
+ * A run that is nothing but the capital every sentence starts with.
+ *
+ * Transcribed speech is one long run of sentences, so "In", "As", "Another",
+ * "Allow", "Secondly", "Bye" were each proposed as somebody to identify: the
+ * stand-up corpus mined 4,843 such candidates and resolved none of them,
+ * burying the two people who actually spoke. Single tokens only — a name that
+ * genuinely opens a sentence is still mined everywhere else it is said, and a
+ * multi-word run is untouched wherever it sits. An all-capital token is exempt:
+ * nobody writes a sentence's first word that way, and those runs are the ones
+ * extraction deliberately keeps as `unknown`.
+ */
+function isSentenceOpener(run: string, before: string): boolean {
+  const bare = run.trim().replace(/\.$/, "");
+  if (/\s/.test(bare)) return false;
+  if (/^[A-Z0-9]{2,}$/.test(bare)) return false;
+  return opensSentence(before, before.length);
+}
+
+/**
+ * Whether the text at `offset` begins a sentence — at the head of the
+ * utterance, or straight after terminal punctuation.
+ */
+function opensSentence(text: string, offset: number): boolean {
+  const before = text.slice(0, offset).trimEnd();
+  if (before.length === 0) return true;
+  return /[.!?…]$/.test(before);
 }
 
 /** Runs of capitalized tokens with stopword tokens trimmed off both ends. */
@@ -563,8 +900,24 @@ export function extractMentions(
       const singleToken =
         tokens.length === 1 && !HONORIFICS.has((tokens[0] ?? "").replace(/\.$/, ""));
       const unknownEntity = singleToken && /^[A-Z0-9]{2,}$/.test(run);
+
+      /* Past the organization branch, so a lone capital left here is a
+         sentence's first word rather than anybody's name. */
+      if (isSentenceOpener(run, before)) continue;
+
+      /* Past the organization branch, so a name-shaped run left here would be
+         proposed as a person — and a tool is not one. Reclassified rather than
+         dropped: extraction retains what it saw and says what kind of thing it
+         is (spec #117), so "Docker" stays a mention, it just stops being
+         somebody the owner has to identify. */
       classifiedRuns.push({
-        kind: unknownEntity ? "unknown" : singleToken ? "ambiguous-name" : "person",
+        kind: isToolName(run)
+          ? "product"
+          : unknownEntity
+            ? "unknown"
+            : singleToken
+              ? "ambiguous-name"
+              : "person",
         run,
         start,
         forms,

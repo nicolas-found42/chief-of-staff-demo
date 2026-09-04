@@ -4,7 +4,6 @@ import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  MEETING_DEBRIEF_EXPIRED_REASON,
   MEETING_DEBRIEF_MODULE_ID,
   MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS,
   type MeetingDebriefRunResult,
@@ -179,93 +178,54 @@ function reviewStateOf(runId: string): MeetingDebriefReviewState {
   return JSON.parse(raw) as MeetingDebriefReviewState;
 }
 
-describe("Meeting Debrief review wait (#140, ADR-0038)", () => {
-  it("blocks the Run in the review Stage once extraction completes, with a 30-day wait", async () => {
+describe("Meeting Debrief completion (no review wait)", () => {
+  it("finishes once extraction completes, with the review record written and nothing waiting", async () => {
     const runId = await startRun(makeRecord());
 
     const meta = h.runs.open(runId)!.read();
-    expect(meta.status).toBe("blocked");
-    expect(meta.wait?.stage).toBe("review");
-    expect(meta.wait?.timeout.kind).toBe("at");
-    if (meta.wait?.timeout.kind !== "at") return;
-    const due = Date.parse(meta.wait.timeout.at);
-    const expected = BASE_TIME + MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-    expect(Math.abs(due - expected)).toBeLessThan(1000);
+    /* The Debrief used to stop here against a thirty-day owner wait. It no
+       longer waits for anybody: the extraction is the finished product, and
+       the only thing still gated is the outward writes. */
+    expect(meta.status).toBe("done");
+    expect(meta.wait).toBeNull();
 
+    /* The review record is still written — the roster, the recipients and the
+       done/dismiss decisions are all still real. It is simply not a gate. */
     const state = reviewStateOf(runId);
     expect(state.roster.status).toBe("unconfirmed");
     expect(state.recipients.additional).toEqual([]);
     expect(state.review.droppedActionItems).toEqual([]);
     expect(state.request).toBeNull();
     expect(state.approval).toBeNull();
-
-    const detail = await (
-      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
-    ).json();
-    expect(detail.review.state).toBe("awaiting_review");
-    const index = await (
-      await h.app.inject({ method: "GET", url: "/api/meeting-debrief/index" })
-    ).json();
-    expect(index.entries[0].reviewState).toBe("awaiting_review");
-    expect(index.entries[0].rosterConfirmed).toBe(false);
   });
 
-  it("prefills the review roster from the Calendar association without confirming it", async () => {
-    const runId = await startRun(
-      makeRecord({
-        occurrence: { occurrenceKey: "evt1::2026-08-17T13:00:00Z", calendarEventId: "evt1" },
-        roster: [
-          { displayName: "Alice", email: "alice@example.com" },
-          { displayName: "Owner", email: OWNER_EMAIL },
-        ],
-      }),
-    );
-
-    const state = reviewStateOf(runId);
-    expect(state.roster.entries.map((entry) => entry.email)).toEqual([
-      "alice@example.com",
-      OWNER_EMAIL,
-    ]);
-    expect(state.roster.status).toBe("unconfirmed");
-  });
-
-  it("expires an unreviewed Run to skipped 30 days later, readable and outward-silent", async () => {
+  it("never expires: time passing leaves a finished Debrief alone", async () => {
     const runId = await startRun(makeRecord());
     h.clock.advanceDays(EXPIRY_PROBE_DAYS);
 
-    expect(await h.host.recover()).toBe(1);
-    await h.host.idle();
-    // Expiry is terminal: the Run has left the active queue for good.
+    /* Nothing is waiting, so there is nothing for recovery to sweep, and no
+       clock that can take a Debrief away from the owner unread. */
     expect(await h.host.recover()).toBe(0);
+    await h.host.idle();
 
     const detail = h.runs.detail(runId)!;
-    expect(detail.status).toBe("skipped");
-    expect(detail.skipReason).toBe(MEETING_DEBRIEF_EXPIRED_REASON);
-
-    // Expired, not destroyed: the Debrief stays readable.
+    expect(detail.status).toBe("done");
+    expect(detail.skipReason).toBeNull();
     expect(h.runs.open(runId)!.readArtifact("result.json")).not.toBeNull();
+
     const served = await (
       await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
     ).json();
-    expect(served.review.state).toBe("expired");
+    expect(served.review.state).toBe("extracted");
     expect(served.extraction).not.toBeNull();
     const index = await (
       await h.app.inject({ method: "GET", url: "/api/meeting-debrief/index" })
     ).json();
-    expect(index.entries[0].reviewState).toBe("expired");
+    expect(index.entries[0].reviewState).toBeNull();
 
-    // No outward records anywhere on the Run.
+    // Still no outward records: those wait for an explicit publish.
     expect(detail.files.sort()).toEqual(["result.json", "review.json"]);
     expect(detail.events.filter((event) => /draft|task|gmail|send/i.test(event.type))).toEqual([]);
-  });
-
-  it("keeps the Run blocked while the review window still runs", async () => {
-    const runId = await startRun(makeRecord());
-    h.clock.advanceDays(MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS - 1);
-
-    expect(await h.host.recover()).toBe(0);
-    await h.host.idle();
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
   });
 });
 
@@ -283,10 +243,10 @@ describe("Meeting Debrief whole-field regeneration (#140, ADR-0037)", () => {
     expect(posted.statusCode).toBe(200);
     await h.host.idle();
 
-    // The Run returns to the review wait, with a fresh 30-day window.
+    // Regeneration ends the Run again rather than returning it to a wait.
     const meta = h.runs.open(runId)!.read();
-    expect(meta.status).toBe("blocked");
-    expect(meta.wait?.stage).toBe("review");
+    expect(meta.status).toBe("done");
+    expect(meta.wait).toBeNull();
 
     // The regenerated field comes from the new generation; the others do not move.
     const raw = h.runs.open(runId)!.readArtifact("result.json")!;
@@ -383,7 +343,7 @@ describe("Meeting Debrief whole-field regeneration (#140, ADR-0037)", () => {
 
     await h.host.retryRun(runId);
     await h.host.idle();
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
     const result = JSON.parse(
       h.runs.open(runId)!.readArtifact("result.json")!,
     ) as MeetingDebriefRunResult;
@@ -777,7 +737,7 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     expect(refused.json().blockers).toContain("attendee-unverified-email:alice@example.com");
 
     // The Run still waits: a refused approval is not a failed Debrief.
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
   });
 
   it("reports the owner blocker while the owner identity is unconfirmed", async () => {
@@ -829,14 +789,14 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     expect(detail.status).toBe("done");
     // The owner is never a recipient of their own Debrief: the count names
     // the confirmed attendees plus explicit selections, not the owner.
-    expect(detail.summary).toContain("Approved with 3 recipients");
+    expect(detail.summary).toContain("Published to 3 recipients");
     const events = detail.events.map((event) => event.type);
     expect(events).toContain("debrief_approved");
 
     const approvedView = (
       await (await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })).json()
     ).review as MeetingDebriefReviewView;
-    expect(approvedView.state).toBe("approved");
+    expect(approvedView.state).toBe("published");
     expect(approvedView.automaticRecipients.map((r) => r.email)).toEqual([
       "alice@example.com",
       "bob@example.com",
@@ -1026,7 +986,7 @@ describe("Meeting Debrief redo (#140, spec #453)", () => {
     await h.host.idle();
 
     const redoDetail = h.runs.detail(redoRunId)!;
-    expect(redoDetail.status).toBe("blocked");
+    expect(redoDetail.status).toBe("done");
     expect(redoDetail.events.some((event) => event.type === "debrief_redo")).toBe(true);
     const redoView = (
       await (await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${redoRunId}` })).json()
@@ -1093,7 +1053,6 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
       },
     });
     expect(confirmed.statusCode).toBe(200);
-    const deadlineBefore = h.runs.open(runId)!.read().wait;
 
     // The gate flips between the route's synchronous check (open) and the
     // Module Stage's durable re-assertion (closed): the refusal happens
@@ -1108,7 +1067,7 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     h.ownerFlip.armed = false;
 
     // The Run kept waiting — and the pending request did NOT strand it.
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
     expect(reviewStateOf(runId).request).toBeNull();
     expect(h.runs.detail(runId)!.events.some((e) => e.type === "debrief_approval_refused")).toBe(
       true,
@@ -1127,7 +1086,8 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     expect(retried.statusCode).toBe(200);
     await h.host.idle();
     expect(h.runs.detail(runId)?.status).toBe("done");
-    expect(deadlineBefore?.timeout.kind).toBe("at");
+    /* Published on the retry: the gate was the only thing holding it. */
+    expect(reviewStateOf(runId).approval).not.toBeNull();
   });
 
   it("a Shell-side resume failure reports honestly and reverts the persisted request", async () => {
@@ -1145,7 +1105,7 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     expect(regenerate.statusCode).toBe(409);
     expect(regenerate.json().error).toBe("run-not-resumable");
     expect(reviewStateOf(runId).request).toBeNull();
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
 
     // The seam unlocked: the same request goes through now.
     const retried = await flaky.app.inject({
@@ -1155,7 +1115,7 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     });
     expect(retried.statusCode).toBe(200);
     await flaky.host.idle();
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
     expect(reviewStateOf(runId).request).toBeNull();
 
     // The approve route reverts the same way, once the gate is open.
@@ -1179,7 +1139,7 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     expect(approve.statusCode).toBe(409);
     expect(approve.json().error).toBe("run-not-resumable");
     expect(reviewStateOf(runId).request).toBeNull();
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
   });
 
   it("mints Calendar shells only for emails the Calendar occurrence actually lists", async () => {
@@ -1218,64 +1178,5 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     expect(detail.review.approvalBlockers).toContain(
       "attendee-unverified-email:dana@elsewhere.com",
     );
-  });
-
-  it("keeps the original review deadline across a durable refusal and a restart", async () => {
-    anchoredProfile("Alice", "alice@example.com");
-    const record = makeRecord({
-      ...LINKED,
-      roster: [
-        { displayName: "Owner", email: OWNER_EMAIL },
-        { displayName: "Alice", email: "alice@example.com" },
-      ],
-    });
-    const runId = await startRun(record);
-    await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/roster`,
-      payload: {
-        entries: [
-          { email: OWNER_EMAIL, displayName: "Owner" },
-          { email: "alice@example.com", displayName: "Alice" },
-        ],
-      },
-    });
-    const originalDeadline = Date.parse(
-      (h.runs.open(runId)!.read().wait?.timeout as { kind: "at"; at: string }).at,
-    );
-
-    // Ten days pass before the owner asks for approval, so a re-armed FRESH
-    // window would be measurably later than the original deadline.
-    h.clock.advanceDays(10);
-
-    // Refused inside the Stage: the re-wait must re-arm the ORIGINAL
-    // deadline, not a fresh thirty days.
-    h.ownerFlip.armed = true;
-    await h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
-    await h.host.idle();
-    h.ownerFlip.armed = false;
-
-    const meta = h.runs.open(runId)!.read();
-    expect(meta.status).toBe("blocked");
-    if (meta.wait?.timeout.kind !== "at") throw new Error("expected a dated wait");
-    expect(Date.parse(meta.wait.timeout.at)).toBe(originalDeadline);
-
-    // Restart: a fresh host over the same Workspace expires the Run on the
-    // original schedule, not a fresh window.
-    h.clock.advanceDays(MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS - 9);
-    const restarted = new MeetingDebriefHost({
-      runs: h.runs,
-      catalog: { getTranscript: (id) => h.catalog.get(id) ?? null },
-      identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
-      extract: (input) => Promise.resolve(fakeExtraction(input, 99)),
-      now: () => new Date(BASE_TIME + (MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS + 1) * 86400000),
-      profiles: workspaceProfileDirectory(h.people),
-      ownerEmail: () => OWNER_EMAIL,
-      log: () => {},
-    });
-    expect(await restarted.recover()).toBe(1);
-    await restarted.idle();
-    expect(h.runs.detail(runId)?.status).toBe("skipped");
-    expect(h.runs.detail(runId)?.skipReason).toBe(MEETING_DEBRIEF_EXPIRED_REASON);
   });
 });

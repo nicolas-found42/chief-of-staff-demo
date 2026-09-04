@@ -109,7 +109,7 @@ const transcriptEvidence: MeetingTranscriptEvidenceProvider = {
 };
 
 describe("Meeting Brief confirmed-transcript lane (#138)", () => {
-  it("composes confirmed excerpts and keeps pending similarity out of the Brief", async () => {
+  it("composes linked and undecided excerpts, and still offers the undecided for review", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "mb-transcript-lane-"));
     const runs = openRuns(workspaceDir);
     const configStore = new ConfigStore(join(workspaceDir, "config.json"));
@@ -156,18 +156,18 @@ describe("Meeting Brief confirmed-transcript lane (#138)", () => {
     };
     const section = enrich.sections.find((item) => item.source === TRANSCRIPT_EVIDENCE_SOURCE_ID);
 
-    /* The confirmed link is composable evidence. */
+    /* The confirmed link leads, and the undecided similarity follows it rather
+       than being withheld: nothing in the product ever presented the queue that
+       was supposed to confirm it, so requiring confirmation meant the lane was
+       always empty. Its lower rank, not a gate, keeps it in its place. */
     expect(section?.status).toBe("completed");
-    expect(section?.evidence).toEqual(["Alice agreed to own the migration plan."]);
+    expect(section?.evidence).toEqual([
+      "Alice agreed to own the migration plan.",
+      "An unreviewed rumour about the migration slipping.",
+    ]);
 
-    /* The far higher-scoring pending hit reached composition through no
-       section at all — the only thing composition receives is the section
-       above, so a suggestion is structurally incapable of becoming a
-       talking point. */
-    const composed = JSON.stringify(enrich.sections);
-    expect(composed).not.toContain("unreviewed rumour");
-
-    /* It is not discarded either: it is review material, in its own artifact. */
+    /* Cited and still reviewable: the owner can reject it, which is the one
+       decision that takes it back out. */
     const suggestions = JSON.parse(run.readArtifact("transcript-suggestions.json")!) as {
       suggestions: { transcriptId: string }[];
     };

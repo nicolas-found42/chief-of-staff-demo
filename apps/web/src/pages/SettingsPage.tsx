@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
-import { api, errorMessage, type ConfigPayload } from "../client";
+import type { DriveIntakeStatus, ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
+import { api, errorMessage, type ConfigPayload, type TranscriptIntakeInventory } from "../client";
 import { GoogleConnect } from "../components/GoogleConnect";
 import { OwnerOnboardingCard } from "../components/OwnerOnboardingCard";
 import { MeetingBriefSettings } from "../components/MeetingBriefSettings";
@@ -87,6 +87,13 @@ export function SettingsPage() {
      banner. */
   const { status: googleStatus, refresh: refreshGoogle } = useGoogleConnection();
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  /* Folder consent (ADR-0001): the Catalog refuses to read a single file until
+     it is granted, and until this card existed there was no way to grant it —
+     "Sync now" simply failed with the refusal. */
+  const [intake, setIntake] = useState<DriveIntakeStatus | null>(null);
+  const [inventory, setInventory] = useState<TranscriptIntakeInventory | null>(null);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -124,6 +131,15 @@ export function SettingsPage() {
       void refreshGoogle();
     }
   }, [payload, refreshGoogle]);
+
+  /* Above the loading gate: hooks cannot sit behind an early return. */
+  const loadIntake = useCallback(() => {
+    void api
+      .driveIntakeStatus()
+      .then(setIntake)
+      .catch(() => setIntake(null));
+  }, []);
+  useEffect(() => loadIntake(), [loadIntake]);
 
   if (!form || !payload) {
     return (
@@ -295,6 +311,33 @@ export function SettingsPage() {
       setError(errorMessage(err));
     } finally {
       setCheckingGoogle(false);
+    }
+  };
+
+  /** The pre-consent disclosure: read the folder listing, never a file. */
+  const reviewFolder = async () => {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      setInventory(await api.transcriptIntakeInventory());
+    } catch (err) {
+      setConsentError(errorMessage(err));
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+
+  const grantConsent = async () => {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      await api.grantTranscriptIntakeConsent();
+      setInventory(null);
+      loadIntake();
+    } catch (err) {
+      setConsentError(errorMessage(err));
+    } finally {
+      setConsentBusy(false);
     }
   };
 
@@ -738,6 +781,9 @@ export function SettingsPage() {
               </label>
             </div>
             <div className="field-row">
+              {/* Always available: `aria-disabled` means "busy" here, so an
+                  un-consented folder must not borrow it. The card below is the
+                  fix, and a sync attempted without consent says so. */}
               <button
                 type="button"
                 className="action-button"
@@ -748,6 +794,84 @@ export function SettingsPage() {
               </button>
               <span role="status">{syncResult && <span className="ok">{syncResult}</span>}</span>
             </div>
+
+            {/* Consent, and what it covers. The Catalog reads nothing from the
+                folder until this is granted; before this card the only way to
+                grant it was an API call, so the whole Debrief half of the
+                Meeting Wizard was unreachable from the app. */}
+            {intake?.catalog.consent ? (
+              <p className="muted">
+                Reading <strong>{intake.catalog.consent.folderName}</strong> since{" "}
+                {new Date(intake.catalog.consent.consentedAt).toLocaleDateString()} ·{" "}
+                {intake.catalog.transcriptCount} transcript
+                {intake.catalog.transcriptCount === 1 ? "" : "s"} catalogued
+                {intake.catalog.backfill === "running" ? " · catching up…" : ""}
+              </p>
+            ) : (
+              <div className="card">
+                <h3>Reading this folder needs your permission</h3>
+                <p className="muted">
+                  Transcripts are read from Drive, kept locally, and sent to your configured model
+                  to be summarised. Nothing is read until you allow it.
+                </p>
+                {consentError && (
+                  <p className="banner-error" role="alert">
+                    {consentError}
+                  </p>
+                )}
+                {inventory ? (
+                  <>
+                    <p>
+                      <strong>{inventory.fileCount}</strong> file
+                      {inventory.fileCount === 1 ? "" : "s"} in{" "}
+                      <strong>{inventory.folder.folderName}</strong>
+                      {inventory.dateRange?.earliest && inventory.dateRange.latest
+                        ? `, from ${inventory.dateRange.earliest} to ${inventory.dateRange.latest}`
+                        : ""}{" "}
+                      ({Math.round(inventory.estimatedScope.totalBytes / 1024)} KB).
+                    </p>
+                    <p className="muted">{inventory.localRetention}</p>
+                    {inventory.providerExposure.sendsTranscriptTextToConfiguredModel && (
+                      <p className="muted">
+                        Transcript text is sent to {inventory.providerExposure.provider} (
+                        {inventory.providerExposure.model}).
+                      </p>
+                    )}
+                    <div className="field-row">
+                      <button
+                        type="button"
+                        className="primary action-button"
+                        onClick={() => void grantConsent()}
+                        aria-disabled={consentBusy}
+                      >
+                        {consentBusy
+                          ? "Starting…"
+                          : `Allow and read ${inventory.fileCount} transcript${
+                              inventory.fileCount === 1 ? "" : "s"
+                            }`}
+                      </button>
+                      <button
+                        type="button"
+                        className="action-button"
+                        onClick={() => setInventory(null)}
+                        aria-disabled={consentBusy}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="action-button"
+                    onClick={() => void reviewFolder()}
+                    aria-disabled={consentBusy}
+                  >
+                    {consentBusy ? "Reading folder…" : "See what this covers"}
+                  </button>
+                )}
+              </div>
+            )}
             <p className="muted">
               Supported: .txt, .md, .json, .jsonc, .pdf, .docx, and native Google Docs (exported as
               text). Other files are ignored.

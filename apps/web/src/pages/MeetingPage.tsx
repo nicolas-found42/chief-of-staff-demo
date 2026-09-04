@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   Meeting,
@@ -8,6 +8,7 @@ import type {
   MeetingIneligibility,
 } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
+import { formatMeetingEndTime, formatMeetingTime } from "../display";
 import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -133,9 +134,11 @@ function MeetingBriefTab({ meeting }: { meeting: Meeting }) {
         <div className="card">
           <h3>{brief.logistics.title}</h3>
           <p className="muted">
-            Occurrence {current.occurrenceId} · version {current.eventVersion} ·{" "}
-            <time dateTime={current.createdAt}>{new Date(current.createdAt).toLocaleString()}</time>{" "}
-            ·{" "}
+            {/* Prepared-at and a way through to the full journey. The
+                occurrence id and the Calendar ETag are diagnostics — they live
+                on the Run detail page, not on a product surface. */}
+            Prepared{" "}
+            <time dateTime={current.createdAt}>{formatMeetingTime(current.createdAt)}</time> ·{" "}
             <Link to={`/meetings/brief/${encodeURIComponent(occurrenceKey)}`}>
               View in the Brief journey
             </Link>
@@ -177,6 +180,12 @@ function MeetingBriefTab({ meeting }: { meeting: Meeting }) {
               <span className="muted">No delivery</span>
             )}
           </p>
+          {/* Why the delivery sits where it does. The Brief journey has said
+              this all along; here the badge stood alone, so "Pending" gave the
+              reader nothing to do with it. */}
+          {current.delivery && deliveryPresentation(current.delivery.status).explanation ? (
+            <p className="muted">{deliveryPresentation(current.delivery.status).explanation}</p>
+          ) : null}
           {/* Owner-only send: the server fixes the recipient to the owner;
               this button only resumes the Run's deliver stage. */}
           {current.delivery?.status !== "sent" ? (
@@ -205,7 +214,7 @@ function MeetingBriefTab({ meeting }: { meeting: Meeting }) {
       ) : current ? (
         <div className="banner banner-error" role="alert">
           <p>
-            Preparation failed — preparation ended with status {current.status} and left no brief.{" "}
+            Preparation failed and left no brief.{" "}
             <Link to={`/runs/${current.runId}`}>Technical details</Link>
           </p>
           <button
@@ -224,7 +233,7 @@ function MeetingBriefTab({ meeting }: { meeting: Meeting }) {
         <div className="card">
           <p className="muted">
             Scheduled — preparation due{" "}
-            <time dateTime={upcoming.dueAt}>{new Date(upcoming.dueAt).toLocaleString()}</time>.
+            <time dateTime={upcoming.dueAt}>{formatMeetingTime(upcoming.dueAt)}</time>.
           </p>
           <button
             type="button"
@@ -279,13 +288,13 @@ function pickDebriefEntry(
   return [...matches].sort((a, b) => rank(a) - rank(b))[0];
 }
 
-/** The Debrief tab's state suffix: the review state, said the way a person would say it. */
+/**
+ * The Debrief tab's state suffix. A Debrief no longer waits for anyone, so the
+ * only state worth putting beside the tab label is that its outward writes
+ * have gone out; an unpublished one is simply the Debrief.
+ */
 function debriefTabState(entry: MeetingDebriefIndexEntry | undefined): string | null {
-  if (!entry) return null;
-  if (entry.reviewState === "awaiting_review") return "awaiting review";
-  if (entry.reviewState === "approved") return "approved";
-  if (entry.reviewState === "expired") return "expired";
-  return null;
+  return entry?.reviewState === "published" ? "published" : null;
 }
 
 /**
@@ -410,16 +419,10 @@ function MeetingDebriefTab({
   return (
     <div className="card">
       <p className="muted">
-        Transcript {detail.transcriptId}
-        {detail.review ? (
-          <>
-            {" · "}
-            <span className="status-badge" role="status">
-              {detail.review.state === "awaiting_review"
-                ? "Awaiting your review"
-                : detail.review.state}
-            </span>
-          </>
+        {detail.review?.state === "published" ? (
+          <span className="status-badge status-ok" role="status">
+            Published
+          </span>
         ) : null}
       </p>
       <h3>Summary</h3>
@@ -504,9 +507,7 @@ function TranscriptOrphanNotice({ meetingId }: { meetingId: string }) {
             <li key={candidate.id} className="card">
               <h3>{candidate.title}</h3>
               <p>
-                <time dateTime={candidate.startAt}>
-                  {new Date(candidate.startAt).toLocaleString()}
-                </time>
+                <time dateTime={candidate.startAt}>{formatMeetingTime(candidate.startAt)}</time>
               </p>
               <p>
                 <button
@@ -596,6 +597,25 @@ export function MeetingPage() {
       ? "debrief"
       : "brief";
   const tab = tabOverride ?? defaultTab;
+  const briefTabRef = useRef<HTMLButtonElement>(null);
+  const debriefTabRef = useRef<HTMLButtonElement>(null);
+  /* Left/Right wrap around the two tabs, Home/End jump to the ends. Selection
+     follows focus: only the selected panel is mounted, so arrowing across does
+     fetch, but both panels read from indexes this page has already asked for
+     and the wait is a spinner in place rather than a navigation. */
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const order: MeetingTab[] = ["brief", "debrief"];
+    const current = order.indexOf(tab);
+    let next: MeetingTab | null = null;
+    if (event.key === "ArrowRight") next = order[(current + 1) % order.length]!;
+    else if (event.key === "ArrowLeft") next = order[(current - 1 + order.length) % order.length]!;
+    else if (event.key === "Home") next = order[0]!;
+    else if (event.key === "End") next = order[order.length - 1]!;
+    if (!next) return;
+    event.preventDefault();
+    setTabOverride(next);
+    (next === "brief" ? briefTabRef : debriefTabRef).current?.focus();
+  };
 
   if (error) {
     return (
@@ -632,9 +652,15 @@ export function MeetingPage() {
         {meeting.title}
       </h1>
       <p className="muted">
-        <time dateTime={meeting.startAt}>{new Date(meeting.startAt).toLocaleString()}</time>
-        {" — "}
-        <time dateTime={meeting.endAt}>{new Date(meeting.endAt).toLocaleTimeString()}</time>
+        <time dateTime={meeting.startAt}>{formatMeetingTime(meeting.startAt)}</time>
+        {/* A transcript-derived Meeting has no duration to state, so an end
+            equal to its start is silence rather than "9:00 AM — 9:00 AM". */}
+        {meeting.endAt !== meeting.startAt ? (
+          <>
+            {" — "}
+            <time dateTime={meeting.endAt}>{formatMeetingEndTime(meeting.endAt)}</time>
+          </>
+        ) : null}
         {meeting.cancelled ? (
           <>
             {" · "}
@@ -652,20 +678,22 @@ export function MeetingPage() {
         {meeting.participants.length === 0 ? (
           <p className="muted">Calendar listed no participants for this meeting.</p>
         ) : (
-          <ul className="card-list">
+          /* A roster reads as a list, not as a stack of cards: four
+             participants used to fill most of the first screen, and each one
+             printed its email twice when Calendar gave no display name. */
+          <ul className="roster-list">
             {meeting.participants.map((participant, index) => (
-              <li
-                key={`${participant.email}::${participant.displayName ?? ""}::${index}`}
-                className="card"
-              >
-                <h3>{participant.displayName ?? participant.email}</h3>
-                <p>
-                  <span className="muted">{participant.email}</span>
-                  {" · "}
-                  {RESPONSE_LABELS[participant.responseStatus]}
+              <li key={`${participant.email}::${participant.displayName ?? ""}::${index}`}>
+                {participant.displayName ?? participant.email}
+                <span className="muted">
+                  {/* A transcript-derived participant is a speaker name with no
+                      address, so the email clause has to disappear entirely
+                      rather than leave its separator behind. */}
+                  {participant.displayName && participant.email ? ` · ${participant.email}` : ""}
+                  {` · ${RESPONSE_LABELS[participant.responseStatus]}`}
                   {participant.organizer ? " · Organizer" : ""}
                   {participant.self ? " · You" : ""}
-                </p>
+                </span>
               </li>
             ))}
           </ul>
@@ -695,21 +723,29 @@ export function MeetingPage() {
       {meeting.occurrenceKey === null ? <TranscriptOrphanNotice meetingId={meeting.id} /> : null}
       {/* --- transcript-orphan slot (issue #154) — end --- */}
 
-      <div role="tablist" aria-label="Meeting detail">
+      {/* The ARIA tabs pattern, kept whole: exactly one tab is in the tab
+          order (roving tabindex) and the arrow keys move between them. The
+          role was already declared here; without these the contract was a
+          promise to assistive technology that the page did not keep. */}
+      <div role="tablist" aria-label="Meeting detail" onKeyDown={onTabKeyDown}>
         <button
           type="button"
           role="tab"
           id="meeting-tab-brief"
+          ref={briefTabRef}
+          tabIndex={tab === "brief" ? 0 : -1}
           aria-selected={tab === "brief"}
           aria-controls="meeting-tabpanel-brief"
           onClick={() => setTabOverride("brief")}
         >
           <TabLabel label="Brief" />
-        </button>{" "}
+        </button>
         <button
           type="button"
           role="tab"
           id="meeting-tab-debrief"
+          ref={debriefTabRef}
+          tabIndex={tab === "debrief" ? 0 : -1}
           aria-selected={tab === "debrief"}
           aria-controls="meeting-tabpanel-debrief"
           onClick={() => setTabOverride("debrief")}

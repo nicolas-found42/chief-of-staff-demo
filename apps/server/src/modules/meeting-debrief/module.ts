@@ -5,12 +5,10 @@ import type {
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
-  MEETING_DEBRIEF_EXPIRED_REASON,
   MEETING_DEBRIEF_MODULE_ID,
   MEETING_DEBRIEF_MODULE_VERSION,
   MeetingDebriefExtractionSchema,
 } from "@chief-of-staff-demo/shared";
-import type { RunEvent } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import { modelDiagnosticEventDetail, parseResultShape } from "../../llm/failure.js";
 import { errorMessage } from "../../engine/failure.js";
@@ -24,8 +22,6 @@ import type {
   DebriefOutputsDeps,
 } from "./deps.js";
 import {
-  MEETING_DEBRIEF_REVIEW_EXPIRY_MS,
-  REVIEW_WAIT_REASON,
   approvalBlockers,
   initialReviewState,
   mergeRegeneratedField,
@@ -55,13 +51,15 @@ const MAX_EXTRACT_ATTEMPTS = 3;
 
 /**
  * The Module's input. `fresh` comes from the Catalog's mining hand-off,
- * `resume` from a Stage retry, and `review` from the durable review wait —
- * clock-driven when the window elapses (`expire`), owner-driven otherwise.
+ * `resume` from a Stage retry, and `review` from an owner re-entering a Run
+ * that has already finished — to regenerate a field, or to publish the gated
+ * outward writes. There is no clock arm: nothing expires, because nothing
+ * waits.
  */
 export type DebriefInput =
   | { kind: "fresh"; transcriptId: string }
   | { kind: "resume"; fromStage: "associate" | "extract" }
-  | { kind: "review"; action: "owner" | "expire"; deadline?: string };
+  | { kind: "review"; action: "owner" };
 
 export interface MeetingDebriefModuleDeps {
   now?: () => Date;
@@ -114,32 +112,6 @@ function readReceipt<T>(ctx: RunContext, file: string): T | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Outward work an already-approved Run still owes, read from its receipts
- * (issue #141, AC 7). A Tasks outage leaves the approval recorded and the
- * Tasks missing; this is how a resume tells that apart from a stray second
- * approval, which stays refused.
- */
-function hasPendingApprovalOutputs(
-  ctx: RunContext,
-  deps: MeetingDebriefModuleDeps,
-  state: MeetingDebriefReviewState,
-  ownerProfileId: string | null,
-): boolean {
-  const outputs = deps.outputs;
-  if (outputs === undefined) return false;
-  if (readReceipt<DebriefDraftReceipt>(ctx, "draft.json") === null) return true;
-  if (outputs.createTask === undefined || ownerProfileId === null) return false;
-  const dropped = new Set(state.review.droppedActionItems);
-  const created = new Set(
-    (readReceipt<DebriefTasksReceipt>(ctx, "tasks.json")?.tasks ?? []).map((entry) => entry.index),
-  );
-  return currentDebrief(ctx).actionItems.some(
-    (action, index) =>
-      !dropped.has(index) && action.ownerProfileId === ownerProfileId && !created.has(index),
-  );
 }
 
 /**
@@ -274,29 +246,6 @@ async function extractWithModel(
   return parsed;
 }
 
-/**
- * The most recent durable wait deadline on a Run's timeline — the original
- * review window a crashed review turn must re-arm (issue #140 review round).
- */
-function lastWaitDeadline(events: readonly RunEvent[]): string | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const detail = events[index]?.detail;
-    if (!detail) continue;
-    const timeout = detail.timeout;
-    if (
-      typeof timeout === "object" &&
-      timeout !== null &&
-      "kind" in timeout &&
-      "at" in timeout &&
-      timeout.kind === "at" &&
-      typeof timeout.at === "string"
-    ) {
-      return timeout.at;
-    }
-  }
-  return undefined;
-}
-
 /** The current stored debrief, for merging a regenerated field into. */
 function currentDebrief(ctx: RunContext): MeetingDebriefExtraction {
   const raw = ctx.readFile("result.json");
@@ -349,21 +298,6 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     ctx.writeFile("result.json", JSON.stringify(result, null, 2) + "\n");
   };
 
-  /**
-   * The review wait (ADR-0020's durable wait, ADR-0038's shape): ensure the
-   * review record, then stop the Run inside the open Stage. Never returns —
-   * `ctx.wait` unrolls the Run into `blocked`.
-   */
-  const wait = (ctx: RunContext, deadline?: string): never => {
-    ctx.wait({
-      reason: REVIEW_WAIT_REASON,
-      timeout: {
-        kind: "at",
-        at: deadline ?? new Date(now().getTime() + MEETING_DEBRIEF_REVIEW_EXPIRY_MS).toISOString(),
-      },
-    });
-  };
-
   const ensureReviewState = (
     ctx: RunContext,
     record: TranscriptRecord,
@@ -376,63 +310,32 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
   };
 
   /**
-   * One review Turn: the Run has resumed out of its wait for a clock or an
-   * owner reason. Runs the pending owner action, then either ends the Run
-   * (approval, expiry) or returns it to the wait.
+   * One owner Turn on a Run that has already finished. The Debrief no longer
+   * waits for anybody, so this is only ever entered deliberately: the owner
+   * asked to regenerate a field, or to publish the gated outward writes. Both
+   * end the Run again rather than returning it to a wait.
    */
-  const reviewTurn = async (
-    ctx: RunContext,
-    action: "owner" | "expire",
-    deadline: string | undefined,
-  ): Promise<RunOutcome> => {
-    if (action === "expire") {
-      return ctx.stage("review", async () => {
-        ctx.event("debrief_expired", { reason: MEETING_DEBRIEF_EXPIRED_REASON });
-        return { status: "skipped", reason: MEETING_DEBRIEF_EXPIRED_REASON };
-      });
-    }
+  const reviewTurn = async (ctx: RunContext, action: "owner"): Promise<RunOutcome> => {
+    void action;
     const transcriptId = ctx.meta().externalId ?? null;
     if (!transcriptId) {
       throw new Error("Debrief Run has no transcript identity");
     }
     const record = deps.catalog.getTranscript(transcriptId);
-    /* The Catalog lost the record mid-review: the Debrief's source is gone,
-       so the Run ends skipped the same way an associate-stage loss does. */
+    /* The Catalog lost the record: the Debrief's source is gone, so the Run
+       ends skipped the same way an associate-stage loss does. */
     if (!record) {
       return { status: "skipped", reason: "transcript_not_in_catalog" };
     }
     const state = await ctx.stage("review", async () => ensureReviewState(ctx, record));
-    if (state.approval) {
-      /* Approval is terminal and already recorded. The one legitimate reason
-         to be back here is that its outward writes did not finish — a Tasks
-         outage after the draft went out (issue #141, AC 7). Both adapters are
-         driven from Run receipts, so completing them re-sends nothing and
-         creates only what is missing. Anything else is a second approval. */
-      const approvedOwner = gate.ownerEmail();
-      const approvedOwnerProfileId =
-        approvedOwner === null ? null : (gate.verifiedForEmail(approvedOwner)?.profileId ?? null);
-      if (!hasPendingApprovalOutputs(ctx, deps, state, approvedOwnerProfileId)) {
-        throw new Error("Debrief Run was already approved");
-      }
-      await ctx.stage("review", async () => {
-        await writeApprovalOutputs(ctx, deps, record, state, approvedOwner, approvedOwnerProfileId);
-      });
-      const resumedCount =
-        state.roster.entries.filter((entry) => entry.email !== approvedOwner).length +
-        state.recipients.additional.length;
-      return {
-        status: "done",
-        summary: `Approved with ${resumedCount} recipient${resumedCount === 1 ? "" : "s"}`,
-        detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
-      };
-    }
 
     const request = state.request;
+
     if (request?.kind === "regenerate") {
       // ADR-0037: the regeneration is one audited Stage, and its model call
       // sees exactly what every other generation saw — the immutable record
       // and the Catalog's review state. The replaced value is not an input.
-      await ctx.stage("regenerate", async () => {
+      const merged = await ctx.stage("regenerate", async () => {
         const debrief = await extract(ctx, record);
         const merged = mergeRegeneratedField(currentDebrief(ctx), request.field, debrief);
         storeResult(ctx, merged, transcriptId);
@@ -448,64 +351,99 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         ctx.event("debrief_regenerated", { field: request.field });
         return merged;
       });
-      // Back to the wait. Any owner touch — approval request, regeneration —
-      // restarts the unreviewed window the thirty-day clock measures.
-      await ctx.stage("review", async () => {
-        wait(ctx);
-      });
+      return {
+        status: "done",
+        summary: `Regenerated ${request.field} — ${merged.decisions.length} decision${
+          merged.decisions.length === 1 ? "" : "s"
+        }, ${merged.actionItems.length} action item${merged.actionItems.length === 1 ? "" : "s"}`,
+        detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
+      };
     }
 
     if (request?.kind === "approve") {
+      /* The one gate that survives (goal: automation, except outward writes).
+         Approval is what authorises the Gmail draft and the Google Tasks —
+         nothing else about the Debrief waits on it. Both adapters are driven
+         from Run receipts, so re-entering after a partial failure re-sends
+         nothing and creates only what is missing. */
       return ctx.stage("review", async () => {
+        /* The durable authority re-asserting the gate. The host route already
+           refused synchronously with the same blockers; this catches the race
+           where the gate closes between the route saying yes and the Stage
+           running. The pending request is cleared so every seam answers
+           again, and the Run ends unpublished rather than half-published. */
         const blockers = approvalBlockers(state, gate);
         if (blockers.length > 0) {
-          /* The Run keeps waiting: an approval refused here must not end a
-             Debrief the owner still has on screen. The host route already
-             refuses synchronously with the same blockers; this is the
-             durable authority re-asserting against races. The pending
-             request is cleared, so every review seam answers again and the
-             owner can fix the blockers and retry. */
           const unlocked: MeetingDebriefReviewState = { ...state, request: null };
           ctx.writeFile("review.json", serializeReviewState(unlocked));
           ctx.event("debrief_approval_refused", { blockers });
-          wait(ctx, deadline);
+          const held = currentDebrief(ctx);
+          return {
+            status: "done",
+            summary: `Not published — ${blockers.length} thing${
+              blockers.length === 1 ? "" : "s"
+            } to settle first (${held.actionItems.length} action item${
+              held.actionItems.length === 1 ? "" : "s"
+            })`,
+            detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
+          };
         }
-        const approvedAt = now().toISOString();
+        const owner = gate.ownerEmail();
+        const ownerProfileId =
+          owner === null ? null : (gate.verifiedForEmail(owner)?.profileId ?? null);
+        const approvedAt = state.approval?.approvedAt ?? now().toISOString();
         const locked: MeetingDebriefReviewState = {
           ...state,
           request: null,
           approval: { approvedAt },
         };
         ctx.writeFile("review.json", serializeReviewState(locked));
-        const owner = gate.ownerEmail();
         const recipientCount =
           locked.roster.entries.filter((entry) => entry.email !== owner).length +
           locked.recipients.additional.length;
-        ctx.event("debrief_approved", { approvedAt, recipientCount });
-        await writeApprovalOutputs(
-          ctx,
-          deps,
-          record,
-          locked,
-          owner,
-          owner === null ? null : (gate.verifiedForEmail(owner)?.profileId ?? null),
-        );
+        if (!state.approval) {
+          ctx.event("debrief_approved", { approvedAt, recipientCount });
+        }
+        await writeApprovalOutputs(ctx, deps, record, locked, owner, ownerProfileId);
         return {
           status: "done",
-          summary: `Approved with ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
+          summary: `Published to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
           detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
         };
       });
     }
 
-    // No pending action: recovery or a stray resume — return to the wait on
-    // the deadline the durable wait record already carried, never a fresh
-    // thirty days; a restart must not re-arm a window the clock already ran.
-    await ctx.stage("review", async () => {
-      wait(ctx, deadline);
-    });
-    /* `wait` never returns; this line only satisfies the type checker. */
-    throw new Error("unreachable");
+    /* Already published, and re-entered: the outward writes did not all
+       finish — a Tasks outage after the draft went out (issue #141, AC 7).
+       Both adapters are driven from Run receipts, so this re-sends nothing
+       and creates only what is missing. */
+    if (state.approval) {
+      return ctx.stage("review", async () => {
+        const owner = gate.ownerEmail();
+        const ownerProfileId =
+          owner === null ? null : (gate.verifiedForEmail(owner)?.profileId ?? null);
+        await writeApprovalOutputs(ctx, deps, record, state, owner, ownerProfileId);
+        const recipientCount =
+          state.roster.entries.filter((entry) => entry.email !== owner).length +
+          state.recipients.additional.length;
+        return {
+          status: "done",
+          summary: `Published to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
+          detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
+        };
+      });
+    }
+
+    /* No pending action — a stray re-entry. Nothing to do, and nothing to
+       wait for: end the Run as it already was. */
+    const debrief = currentDebrief(ctx);
+    return {
+      status: "done",
+      summary: `${debrief.decisions.length} decision${
+        debrief.decisions.length === 1 ? "" : "s"
+      }, ${debrief.actionItems.length} action item${debrief.actionItems.length === 1 ? "" : "s"}`,
+      detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
+    };
   };
 
   return {
@@ -554,16 +492,15 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     planRecovery(state) {
       if (state.status !== "pending" && state.status !== "running") return null;
       if (state.files.includes("review.json") || state.files.includes("result.json")) {
-        /* The wait record was cleared when the Run resumed, so the original
-           deadline survives only on the Run's timeline: re-arm that one,
-           never a fresh thirty days. */
-        const deadline = lastWaitDeadline(state.events);
+        /* Extraction already happened and its result survived. Re-enter the
+           review Stage, which now settles any pending owner request and ends
+           the Run rather than re-arming a wait. */
         return {
           fromStage: "review",
           reason: state.files.includes("review.json")
             ? "debrief_review_survived_restart"
             : "debrief_result_survived_restart",
-          input: { kind: "review", action: "owner", ...(deadline ? { deadline } : {}) },
+          input: { kind: "review", action: "owner" },
         };
       }
       return {
@@ -573,32 +510,23 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       };
     },
 
-    /** What continuing one of this Module's blocked review Runs means (ADR-0020). */
+    /**
+     * Continuing a Run left blocked by an older build. Nothing blocks on
+     * review any more, so this exists only to let those Runs finish: it
+     * carries them into the review Stage, which settles and ends them.
+     */
     planResume(meta) {
       if (meta.status !== "blocked" || !meta.wait) return null;
-      const due =
-        meta.wait.timeout.kind === "at" && Date.parse(meta.wait.timeout.at) <= now().getTime();
-      if (due) {
-        return {
-          fromStage: meta.wait.stage,
-          reason: "review_window_elapsed",
-          input: { kind: "review", action: "expire" },
-        };
-      }
       return {
         fromStage: meta.wait.stage,
         reason: "owner_review_action",
-        input: {
-          kind: "review",
-          action: "owner",
-          ...(meta.wait.timeout.kind === "at" ? { deadline: meta.wait.timeout.at } : {}),
-        },
+        input: { kind: "review", action: "owner" },
       };
     },
 
     async run(ctx: RunContext, input: DebriefInput): Promise<RunOutcome> {
       if (input.kind === "review") {
-        return reviewTurn(ctx, input.action, input.deadline);
+        return reviewTurn(ctx, input.action);
       }
 
       const transcriptId =
@@ -638,19 +566,28 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         return debrief;
       });
 
-      // review — the durable owner wait (ADR-0038). The Run blocks against a
-      // 30-day wait record; approval or regeneration resumes it, the clock
-      // expires it. The summary the list will keep showing across the wait
-      // is the Module's own line about what it extracted.
+      /* The Debrief is finished the moment it is extracted. It used to stop
+         here against a thirty-day owner wait, which meant a workspace of
+         transcripts sat `blocked` behind a person — the opposite of what this
+         app is for. The review record is still written, because the roster,
+         the recipients and the done/dismiss decisions are all still real; it
+         is simply no longer a gate. The one thing that still waits for the
+         owner is the outward writes — the Gmail draft and the Google Tasks —
+         which `approve` performs by re-entering this Run. */
       await ctx.stage("review", async () => {
         ensureReviewState(ctx, record);
         ctx.event("debrief_review_started", {
           rosterStatus: rosterStatusOf(record),
         });
-        wait(ctx);
       });
-      /* `wait` never returns; this line only satisfies the type checker. */
-      throw new Error("unreachable");
+      const debrief = currentDebrief(ctx);
+      return {
+        status: "done",
+        summary: `${debrief.decisions.length} decision${
+          debrief.decisions.length === 1 ? "" : "s"
+        }, ${debrief.actionItems.length} action item${debrief.actionItems.length === 1 ? "" : "s"}`,
+        detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
+      };
     },
   };
 }

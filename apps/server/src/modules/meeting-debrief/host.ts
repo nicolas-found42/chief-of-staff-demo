@@ -5,13 +5,13 @@ import type {
   MeetingDebriefIdentitySummary,
   MeetingDebriefIndex,
   MeetingDebriefIndexEntry,
+  MeetingDebriefActionItemRollup,
   MeetingDebriefReviewState,
   MeetingDebriefReviewView,
   MeetingDebriefRunResult,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
-  MEETING_DEBRIEF_EXPIRED_REASON,
   MEETING_DEBRIEF_FIELDS,
   MEETING_DEBRIEF_INTAKE,
   MEETING_DEBRIEF_MODULE_ID,
@@ -54,8 +54,14 @@ export interface MeetingDebriefHostDeps {
   getCompleteJson?: MeetingDebriefModuleDeps["getCompleteJson"];
   getLlmInfo?: MeetingDebriefModuleDeps["getLlmInfo"];
   log?: (message: string) => void;
-  /** Clock for the review wait and its 30-day expiry (ADR-0038). */
   now?: () => Date;
+  /**
+   * What the Workspace calls the Meeting a Transcript belongs to. A Debrief
+   * addressed by its Drive file name reads as
+   * "Copy of Erin- Richard-…-transcript-2026-06-04T20-30-00.000Z.json"; the
+   * Meeting already carries a name a person would use.
+   */
+  meetingTitle?: (meetingId: string) => string | null;
   /** The Profile surface the review binds attendees and recipients through. */
   profiles?: DebriefProfileDirectory;
   /** The confirmed owner identity's email, for the approval gate (spec #450). */
@@ -80,6 +86,15 @@ function parseRunResult(raw: string | null): MeetingDebriefRunResult | null {
   }
 }
 
+/**
+ * The mention kinds the Debrief presents as people. The Catalog retains every
+ * span it classifies — products, and the all-capital runs it files as
+ * `unknown` — deliberately, so identity review can see them; but the Debrief's
+ * section asks who was mentioned, and answering it with Chrome, Playwright and
+ * CIM is answering a different question.
+ */
+const PERSON_MENTION_KINDS = new Set(["person", "ambiguous-name"]);
+
 /** The Catalog's review state, summarized for the Debrief surfaces. */
 function identitySummary(review: DebriefIdentityReview): MeetingDebriefIdentitySummary {
   const latestDecision = new Map<string, { outcome: string; profileId: string | null }>();
@@ -89,6 +104,7 @@ function identitySummary(review: DebriefIdentityReview): MeetingDebriefIdentityS
   const resolved: MeetingDebriefIdentitySummary["resolved"] = [];
   const unresolved: MeetingDebriefIdentitySummary["unresolved"] = [];
   for (const mention of review.mentions) {
+    if (!PERSON_MENTION_KINDS.has(mention.kind)) continue;
     const decision = latestDecision.get(mention.id);
     if (
       decision &&
@@ -140,6 +156,7 @@ export class MeetingDebriefHost implements HostedModule {
   private readonly identity: DebriefIdentityReviewReader;
   private readonly gate: DebriefApprovalGateDeps;
   private readonly profiles: DebriefProfileDirectory | null;
+  private readonly meetingTitle: ((meetingId: string) => string | null) | null;
   /** The outward-write surface, also the Task read-through for item status (issue #158). */
   private readonly outputs: MeetingDebriefModuleDeps["outputs"];
   /** transcriptId → runId, rebuilt once per process from Runs and the log. */
@@ -153,6 +170,7 @@ export class MeetingDebriefHost implements HostedModule {
     this.catalog = deps.catalog;
     this.identity = deps.identity;
     this.profiles = deps.profiles ?? null;
+    this.meetingTitle = deps.meetingTitle ?? null;
     this.outputs = deps.outputs;
     this.onActionItemsChanged = deps.onActionItemsChanged ?? null;
     /* A host without owner identity or a Profile directory keeps the gate
@@ -187,6 +205,28 @@ export class MeetingDebriefHost implements HostedModule {
 
   start(): void {
     this.runner.startRecoveryLoop();
+    void this.releaseLegacyReviewWaits();
+  }
+
+  /**
+   * Release Runs left blocked against the review wait an older build armed.
+   *
+   * Review no longer gates a Debrief, so a Run sitting against a thirty-day
+   * owner wait is waiting for something that will never be asked of it. One
+   * pass on boot carries each into the review Stage, which settles it and
+   * ends the Run. Idempotent — a released Run is no longer blocked, so a
+   * second boot finds nothing.
+   */
+  private async releaseLegacyReviewWaits(): Promise<void> {
+    for (const summary of this.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
+      const meta = this.runs.open(summary.id)?.read();
+      if (meta?.status !== "blocked" || meta.wait?.stage !== "review") continue;
+      try {
+        await this.runner.resumeRun(summary.id);
+      } catch {
+        // A Run that will not resume stays as it is; the next boot tries again.
+      }
+    }
   }
 
   stop(): void {
@@ -206,11 +246,19 @@ export class MeetingDebriefHost implements HostedModule {
   }
 
   /**
-   * The one resume seam for owner-requested review turns. Overridable so a
-   * test can force the Shell-side resume to fail and prove the persisted
-   * request reverts instead of stranding the review.
+   * The one seam for owner-requested turns. A finished Run is re-entered at
+   * its review Stage; a Run still blocked by an older build resumes the way
+   * it always did. Overridable so a test can force the Shell-side call to
+   * fail and prove the persisted request reverts instead of stranding it.
    */
   protected resumeOwnerTurn(runId: string): Promise<RunMeta> {
+    const meta = this.runs.open(runId)?.read();
+    if (meta?.status === "done" || meta?.status === "skipped") {
+      return this.runner.reenterRun(runId, "review", "owner_review_action", {
+        kind: "review",
+        action: "owner",
+      });
+    }
     return this.runner.resumeRun(runId);
   }
 
@@ -263,11 +311,28 @@ export class MeetingDebriefHost implements HostedModule {
    * A Run whose review the owner may still change: blocked in the review
    * wait, holding a review record, nothing approved, no action in flight.
    */
+  /**
+   * A Run the owner can still act on. A Debrief finishes as soon as it has
+   * extracted — nothing waits — so `done` is the ordinary case here; `blocked`
+   * is only a Run left mid-wait by an older build. Already approved or with a
+   * request in flight, it is not open to another.
+   */
+  /** The Meeting's name, falling back to the file the Transcript came from. */
+  private titleFor(
+    record: { meetingId?: string | null; source: { fileName: string } } | null,
+  ): string | null {
+    if (!record) return null;
+    const named = record.meetingId ? this.meetingTitle?.(record.meetingId) : null;
+    return named ?? record.source.fileName;
+  }
+
   private reviewable(runId: string): { run: RunHandle; state: MeetingDebriefReviewState } | null {
     const run = this.runs.open(runId);
     if (!run) return null;
     const meta = run.read();
-    if (meta.status !== "blocked" || meta.wait?.stage !== "review") return null;
+    const open =
+      meta.status === "done" || (meta.status === "blocked" && meta.wait?.stage === "review");
+    if (!open) return null;
     const state = parseReviewState(run.readArtifact("review.json"));
     if (!state || state.approval || state.request) return null;
     return { run, state };
@@ -314,15 +379,13 @@ export class MeetingDebriefHost implements HostedModule {
     return { runId: redoRunId };
   }
 
-  private reviewStateOf(
-    meta: RunMeta,
-    state: MeetingDebriefReviewState | null,
-  ): MeetingDebriefReviewView["state"] | null {
-    if (!state) return null;
-    if (state.approval) return "approved";
-    if (meta.skipReason === MEETING_DEBRIEF_EXPIRED_REASON) return "expired";
-    if (meta.status === "blocked") return "awaiting_review";
-    return null;
+  /**
+   * The one state a Debrief still carries for the owner: whether its gated
+   * outward writes have gone out. Extraction no longer waits for anybody, so
+   * there is nothing else to report here.
+   */
+  private reviewStateOf(state: MeetingDebriefReviewState | null): "published" | null {
+    return state?.approval ? "published" : null;
   }
 
   /** The approved sibling of a not-yet-approved Run, if one exists. */
@@ -399,7 +462,7 @@ export class MeetingDebriefHost implements HostedModule {
     state: MeetingDebriefReviewState,
     extraction: MeetingDebriefExtraction | null,
   ): Promise<MeetingDebriefReviewView> {
-    const stateName = this.reviewStateOf(meta, state) ?? "awaiting_review";
+    const stateName = this.reviewStateOf(state) ?? "extracted";
     const owner = this.gate.ownerEmail();
     const automaticRecipients = state.roster.entries
       .filter(
@@ -425,8 +488,10 @@ export class MeetingDebriefHost implements HostedModule {
       droppedActionItems: state.review.droppedActionItems,
       completedActionItems: state.review.completedActionItems,
       actionItemTasks: await this.actionItemTasks(run, state),
-      approvalBlockers: stateName === "awaiting_review" ? approvalBlockers(state, this.gate) : [],
-      duplicateWarning: this.duplicateWarningFor(runId, meta.externalId, stateName === "approved"),
+      /* Blockers describe the outward writes, which are the one thing still
+         gated — so they are reported until those writes have gone out. */
+      approvalBlockers: stateName === "published" ? [] : approvalBlockers(state, this.gate),
+      duplicateWarning: this.duplicateWarningFor(runId, meta.externalId, stateName === "published"),
     };
   }
 
@@ -455,7 +520,7 @@ export class MeetingDebriefHost implements HostedModule {
       status: summary.status,
       summary: summary.summary,
       meetingDate: record?.meetingDate ?? null,
-      fileName: record?.source.fileName ?? meta.fileName ?? null,
+      fileName: this.titleFor(record) ?? meta.fileName ?? null,
       linked,
       occurrenceKey: record?.occurrence?.occurrenceKey ?? null,
       rosterStatus,
@@ -470,10 +535,51 @@ export class MeetingDebriefHost implements HostedModule {
           ? "ready"
           : "needs_roster"
         : "no_extraction",
-      reviewState: this.reviewStateOf(meta, state),
+      reviewState: this.reviewStateOf(state),
       rosterConfirmed: state?.roster.status === "confirmed",
       recipientCount: automaticCount + (state?.recipients.additional.length ?? 0),
     };
+  }
+
+  /**
+   * Every open action item across every Debrief, in one read.
+   *
+   * The Meeting Wizard home used to build this by fetching the index and then
+   * one detail per Run — thirty-odd requests on every page load, growing with
+   * the corpus. The work is all local file reads, so it belongs on this side
+   * of the wire. Filtering to the owner stays with the caller, which knows who
+   * that is; this route only flattens what the Runs hold.
+   */
+  private async buildActionItems(): Promise<{ items: MeetingDebriefActionItemRollup[] }> {
+    const items: MeetingDebriefActionItemRollup[] = [];
+    for (const summary of this.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
+      const run = this.runs.open(summary.id);
+      if (!run) continue;
+      const extraction = parseRunResult(run.readArtifact("result.json"))?.debrief;
+      if (!extraction) continue;
+      const state = parseReviewState(run.readArtifact("review.json"));
+      const dropped = new Set(state?.review.droppedActionItems ?? []);
+      const doneLocal = new Set(state?.review.completedActionItems ?? []);
+      const tasks = state
+        ? new Map((await this.actionItemTasks(run, state)).map((t) => [t.index, t.completed]))
+        : new Map<number, boolean>();
+      const meta = run.read();
+      const record = meta.externalId ? this.catalog.getTranscript(meta.externalId) : null;
+      extraction.actionItems.forEach((item, index) => {
+        if (dropped.has(index)) return;
+        if (tasks.has(index) ? tasks.get(index)! : doneLocal.has(index)) return;
+        items.push({
+          runId: summary.id,
+          meetingId: record?.meetingId ?? null,
+          index,
+          title: item.title,
+          owner: item.owner,
+          ownerProfileId: item.ownerProfileId,
+          dueDate: item.dueDate,
+        });
+      });
+    }
+    return { items };
   }
 
   private buildIndex(): MeetingDebriefIndex {
@@ -599,6 +705,9 @@ export class MeetingDebriefHost implements HostedModule {
 
   routes(app: FastifyInstance): void {
     app.get("/api/meeting-debrief/index", async () => this.buildIndex());
+    /* Registered before the `:runId` route so "action-items" is not read as a
+       Run id. */
+    app.get("/api/meeting-debrief/action-items", async () => this.buildActionItems());
     app.get("/api/meeting-debrief/:runId", async (request, reply) => {
       const { runId } = request.params as { runId: string };
       const detail = await this.buildDetail(runId);

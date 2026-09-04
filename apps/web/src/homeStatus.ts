@@ -1,5 +1,5 @@
 import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
-import { isExpectedConnectionExpiry, runTitle, statusLabel } from "./display";
+import { isExpectedConnectionExpiry, runDisplayName, statusLabel } from "./display";
 
 interface RailRow {
   /** React key, and the identity of the thing the row is about. */
@@ -113,13 +113,13 @@ export function homeStatus(
     isExpectedConnectionExpiry(run.connectionState)
       ? {
           id: run.id,
-          text: `${runTitle(run.fileName ?? run.id)} could not finish because Google needs reconnecting`,
+          text: `${runDisplayName(run)} could not finish because Google needs reconnecting`,
           cta: "Reconnect",
           to: "/settings",
         }
       : {
           id: run.id,
-          text: `${runTitle(run.fileName ?? run.id)} failed`,
+          text: `${runDisplayName(run)} failed`,
           cta: "Open",
           to: `/runs/${run.id}`,
         },
@@ -150,7 +150,7 @@ export function homeStatus(
   for (const run of blocked) {
     rows.push({
       id: run.id,
-      text: `${runTitle(run.fileName ?? run.id)} is waiting${run.wait?.reason ? `: ${run.wait.reason}` : ""}`,
+      text: `${runDisplayName(run)} is waiting${run.wait?.reason ? `: ${run.wait.reason}` : ""}`,
       cta: "Open",
       to: `/runs/${run.id}`,
     });
@@ -176,7 +176,7 @@ export function homeStatus(
     const detail = run.status === "skipped" ? run.skipReason : run.summary;
     return {
       id: run.id,
-      title: runTitle(run.fileName ?? run.id),
+      title: runDisplayName(run),
       outcome: detail ? `${statusLabel(run.status)} — ${detail}` : statusLabel(run.status),
       at: run.createdAt,
       to: owningSurfaceForRun(run),

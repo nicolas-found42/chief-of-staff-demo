@@ -138,6 +138,31 @@ export class Runner<Input> {
     return reopened;
   }
 
+  /**
+   * Re-enter a finished Run at a named Stage, for owner-initiated work that
+   * belongs to a Run that has already ended (issue: review gates removed).
+   *
+   * A Debrief now finishes as soon as it has extracted, rather than sitting
+   * blocked against an owner it may never hear from. The two things the owner
+   * can still ask of it afterwards — regenerate a field, publish the gated
+   * outward writes — are real Stage work on that same Run, so they reopen it
+   * rather than starting a second one. Terminal Runs only: a live Run is
+   * already going somewhere, and retry/resume own those paths.
+   */
+  async reenterRun(id: string, fromStage: string, reason: string, input: Input): Promise<RunMeta> {
+    const run = this.deps.runs.open(id);
+    if (!run) {
+      throw new RunNotFoundError(id);
+    }
+    const meta = run.read();
+    if (meta.status !== "done" && meta.status !== "skipped") {
+      throw new RunNotResumableError(id);
+    }
+    const reopened = run.reopen(fromStage, reason);
+    this.enqueue(run, input);
+    return reopened;
+  }
+
   /** Continue a blocked Run in place using the owning Module's durable plan. */
   async resumeRun(id: string): Promise<RunMeta> {
     const run = this.deps.runs.open(id);

@@ -55,11 +55,17 @@ export function buildDailyBriefing(
       const startMsOf = Date.parse(meeting.startAt);
       return !Number.isNaN(startMsOf) && startMsOf >= startMs && startMsOf < endMs;
     })
-    .sort((a, b) => a.startAt.localeCompare(b.startAt));
+    /* By the instant, not the text: Calendar writes an offset and a
+       transcript-owned Meeting writes UTC, so the strings do not sort. */
+    .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
   if (todays.length === 0) return null;
 
   const doneKeys = new Set<string>();
   const activeKeys = new Set<string>();
+  /* A preparation that ran and produced nothing — failed outright, or ended
+     `done` with no Brief on it. The owner can retry those, so they must not
+     read as never having been asked for. */
+  const failedKeys = new Set<string>();
   for (const summary of deps.runs.list({ module: MEETING_BRIEF_MODULE_ID }).runs) {
     const meta = deps.runs.open(summary.id)?.read();
     const key = meta?.externalId;
@@ -67,20 +73,26 @@ export function buildDailyBriefing(
     if (meta.status === "done") {
       const result = deps.runs.detail(summary.id)?.result as MeetingBriefRunResult | null;
       if (result?.meetingBrief) doneKeys.add(key);
+      else failedKeys.add(key);
     } else if (
       meta.status === "pending" ||
       meta.status === "running" ||
       meta.status === "blocked"
     ) {
       activeKeys.add(key);
+    } else if (meta.status === "failed") {
+      failedKeys.add(key);
     }
   }
 
   const meetings = todays.map((meeting) => {
+    /* Best outcome wins: a Brief that succeeded after an earlier failure is
+       ready, and one still preparing outranks the attempt it supersedes. */
     let briefStatus: DailyBriefingBriefStatus = "missing";
     if (meeting.occurrenceKey) {
       if (doneKeys.has(meeting.occurrenceKey)) briefStatus = "ready";
       else if (activeKeys.has(meeting.occurrenceKey)) briefStatus = "pending";
+      else if (failedKeys.has(meeting.occurrenceKey)) briefStatus = "failed";
     }
     return {
       meetingId: meeting.id,
@@ -90,11 +102,16 @@ export function buildDailyBriefing(
     };
   });
   const ready = meetings.filter((entry) => entry.briefStatus === "ready").length;
+  /* Named in the summary, not just per row: a failure the owner has to act on
+     should be visible without reading the list. */
+  const failed = meetings.filter((entry) => entry.briefStatus === "failed").length;
   const noun = meetings.length === 1 ? "Meeting" : "Meetings";
   return {
     date,
     meetings,
     summary:
-      `${meetings.length} ${noun} today · ` + `${ready} ${ready === 1 ? "Brief" : "Briefs"} ready`,
+      `${meetings.length} ${noun} today · ` +
+      `${ready} ${ready === 1 ? "Brief" : "Briefs"} ready` +
+      (failed > 0 ? ` · ${failed} failed` : ""),
   };
 }

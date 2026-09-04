@@ -22,7 +22,7 @@ import { RunDetailPage } from "./pages/RunDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { YoutubePage } from "./pages/YoutubePage";
 import { migrationApi, type MigrationStatus } from "./client";
-import { PRODUCT_AREAS } from "./productAreas";
+import { isCurrentArea, PRODUCT_AREAS } from "./productAreas";
 import { useIsLoadedEntry } from "./usePageFocus";
 
 /* The one width the Shell changes shape at, shared with the stylesheet's
@@ -161,11 +161,21 @@ export function App() {
                 is a Workspace resource with its own surface, not a Module, and
                 the four areas name ownership, not backend registration. Nav and
                 Home's cards read the same list, so the two cannot disagree. */}
+            {/* A plain Link with the current state stated here, rather than a
+                NavLink: a product area owns routes outside its own path prefix
+                — Meeting Wizard presents the Debrief journey at
+                /meeting-debrief — and NavLink can only match the prefix, so the
+                whole nav went blank on those pages and the Debrief journey read
+                as though it sat outside the product that owns it. */}
             <nav aria-label="Products">
               {PRODUCT_AREAS.map((area) => (
-                <NavLink key={area.id} to={area.path}>
+                <Link
+                  key={area.id}
+                  to={area.path}
+                  aria-current={isCurrentArea(area, pathname) ? "page" : undefined}
+                >
                   {area.label}
-                </NavLink>
+                </Link>
               ))}
             </nav>
             <nav aria-label="Settings">

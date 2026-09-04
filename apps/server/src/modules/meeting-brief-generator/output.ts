@@ -295,6 +295,7 @@ export function renderMeetingBriefEmail(
 function briefingStatusLabel(status: DailyBriefingBriefStatus): string {
   if (status === "ready") return "Brief ready";
   if (status === "pending") return "Brief pending";
+  if (status === "failed") return "Brief failed — retry it";
   return "No brief yet";
 }
 

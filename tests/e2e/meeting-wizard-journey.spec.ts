@@ -43,7 +43,7 @@ test("meeting wizard home — a day with no meetings says so", async ({ page }) 
   // Fresh hermetic workspace: no Meeting recorded carries today's date.
   await page.goto("/meetings");
   await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Today's meetings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page.getByText("No meetings today.")).toBeVisible();
 });
 
@@ -172,9 +172,11 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
   // brief-record projection it replaced is gone.
   await page.goto("/meetings");
   await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Today's meetings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Upcoming eligible meetings" })).toHaveCount(0);
-  const todaySection = page.locator('section[aria-labelledby="overview-today-heading"]');
+  /* One section for the day, not two: the Daily briefing is today's meetings
+     plus their Brief state, so the separate list it duplicated is gone. */
+  const todaySection = page.locator('section[aria-labelledby="overview-briefing-heading"]');
   const cards = todaySection.locator("li.card");
   await expect(cards.filter({ hasText: "Internal planning" })).toHaveCount(1);
 

@@ -17,6 +17,7 @@ import type {
   ContentResearchIndex,
   ContentShortlist,
   DriveIntakeStatus,
+  TranscriptCatalogStatus,
   GoogleStatus,
   HubSpotSetupCheck,
   HubSpotStatus,
@@ -29,6 +30,7 @@ import type {
   MeetingDebriefDetail,
   MeetingDebriefField,
   MeetingDebriefIndex,
+  MeetingDebriefActionItemRollup,
   MeetingDebriefRecipient,
   NamedPerson,
   PersonSuggestion,
@@ -263,6 +265,13 @@ export const api = {
     ),
   /* Remembered intake facts only (D14): the endpoint makes zero Google calls. */
   driveIntakeStatus: () => request<DriveIntakeStatus>("/api/transcripts/intake"),
+  /* The pre-consent disclosure: what consent would cover, read from the folder
+     listing alone — file names and sizes, never a file's contents. */
+  transcriptIntakeInventory: () =>
+    request<TranscriptIntakeInventory>("/api/transcripts/intake/inventory"),
+  /* Standing folder consent. Grants and starts the historical backfill. */
+  grantTranscriptIntakeConsent: () =>
+    request<TranscriptCatalogStatus>("/api/transcripts/intake/consent", { method: "POST" }),
   /* Derived from the Runs on disk, so it answers while Google is expired. */
   youtubeTrends: () => request<YoutubeTrends>("/api/youtube/trends"),
   addYoutubeChannel: (url: string) =>
@@ -540,6 +549,10 @@ export const api = {
       { method: "POST", body: JSON.stringify(instruction === undefined ? {} : { instruction }) },
     ),
   meetingDebriefIndex: () => request<MeetingDebriefIndex>("/api/meeting-debrief/index"),
+  /* Every open action item in one read, instead of the index plus one detail
+     per Run the Meeting Wizard home used to fan out. */
+  meetingDebriefActionItems: () =>
+    request<{ items: MeetingDebriefActionItemRollup[] }>("/api/meeting-debrief/action-items"),
   meetingDebriefDetail: (runId: string) =>
     request<MeetingDebriefDetail>(`/api/meeting-debrief/${encodeURIComponent(runId)}`),
   meetingDebriefRegenerate: (runId: string, field: MeetingDebriefField) =>
@@ -826,6 +839,28 @@ export function errorMessage(error: unknown): string {
 export interface OwnerOnboardingStatus {
   proposal: OwnerOnboardingProposal | null;
   confirmed: ConfirmedOwnerReference | null;
+}
+
+/** What granting folder consent would cover (`/api/transcripts/intake/inventory`). */
+export interface TranscriptIntakeInventory {
+  folder: { sourceSystem: string; folderId: string; folderName: string };
+  fileCount: number;
+  dateRange: { earliest: string | null; latest: string | null } | null;
+  estimatedScope: { totalBytes: number };
+  localRetention: string;
+  providerExposure: {
+    sendsTranscriptTextToConfiguredModel: boolean;
+    provider: string;
+    model: string;
+  };
+  externalQueryBehavior: string;
+  files: Array<{
+    externalFileId: string;
+    fileName: string;
+    sizeBytes: number;
+    modifiedAt: string;
+    meetingDate: string | null;
+  }>;
 }
 
 export const onboardingApi = {

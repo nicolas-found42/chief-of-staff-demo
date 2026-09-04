@@ -7,6 +7,7 @@ import {
   type TranscriptOccurrenceAssociation,
   type TranscriptProcessingPass,
   type TranscriptRecord,
+  type TranscriptRosterPerson,
   type TranscriptSourceRevision,
   type TranscriptCatalogStatus,
 } from "@chief-of-staff-demo/shared";
@@ -14,8 +15,14 @@ import { isSupportedFileName, convertToText } from "../text/convert.js";
 import { meetingDateFromFileName } from "../text/meetingDate.js";
 import { TranscriptCatalogStore } from "./store.js";
 
-/** Bumped whenever the normalization/registration behavior changes meaning. */
-export const TRANSCRIPT_CATALOG_EXTRACTOR_VERSION = 1;
+/**
+ * Bumped whenever the normalization or the derivation over a Transcript's own
+ * text changes meaning. A record already stored under an older version is
+ * re-derived in place on the next pass — the text it derives from is immutable
+ * and already local, so this costs no Drive read and changes nothing the source
+ * said.
+ */
+export const TRANSCRIPT_CATALOG_EXTRACTOR_VERSION = 2;
 
 /**
  * What the Catalog needs from its source folder. The production source is the
@@ -93,6 +100,18 @@ const LOCAL_RETENTION =
   "an explicit transcript deletion; nothing is stored remotely by the Catalog.";
 
 const SPEAKER_LABEL = /^\s*([^:\n]{1,80})\s*:\s*.+/;
+/**
+ * The Markdown speaker line a Fireflies export writes:
+ * `**Richard Achee** *[00:05]*: utterance`. SPEAKER_LABEL cannot reach the
+ * separating colon here — `[^:\n]` refuses to cross the one inside the
+ * `00:05` timestamp — so it captured `**Richard Achee** *[00` and threw it
+ * away, and every Markdown transcript recorded no speakers at all. Without
+ * speakers the Meeting a transcript owns has no participants, its Debrief has
+ * no roster to prefill, and the Calendar match loses its speaker signal. The
+ * bracketed timestamp is optional: the same style appears without one.
+ */
+const MARKDOWN_SPEAKER_LABEL =
+  /^\s*(\*\*|__)([^*_\n]{1,80}?)\1\s*(?:[*_]{0,2}\[?\d{1,2}:\d{2}(?::\d{2})?(?:\s?[APap][Mm])?\]?[*_]{0,2})?\s*:\s+/;
 const PERSON_LIKE_LABEL = /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$/;
 
 /**
@@ -103,9 +122,12 @@ const PERSON_LIKE_LABEL = /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)?$/;
 function collectSpeakerLabels(text: string): string[] {
   const labels = new Set<string>();
   for (const line of text.split("\n")) {
-    const match = line.match(SPEAKER_LABEL);
+    /* Markdown emphasis first: its line also ends in `: `, so SPEAKER_LABEL
+       would otherwise claim a truncated label off the front of it. */
+    const markdown = line.match(MARKDOWN_SPEAKER_LABEL);
+    const match = markdown ?? line.match(SPEAKER_LABEL);
     if (!match) continue;
-    const label = match[1]?.trim();
+    const label = (markdown ? match[2] : match[1])?.trim();
     if (!label) continue;
     if (
       (label.length < 40 && !label.includes(" ")) ||
@@ -293,7 +315,12 @@ export class TranscriptCatalog {
    */
   async attachMeeting(
     id: string,
-    meeting: { id: string; occurrenceKey: string | null; calendarEventId: string | null },
+    meeting: {
+      id: string;
+      occurrenceKey: string | null;
+      calendarEventId: string | null;
+      roster?: TranscriptRosterPerson[];
+    },
   ): Promise<TranscriptRecord> {
     const record = this.store.readTranscript(id);
     if (!record) {
@@ -306,6 +333,12 @@ export class TranscriptCatalog {
         meeting.occurrenceKey !== null
           ? { occurrenceKey: meeting.occurrenceKey, calendarEventId: meeting.calendarEventId }
           : record.occurrence,
+      /* Calendar's attendees travel with the association. Without them a
+         linked Transcript kept an empty roster, and its Debrief asked the
+         owner to type in the very attendees the Meeting already held. A
+         Meeting a Transcript owns supplies none, and the record keeps what it
+         had. */
+      roster: meeting.roster && meeting.roster.length > 0 ? meeting.roster : record.roster,
     };
     this.store.updateTranscript(updated);
     await this.identity.process(updated);
@@ -322,6 +355,31 @@ export class TranscriptCatalog {
     });
   }
 
+  /**
+   * Bring stored records up to the current extractor.
+   *
+   * Speaker labels are diarization metadata derived from the Transcript's own
+   * immutable text, not something the source or a person supplied, so a
+   * derivation fix has to reach the records already stored — otherwise the
+   * corpus keeps whatever the old rule got, and every Markdown transcript in
+   * it keeps reporting no speakers at all. Only the derived fields and the
+   * version move; identity, association and roster decisions are untouched.
+   */
+  private rederiveStaleRecords(): void {
+    for (const record of this.store.listTranscripts()) {
+      if (record.extractorVersion === TRANSCRIPT_CATALOG_EXTRACTOR_VERSION) continue;
+      const speakers = collectSpeakerLabels(record.normalizedText);
+      this.store.updateTranscript({
+        ...record,
+        speakers,
+        extractorVersion: TRANSCRIPT_CATALOG_EXTRACTOR_VERSION,
+      });
+      this.log(
+        `re-derived ${record.id}: ${speakers.length} speaker${speakers.length === 1 ? "" : "s"}`,
+      );
+    }
+  }
+
   private async runPass(): Promise<TranscriptProcessingPass> {
     const result: TranscriptProcessingPass = {
       processed: 0,
@@ -330,6 +388,7 @@ export class TranscriptCatalog {
       unchanged: 0,
     };
     if (this.store.readPaused()) return result;
+    this.rederiveStaleRecords();
     await this.identity.backfill(this.store.listTranscripts());
     if (this.debrief) await this.debrief.backfill(this.store.listTranscripts());
     const listed = await this.source.listFiles();

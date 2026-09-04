@@ -86,10 +86,6 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   await expect(page.getByRole("heading", { name: "Upcoming meetings" })).toBeVisible();
   await expect(page.getByText("Initial Meeting")).toBeVisible();
   await expect(page.getByText(/Current briefs/)).toBeVisible();
-  // Live tab is live (not headless) and shows 4 Stages hint
-  await expect(
-    page.getByText("Stages: snapshot | enrich | compose | deliver (fixed 4)", { exact: true }),
-  ).toBeVisible();
 
   // 3. Advance fake clock to due → Intake creates Run with 4 Stages and completes
   const advance1 = await request.post("/api/test/meeting-brief/advance", {
@@ -328,13 +324,19 @@ test("meeting brief hermetic journey — incomplete provider blocks until cutoff
   // 4. The Brief tab shows the failed Run with its provider outcomes.
   await page.goto("/meetings/brief");
   const currentBriefs = page.getByLabel("Current briefs");
-  // Without a composed Brief the entry titles itself by its eventId.
-  await expect(currentBriefs.getByText("evt_journey_cutoff", { exact: true })).toBeVisible();
-  await expect(currentBriefs.getByText(/status failed/)).toBeVisible();
-  await expect(
-    currentBriefs.getByText("Provider outcomes: crm alice@external.co — failed"),
-  ).toBeVisible();
-  await expect(currentBriefs.getByText(/No structured brief — preparation failed/)).toBeVisible();
+  /* Without a composed Brief the entry takes its name from the Meeting rather
+     than from the Calendar event id, and reports its outcome in display
+     vocabulary. The per-provider outcomes are diagnostics, so they sit behind
+     a disclosure instead of a semicolon-joined paragraph. */
+  await expect(currentBriefs.getByText("evt_journey_cutoff", { exact: true })).toHaveCount(0);
+  await expect(currentBriefs.getByText(/Failed/)).toBeVisible();
+  await currentBriefs
+    .getByRole("group")
+    .filter({ hasText: /sources? consulted/ })
+    .first()
+    .click();
+  await expect(currentBriefs.getByText("crm · alice@external.co — failed")).toBeVisible();
+  await expect(currentBriefs.getByText(/No brief — preparation failed/)).toBeVisible();
 
   // 5. Technical details links the failed preparation to its Run detail,
   // which shows the cutoff failure and no composed Brief.
@@ -375,10 +377,12 @@ test("meeting brief hermetic journey — incomplete provider blocks until cutoff
   await page.goto("/meetings/brief");
   const delivered = page.getByLabel("Current briefs");
   await expect(delivered.getByText("Brief for Cutoff Meeting", { exact: true })).toBeVisible();
+  /* The card is addressed by the meeting it prepared, not by the Calendar
+     event id — that is a diagnostic and lives on the Run detail page. */
   await expect(
     delivered
-      .getByRole("paragraph")
-      .filter({ hasText: "evt_journey_cutoff" })
+      .locator("li.card")
+      .filter({ hasText: "Brief for Cutoff Meeting" })
       .getByText("Sent", { exact: true }),
   ).toBeVisible();
 

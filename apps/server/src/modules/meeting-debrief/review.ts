@@ -5,15 +5,6 @@ import type {
   MeetingDebriefReviewState,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
-import { MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS } from "@chief-of-staff-demo/shared";
-
-/** The review window (ADR-0038), in milliseconds. */
-export const MEETING_DEBRIEF_REVIEW_EXPIRY_MS =
-  MEETING_DEBRIEF_REVIEW_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-
-/** The reason a Run's review wait carries while it waits for the owner. */
-export const REVIEW_WAIT_REASON =
-  "Awaiting the workspace owner's review — approve, regenerate, or let it expire.";
 
 export function serializeReviewState(state: MeetingDebriefReviewState): string {
   return `${JSON.stringify(state, null, 2)}\n`;

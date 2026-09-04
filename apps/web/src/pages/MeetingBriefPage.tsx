@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { MeetingBriefIndexEntry } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
+import { formatMeetingTime, statusLabel } from "../display";
 import { useMeetingIndex } from "../useMeetingIndex";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -47,6 +48,40 @@ export function MeetingBriefPage() {
   const [sendRunId, setSendRunId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const { index, error, busy, refresh, prepareNow } = useMeetingIndex(fetchIndex);
+  /* Meetings by occurrence key, so a Brief that failed before it could compose
+     one still has a name to show instead of a Calendar event id — and so a
+     cancelled occurrence can say when it was to be. */
+  const [meetingsByKey, setMeetingsByKey] = useState<
+    Map<string, { title: string; startAt: string }>
+  >(new Map());
+  const meetingTitles = useMemo(
+    () => new Map([...meetingsByKey].map(([key, meeting]) => [key, meeting.title])),
+    [meetingsByKey],
+  );
+  useEffect(() => {
+    let live = true;
+    void api
+      .meetings()
+      .then((meetings) => {
+        if (!live) return;
+        setMeetingsByKey(
+          new Map(
+            meetings.meetings
+              .filter((meeting) => meeting.occurrenceKey !== null)
+              .map((meeting) => [
+                meeting.occurrenceKey as string,
+                { title: meeting.title, startAt: meeting.startAt },
+              ]),
+          ),
+        );
+      })
+      .catch(() => {
+        // A missing title only costs the fallback below, never the page.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const groups = useMemo(() => {
     if (!index) return new Map<string, MeetingBriefIndexEntry[]>();
@@ -99,16 +134,19 @@ export function MeetingBriefPage() {
       <h1 ref={headingRef} tabIndex={-1}>
         Meeting Brief
       </h1>
+      {/* Filtered to one meeting: say which meeting, by its name. The raw
+          occurrence key was a diagnostic identity printed where the reader
+          needed to know what they were looking at. */}
       {occurrenceKey ? (
         <p>
-          <Link to="/meetings">← Meeting Wizard overview</Link> · occurrence{" "}
-          <code>{occurrenceKey}</code>
+          <Link to="/meetings">← Meeting Wizard overview</Link> ·{" "}
+          {meetingTitles.get(occurrenceKey) ?? "this meeting"} only
         </p>
       ) : null}
       <p className="muted">
-        Upcoming Eligible Meetings from Intake schedules; current briefs are latest per occurrence.
-        History preserves revision chain and cancellation state. No live Gmail/HubSpot/Docs reads
-        for history.
+        Briefs prepared for meetings with other people on the invite — guest and company context,
+        conversation starters, and the sources behind them. The newest brief for each meeting is
+        shown; earlier revisions stay in the history below.
       </p>
       {error ? (
         <div className="banner banner-error" role="alert">
@@ -134,8 +172,12 @@ export function MeetingBriefPage() {
       <section aria-labelledby="upcoming-heading">
         <h2 id="upcoming-heading">Upcoming meetings</h2>
         {upcoming.length === 0 ? (
+          /* Empty here is the ordinary case once the week is prepared, not a
+             fault. The old copy named the Intake and its schedule, which told
+             the reader nothing about their own week. */
           <p className="muted">
-            No upcoming Eligible Meetings — Intake holds no scheduled preparation.
+            Nothing waiting to be prepared — every eligible meeting ahead already has its brief
+            below.
           </p>
         ) : (
           <ul className="card-list">
@@ -143,15 +185,15 @@ export function MeetingBriefPage() {
               <li key={item.occurrenceKey} className="card">
                 <h3>{item.summary}</h3>
                 <p className="muted">
-                  Event {item.eventId} · occurrence {item.occurrenceId} · version {item.version}
+                  {meetingTitles.get(item.occurrenceKey) ?? "Untitled meeting"}
                 </p>
                 <p>
                   <span className="muted">Starts:</span>{" "}
-                  <time dateTime={item.startAt}>{new Date(item.startAt).toLocaleString()}</time>
+                  <time dateTime={item.startAt}>{formatMeetingTime(item.startAt)}</time>
                 </p>
                 <p>
                   <span className="muted">Preparation due:</span>{" "}
-                  <time dateTime={item.dueAt}>{new Date(item.dueAt).toLocaleString()}</time>
+                  <time dateTime={item.dueAt}>{formatMeetingTime(item.dueAt)}</time>
                 </p>
                 <button
                   type="button"
@@ -173,8 +215,7 @@ export function MeetingBriefPage() {
         <h2 id="current-heading">Current briefs</h2>
         {currentByOccurrence.size === 0 ? (
           <p className="muted">
-            No Meeting Briefs yet — due meetings are prepared in 4 stages: snapshot → enrich →
-            compose → deliver.
+            No Meeting Briefs yet — one is prepared for each eligible meeting shortly before it.
           </p>
         ) : (
           <ul className="card-list">
@@ -182,13 +223,18 @@ export function MeetingBriefPage() {
               const brief = entry.meetingBrief;
               return (
                 <li key={occurrenceKey} className="card">
-                  <h3>{brief ? brief.logistics.title : entry.eventId}</h3>
+                  {/* A failed preparation has no brief to take a title from,
+                      and the Calendar event id is not a name — the Meeting
+                      title is, so fall back to it before the raw id. */}
+                  <h3>
+                    {brief?.logistics.title ??
+                      meetingTitles.get(occurrenceKey) ??
+                      "Untitled meeting"}
+                  </h3>
                   <p className="muted">
-                    Occurrence {entry.occurrenceId} · version {entry.eventVersion} ·{" "}
-                    <time dateTime={entry.createdAt}>
-                      {new Date(entry.createdAt).toLocaleString()}
-                    </time>{" "}
-                    · status {entry.status}
+                    Prepared{" "}
+                    <time dateTime={entry.createdAt}>{formatMeetingTime(entry.createdAt)}</time> ·{" "}
+                    {statusLabel(entry.status)}
                   </p>
                   {entry.supersedes ? (
                     <p className="muted">
@@ -197,10 +243,8 @@ export function MeetingBriefPage() {
                     </p>
                   ) : null}
                   <p>
-                    Delivery: <DeliveryBadge delivery={entry.delivery} />{" "}
-                    {entry.delivery?.recipient ? `· to ${entry.delivery.recipient}` : ""}{" "}
-                    {entry.delivery?.messageId ? `· ${entry.delivery.messageId}` : ""}{" "}
-                    {entry.delivery?.deliveryId ? `· ${entry.delivery.deliveryId}` : ""}
+                    Delivery: <DeliveryBadge delivery={entry.delivery} />
+                    {entry.delivery?.recipient ? ` · to ${entry.delivery.recipient}` : ""}
                   </p>
                   {entry.delivery && deliveryPresentation(entry.delivery.status).explanation ? (
                     <p className="muted">
@@ -208,15 +252,19 @@ export function MeetingBriefPage() {
                     </p>
                   ) : null}
                   {entry.providerOutcomes && entry.providerOutcomes.length > 0 ? (
-                    <p className="muted">
-                      Provider outcomes:{" "}
-                      {entry.providerOutcomes
-                        .map(
-                          (outcome) =>
-                            `${outcome.provider} ${outcome.attendee} — ${outcome.outcome}`,
-                        )
-                        .join("; ")}
-                    </p>
+                    <details className="provider-outcomes">
+                      <summary className="muted">
+                        {entry.providerOutcomes.length} source
+                        {entry.providerOutcomes.length === 1 ? "" : "s"} consulted
+                      </summary>
+                      <ul>
+                        {entry.providerOutcomes.map((outcome, outcomeIndex) => (
+                          <li key={`${outcome.provider}:${outcome.attendee}:${outcomeIndex}`}>
+                            {outcome.provider} · {outcome.attendee} — {outcome.outcome}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   ) : null}
                   {brief ? (
                     <>
@@ -286,7 +334,9 @@ export function MeetingBriefPage() {
                     </>
                   ) : (
                     <>
-                      <p className="muted">No structured brief — preparation {entry.status}.</p>
+                      <p className="muted">
+                        No brief — preparation {statusLabel(entry.status).toLowerCase()}.
+                      </p>
                       <p>
                         <Link to={`/runs/${entry.runId}`} className="action-button">
                           Technical details
@@ -335,10 +385,21 @@ export function MeetingBriefPage() {
           <ul className="card-list">
             {index.cancellations.map((cancellation) => (
               <li key={cancellation.occurrenceKey} className="card">
-                <h3>{cancellation.summary}</h3>
+                {/* The meeting's own name and when it was to be, so two
+                    cancelled occurrences of one recurring meeting are told
+                    apart. "occurrence <title>" read as a broken sentence and
+                    identified nothing. */}
+                <h3>{meetingTitles.get(cancellation.occurrenceKey) ?? cancellation.summary}</h3>
                 <p>
-                  <span className="status-badge status-active">Cancelled</span> · occurrence{" "}
-                  {cancellation.occurrenceId} · version {cancellation.version}
+                  <span className="status-badge status-active">Cancelled</span>
+                  {meetingsByKey.get(cancellation.occurrenceKey) ? (
+                    <>
+                      {" · was "}
+                      <time dateTime={meetingsByKey.get(cancellation.occurrenceKey)!.startAt}>
+                        {formatMeetingTime(meetingsByKey.get(cancellation.occurrenceKey)!.startAt)}
+                      </time>
+                    </>
+                  ) : null}
                 </p>
                 <p className="muted">
                   Completed briefs remain in revision history, but this occurrence is no longer a
@@ -364,9 +425,16 @@ export function MeetingBriefPage() {
                   currentByOccurrence.get(entry.occurrenceKey)?.runId === entry.runId;
                 return (
                   <li key={entry.runId} className="card">
+                    {/* Which meeting this revision is of. Unfiltered, the
+                        history mixes every meeting's revisions together, and
+                        two of them read "Current" with nothing to say what
+                        each was current for. */}
+                    <h3>{meetingTitles.get(entry.occurrenceKey) ?? "Untitled meeting"}</h3>
                     <p>
-                      Occurrence {entry.occurrenceKey} · version {entry.eventVersion} ·{" "}
-                      {new Date(entry.createdAt).toLocaleString()} ·{" "}
+                      {/* The Calendar version stays here and only here: it is
+                          what tells one revision from the next. On a current
+                          brief it is a raw ETag beside a meeting's name. */}
+                      version {entry.eventVersion} · {formatMeetingTime(entry.createdAt)} ·{" "}
                       <span
                         className={`status-badge ${isCurrent ? "status-done" : "status-active"}`}
                       >
@@ -386,7 +454,7 @@ export function MeetingBriefPage() {
                       <p className="muted">{entry.meetingBrief.summary}</p>
                     ) : null}
                     <p>
-                      Status: {entry.status}
+                      {statusLabel(entry.status)}
                       {!entry.meetingBrief || entry.status !== "done" ? (
                         <>
                           {" · "}
@@ -400,16 +468,6 @@ export function MeetingBriefPage() {
           </ul>
         )}
       </section>
-
-      <div className="card">
-        <h3>How this page is built</h3>
-        <p className="muted">
-          Upcoming derived from Intake DurableClock schedules (Module-owned). Briefs derived on read
-          — the brief index is invalidated only by Meeting Brief Generator writes. No live
-          Gmail/HubSpot/Docs reads for history.
-        </p>
-        <p className="muted">Stages: snapshot | enrich | compose | deliver (fixed 4)</p>
-      </div>
     </div>
   );
 }

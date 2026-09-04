@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { DriveFileClient } from "../../../apps/server/src/intake/drive";
 import {
   TranscriptCatalog,
+  TRANSCRIPT_CATALOG_EXTRACTOR_VERSION,
   type TranscriptCatalogSource,
 } from "../../../apps/server/src/transcript-catalog/catalog";
 import { createDriveCatalogSource } from "../../../apps/server/src/transcript-catalog/drive-source";
@@ -167,7 +168,7 @@ describe("Transcript Catalog consent and backfill", () => {
       observedRevision: 1,
       modifiedAt: "2026-08-17T13:05:00.000Z",
     });
-    expect(record?.extractorVersion).toBe(1);
+    expect(record?.extractorVersion).toBe(TRANSCRIPT_CATALOG_EXTRACTOR_VERSION);
     expect(record?.ingestedAt).toBe("2026-08-31T12:00:00.000Z");
     expect(record?.meetingDate).toBe("2026-08-17");
     expect(record?.occurrence).toBeNull();
@@ -205,6 +206,71 @@ describe("Transcript Catalog consent and backfill", () => {
       "Grace Hopper",
       "OPERATOR",
       "Ada Lovelace",
+    ]);
+  });
+
+  it("re-derives speaker labels on a record stored under an older extractor", async () => {
+    /* Records are immutable, so a derivation fix would otherwise never reach
+       the corpus already catalogued: every Markdown transcript in it would keep
+       reporting no speakers, and every Debrief keep an unprefillable roster.
+       Only the derived fields move — the text, the source and the ledger are
+       untouched. */
+    const workspaceDir = mkdtempSync(join(tmpdir(), "transcript-catalog-rederive-"));
+    const source = fakeSource({
+      fileA: {
+        name: "Stand-Up-transcript-2026-08-17T13-00-00.000Z.md",
+        body: "**Grace Hopper** *[00:00]*: Ready.",
+      },
+    });
+    const catalog = makeCatalog(source, workspaceDir);
+    await catalog.grantConsent();
+    await catalog.whenIdle();
+
+    const store = new TranscriptCatalogStore(workspaceDir);
+    const stored = store.readTranscript("drive_fileA_r1");
+    expect(stored).not.toBeNull();
+    store.updateTranscript({ ...stored!, speakers: [], extractorVersion: 1 });
+    expect(store.readTranscript("drive_fileA_r1")?.speakers).toEqual([]);
+
+    await catalog.processAvailable();
+    await catalog.whenIdle();
+
+    const repaired = store.readTranscript("drive_fileA_r1");
+    expect(repaired?.speakers).toEqual(["Grace Hopper"]);
+    expect(repaired?.extractorVersion).toBe(TRANSCRIPT_CATALOG_EXTRACTOR_VERSION);
+    // Re-derived in place, not re-registered: same text, same revision.
+    expect(repaired?.normalizedText).toBe(stored!.normalizedText);
+    expect(repaired?.source).toEqual(stored!.source);
+    expect(repaired?.ingestedAt).toBe(stored!.ingestedAt);
+  });
+
+  it("reads the Markdown speaker line an export writes with a bracketed timestamp", async () => {
+    /* `**Richard Achee** *[00:00]*: …`. The plain label pattern cannot reach
+       the separating colon — it refuses to cross the one inside `00:00` — so
+       every Markdown transcript in the corpus recorded no speakers at all, and
+       with no speakers a transcript-owned Meeting has no participants and its
+       Debrief has no roster to prefill. */
+    const source = fakeSource({
+      fileA: {
+        name: "Stand-Up-transcript-2026-08-17T13-00-00.000Z.md",
+        body: [
+          "# Found42 Stand-Up Meeting",
+          "",
+          "**Richard Achee** *[00:00]*: So we'll do a recap.",
+          "**Adejoke Olaosebikan** *[00:18]*: Yes, I made some progress.",
+          "__Dana__: Emphasis without a timestamp still counts.",
+          "**Richard Achee** *[01:02]*: Repeats are one speaker.",
+        ].join("\n"),
+      },
+    });
+    const catalog = makeCatalog(source);
+    await catalog.grantConsent();
+    await catalog.whenIdle();
+
+    expect(catalog.getTranscript("drive_fileA_r1")?.speakers).toEqual([
+      "Richard Achee",
+      "Adejoke Olaosebikan",
+      "Dana",
     ]);
   });
 

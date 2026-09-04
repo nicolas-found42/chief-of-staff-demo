@@ -1,169 +1,102 @@
-import type { MeetingDebriefDetail, MeetingDebriefExtraction } from "@chief-of-staff-demo/shared";
+import type { MeetingDebriefActionItemRollup } from "@chief-of-staff-demo/shared";
 import { describe, expect, it } from "vitest";
 import { selectHomeActionItems } from "../../../apps/web/src/homeActionItems";
 
 /**
- * The Meeting Wizard home lists the owner's or owner-unresolved action items
- * that are still open and not dismissed, including Debriefs not yet reviewed
- * (issue #159). Done/dismissed are the #158 read-model states: dismissed
- * never lists, local done lists only until a Google Task takes over, and a
- * Task-backed item follows the Task.
+ * The Meeting Wizard home lists the owner's own open action items (issue
+ * #159). Dropping dismissed and completed items is the server rollup's job now
+ * (`/api/meeting-debrief/action-items`), so what is left here is whose an item
+ * is, what order they read in, and how many.
+ *
+ * Ownership has two keys, and the second is load-bearing: the Catalog resolves
+ * very few mentions to Profiles, so keying on the Profile alone made every
+ * unresolved item count as the owner's and the list became everyone's work.
  */
 
 const OWNER = "profile_owner";
 const OTHER = "profile_other";
+const OWNER_NAME = "Nicolas Alexander";
 
-function extraction(
-  titles: { title: string; ownerProfileId: string | null }[],
-): MeetingDebriefExtraction {
+function item(overrides: Partial<MeetingDebriefActionItemRollup> = {}) {
   return {
-    version: 1,
-    summary: "summary",
-    decisions: [],
-    actionItems: titles.map((item) => ({
-      title: item.title,
-      owner: null,
-      ownerMentionId: null,
-      ownerProfileId: item.ownerProfileId,
-      dueDate: null,
-    })),
-    openQuestions: [],
-    effectivenessEvidence: "evidence",
-    coachingAdvice: "advice",
-    suggestedRecipients: [],
-  };
-}
-
-function detail(
-  runId: string,
-  overrides: Partial<MeetingDebriefDetail> = {},
-): MeetingDebriefDetail {
-  return {
-    runId,
-    transcriptId: `transcript_${runId}`,
-    meetingId: `meeting_${runId}`,
-    status: "done",
-    summary: null,
-    skipReason: null,
-    meetingDate: null,
-    fileName: null,
-    sourceUrl: null,
-    linked: false,
-    occurrence: null,
-    roster: [],
-    speakers: [],
-    rosterStatus: "requires_confirmation",
-    identity: { resolved: [], unresolved: [], organizations: [] },
-    extraction: extraction([{ title: "default", ownerProfileId: null }]),
-    reviewReadiness: "ready",
-    review: null,
+    runId: "run",
+    meetingId: "meeting",
+    index: 0,
+    title: "title",
+    owner: null,
+    ownerProfileId: null,
+    dueDate: null,
     ...overrides,
-  };
+  } satisfies MeetingDebriefActionItemRollup;
 }
 
 describe("selectHomeActionItems", () => {
-  it("lists the owner's and owner-unresolved items, including unreviewed Debriefs", () => {
-    const details = [
-      detail("reviewed", {
-        extraction: extraction([
-          { title: "mine", ownerProfileId: OWNER },
-          { title: "unresolved", ownerProfileId: null },
-          { title: "theirs", ownerProfileId: OTHER },
-        ]),
-        review: {
-          state: "awaiting_review",
-          approvedAt: null,
-          roster: { status: "confirmed", confirmedAt: null, entries: [] },
-          automaticRecipients: [],
-          additionalRecipients: [],
-          droppedActionItems: [],
-          suggestedRecipients: [],
-          completedActionItems: [],
-          actionItemTasks: [],
-          approvalBlockers: [],
-          duplicateWarning: null,
-        },
-      }),
-      detail("unreviewed", {
-        review: null,
-      }),
+  it("keeps the owner's resolved items and drops another Profile's", () => {
+    const items = [
+      item({ title: "mine", ownerProfileId: OWNER }),
+      item({ title: "theirs", ownerProfileId: OTHER }),
     ];
-    const titles = selectHomeActionItems(details, OWNER).map((item) => item.title);
-    expect(titles).toEqual(["mine", "unresolved", "default"]);
+    expect(selectHomeActionItems(items, OWNER).map((entry) => entry.title)).toEqual(["mine"]);
   });
 
-  it("hides other-owned items when the owner is unconfirmed", () => {
-    const details = [
-      detail("run", {
-        extraction: extraction([
-          { title: "unresolved", ownerProfileId: null },
-          { title: "resolved", ownerProfileId: OTHER },
-        ]),
-      }),
+  it("falls back to the owner's name when the Catalog resolved no Profile", () => {
+    const items = [
+      item({ title: "mine-by-name", owner: OWNER_NAME }),
+      item({ title: "mine-cased", owner: "  nicolas alexander " }),
+      item({ title: "theirs-by-name", owner: "Richard Achee" }),
+      item({ title: "nobody-named" }),
     ];
-    expect(selectHomeActionItems(details, null).map((item) => item.title)).toEqual(["unresolved"]);
-  });
-
-  it("excludes dismissed and locally-done items", () => {
-    const details = [
-      detail("run", {
-        extraction: extraction([
-          { title: "keep", ownerProfileId: null },
-          { title: "dismissed", ownerProfileId: null },
-          { title: "done", ownerProfileId: null },
-        ]),
-        review: {
-          state: "awaiting_review",
-          approvedAt: null,
-          roster: { status: "confirmed", confirmedAt: null, entries: [] },
-          automaticRecipients: [],
-          additionalRecipients: [],
-          droppedActionItems: [1],
-          suggestedRecipients: [],
-          completedActionItems: [2],
-          actionItemTasks: [],
-          approvalBlockers: [],
-          duplicateWarning: null,
-        },
-      }),
-    ];
-    expect(selectHomeActionItems(details, OWNER).map((item) => item.title)).toEqual(["keep"]);
-  });
-
-  it("follows the Google Task once one exists, locally-done fallback otherwise", () => {
-    const details = [
-      detail("run", {
-        extraction: extraction([
-          { title: "task-open-despite-local", ownerProfileId: null },
-          { title: "task-done", ownerProfileId: null },
-        ]),
-        review: {
-          state: "approved",
-          approvedAt: null,
-          roster: { status: "confirmed", confirmedAt: null, entries: [] },
-          automaticRecipients: [],
-          additionalRecipients: [],
-          droppedActionItems: [],
-          suggestedRecipients: [],
-          completedActionItems: [0],
-          actionItemTasks: [
-            { index: 0, taskId: "task_0", completed: false },
-            { index: 1, taskId: "task_1", completed: true },
-          ],
-          approvalBlockers: [],
-          duplicateWarning: null,
-        },
-      }),
-    ];
-    expect(selectHomeActionItems(details, OWNER).map((item) => item.title)).toEqual([
-      "task-open-despite-local",
+    expect(selectHomeActionItems(items, OWNER, OWNER_NAME).map((entry) => entry.title)).toEqual([
+      "mine-by-name",
+      "mine-cased",
+      "nobody-named",
     ]);
   });
 
-  it("carries the Meeting each item came from", () => {
-    const details = [detail("run", { meetingId: "meeting_7" })];
-    const items = selectHomeActionItems(details, OWNER);
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ runId: "run", meetingId: "meeting_7", index: 0 });
+  it("lets a resolved Profile outrank the name it was written under", () => {
+    const items = [item({ title: "theirs", owner: OWNER_NAME, ownerProfileId: OTHER })];
+    expect(selectHomeActionItems(items, OWNER, OWNER_NAME)).toEqual([]);
+  });
+
+  it("keeps only unowned items when the owner is unconfirmed", () => {
+    const items = [
+      item({ title: "unowned" }),
+      item({ title: "named", owner: "Richard Achee" }),
+      item({ title: "resolved", ownerProfileId: OTHER }),
+    ];
+    expect(selectHomeActionItems(items, null).map((entry) => entry.title)).toEqual(["unowned"]);
+  });
+
+  it("sorts by due date, undated last", () => {
+    const items = [
+      item({ title: "undated" }),
+      item({ title: "later", dueDate: "2026-09-10" }),
+      item({ title: "overdue", dueDate: "2026-06-01" }),
+    ];
+    expect(selectHomeActionItems(items, OWNER).map((entry) => entry.title)).toEqual([
+      "overdue",
+      "later",
+      "undated",
+    ]);
+  });
+
+  it("caps the list — the home is a short list, not an archive", () => {
+    const items = Array.from({ length: 40 }, (_, index) =>
+      item({
+        title: `item-${index}`,
+        index,
+        dueDate: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+      }),
+    );
+    expect(selectHomeActionItems(items, OWNER)).toHaveLength(12);
+  });
+
+  it("carries the Meeting and the Run each item came from", () => {
+    const items = [item({ runId: "run_7", meetingId: "meeting_7", index: 3 })];
+    expect(selectHomeActionItems(items, OWNER)[0]).toMatchObject({
+      runId: "run_7",
+      meetingId: "meeting_7",
+      index: 3,
+    });
   });
 });

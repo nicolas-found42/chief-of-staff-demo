@@ -102,6 +102,25 @@ describe("collectMeetingHistory (issue #152)", () => {
     expect(list[0]?.occurrenceKey).toBe("evt_hist_1::2026-06-15T15:00:00Z");
   });
 
+  it("sends Calendar an RFC3339 instant when the oldest Transcript states only a date", async () => {
+    /* `oldestRecordedDate` returns the Transcript's `meetingDate`, which is a
+       plain `YYYY-MM-DD`. Sent as-is, Calendar answered 400 Bad Request on
+       every reconcile: no history was ever collected, no past Meeting existed,
+       and so no Transcript could reach the occurrence it belonged to. */
+    const meetings = meetingsStore();
+    const { provider, windows } = spyingProvider(new FakeCalendarProvider([calEvent()]));
+
+    await collectMeetingHistory({
+      provider,
+      meetings,
+      oldestTranscriptAt: "2026-05-01",
+      ownerEmail: "owner@example.com",
+      now: NOW,
+    });
+
+    expect(windows).toEqual([{ timeMin: "2026-05-01T00:00:00.000Z", timeMax: NOW.toISOString() }]);
+  });
+
   it("records a Meeting collected from history indistinguishably from forward intake", async () => {
     const fromHistory = meetingsStore();
     const fake = new FakeCalendarProvider([calEvent()]);

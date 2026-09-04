@@ -257,7 +257,13 @@ export interface MeetingBriefIndexEntry {
 // ---------------------------------------------------------------------------
 
 /** Whether the day's Meeting already has a Meeting Brief. */
-export type DailyBriefingBriefStatus = "ready" | "pending" | "missing";
+/**
+ * How a Meeting's Brief stands in a Briefing. `failed` is its own state and
+ * not a kind of `missing`: a preparation that ran and failed is something the
+ * owner can retry, where a missing one has never been asked for, and a
+ * front page that calls the first "No brief" under-reports its own failures.
+ */
+export type DailyBriefingBriefStatus = "ready" | "pending" | "failed" | "missing";
 
 /** One of the day's Meetings as the Daily Briefing presents it. */
 export interface DailyBriefingMeeting {

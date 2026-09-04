@@ -119,6 +119,7 @@ describe("WorkspaceMeetingJoin.attachTranscript", () => {
       id: seeded.calendarId,
       occurrenceKey: "evt_a::2026-06-18T15:00:00Z",
       calendarEventId: "evt_a",
+      roster: [],
     };
     await seeded.join.attachTranscript("t_1", matched);
     await seeded.join.attachTranscript("t_1", matched);
@@ -174,12 +175,16 @@ describe("WorkspaceMeetingJoin.mergeTranscriptShell", () => {
 });
 
 describe("WorkspaceMeetingJoin.associateTranscripts", () => {
-  it("links the unmatched back-catalog and skips already-linked records", async () => {
+  it("gives every unlinked transcript a Meeting, matched or its own", async () => {
     const seeded = harness({
       meetings: [meeting()],
       transcripts: [
         transcript({ id: "t_match" }),
-        transcript({ id: "t_linked", meetingId: "meeting_a" }),
+        transcript({
+          id: "t_linked",
+          meetingId: "meeting_a",
+          roster: [{ displayName: "Owner", email: "owner@example.com" }],
+        }),
         transcript({
           id: "t_nomatch",
           source: {
@@ -195,11 +200,167 @@ describe("WorkspaceMeetingJoin.associateTranscripts", () => {
       ],
     });
     const result = await seeded.join.associateTranscripts();
-    expect(result).toEqual({ linked: 1 });
-    expect(seeded.attachMeeting).toHaveBeenCalledTimes(1);
+    /* Both unlinked transcripts get a Meeting: one matches the Calendar
+       occurrence, and one whose file name says nothing usable owns its own.
+       A meeting only a transcript attests to still happened, and the Meeting
+       Wizard is where the workspace looks for it. The already-linked record is
+       left alone. */
+    expect(result).toEqual({ linked: 2 });
+    expect(seeded.attachMeeting).toHaveBeenCalledTimes(2);
     expect(seeded.attachMeeting).toHaveBeenCalledWith(
       "t_match",
       expect.objectContaining({ id: seeded.calendarId }),
+    );
+    expect(seeded.attachMeeting).toHaveBeenCalledWith(
+      "t_nomatch",
+      expect.objectContaining({ occurrenceKey: null }),
+    );
+    expect(seeded.attachMeeting).not.toHaveBeenCalledWith("t_linked", expect.anything());
+  });
+
+  it("re-matches a Transcript sitting on a Meeting it owns once Calendar has the occurrence", async () => {
+    /* Calendar arrives late — the backward history read is one reconcile
+       behind the first join, and an occurrence can be created after its own
+       transcript. A Transcript that fell back to owning a Meeting is not a
+       settled placement, so it is offered to the match again, and the shell it
+       leaves behind is forgotten. */
+    const seeded = harness({ meetings: [meeting()], transcripts: [transcript({ id: "t_shell" })] });
+    // The state the broken history read left behind: the Transcript owns a
+    // Meeting of its own even though its occurrence is on the Calendar.
+    const shell = seeded.meetings.createFromTranscript({
+      transcriptId: "t_shell",
+      title: "Internal planning",
+      speakers: [],
+      modifiedAt: null,
+      meetingDate: "2026-06-18",
+    });
+    seeded.transcripts.find((record) => record.id === "t_shell")!.meetingId = shell.id;
+
+    const result = await seeded.join.associateTranscripts();
+
+    expect(result).toEqual({ linked: 1 });
+    expect(seeded.transcripts.find((record) => record.id === "t_shell")?.meetingId).toBe(
+      seeded.calendarId,
+    );
+    expect(seeded.meetings.get(shell.id)).toBeNull();
+  });
+
+  it("keeps the shell when nothing on Calendar matches it", async () => {
+    const seeded = harness({ meetings: [meeting()], transcripts: [] });
+    const shell = seeded.meetings.createFromTranscript({
+      transcriptId: "t_nomatch",
+      title: "Unplaceable",
+      speakers: [],
+      modifiedAt: null,
+    });
+    seeded.transcripts.push(
+      transcript({
+        id: "t_nomatch",
+        meetingId: shell.id,
+        source: {
+          sourceSystem: "drive",
+          externalFileId: "file_nomatch",
+          fileName: "12345.mp3",
+          sourceUrl: null,
+          checksum: "sum_nomatch",
+          observedRevision: 1,
+          modifiedAt: null,
+        },
+      }),
+    );
+
+    const result = await seeded.join.associateTranscripts();
+
+    expect(result).toEqual({ linked: 0 });
+    expect(seeded.meetings.get(shell.id)).not.toBeNull();
+    expect(seeded.attachMeeting).not.toHaveBeenCalled();
+  });
+
+  it("carries Calendar's attendees across with the association", async () => {
+    /* The association wrote the occurrence but never the roster, so a linked
+       Transcript still had an empty one — and its Debrief asked the owner to
+       type in the attendees the Meeting beside it already held. */
+    const seeded = harness({ meetings: [meeting()], transcripts: [transcript({ id: "t_match" })] });
+
+    await seeded.join.associateTranscripts();
+
+    expect(seeded.attachMeeting).toHaveBeenCalledWith(
+      "t_match",
+      expect.objectContaining({
+        id: seeded.calendarId,
+        roster: [
+          { displayName: "Owner", email: "owner@example.com" },
+          { displayName: "Bob", email: "bob@internal.example.com" },
+        ],
+      }),
+    );
+  });
+
+  it("gives a Meeting a Transcript owns no Calendar roster to carry", async () => {
+    const seeded = harness({
+      meetings: [meeting()],
+      transcripts: [
+        transcript({
+          id: "t_nomatch",
+          source: {
+            sourceSystem: "drive",
+            externalFileId: "file_nomatch",
+            fileName: "12345.mp3",
+            sourceUrl: null,
+            checksum: "sum_nomatch",
+            observedRevision: 1,
+            modifiedAt: null,
+          },
+        }),
+      ],
+    });
+
+    await seeded.join.associateTranscripts();
+
+    expect(seeded.attachMeeting).toHaveBeenCalledWith(
+      "t_nomatch",
+      expect.objectContaining({ occurrenceKey: null, roster: [] }),
+    );
+  });
+
+  it("never re-matches a Transcript already on a Calendar Meeting", async () => {
+    const seeded = harness({
+      meetings: [meeting()],
+      transcripts: [
+        transcript({
+          id: "t_linked",
+          meetingId: "meeting_a",
+          roster: [{ displayName: "Owner", email: "owner@example.com" }],
+        }),
+      ],
+    });
+
+    const result = await seeded.join.associateTranscripts();
+
+    expect(result).toEqual({ linked: 0 });
+    expect(seeded.attachMeeting).not.toHaveBeenCalled();
+  });
+
+  it("gives a settled Transcript the roster its Meeting holds, without re-matching it", async () => {
+    /* An earlier build wrote the occurrence and nothing else. The placement
+       stays exactly as it was; only the attendees it was missing arrive. */
+    const seeded = harness({
+      meetings: [meeting()],
+      transcripts: [transcript({ id: "t_linked", meetingId: "meeting_a", roster: [] })],
+    });
+
+    const result = await seeded.join.associateTranscripts();
+
+    expect(result).toEqual({ linked: 0 });
+    expect(seeded.attachMeeting).toHaveBeenCalledWith(
+      "t_linked",
+      expect.objectContaining({
+        id: seeded.calendarId,
+        roster: [
+          { displayName: "Owner", email: "owner@example.com" },
+          { displayName: "Bob", email: "bob@internal.example.com" },
+        ],
+      }),
     );
   });
 });

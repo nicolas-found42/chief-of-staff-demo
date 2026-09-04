@@ -36,7 +36,7 @@ interface SemanticTranscriptCandidate {
 /** One cited excerpt composition may state as fact. */
 interface TranscriptEvidenceItem {
   transcriptId: string;
-  via: TranscriptEvidenceVia | "confirmed-relevance";
+  via: TranscriptEvidenceVia | "confirmed-relevance" | "relevance";
   excerpt: string;
   meetingDate: string | null;
 }
@@ -89,15 +89,18 @@ const DEFAULT_TRANSCRIPT_EVIDENCE_LIMIT = 6;
 /**
  * Relationship strength, the first ranking key. A direct person link is the
  * strongest claim the Workspace holds, then the organization, then the
- * standing meeting series. Owner-confirmed similarity is citable but is the
- * weakest of the citable lanes: it was admitted by a review decision rather
- * than by a link the Workspace already knew about.
+ * standing meeting series, then similarity the owner confirmed, and last
+ * similarity nobody has ruled on. Undecided similarity is citable — a review
+ * queue nobody works is not a safety property, it is evidence withheld — but
+ * it ranks below every lane the Workspace can vouch for, so it only ever
+ * fills space the stronger lanes left.
  */
 const RELATIONSHIP_STRENGTH: Record<TranscriptEvidenceItem["via"], number> = {
-  person: 3,
-  organization: 2,
-  "meeting-series": 1,
-  "confirmed-relevance": 0,
+  person: 4,
+  organization: 3,
+  "meeting-series": 2,
+  "confirmed-relevance": 1,
+  relevance: 0,
 };
 
 /** One citable excerpt with the two ranking keys that outrank neither lane. */
@@ -107,10 +110,13 @@ interface RankedEvidence {
 }
 
 /**
- * Split the two lanes into what may be cited and what may only be reviewed.
- * Only a semantic candidate the owner explicitly confirmed crosses over;
- * pending, rejected, and unresolved states never do, so an unreviewed
- * suggestion cannot block or enter a scheduled Brief.
+ * Split the two lanes into what may be cited and what may not.
+ *
+ * Everything the owner has not rejected is citable. Confirmation used to be
+ * required, which meant every similarity result waited on a review queue that
+ * nothing in the product ever presented — so the lane was, in practice, always
+ * empty. A rejection is still honoured: that is an owner decision, not an
+ * absent one.
  *
  * Citable evidence is then ranked by relationship strength, then meeting
  * relevance, then recency, and cut to `limit`. The keys are applied in
@@ -132,18 +138,18 @@ export function selectTranscriptEvidence(
   }));
   const suggestions: TranscriptEvidenceSuggestion[] = [];
   for (const candidate of input.semantic) {
-    if (candidate.reviewState === "confirmed") {
-      ranked.push({
-        item: {
-          transcriptId: candidate.transcriptId,
-          via: "confirmed-relevance",
-          excerpt: candidate.excerpt,
-          meetingDate: candidate.meetingDate,
-        },
-        relevance: candidate.score,
-      });
-      continue;
-    }
+    if (candidate.reviewState === "rejected") continue;
+    ranked.push({
+      item: {
+        transcriptId: candidate.transcriptId,
+        via: candidate.reviewState === "confirmed" ? "confirmed-relevance" : "relevance",
+        excerpt: candidate.excerpt,
+        meetingDate: candidate.meetingDate,
+      },
+      relevance: candidate.score,
+    });
+    /* Still listed as a suggestion while undecided, so the owner can confirm
+       or reject it — it is simply cited in the meantime rather than withheld. */
     if (candidate.reviewState === "pending") {
       suggestions.push({
         transcriptId: candidate.transcriptId,

@@ -11,6 +11,13 @@ export interface ProductArea {
   id: string;
   /** Where the nav and Home's card link. Presentation — expected to change. */
   path: string;
+  /**
+   * Other route prefixes this area presents, beyond its own `path`. An area
+   * may own a surface that does not sit under it — Meeting Wizard presents the
+   * Debrief journey at `/meeting-debrief` — and the nav has to know, or those
+   * pages show no current product at all.
+   */
+  alsoOwns?: readonly string[];
   /** The nav's text, e.g. "Person Profiles". */
   label: string;
   /** One line, for Home's card. */
@@ -44,5 +51,17 @@ export const PRODUCT_AREAS: readonly ProductArea[] = [
     path: "/meetings",
     label: "Meeting Wizard",
     description: "Prospective Brief and retrospective Debrief, presented as sibling workflows.",
+    alsoOwns: ["/meeting-debrief"],
   },
 ];
+
+/**
+ * Whether one product area is the one the reader is inside. Its own path, or
+ * any route it also presents; a prefix only counts at a segment boundary, so
+ * `/people` never claims `/peoples`.
+ */
+export function isCurrentArea(area: ProductArea, pathname: string): boolean {
+  const covers = (prefix: string): boolean =>
+    pathname === prefix || pathname.startsWith(`${prefix}/`);
+  return covers(area.path) || (area.alsoOwns ?? []).some(covers);
+}

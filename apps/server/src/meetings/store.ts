@@ -5,6 +5,31 @@ import type { Meeting, MeetingIndex, MeetingParticipant } from "@chief-of-staff-
 import { atomicWriteJson } from "../engine/atomic.js";
 
 /**
+ * A date-only `YYYY-MM-DD` anchored at midday UTC, so the calendar day it
+ * names survives rendering in any offset from UTC-11 to UTC+11. Anything that
+ * already carries a time is returned untouched; null passes through.
+ */
+function middayUtc(date: string | null | undefined): string | null {
+  if (!date) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T12:00:00.000Z` : date;
+}
+
+/**
+ * Chronological order. Calendar writes an offset (`…T09:00:00-04:00`) and a
+ * transcript-owned Meeting writes UTC (`…T12:00:00.000Z`), so comparing the
+ * strings sorts `09:00:00-04:00` (13:00Z) before `12:00:00.000Z` — text order,
+ * not time order. Compare the instants; an unparseable start sorts last rather
+ * than scrambling the ones around it.
+ */
+function compareByStart(a: Meeting, b: Meeting): number {
+  const left = Date.parse(a.startAt);
+  const right = Date.parse(b.startAt);
+  if (Number.isNaN(left)) return Number.isNaN(right) ? 0 : 1;
+  if (Number.isNaN(right)) return -1;
+  return left - right;
+}
+
+/**
  * The Workspace's Meetings (ADR-0050).
  *
  * A Workspace resource beside Person Profiles and the Transcript Catalog, not
@@ -31,7 +56,7 @@ export class WorkspaceMeetings {
   }
 
   list(): Meeting[] {
-    return this.read().sort((a, b) => a.startAt.localeCompare(b.startAt));
+    return this.read().sort(compareByStart);
   }
 
   index(): MeetingIndex {
@@ -109,13 +134,21 @@ export class WorkspaceMeetings {
     speakers: string[];
     modifiedAt: string | null;
     meetingDate?: string | null;
+    /** The full timestamp the transcript's file name carries, when it has one. */
+    nameTimestamp?: string | null;
   }): Meeting {
     const meetings = this.read();
     const id = transcriptMeetingId(input.transcriptId);
     const existing = meetings.find((meeting) => meeting.id === id);
     if (existing) return existing;
     const at = this.now().toISOString();
-    const startAt = input.modifiedAt ?? input.meetingDate ?? at;
+    /* When the meeting happened, best evidence first. `modifiedAt` is when
+       Drive last touched the file — copying a June transcript into the folder
+       in August dated the Meeting August — so it is the last resort, not the
+       first. A date-only `meetingDate` is anchored at midday UTC: every offset
+       from UTC-11 to UTC+11 then renders the calendar day the name states,
+       where midnight would show the day before across the Americas. */
+    const startAt = input.nameTimestamp ?? middayUtc(input.meetingDate) ?? input.modifiedAt ?? at;
     const participants = participantsFromSpeakers(input.speakers);
     const meeting: Meeting = {
       id,

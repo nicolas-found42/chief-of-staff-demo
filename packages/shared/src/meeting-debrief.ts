@@ -21,6 +21,13 @@ export const MEETING_DEBRIEF_INTAKE = "transcript-catalog" as const;
 export type MeetingDebriefRosterStatus = "prefilled" | "requires_confirmation";
 
 /** Whether the Debrief is ready for the owner's review. */
+/**
+ * How a Debrief stands for the one thing that still needs the owner: the
+ * outward writes. Nothing gates reading or using a Debrief any more, so this
+ * describes publishing readiness only — `needs_roster` means the attendee
+ * list is not settled enough to address a draft to, not that the Debrief is
+ * unfinished.
+ */
 export type MeetingDebriefReviewReadiness = "ready" | "needs_roster" | "no_extraction";
 
 /**
@@ -97,7 +104,12 @@ export interface MeetingDebriefReviewState {
 
 /** The review half of the Debrief detail journey's payload. */
 export interface MeetingDebriefReviewView {
-  state: "awaiting_review" | "approved" | "expired";
+  /**
+   * `published` once the gated outward writes have gone out; `extracted`
+   * before that. A Debrief is never "awaiting review" — it finishes when it
+   * is extracted — and never expires.
+   */
+  state: "extracted" | "published";
   approvedAt: string | null;
   roster: {
     status: "unconfirmed" | "confirmed";
@@ -254,7 +266,7 @@ export interface MeetingDebriefIndexEntry {
   identity: { resolvedCount: number; unresolvedCount: number; organizationCount: number };
   reviewReadiness: MeetingDebriefReviewReadiness;
   /** The Run's review state; null before the review record exists. */
-  reviewState: "awaiting_review" | "approved" | "expired" | null;
+  reviewState: "published" | null;
   rosterConfirmed: boolean;
   recipientCount: number;
 }
@@ -285,4 +297,18 @@ export interface MeetingDebriefDetail {
   reviewReadiness: MeetingDebriefReviewReadiness;
   /** The review workflow's view; null before the Run holds a review record. */
   review: MeetingDebriefReviewView | null;
+}
+
+/**
+ * One open action item as the cross-Debrief rollup reports it. Ownership is
+ * carried, never applied: the caller decides whose list it belongs on.
+ */
+export interface MeetingDebriefActionItemRollup {
+  runId: string;
+  meetingId: string | null;
+  index: number;
+  title: string;
+  owner: string | null;
+  ownerProfileId: string | null;
+  dueDate: string | null;
 }

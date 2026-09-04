@@ -48,7 +48,9 @@ export interface TranscriptCatalogRuntime {
    * memory rather than as a durable checkpoint, because the Catalog's ledger
    * is already the durable record of what was processed.
    */
-  intakeStatus(): DriveIntakeStatus;
+  /** Configuration and this process's last pass. The Catalog's own ledger is
+   *  added by the route, which reads it from the Catalog itself. */
+  intakeStatus(): Omit<DriveIntakeStatus, "catalog">;
   /** Begins the periodic processing pass at the configured Drive interval. */
   start(): void;
   stop(): void;
@@ -129,7 +131,7 @@ export function createTranscriptCatalogRuntime(
 
   return {
     catalog,
-    intakeStatus(): DriveIntakeStatus {
+    intakeStatus(): Omit<DriveIntakeStatus, "catalog"> {
       const current = options.getConfig();
       return {
         enabled: current.drive.enabled,

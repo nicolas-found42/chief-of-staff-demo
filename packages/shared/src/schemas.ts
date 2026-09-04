@@ -1,3 +1,4 @@
+import type { TranscriptCatalogStatus } from "./transcript.js";
 import { z } from "zod";
 import { YoutubeChannelSchema } from "./youtube.js";
 
@@ -360,6 +361,8 @@ export interface DriveIntakeStatus {
    *  there is no last-checked time to claim. */
   lastPollAt: string | null;
   lastPollOutcome: "ok" | "failed" | null;
+  /** The Transcript Catalog's own state: standing consent, and the ledger. */
+  catalog: TranscriptCatalogStatus;
 }
 
 // ---------------------------------------------------------------------------

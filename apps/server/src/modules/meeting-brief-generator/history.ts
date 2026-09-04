@@ -4,6 +4,20 @@ import { ineligibilityOf, MEETING_BRIEF_CALENDAR_ID, occurrenceKeyFor } from "./
 import type { WorkspaceMeetings } from "../../meetings/store.js";
 
 /**
+ * Calendar's `timeMin` is RFC3339, and the oldest Transcript's date is a plain
+ * `YYYY-MM-DD` whenever the transcript stated a meeting date rather than only
+ * an ingestion instant. Sent as-is Calendar answered 400 Bad Request on every
+ * reconcile, so no history was ever collected and no Transcript could reach
+ * the occurrence it belonged to. A date names the whole day, so it starts at
+ * its own midnight UTC — reaching back further than any offset needs.
+ */
+function rfc3339Instant(at: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return `${at}T00:00:00.000Z`;
+  const parsed = Date.parse(at);
+  return Number.isNaN(parsed) ? at : new Date(parsed).toISOString();
+}
+
+/**
  * The one backward read of Calendar (issue #152).
  *
  * Calendar is read forward only, so a Workspace that starts after its own
@@ -36,7 +50,7 @@ export async function collectMeetingHistory(args: {
   const result = await args.provider.listEvents({
     calendarId,
     syncToken: null,
-    timeMin: args.oldestTranscriptAt,
+    timeMin: rfc3339Instant(args.oldestTranscriptAt),
     timeMax: args.now.toISOString(),
   });
 

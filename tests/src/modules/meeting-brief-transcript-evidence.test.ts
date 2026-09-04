@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 import { selectTranscriptEvidence } from "../../../apps/server/src/modules/meeting-brief-generator/transcriptEvidence";
 
 /**
- * #138's central discrimination, stated once: a confirmed link is evidence a
- * Brief may compose as fact; a similarity judgment is a suggestion until the
- * owner confirms it. #127 established that similarity is never promoted to
- * fact inside the Catalog — this is the same rule at the Brief's seam.
+ * #138's discrimination, as it now stands: strength of relationship orders the
+ * evidence, and only an owner's rejection keeps a candidate out.
+ *
+ * Confirmation used to be required before a similarity hit could be cited,
+ * which meant every one of them waited on a review queue no product surface
+ * ever presented — the lane was always empty. Undecided similarity is cited,
+ * ranked below every lane the Workspace can vouch for, and still offered for
+ * review.
  */
 describe("Meeting Brief transcript evidence selection (#138)", () => {
-  it("admits confirmed links as evidence and holds unconfirmed similarity as suggestions", () => {
+  it("cites links first, then confirmed similarity, then undecided similarity", () => {
     const selection = selectTranscriptEvidence({
       links: [
         {
@@ -37,16 +41,17 @@ describe("Meeting Brief transcript evidence selection (#138)", () => {
       ],
     });
 
-    /* Confirmed link, and the semantic hit the owner confirmed — both are
-       citable. The higher-scoring pending hit is not, and score does not buy
-       its way in. */
+    /* Relationship strength orders them: the person link, then the similarity
+       the owner confirmed, then the undecided one — whose higher score still
+       does not buy it past either. */
     expect(selection.evidence.map((item) => item.transcriptId)).toEqual([
       "drive_linked_r1",
       "drive_confirmed_r1",
+      "drive_pending_r1",
     ]);
 
-    /* Still visible to the owner as something to review, carrying its
-       citation — but structurally outside what composition can state. */
+    /* Cited, and still offered for review, so the owner can confirm or reject
+       it — rejecting is the one decision that removes it. */
     expect(selection.suggestions.map((item) => item.transcriptId)).toEqual(["drive_pending_r1"]);
   });
 });

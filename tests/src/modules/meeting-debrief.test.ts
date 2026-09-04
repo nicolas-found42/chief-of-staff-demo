@@ -202,16 +202,19 @@ describe("Meeting Debrief Run creation (#139)", () => {
     expect(page.runs).toHaveLength(2);
   });
 
-  it("extracts and then blocks for the owner's review", async () => {
+  it("finishes as soon as it has extracted — nothing waits for the owner", async () => {
     const record = makeRecord();
     h.catalog.set(record.id, record);
     await h.host.process(record);
     await h.host.idle();
 
     const run = h.runs.detail(h.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id);
-    expect(run?.status).toBe("blocked");
-    expect(run?.wait?.stage).toBe("review");
-    expect(run?.wait?.reason).toContain("review");
+    /* A Debrief used to stop here against a thirty-day owner wait, which left
+       a workspace of transcripts `blocked` behind a person. The one thing that
+       still waits for the owner is the outward writes. */
+    expect(run?.status).toBe("done");
+    expect(run?.wait).toBeNull();
+    expect(run?.summary).toContain("action item");
   });
 
   it("skips with a visible reason when the Catalog no longer holds the Transcript", async () => {
@@ -498,7 +501,7 @@ describe("Meeting Debrief retry and recovery (#139)", () => {
     await failingHost.retryRun(runId);
     await failingHost.idle();
 
-    expect(h.runs.detail(runId)?.status).toBe("blocked");
+    expect(h.runs.detail(runId)?.status).toBe("done");
     expect(attempts).toBe(attemptsAfterFailure + 1);
   });
 
@@ -515,7 +518,7 @@ describe("Meeting Debrief retry and recovery (#139)", () => {
     });
 
     h.host.start();
-    await vi.waitFor(() => expect(h.runs.detail(orphan.id)?.status).toBe("blocked"));
+    await vi.waitFor(() => expect(h.runs.detail(orphan.id)?.status).toBe("done"));
 
     const page = h.runs.list({ module: MEETING_DEBRIEF_MODULE_ID });
     expect(page.runs).toHaveLength(1);

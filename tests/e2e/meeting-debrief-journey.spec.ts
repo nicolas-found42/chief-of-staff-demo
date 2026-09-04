@@ -125,7 +125,7 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     transcript: linkedTranscript,
     identity: identityState("drive_journey_link_r1", "profile_alice"),
   });
-  await waitForStatus(request, seeded.runId, "blocked");
+  await waitForStatus(request, seeded.runId, "done");
 
   // 2. The Debrief list shows the row with prefill and readiness.
   await page.goto("/meeting-debrief");
@@ -135,7 +135,7 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
   await expect(row.getByText("Linked", { exact: true })).toBeVisible();
   await expect(row.getByText("Roster prefilled from Calendar")).toBeVisible();
   await expect(row.getByText(/1 resolved/)).toBeVisible();
-  await expect(row.getByText("Awaiting review")).toBeVisible();
+  await expect(row.getByText(/^Ready/)).toBeVisible();
 
   // 3. The detail journey shows extraction, roster, identity, and readiness.
   await page.getByRole("link", { name: LINKED_RUN_FILE }).click();
@@ -153,20 +153,21 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
   await expect(page.getByText("Is the rollout on track?")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Effectiveness evidence" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Coaching advice" })).toBeVisible();
-  await expect(
-    page.getByText("Calendar-linked: occurrence evt1::2026-08-17T13:00:00Z"),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Roster confirmation required before review can complete."),
-  ).toBeVisible();
-  await expect(page.getByText("Awaiting your review").first()).toBeVisible();
+  /* The occurrence key is a diagnostic, not a fact about the meeting — the
+     page says whether Calendar prefilled the roster, and the key lives on the
+     Run detail page. */
+  await expect(page.getByText("Prefilled from the meeting's calendar attendees.")).toBeVisible();
+  await expect(page.getByText("Confirm the roster to publish the draft and Tasks.")).toBeVisible();
+  await expect(page.getByText("Extracted").first()).toBeVisible();
   // The gate's refusal surface, whatever the shared server's owner state is:
   // journey 1 guarantees only the unconfirmed roster, so assert that blocker
   // rather than one that depends on other specs' onboarding state.
-  await expect(page.getByText("Approval is blocked until:")).toBeVisible();
+  await expect(page.getByText("Publishing needs:")).toBeVisible();
   await expect(page.getByText("The attendee roster is not confirmed yet.")).toBeVisible();
-  await expect(page.getByText("Alice — confirmed Profile")).toBeVisible();
-  await expect(page.getByText("Bob — awaiting review")).toBeVisible();
+  await expect(page.getByText("Alice — Profile")).toBeVisible();
+  /* Unresolved mentions are grouped by name and counted, not listed once per
+     span with an "awaiting review" suffix nothing could ever act on. */
+  await expect(page.getByText("Bob", { exact: true })).toBeVisible();
 
   // 4. An unlinked transcript visibly requires manual roster confirmation.
   const unlinked = await seed(request, {
@@ -189,14 +190,14 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     }),
     identity: identityState("drive_journey_unlink_r1", "profile_alice"),
   });
-  await waitForStatus(request, unlinked.runId, "blocked");
+  await waitForStatus(request, unlinked.runId, "done");
 
   await page.goto("/meeting-debrief");
   const unlinkedRow = page.getByRole("row", { name: /Unlinked notes/ });
   await expect(unlinkedRow).toBeVisible();
   await expect(unlinkedRow.getByText("Not linked", { exact: true })).toBeVisible();
   await expect(unlinkedRow.getByText("Roster confirmation required")).toBeVisible();
-  await expect(unlinkedRow.getByText("Awaiting review")).toBeVisible();
+  await expect(unlinkedRow.getByText(/^Ready/)).toBeVisible();
 
   // 5. Re-mining the same transcripts never duplicates Debrief Runs.
   const reseeded = await seed(request, {
@@ -301,20 +302,22 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
     identity: identityState("drive_journey_link_r1", "profile_alice"),
     profiles: [{ fullName: "Carol", email: "carol@example.com" }],
   });
-  await waitForStatus(request, seeded.runId, "blocked");
+  await waitForStatus(request, seeded.runId, "done");
 
   await page.goto(`/meeting-debrief/${encodeURIComponent(seeded.runId)}`);
-  await expect(page.getByText("Awaiting your review").first()).toBeVisible();
+  await expect(page.getByText("Extracted").first()).toBeVisible();
 
   // 1. Whole-field regeneration: the rejected value is invisible to the model,
   //    and the audited regenerate Stage lands on the Run's timeline.
   await page.getByRole("button", { name: "Regenerate summary" }).click();
   await expect(page.getByText("Working…")).toBeHidden();
-  await expect(page.getByText("Awaiting your review").first()).toBeVisible();
+  await expect(page.getByText("Extracted").first()).toBeVisible();
   const run = (await (
     await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
   ).json()) as { review: { state: string } };
-  expect(run.review.state).toBe("awaiting_review");
+  /* Extraction is finished work: the only state left is whether the gated
+     outward writes have gone out. */
+  expect(run.review.state).toBe("extracted");
   const regenerated = (await (
     await request.get(`/api/runs/${encodeURIComponent(seeded.runId)}`)
   ).json()) as { events: Array<{ type: string }> };
@@ -339,8 +342,8 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
 
   // 4. A linked roster binds Calendar shells, so the gate opens: the
   //    approval section shows the Approve button and no blockers.
-  await expect(page.getByRole("heading", { name: "Approval" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve Debrief" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Publish outward" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish draft and Tasks" })).toBeVisible();
   await expect(page.getByText("Approval is blocked until:")).toBeHidden();
 
   // 5. Add a suggested non-attendee recipient through an explicit,
@@ -354,7 +357,7 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
 
   // 6. Approve: the Run locks, and every mutation seam refuses. Approval is
   //    verified through the API before anything is built on top of it.
-  await page.getByRole("button", { name: "Approve Debrief" }).click();
+  await page.getByRole("button", { name: "Publish draft and Tasks" }).click();
   await waitForStatus(request, seeded.runId, "done");
   await expect
     .poll(async () => {
@@ -363,9 +366,9 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
       ).json()) as { review: { state: string } | null };
       return detail.review?.state;
     })
-    .toBe("approved");
-  await expect(page.getByText("Approved — locked").first()).toBeVisible();
-  await expect(page.getByText(/Approved and locked/)).toBeVisible();
+    .toBe("published");
+  await expect(page.getByText(/Published — draft and Tasks written/).first()).toBeVisible();
+  await expect(page.getByText(/^Published/).first()).toBeVisible();
   const approvedDetail = (await (
     await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
   ).json()) as {
@@ -373,7 +376,7 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
     review: { state: string; automaticRecipients: Array<{ email: string }> };
   };
   expect(approvedDetail.status).toBe("done");
-  expect(approvedDetail.review.state).toBe("approved");
+  expect(approvedDetail.review.state).toBe("published");
   expect(approvedDetail.review.automaticRecipients.map((r) => r.email)).toEqual([
     "alice@example.com",
     "bob@example.com",
@@ -404,7 +407,7 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
     .toBeTruthy();
   // The detail surface renders once; wait for the redo Run to hold its
   // review record — and the verified warning — before reading it on the page.
-  await waitForStatus(request, redoRunId!, "blocked");
+  await waitForStatus(request, redoRunId!, "done");
   await expect
     .poll(async () => {
       const detail = (await (
@@ -424,7 +427,7 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
   expect(redoRun.events.some((event) => event.type === "debrief_redo")).toBe(true);
 });
 
-test("meeting debrief expiry journey — an unreviewed Run skips after 30 days", async ({
+test("meeting debrief journey — a Debrief never expires, and publishing stays gated", async ({
   page,
   request,
 }) => {
@@ -447,7 +450,7 @@ test("meeting debrief expiry journey — an unreviewed Run skips after 30 days",
       roster: [],
     }),
   });
-  await waitForStatus(request, unlinked.runId, "blocked");
+  await waitForStatus(request, unlinked.runId, "done");
 
   // Confirming a typed roster with no verified Profile shows the blocker
   // the approval gate refuses on.
@@ -461,25 +464,29 @@ test("meeting debrief expiry journey — an unreviewed Run skips after 30 days",
       "dana@example.com has no Person Profile with a verified (Calendar-anchored) email.",
     ),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve Debrief" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Publish draft and Tasks" })).toBeHidden();
 
+  /* Time passing takes nothing away. A Debrief used to skip itself after
+     thirty unreviewed days, which meant work the owner had not got to was
+     deleted on a timer; nothing waits for review now, so nothing expires. */
   const advanced = await request.post("/api/test/meeting-debrief/advance", {
     data: { ms: REVIEW_WAIT_MS },
   });
   expect(advanced.ok()).toBe(true);
-  await waitForStatus(request, unlinked.runId, "skipped");
+  await waitForStatus(request, unlinked.runId, "done");
 
   await page.goto("/meeting-debrief");
   const row = page.getByRole("row", { name: /Expiry notes/ });
-  await expect(row.getByText("Expired")).toBeVisible();
+  await expect(row.getByText(/^Ready/)).toBeVisible();
 
   await page.getByRole("link", { name: /Expiry notes/ }).click();
-  await expect(page.getByText("Expired — skipped after 30 days unreviewed").first()).toBeVisible();
+  await expect(page.getByText("Extracted").first()).toBeVisible();
+  /* Still there, in full: nothing was taken away by the clock. */
   await expect(
-    page.getByText("The Debrief expired unreviewed; no draft or Task was written."),
+    page.getByText("We agreed to revisit the pricing page", { exact: false }).first(),
   ).toBeVisible();
 
-  // Expired, not destroyed: the extraction stays readable, nothing outward.
+  // Complete and readable, and still outward-silent until it is published.
   const run = (await (
     await request.get(`/api/runs/${encodeURIComponent(unlinked.runId)}`)
   ).json()) as { events: Array<{ type: string }>; files: string[] };

@@ -45,6 +45,34 @@ const STAGE_LABELS: Record<string, string> = {
   email: "Email",
 };
 
+/**
+ * What each Module calls the work it does, for a Run with no file behind it.
+ * Only file-driven Modules set `fileName`; the rest used to fall back to the
+ * Run id, so Home's attention rail and activity feed read
+ * "run_20260904-061336_091e7742 failed".
+ */
+const MODULE_WORK_LABELS: Record<string, string> = {
+  "meeting-brief-generator": "Meeting brief",
+  "meeting-debrief": "Meeting debrief",
+  "content-scout": "Content scout",
+  "content-research": "Content research",
+  "youtube-trends": "YouTube trends",
+  transcript: "Transcript",
+};
+
+/**
+ * What to call one Run on a product surface. The file it processed when there
+ * is one, else what its Module does — never the Run id, which is a diagnostic
+ * identity and belongs on the Run detail page.
+ */
+export function runDisplayName(run: Pick<RunSummary, "fileName" | "module">): string {
+  /* A Run that has a file names itself after it, even when that name is empty
+     — `runTitle` has its own word for that, and the runs table uses it. Only a
+     Run with no file at all falls back to what its Module does. */
+  if (run.fileName !== undefined) return runTitle(run.fileName);
+  return MODULE_WORK_LABELS[run.module] ?? run.module;
+}
+
 export function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
@@ -156,6 +184,53 @@ export function formatTime(iso: string): string {
     return iso;
   }
   return date.toLocaleString();
+}
+
+/**
+ * When a meeting is, for a reader scanning a list of them. `toLocaleString`
+ * spells out seconds — "9/4/2026, 9:00:00 AM" — which no meeting has ever
+ * needed; this drops them and names the weekday, which is what someone reading
+ * a week ahead is actually looking for.
+ */
+export function formatMeetingTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * The same calendar shape without a clock, for a date that names a day rather
+ * than a moment. Kept beside `formatMeetingTime` so a page never mixes
+ * "Fri, Sep 4" with the browser default's "9/4/2026".
+ */
+export function formatMeetingDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** The same clock without the date, for the end of a meeting that starts beside it. */
+export function formatMeetingEndTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 /**

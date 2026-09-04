@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import type { MeetingDebriefDetail, MeetingDebriefField } from "@chief-of-staff-demo/shared";
 import { MEETING_DEBRIEF_FIELDS } from "@chief-of-staff-demo/shared";
 import { api, errorMessage } from "../client";
+import { formatMeetingTime, statusLabel } from "../display";
+import { meetingDebriefDetailName } from "../modules/meeting-debrief/naming";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 
@@ -31,13 +33,35 @@ function blockerLabel(blocker: string): string {
   return blocker;
 }
 
-function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
+/** Where the owner goes to clear one blocker, when this page can settle it. */
+function blockerTarget(blocker: string): string | null {
+  if (blocker === "roster-unconfirmed") return "#debrief-roster";
+  if (blocker === "owner-identity-unconfirmed") return "/settings";
+  return null;
+}
+
+/**
+ * What the Debrief extracted, and the two decisions the owner can take on an
+ * action item. Done and Dismiss used to live in a second copy of this list
+ * further down the page — the same items twice, one showing state and the
+ * other offering the buttons — so a reader had to hold both in their head to
+ * see where an item stood. One list carries both.
+ */
+function ExtractionSection({
+  detail,
+  act,
+  actionable,
+}: {
+  detail: MeetingDebriefDetail;
+  act: (run: () => Promise<unknown>) => void;
+  actionable: boolean;
+}) {
   const debrief = detail.extraction;
   if (!debrief) {
     return (
       <section aria-labelledby="debrief-extraction">
         <h2 id="debrief-extraction">Extraction</h2>
-        <p className="muted">No extraction yet — the debrief is {detail.status}.</p>
+        <p className="muted">No extraction yet — the debrief is {statusLabel(detail.status)}.</p>
       </section>
     );
   }
@@ -93,10 +117,43 @@ function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
                 {!dismissed && !task && doneLocal && (
                   <span className="status-badge status-ok"> Done</span>
                 )}
+                {actionable && !doneLocal && !task?.completed && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        act(() => api.meetingDebriefDoneActionItem(detail.runId, index))
+                      }
+                    >
+                      Done
+                    </button>
+                  </>
+                )}
+                {actionable && !dismissed && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        act(() => api.meetingDebriefDismissActionItem(detail.runId, index))
+                      }
+                    >
+                      Dismiss
+                    </button>
+                  </>
+                )}
               </li>
             );
           })}
         </ul>
+      )}
+      {actionable && debrief.actionItems.length > 0 && (
+        <p className="muted">
+          Done marks an item complete — its Google Task takes over once one exists. Dismiss removes
+          it: a dismissed item never becomes a Google Task, even when the Debrief is published
+          later. Marking one clears the other; regenerating action items clears both.
+        </p>
       )}
       <h3>Open questions</h3>
       {debrief.openQuestions.length === 0 ? (
@@ -119,66 +176,62 @@ function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
   );
 }
 
-function RosterSection({ detail }: { detail: MeetingDebriefDetail }) {
-  const review = detail.review;
+/**
+ * People and organizations the Catalog found in the transcript.
+ *
+ * Mentions are per-span: a name spoken three hundred times is three hundred
+ * mentions of the same person. Listed one per span this section ran to tens of
+ * thousands of rows and buried the Debrief above it, so it groups by name and
+ * counts, and shows the most-mentioned first. The rest stay one disclosure
+ * away rather than being dropped.
+ */
+const IDENTITY_ROWS_SHOWN = 12;
+
+interface NamedMention {
+  mentionId: string;
+  surfaceText: string;
+}
+
+/** One row per distinct name, most mentioned first, ties broken alphabetically. */
+function groupMentions(mentions: NamedMention[]): { name: string; count: number; key: string }[] {
+  const byName = new Map<string, { name: string; count: number; key: string }>();
+  for (const mention of mentions) {
+    const name = mention.surfaceText.trim();
+    if (name === "") continue;
+    const key = name.toLocaleLowerCase();
+    const found = byName.get(key);
+    if (found) found.count += 1;
+    else byName.set(key, { name, count: 1, key });
+  }
+  return [...byName.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function MentionList({ mentions, empty }: { mentions: NamedMention[]; empty: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const groups = groupMentions(mentions);
+  if (groups.length === 0) return <p className="muted">{empty}</p>;
+  const shown = expanded ? groups : groups.slice(0, IDENTITY_ROWS_SHOWN);
+  const hidden = groups.length - shown.length;
   return (
-    <section aria-labelledby="debrief-roster">
-      <h2 id="debrief-roster">Roster</h2>
-      <p>
-        {detail.linked
-          ? `Calendar-linked: occurrence ${detail.occurrence?.occurrenceKey ?? "unknown"}`
-          : "Not linked to Calendar"}
+    <>
+      <p className="muted">
+        {groups.length} name{groups.length === 1 ? "" : "s"} across {mentions.length} mention
+        {mentions.length === 1 ? "" : "s"}.
       </p>
-      {review === null ? (
-        detail.rosterStatus === "prefilled" ? (
-          <p className="muted">Roster prefilled from the Calendar association.</p>
-        ) : (
-          <p className="status-badge status-attention" role="status">
-            Roster confirmation required before review can complete.
-          </p>
-        )
-      ) : review.roster.status === "confirmed" ? (
-        <p className="status-badge status-ok" role="status">
-          Roster confirmed{review.roster.confirmedAt ? ` at ${review.roster.confirmedAt}` : ""}.
-        </p>
-      ) : (
-        <p className="status-badge status-attention" role="status">
-          Roster confirmation required before review can complete.
-        </p>
+      <ul className="mention-list">
+        {shown.map((group) => (
+          <li key={group.key}>
+            {group.name}
+            {group.count > 1 ? <span className="muted"> ×{group.count}</span> : null}
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 && (
+        <button type="button" className="action-button" onClick={() => setExpanded(true)}>
+          Show {hidden} more
+        </button>
       )}
-      {review === null ? (
-        detail.roster.length === 0 ? (
-          <p className="muted">No roster recorded.</p>
-        ) : (
-          <ul>
-            {detail.roster.map((person) => (
-              <li key={person.email}>
-                {person.displayName ?? person.email} &lt;{person.email}&gt;
-              </li>
-            ))}
-          </ul>
-        )
-      ) : review.roster.entries.length === 0 ? (
-        <p className="muted">No roster recorded.</p>
-      ) : (
-        <ul>
-          {review.roster.entries.map((entry) => (
-            <li key={entry.email}>
-              {entry.displayName ?? entry.email} &lt;{entry.email}&gt;
-              {entry.profileId && (
-                <>
-                  {" "}
-                  <Link to={`/people/${encodeURIComponent(entry.profileId)}`}>
-                    (confirmed Profile)
-                  </Link>
-                </>
-              )}
-              {!entry.profileId && <span className="muted"> (no Profile bound yet)</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </>
   );
 }
 
@@ -186,102 +239,101 @@ function IdentitySection({ detail }: { detail: MeetingDebriefDetail }) {
   const identity = detail.identity;
   return (
     <section aria-labelledby="debrief-identity">
-      <h2 id="debrief-identity">Identity (from the Transcript Catalog)</h2>
-      <h3>Resolved</h3>
+      <h2 id="debrief-identity">Who and what was mentioned</h2>
+      <h3>Matched to a Person Profile</h3>
       {identity.resolved.length === 0 ? (
-        <p className="muted">No resolved identities.</p>
+        <p className="muted">No mention matched a Person Profile.</p>
       ) : (
-        <ul>
+        <ul className="mention-list">
           {identity.resolved.map((resolved) => (
             <li key={resolved.mentionId}>
               {resolved.surfaceText} —{" "}
-              <Link to={`/people/${encodeURIComponent(resolved.profileId)}`}>
-                confirmed Profile
-              </Link>
+              <Link to={`/people/${encodeURIComponent(resolved.profileId)}`}>Profile</Link>
             </li>
           ))}
         </ul>
       )}
-      <h3>Unresolved</h3>
-      {identity.unresolved.length === 0 ? (
-        <p className="muted">Nothing unresolved.</p>
-      ) : (
-        <ul>
-          {identity.unresolved.map((unresolved) => (
-            <li key={unresolved.mentionId}>{unresolved.surfaceText} — awaiting review</li>
-          ))}
-        </ul>
-      )}
+      <h3>Other names heard</h3>
+      <MentionList mentions={identity.unresolved} empty="No other names were picked up." />
       <h3>Organizations</h3>
-      {identity.organizations.length === 0 ? (
-        <p className="muted">No organizations mentioned.</p>
-      ) : (
-        <ul>
-          {identity.organizations.map((organization) => (
-            <li key={organization.mentionId}>{organization.surfaceText}</li>
-          ))}
-        </ul>
-      )}
+      <MentionList mentions={identity.organizations} empty="No organizations mentioned." />
     </section>
   );
 }
 
 const STATE_LABELS: Record<string, string> = {
-  awaiting_review: "Awaiting your review",
-  approved: "Approved — locked",
-  expired: "Expired — skipped after 30 days unreviewed",
+  extracted: "Extracted",
+  published: "Published — draft and Tasks written",
 };
+
+/**
+ * One owner turn against a Debrief: run it, then re-read the detail. Held by
+ * the page rather than by one section, because the action items above and the
+ * roster and recipients below are all turns on the same Run.
+ */
+function useDebriefActions(onChanged: () => Promise<void> | void) {
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const act = useCallback(
+    (run: () => Promise<unknown>) => {
+      setBusy(true);
+      setActionError(null);
+      run()
+        .then(() => onChanged())
+        .catch((err: unknown) => setActionError(errorMessage(err)))
+        .finally(() => setBusy(false));
+    },
+    [onChanged],
+  );
+
+  return { busy, actionError, setActionError, act };
+}
+
+type DebriefActions = ReturnType<typeof useDebriefActions>;
 
 function ReviewSection({
   detail,
-  onChanged,
+  actions,
 }: {
   detail: MeetingDebriefDetail;
-  onChanged: () => void;
+  actions: DebriefActions;
 }) {
   const review = detail.review;
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { busy, actionError, setActionError, act } = actions;
   const [rosterDraft, setRosterDraft] = useState("");
   const [recipientQuery, setRecipientQuery] = useState("");
   const [matches, setMatches] = useState<
     Array<{ id: string; fullName: string | null; primaryEmail: string | null }>
   >([]);
 
-  const act = useCallback(
-    async (run: () => Promise<unknown>) => {
-      setBusy(true);
+  const searchProfiles = useCallback(
+    async (query: string) => {
       setActionError(null);
       try {
-        await run();
-        onChanged();
+        setMatches(
+          (await api.people(query)).map((profile) => ({
+            id: profile.id,
+            fullName: profile.fullName,
+            primaryEmail: profile.primaryEmail,
+          })),
+        );
       } catch (err) {
         setActionError(errorMessage(err));
-      } finally {
-        setBusy(false);
       }
     },
-    [onChanged],
+    [setActionError],
   );
-
-  const searchProfiles = useCallback(async (query: string) => {
-    setActionError(null);
-    try {
-      setMatches(
-        (await api.people(query)).map((profile) => ({
-          id: profile.id,
-          fullName: profile.fullName,
-          primaryEmail: profile.primaryEmail,
-        })),
-      );
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  }, []);
 
   if (!review) return null;
 
-  const actionable = review.state === "awaiting_review";
+  /* Everything stays editable until the outward writes go out. Publishing is
+     what locks a Debrief — nothing else ever did, and waiting for review no
+     longer does. */
+  const actionable = review.state !== "published";
+  /* The speakers the transcript recorded, in the roster field's own syntax and
+     awaiting their emails. */
+  const speakerDraft = detail.speakers.map((speaker) => `${speaker} <>`).join(", ");
   const entryDraft = rosterDraft
     .split(",")
     .map((part) => part.trim())
@@ -301,14 +353,14 @@ function ReviewSection({
     <section aria-labelledby="debrief-review">
       <h2 id="debrief-review">Review</h2>
       <p
-        className={`status-badge ${review.state === "approved" ? "status-ok" : review.state === "expired" ? "status-attention" : ""}`}
+        className={`status-badge ${review.state === "published" ? "status-ok" : ""}`}
         role="status"
       >
         {STATE_LABELS[review.state] ?? review.state}
       </p>
       {review.duplicateWarning && (
         <p className="banner-error" role="alert">
-          Duplicate output warning: this transcript already has an approved Debrief (
+          Duplicate output warning: this transcript already has a published Debrief (
           <Link
             to={`/meeting-debrief/${encodeURIComponent(review.duplicateWarning.approvedRunId)}`}
           >
@@ -321,9 +373,6 @@ function ReviewSection({
         <p className="banner-error" role="alert">
           {actionError}
         </p>
-      )}
-      {review.state === "expired" && (
-        <p className="muted">The Debrief expired unreviewed; no draft or Task was written.</p>
       )}
       {busy && <p className="muted">Working…</p>}
 
@@ -340,79 +389,62 @@ function ReviewSection({
               <li key={field}>
                 <button
                   type="button"
-                  onClick={() => void act(() => api.meetingDebriefRegenerate(detail.runId, field))}
+                  onClick={() => act(() => api.meetingDebriefRegenerate(detail.runId, field))}
                 >
                   Regenerate {FIELD_LABELS[field]}
                 </button>
               </li>
             ))}
           </ul>
-          <h3>Action items</h3>
-          <p className="muted">
-            Done marks an item complete — its Google Task takes over once one exists. Dismiss
-            removes it: a dismissed item never becomes a Google Task, even when the Debrief is
-            approved later. Marking one clears the other; regenerating action items clears both.
-          </p>
-          <ul>
-            {detail.extraction?.actionItems.map((item, index) => {
-              const dismissed = review.droppedActionItems.includes(index);
-              const done = review.completedActionItems.includes(index);
-              return (
-                <li key={index}>
-                  <span className={dismissed ? "muted" : done ? "status-ok" : undefined}>
-                    “{item.title}”{dismissed ? " — dismissed" : done ? " — done" : ""}
-                  </span>{" "}
-                  {!done && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void act(() => api.meetingDebriefDoneActionItem(detail.runId, index))
-                      }
-                    >
-                      Done
-                    </button>
-                  )}{" "}
-                  {!dismissed && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void act(() => api.meetingDebriefDismissActionItem(detail.runId, index))
-                      }
-                    >
-                      Dismiss
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
         </>
       )}
 
-      <h3>Roster confirmation</h3>
-      <ul>
-        {review.roster.entries.map((entry) => (
-          <li key={entry.email}>
-            {entry.displayName ?? entry.email} &lt;{entry.email}&gt;
-            {entry.profileId ? (
-              <>
-                {" "}
-                <Link to={`/people/${encodeURIComponent(entry.profileId)}`}>
-                  (confirmed Profile)
-                </Link>
-              </>
-            ) : (
-              <span className="muted"> (no Profile bound)</span>
-            )}
-          </li>
-        ))}
-      </ul>
+      {/* Roster: one section, not two. The page used to state the roster here
+          and again in a section of its own below, which disagreed with itself
+          the moment either changed. */}
+      <h3 id="debrief-roster">Roster confirmation</h3>
+      <p className="muted">
+        {detail.linked
+          ? "Prefilled from the meeting's calendar attendees."
+          : "No calendar event is linked to this transcript, so the attendees have to be named here."}
+      </p>
+      {review.roster.status === "confirmed" ? (
+        <p className="status-badge status-ok" role="status">
+          Roster confirmed
+          {review.roster.confirmedAt ? ` ${formatMeetingTime(review.roster.confirmedAt)}` : ""}.
+        </p>
+      ) : (
+        <p className="status-badge status-attention" role="status">
+          Confirm the roster to publish the draft and Tasks.
+        </p>
+      )}
+      {review.roster.entries.length === 0 ? (
+        <p className="muted">No roster recorded.</p>
+      ) : (
+        <ul>
+          {review.roster.entries.map((entry) => (
+            <li key={entry.email}>
+              {entry.displayName ?? entry.email} &lt;{entry.email}&gt;
+              {entry.profileId ? (
+                <>
+                  {" "}
+                  <Link to={`/people/${encodeURIComponent(entry.profileId)}`}>
+                    (confirmed Profile)
+                  </Link>
+                </>
+              ) : (
+                <span className="muted"> (no Profile bound)</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       {actionable && (
         <form
           onSubmit={(event) => {
             event.preventDefault();
             if (entryDraft.length === 0) return;
-            void act(() => api.meetingDebriefConfirmRoster(detail.runId, entryDraft));
+            act(() => api.meetingDebriefConfirmRoster(detail.runId, entryDraft));
           }}
         >
           <label htmlFor="debrief-roster-input">
@@ -427,6 +459,17 @@ function ReviewSection({
           <button type="submit" disabled={busy || entryDraft.length === 0}>
             Confirm roster
           </button>
+          {/* The transcript already names who spoke. Retyping them was busywork
+              the page could do itself; the emails still have to be supplied,
+              because a spoken name is not a mailbox. */}
+          {speakerDraft !== "" && rosterDraft === "" && (
+            <p className="muted">
+              Heard in the transcript:{" "}
+              <button type="button" onClick={() => setRosterDraft(speakerDraft)}>
+                Start from {detail.speakers.join(", ")}
+              </button>
+            </p>
+          )}
         </form>
       )}
 
@@ -453,9 +496,7 @@ function ReviewSection({
                 <button
                   type="button"
                   onClick={() =>
-                    void act(() =>
-                      api.meetingDebriefRemoveRecipient(detail.runId, recipient.profileId),
-                    )
+                    act(() => api.meetingDebriefRemoveRecipient(detail.runId, recipient.profileId))
                   }
                 >
                   Remove
@@ -506,7 +547,7 @@ function ReviewSection({
                 disabled={!profile.primaryEmail}
                 onClick={() => {
                   if (profile.primaryEmail) {
-                    void act(() =>
+                    act(() =>
                       api.meetingDebriefAddRecipient(detail.runId, {
                         profileId: profile.id,
                         email: profile.primaryEmail!,
@@ -522,37 +563,52 @@ function ReviewSection({
         </ul>
       )}
 
-      <h3>Approval</h3>
-      {review.state === "approved" ? (
+      {/* The one gate left in the product. The Debrief itself is finished and
+          readable above; this writes outward — a Gmail draft to the confirmed
+          recipients, and Google Tasks for the owner's own actions. */}
+      <h3>Publish outward</h3>
+      <p className="muted">
+        Publishing creates the Gmail draft and the Google Tasks. Nothing above waits on it — the
+        Debrief is already complete.
+      </p>
+      {review.state === "published" ? (
         <p>
-          Approved and locked{review.approvedAt ? ` at ${review.approvedAt}` : ""}. The Debrief,
-          roster, recipients, and review decisions cannot change; redo starts a separate debrief.
+          Published{review.approvedAt ? ` ${formatMeetingTime(review.approvedAt)}` : ""}. The
+          Debrief, roster, recipients, and decisions are locked so they stay aligned with what went
+          out; redo starts a separate debrief.
         </p>
-      ) : review.state === "expired" ? null : review.approvalBlockers.length > 0 ? (
+      ) : review.approvalBlockers.length > 0 ? (
         <div>
           <p className="muted" role="status">
-            Approval is blocked until:
+            Publishing needs:
           </p>
+          {/* Each blocker reaches whatever settles it. The list used to name
+              the roster with the roster form a screen away and no way to it. */}
           <ul>
-            {review.approvalBlockers.map((blocker) => (
-              <li key={blocker}>{blockerLabel(blocker)}</li>
-            ))}
+            {review.approvalBlockers.map((blocker) => {
+              const target = blockerTarget(blocker);
+              return (
+                <li key={blocker}>
+                  {target ? <a href={target}>{blockerLabel(blocker)}</a> : blockerLabel(blocker)}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : (
         <button
           type="button"
           disabled={busy}
-          onClick={() => void act(() => api.meetingDebriefApprove(detail.runId))}
+          onClick={() => act(() => api.meetingDebriefApprove(detail.runId))}
         >
-          Approve Debrief
+          Publish draft and Tasks
         </button>
       )}
-      {review.state === "approved" && (
+      {review.state === "published" && (
         <button
           type="button"
           disabled={busy}
-          onClick={() => void act(() => api.meetingDebriefRedo(detail.runId))}
+          onClick={() => act(() => api.meetingDebriefRedo(detail.runId))}
         >
           Redo (start a new debrief)
         </button>
@@ -561,33 +617,38 @@ function ReviewSection({
   );
 }
 
+/**
+ * When the meeting was, and — only when there is something to say — what the
+ * Debrief is still doing. A finished Debrief says nothing here: the engine's
+ * own words for a Run ("Waiting", "Completed") described the Run, not the
+ * retrospective, and "Waiting" contradicted the "Extracted" badge and the
+ * page's own promise that nothing waits.
+ */
 function StatusLine({ detail }: { detail: MeetingDebriefDetail }) {
-  const state = detail.review?.state;
-  const badge = state === "approved" ? "status-ok" : state === "expired" ? "status-attention" : "";
+  const unfinished = detail.status !== "done";
   return (
     <p className="muted">
-      Transcript {detail.transcriptId} · {detail.meetingDate ?? "no meeting date"} · Debrief{" "}
-      {detail.status}
-      {state && (
+      {detail.meetingDate ?? "No meeting date"}
+      {unfinished && ` · ${statusLabel(detail.status)}`}
+      {detail.review?.state === "published" && (
         <>
           {" · "}
-          <span className={`status-badge ${badge}`} role="status">
-            {STATE_LABELS[state] ?? state}
+          <span className="status-badge status-ok" role="status">
+            Published
           </span>
         </>
       )}
-      {detail.reviewReadiness === "ready" && !state ? " · ready for review" : ""}
     </p>
   );
 }
 
 export function MeetingDebriefDetailPage() {
-  useTitle("Meeting Debrief detail");
   const { runId } = useParams<{ runId: string }>();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [detail, setDetail] = useState<MeetingDebriefDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [meetingTitles, setMeetingTitles] = useState<Map<string, string>>(new Map());
 
   const refresh = useCallback(async () => {
     if (!runId) return;
@@ -604,9 +665,33 @@ export function MeetingDebriefDetailPage() {
     }
   }, [runId]);
 
+  const actions = useDebriefActions(refresh);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let live = true;
+    void api
+      .meetings()
+      .then((meetings) => {
+        if (!live) return;
+        setMeetingTitles(new Map(meetings.meetings.map((meeting) => [meeting.id, meeting.title])));
+      })
+      .catch(() => {
+        // A missing title only costs the file-name fallback, never the page.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const name = detail ? meetingDebriefDetailName(detail, meetingTitles) : "Meeting Debrief";
+  /* The tab carries the meeting, like every other Meeting Wizard page. A
+     constant "Meeting Debrief detail" made two open debriefs indistinguishable
+     in the browser's own list of them. */
+  useTitle(name);
 
   return (
     <div className="page">
@@ -614,7 +699,7 @@ export function MeetingDebriefDetailPage() {
         <Link to="/meeting-debrief">← All Meeting Debriefs</Link>
       </p>
       <h1 ref={headingRef} tabIndex={-1}>
-        {detail?.fileName ?? "Meeting Debrief"}
+        {name}
       </h1>
       {notFound && (
         <p className="banner-error" role="alert">
@@ -629,9 +714,21 @@ export function MeetingDebriefDetailPage() {
       {detail && (
         <>
           <StatusLine detail={detail} />
-          <ExtractionSection detail={detail} />
-          <ReviewSection detail={detail} onChanged={() => void refresh()} />
-          <RosterSection detail={detail} />
+          {/* The Meeting is where this retrospective belongs, and the Debrief
+              already knows which one — the page just never said so. */}
+          {detail.meetingId && (
+            <p>
+              <Link to={`/meetings/${encodeURIComponent(detail.meetingId)}`}>
+                Open this meeting
+              </Link>
+            </p>
+          )}
+          <ExtractionSection
+            detail={detail}
+            act={actions.act}
+            actionable={detail.review !== null && detail.review.state !== "published"}
+          />
+          <ReviewSection detail={detail} actions={actions} />
           <IdentitySection detail={detail} />
         </>
       )}

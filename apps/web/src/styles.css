@@ -155,7 +155,7 @@ body {
   border-radius: 6px;
 }
 
-/* Keyed off the semantic NavLink already emits, so the visual state and the
+/* Keyed off the semantic the nav emits, so the visual state and the
    programmatic one can't drift apart. */
 .app-header nav a[aria-current="page"] {
   background: var(--accent);
@@ -477,6 +477,99 @@ body {
 
 .card h2 {
   margin-top: 0.25rem;
+}
+
+/* A list of cards. It is a <ul> for the semantics — a Meeting Wizard list is a
+   list — so the marker and the marker's indent come off, and the gap comes
+   from the list rather than from each card's own margin. Without this rule the
+   Meeting Wizard drew browser-default bullets in the gutter beside every
+   card. */
+.card-list {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card-list > .card {
+  margin: 0;
+}
+
+.card-list h3 {
+  margin: 0 0 0.25rem;
+}
+
+.card-list p {
+  margin: 0;
+}
+
+/* Rosters and mention lists: many short rows, read as a list rather than as a
+   stack of bordered boxes. */
+.roster-list,
+.mention-list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.provider-outcomes summary {
+  cursor: pointer;
+}
+
+.provider-outcomes ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Tabs. The selected tab must be visibly selected: `aria-selected` alone tells
+   assistive technology and nobody else, and the two tabs were previously drawn
+   identically. Weight and the underline carry it together, so the distinction
+   survives forced-colors and does not rest on hue alone (WCAG 1.4.1).
+   --------------------------------------------------------------------------- */
+
+[role="tablist"] {
+  display: flex;
+  gap: 0.25rem;
+  margin: 1.5rem 0 0;
+  border-bottom: 1px solid var(--line);
+}
+
+[role="tab"] {
+  appearance: none;
+  background: none;
+  border: none;
+  /* The transparent border reserves the selected tab's space, so selecting one
+     never nudges the row. */
+  border-bottom: 3px solid transparent;
+  border-radius: 4px 4px 0 0;
+  padding: 0.5rem 1rem;
+  min-height: 44px;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+[role="tab"]:hover {
+  color: var(--ink);
+  background: var(--surface-alt);
+}
+
+[role="tab"][aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+@media (forced-colors: active) {
+  [role="tab"][aria-selected="true"] {
+    border-bottom-color: Highlight;
+  }
 }
 
 .field-row {

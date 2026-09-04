@@ -18,6 +18,8 @@ export interface MeetingDebriefProductionRuntimeOptions {
   people: WorkspacePersonProfiles;
   /** The confirmed owner identity's email, as the Shell holds it (ADR-0036). */
   ownerEmail: () => string | null;
+  /** What the Workspace calls the Meeting a Transcript belongs to. */
+  meetingTitle?: (meetingId: string) => string | null;
   /**
    * The Workspace's Google connection, backing terminal approval's outward
    * writes (issue #141). Absent, approval still completes and the Module has
@@ -72,6 +74,7 @@ export function createMeetingDebriefProductionRuntime(
     },
     profiles: workspaceProfileDirectory(options.people),
     ownerEmail: options.ownerEmail,
+    ...(options.meetingTitle ? { meetingTitle: options.meetingTitle } : {}),
     getCompleteJson: options.getCompleteJson,
     getLlmInfo: options.getLlmInfo,
     ...(options.google

@@ -219,8 +219,8 @@ test("busy buttons keep focus instead of dropping it to the body", async ({ page
   await sync.focus();
   await sync.click();
   // Sync may idle when Google is not connected (no error banner), or it may
-  // report an error if the folder is missing — either way the request
-  // completes quickly and focus must stay on the button that was pressed.
+  // report an error if the folder is missing or unconsented — either way the
+  // request completes quickly and focus must stay on the button pressed.
   await page.waitForTimeout(500);
   await expect(sync).toBeFocused();
 });

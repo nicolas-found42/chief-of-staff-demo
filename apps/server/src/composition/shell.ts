@@ -512,6 +512,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     listTranscripts: () => transcriptCatalogStore.listTranscripts(),
     attachMeeting: (transcriptId, matched) =>
       transcriptCatalogRuntime.catalog.attachMeeting(transcriptId, matched),
+    /* Naming a transcript-owned Meeting: deterministic first, and the model
+       only for names the file name and the transcript's own heading leave
+       file-shaped. */
+    title: { getCompleteJson: meetingBriefCompleteJson, log: meetingBriefLog },
     log: meetingBriefLog,
   });
   const associateTranscripts = async (): Promise<void> => {
@@ -586,6 +590,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       /* Terminal approval's outward writes (issue #141): one Gmail draft to the
          confirmed recipients, then Tasks for the owner's own retained actions. */
       google: googleConnection,
+      /* A Debrief is named after its Meeting, not after the Drive file. */
+      meetingTitle: (meetingId: string) => meetings.get(meetingId)?.title ?? null,
       getCompleteJson: () => {
         const current = configStore.get();
         return makeCompleteJson(

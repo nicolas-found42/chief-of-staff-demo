@@ -168,6 +168,38 @@ describe("weeklyBriefing", () => {
     expect(buildWeeklyBriefing({ meetings, runs: emptyRuns() }, NOW, "UTC", [])).toBeNull();
   });
 
+  it("leaves out days of the week that have already happened", () => {
+    /* The sweep window opens on Sunday because that is when Briefs are
+       prepared, but this section is about the week ahead. Read from the window
+       start, a Friday's briefing re-listed Monday to Thursday — in this
+       Workspace, transcripts of meetings nobody can prepare for. */
+    const meetings = seedMeetings();
+    meetings.createFromTranscript({
+      transcriptId: "t_sunday",
+      title: "Yesterday's stand-up",
+      speakers: ["Dana", "Sam"],
+      modifiedAt: null,
+      meetingDate: "2026-08-30",
+    });
+    const briefing = buildWeeklyBriefing({ meetings, runs: emptyRuns() }, NOW, "UTC", []);
+
+    expect(briefing?.meetings.map((entry) => entry.title)).not.toContain("Yesterday's stand-up");
+  });
+
+  it("keeps a meeting that already happened earlier today", () => {
+    const meetings = seedMeetings();
+    meetings.createFromTranscript({
+      transcriptId: "t_this_morning",
+      title: "This morning's stand-up",
+      speakers: ["Dana", "Sam"],
+      modifiedAt: null,
+      nameTimestamp: "2026-08-31T09:00:00.000Z",
+    });
+    const briefing = buildWeeklyBriefing({ meetings, runs: emptyRuns() }, NOW, "UTC", []);
+
+    expect(briefing?.meetings.map((entry) => entry.title)).toContain("This morning's stand-up");
+  });
+
   it("scores importance deterministically from guests, external presence, and Brief state", () => {
     expect(weeklyImportance({ guestCount: 0, hasExternal: false, briefStatus: "missing" })).toBe(0);
     expect(weeklyImportance({ guestCount: 2, hasExternal: true, briefStatus: "ready" })).toBe(17);

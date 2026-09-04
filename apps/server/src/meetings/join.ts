@@ -1,6 +1,7 @@
 import type { Meeting, TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { meetingFileNameMeta } from "../text/meetingFileName.js";
-import { findMatchingMeeting, findNearMatches, type MatchedMeeting } from "./matching.js";
+import { findMatchingMeeting, findNearMatches, rosterOf, type MatchedMeeting } from "./matching.js";
+import { resolveMeetingTitle, type MeetingTitleCleanerDeps } from "./title.js";
 import type { WorkspaceMeetings } from "./store.js";
 
 /**
@@ -38,6 +39,8 @@ export interface MeetingJoinDeps {
   meetings: WorkspaceMeetings;
   listTranscripts: () => TranscriptRecord[];
   attachMeeting: (transcriptId: string, matched: MatchedMeeting) => Promise<unknown>;
+  /** Naming for transcript-owned Meetings; deterministic when absent. */
+  title?: MeetingTitleCleanerDeps;
   log?: (message: string) => void;
 }
 
@@ -47,41 +50,98 @@ export class WorkspaceMeetingJoin {
   /**
    * The standing pass joining the Transcript Catalog to the Workspace's
    * Meetings. It places every catalogued Transcript, not only newly ingested
-   * ones; a Transcript that already carries its Meeting is never re-matched.
-   * A Transcript nothing matches owns its Meeting instead, keyed on the
+   * ones. A Transcript nothing matches owns its Meeting instead, keyed on the
    * Transcript id so a re-run returns the same record.
+   *
+   * A Transcript on a Calendar Meeting is settled and never re-matched: that
+   * placement is either a confident match or a person's own merge. One sitting
+   * on a Meeting it owns is not settled — it is what happens when no Calendar
+   * occurrence could be found — so it is offered to the match again. Calendar
+   * arrives late (the backward history read is one reconcile behind the first
+   * join, and an occurrence can be created after its own transcript), and
+   * without this those Transcripts stayed on their shells for good.
    */
   async associateTranscripts(): Promise<{ linked: number }> {
     let linked = 0;
     const meetings = [...this.deps.meetings.list()];
     for (const transcript of this.deps.listTranscripts()) {
-      if (transcript.meetingId) continue;
+      const held = transcript.meetingId ? this.deps.meetings.get(transcript.meetingId) : null;
+      if (held !== null && held.occurrenceKey !== null) {
+        /* Settled, so never re-matched — but still brought up to date. An
+           earlier build wrote the occurrence and nothing else, leaving linked
+           Transcripts with an empty roster and their Debriefs asking for
+           attendees the Meeting already held. */
+        await this.carryRosterAcross(transcript, held);
+        continue;
+      }
       const meeting = findMatchingMeeting(transcript, meetings);
       if (meeting !== null) {
         await this.attachRecord(transcript, meeting);
+        /* The shell it came off is forgotten once nothing is left on it, the
+           same way a merge forgets one — otherwise the Meeting Wizard lists an
+           empty duplicate of the meeting the Transcript just joined. */
+        if (held !== null) this.forgetEmptyShell(held.id);
         linked += 1;
         this.deps.log?.(`transcript ${transcript.id} matched Meeting ${meeting.id}`);
         continue;
       }
+      if (held !== null) continue;
+      /* Every catalogued Transcript earns a Meeting. A meeting that only a
+         transcript attests to still happened, and the Meeting Wizard is where
+         the workspace looks for it — so an unparseable file name names the
+         Meeting badly rather than withholding it. */
       const meta = meetingFileNameMeta(transcript.source.fileName);
-      if (meta.title === null && meta.timestamp === null) continue;
       const created = this.deps.meetings.createFromTranscript({
         transcriptId: transcript.id,
-        title: meta.title ?? transcript.source.fileName,
+        title: await resolveMeetingTitle(transcript, this.deps.title ?? {}),
         speakers: transcript.speakers,
         modifiedAt: transcript.source.modifiedAt,
         meetingDate: transcript.meetingDate,
+        nameTimestamp: meta.timestamp,
       });
       meetings.push(created);
       await this.attachRecord(transcript, {
         id: created.id,
         occurrenceKey: created.occurrenceKey,
         calendarEventId: created.calendarEventId,
+        roster: rosterOf(created),
       });
       linked += 1;
       this.deps.log?.(`transcript ${transcript.id} created Meeting ${created.id}`);
     }
     return { linked };
+  }
+
+  /**
+   * Give a settled Transcript the Calendar attendees its Meeting holds, when
+   * the association was written without them. Idempotent: a Transcript that
+   * already has a roster, or a Meeting with no attendees to give, writes
+   * nothing.
+   */
+  private async carryRosterAcross(transcript: TranscriptRecord, held: Meeting): Promise<void> {
+    if (transcript.roster.length > 0) return;
+    const roster = rosterOf(held);
+    if (roster.length === 0) return;
+    await this.deps.attachMeeting(transcript.id, {
+      id: held.id,
+      occurrenceKey: held.occurrenceKey,
+      calendarEventId: held.calendarEventId,
+      roster,
+    });
+    this.deps.log?.(`transcript ${transcript.id} took the roster of Meeting ${held.id}`);
+  }
+
+  /**
+   * Forget a transcript-owned Meeting that no Transcript sits on any more.
+   * Calendar Meetings are never removed here — only the shell a Transcript
+   * owned before it found its occurrence.
+   */
+  private forgetEmptyShell(meetingId: string): void {
+    const shell = this.deps.meetings.get(meetingId);
+    if (!shell || shell.occurrenceKey !== null) return;
+    if (this.transcriptsForMeeting(meetingId).length > 0) return;
+    this.deps.meetings.remove(meetingId);
+    this.deps.log?.(`forgot empty transcript Meeting ${meetingId}`);
   }
 
   /**
@@ -141,6 +201,7 @@ export class WorkspaceMeetingJoin {
       id: target.id,
       occurrenceKey: target.occurrenceKey,
       calendarEventId: target.calendarEventId,
+      roster: rosterOf(target),
     };
     for (const transcript of this.transcriptsForMeeting(source.id)) {
       await this.attachTranscript(transcript.id, matched);
