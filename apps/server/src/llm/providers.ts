@@ -6,6 +6,7 @@ import {
   type ResultShapeBinding,
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
+  MODEL_STREAM_IDLE_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -33,6 +34,12 @@ interface CompletionRequest {
   system: string;
   user: string;
   /**
+   * Sampling temperature. Omitted → the upstream's own default, exactly as
+   * before; extraction Modules set 0 so a transcript yields one extraction,
+   * not a fresh sample per run.
+   */
+  temperature?: number;
+  /**
    * The result shape this one call must return. Required, and deliberately so:
    * one Shell seam serves every Module, `strict: true` means the schema sent is
    * the schema obeyed, and a default here would hand a Module another Module's
@@ -45,6 +52,9 @@ export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
 
 /** The ceiling on one model call. Exported so a test can drive it deterministically. */
 export const REQUEST_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS;
+
+/** The streaming idle ceiling. Exported so a test can drive it deterministically. */
+export const STREAM_IDLE_TIMEOUT_MS = MODEL_STREAM_IDLE_TIMEOUT_MS;
 
 interface RequestDeadline {
   signal: AbortSignal;
@@ -154,6 +164,200 @@ async function postJson(
       });
     }
     throw modelBoundaryFailure({ call, classification: "transport_failure" });
+  }
+}
+
+/**
+ * POST one OpenAI-shaped chat completion as an SSE stream and read it back as
+ * the plain completion `postJson` would have returned, so everything above the
+ * transport — classification, binding extraction — is unchanged. Activity is a
+ * token-bearing `data:` event: the keep-alive comments OpenRouter sends
+ * between events (`: OPENROUTER PROCESSING`) prove a route, not a model, so
+ * they do not reset the idle timer. Errors before the stream starts are plain
+ * non-2xx JSON and take the same classification path as `postJson`; errors
+ * mid-generation arrive as `data:` events carrying an `error` field.
+ */
+async function postSseStream(
+  call: ModelCall,
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  deadline: RequestDeadline,
+): Promise<HttpResponse> {
+  deadline.calling(call);
+  /* The idle timer owns the wire; the seam's ceiling aborts the same wire, so
+     either one ends the fetch, and the abort's origin names the timeout. */
+  const idle = new AbortController();
+  const onOuterAbort = (): void => idle.abort();
+  deadline.signal.addEventListener("abort", onOuterAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const armIdle = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => idle.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
+  armIdle();
+  try {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: idle.signal,
+      });
+    } catch (error) {
+      throw requestTimeoutOrTransport(call, deadline.signal, error);
+    }
+    if (response.status < 200 || response.status >= 300) {
+      /* Classify exactly like postJson: the refusal body carries the facts. */
+      return { status: response.status, text: await response.text() };
+    }
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw modelBoundaryFailure({ call, classification: "transport_failure" });
+    }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let toolArguments = "";
+    let finishReason: string | null = null;
+    const seen = { data: false };
+    const consume = (line: string): boolean => {
+      const trimmed = line.trim();
+      if (trimmed === "" || trimmed.startsWith(":")) return false;
+      if (!trimmed.startsWith("data:")) return false;
+      const data = trimmed.slice(5).trim();
+      if (data === "[DONE]") return true;
+      seen.data = true;
+      const chunk = tryParse(data);
+      if (chunk === undefined) return false;
+      if (carriesUpstreamError(chunk)) {
+        throw modelBoundaryFailure({
+          call,
+          classification: "upstream_error",
+          status: response.status,
+          body: data,
+          payload: chunk,
+        });
+      }
+      if (typeof chunk !== "object" || chunk === null || !("choices" in chunk)) return false;
+      const choices = chunk.choices;
+      if (!isUnknownArray(choices) || choices.length === 0) return false;
+      const choice = choices[0];
+      if (typeof choice !== "object" || choice === null) return false;
+      if ("delta" in choice && typeof choice.delta === "object" && choice.delta !== null) {
+        const delta = choice.delta;
+        if ("content" in delta && typeof delta.content === "string") content += delta.content;
+        if ("tool_calls" in delta && isUnknownArray(delta.tool_calls)) {
+          for (const toolCall of delta.tool_calls) {
+            if (typeof toolCall !== "object" || toolCall === null) continue;
+            if (!("function" in toolCall)) continue;
+            const fn = toolCall.function;
+            if (
+              typeof fn === "object" &&
+              fn !== null &&
+              "arguments" in fn &&
+              typeof fn.arguments === "string"
+            ) {
+              toolArguments += fn.arguments;
+            }
+          }
+        }
+      }
+      if ("finish_reason" in choice && typeof choice.finish_reason === "string") {
+        finishReason = choice.finish_reason;
+      }
+      return false;
+    };
+    let done = false;
+    for (;;) {
+      const read = await readChunk(reader);
+      if (!read.ok) {
+        /* The abort's origin names the timeout: the seam's ceiling or the idle
+           timer — which, before the first token, is also the first-token cap. */
+        throw requestTimeoutOrTransport(call, deadline.signal, read.error);
+      }
+      if (read.chunk.done) break;
+      armIdle();
+      buffer += decoder.decode(read.chunk.value, { stream: true });
+      for (;;) {
+        const lineEnd = buffer.indexOf("\n");
+        if (lineEnd === -1) break;
+        const line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 1);
+        if (consume(line)) {
+          done = true;
+          break;
+        }
+      }
+      if (done) break;
+    }
+    let message: JsonObject = { role: "assistant", content };
+    if (call.binding === "forced_tool_call") {
+      if (toolArguments === "") {
+        message = { role: "assistant", content: "", tool_calls: [] };
+      } else {
+        message = {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              type: "function",
+              function: { name: "save_extraction", arguments: toolArguments },
+            },
+          ],
+        };
+      }
+    }
+    /* A stream that ended without a single token is an empty body, and is
+       classified as one — not as an answer that said nothing. */
+    if (!seen.data) return { status: response.status, text: "" };
+    return {
+      status: 200,
+      text: JSON.stringify({ choices: [{ index: 0, message, finish_reason: finishReason }] }),
+    };
+  } finally {
+    clearTimeout(timer);
+    deadline.signal.removeEventListener("abort", onOuterAbort);
+  }
+}
+
+/** The timeout whose ceiling fired, or a transport fault when neither did. */
+function requestTimeoutOrTransport(
+  call: ModelCall,
+  ceilingSignal: AbortSignal,
+  error: unknown,
+): ModelBoundaryError {
+  if (ceilingSignal.aborted) {
+    return modelBoundaryFailure({
+      call,
+      classification: "request_timeout",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+    });
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return modelBoundaryFailure({
+      call,
+      classification: "request_timeout",
+      timeoutMs: STREAM_IDLE_TIMEOUT_MS,
+    });
+  }
+  if (isRequestTimeout(error)) {
+    return modelBoundaryFailure({
+      call,
+      classification: "request_timeout",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+    });
+  }
+  return modelBoundaryFailure({ call, classification: "transport_failure" });
+}
+
+/** One stream read, with its failure carried instead of thrown. */
+async function readChunk(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  try {
+    return { ok: true as const, chunk: await reader.read() };
+  } catch (error) {
+    return { ok: false as const, error };
   }
 }
 
@@ -402,6 +606,7 @@ async function openaiComplete(
     { authorization: `Bearer ${cfg.apiKey}` },
     {
       model: cfg.model,
+      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       messages: [
         { role: "system", content: request.system },
         { role: "user", content: request.user },
@@ -471,6 +676,17 @@ async function geminiComplete(
   return readGeminiResultShape(modelReply(call, response));
 }
 
+/**
+ * The prompt-only binding has no provider-side shape constraint, so the Result
+ * Shape itself travels in the prompt: the field descriptions alone leave the
+ * model without the schema. Provider-constrained bindings keep the Module's
+ * prompt verbatim — the shape rides in response_format or in the tool's
+ * parameters.
+ */
+function promptOnlySystem(system: string, schema: JsonObject): string {
+  return `${system}\n\nReturn exactly one JSON object matching this schema, and nothing else — no prose, no markdown fences, no fields beyond it:\n${JSON.stringify(schema, null, 2)}`;
+}
+
 /** The OpenAI-shaped chat-completion body that asks for one Result Shape Binding. */
 function chatCompletionBody(
   binding: ResultShapeBinding,
@@ -484,13 +700,12 @@ function chatCompletionBody(
       {
         role: "system",
         content:
-          binding === "prompt_only"
-            ? `${request.system}\n\nReply with raw JSON only.`
-            : request.system,
+          binding === "prompt_only" ? promptOnlySystem(request.system, schema) : request.system,
       },
       { role: "user", content: request.user },
     ],
   };
+  if (request.temperature !== undefined) body.temperature = request.temperature;
   if (binding === "response_format") {
     body.response_format = {
       type: "json_schema",
@@ -526,6 +741,7 @@ async function openAiCompatibleComplete(
   schema: JsonObject,
   declared: ResultShapeBinding | null,
   deadline: RequestDeadline,
+  stream: boolean,
 ): Promise<unknown> {
   /* A declared binding is sent and its answer taken as final. An unknown one
      starts at the most deterministic binding and gives up one step at a time,
@@ -533,13 +749,21 @@ async function openAiCompatibleComplete(
   let index = declared === null ? 0 : RESULT_SHAPE_BINDINGS.indexOf(declared);
   for (;;) {
     const call = modelCall(cfg, RESULT_SHAPE_BINDINGS[index] ?? "prompt_only");
-    const response = await postJson(
-      call,
-      url,
-      headers,
-      chatCompletionBody(call.binding, cfg, request, schema),
-      deadline,
-    );
+    const body = chatCompletionBody(call.binding, cfg, request, schema);
+    if (stream) body.stream = true;
+    /* OpenRouter unions endpoint declarations, so a declared binding can still
+       land on an endpoint that refuses it; require_parameters holds routing to
+       endpoints that declare everything the body sends. Withheld when the
+       declaration is unreadable: the step-down ladder recognizes a refusal by
+       the binding's name in the upstream error, and a no-endpoints routing
+       failure names none. Declared bindings are final, so declared models lose
+       nothing. */
+    if (cfg.provider === "openrouter" && declared !== null) {
+      body.provider = { require_parameters: true };
+    }
+    const response = await (stream
+      ? postSseStream(call, url, headers, body, deadline)
+      : postJson(call, url, headers, body, deadline));
     if (
       declared === null &&
       index < RESULT_SHAPE_BINDINGS.length - 1 &&
@@ -652,6 +876,7 @@ async function openrouterComplete(
     schema,
     declaredBinding(await openrouterDeclaredParameters(cfg, deadline)),
     deadline,
+    true,
   );
 }
 
@@ -675,6 +900,7 @@ function ollamaComplete(
     schema,
     null,
     deadline,
+    false,
   );
 }
 

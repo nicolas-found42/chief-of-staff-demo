@@ -1,7 +1,16 @@
 import type { ProviderId } from "./schemas.js";
 
-/** One model call's ceiling, with headroom over the configured model's measured latency. */
-export const MODEL_REQUEST_TIMEOUT_MS = 300_000;
+/** One model call's absolute ceiling — the backstop above the token idle ceiling. */
+export const MODEL_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
+ * How long one streaming model call may go without a token — measured from the
+ * call's start until its first token, then from the last token it produced. The
+ * absolute `MODEL_REQUEST_TIMEOUT_MS` ceiling stays above it as a backstop: a
+ * stream that keeps dripping tokens is still bounded, while a hung one ends in
+ * thirty seconds instead of two minutes.
+ */
+export const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000;
 
 /**
  * How a model is bound to the caller's Result Shape. Ordered most deterministic

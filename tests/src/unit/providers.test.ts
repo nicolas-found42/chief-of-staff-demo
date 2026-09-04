@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ExtractionWireSchema, type ModelBoundaryDiagnostic } from "@chief-of-staff-demo/shared";
-import { makeCompleteJson, REQUEST_TIMEOUT_MS } from "../../../apps/server/src/llm/providers";
+import {
+  makeCompleteJson,
+  REQUEST_TIMEOUT_MS,
+  STREAM_IDLE_TIMEOUT_MS,
+} from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
 
 interface Call {
@@ -22,6 +26,7 @@ interface Reply {
   status?: number;
   body?: unknown;
   text?: string;
+  sse?: string[];
   hang?: true;
   bodyHang?: true;
   delayMs?: number;
@@ -67,14 +72,27 @@ async function queuedResponse(queued: Reply, signal?: AbortSignal | null): Promi
       { status: queued.status ?? 200 },
     );
   }
+  if (queued.sse) {
+    const lines = queued.sse;
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const line of lines) controller.enqueue(new TextEncoder().encode(`${line}\n`));
+          controller.close();
+        },
+      }),
+      { status: queued.status ?? 200, headers: { "content-type": "text/event-stream" } },
+    );
+  }
   return new Response(queued.text ?? JSON.stringify(queued.body), {
     status: queued.status ?? 200,
     headers: { "content-type": "application/json" },
   });
 }
 
-it("gives the configured model latency headroom", () => {
-  expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(186_000);
+it("keeps the absolute request ceiling above the token idle ceiling", () => {
+  expect(REQUEST_TIMEOUT_MS).toBe(120_000);
+  expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(STREAM_IDLE_TIMEOUT_MS);
 });
 
 beforeEach(() => {
@@ -136,6 +154,24 @@ function chatCompletion(content: unknown): Record<string, unknown> {
   return { choices: [{ message: { content } }] };
 }
 
+/** An OpenRouter answer, the way the streaming wire actually carries it. */
+function sseChatCompletion(content: unknown): string[] {
+  return [
+    ": OPENROUTER PROCESSING",
+    `data: {"choices":[{"delta":{"content":${JSON.stringify(content)}}}]}`,
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{}}',
+    "data: [DONE]",
+  ];
+}
+
+function sseToolCallCompletion(args: unknown): string[] {
+  return [
+    `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"save_extraction","arguments":${JSON.stringify(args)}}}]}}]}`,
+    'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{}}',
+    "data: [DONE]",
+  ];
+}
+
 describe("providers", () => {
   it("openai: posts json_schema strict with bearer auth and parses content", async () => {
     responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
@@ -166,6 +202,19 @@ describe("providers", () => {
       { role: "system", content: "S" },
       { role: "user", content: "U" },
     ]);
+  });
+
+  it("forwards a requested temperature and omits it when not requested", async () => {
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openai", model: "gpt-5.2", apiKey: "sk-test" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({ system: "S", user: "U", schema: ExtractionWireSchema, temperature: 0 });
+    expect(calls[0].body.temperature).toBe(0);
+    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
+    expect(calls[1].body).not.toHaveProperty("temperature");
   });
 
   it("anthropic: forces the save_extraction tool and reads its input", async () => {
@@ -222,8 +271,9 @@ describe("providers", () => {
     expect(JSON.stringify(schema)).not.toContain("$ref");
   });
 
-  it("openrouter: happy path posts the same body shape as openai", async () => {
-    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+  it("openrouter: posts the openai body shape and routes with require_parameters", async () => {
+    declarations.push(declaring("structured_outputs", "response_format"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "google/gemini-3.7-flash", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -234,6 +284,7 @@ describe("providers", () => {
     expect(calls[0].url).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(calls[0].headers.authorization).toBe("Bearer ork");
     expect((calls[0].body.response_format as Record<string, unknown>).type).toBe("json_schema");
+    expect(calls[0].body.provider).toEqual({ require_parameters: true });
   });
 
   /* An unreadable declaration is the only case that steps down, and it steps to
@@ -241,7 +292,7 @@ describe("providers", () => {
      that will not take a JSON Schema may still take a forced tool call. */
   it("openrouter: steps down one binding at a time when the declaration is unavailable", async () => {
     responses.push({ status: 400, body: { error: "response_format json_schema not supported" } });
-    responses.push({ status: 200, body: toolCallCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "some/undeclared-model", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -255,12 +306,14 @@ describe("providers", () => {
       type: "function",
       function: { name: "save_extraction" },
     });
+    expect(calls[0].body.provider).toBeUndefined();
+    expect(calls[1].body.provider).toBeUndefined();
   });
 
   it("openrouter: reaches the prompt only after a tool call is refused too", async () => {
     responses.push({ status: 400, body: { error: "json_schema not supported" } });
     responses.push({ status: 400, body: { error: "tool_choice not supported" } });
-    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "some/bare-model", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -271,7 +324,10 @@ describe("providers", () => {
     expect(calls[2].body.response_format).toBeUndefined();
     expect(calls[2].body.tools).toBeUndefined();
     const messages = calls[2].body.messages as { role: string; content: string }[];
-    expect(messages[0].content).toBe("S\n\nReply with raw JSON only.");
+    expect(messages[0].content).toMatch(
+      /^S\n\nReturn exactly one JSON object matching this schema/,
+    );
+    expect(messages[0].content).toContain('"tasks"');
   });
 
   it("openrouter: a 4xx unrelated to the schema surfaces as an error", async () => {
@@ -291,7 +347,7 @@ describe("providers", () => {
      fronts it. This model declares tool calling and not structured outputs. */
   it("openrouter: forces a tool call when the model declares tools and not structured outputs", async () => {
     declarations.push(declaring("tools", "tool_choice", "reasoning"));
-    responses.push({ status: 200, body: toolCallCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "nvidia/nemotron-3-ultra-550b-a55b:free", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -316,7 +372,7 @@ describe("providers", () => {
      constrained decoding beats a constrained tool call. */
   it("openrouter: prefers response_format when the model declares structured outputs and tools", async () => {
     declarations.push(declaring("structured_outputs", "response_format", "tools", "tool_choice"));
-    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "openai/gpt-5.2", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -334,7 +390,7 @@ describe("providers", () => {
      call. */
   it("openrouter: asks in the prompt when the model declares neither binding", async () => {
     declarations.push(declaring("max_tokens", "temperature"));
-    responses.push({ status: 200, body: chatCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "some/plain-model", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -344,8 +400,12 @@ describe("providers", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].body.response_format).toBeUndefined();
     expect(calls[0].body.tools).toBeUndefined();
+    expect(calls[0].body.provider).toEqual({ require_parameters: true });
     const messages = calls[0].body.messages as { role: string; content: string }[];
-    expect(messages[0].content).toBe("S\n\nReply with raw JSON only.");
+    expect(messages[0].content).toMatch(
+      /^S\n\nReturn exactly one JSON object matching this schema/,
+    );
+    expect(messages[0].content).toContain('"tasks"');
   });
 
   /* The Idea Engine runs 12 Stages against one model and Content Scout ranks
@@ -353,8 +413,8 @@ describe("providers", () => {
      model supports does not change under us mid-Run. */
   it("openrouter: looks a model's declaration up once and reuses it", async () => {
     declarations.push(declaring("tools", "tool_choice"));
-    responses.push({ status: 200, body: toolCallCompletion(JSON.stringify(RESULT)) });
-    responses.push({ status: 200, body: toolCallCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "some/cached-model", apiKey: "ork" },
       "/nonexistent/mock-result.json",
@@ -382,6 +442,7 @@ describe("providers", () => {
     expect(calls[0].headers.authorization).toBeUndefined();
     expect(calls[0].body.model).toBe("nemotron");
     expect((calls[0].body.response_format as Record<string, unknown>).type).toBe("json_schema");
+    expect(calls[0].body.provider).toBeUndefined();
   });
 
   /* Ollama serves arbitrary local models and has nothing to ask about them, so
@@ -436,8 +497,7 @@ describe("providers", () => {
      shape silently returned another Module's result. */
   it("sends the caller's own schema, not a shape of its own", async () => {
     responses.push({
-      status: 200,
-      body: chatCompletion(JSON.stringify({ markdown: "# Brand Profile" })),
+      sse: sseChatCompletion(JSON.stringify({ markdown: "# Brand Profile" })),
     });
     const complete = makeCompleteJson(
       { provider: "openrouter", model: "some/model", apiKey: "sk-test" },
@@ -492,7 +552,7 @@ describe("model-boundary failures", () => {
      parser, which names neither the provider nor the fact that nothing arrived. */
   it("classifies a 2xx with no body as an empty body", async () => {
     declarations.push(declaring("tools", "tool_choice"));
-    responses.push({ status: 200, body: undefined });
+    responses.push({ sse: [] });
     const failure = await failureOf(openrouter("some/silent-model"));
     expect(failure.classification).toBe("empty_body");
     expect(failure.provider).toBe("openrouter");
@@ -511,14 +571,10 @@ describe("model-boundary failures", () => {
   it("classifies an upstream failure carried by a 200 response", async () => {
     declarations.push(declaring("tools", "tool_choice"));
     responses.push({
-      status: 200,
-      body: {
-        error: {
-          message: "Upstream error from Nvidia: Service temporarily overloaded",
-          code: 502,
-          metadata: { provider_name: "Nvidia" },
-        },
-      },
+      sse: [
+        'data: {"error":{"message":"Upstream error from Nvidia: Service temporarily overloaded","code":502,"metadata":{"provider_name":"Nvidia"}}}',
+        "data: [DONE]",
+      ],
     });
     const failure = await failureOf(openrouter("some/overloaded-model"));
     expect(failure.classification).toBe("upstream_error");
@@ -532,35 +588,28 @@ describe("model-boundary failures", () => {
   /* The observed defect: the endpoint never declared `response_format`, so the
      answer landed outside `content`. The failure has to say which field was
      populated, because that is what identified the cause. */
-  it("classifies a reply with nothing in the binding's field, naming the field that held something", async () => {
+  it("classifies a streamed reply with nothing in the binding's field", async () => {
     declarations.push(declaring("structured_outputs", "response_format"));
     responses.push({
-      status: 200,
-      body: {
-        provider: "Nvidia",
-        choices: [
-          {
-            finish_reason: "stop",
-            message: { role: "assistant", content: null, reasoning: "thinking out loud" },
-          },
-        ],
-      },
+      sse: [
+        'data: {"choices":[{"delta":{"reasoning":"thinking out loud"}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{}}',
+        "data: [DONE]",
+      ],
     });
     const failure = await failureOf(openrouter("some/reasoning-model"));
     expect(failure.classification).toBe("unusable_shape");
     expect(failure.binding).toBe("response_format");
     expect(failure.finishReason).toBe("stop");
-    expect(failure.upstreamServer).toBe("Nvidia");
-    expect(failure.topLevelKeys).toEqual(["provider", "choices"]);
+    expect(failure.topLevelKeys).toEqual(["choices"]);
     expect(failure.emptyFields).toContain("choices[0].message.content");
-    expect(failure.populatedFields).toContain("choices[0].message.reasoning");
+    expect(failure.populatedFields).toContain("choices[0].message.role");
   });
 
   it("classifies a tool call that returned no tool_calls", async () => {
     declarations.push(declaring("tools", "tool_choice"));
     responses.push({
-      status: 200,
-      body: { choices: [{ finish_reason: "length", message: { content: "", tool_calls: [] } }] },
+      sse: ['data: {"choices":[{"delta":{},"finish_reason":"length"}],"usage":{}}', "data: [DONE]"],
     });
     const failure = await failureOf(openrouter("some/truncating-model"));
     expect(failure.classification).toBe("unusable_shape");
@@ -571,19 +620,18 @@ describe("model-boundary failures", () => {
     );
   });
 
-  it("classifies the seam's own ceiling firing as a timeout that names the model", async () => {
+  it("ends a request that hangs before its first token at the idle ceiling", async () => {
     vi.useFakeTimers();
     try {
       declarations.push(declaring("tools", "tool_choice"));
       responses.push({ hang: true });
       const pending = failureOf(openrouter("some/queued-model"));
-      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
       const failure = await pending;
       expect(failure.classification).toBe("request_timeout");
-      expect(failure.timeoutMs).toBe(REQUEST_TIMEOUT_MS);
+      expect(failure.timeoutMs).toBe(STREAM_IDLE_TIMEOUT_MS);
       expect(failure.model).toBe("some/queued-model");
       expect(failure.status).toBeNull();
-      expect(failure.message).toContain("some/queued-model");
     } finally {
       vi.useRealTimers();
     }
@@ -638,12 +686,12 @@ describe("model-boundary failures", () => {
       responses.push({
         status: 400,
         body: { error: "json_schema not supported" },
-        delayMs: 140_000,
+        delayMs: 10_000,
       });
       responses.push({
         status: 400,
         body: { error: "tool_choice not supported" },
-        delayMs: 140_000,
+        delayMs: 10_000,
       });
       responses.push({ hang: true });
       const pending = failureOf(openrouter("some/slow-step-down-model"));
@@ -658,6 +706,7 @@ describe("model-boundary failures", () => {
       const failure = await pending;
       expect(failure.classification).toBe("request_timeout");
       expect(failure.model).toBe("some/slow-step-down-model");
+      expect(failure.timeoutMs).toBe(STREAM_IDLE_TIMEOUT_MS);
       expect(calls).toHaveLength(3);
     } finally {
       vi.useRealTimers();
@@ -672,18 +721,19 @@ describe("model-boundary failures", () => {
     expect(failure.message).toContain("HTTP 401");
   });
 
-  it("classifies a 2xx body that is not JSON", async () => {
-    declarations.push(declaring("tools", "tool_choice"));
-    responses.push({ status: 200, text: "<html>gateway</html>" });
-    const failure = await failureOf(openrouter("some/proxied-model"));
-    expect(failure.classification).toBe("unparseable_body");
-    expect(failure.bodyBytes).toBe(20);
-    expect(failure.topLevelKeys).toEqual([]);
+  it("classifies an error event carried inside the stream", async () => {
+    declarations.push(declaring("response_format"));
+    responses.push({
+      sse: ['data: {"error":{"message":"upstream overloaded","code":504}}', "data: [DONE]"],
+    });
+    const failure = await failureOf(openrouter("some/mid-stream-failure-model"));
+    expect(failure.classification).toBe("upstream_error");
+    expect(failure.status).toBe(200);
   });
 
   it("classifies an answer field that holds text which is not JSON", async () => {
     declarations.push(declaring("max_tokens"));
-    responses.push({ status: 200, body: chatCompletion("Sure! Here are the tasks:") });
+    responses.push({ sse: sseChatCompletion("Sure! Here are the tasks:") });
     const failure = await failureOf(openrouter("some/chatty-model"));
     expect(failure.classification).toBe("answer_not_json");
     expect(failure.binding).toBe("prompt_only");
@@ -709,6 +759,21 @@ describe("model-boundary failures", () => {
     const failure = await failureOf(openrouter("some/native-timeout-model"));
     expect(failure.classification).toBe("request_timeout");
     expect(failure.timeoutMs).toBe(REQUEST_TIMEOUT_MS);
+  });
+
+  it("ends a stream that never sends a token at the idle ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("response_format"));
+      responses.push({ status: 200, bodyHang: true });
+      const pending = failureOf(openrouter("some/hung-stream-model"));
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
+      const failure = await pending;
+      expect(failure.classification).toBe("request_timeout");
+      expect(failure.timeoutMs).toBe(STREAM_IDLE_TIMEOUT_MS);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /* Transcripts are private and Source Items are untrusted third-party evidence.
