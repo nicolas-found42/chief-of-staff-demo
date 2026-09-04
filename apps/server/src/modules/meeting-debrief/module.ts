@@ -33,7 +33,16 @@ import {
   serializeReviewState,
   type DebriefApprovalGateDeps,
 } from "./review.js";
-import { buildDebriefMessages, resolveActionItemOwners } from "./extraction.js";
+import {
+  actionItemEvidence,
+  buildDebriefMessages,
+  clampDueDates,
+  dropActionItemEvidence,
+  resolveActionItemOwners,
+  stripFulfilledActionItems,
+  stripRestatedDecisions,
+  stripUnverifiedRecipientEmails,
+} from "./extraction.js";
 import { composeExternalDebriefBody } from "./externalBody.js";
 
 export type {
@@ -229,8 +238,22 @@ async function extractWithModel(
         system: messages.system,
         user: messages.user,
         schema: messages.schema,
+        temperature: 0,
       });
-      parsed = parseResultShape("MeetingDebriefExtraction", MeetingDebriefExtractionSchema, raw);
+      parsed = stripRestatedDecisions(
+        stripFulfilledActionItems(
+          clampDueDates(
+            parseResultShape(
+              "MeetingDebriefExtraction",
+              MeetingDebriefExtractionSchema,
+              dropActionItemEvidence(raw),
+            ),
+            record,
+          ),
+          actionItemEvidence(raw),
+          record,
+        ),
+      );
       ctx.event("extract_ok", { attempt });
       break;
     } catch (error) {
@@ -307,7 +330,8 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     const debrief = deps.extract
       ? await deps.extract({ record, identity })
       : await extractWithModel(ctx, record, identity, deps);
-    return resolveActionItemOwners(debrief, deps.identity.reviewFor(record.id));
+    const resolved = resolveActionItemOwners(debrief, deps.identity.reviewFor(record.id));
+    return stripUnverifiedRecipientEmails(resolved, record);
   };
 
   /** Store the result of a finished extraction or regeneration on the Run. */
