@@ -52,7 +52,7 @@ services:
         - action: rebuild
           path: ./package.json
         - action: rebuild
-          path: ./package-lock.json
+          path: ./pnpm-lock.yaml
         - action: rebuild
           path: ./tsconfig.base.json
         - action: rebuild
