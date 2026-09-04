@@ -501,13 +501,17 @@ export class MeetingDebriefHost implements HostedModule {
     const meta = run.read();
     if (!meta.externalId) return null;
     const record = this.catalog.getTranscript(meta.externalId);
+    /* A Debrief the Catalog no longer has a Transcript for is not listed. It
+       is how a retired duplicate leaves the journey — the Run stays exactly
+       where it is, and the meeting it covered is still here under the copy
+       that was kept, rather than three times over. */
+    if (record === null) return null;
     const review = this.identity.reviewFor(meta.externalId);
     const identity = identitySummary(review);
     const extraction = parseRunResult(run.readArtifact("result.json"));
     const state = parseReviewState(run.readArtifact("review.json"));
-    const linked = record?.occurrence != null;
-    const rosterStatus =
-      record !== null && record.roster.length > 0 ? "prefilled" : "requires_confirmation";
+    const linked = record.occurrence !== null;
+    const rosterStatus = record.roster.length > 0 ? "prefilled" : "requires_confirmation";
     const owner = this.gate.ownerEmail();
     const automaticCount = state
       ? state.roster.entries.filter((entry) => entry.profileId !== null && entry.email !== owner)
@@ -516,15 +520,15 @@ export class MeetingDebriefHost implements HostedModule {
     return {
       runId: summary.id,
       transcriptId: meta.externalId,
-      meetingId: record?.meetingId ?? null,
+      meetingId: record.meetingId,
       status: summary.status,
       summary: summary.summary,
-      meetingDate: record?.meetingDate ?? null,
+      meetingDate: record.meetingDate,
       fileName: this.titleFor(record) ?? meta.fileName ?? null,
       linked,
-      occurrenceKey: record?.occurrence?.occurrenceKey ?? null,
+      occurrenceKey: record.occurrence?.occurrenceKey ?? null,
       rosterStatus,
-      rosterSize: record?.roster.length ?? 0,
+      rosterSize: record.roster.length,
       identity: {
         resolvedCount: identity.resolved.length,
         unresolvedCount: identity.unresolved.length,
@@ -557,20 +561,24 @@ export class MeetingDebriefHost implements HostedModule {
       if (!run) continue;
       const extraction = parseRunResult(run.readArtifact("result.json"))?.debrief;
       if (!extraction) continue;
+      const meta = run.read();
+      const record = meta.externalId ? this.catalog.getTranscript(meta.externalId) : null;
+      /* Same rule as the index: a retired copy's items are the kept copy's
+         items, and counting both listed one commitment as many times as Drive
+         held the file. */
+      if (record === null) continue;
       const state = parseReviewState(run.readArtifact("review.json"));
       const dropped = new Set(state?.review.droppedActionItems ?? []);
       const doneLocal = new Set(state?.review.completedActionItems ?? []);
       const tasks = state
         ? new Map((await this.actionItemTasks(run, state)).map((t) => [t.index, t.completed]))
         : new Map<number, boolean>();
-      const meta = run.read();
-      const record = meta.externalId ? this.catalog.getTranscript(meta.externalId) : null;
       extraction.actionItems.forEach((item, index) => {
         if (dropped.has(index)) return;
         if (tasks.has(index) ? tasks.get(index)! : doneLocal.has(index)) return;
         items.push({
           runId: summary.id,
-          meetingId: record?.meetingId ?? null,
+          meetingId: record.meetingId,
           index,
           title: item.title,
           owner: item.owner,

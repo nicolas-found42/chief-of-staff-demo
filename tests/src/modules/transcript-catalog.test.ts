@@ -244,6 +244,74 @@ describe("Transcript Catalog consent and backfill", () => {
     expect(repaired?.ingestedAt).toBe(stored!.ingestedAt);
   });
 
+  it("retires a copy the Catalog mined before it knew to refuse it, keeping the fuller text", async () => {
+    /* The corpus was catalogued under the older per-file rule. The richest
+       member is kept: a `_summary` is an artifact of the recording its
+       `_transcript` carries in full. */
+    const workspaceDir = mkdtempSync(join(tmpdir(), "transcript-catalog-retire-"));
+    const source = fakeSource({
+      fileA: { name: "Team Sync_transcript.txt", body: "Dana: Three things today, at length." },
+    });
+    const catalog = makeCatalog(source, workspaceDir);
+    await catalog.grantConsent();
+    await catalog.whenIdle();
+
+    // A second record for the same recording, as the older rule would have left it.
+    const store = new TranscriptCatalogStore(workspaceDir);
+    const kept = store.readTranscript("drive_fileA_r1");
+    expect(kept).not.toBeNull();
+    store.saveTranscript({
+      ...kept!,
+      id: "drive_fileB_r1",
+      source: { ...kept!.source, externalFileId: "fileB", fileName: "Team Sync_summary.txt" },
+      normalizedText: "Dana: Short.",
+    });
+    expect(store.listTranscripts()).toHaveLength(2);
+
+    await catalog.processAvailable();
+    await catalog.whenIdle();
+
+    const remaining = store.listTranscripts();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.source.fileName).toBe("Team Sync_transcript.txt");
+  });
+
+  it("mines one recording once, however many copies of it Drive holds", async () => {
+    /* Drive makes a new file id for every copy, and an exporter writes the
+       same recording as `.json` and `.md` and as `_transcript` beside
+       `_summary`. Mined per file, one meeting earned three Debriefs and its
+       action items were counted three times. */
+    const source = fakeSource({
+      original: {
+        name: "Team Sync-transcript-2026-08-17T13-00-00.000Z.md",
+        body: "Dana: Three things today.",
+      },
+      identicalBytes: {
+        name: "Copy of Team Sync-transcript-2026-08-17T13-00-00.000Z.md",
+        body: "Dana: Three things today.",
+      },
+      otherFormat: {
+        name: "Team Sync-transcript-2026-08-17T13-00-00.000Z.json",
+        body: JSON.stringify([{ speaker_name: "Dana", text: "Three things today.", index: 0 }]),
+      },
+      differentMeeting: {
+        name: "Team Sync-transcript-2026-08-18T13-00-00.000Z.md",
+        body: "Dana: A different day.",
+      },
+    });
+    const catalog = makeCatalog(source);
+    await catalog.grantConsent();
+    await catalog.whenIdle();
+
+    const kept = catalog.listTranscripts();
+    expect(kept).toHaveLength(2);
+    expect(kept.map((record) => record.meetingDate).sort()).toEqual(["2026-08-17", "2026-08-18"]);
+    // The copies are still accounted for, and each one names what covers it.
+    const status = catalog.status();
+    expect(status.skipped).toBe(2);
+    expect(status.transcriptCount).toBe(2);
+  });
+
   it("reads the Markdown speaker line an export writes with a bracketed timestamp", async () => {
     /* `**Richard Achee** *[00:00]*: …`. The plain label pattern cannot reach
        the separating colon — it refuses to cross the one inside `00:00` — so

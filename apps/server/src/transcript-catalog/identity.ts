@@ -95,6 +95,16 @@ export class TranscriptIdentityService {
     this.now = deps.now ?? (() => new Date());
   }
 
+  /**
+   * Forget everything mined from one Transcript. Used when the Catalog
+   * retires a copy of a recording it already holds: the mentions belong to
+   * the record, so they go with it rather than surviving as candidates
+   * nobody can trace back to a transcript.
+   */
+  forget(transcriptId: string): void {
+    this.store.forgetTranscript(transcriptId);
+  }
+
   async backfill(records: TranscriptRecord[]): Promise<void> {
     for (const record of records) await this.process(record);
   }

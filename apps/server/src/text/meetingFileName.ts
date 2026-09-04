@@ -110,3 +110,43 @@ export function meetingFileNameMeta(fileName: string): MeetingFileNameMeta {
 
   return { title: titleOf(stem), timestamp: null, namesTime: false };
 }
+
+/**
+ * A key identifying the *recording* a file name describes, for telling copies
+ * of one transcript apart from two different meetings.
+ *
+ * Deliberately blunter than the display title: the exporter's artifact words
+ * are always stripped here, where `meetingFileNameMeta` only strips them from
+ * a name that also carries a timestamp. That guard exists so a meeting really
+ * called "Design Notes" keeps its name — a naming question. Grouping is a
+ * different question, and Drive answers it with
+ * `…_transcript.txt` beside `…_summary.txt`: one recording, two artifacts of
+ * it. Null when the name says nothing to group on.
+ */
+export function recordingKey(fileName: string): string | null {
+  const meta = meetingFileNameMeta(fileName);
+  /* A name carrying no title at all says nothing to group on — the same test
+     the Meeting match applies before it will link anything. */
+  if (meta.title === null) return null;
+  const base = meta.title
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(COPY_PREFIX, "");
+  let name = base;
+  for (;;) {
+    const next = name.replace(ARTIFACT_TAIL, "").trim();
+    if (next === name || next === "") break;
+    name = next;
+  }
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  if (normalized === "") return null;
+  /* The timestamp separates one occurrence of a recurring meeting from the
+     next. A name with none groups on its title alone — which is what the two
+     undated stand-up artifacts need, and which no dated file can collide
+     with. */
+  return `${normalized}|${meta.timestamp ?? "undated"}`;
+}

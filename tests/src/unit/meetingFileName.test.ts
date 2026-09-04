@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { meetingFileNameMeta } from "../../../apps/server/src/text/meetingFileName";
+import { meetingFileNameMeta, recordingKey } from "../../../apps/server/src/text/meetingFileName";
 
 /**
  * A Transcript's file name is the primary evidence for its Meeting (issue
@@ -53,5 +53,43 @@ describe("meetingFileNameMeta", () => {
       timestamp: "2026-06-18T00:00:00.000Z",
       namesTime: false,
     });
+  });
+});
+
+/**
+ * Grouping copies of one recording is a different question from naming a
+ * meeting, so `recordingKey` is blunter than the display title on purpose.
+ */
+describe("recordingKey", () => {
+  it("gives Drive's copies of one export the same key", () => {
+    expect(recordingKey("Copy of Abhinav- Richard-transcript-2026-06-18T13-00-00.000Z.json")).toBe(
+      recordingKey("Copy of Copy of Abhinav- Richard-transcript-2026-06-18T13-00-00.000Z.json"),
+    );
+  });
+
+  it("gives two export formats of one meeting the same key", () => {
+    expect(recordingKey("Team Sync-transcript-2026-06-18T13-00-00.000Z.json")).toBe(
+      recordingKey("Team Sync-transcript-2026-06-18T13-00-00.000Z.md"),
+    );
+  });
+
+  it("gives a transcript and its summary the same key", () => {
+    expect(recordingKey("Team Sync_transcript.txt")).toBe(recordingKey("Team Sync_summary.txt"));
+  });
+
+  it("keeps two occurrences of a recurring meeting apart", () => {
+    expect(recordingKey("Team Sync-transcript-2026-06-18T13-00-00.000Z.md")).not.toBe(
+      recordingKey("Team Sync-transcript-2026-06-19T13-00-00.000Z.md"),
+    );
+  });
+
+  it("keeps two different meetings apart", () => {
+    expect(recordingKey("Team Sync-transcript-2026-06-18T13-00-00.000Z.md")).not.toBe(
+      recordingKey("Board Review-transcript-2026-06-18T13-00-00.000Z.md"),
+    );
+  });
+
+  it("has no key for a name that says nothing to group on", () => {
+    expect(recordingKey("12345.mp3")).toBeNull();
   });
 });

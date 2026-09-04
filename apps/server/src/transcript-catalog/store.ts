@@ -15,6 +15,7 @@ import type {
   TranscriptLedgerEntry,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
+import { recordingKey } from "../text/meetingFileName.js";
 
 /**
  * Durable state of the Transcript Catalog: the standing folder consent, the
@@ -73,6 +74,34 @@ export class TranscriptCatalogStore {
     next.sort((a, b) => key(a).localeCompare(key(b)));
     mkdirSync(this.root, { recursive: true });
     this.writeAtomic(join(this.root, "ledger.json"), this.serialize(next));
+  }
+
+  /**
+   * The registered Transcript that already covers this source file, if
+   * another one does. Drive makes a new file id every time a transcript is
+   * copied, and an exporter writes the same recording as `.json` and `.md`
+   * and as `_transcript` beside `_summary`: the corpus held 29 files for 19
+   * distinct recordings, each copy mining its own identity and earning its
+   * own Debrief.
+   */
+  processedDuplicate(
+    checksum: string,
+    fileName: string,
+    exceptFileId: string,
+  ): TranscriptLedgerEntry | null {
+    const key = recordingKey(fileName);
+    return (
+      this.readLedger().find(
+        (entry) =>
+          entry.state === "processed" &&
+          entry.transcriptId !== null &&
+          entry.externalFileId !== exceptFileId &&
+          /* Identical bytes, or the same recording under another name — a
+             `.json` and a `.md` export of one meeting are not the same file
+             and are not two meetings. */
+          (entry.checksum === checksum || (key !== null && recordingKey(entry.fileName) === key)),
+      ) ?? null
+    );
   }
 
   latestEntry(externalFileId: string): TranscriptLedgerEntry | null {

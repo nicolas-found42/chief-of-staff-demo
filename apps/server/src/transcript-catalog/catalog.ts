@@ -13,6 +13,7 @@ import {
 } from "@chief-of-staff-demo/shared";
 import { isSupportedFileName, convertToText } from "../text/convert.js";
 import { meetingDateFromFileName } from "../text/meetingDate.js";
+import { recordingKey } from "../text/meetingFileName.js";
 import { TranscriptCatalogStore } from "./store.js";
 
 /**
@@ -64,6 +65,8 @@ export interface TranscriptCatalogDisclosure {
 export interface TranscriptIdentityProcessor {
   process(record: TranscriptRecord): Promise<void>;
   backfill(records: TranscriptRecord[]): Promise<void>;
+  /** Drop everything mined from one Transcript the Catalog no longer holds. */
+  forget?(transcriptId: string): void;
 }
 
 export interface TranscriptCatalogDeps {
@@ -94,6 +97,9 @@ export class ConsentRequiredError extends Error {
     this.name = "ConsentRequiredError";
   }
 }
+
+/** Why a source file was catalogued but not mined a second time. */
+const DUPLICATE_REASON = "duplicate of an already-catalogued transcript";
 
 const LOCAL_RETENTION =
   "Full normalized transcript text is retained locally in the Workspace until " +
@@ -380,6 +386,57 @@ export class TranscriptCatalog {
     }
   }
 
+  /**
+   * Retire Transcripts the Catalog mined before it knew they were copies.
+   *
+   * Ingest now refuses a duplicate outright, but the corpus was catalogued
+   * under the older rule and holds ten extra records — the Debrief journey
+   * listed one meeting three times, and the owner's action-item rollup counted
+   * the same commitment as many times as Drive held the file. The richest
+   * member of each group is kept: a `_summary` is an artifact of the recording
+   * its `_transcript` carries in full, and keeping the fuller text is what
+   * makes the two interchangeable.
+   *
+   * Idempotent, and it removes only Catalog records. The Run that mined a
+   * retired copy is left exactly where it is — the Debrief surfaces stop
+   * listing it because its transcript is gone, so nothing is destroyed and
+   * restoring one is a matter of putting the record back.
+   */
+  private retireDuplicateRecords(): void {
+    const groups = new Map<string, TranscriptRecord[]>();
+    for (const record of this.store.listTranscripts()) {
+      const key = recordingKey(record.source.fileName);
+      if (key === null) continue;
+      groups.set(key, [...(groups.get(key) ?? []), record]);
+    }
+    for (const [key, members] of groups) {
+      if (members.length < 2) continue;
+      /* Longest normalized text wins, ties broken on id so the choice is the
+         same on every pass and in every workspace. */
+      const ranked = [...members].sort(
+        (left, right) =>
+          right.normalizedText.length - left.normalizedText.length ||
+          left.id.localeCompare(right.id),
+      );
+      const [kept, ...retired] = ranked;
+      if (!kept) continue;
+      for (const record of retired) {
+        this.store.deleteTranscript(record.id);
+        this.identity.forget?.(record.id);
+        const entry = this.store.latestEntry(record.source.externalFileId);
+        if (entry) {
+          this.recordEntry({
+            ...entry,
+            state: "skipped",
+            reason: DUPLICATE_REASON,
+            transcriptId: kept.id,
+          });
+        }
+        this.log(`retired ${record.source.fileName} as a copy of ${kept.source.fileName} (${key})`);
+      }
+    }
+  }
+
   private async runPass(): Promise<TranscriptProcessingPass> {
     const result: TranscriptProcessingPass = {
       processed: 0,
@@ -389,6 +446,7 @@ export class TranscriptCatalog {
     };
     if (this.store.readPaused()) return result;
     this.rederiveStaleRecords();
+    this.retireDuplicateRecords();
     await this.identity.backfill(this.store.listTranscripts());
     if (this.debrief) await this.debrief.backfill(this.store.listTranscripts());
     const listed = await this.source.listFiles();
@@ -446,6 +504,24 @@ export class TranscriptCatalog {
     }
     const checksum = checksumOf(bytes);
     const effectiveName = conversionNameOf(file);
+    /* Exactly-once per *content*, not merely per source file. Drive makes a
+       new file id every time a transcript is copied, and Fireflies re-uploads
+       one it has already delivered, so the same recording arrived several
+       times over — each copy mining its own identity and earning its own
+       Debrief, and the Debrief journey listing one meeting three times. The
+       copy is recorded and reaches its original, so nothing is lost and the
+       ledger still says what happened to every file the folder holds. */
+    const duplicateOf = this.store.processedDuplicate(checksum, file.fileName, file.externalFileId);
+    if (duplicateOf !== null) {
+      if (latest?.checksum !== checksum || latest.state !== "skipped") {
+        this.recordEntry({
+          ...this.newEntry(file, checksum, "skipped", DUPLICATE_REASON, latest?.observedRevision),
+          transcriptId: duplicateOf.transcriptId,
+        });
+        this.log(`${file.fileName} duplicates ${duplicateOf.fileName}; not mined again`);
+      }
+      return "skipped";
+    }
     /* A skipped revision is only "unchanged" while its skip reason still
        holds: a file that came back after disappearing, or an unsupported
        name that has since become supported (Drive rename keeps the id and
