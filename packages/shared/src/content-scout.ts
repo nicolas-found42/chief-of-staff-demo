@@ -340,6 +340,8 @@ export function canaryHealthForAdapter(input: {
     canaryTargets?: readonly SourceAdapterCanaryTarget[];
   };
   receipts: readonly SourceCanaryReceipt[];
+  /** The clock the promotion window is measured against; the caller's, not the wall's. */
+  now?: Date;
 }): SourceCanaryHealth {
   const targets = [...(input.adapter.canaryTargets ?? [])];
   const forAdapter = [...input.receipts]
@@ -359,6 +361,7 @@ export function canaryHealthForAdapter(input: {
   const promotionEligible = isCanaryPromotionEligible({
     adapter: input.adapter,
     receipts: input.receipts,
+    ...(input.now ? { now: input.now } : {}),
   });
   return {
     adapterId: input.adapter.id,

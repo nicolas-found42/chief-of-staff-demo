@@ -85,11 +85,13 @@ export class ContentScoutCanaryStore {
   }
 
   healthForAdapter(adapter: SourceAdapter): SourceCanaryHealth {
-    return canaryHealthForAdapter({ adapter, receipts: this.list() });
+    return canaryHealthForAdapter({ adapter, receipts: this.list(), now: this.now() });
   }
 
   allHealth(adapters: readonly SourceAdapter[]): SourceCanaryHealth[] {
-    return adapters.map((adapter) => canaryHealthForAdapter({ adapter, receipts: this.list() }));
+    return adapters.map((adapter) =>
+      canaryHealthForAdapter({ adapter, receipts: this.list(), now: this.now() }),
+    );
   }
 
   promotionEligible(adapter: SourceAdapter, now?: Date): boolean {
