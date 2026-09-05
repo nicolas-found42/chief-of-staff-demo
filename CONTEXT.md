@@ -414,10 +414,9 @@ _Status_: live
 _Avoid_: Meeting Briefing Generator (the Relay original), Briefing Module
 
 **Person Profile**:
-A durable, reusable, evidence-backed record of one person, resolved from Identity Signals and
-composed of sourced Person Evidence. It is owned by the Workspace rather than by the workflow that
-first requested it, so meeting preparation, content research, and future outreach may reuse the same
-identity without silently sharing guesses.
+A durable, Workspace-owned dossier of one person, composed of sourced Person Evidence about their
+identity, work, expertise, ideas, and connections. Its readable account and detailed records share
+the same evidence, independently of the workflow that first encountered the person.
 _Avoid_: Guest Profile, guest dossier, contact profile (the person need not be a contact)
 
 **Identity Signal**:
@@ -431,6 +430,47 @@ A sourced claim, profile reference, publication, activity, or mention attributed
 with its provenance and match confidence. Ambiguous evidence remains visible but cannot establish a
 person, employer, or owned publishing surface as fact.
 _Avoid_: Profile data, intelligence (alone), fact (unless the evidence establishes it)
+
+**Person Source Document**:
+One retained version of source material used to research a person, with its origin, dates, and
+collection completeness. It can support several claims without making those claims independent.
+_Avoid_: Profile snapshot, Person Evidence (a source document alone does not establish attribution)
+
+**Person Claim**:
+One attributed assertion about a person, their work, or a connection, supported by specific passages
+of Person Source Documents. Its factual support is distinct from confidence that it names the right
+person, and it can remain historical, contested, or superseded.
+_Avoid_: Fact (unless established), confidence score
+
+**Work Record**:
+One named project, product, system, publication, or other contribution, connecting the person's
+documented role to collaborators, operating scale, constraints, and outcomes. Missing individual
+contribution or outcome information remains unknown.
+_Avoid_: Artifact (that term also names Run output), achievement (work can fail)
+
+**Demonstrated Expertise**:
+A capability established by documented work and the person's contribution to it, using the same
+subject categories as Claimed Expertise. Its context and supporting work determine what the record
+establishes.
+_Avoid_: Expertise score, inferred skill
+
+**Claimed Expertise**:
+A capability attributed to a person without sufficient documented work to establish it, preserving
+the original statement and its source. It can later gain support without changing its subject
+category.
+_Avoid_: Verified skill, false claim (lack of support does not establish falsity)
+
+**Person Connection**:
+A sourced, typed relationship between a person and another person, organisation, or idea, with dates
+and shared work where known. Repeated shared work and shared employment describe different
+relationships.
+_Avoid_: Social link, introduction, access (a connection establishes neither)
+
+**Relationship History**:
+The Workspace owner's documented interactions with a person, connecting Meetings, Transcript
+passages, decisions, Action Items, and Tasks. It is distinct from the public account of that person
+and may be empty.
+_Avoid_: Public activity, inferred relationship
 
 **Transcript Catalog**:
 The Workspace-owned collection of immutable Transcripts, source and meeting metadata, extracted
