@@ -52,7 +52,20 @@ function defaultConfig(): AppConfig {
     },
     notion: { token: "", lastVerifiedAt: null },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
-    tasks: { googleTasks: { enabled: false, taskListId: "", taskListTitle: "" } },
+    tasks: {
+      googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
+      asana: {
+        token: "",
+        lastVerifiedAt: null,
+        enabled: false,
+        workspaceGid: "",
+        workspaceName: "",
+        projectGid: "",
+        projectName: "",
+        sectionGid: null,
+        sectionName: null,
+      },
+    },
     ollama: { baseUrl: DEFAULT_OLLAMA_BASE_URL },
     search: {},
     modules: {
@@ -203,6 +216,19 @@ export class ConfigStore {
   setGoogleTasksDestination(next: AppConfig["tasks"]["googleTasks"]): void {
     const current = this.get();
     this.config = { ...current, tasks: { ...current.tasks, googleTasks: next } };
+    this.persist();
+  }
+
+  /**
+   * Asana as a Task Destination (issue #189). Its own method rather than a
+   * `PUT /api/config` field, like the Google Tasks destination above: the
+   * token is verified against Asana before it is stored, and the destination
+   * is validated against the account before it is enabled — decisions the
+   * Tasks product makes on its own routes, not settings anyone can post.
+   */
+  setAsanaDestination(next: AppConfig["tasks"]["asana"]): void {
+    const current = this.get();
+    this.config = { ...current, tasks: { ...current.tasks, asana: next } };
     this.persist();
   }
 

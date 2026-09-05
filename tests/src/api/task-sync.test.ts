@@ -10,7 +10,9 @@ import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
 import {
   TaskLinking,
+  type GoogleTasksDestination,
   type GoogleTasksDestinationSettings,
+  type RemoteTaskConnector,
 } from "../../../apps/server/src/tasks/external-link";
 
 /**
@@ -21,17 +23,18 @@ import {
  * locally, and a remote record Google no longer holds leaves the Task intact
  * with a missing link the owner can recreate or remove.
  */
+/** The Google destination the fake Task carries, as the connector now receives it. */
+const G_LIST = {
+  provider: "google-tasks",
+  googleTaskListId: "list_work",
+  googleTaskListTitle: "Work",
+} as const;
+
 let app: FastifyInstance;
 let settings: GoogleTasksDestinationSettings;
-let createRemote: Mock<
-  (taskListId: string, task: Task) => Promise<{ remoteId: string; url: string | null }>
->;
-let readRemoteStatus: Mock<
-  (taskListId: string, remoteId: string) => Promise<{ completed: boolean } | null>
->;
-let updateRemoteStatus: Mock<
-  (taskListId: string, remoteId: string, completed: boolean) => Promise<void>
->;
+let createRemote: Mock<RemoteTaskConnector<GoogleTasksDestination>["create"]>;
+let readRemoteStatus: Mock<RemoteTaskConnector<GoogleTasksDestination>["readStatus"]>;
+let updateRemoteStatus: Mock<RemoteTaskConnector<GoogleTasksDestination>["updateStatus"]>;
 
 beforeEach(() => {
   const workspaceDir = mkdtempSync(join(tmpdir(), "cos-task-sync-"));
@@ -56,9 +59,11 @@ beforeEach(() => {
         settings = next;
       },
       listRemoteLists: async () => [{ id: "list_work", title: "Work" }],
-      createRemote,
-      readRemoteStatus,
-      updateRemoteStatus,
+      google: {
+        create: createRemote,
+        readStatus: readRemoteStatus,
+        updateStatus: updateRemoteStatus,
+      },
     }),
   });
   return app.ready();
@@ -108,7 +113,7 @@ describe("pushing local completion outward", () => {
 
     const completed = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
     expect(completed.statusCode).toBe(200);
-    expect(updateRemoteStatus).toHaveBeenCalledWith("list_work", "google_1", true);
+    expect(updateRemoteStatus).toHaveBeenCalledWith(G_LIST, "google_1", true);
     expect(completed.json<Task>()).toMatchObject({
       status: "completed",
       externalLink: { state: "synchronized", baseline: { status: "completed" } },
@@ -124,7 +129,7 @@ describe("pushing local completion outward", () => {
 
     const reopened = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/reopen` });
     expect(reopened.statusCode).toBe(200);
-    expect(updateRemoteStatus).toHaveBeenCalledWith("list_work", "google_1", false);
+    expect(updateRemoteStatus).toHaveBeenCalledWith(G_LIST, "google_1", false);
     expect(reopened.json<Task>()).toMatchObject({
       status: "open",
       externalLink: { state: "synchronized", baseline: { status: "open" } },
@@ -283,7 +288,7 @@ describe("classified provider failures", () => {
         remoteId: "google_1",
         failure: {
           kind: "authorization",
-          message: "Google Tasks refused the saved sign-in. Sign in again.",
+          message: "Google Tasks refused the saved credential. Reconnect Google Tasks.",
         },
       },
     });
@@ -343,7 +348,7 @@ describe("completed Tasks stay completed", () => {
 
     const linked = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/link` });
     expect(linked.statusCode).toBe(200);
-    expect(updateRemoteStatus).toHaveBeenCalledWith("list_work", "google_1", true);
+    expect(updateRemoteStatus).toHaveBeenCalledWith(G_LIST, "google_1", true);
     expect(linked.json<Task>()).toMatchObject({
       status: "completed",
       externalLink: { state: "synchronized", baseline: { status: "completed" } },
@@ -372,7 +377,7 @@ describe("completed Tasks stay completed", () => {
 
     const recreated = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/recreate` });
     expect(recreated.statusCode).toBe(200);
-    expect(updateRemoteStatus).toHaveBeenLastCalledWith("list_work", "google_2", true);
+    expect(updateRemoteStatus).toHaveBeenLastCalledWith(G_LIST, "google_2", true);
     expect(recreated.json<Task>()).toMatchObject({
       status: "completed",
       externalLink: {

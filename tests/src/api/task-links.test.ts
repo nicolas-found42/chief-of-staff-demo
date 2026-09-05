@@ -10,14 +10,10 @@ import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
 import {
   TaskLinking,
+  type GoogleTasksDestination,
   type GoogleTasksDestinationSettings,
+  type RemoteTaskConnector,
 } from "../../../apps/server/src/tasks/external-link";
-
-/** What creating one Google Task answers with, as the linking module reads it. */
-interface CreatedRemote {
-  remoteId: string;
-  url: string | null;
-}
 
 /**
  * Google Tasks as an optional Task Destination (issue #184, ADR-0056).
@@ -29,7 +25,7 @@ interface CreatedRemote {
 let app: FastifyInstance;
 let settings: GoogleTasksDestinationSettings;
 let remoteLists: { id: string; title: string }[];
-let createRemote: Mock<(taskListId: string, task: Task) => Promise<CreatedRemote>>;
+let createRemote: Mock<RemoteTaskConnector<GoogleTasksDestination>["create"]>;
 
 beforeEach(() => {
   const workspaceDir = mkdtempSync(join(tmpdir(), "cos-task-links-"));
@@ -53,9 +49,11 @@ beforeEach(() => {
         settings = next;
       },
       listRemoteLists: async () => remoteLists,
-      createRemote,
-      readRemoteStatus: async () => ({ completed: false }),
-      updateRemoteStatus: async () => {},
+      google: {
+        create: createRemote,
+        readStatus: async () => ({ completed: false }),
+        updateStatus: async () => {},
+      },
     }),
   });
   return app.ready();

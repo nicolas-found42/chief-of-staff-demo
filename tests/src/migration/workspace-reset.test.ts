@@ -191,6 +191,9 @@ function authOnlyConfig() {
     },
     notion: { token: "notion-token" },
     modules: { "meeting-brief-generator": { hubspot: { token: "hubspot-token" } } },
+    /* The Asana credential slot survives the reset structurally, even when
+       the Workspace never connected (issue #189). */
+    tasks: { asana: { token: "" } },
   };
 }
 
@@ -289,8 +292,8 @@ describe("executeWorkspaceMigration", () => {
     const expectedCategories = {
       directories: 4,
       files: 5,
-      preservedConfigKeys: 6,
-      droppedConfigKeys: 34,
+      preservedConfigKeys: 7,
+      droppedConfigKeys: 42,
       preservedRelayKeys: 2,
       droppedRelayKeys: 3,
     };
@@ -455,8 +458,8 @@ describe("executeWorkspaceMigration", () => {
     expect(result.receipt.categories).toEqual({
       directories: 2,
       files: 4,
-      preservedConfigKeys: 6,
-      droppedConfigKeys: 34,
+      preservedConfigKeys: 7,
+      droppedConfigKeys: 42,
       preservedRelayKeys: 2,
       droppedRelayKeys: 3,
     });

@@ -30,8 +30,8 @@ export const INBOX_TASK_LIST_NAME = "Inbox" as const;
 /**
  * The external system and container a new Task is delivered to. `local` is the
  * default and creates no External Task Link — an outward write never happens
- * by accident. Google Tasks and Asana widen this union with their own
- * container fields when those destinations arrive.
+ * by accident. Google Tasks and Asana are the two destinations, each carrying
+ * the container fields that identify where the Task goes.
  */
 export type TaskDestination =
   | { provider: "local" }
@@ -44,6 +44,22 @@ export type TaskDestination =
       provider: "google-tasks";
       googleTaskListId: string;
       googleTaskListTitle: string;
+    }
+  | {
+      /**
+       * Asana, connected with a person-supplied personal access token (issue
+       * #189). The container is one workspace, one project inside it, and an
+       * optional section inside that project. Asana's gids are stored, never
+       * interpreted; a Responsible Person is never mapped to an assignee.
+       */
+      provider: "asana";
+      workspaceGid: string;
+      workspaceName: string;
+      projectGid: string;
+      projectName: string;
+      /** Null when the Task goes to the project's default section. */
+      sectionGid: string | null;
+      sectionName: string | null;
     };
 
 export const LOCAL_TASK_DESTINATION: TaskDestination = { provider: "local" };

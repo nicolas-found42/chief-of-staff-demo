@@ -51,6 +51,29 @@ export interface GoogleTasksDestination {
   available: boolean;
 }
 
+/** The Asana destination, as the Tasks page reads and writes it (issue #189). */
+export interface AsanaDestination {
+  connected: boolean;
+  /** The last four characters of the stored token; the full token never leaves the server. */
+  tokenHint: string;
+  lastVerifiedAt: string | null;
+  enabled: boolean;
+  workspaceGid: string;
+  workspaceName: string;
+  projectGid: string;
+  projectName: string;
+  sectionGid: string | null;
+  sectionName: string | null;
+  /** False when this Workspace composes no Asana destination at all. */
+  available: boolean;
+}
+
+/** What Check connection answers: who the token belongs to and what it reaches. */
+export interface AsanaCheckConnection {
+  user: { gid: string; name: string; email: string | null };
+  workspaces: { gid: string; name: string }[];
+}
+
 export const tasksApi = {
   tasks: (query?: TaskFilters) => request<TaskIndex>(`/api/tasks${taskQuery(query)}`),
   createTask: (input: TaskCreateInput) =>
@@ -125,6 +148,35 @@ export const tasksApi = {
   googleLists: () => request<{ lists: { id: string; title: string }[] }>("/api/tasks/google-lists"),
   setGoogleDestination: (input: { enabled: boolean; taskListId?: string }) =>
     request<GoogleTasksDestination>("/api/tasks/google-destination", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  asanaDestination: () => request<AsanaDestination>("/api/tasks/asana-destination"),
+  asanaConnect: (token: string) =>
+    request<AsanaCheckConnection & { tokenHint: string }>("/api/tasks/asana/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+  asanaDisconnect: () =>
+    request<AsanaDestination>("/api/tasks/asana/disconnect", { method: "POST" }),
+  asanaCheck: () => request<AsanaCheckConnection>("/api/tasks/asana/check", { method: "POST" }),
+  asanaProjects: (workspaceGid: string) =>
+    request<{ projects: { gid: string; name: string }[] }>(
+      `/api/tasks/asana/projects?workspace=${encodeURIComponent(workspaceGid)}`,
+    ),
+  asanaSections: (projectGid: string) =>
+    request<{ sections: { gid: string; name: string }[] }>(
+      `/api/tasks/asana/sections?project=${encodeURIComponent(projectGid)}`,
+    ),
+  setAsanaDestination: (input: {
+    enabled: boolean;
+    workspaceGid?: string | undefined;
+    projectGid?: string | undefined;
+    sectionGid?: string | null | undefined;
+  }) =>
+    request<AsanaDestination>("/api/tasks/asana-destination", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),

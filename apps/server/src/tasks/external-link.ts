@@ -1,20 +1,49 @@
-import type { ExternalTaskBaseline, Task, TaskLinkFailure } from "@chief-of-staff-demo/shared";
+import type {
+  ExternalTaskBaseline,
+  Task,
+  TaskDestination,
+  TaskLinkFailure,
+} from "@chief-of-staff-demo/shared";
 import { TaskValidationError, type WorkspaceTasks } from "./tasks.js";
 
 /**
- * Google Tasks as a Task Destination (issues #184, #185, ADR-0056).
+ * External Task Links (issues #184, #185, #189, ADR-0056).
  *
  * Local first, always. A Task is committed to the Workspace before anything is
- * sent outward, and a Google failure leaves the Task exactly as usable as it
+ * sent outward, and a provider failure leaves the Task exactly as usable as it
  * was — with a link that says `waiting`, `failed` or `missing` rather than no
  * Task at all.
  *
- * Google Tasks are read one linked record at a time, and completion only:
- * synchronizing a link asks Google whether that one Task is done. Nothing is
- * ever listed, and no Google Task ever becomes a Workspace Task.
+ * One state machine serves every provider. Each outward destination — Google
+ * Tasks, Asana — is a `RemoteTaskConnector` the machine dispatches on by the
+ * destination's provider, so the local-first ordering, the one-link rule and
+ * the failure quadrants are written once and cannot drift between providers.
+ *
+ * Linked records are read one at a time, and completion only: synchronizing a
+ * link asks whether that one Task is done. Nothing is ever listed, and no
+ * provider Task ever becomes a Workspace Task.
  */
 
-/** What the owner chose, as the Workspace stores it. */
+/** The destination a Task can be linked outward to. */
+type ExternalTaskDestination = Extract<TaskDestination, { provider: "google-tasks" | "asana" }>;
+
+export type GoogleTasksDestination = Extract<TaskDestination, { provider: "google-tasks" }>;
+export type AsanaDestination = Extract<TaskDestination, { provider: "asana" }>;
+
+/**
+ * One provider's outward write, as the shared state machine calls it. The
+ * destination comes from the Task or link being worked on, so a connector
+ * never guesses which container it was pointed at. `readStatus` answers null
+ * when the provider no longer holds the record — the machine marks the link
+ * missing rather than failing the local Task.
+ */
+export interface RemoteTaskConnector<D extends ExternalTaskDestination = ExternalTaskDestination> {
+  create(task: Task, destination: D): Promise<{ remoteId: string; url: string | null }>;
+  readStatus(destination: D, remoteId: string): Promise<{ completed: boolean } | null>;
+  updateStatus(destination: D, remoteId: string, completed: boolean): Promise<void>;
+}
+
+/** What the owner chose for Google Tasks, as the Workspace stores it. */
 export interface GoogleTasksDestinationSettings {
   enabled: boolean;
   taskListId: string;
@@ -26,23 +55,12 @@ export interface TaskLinkingDeps {
   /** The stored Google Tasks settings, read live. */
   settings: () => GoogleTasksDestinationSettings;
   save: (settings: GoogleTasksDestinationSettings) => void;
-  /** The account's Task Lists, or a refusal explaining why not. */
+  /** The Google account's Task Lists, or a refusal explaining why not. */
   listRemoteLists: () => Promise<{ id: string; title: string }[]>;
-  /** Create one Google Task and answer with its identity. */
-  createRemote: (
-    taskListId: string,
-    task: Task,
-  ) => Promise<{ remoteId: string; url: string | null }>;
-  /**
-   * Read one Google Task's completion. Null when Google no longer holds it —
-   * the caller marks the link missing rather than failing the local Task.
-   */
-  readRemoteStatus: (
-    taskListId: string,
-    remoteId: string,
-  ) => Promise<{ completed: boolean } | null>;
-  /** Set one Google Task's completion. Idempotent, like the local operation. */
-  updateRemoteStatus: (taskListId: string, remoteId: string, completed: boolean) => Promise<void>;
+  /** Google Tasks — the connector the original destination was built on. */
+  google: RemoteTaskConnector<GoogleTasksDestination>;
+  /** Asana, when the Workspace composes it (issue #189). */
+  asana?: RemoteTaskConnector<AsanaDestination>;
 }
 
 /** The HTTP-ish status a provider failure carries, whatever its shape. */
@@ -85,46 +103,58 @@ function sanitizeDetail(message: string): string {
  * failure keeps its redacted detail, which is why a refusal the tests raise
  * by hand still reads the way it was raised.
  */
-function classifyTaskLinkError(error: unknown): TaskLinkFailure {
+function classifyTaskLinkError(error: unknown, provider: string): TaskLinkFailure {
   const status = providerStatus(error);
   const raw = error instanceof Error ? error.message : String(error);
   /* Google reports quota exhaustion over 403 with a reason in the body, so
      the reason is read before the status: a rate limit wants a retry, not a
      re-auth. */
   if (/rateLimitExceeded|userRateLimitExceeded|quotaExceeded/i.test(raw)) {
-    return { kind: "rate-limit", message: "Google Tasks is rate-limited. Retry shortly." };
+    return { kind: "rate-limit", message: `${provider} is rate-limited. Retry shortly.` };
   }
   if (status === 401 || status === 403 || /invalid_grant/.test(raw)) {
     return {
       kind: "authorization",
-      message: "Google Tasks refused the saved sign-in. Sign in again.",
+      message: `${provider} refused the saved credential. Reconnect ${provider}.`,
     };
   }
   if (status === 400) {
-    return { kind: "validation", message: "Google Tasks refused that change as invalid." };
+    return { kind: "validation", message: `${provider} refused that change as invalid.` };
   }
   if (status === 404) {
-    return { kind: "not-found", message: "Google no longer holds that Task." };
+    return { kind: "not-found", message: `${provider} no longer holds that Task.` };
   }
   if (status === 429) {
-    return { kind: "rate-limit", message: "Google Tasks is rate-limited. Retry shortly." };
+    return { kind: "rate-limit", message: `${provider} is rate-limited. Retry shortly.` };
   }
   if (
     status === 408 ||
     (status !== null && status >= 500) ||
     /ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|fetch failed|network/i.test(raw)
   ) {
-    return { kind: "network", message: "Google Tasks is unreachable; the Task is intact." };
+    return { kind: "network", message: `${provider} is unreachable; the Task is intact.` };
   }
   const detail = sanitizeDetail(raw);
   return {
     kind: "unavailable",
-    message: detail === "" ? "Google Tasks failed; the Task is intact." : detail,
+    message: detail === "" ? `${provider} failed; the Task is intact.` : detail,
   };
 }
 
 export class TaskLinking {
   constructor(private readonly deps: TaskLinkingDeps) {}
+
+  /** The connector a destination's provider dispatches to; null when the Workspace does not compose it. */
+  private connectorFor(provider: TaskDestination["provider"]): RemoteTaskConnector | null {
+    if (provider === "google-tasks") return this.deps.google;
+    if (provider === "asana") return this.deps.asana ?? null;
+    return null;
+  }
+
+  /** The provider's name as a person reads it, for the sentences failures carry. */
+  private providerName(destination: TaskDestination): string {
+    return destination.provider === "asana" ? "Asana" : "Google Tasks";
+  }
 
   settings(): GoogleTasksDestinationSettings {
     return this.deps.settings();
@@ -192,14 +222,23 @@ export class TaskLinking {
         "That Task already has an External Task Link.",
       );
     }
-    if (task.destination.provider !== "google-tasks") {
+    if (task.destination.provider === "local") {
       throw new TaskValidationError(
         "invalid-destination",
         "That Task is filed locally and has nothing to link to.",
       );
     }
-    /* Recorded before Google is called at all, so an outward write that never
-       returns leaves a Task that says it is waiting rather than one that
+    const connector = this.connectorFor(task.destination.provider);
+    if (connector === null) {
+      throw new TaskValidationError(
+        "invalid-destination",
+        `The Workspace does not compose ${this.providerName(task.destination)} as a Task Destination.`,
+      );
+    }
+    const provider = this.providerName(task.destination);
+    const destination = task.destination;
+    /* Recorded before the provider is called at all, so an outward write that
+       never returns leaves a Task that says it is waiting rather than one that
        silently says nothing happened. */
     this.deps.tasks.recordExternalLink(task.id, {
       state: "waiting",
@@ -213,7 +252,7 @@ export class TaskLinking {
        `recreate`: a Workspace refusal is a domain fact, never provider prose. */
     let created: { remoteId: string; url: string | null };
     try {
-      created = await this.deps.createRemote(task.destination.googleTaskListId, task);
+      created = await connector.create(task, destination);
     } catch (error) {
       return this.deps.tasks.recordExternalLink(task.id, {
         state: "failed",
@@ -221,21 +260,18 @@ export class TaskLinking {
         remoteId: null,
         url: null,
         baseline: this.baselineFor(task, task.status),
-        failure: classifyTaskLinkError(error),
+        failure: classifyTaskLinkError(error, provider),
       });
     }
-    /* Creation cannot carry completion (the insert sends title, notes and
-       due date only), so a completed Task is completed in the same
-       recoverable operation — and the baseline records the status Google
-       actually holds, never the status the Task wishes it held. */
+    /* Creation cannot carry completion on either provider (the record arrives
+       open — Google's insert has no completed field, and Asana's is sent as
+       its own call so the sequence stays recoverable), so a completed Task is
+       completed in the same operation — and the baseline records the status
+       the provider actually holds, never the status the Task wishes it held. */
     const sent = task.status;
     if (task.status === "completed") {
       try {
-        await this.deps.updateRemoteStatus(
-          task.destination.googleTaskListId,
-          created.remoteId,
-          true,
-        );
+        await connector.updateStatus(destination, created.remoteId, true);
       } catch (error) {
         return this.deps.tasks.recordExternalLink(task.id, {
           state: "failed",
@@ -243,13 +279,13 @@ export class TaskLinking {
           remoteId: created.remoteId,
           url: created.url,
           baseline: this.baselineFor(task, "open"),
-          failure: classifyTaskLinkError(error),
+          failure: classifyTaskLinkError(error, provider),
         });
       }
     }
     return this.deps.tasks.recordExternalLink(task.id, {
       state: "synchronized",
-      destination: task.destination,
+      destination,
       remoteId: created.remoteId,
       url: created.url,
       baseline: this.baselineFor(task, sent),
@@ -258,10 +294,10 @@ export class TaskLinking {
   }
 
   /**
-   * Push the Task's current open or completed state to its linked Google Task
-   * (issue #185). Runs after the local commit, never instead of it: a Google
-   * failure is recorded on the link while the Task itself stays exactly as
-   * the owner left it.
+   * Push the Task's current open or completed state to its linked provider
+   * record (issue #185). Runs after the local commit, never instead of it: a
+   * provider failure is recorded on the link while the Task itself stays
+   * exactly as the owner left it.
    *
    * Side-effect free when there is nothing to send — no link, no remote
    * identity, a link known to be missing, or a baseline that already carries
@@ -276,19 +312,17 @@ export class TaskLinking {
     if (
       link === null ||
       link.remoteId === null ||
-      link.destination.provider !== "google-tasks" ||
       link.state === "missing" ||
+      link.destination.provider === "local" ||
       link.baseline?.status === task.status
     ) {
       return task;
     }
+    const connector = this.connectorFor(link.destination.provider);
+    if (connector === null) return task;
     const baseline = this.baselineFor(task, task.status);
     try {
-      await this.deps.updateRemoteStatus(
-        link.destination.googleTaskListId,
-        link.remoteId,
-        task.status === "completed",
-      );
+      await connector.updateStatus(link.destination, link.remoteId, task.status === "completed");
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: "synchronized",
@@ -296,9 +330,9 @@ export class TaskLinking {
         failure: null,
       });
     } catch (error) {
-      const classified = classifyTaskLinkError(error);
-      /* Google answering not-found means the record is gone, not that the
-         write was wrong: the local Task stays intact and the link says
+      const classified = classifyTaskLinkError(error, this.providerName(link.destination));
+      /* The provider answering not-found means the record is gone, not that
+         the write was wrong: the local Task stays intact and the link says
          missing, which is what `recreate` and `removeLink` below resolve. */
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
@@ -309,15 +343,16 @@ export class TaskLinking {
   }
 
   /**
-   * Read the linked Google Task and apply an unopposed external completion
-   * or reopening locally (issue #185). Unopposed means the Workspace has not
-   * moved since the baseline: local and baseline agree, so the external side
-   * is the only one that changed and applying it loses nothing.
+   * Read the linked provider record and apply an unopposed external
+   * completion or reopening locally (issue #185). Unopposed means the
+   * Workspace has not moved since the baseline: local and baseline agree, so
+   * the external side is the only one that changed and applying it loses
+   * nothing.
    *
    * A competing local change is left alone for the conflict handling in
-   * issue #186 — neither side wins implicitly here. A remote record Google no
-   * longer holds marks the link missing with the local Task intact. Repeated
-   * reads that agree with the Task write nothing.
+   * issue #186 — neither side wins implicitly here. A remote record the
+   * provider no longer holds marks the link missing with the local Task
+   * intact. Repeated reads that agree with the Task write nothing.
    */
   async synchronize(taskId: string): Promise<Task> {
     const task = this.deps.tasks.get(taskId);
@@ -328,12 +363,19 @@ export class TaskLinking {
     if (
       link === null ||
       link.remoteId === null ||
-      link.destination.provider !== "google-tasks" ||
-      link.state === "waiting"
+      link.state === "waiting" ||
+      link.destination.provider === "local"
     ) {
       throw new TaskValidationError(
         "task-not-linked",
-        "That Task has no linked Google Task to synchronize.",
+        "That Task has no linked Task to synchronize.",
+      );
+    }
+    const connector = this.connectorFor(link.destination.provider);
+    if (connector === null) {
+      throw new TaskValidationError(
+        "task-not-linked",
+        "That Task has no linked Task to synchronize.",
       );
     }
     /* A missing link is resolved by recreating or removing it, never by
@@ -342,9 +384,9 @@ export class TaskLinking {
     if (link.state === "missing") return task;
     let remote: { completed: boolean } | null;
     try {
-      remote = await this.deps.readRemoteStatus(link.destination.googleTaskListId, link.remoteId);
+      remote = await connector.readStatus(link.destination, link.remoteId);
     } catch (error) {
-      const classified = classifyTaskLinkError(error);
+      const classified = classifyTaskLinkError(error, this.providerName(link.destination));
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: classified.kind === "not-found" ? "missing" : "failed",
@@ -355,7 +397,10 @@ export class TaskLinking {
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: "missing",
-        failure: { kind: "not-found", message: "Google no longer holds that Task." },
+        failure: {
+          kind: "not-found",
+          message: `${this.providerName(link.destination)} no longer holds that Task.`,
+        },
       });
     }
     const remoteStatus = remote.completed ? "completed" : "open";
@@ -377,12 +422,12 @@ export class TaskLinking {
       });
     }
     /* The remote differs from the Task, and whose move it was decides what
-       this read may do. baseline == Task would mean only Google moved — but
-       that is the apply branch below. Here the baseline differs from the
-       Task, so the Workspace moved too: either Google also moved (a Task
-       Link Conflict, which issue #186 resolves) or it still sits at the
-       baseline (an interrupted push, which pushStatus retries). Applying
-       Google's stale state would revert accepted work, so this read answers
+       this read may do. baseline == Task would mean only the provider moved —
+       but that is the apply branch below. Here the baseline differs from the
+       Task, so the Workspace moved too: either the provider also moved (a
+       Task Link Conflict, which issue #186 resolves) or it still sits at the
+       baseline (an interrupted push, which pushStatus retries). Applying the
+       provider's stale state would revert accepted work, so this read answers
        unchanged and refuses to pick a winner. */
     if (baselineStatus !== undefined && baselineStatus !== task.status) {
       return task;
@@ -405,62 +450,66 @@ export class TaskLinking {
   }
 
   /**
-   * Recreate the remote record for a link Google no longer holds (issue
-   * #185). Stores the replacement identity and a fresh baseline over the
-   * current Task, so synchronization resumes from what the owner has rather
-   * than from what went missing. Refused unless the link is missing — any
-   * other state already names a record or a retry for it.
+   * Recreate the remote record for a link the provider no longer holds
+   * (issue #185). Stores the replacement identity and a fresh baseline over
+   * the current Task, so synchronization resumes from what the owner has
+   * rather than from what went missing. Refused unless the link is missing —
+   * any other state already names a record or a retry for it.
    */
   async recreate(taskId: string): Promise<Task> {
     const task = this.requireTask(taskId);
     const link = task.externalLink;
-    if (link === null || link.state !== "missing" || link.destination.provider !== "google-tasks") {
+    if (link === null || link.state !== "missing" || link.destination.provider === "local") {
       throw new TaskValidationError(
         "link-not-missing",
         "Only a missing External Task Link can be recreated.",
       );
     }
+    const connector = this.connectorFor(link.destination.provider);
+    if (connector === null) {
+      throw new TaskValidationError(
+        "invalid-destination",
+        `The Workspace does not compose ${this.providerName(link.destination)} as a Task Destination.`,
+      );
+    }
+    const destination = link.destination;
     /* Only the provider calls sit inside try: a Workspace refusal from
        recordExternalLink below is a domain fact and must reach its caller
        as one, never be laundered into provider-failure prose on the link. */
     let created: { remoteId: string; url: string | null };
     try {
-      created = await this.deps.createRemote(link.destination.googleTaskListId, task);
+      created = await connector.create(task, destination);
     } catch (error) {
       /* Still missing: the replacement never arrived, so the link keeps
          naming the record that went away with the new reason attached. */
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
-        failure: classifyTaskLinkError(error),
+        failure: classifyTaskLinkError(error, this.providerName(destination)),
       });
     }
     /* As in `link`: the replacement record is created open, so a completed
        Task is completed in the same operation, and the baseline always
-       records what Google actually holds. A completion that fails leaves
-       the new record live and the link failed against it — the Task is
-       intact either way. */
+       records what the provider actually holds. A completion that fails
+       leaves the new record live and the link failed against it — the Task
+       is intact either way. */
     const sent = task.status;
     if (task.status === "completed") {
       try {
-        await this.deps.updateRemoteStatus(
-          link.destination.googleTaskListId,
-          created.remoteId,
-          true,
-        );
+        await connector.updateStatus(destination, created.remoteId, true);
       } catch (error) {
         return this.deps.tasks.recordExternalLink(task.id, {
           state: "failed",
-          destination: task.destination,
+          destination,
           remoteId: created.remoteId,
           url: created.url,
           baseline: this.baselineFor(task, "open"),
-          failure: classifyTaskLinkError(error),
+          failure: classifyTaskLinkError(error, this.providerName(destination)),
         });
       }
     }
     return this.deps.tasks.recordExternalLink(task.id, {
       state: "synchronized",
-      destination: task.destination,
+      destination,
       remoteId: created.remoteId,
       url: created.url,
       baseline: this.baselineFor(task, sent),
@@ -490,10 +539,11 @@ export class TaskLinking {
   }
 
   /**
-   * The four outward fields as Google holds them after this operation: the
-   * Task's content, and the status that was actually sent — which is not
+   * The four outward fields as the provider holds them after this operation:
+   * the Task's content, and the status that was actually sent — which is not
    * always the status the Task carries (a completion whose outward write
-   * failed has not reached Google, and the baseline must not claim it did).
+   * failed has not reached the provider, and the baseline must not claim it
+   * did).
    */
   private baselineFor(task: Task, sentStatus: Task["status"]): ExternalTaskBaseline {
     return {

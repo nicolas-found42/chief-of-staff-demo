@@ -31,6 +31,7 @@ export class TaskValidationError extends Error {
       | "invalid-priority"
       | "invalid-responsible-person"
       | "invalid-destination"
+      | "invalid-token"
       | "task-list-not-found"
       | "task-list-not-empty"
       | "inbox-is-permanent"
@@ -73,6 +74,14 @@ export interface WorkspaceTasksDeps {
    * default — local is the only destination there is.
    */
   isGoogleTasksEnabled?: () => boolean;
+  /**
+   * Whether Asana is enabled as a Task Destination right now (issue #189).
+   * Live, like the Google Tasks gate above: an outward destination is a
+   * decision the Workspace can take back, and the next Task must read the
+   * decision of the moment, not the decision of boot. Absent, Asana is not
+   * a destination at all.
+   */
+  isAsanaEnabled?: () => boolean;
 }
 
 /**
@@ -112,6 +121,7 @@ export class WorkspaceTasks {
   private readonly isConfirmedPerson: (profileId: string) => boolean;
   private readonly timezone: () => string;
   private readonly isGoogleTasksEnabled: () => boolean;
+  private readonly isAsanaEnabled: () => boolean;
 
   constructor(deps: WorkspaceTasksDeps) {
     this.store = deps.store;
@@ -119,6 +129,7 @@ export class WorkspaceTasks {
     this.isConfirmedPerson = deps.isConfirmedPerson ?? (() => false);
     this.timezone = deps.timezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone);
     this.isGoogleTasksEnabled = deps.isGoogleTasksEnabled ?? (() => false);
+    this.isAsanaEnabled = deps.isAsanaEnabled ?? (() => false);
   }
 
   // ---------------------------------------------------------------------------
@@ -491,8 +502,8 @@ export class WorkspaceTasks {
   }
 
   /**
-   * Local only until the owner enables Google Tasks as a Task Destination
-   * (issue #184): an outward write is a decision, and a request naming a
+   * Local only until the owner enables an external Task Destination (issues
+   * #184, #189): an outward write is a decision, and a request naming a
    * provider the Workspace is not connected to is refused rather than
    * downgraded silently to local.
    */
@@ -502,6 +513,12 @@ export class WorkspaceTasks {
       provider?: unknown;
       googleTaskListId?: unknown;
       googleTaskListTitle?: unknown;
+      workspaceGid?: unknown;
+      workspaceName?: unknown;
+      projectGid?: unknown;
+      projectName?: unknown;
+      sectionGid?: unknown;
+      sectionName?: unknown;
     };
     if (candidate.provider === "local") return LOCAL_TASK_DESTINATION;
     if (
@@ -520,6 +537,44 @@ export class WorkspaceTasks {
         provider: "google-tasks",
         googleTaskListId: candidate.googleTaskListId,
         googleTaskListTitle: candidate.googleTaskListTitle,
+      };
+    }
+    if (
+      candidate.provider === "asana" &&
+      typeof candidate.workspaceGid === "string" &&
+      candidate.workspaceGid !== "" &&
+      typeof candidate.workspaceName === "string" &&
+      typeof candidate.projectGid === "string" &&
+      candidate.projectGid !== "" &&
+      typeof candidate.projectName === "string"
+    ) {
+      /* A section is either properly absent or completely named: a gid without
+         the name (or the reverse) is not a destination anyone chose. */
+      const sectionGid =
+        typeof candidate.sectionGid === "string" && candidate.sectionGid !== ""
+          ? candidate.sectionGid
+          : null;
+      const sectionName =
+        sectionGid !== null && typeof candidate.sectionName === "string"
+          ? candidate.sectionName
+          : null;
+      if ((sectionGid !== null) !== (sectionName !== null)) {
+        throw new TaskValidationError("invalid-destination", "That is not a Task Destination.");
+      }
+      if (!this.isAsanaEnabled()) {
+        throw new TaskValidationError(
+          "invalid-destination",
+          "Asana is not enabled as a Task Destination.",
+        );
+      }
+      return {
+        provider: "asana",
+        workspaceGid: candidate.workspaceGid,
+        workspaceName: candidate.workspaceName,
+        projectGid: candidate.projectGid,
+        projectName: candidate.projectName,
+        sectionGid,
+        sectionName,
       };
     }
     throw new TaskValidationError("invalid-destination", "That is not a Task Destination.");

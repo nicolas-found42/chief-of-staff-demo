@@ -17,6 +17,7 @@ import {
 import type { ActionItemQuery, WorkspaceActionItems } from "../tasks/action-items.js";
 import { promoteActionItem } from "../tasks/promotion.js";
 import type { TaskLinking } from "../tasks/external-link.js";
+import type { AsanaLinking } from "../tasks/asana-link.js";
 
 export interface TasksApiContext {
   /** The Tasks product area's Workspace-owned interface; routes stay thin over it. */
@@ -29,6 +30,11 @@ export interface TasksApiContext {
    * works — which is the point of the destination being optional.
    */
   linking?: TaskLinking;
+  /**
+   * Asana as an optional Task Destination (issue #189). Absent when the
+   * Workspace composes no Asana connection; every route below still answers.
+   */
+  asana?: AsanaLinking;
 }
 
 /** HTTP status per refusal: bad input, a missing record, or a refused state change. */
@@ -40,6 +46,7 @@ const REFUSAL_STATUS: Record<TaskValidationError["code"], number> = {
   "invalid-priority": 400,
   "invalid-responsible-person": 400,
   "invalid-destination": 400,
+  "invalid-token": 400,
   "task-list-not-found": 404,
   "task-not-found": 404,
   "task-list-not-empty": 409,
@@ -91,6 +98,17 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
    */
   function requireLinking(reply: FastifyReply): TaskLinking | null {
     if (ctx.linking) return ctx.linking;
+    reply.code(409);
+    return null;
+  }
+
+  /**
+   * The Asana destination service, or the one refusal every Asana route
+   * gives: a Workspace that composes no Asana connection has nothing to
+   * configure, and says so once rather than six times.
+   */
+  function requireAsana(reply: FastifyReply): AsanaLinking | null {
+    if (ctx.asana) return ctx.asana;
     reply.code(409);
     return null;
   }
@@ -345,6 +363,142 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
         ...(await linking.select({
           enabled: body.enabled === true,
           ...(body.taskListId === undefined ? {} : { taskListId: body.taskListId }),
+        })),
+        available: true,
+      };
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Asana (issue #189)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The Asana destination, as the Tasks page reads and writes it. The token
+   * is never in this answer — `connected` and `tokenHint` are all a person
+   * gets, which is the whole point of storing a secret through the
+   * credential boundary.
+   */
+  app.get("/api/tasks/asana-destination", async () => {
+    if (!ctx.asana) {
+      return {
+        connected: false,
+        tokenHint: "",
+        lastVerifiedAt: null,
+        enabled: false,
+        /* The gids and names ride along at their defaults so the answer has
+           one shape whether or not this Workspace composes Asana. */
+        workspaceGid: "",
+        workspaceName: "",
+        projectGid: "",
+        projectName: "",
+        sectionGid: null,
+        sectionName: null,
+        available: false,
+      };
+    }
+    return { ...ctx.asana.status(), available: true };
+  });
+
+  /**
+   * Verify a personal access token against Asana and store it when Asana
+   * accepts it. The answer names the user the token belongs to and the
+   * workspaces it reaches — Check connection's first use, before any
+   * destination is chosen.
+   */
+  app.post("/api/tasks/asana/connect", async (request: FastifyRequest, reply: FastifyReply) => {
+    const asana = requireAsana(reply);
+    if (!asana) return NO_DESTINATION;
+    const body = (request.body ?? {}) as { token?: unknown };
+    if (typeof body.token !== "string") {
+      reply.code(400);
+      return { error: "invalid-token", message: "An Asana personal access token is required." };
+    }
+    try {
+      return await asana.connect(body.token);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /** Forget the token and disable the destination. Local Tasks are untouched. */
+  app.post("/api/tasks/asana/disconnect", async (_request: FastifyRequest, reply: FastifyReply) => {
+    const asana = requireAsana(reply);
+    if (!asana) return NO_DESTINATION;
+    return asana.disconnect();
+  });
+
+  /**
+   * Check connection on demand: the user and workspaces the stored token
+   * reaches right now. A stale token is refused with what to do about it,
+   * and changes nothing.
+   */
+  app.post("/api/tasks/asana/check", async (_request: FastifyRequest, reply: FastifyReply) => {
+    const asana = requireAsana(reply);
+    if (!asana) return NO_DESTINATION;
+    try {
+      return await asana.checkConnection();
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /** The projects of one workspace. Containers only — never a project's Tasks. */
+  app.get("/api/tasks/asana/projects", async (request: FastifyRequest, reply: FastifyReply) => {
+    const asana = requireAsana(reply);
+    if (!asana) return NO_DESTINATION;
+    const { workspace } = request.query as { workspace?: string };
+    if (!workspace) {
+      reply.code(400);
+      return { error: "invalid-destination", message: "Which workspace?" };
+    }
+    try {
+      return { projects: await asana.availableProjects(workspace) };
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /** The sections of one project, scoped to it by construction. */
+  app.get("/api/tasks/asana/sections", async (request: FastifyRequest, reply: FastifyReply) => {
+    const asana = requireAsana(reply);
+    if (!asana) return NO_DESTINATION;
+    const { project } = request.query as { project?: string };
+    if (!project) {
+      reply.code(400);
+      return { error: "invalid-destination", message: "Which project?" };
+    }
+    try {
+      return { sections: await asana.availableSections(project) };
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /**
+   * Enable the destination, or choose where Tasks go. Enabling validates the
+   * whole chain live — the project against the workspace, the section against
+   * the project — so an inaccessible destination is refused here, once,
+   * instead of failing one Task at a time.
+   */
+  app.put("/api/tasks/asana-destination", async (request: FastifyRequest, reply: FastifyReply) => {
+    const asana = requireAsana(reply);
+    if (!asana) return NO_DESTINATION;
+    const body = (request.body ?? {}) as {
+      enabled?: boolean;
+      workspaceGid?: string;
+      projectGid?: string;
+      sectionGid?: string | null;
+    };
+    try {
+      return {
+        ...(await asana.select({
+          enabled: body.enabled === true,
+          ...(body.workspaceGid === undefined ? {} : { workspaceGid: body.workspaceGid }),
+          ...(body.projectGid === undefined ? {} : { projectGid: body.projectGid }),
+          ...(body.sectionGid === undefined ? {} : { sectionGid: body.sectionGid }),
         })),
         available: true,
       };

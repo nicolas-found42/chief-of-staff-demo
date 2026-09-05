@@ -76,8 +76,55 @@ export const ConfigSchema = z.strictObject({
           taskListTitle: z.string().default(""),
         })
         .default({ enabled: false, taskListId: "", taskListTitle: "" }),
+      /**
+       * Asana as a Task Destination (issue #189), connected with a
+       * person-supplied personal access token. The token is stored here — the
+       * config file is the credential boundary — and never returned by any
+       * route: `GET /api/config` redacts it away with the rest, and the
+       * destination routes answer with a hint only. The destination gids are
+       * Asana's own; the Workspace stores and sends them, never interprets
+       * them.
+       */
+      asana: z
+        .strictObject({
+          token: z.string().default(""),
+          /** When a Check connection last succeeded against this token. */
+          lastVerifiedAt: z.string().nullable().default(null),
+          enabled: z.boolean().default(false),
+          workspaceGid: z.string().default(""),
+          workspaceName: z.string().default(""),
+          projectGid: z.string().default(""),
+          projectName: z.string().default(""),
+          /** Null sends the Task to the project's default section. */
+          sectionGid: z.string().nullable().default(null),
+          sectionName: z.string().nullable().default(null),
+        })
+        .default({
+          token: "",
+          lastVerifiedAt: null,
+          enabled: false,
+          workspaceGid: "",
+          workspaceName: "",
+          projectGid: "",
+          projectName: "",
+          sectionGid: null,
+          sectionName: null,
+        }),
     })
-    .default({ googleTasks: { enabled: false, taskListId: "", taskListTitle: "" } }),
+    .default({
+      googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
+      asana: {
+        token: "",
+        lastVerifiedAt: null,
+        enabled: false,
+        workspaceGid: "",
+        workspaceName: "",
+        projectGid: "",
+        projectName: "",
+        sectionGid: null,
+        sectionName: null,
+      },
+    }),
   ollama: z.strictObject({
     baseUrl: z.string().default(DEFAULT_OLLAMA_BASE_URL),
   }),

@@ -16,7 +16,13 @@ import {
   groupTasks,
 } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
-import { tasksApi, type GoogleTasksDestination, type TasksClient } from "../clients/tasks";
+import {
+  tasksApi,
+  type AsanaCheckConnection,
+  type AsanaDestination,
+  type GoogleTasksDestination,
+  type TasksClient,
+} from "../clients/tasks";
 import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
@@ -167,6 +173,11 @@ function TaskFields({
   );
 }
 
+/** The provider a Task's destination names, as the row's sentences read it. */
+function providerName(destination: Task["destination"]): string {
+  return destination.provider === "asana" ? "Asana" : "Google Tasks";
+}
+
 /** One Task in a list, with its controls and its own edit form. */
 function TaskRow({
   task,
@@ -239,15 +250,15 @@ function TaskRow({
       {task.externalLink && (
         <p className="muted">
           {task.externalLink.state === "synchronized"
-            ? "Sent to Google Tasks."
+            ? `Sent to ${providerName(task.destination)}.`
             : task.externalLink.state === "failed"
-              ? `Google Tasks refused it: ${task.externalLink.failure?.message ?? "no reason given"}`
+              ? `${providerName(task.destination)} refused it: ${task.externalLink.failure?.message ?? "no reason given"}`
               : task.externalLink.state === "missing"
-                ? "Google no longer holds this Task. Recreate it there or remove the link — this Task is unaffected."
-                : "Waiting to reach Google Tasks."}{" "}
+                ? `${providerName(task.destination)} no longer holds this Task. Recreate it there or remove the link — this Task is unaffected.`
+                : `Waiting to reach ${providerName(task.destination)}.`}{" "}
           {task.externalLink.url && (
             <a href={task.externalLink.url} target="_blank" rel="noreferrer">
-              Open in Google Tasks
+              Open in {providerName(task.destination)}
             </a>
           )}
         </p>
@@ -272,11 +283,11 @@ function TaskRow({
             Reopen
           </button>
         )}
-        {task.destination.provider === "google-tasks" &&
+        {task.destination.provider !== "local" &&
           task.externalLink?.state !== "synchronized" &&
           task.externalLink?.state !== "missing" &&
           /* A failed push that left a record behind is one link already:
-             offering another create would strand a second Google Task. */
+             offering another create would strand a second provider Task. */
           task.externalLink?.remoteId === null && (
             <button
               type="button"
@@ -284,7 +295,7 @@ function TaskRow({
               aria-disabled={busy}
               onClick={() => void onLink()}
             >
-              Send to Google Tasks
+              Send to {providerName(task.destination)}
             </button>
           )}
         {task.externalLink?.state === "missing" && (
@@ -295,7 +306,7 @@ function TaskRow({
               aria-disabled={busy}
               onClick={() => void onRecreate()}
             >
-              Recreate in Google Tasks
+              Recreate in {providerName(task.destination)}
             </button>
             <button
               type="button"
@@ -561,10 +572,22 @@ export function TasksPage({
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [today, setToday] = useState("");
   const [lists, setLists] = useState<TaskList[]>([]);
-  const [pending, setPending] = useState<ActionItem[]>([]);
-  const [dismissed, setDismissed] = useState<ActionItem[]>([]);
+  /* Asana's destination state, its chosen containers, and the answer of the
+     last Check connection (issue #189). */
+  const [asana, setAsana] = useState<AsanaDestination | null>(null);
+  const [asanaToken, setAsanaToken] = useState("");
+  /* The answer of the last Check connection: the user the token belongs to
+     and the workspaces it reaches. Only ever filled by an explicit check. */
+  const [asanaCheck, setAsanaCheck] = useState<AsanaCheckConnection | null>(null);
+  const [asanaProjectList, setAsanaProjectList] = useState<{ gid: string; name: string }[]>([]);
+  const [asanaSectionList, setAsanaSectionList] = useState<{ gid: string; name: string }[]>([]);
+  const [asanaNotice, setAsanaNotice] = useState<string | null>(null);
+  const [asanaError, setAsanaError] = useState<string | null>(null);
+  const [asanaBusy, setAsanaBusy] = useState(false);
   /** The most recently dismissed proposal, while its Undo stays available. */
   const [lastDismissed, setLastDismissed] = useState<ActionItem | null>(null);
+  const [pending, setPending] = useState<ActionItem[]>([]);
+  const [dismissed, setDismissed] = useState<ActionItem[]>([]);
   const undoRef = useRef<HTMLButtonElement>(null);
   const [destination, setDestination] = useState<GoogleTasksDestination | null>(null);
   const [googleLists, setGoogleLists] = useState<{ id: string; title: string }[]>([]);
@@ -621,8 +644,8 @@ export function TasksPage({
 
   useEffect(() => {
     let live = true;
-    Promise.all([load(), people.people(), client.googleDestination()])
-      .then(([, directory, googleDestination]) => {
+    Promise.all([load(), people.people(), client.googleDestination(), client.asanaDestination()])
+      .then(([, directory, googleDestination, asanaDestination]) => {
         if (!live) return;
         /* The same test the Workspace applies: offering a Profile it would
            refuse turns a chooser into a way to earn a 400. */
@@ -632,6 +655,7 @@ export function TasksPage({
           ),
         );
         setDestination(googleDestination);
+        setAsana(asanaDestination);
       })
       .catch((err) => {
         if (live) setError(errorMessage(err));
@@ -683,6 +707,30 @@ export function TasksPage({
       }
     },
     [busy, load],
+  );
+
+  /**
+   * The same discipline as act, scoped to the Asana card: its writes answer
+   * with their new state, so nothing here reloads the page's Tasks — a
+   * refusal becomes the card's message, not a silently unchanged screen.
+   */
+  const asanaAct = useCallback(
+    async (announce: string, action: () => Promise<unknown>): Promise<boolean> => {
+      if (asanaBusy) return false;
+      setAsanaBusy(true);
+      setAsanaError(null);
+      try {
+        await action();
+        setAsanaNotice(announce);
+        return true;
+      } catch (err) {
+        setAsanaError(errorMessage(err));
+        return false;
+      } finally {
+        setAsanaBusy(false);
+      }
+    },
+    [asanaBusy],
   );
 
   /**
@@ -748,13 +796,17 @@ export function TasksPage({
         await act(`Moved ${task.title} to Trash.`, () => client.trashTask(task.id));
       }}
       onLink={async () => {
-        await act(`Sent ${task.title} to Google Tasks.`, () => client.linkTask(task.id));
+        await act(`Sent ${task.title} to ${providerName(task.destination)}.`, () =>
+          client.linkTask(task.id),
+        );
       }}
       onRecreate={async () => {
-        await act(`Recreated ${task.title} in Google Tasks.`, () => client.recreateTask(task.id));
+        await act(`Recreated ${task.title} in ${providerName(task.destination)}.`, () =>
+          client.recreateTask(task.id),
+        );
       }}
       onRemoveLink={async () => {
-        await act(`Removed the Google Tasks link from ${task.title}.`, () =>
+        await act(`Removed the ${providerName(task.destination)} link from ${task.title}.`, () =>
           client.removeTaskLink(task.id),
         );
       }}
@@ -1056,9 +1108,9 @@ export function TasksPage({
 
       <h2>Task Destination</h2>
       <p className="muted">
-        Google Tasks is optional. Everything above works without it, and enabling it asks Google for
-        one extra permission — the only thing that permission is used for is creating the Tasks you
-        send.
+        Google Tasks and Asana are optional. Everything above works without them, and a Task you
+        send carries only its own title, notes and due date — nothing about you leaves this
+        Workspace with it.
       </p>
       {destination && (
         <div className="card">
@@ -1115,6 +1167,189 @@ export function TasksPage({
               {destination.enabled ? "Disable Google Tasks" : "Enable Google Tasks"}
             </button>
           </div>
+        </div>
+      )}
+      {asana?.available && (
+        <div className="card">
+          <h3>Asana</h3>
+          <p className="muted">
+            {asana.connected
+              ? `Connected · token ${asana.tokenHint}` +
+                (asana.enabled
+                  ? ` · enabled · new Tasks go to ${asana.projectName}${
+                      asana.sectionName ? ` · ${asana.sectionName}` : ""
+                    } in ${asana.workspaceName}`
+                  : " · not enabled")
+              : "Not connected · every Task stays in this Workspace"}
+          </p>
+          {asanaError && <p role="alert">{asanaError}</p>}
+          {asanaNotice && <p role="status">{asanaNotice}</p>}
+          {!asana.connected ? (
+            <form
+              className="field-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void asanaAct("Connected Asana.", async () => {
+                  setAsanaCheck(await client.asanaConnect(asanaToken));
+                  setAsanaToken("");
+                  setAsana(await client.asanaDestination());
+                  setAsanaProjectList([]);
+                  setAsanaSectionList([]);
+                });
+              }}
+            >
+              <label htmlFor="asana-token">Asana personal access token</label>
+              <input
+                id="asana-token"
+                type="password"
+                value={asanaToken}
+                autoComplete="off"
+                onChange={(event) => setAsanaToken(event.target.value)}
+              />
+              <button
+                type="submit"
+                className="action-button"
+                aria-disabled={asanaBusy || asanaToken.trim() === ""}
+              >
+                Connect Asana
+              </button>
+            </form>
+          ) : (
+            <>
+              {asanaCheck && (
+                <p className="muted">
+                  Checked as {asanaCheck.user.name}
+                  {asanaCheck.user.email ? ` (${asanaCheck.user.email})` : ""} — workspaces:{" "}
+                  {asanaCheck.workspaces.map((workspace) => workspace.name).join(", ")}
+                </p>
+              )}
+              <div className="field-row">
+                <label htmlFor="asana-workspace">Workspace</label>
+                <select
+                  id="asana-workspace"
+                  value={asana.workspaceGid}
+                  onChange={(event) => {
+                    const workspaceGid = event.target.value;
+                    setAsana({ ...asana, workspaceGid });
+                    void asanaAct("Read the Asana projects.", async () => {
+                      setAsanaProjectList((await client.asanaProjects(workspaceGid)).projects);
+                      setAsanaSectionList([]);
+                    });
+                  }}
+                >
+                  <option value="">Choose a workspace</option>
+                  {asanaCheck?.workspaces.map((workspace) => (
+                    <option key={workspace.gid} value={workspace.gid}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="asana-project">Project</label>
+                <select
+                  id="asana-project"
+                  value={asana.projectGid}
+                  onChange={(event) => {
+                    const projectGid = event.target.value;
+                    /* A section belongs to its project: switching projects
+                       clears the chosen one, so the next enable sends an
+                       explicit "no section" rather than a stale gid the new
+                       project would refuse. */
+                    setAsana({ ...asana, projectGid, sectionGid: null, sectionName: null });
+                    void asanaAct("Read the Asana sections.", async () => {
+                      setAsanaSectionList((await client.asanaSections(projectGid)).sections);
+                    });
+                  }}
+                >
+                  <option value="">Choose a project</option>
+                  {asanaProjectList.map((project) => (
+                    <option key={project.gid} value={project.gid}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="asana-section">Section (optional)</label>
+                <select
+                  id="asana-section"
+                  value={asana.sectionGid ?? ""}
+                  onChange={(event) => {
+                    const sectionGid = event.target.value;
+                    const section = asanaSectionList.find((one) => one.gid === sectionGid);
+                    setAsana({
+                      ...asana,
+                      sectionGid: sectionGid === "" ? null : sectionGid,
+                      sectionName: section?.name ?? null,
+                    });
+                  }}
+                >
+                  <option value="">No section</option>
+                  {asanaSectionList.map((section) => (
+                    <option key={section.gid} value={section.gid}>
+                      {section.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="toolbar">
+                <button
+                  type="button"
+                  className="action-button"
+                  aria-disabled={asanaBusy}
+                  onClick={() => {
+                    void asanaAct("Asana connection verified.", async () => {
+                      setAsanaCheck(await client.asanaCheck());
+                      setAsana(await client.asanaDestination());
+                    });
+                  }}
+                >
+                  Check connection
+                </button>
+                <button
+                  type="button"
+                  className="action-button primary"
+                  aria-disabled={asanaBusy || !asana.connected}
+                  onClick={() => {
+                    void asanaAct(
+                      asana.enabled
+                        ? "Disabled the Asana destination."
+                        : "Enabled the Asana destination.",
+                      async () => {
+                        setAsana(
+                          await client.setAsanaDestination({
+                            enabled: !asana.enabled,
+                            workspaceGid:
+                              asana.workspaceGid === "" ? undefined : asana.workspaceGid,
+                            projectGid: asana.projectGid === "" ? undefined : asana.projectGid,
+                            sectionGid: asana.sectionGid ?? null,
+                          }),
+                        );
+                      },
+                    );
+                  }}
+                >
+                  {asana.enabled ? "Disable Asana Tasks" : "Enable Asana Tasks"}
+                </button>
+                <button
+                  type="button"
+                  className="action-button"
+                  aria-disabled={asanaBusy}
+                  onClick={() => {
+                    void asanaAct(
+                      "Disconnected Asana. Saved Tasks here are unaffected.",
+                      async () => {
+                        await client.asanaDisconnect();
+                        setAsanaCheck(null);
+                        setAsanaProjectList([]);
+                        setAsanaSectionList([]);
+                        setAsana(await client.asanaDestination());
+                      },
+                    );
+                  }}
+                >
+                  Disconnect Asana
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

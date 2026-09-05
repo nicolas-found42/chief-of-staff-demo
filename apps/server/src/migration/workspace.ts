@@ -136,7 +136,8 @@ type RemoteRecordName =
   | "google-drive-folders"
   | "google-sheets-spreadsheets"
   | "youtube-channels"
-  | "notion-databases";
+  | "notion-databases"
+  | "asana-destinations";
 
 /**
  * A table value whose flat key stops at a composite — an array or object. The
@@ -210,6 +211,7 @@ const REMOTE_RECORDS: readonly RemoteRecordName[] = [
   "google-sheets-spreadsheets",
   "youtube-channels",
   "notion-databases",
+  "asana-destinations",
 ];
 
 /** Directories whose every file belongs to one category. The migration's delete side and the
@@ -288,6 +290,18 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "tasks.googleTasks.enabled": "non-auth-workflow-configuration",
   "tasks.googleTasks.taskListId": "google-tasklists",
   "tasks.googleTasks.taskListTitle": "google-tasklists",
+  /* The Asana destination (issue #189): a personal access token, the fact it
+     was verified, and the workspace/project/section it files work into. The
+     gids and names point at Asana-owned records the reset never touches. */
+  "tasks.asana.token": "provider-tokens",
+  "tasks.asana.lastVerifiedAt": "connection-verification-state",
+  "tasks.asana.enabled": "non-auth-workflow-configuration",
+  "tasks.asana.workspaceGid": "asana-destinations",
+  "tasks.asana.workspaceName": "asana-destinations",
+  "tasks.asana.projectGid": "asana-destinations",
+  "tasks.asana.projectName": "asana-destinations",
+  "tasks.asana.sectionGid": "asana-destinations",
+  "tasks.asana.sectionName": "asana-destinations",
   "ollama.baseUrl": "non-auth-workflow-configuration",
   "search.searxngUrl": "non-auth-workflow-configuration",
   "modules.youtube-trends.channels": composite("youtube-channels", {

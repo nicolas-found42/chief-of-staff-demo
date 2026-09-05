@@ -98,7 +98,20 @@ const config: AppConfig = {
   model: "mock-model",
   apiKey: "test-key",
   tasklistName: "Meeting Followups",
-  tasks: { googleTasks: { enabled: false, taskListId: "", taskListTitle: "" } },
+  tasks: {
+    googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
+    asana: {
+      token: "",
+      lastVerifiedAt: null,
+      enabled: false,
+      workspaceGid: "",
+      workspaceName: "",
+      projectGid: "",
+      projectName: "",
+      sectionGid: null,
+      sectionName: null,
+    },
+  },
   google: {
     clientId: "client.apps.googleusercontent.com",
     clientSecret: "secret",

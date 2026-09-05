@@ -335,6 +335,7 @@ describe("Workspace migration preview", () => {
       "google-sheets-spreadsheets",
       "youtube-channels",
       "notion-databases",
+      "asana-destinations",
     ]);
   });
 
@@ -402,11 +403,12 @@ describe("Workspace migration preview", () => {
     expect(categories.get("connection-verification-state")).toEqual(
       category("disposable-product-state", 4),
     );
-    /* Post-cutover workflow settings plus the 8 local values that name a
-       remote record. The retired Notion calendar keys stay classified in the
-       inventory for legacy Workspaces, but a clean config carries none. */
+    /* Post-cutover workflow settings (including whether Asana is enabled)
+       plus the 8 local values that name a remote record. The retired Notion
+       calendar keys stay classified in the inventory for legacy Workspaces,
+       but a clean config carries none. */
     expect(categories.get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 29),
+      category("disposable-product-state", 30),
     );
     expect(categories.get("mock-provider-state")).toEqual(category("disposable-product-state", 1));
     expect(categories.get("operating-system-metadata")).toEqual(
@@ -426,15 +428,20 @@ describe("Workspace migration preview", () => {
       disclosure("google-sheets-spreadsheets", 4),
       disclosure("youtube-channels", 1),
       disclosure("notion-databases", 0),
+      /* A Workspace that never connected carries no Asana destination, so
+         the record list names the category with nothing disclosed (issue #189). */
+      disclosure("asana-destinations", 0),
     ]);
     const disclosed = remoteRecords(preview).reduce((total, record) => total + record.count, 0);
     expect(disclosed).toBe(8);
     /* Those same 8 values are on the delete side, inside the category every
        disclosure names, so nothing is preserved by being disclosed. */
     expect(inventory(preview).get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 29),
+      category("disposable-product-state", 30),
     );
-    /* No category answers "deleted or kept" with a remote reference. */
+    /* No category answers "deleted or kept" with a remote reference: the
+       destination gids drop with the rest of the non-auth configuration, and
+       only the disclosure names the record they used to point at. */
     expect(named(preview, "remote-reference")).toEqual([]);
   });
 
