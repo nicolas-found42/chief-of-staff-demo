@@ -72,6 +72,7 @@ async function buildApp(mockProviderAvailable: boolean): Promise<void> {
     tasks: fromPartial({}),
     actionItems: fromPartial({}),
     taskLinking: fromPartial({}),
+    asanaLinking: fromPartial({}),
     onConfigChanged: () => {},
     /* The mock posture is the composition's decision; these routes only
        enforce it, so the tests decide it here the same way the Shell does. */

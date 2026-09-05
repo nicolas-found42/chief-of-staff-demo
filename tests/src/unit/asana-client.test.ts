@@ -75,8 +75,13 @@ describe("asanaMe", () => {
   });
 
   it("refuses an invalid token with Asana's own words and no credential in them", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, { errors: ["Not Authorized"] }));
-    await expect(asanaMe("wrong-token")).rejects.toMatchObject({ status: 401 });
+    /* The documented error body is { errors: [{ message }] } — objects, not
+       strings; the message must survive extraction. */
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { errors: [{ message: "Not Authorized" }] }));
+    await expect(asanaMe("wrong-token")).rejects.toMatchObject({
+      status: 401,
+      message: "Not Authorized",
+    });
   });
 });
 
@@ -119,7 +124,9 @@ describe("listAsanaSections", () => {
       { gid: "s2", name: "Doing" },
     ]);
     const { url } = lastCall();
-    expect(url).toContain("/api/1.0/sections?project=p1");
+    expect(url).toBe(
+      "https://app.asana.com/api/1.0/projects/p1/sections?opt_fields=gid,name&limit=100",
+    );
   });
 });
 
@@ -170,7 +177,9 @@ describe("createAsanaTask", () => {
   });
 
   it("raises Asana's own validation message, sanitized, on a refused create", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(403, { errors: ["Not a member of the project"] }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(403, { errors: [{ message: "Not a member of the project" }] }),
+    );
     await expect(
       createAsanaTask(TOKEN, destination, { title: "T", notes: "", dueDate: null }),
     ).rejects.toMatchObject({ status: 403, message: "Not a member of the project" });
@@ -188,12 +197,12 @@ describe("task status", () => {
   });
 
   it("answers null — not an error — when Asana no longer holds the Task", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(404, { errors: ["Not Found"] }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { errors: [{ message: "Not Found" }] }));
     await expect(getAsanaTaskStatus(TOKEN, "gone")).resolves.toBeNull();
   });
 
   it("keeps non-404 failures as classified errors", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, { errors: ["Not Authorized"] }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { errors: [{ message: "Not Authorized" }] }));
     await expect(getAsanaTaskStatus(TOKEN, "t9")).rejects.toBeInstanceOf(AsanaApiError);
   });
 });

@@ -55,9 +55,10 @@ export interface ApiContext {
   actionItems: WorkspaceActionItems;
   /** Google Tasks as an optional Task Destination (issue #184). */
   taskLinking: TaskLinking;
-  /** Asana as an optional Task Destination (issue #189); absent when the
-      Workspace composes none, which the destination route reports honestly. */
-  asanaLinking?: AsanaLinking;
+  /** Asana as an optional Task Destination (issue #189). Required here like
+      taskLinking: a composition that forgets it must fail typecheck, not
+      surface as a silent "not available" answer at runtime. */
+  asanaLinking: AsanaLinking;
   /** The only route to Google: the four states, the consent screen, and sign-out. */
   google: GoogleConnection;
   /**
@@ -294,6 +295,6 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     tasks: ctx.tasks,
     actionItems: ctx.actionItems,
     linking: ctx.taskLinking,
-    ...(ctx.asanaLinking ? { asana: ctx.asanaLinking } : {}),
+    asana: ctx.asanaLinking,
   });
 }

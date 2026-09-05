@@ -67,11 +67,27 @@ async function asanaFetch(path: string, token: string, init?: RequestInit): Prom
   }
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
+    /* Asana's error body is { errors: [{ message }] } — an array of objects
+       (developers.asana.com/docs/errors). Plain strings are tolerated, but
+       the objects are the real shape: filtering for strings alone would
+       discard every actual message and leave only the generic fallback. */
     const errors =
       typeof body === "object" &&
       body !== null &&
       Array.isArray((body as { errors?: unknown }).errors)
-        ? (body as { errors: unknown[] }).errors.filter((e) => typeof e === "string")
+        ? (body as { errors: unknown[] }).errors
+            .map((entry) => {
+              if (typeof entry === "string") return entry;
+              if (
+                typeof entry === "object" &&
+                entry !== null &&
+                typeof (entry as { message?: unknown }).message === "string"
+              ) {
+                return (entry as { message: string }).message;
+              }
+              return null;
+            })
+            .filter((message): message is string => message !== null)
         : [];
     const detail = errors[0] ?? "";
     throw new AsanaApiError(
@@ -144,8 +160,10 @@ export async function listAsanaSections(
   token: string,
   projectGid: string,
 ): Promise<{ gid: string; name: string }[]> {
+  /* The documented canonical form: the project is a path parameter
+     (GET /projects/{project_gid}/sections), not the legacy query form. */
   const body = (await asanaFetch(
-    `/sections?project=${encodeURIComponent(projectGid)}&opt_fields=gid,name&limit=100`,
+    `/projects/${encodeURIComponent(projectGid)}/sections?opt_fields=gid,name&limit=100`,
     token,
   )) as { data?: { gid?: string; name?: string }[] };
   return (body.data ?? [])
