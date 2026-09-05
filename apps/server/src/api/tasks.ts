@@ -128,6 +128,11 @@ const NO_DESTINATION = {
 export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): void {
   const tasks = ctx.tasks;
 
+  app.post("/api/tasks/refresh", async () => ({ tasks: (await ctx.linking?.refresh()) ?? [] }));
+  app.post("/api/tasks/retry-failed", async () => ({
+    tasks: (await ctx.linking?.refresh({ failedOnly: true, manual: true })) ?? [],
+  }));
+
   /**
    * The external destination, or the one refusal every route that needs it
    * gives: a Workspace that composes no Google connection has nothing to file
@@ -252,7 +257,9 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
   app.patch("/api/tasks/:taskId", async (request: FastifyRequest, reply: FastifyReply) => {
     const { taskId } = request.params as { taskId: string };
     try {
-      return tasks.update(taskId, request.body ?? {});
+      tasks.update(taskId, request.body ?? {});
+      if (ctx.linking) return await ctx.linking.pushContent(taskId);
+      return tasks.get(taskId);
     } catch (error) {
       return refuse(reply, error);
     }
@@ -288,6 +295,18 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
   app.post("/api/tasks/:taskId/trash", async (request: FastifyRequest, reply: FastifyReply) => {
     const { taskId } = request.params as { taskId: string };
     try {
+      const choice = (request.body as { external?: unknown } | null)?.external;
+      if (ctx.linking)
+        return await ctx.linking.trash(
+          taskId,
+          choice === "delete" || choice === "preserve" ? choice : undefined,
+        );
+      if (tasks.get(taskId)?.externalLink) {
+        throw new TaskValidationError(
+          "confirmation-required",
+          "Remove the External Task Link before moving this Task to Trash.",
+        );
+      }
       return tasks.trash(taskId);
     } catch (error) {
       return refuse(reply, error);
@@ -345,6 +364,17 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     if (!linking) return NO_DESTINATION;
     try {
       return await linking.synchronize(taskId);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  app.post("/api/tasks/:taskId/retry", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { taskId } = request.params as { taskId: string };
+    const linking = requireLinking(reply);
+    if (!linking) return NO_DESTINATION;
+    try {
+      return await linking.retry(taskId);
     } catch (error) {
       return refuse(reply, error);
     }

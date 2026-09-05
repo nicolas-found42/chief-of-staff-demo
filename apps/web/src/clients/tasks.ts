@@ -129,8 +129,16 @@ export const tasksApi = {
     request<{ lists: TaskList[] }>(`/api/task-lists/${encodeURIComponent(listId)}`, {
       method: "DELETE",
     }),
-  trashTask: (taskId: string) =>
-    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/trash`, { method: "POST" }),
+  trashTask: (taskId: string, external?: "delete" | "preserve") =>
+    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/trash`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ external }),
+    }),
+  refresh: () => request<{ tasks: Task[] }>("/api/tasks/refresh", { method: "POST" }),
+  retryFailed: () => request<{ tasks: Task[] }>("/api/tasks/retry-failed", { method: "POST" }),
+  retryTask: (taskId: string) =>
+    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST" }),
   restoreTask: (taskId: string) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/restore`, { method: "POST" }),
   /* Confirmation travels in the request: the server refuses a deletion nobody

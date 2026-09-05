@@ -223,3 +223,13 @@ export async function setGoogleTaskStatus(
     requestBody: completed ? { status: "completed" } : { status: "needsAction" },
   });
 }
+
+/** Delete only the explicitly linked record. A missing record is already deleted. */
+export async function deleteGoogleTask(
+  auth: GoogleAuth,
+  tasklistId: string,
+  taskId: string,
+): Promise<void> {
+  const tasks = google.tasks({ version: "v1", auth });
+  await tasks.tasks.delete({ tasklist: tasklistId, task: taskId });
+}

@@ -28,7 +28,7 @@ import { TaskStore } from "../tasks/store.js";
 import { WorkspaceTasks } from "../tasks/tasks.js";
 import { WorkspaceActionItems, type ActionItemMaterialization } from "../tasks/action-items.js";
 import { materializeUnderPolicy } from "../tasks/auto-promotion.js";
-import { migrateLegacyActionReview } from "../tasks/legacy-migration.js";
+import { migrateLegacyActionReview, migrateLegacyTaskReceipts } from "../tasks/legacy-migration.js";
 import {
   TaskLinking,
   type AsanaDestination,
@@ -38,6 +38,7 @@ import {
 import { AsanaLinking } from "../tasks/asana-link.js";
 import {
   getGoogleTask,
+  deleteGoogleTask,
   setGoogleTaskContent,
   insertGoogleTask,
   listGoogleTaskLists,
@@ -46,6 +47,7 @@ import {
 import {
   asanaMe,
   createAsanaTask,
+  deleteAsanaTask,
   getAsanaTask,
   setAsanaTaskContent,
   listAsanaProjects,
@@ -241,6 +243,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     },
   };
   function stopModules(): void {
+    taskLinking.stop();
     for (const module of modules) {
       module.stop?.();
     }
@@ -319,6 +322,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      The Asana token is read live from the config on every call: it is stored
      after this composition ran, and connecting must not need a restart. */
   const googleConnector: RemoteTaskConnector<GoogleTasksDestination> = {
+    delete: async (destination, remoteId) => {
+      const access = googleConnection.auth();
+      if (!access.ok)
+        throw Object.assign(new Error(googleFailureHint(access.state)), { status: 401 });
+      await deleteGoogleTask(access.auth, destination.googleTaskListId, remoteId);
+    },
     create: async (task, destination) => {
       const access = googleConnection.auth();
       if (!access.ok) throw new Error(googleFailureHint(access.state));
@@ -356,6 +365,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     return token;
   };
   const asanaConnector: RemoteTaskConnector<AsanaDestination> = {
+    delete: async (_destination, remoteId) => deleteAsanaTask(requireAsanaToken(), remoteId),
     create: async (task, destination) => createAsanaTask(requireAsanaToken(), destination, task),
     read: async (_destination, remoteId) => {
       const remote = await getAsanaTask(requireAsanaToken(), remoteId);
@@ -427,14 +437,33 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      the canonical records rather than those arrays. Idempotent by
      construction, so this runs on every boot and does nothing on all but the
      first. */
-  migrateLegacyActionReview({
+  const legacyMigrationDeps = {
     runs,
     tasks,
     actionItems,
-    meetingIdFor: (transcriptId) =>
+    meetingIdFor: (transcriptId: string) =>
       transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
-    log: (message) => console.log(`[tasks] ${message}`),
-  });
+    log: (message: string) => console.log(`[tasks] ${message}`),
+  };
+  /* The Google Task receipts those same Runs wrote (issue #188). Only the
+     configured destination can be adopted, because a receipt records the
+     remote identity and not the list it was filed in, and the app only ever
+     wrote to the list the Workspace configured. Without that destination the
+     review migration still runs and the receipts wait for the next boot. */
+  const legacyGoogleTasks = configStore.get().tasks.googleTasks;
+  if (legacyGoogleTasks.enabled && legacyGoogleTasks.taskListId !== "") {
+    await migrateLegacyTaskReceipts({
+      ...legacyMigrationDeps,
+      destination: {
+        provider: "google-tasks",
+        googleTaskListId: legacyGoogleTasks.taskListId,
+        googleTaskListTitle: legacyGoogleTasks.taskListTitle,
+      },
+      read: (destination, remoteId) => googleConnector.read(destination, remoteId),
+    });
+  } else {
+    migrateLegacyActionReview(legacyMigrationDeps);
+  }
 
   /* The public-web identity resolver, wired here for the first time: the seam
      and its source existed but nothing in production built them, so a Profile
@@ -1062,6 +1091,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     }
     transcriptCatalogRuntime.start();
     meetingBriefProduction?.relayPoller.start();
+    taskLinking.start();
     modulesRunning = true;
   }
 

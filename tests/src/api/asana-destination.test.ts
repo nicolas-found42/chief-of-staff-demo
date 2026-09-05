@@ -127,6 +127,7 @@ beforeEach(() => {
         create: async () => ({ remoteId: "google_1", url: null }),
         read: async () => ({ title: "", notes: "", dueDate: null, status: "open" as const }),
         updateContent: async () => {},
+        delete: async () => {},
         updateStatus: async () => {},
       },
       asana: {
@@ -134,6 +135,7 @@ beforeEach(() => {
         read: readRemote,
         updateStatus: updateRemote,
         updateContent: async () => {},
+        delete: async () => {},
       },
     }),
     asana: new AsanaLinking({

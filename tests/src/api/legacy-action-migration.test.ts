@@ -16,7 +16,10 @@ import { openRuns, type RunHandle, type Runs } from "../../../apps/server/src/ru
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
-import { migrateLegacyActionReview } from "../../../apps/server/src/tasks/legacy-migration";
+import {
+  migrateLegacyActionReview,
+  migrateLegacyTaskReceipts,
+} from "../../../apps/server/src/tasks/legacy-migration";
 
 /**
  * Legacy Debrief review carried into canonical records (issue #183). The
@@ -117,6 +120,40 @@ function migrate() {
 }
 
 describe("migrating legacy Debrief review", () => {
+  it("adopts only app receipts, refreshes their status, and never creates remote records on restart", async () => {
+    const run = legacyRun({ actionItems: [proposal()], taskReceipts: [0] });
+    const receiptBefore = run.readArtifact("tasks.json");
+    const reads: string[] = [];
+    const deps = {
+      runs,
+      tasks,
+      actionItems,
+      destination: {
+        provider: "google-tasks" as const,
+        googleTaskListId: "legacy_list",
+        googleTaskListTitle: "Meeting actions",
+      },
+      read: async (_destination: unknown, remoteId: string) => {
+        reads.push(remoteId);
+        return {
+          title: "Follow up on the billing fix",
+          notes: "",
+          dueDate: "2026-08-22",
+          status: "completed" as const,
+        };
+      },
+    };
+    await migrateLegacyTaskReceipts(deps);
+    await migrateLegacyTaskReceipts(deps);
+    expect(tasks.list()).toHaveLength(1);
+    expect(tasks.list()[0]).toMatchObject({
+      status: "completed",
+      externalLink: { remoteId: "google_0", state: "synchronized" },
+    });
+    expect(actionItems.list()[0].state).toBe("promoted");
+    expect(reads).toEqual(["google_0"]);
+    expect(run.readArtifact("tasks.json")).toBe(receiptBefore);
+  });
   it("materializes every undecided proposal as a pending Action Item", () => {
     legacyRun({ actionItems: [proposal(), proposal({ title: "Book the follow-up" })] });
 

@@ -294,3 +294,8 @@ export async function setAsanaTaskStatus(
     body: JSON.stringify({ data: { completed } }),
   });
 }
+
+/** Delete the one record whose link the owner chose to remove with Trash. */
+export async function deleteAsanaTask(token: string, remoteId: string): Promise<void> {
+  await asanaFetch(`/tasks/${encodeURIComponent(remoteId)}`, token, { method: "DELETE" });
+}

@@ -341,10 +341,11 @@ test("tasks journey — a possible duplicate warns, and the owner can still deci
   await page.getByRole("button", { name: "Add task" }).click();
   const warning = page.locator("div.banner-warn").filter({ hasText: "Possible duplicate." });
   await expect(warning).toBeVisible();
-  await expect(warning.getByRole("link", { name: title })).toHaveAttribute(
-    "href",
-    `/tasks#task-${firstId}`,
-  );
+  await page.getByLabel("Search Tasks").fill("a filter hiding the original");
+  await expect(page.locator(`#task-${firstId}`)).toHaveCount(0);
+  await warning.getByText(`Compare: ${title}`, { exact: true }).click();
+  await expect(warning.getByText("Inbox · no due date · open", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Task title")).toHaveValue(title);
   await expect(page.getByRole("button", { name: "Add anyway" })).toBeVisible();
   await expect
     .poll(async () => (await openTasks()).filter((task) => task.title === title).length)

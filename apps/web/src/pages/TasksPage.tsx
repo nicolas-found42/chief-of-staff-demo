@@ -186,11 +186,21 @@ function DuplicateWarning({ duplicates }: { duplicates: Task[] }) {
     <div className="banner banner-warn" role="status">
       <strong>Possible duplicate.</strong> An open Task already has this title, Responsible Person,
       and due date:{" "}
-      {duplicates.map((duplicate, index) => (
-        <span key={duplicate.id}>
-          {index > 0 ? " · " : ""}
-          <Link to={`/tasks#task-${duplicate.id}`}>{duplicate.title}</Link>
-        </span>
+      {duplicates.map((duplicate) => (
+        <details key={duplicate.id}>
+          <summary>Compare: {duplicate.title}</summary>
+          <p>
+            {duplicate.listId === INBOX_TASK_LIST_ID ? "Inbox" : "Task List"} ·{" "}
+            {duplicate.dueDate ? `due ${duplicate.dueDate}` : "no due date"} · {duplicate.status}
+          </p>
+          <p>{duplicate.notes || "No notes."}</p>
+          <p>
+            Responsible Person:{" "}
+            {duplicate.responsiblePerson?.kind === "owner"
+              ? "You"
+              : (duplicate.responsiblePerson?.profileId ?? "Nobody")}
+          </p>
+        </details>
       ))}
       . Submit again to create the Task anyway.
     </div>
@@ -214,6 +224,7 @@ function TaskRow({
   onTrash,
   onLink,
   onRecreate,
+  onRetry,
   onRemoveLink,
   onResolve,
   sourceAvailable,
@@ -225,15 +236,18 @@ function TaskRow({
   onComplete: () => Promise<void>;
   onReopen: () => Promise<void>;
   onSave: (values: TaskFormValues) => Promise<boolean>;
-  onTrash: () => Promise<void>;
+  onTrash: (external?: "delete" | "preserve") => Promise<void>;
   onLink: () => Promise<void>;
   onRecreate: () => Promise<void>;
+  onRetry: () => Promise<void>;
   onRemoveLink: () => Promise<void>;
   /** Settle a drift or a conflict by keeping one side (issue #186). */
   onResolve: (kind: "drift" | "conflict", keep: "app" | "external") => Promise<void>;
   /** False once what the Task was promoted from has been deleted. */
   sourceAvailable: boolean;
 }) {
+  const [confirmTrash, setConfirmTrash] = useState(false);
+  const [trashExternal, setTrashExternal] = useState<"delete" | "preserve">("delete");
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<TaskFormValues>(() => formValuesFrom(task));
   const editButton = useRef<HTMLButtonElement>(null);
@@ -294,7 +308,47 @@ function TaskRow({
           )}
         </p>
       )}
+      {confirmTrash && (
+        <fieldset>
+          <legend>Move linked Task to Trash</legend>
+          <label>
+            <input
+              type="radio"
+              name={`trash-${task.id}`}
+              checked={trashExternal === "delete"}
+              onChange={() => setTrashExternal("delete")}
+            />
+            Delete the external Task
+          </label>
+          <label>
+            <input
+              type="radio"
+              name={`trash-${task.id}`}
+              checked={trashExternal === "preserve"}
+              onChange={() => setTrashExternal("preserve")}
+            />
+            Preserve the external Task and remove the link
+          </label>
+          <button type="button" disabled={busy} onClick={() => void onTrash(trashExternal)}>
+            Confirm move to Trash
+          </button>
+          <button type="button" onClick={() => setConfirmTrash(false)}>
+            Cancel
+          </button>
+        </fieldset>
+      )}
       <div className="toolbar">
+        {task.externalLink?.state === "failed" && (
+          <button type="button" disabled={busy} onClick={() => void onRetry()}>
+            Retry link
+          </button>
+        )}
+        {task.externalLink &&
+          !["missing", "conflicted", "changed-externally"].includes(task.externalLink.state) && (
+            <button type="button" disabled={busy} onClick={() => void onRemoveLink()}>
+              Remove link
+            </button>
+          )}
         {task.status === "open" ? (
           <button
             type="button"
@@ -412,7 +466,7 @@ function TaskRow({
           type="button"
           className="action-button"
           aria-disabled={busy}
-          onClick={() => void onTrash()}
+          onClick={() => (task.externalLink ? setConfirmTrash(true) : void onTrash())}
         >
           Move to Trash
         </button>
@@ -646,11 +700,13 @@ function TrashRow({
   busy,
   onRestore,
   onDeleteForever,
+  onRetry,
 }: {
   task: Task;
   busy: boolean;
   onRestore: () => Promise<void>;
   onDeleteForever: () => Promise<void>;
+  onRetry: () => Promise<void>;
 }) {
   /* Two presses rather than a browser dialog: permanent deletion is the one
      Task operation with nothing behind it, and confirming it has to be a
@@ -662,6 +718,15 @@ function TrashRow({
       <p className="muted">
         In Trash · was {task.status} · restoring returns it exactly as it was.
       </p>
+      {task.externalLink && (
+        <p role="status">
+          External deletion has not succeeded. The external Task may remain after permanent local
+          deletion. {task.externalLink.failure?.message}{" "}
+          <button type="button" disabled={busy} onClick={() => void onRetry()}>
+            Retry external deletion
+          </button>
+        </p>
+      )}
       <div className="toolbar">
         <button
           type="button"
@@ -833,6 +898,15 @@ export function TasksPage({
     };
   }, [client, people, load]);
 
+  useEffect(() => {
+    void client
+      .refresh()
+      .then(load)
+      .catch((err) => setError(errorMessage(err)));
+    // The Tasks-open trigger runs once; filter changes only reload the local projection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
+
   /* Dismissal moves its row out of the pending queue, so focus moves to the
      Undo that reverses it — the one control that can bring the row back. */
   useEffect(() => {
@@ -979,13 +1053,16 @@ export function TasksPage({
         await act(`Reopened ${task.title}.`, () => client.reopenTask(task.id));
       }}
       sourceAvailable={!unavailableSources.includes(task.id)}
-      onTrash={async () => {
-        await act(`Moved ${task.title} to Trash.`, () => client.trashTask(task.id));
+      onTrash={async (external) => {
+        await act(`Moved ${task.title} to Trash.`, () => client.trashTask(task.id, external));
       }}
       onLink={async () => {
         await act(`Sent ${task.title} to ${providerName(task.destination)}.`, () =>
           client.linkTask(task.id),
         );
+      }}
+      onRetry={async () => {
+        await act("Retried the External Task Link.", () => client.retryTask(task.id));
       }}
       onRecreate={async () => {
         await act(`Recreated ${task.title} in ${providerName(task.destination)}.`, () =>
@@ -1042,6 +1119,22 @@ export function TasksPage({
         Asana, or any other account.
       </p>
 
+      <div className="toolbar">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void act("Refreshed linked Tasks.", () => client.refresh())}
+        >
+          Refresh Tasks
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void act("Retried failed links.", () => client.retryFailed())}
+        >
+          Retry all failed links
+        </button>
+      </div>
       {error && (
         <p className="banner-error" role="alert">
           {error}
@@ -1294,6 +1387,9 @@ export function TasksPage({
             busy={busy}
             onRestore={async () => {
               await act(`Restored ${task.title}.`, () => client.restoreTask(task.id));
+            }}
+            onRetry={async () => {
+              await act("Retried external deletion.", () => client.retryTask(task.id));
             }}
             onDeleteForever={async () => {
               await act(`Deleted ${task.title} forever.`, () => client.deleteTaskForever(task.id));

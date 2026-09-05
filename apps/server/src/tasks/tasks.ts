@@ -461,7 +461,11 @@ export class WorkspaceTasks {
           "That Task already has an External Task Link.",
         );
       }
-      return { ...task, externalLink: { ...link, updatedAt: this.now().toISOString() } };
+      return {
+        ...task,
+        destination: link.destination,
+        externalLink: { ...link, updatedAt: this.now().toISOString() },
+      };
     });
   }
   /**

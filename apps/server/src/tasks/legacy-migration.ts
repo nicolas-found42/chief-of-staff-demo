@@ -1,11 +1,13 @@
 import type {
   MeetingDebriefRunResult,
+  ExternalTaskBaseline,
   MeetingDebriefReviewState,
 } from "@chief-of-staff-demo/shared";
 import { MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
 import type { RunHandle, Runs } from "../runs.js";
 import type { WorkspaceActionItems } from "./action-items.js";
 import { promoteActionItem } from "./promotion.js";
+import { classifyTaskLinkError, type GoogleTasksDestination } from "./external-link.js";
 import type { WorkspaceTasks } from "./tasks.js";
 
 /**
@@ -165,4 +167,98 @@ function taskReceiptIndexes(run: RunHandle): Set<number> {
     return indexes;
   }
   return indexes;
+}
+
+/** Adopt only remote identities proven by this app's historical receipts. */
+export async function migrateLegacyTaskReceipts(
+  deps: LegacyActionMigrationDeps & {
+    destination: GoogleTasksDestination;
+    read: (
+      destination: GoogleTasksDestination,
+      remoteId: string,
+    ) => Promise<ExternalTaskBaseline | null>;
+  },
+): Promise<void> {
+  migrateLegacyActionReview(deps);
+  for (const summary of deps.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
+    const run = deps.runs.open(summary.id);
+    if (!run) continue;
+    const stored = readResult(run);
+    const raw = run.readArtifact("tasks.json");
+    if (!stored || !raw) continue;
+    let receipt: { tasks?: Array<{ index?: unknown; taskId?: unknown }> };
+    try {
+      receipt = JSON.parse(raw) as typeof receipt;
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(receipt.tasks)) continue;
+    const items = deps.actionItems.materialize({
+      debriefRunId: summary.id,
+      transcriptId: stored.transcriptId,
+      meetingId: deps.meetingIdFor?.(stored.transcriptId) ?? null,
+      actionItems: stored.debrief.actionItems,
+    });
+    for (const entry of receipt.tasks) {
+      if (
+        typeof entry.index !== "number" ||
+        !Number.isInteger(entry.index) ||
+        typeof entry.taskId !== "string" ||
+        entry.taskId === ""
+      )
+        continue;
+      const item = items[entry.index];
+      if (!item) continue;
+      if (
+        item.state === "promoted" &&
+        (!item.promotedTaskId || !deps.tasks.get(item.promotedTaskId))
+      )
+        continue;
+      if (item.state === "dismissed") deps.actionItems.restore(item.id);
+      const { task } = promoteActionItem(deps, item.id);
+      if (task.externalLink) continue;
+      const baseline: ExternalTaskBaseline = {
+        title: task.title,
+        notes: task.notes,
+        dueDate: task.dueDate,
+        status: task.status,
+      };
+      deps.tasks.recordExternalLink(task.id, {
+        destination: deps.destination,
+        remoteId: entry.taskId,
+        url: null,
+        state: "waiting",
+        baseline,
+        external: null,
+        failure: null,
+      });
+      try {
+        const remote = await deps.read(deps.destination, entry.taskId);
+        if (remote?.status === "completed") deps.tasks.complete(task.id);
+        if (remote?.status === "open") deps.tasks.reopen(task.id);
+        deps.tasks.refreshExternalLink(task.id, {
+          destination: deps.destination,
+          remoteId: entry.taskId,
+          url: null,
+          state: remote ? "synchronized" : "missing",
+          baseline: remote ?? baseline,
+          external: null,
+          failure: remote
+            ? null
+            : { kind: "not-found", message: "Google Tasks no longer holds that Task." },
+        });
+      } catch (error) {
+        const failure = classifyTaskLinkError(error, "Google Tasks");
+        deps.tasks.refreshExternalLink(task.id, {
+          destination: deps.destination,
+          remoteId: entry.taskId,
+          url: null,
+          state: failure.kind === "not-found" ? "missing" : "failed",
+          baseline,
+          external: null,
+          failure,
+        });
+      }
+    }
+  }
 }

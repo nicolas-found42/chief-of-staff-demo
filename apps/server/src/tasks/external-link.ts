@@ -59,6 +59,7 @@ export interface RemoteTaskConnector<D extends ExternalTaskDestination = Externa
   read(destination: D, remoteId: string): Promise<RemoteTaskSnapshot | null>;
   updateStatus(destination: D, remoteId: string, completed: boolean): Promise<void>;
   updateContent(destination: D, remoteId: string, content: RemoteTaskContent): Promise<void>;
+  delete(destination: D, remoteId: string): Promise<void>;
 }
 
 /** Which side of a drift or a conflict the owner chose to keep. */
@@ -124,7 +125,7 @@ function sanitizeDetail(message: string): string {
  * failure keeps its redacted detail, which is why a refusal the tests raise
  * by hand still reads the way it was raised.
  */
-function classifyTaskLinkError(error: unknown, provider: string): TaskLinkFailure {
+export function classifyTaskLinkError(error: unknown, provider: string): TaskLinkFailure {
   const status = providerStatus(error);
   const raw = error instanceof Error ? error.message : String(error);
   /* Google reports quota exhaustion over 403 with a reason in the body, so
@@ -163,7 +164,100 @@ function classifyTaskLinkError(error: unknown, provider: string): TaskLinkFailur
 }
 
 export class TaskLinking {
+  private readonly pending = new Map<string, Promise<Task>>();
+  private timer: ReturnType<typeof setInterval> | undefined;
+
   constructor(private readonly deps: TaskLinkingDeps) {}
+
+  start(): void {
+    if (this.timer) return;
+    void this.refresh();
+    this.timer = setInterval(() => void this.refresh(), 5 * 60_000);
+    this.timer.unref();
+  }
+
+  stop(): void {
+    clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  /** All lifecycle triggers use the same per-Task path and isolate provider failures. */
+  async refresh(options: { failedOnly?: boolean; manual?: boolean } = {}): Promise<Task[]> {
+    const selected = [...this.deps.tasks.list(), ...this.deps.tasks.list({ trashed: true })].filter(
+      (task) => {
+        const link = task.externalLink;
+        return (
+          link !== null &&
+          (!options.failedOnly || link.state === "failed") &&
+          (options.manual || link.failure?.kind !== "authorization")
+        );
+      },
+    );
+    const results = await Promise.allSettled(selected.map((task) => this.retry(task.id)));
+    return results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  }
+
+  /** Reconcile and retry one link; concurrent triggers share the same operation. */
+  retry(taskId: string): Promise<Task> {
+    const pending = this.pending.get(taskId);
+    if (pending) return pending;
+    const operation = this.retryOne(taskId).finally(() => this.pending.delete(taskId));
+    this.pending.set(taskId, operation);
+    return operation;
+  }
+
+  private async retryOne(taskId: string): Promise<Task> {
+    let task = this.requireTask(taskId);
+    const link = task.externalLink;
+    if (task.deletedAt !== null) return this.deleteExternal(taskId);
+    if (link === null || ["missing", "conflicted", "changed-externally"].includes(link.state)) {
+      return task;
+    }
+    if (link.remoteId === null) return this.link(taskId);
+    task = await this.synchronize(taskId);
+    if (["missing", "conflicted", "changed-externally"].includes(task.externalLink?.state ?? "")) {
+      return task;
+    }
+    task = await this.pushStatus(taskId);
+    if (task.externalLink?.state === "failed") return task;
+    return this.pushContent(taskId);
+  }
+
+  async trash(taskId: string, external?: "delete" | "preserve"): Promise<Task> {
+    const task = this.requireTask(taskId);
+    if (task.externalLink !== null && external === undefined) {
+      throw new TaskValidationError(
+        "confirmation-required",
+        "Choose whether to delete the external Task or preserve it and remove the link.",
+      );
+    }
+    this.deps.tasks.trash(taskId);
+    return external === "delete" ? this.deleteExternal(taskId) : this.removeLink(taskId);
+  }
+
+  private async deleteExternal(taskId: string): Promise<Task> {
+    const task = this.requireTask(taskId);
+    const link = task.externalLink;
+    if (!link) return task;
+    if (
+      link.remoteId === null ||
+      link.state === "missing" ||
+      link.destination.provider === "local"
+    ) {
+      return this.removeLink(taskId);
+    }
+    const connector = this.connectorFor(link.destination.provider);
+    if (!connector) return task;
+    try {
+      await connector.delete(link.destination, link.remoteId);
+    } catch (error) {
+      const failure = classifyTaskLinkError(error, this.providerName(link.destination));
+      if (failure.kind !== "not-found") {
+        return this.deps.tasks.refreshExternalLink(taskId, { ...link, state: "failed", failure });
+      }
+    }
+    return this.removeLink(taskId);
+  }
 
   /** The connector a destination's provider dispatches to; null when the Workspace does not compose it. */
   private connectorFor(provider: TaskDestination["provider"]): RemoteTaskConnector | null {
@@ -338,6 +432,8 @@ export class TaskLinking {
       link === null ||
       link.remoteId === null ||
       link.state === "missing" ||
+      link.state === "conflicted" ||
+      link.state === "changed-externally" ||
       link.destination.provider === "local" ||
       link.baseline?.status === task.status
     ) {
@@ -345,7 +441,7 @@ export class TaskLinking {
     }
     const connector = this.connectorFor(link.destination.provider);
     if (connector === null) return task;
-    const baseline = this.baselineFor(task, task.status);
+    const baseline = { ...contentOf(link.baseline ?? task), status: task.status };
     try {
       await connector.updateStatus(link.destination, link.remoteId, task.status === "completed");
       return this.deps.tasks.refreshExternalLink(task.id, {
@@ -522,6 +618,8 @@ export class TaskLinking {
       link === null ||
       link.remoteId === null ||
       link.state === "missing" ||
+      link.state === "conflicted" ||
+      link.state === "changed-externally" ||
       link.destination.provider === "local"
     ) {
       return task;

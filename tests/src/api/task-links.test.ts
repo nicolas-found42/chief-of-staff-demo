@@ -53,6 +53,7 @@ beforeEach(() => {
         create: createRemote,
         read: async () => ({ title: "", notes: "", dueDate: null, status: "open" as const }),
         updateContent: async () => {},
+        delete: async () => {},
         updateStatus: async () => {},
       },
     }),
