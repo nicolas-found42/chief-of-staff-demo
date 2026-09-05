@@ -1,6 +1,7 @@
 import type {
   DailyBriefing,
   DailyBriefingBriefStatus,
+  DailyBriefingWork,
   MeetingBrief,
   WeeklyBriefing,
 } from "@chief-of-staff-demo/shared";
@@ -311,6 +312,41 @@ function formatMeetingWhen(startAt: string): string {
  * the home surface shows. No recipient field: the caller sends owner-only
  * through the Gmail delivery adapter, never to External Guests.
  */
+
+/**
+ * The Task and Action Item sections a Daily Briefing email carries (issue
+ * #192), in the order they matter. An empty section is omitted rather than
+ * rendered as a zero, and a capped one says how many rows it did not draw.
+ */
+function workSections(
+  work: DailyBriefingWork,
+): Array<{ heading: string; rows: string[]; more: number }> {
+  const due = (dueDate: string | null): string => (dueDate ? ` · due ${dueDate}` : "");
+  const sections = [
+    {
+      heading: "Overdue Tasks",
+      rows: work.overdue.map((task) => `${task.title}${due(task.dueDate)}`),
+      more: work.totals.overdue - work.overdue.length,
+    },
+    {
+      heading: "Tasks due today",
+      rows: work.dueToday.map((task) => task.title),
+      more: work.totals.dueToday - work.dueToday.length,
+    },
+    {
+      heading: "High priority",
+      rows: work.highPriority.map((task) => `${task.title}${due(task.dueDate)}`),
+      more: work.totals.highPriority - work.highPriority.length,
+    },
+    {
+      heading: "Action Items awaiting review",
+      rows: work.pendingActionItems.map((item) => `${item.title}${due(item.dueDate)}`),
+      more: work.totals.pendingActionItems - work.pendingActionItems.length,
+    },
+  ];
+  return sections.filter((section) => section.rows.length > 0);
+}
+
 export function renderDailyBriefingEmail(briefing: DailyBriefing): RenderedMeetingBriefEmail {
   const subject = `Daily Briefing: ${briefing.date}`;
   const lines: string[] = [subject, "", briefing.summary, "", "Today's meetings:"];
@@ -318,6 +354,15 @@ export function renderDailyBriefingEmail(briefing: DailyBriefing): RenderedMeeti
     lines.push(
       `- ${meeting.title} · ${formatMeetingWhen(meeting.startAt)} · ${briefingStatusLabel(meeting.briefStatus)}`,
     );
+  }
+  if (briefing.meetings.length === 0) lines.push("- None");
+  /* Tasks and Action Items stay separate sections with separate headings: an
+     email that ran them together would read as a list of commitments, and half
+     of it would be proposals nobody has accepted yet (issue #192). */
+  for (const section of workSections(briefing.work)) {
+    lines.push("", `${section.heading}:`);
+    for (const row of section.rows) lines.push(`- ${row}`);
+    if (section.more > 0) lines.push(`- and ${section.more} more`);
   }
   const text = lines.join("\n");
 
@@ -334,6 +379,12 @@ export function renderDailyBriefingEmail(briefing: DailyBriefing): RenderedMeeti
     );
   }
   htmlLines.push(`</ul>`);
+  for (const section of workSections(briefing.work)) {
+    htmlLines.push(`<h3 style="margin:16px 0 8px 0">${escapeHtml(section.heading)}</h3><ul>`);
+    for (const row of section.rows) htmlLines.push(`<li>${escapeHtml(row)}</li>`);
+    if (section.more > 0) htmlLines.push(`<li>and ${section.more} more</li>`);
+    htmlLines.push(`</ul>`);
+  }
   htmlLines.push(
     `<hr style="margin:16px 0; border:none; border-top:1px solid #eee" /><div style="color:#888; font-size:12px">Daily Briefing for ${escapeHtml(briefing.date)}</div>`,
   );

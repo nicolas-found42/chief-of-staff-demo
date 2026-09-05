@@ -3,10 +3,12 @@ import {
   MEETING_BRIEF_MODULE_ID,
   type DailyBriefing,
   type DailyBriefingBriefStatus,
+  type DailyBriefingWork,
   type MeetingBriefRunResult,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspaceMeetings } from "../../meetings/store.js";
 import type { Runs } from "../../runs.js";
+import { NO_BRIEFING_WORK } from "../../tasks/briefing-projection.js";
 
 /**
  * The Daily Briefing read model (issue #160): the day ahead, derived on read
@@ -18,6 +20,12 @@ import type { Runs } from "../../runs.js";
 export interface DailyBriefingDeps {
   meetings: WorkspaceMeetings;
   runs: Runs;
+  /**
+   * The day's canonical Tasks and pending Action Items (issue #192), as the
+   * bounded projection the Tasks product hands over. Absent when no Tasks
+   * product is composed, and then the Briefing is meetings alone.
+   */
+  work?: () => DailyBriefingWork;
 }
 
 /** The owner-timezone calendar day covering `now`: day id and UTC bounds. */
@@ -37,10 +45,12 @@ export function dayBoundsFor(
 }
 
 /**
- * The day's Daily Briefing, or null when the day holds no Meetings. Reads the
- * Workspace's Meetings for the owner-timezone day plus the Brief Runs index
- * for their Brief state. Throws only when the underlying stores throw; the
- * host turns that into the surfaced error state.
+ * The day's Daily Briefing, or null when the day holds neither Meetings nor
+ * work. Reads the Workspace's Meetings for the owner-timezone day plus the
+ * Brief Runs index for their Brief state, and the Tasks product's own
+ * projection of overdue, due-today, high-priority Tasks and pending review
+ * (issue #192). Throws only when the underlying stores throw; the host turns
+ * that into the surfaced error state.
  */
 export function buildDailyBriefing(
   deps: DailyBriefingDeps,
@@ -58,7 +68,16 @@ export function buildDailyBriefing(
     /* By the instant, not the text: Calendar writes an offset and a
        transcript-owned Meeting writes UTC, so the strings do not sort. */
     .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
-  if (todays.length === 0) return null;
+  const work = deps.work?.() ?? NO_BRIEFING_WORK;
+  const hasWork =
+    work.totals.overdue +
+      work.totals.dueToday +
+      work.totals.highPriority +
+      work.totals.pendingActionItems >
+    0;
+  /* A day with no Meetings can still be a day with work. Only a day with
+     neither is nothing to say — and that is the one that stays null. */
+  if (todays.length === 0 && !hasWork) return null;
 
   const doneKeys = new Set<string>();
   const activeKeys = new Set<string>();
@@ -112,6 +131,11 @@ export function buildDailyBriefing(
     summary:
       `${meetings.length} ${noun} today · ` +
       `${ready} ${ready === 1 ? "Brief" : "Briefs"} ready` +
-      (failed > 0 ? ` · ${failed} failed` : ""),
+      (failed > 0 ? ` · ${failed} failed` : "") +
+      (work.totals.overdue > 0 ? ` · ${work.totals.overdue} overdue` : "") +
+      (work.totals.pendingActionItems > 0
+        ? ` · ${work.totals.pendingActionItems} awaiting review`
+        : ""),
+    work,
   };
 }

@@ -1,3 +1,4 @@
+import type { DailyBriefingWork } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
 import type { ConfigStore } from "../../config.js";
 import type { GoogleConnection } from "../../google/connection.js";
@@ -59,6 +60,8 @@ export interface MeetingBriefProductionRuntimeOptions {
   ownerReference?: () => ConfirmedOwnerReference | null;
   /** The one backward read's bound (issue #152); see MeetingBriefHostDeps. */
   oldestTranscriptAt?: () => string | null;
+  /** The Tasks product's bounded projection of the day's work (issue #192). */
+  getBriefingWork?: () => DailyBriefingWork;
   /** The standing Transcript ↔ Meeting join (issue #153); see MeetingBriefHostDeps. */
   associateTranscripts?: () => Promise<void> | void;
 }
@@ -202,6 +205,7 @@ export function createMeetingBriefProductionRuntime(
     gmailDeliveryProvider,
     personProfiles,
     ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
+    ...(options.getBriefingWork ? { getBriefingWork: options.getBriefingWork } : {}),
     ...(options.associateTranscripts ? { associateTranscripts: options.associateTranscripts } : {}),
     ...(options.log ? { log: options.log } : {}),
   });

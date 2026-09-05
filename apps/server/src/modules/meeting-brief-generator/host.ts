@@ -7,6 +7,7 @@ import {
   MEETING_BRIEF_MODULE_VERSION,
   type MeetingBriefEvent,
   type DailyBriefingState,
+  type DailyBriefingWork,
   type WeeklyBriefingState,
   type MeetingBriefPersonProfileReadModel,
   type MeetingBriefProviderOutcomes,
@@ -86,6 +87,12 @@ export interface MeetingBriefHostDeps {
   configStore?: ConfigStore;
   getInternalDomains?: () => string[];
   getOwnerEmail?: () => string | null;
+  /**
+   * The Tasks product's bounded projection of the day's work (issue #192).
+   * Composed by the Shell, which owns both products; absent, the Daily
+   * Briefing is meetings alone.
+   */
+  getBriefingWork?: () => DailyBriefingWork;
   /** IANA timezone the weekly sweep window is computed in (issue://157). Defaults to the host timezone. */
   getTimezone?: () => string | null;
   isOwnerProfileConfirmed?: () => boolean;
@@ -252,6 +259,7 @@ export class MeetingBriefHost implements HostedModule {
       getTimezone: () => this.getTimezone(),
       getInternalDomains: () => this.getInternalDomains(),
       getOwnerEmail: () => this.getOwnerEmail(),
+      ...(deps.getBriefingWork ? { getBriefingWork: deps.getBriefingWork } : {}),
       ...(deps.isOwnerProfileConfirmed
         ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
         : {}),
@@ -295,6 +303,7 @@ export class MeetingBriefHost implements HostedModule {
         }),
       ...(deps.gmailDeliveryProvider ? { gmailDeliveryProvider: deps.gmailDeliveryProvider } : {}),
       getOwnerEmail: () => this.getOwnerEmail(),
+      ...(deps.getBriefingWork ? { getBriefingWork: deps.getBriefingWork } : {}),
       ...(deps.isOwnerProfileConfirmed
         ? { isOwnerProfileConfirmed: deps.isOwnerProfileConfirmed }
         : {}),

@@ -25,6 +25,7 @@ import type { ActionItemQuery, WorkspaceActionItems } from "../tasks/action-item
 import { promoteActionItem } from "../tasks/promotion.js";
 import type { TaskLinking, TaskLinkResolution } from "../tasks/external-link.js";
 import type { AsanaLinking } from "../tasks/asana-link.js";
+import { buildTaskOverview } from "../tasks/overview.js";
 
 export interface TasksApiContext {
   /** The Tasks product area's Workspace-owned interface; routes stay thin over it. */
@@ -169,6 +170,16 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
    * date in the Workspace timezone (issue #175). Today is served rather than
    * left to the browser: a date-only due date belongs to the owner's day.
    */
+  /**
+   * The compact rollup Home and the Meeting Wizard read (issue #192). A pure
+   * projection of the canonical stores: counts, two capped lists, and the
+   * Workspace's own today, so no compact surface has to fetch every Task and
+   * count them itself — or resolve "today" in the browser's timezone.
+   */
+  app.get("/api/tasks/overview", async () =>
+    buildTaskOverview({ tasks, actionItems: ctx.actionItems }),
+  );
+
   app.get("/api/tasks", async (request: FastifyRequest) => {
     const query = request.query as {
       listId?: string;

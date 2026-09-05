@@ -36,6 +36,7 @@ import {
   type RemoteTaskConnector,
 } from "../tasks/external-link.js";
 import { AsanaLinking } from "../tasks/asana-link.js";
+import { buildDailyBriefingWork } from "../tasks/briefing-projection.js";
 import {
   getGoogleTask,
   deleteGoogleTask,
@@ -708,6 +709,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     );
   };
   const meetingBriefLog = (message: string) => console.log(`[meeting-brief] ${message}`);
+  /* The Daily Briefing's canonical work (issue #192). The Tasks product hands
+     the Meeting Wizard a bounded projection rather than its stores: the
+     Briefing shows overdue, due-today and high-priority Tasks beside the
+     Action Items still awaiting review, and owns none of them. */
+  const getBriefingWork = () => buildDailyBriefingWork({ tasks, actionItems });
   /* The standing Transcript ↔ Meeting join (issue #165). One deep module
      owns match-plus-attach-plus-merge; the Catalog owns the Transcript
      record and its Debrief/identity processing, the Meetings store owns the
@@ -738,6 +744,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           personProfiles: peopleProfiles,
           oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
           associateTranscripts,
+          getBriefingWork,
         })
       : null;
   const meetingBriefProduction = meetingBriefTest
@@ -763,6 +770,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,
+        getBriefingWork,
         log: meetingBriefLog,
       });
   const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;

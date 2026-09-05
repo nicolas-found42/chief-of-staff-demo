@@ -1,5 +1,6 @@
 import type {
   DailyBriefing,
+  DailyBriefingWork,
   DailyBriefingState,
   WeeklyBriefing,
   WeeklyBriefingState,
@@ -19,6 +20,8 @@ interface MeetingBriefingCoordinatorOptions {
   getTimezone: () => string;
   getInternalDomains: () => string[];
   getOwnerEmail: () => string | null;
+  /** The Tasks product's bounded Task projection (issue #192); absent when none is composed. */
+  getBriefingWork?: () => DailyBriefingWork;
   isOwnerProfileConfirmed?: () => boolean;
   gmailDeliveryProvider?: GmailDeliveryProvider | null;
   briefingEmails?: boolean;
@@ -40,6 +43,15 @@ export class MeetingBriefingCoordinator {
   private readonly regenQuietMs = 15 * 60 * 1000;
 
   constructor(private readonly options: MeetingBriefingCoordinatorOptions) {}
+
+  /** The stores the Daily Briefing derives from, resolved per build. */
+  private dailyDeps() {
+    return {
+      meetings: this.options.meetings,
+      runs: this.options.runs,
+      ...(this.options.getBriefingWork ? { work: this.options.getBriefingWork } : {}),
+    };
+  }
 
   markBriefingsStale(now: Date, timezone: string): void {
     const regenAtMs = now.getTime() + this.regenQuietMs;
@@ -85,11 +97,7 @@ export class MeetingBriefingCoordinator {
     this.lastDailyBriefingDay = dayBoundsFor(now, timezone).date;
     this.dailyBriefingDirty = null;
     try {
-      this.dailyBriefingCache = buildDailyBriefing(
-        { meetings: this.options.meetings, runs: this.options.runs },
-        now,
-        timezone,
-      );
+      this.dailyBriefingCache = buildDailyBriefing(this.dailyDeps(), now, timezone);
       this.dailyBriefingError = null;
     } catch (error) {
       this.dailyBriefingError = error instanceof Error ? error.message : String(error);
@@ -113,11 +121,7 @@ export class MeetingBriefingCoordinator {
     if (this.dailyBriefingDirty?.date !== date) {
       let fresh: DailyBriefing | null | undefined;
       try {
-        fresh = buildDailyBriefing(
-          { meetings: this.options.meetings, runs: this.options.runs },
-          now,
-          timezone,
-        );
+        fresh = buildDailyBriefing(this.dailyDeps(), now, timezone);
       } catch {
         fresh = undefined;
       }

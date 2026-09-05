@@ -2087,3 +2087,53 @@ code {
   background: var(--surface-alt);
   border-radius: 4px;
 }
+
+/* The canonical work rollup (issue #192): a metric strip and two compact
+   lists. Numbers before labels, because the strip is read for its figures;
+   each tile is a link, so the whole 44px target is clickable (WCAG 2.5.8). */
+.work-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.work-metric a {
+  display: block;
+  min-height: 44px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.work-metric a:hover {
+  border-color: var(--accent);
+}
+
+.work-metric-value {
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.work-metric-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.work-group + .work-group {
+  margin-top: 1rem;
+}
+
+.work-group h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}

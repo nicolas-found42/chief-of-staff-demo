@@ -9,6 +9,7 @@ import type {
   TaskDuplicateCheck,
   TaskIndex,
   TaskList,
+  TaskOverview,
   TaskStatus,
   TaskUpdateInput,
 } from "@chief-of-staff-demo/shared";
@@ -90,6 +91,12 @@ export interface AsanaCheckConnection {
 
 export const tasksApi = {
   tasks: (query?: TaskFilters) => request<TaskIndex>(`/api/tasks${taskQuery(query)}`),
+  /**
+   * The compact rollup Home draws (issue #192): counts, two capped lists, and
+   * the Workspace's own today. One read rather than fetching every Task and
+   * counting them in the browser.
+   */
+  overview: () => request<TaskOverview>("/api/tasks/overview"),
   createTask: (input: TaskCreateInput) =>
     request<Task>("/api/tasks", {
       method: "POST",

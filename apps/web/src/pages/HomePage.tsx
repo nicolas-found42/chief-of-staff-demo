@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { ProviderId, RunSummary } from "@chief-of-staff-demo/shared";
+import type { ProviderId, RunSummary, TaskOverview } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { configApi, migrationApi, runsApi, type OnboardingStatus } from "../clients/workspace";
+import { tasksApi } from "../clients/tasks";
+import { WorkSummary } from "../components/WorkSummary";
 import { connectionNotice } from "../connectionNotice";
 import { homeStatus } from "../homeStatus";
 import { useGoogleConnection } from "../useGoogleConnection";
@@ -36,6 +38,7 @@ export function HomePage() {
   const [searchParams] = useSearchParams();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [provider, setProvider] = useState<ProviderId | null>(null);
+  const [work, setWork] = useState<TaskOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -45,6 +48,17 @@ export function HomePage() {
     } catch (err) {
       setError(errorMessage(err));
     }
+  }, []);
+
+  /* Canonical work (issue #192), read once per visit. Its own request and its
+     own failure: the Runs feed above is a different contract, and a Tasks read
+     that fails should not blank the page that owns the Modules. */
+  const [workError, setWorkError] = useState<string | null>(null);
+  useEffect(() => {
+    tasksApi
+      .overview()
+      .then(setWork)
+      .catch((err: unknown) => setWorkError(errorMessage(err)));
   }, []);
 
   useEffect(() => {
@@ -201,6 +215,25 @@ export function HomePage() {
               reader takes the label from that sentence, but nothing associates the
               list with it programmatically — and it puts the rail in the heading
               outline beside "Modules" for heading navigation. */}
+          {/* Accepted work and the proposals waiting on a decision, before the
+              Run feed: what is open is the reason to be here, and what merely
+              ran is not (issue #192). Omitted only when the Tasks read failed
+              — a Workspace with no Tasks still says so, in zeroes. */}
+          <section className="card home-rail-card" aria-labelledby="home-work-heading">
+            <h2 id="home-work-heading">Your work</h2>
+            {workError ? (
+              <div className="banner banner-error" role="alert">
+                {workError}
+              </div>
+            ) : work === null ? (
+              <p className="muted" role="status">
+                Loading work…
+              </p>
+            ) : (
+              <WorkSummary overview={work} />
+            )}
+          </section>
+
           {rows.length > 0 && (
             <section className="card home-rail-card">
               <h2 className="visually-hidden">Needs your attention</h2>

@@ -1,6 +1,7 @@
 /** Meeting Brief Generator — Module-owned types (issue://80, ADR-0032/0033/0034). */
 
 import type { PersonProfileConsumerState } from "./person-profile.js";
+import type { TaskPriority } from "./task.js";
 
 export const MEETING_BRIEF_MODULE_ID = "meeting-brief-generator" as const;
 export const MEETING_BRIEF_MODULE_VERSION = 1 as const;
@@ -274,17 +275,67 @@ export interface DailyBriefingMeeting {
   briefStatus: DailyBriefingBriefStatus;
 }
 
-/** GET /api/meeting-brief/daily — the morning read model, or null when the day holds no Meetings. */
+/**
+ * One canonical Task as a Briefing presents it (issue #192). A projection of
+ * the Tasks product's own record, never a copy that can drift: the identity is
+ * here so the row can link back, and nothing on it is editable from a
+ * Briefing.
+ */
+export interface DailyBriefingTask {
+  taskId: string;
+  title: string;
+  /** Date-only `YYYY-MM-DD`; null when the Task has no due date. */
+  dueDate: string | null;
+  priority: TaskPriority;
+}
+
+/**
+ * One pending Action Item as a Briefing presents it (issue #192). Separate
+ * from `DailyBriefingTask` on purpose: an Action Item is a proposal awaiting a
+ * decision, and merging the two identities is exactly the confusion the
+ * canonical Task model exists to end.
+ */
+export interface DailyBriefingActionItem {
+  actionItemId: string;
+  title: string;
+  dueDate: string | null;
+  /** The Meeting that proposed it; null when none is placed. */
+  meetingId: string | null;
+}
+
+/**
+ * The day's work beside the day's meetings (issue #192). Read from the
+ * canonical Task and Action Item stores rather than reconstructed from Run
+ * receipts, and capped like every other compact surface — each list is paired
+ * with the total it was taken from.
+ */
+export interface DailyBriefingWork {
+  overdue: DailyBriefingTask[];
+  dueToday: DailyBriefingTask[];
+  /** Open, high-priority Tasks not already named above. */
+  highPriority: DailyBriefingTask[];
+  pendingActionItems: DailyBriefingActionItem[];
+  totals: {
+    overdue: number;
+    dueToday: number;
+    highPriority: number;
+    pendingActionItems: number;
+  };
+}
+
+/** GET /api/meeting-brief/daily — the morning read model, or null when the day holds neither Meetings nor work. */
 export interface DailyBriefing {
   /** The owner-timezone calendar day covered, `YYYY-MM-DD`. */
   date: string;
   meetings: DailyBriefingMeeting[];
   summary: string;
+  /** Canonical Tasks and pending Action Items for the day (issue #192). */
+  work: DailyBriefingWork;
 }
 
 /** GET /api/meeting-brief/daily and POST /api/meeting-brief/daily/retry envelope. */
 export interface DailyBriefingState {
-  /** Null when the day holds no Meetings; a failed build keeps the last good value. */
+  /** Null when the day holds neither Meetings nor work; a failed build keeps the last good value. */
   briefing: DailyBriefing | null;
   /** The failed build's message; null when the last build succeeded. */
   error: string | null;

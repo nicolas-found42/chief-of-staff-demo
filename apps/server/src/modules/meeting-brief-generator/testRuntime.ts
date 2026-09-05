@@ -1,3 +1,4 @@
+import type { DailyBriefingWork } from "@chief-of-staff-demo/shared";
 import type { FastifyInstance } from "fastify";
 import type {
   MeetingBrief,
@@ -22,6 +23,8 @@ export interface MeetingBriefTestRuntimeOptions {
   personProfiles?: WorkspacePersonProfiles;
   /** The one backward read's bound (issue #152); see MeetingBriefHostDeps. */
   oldestTranscriptAt?: () => string | null;
+  /** The Tasks product's bounded projection of the day's work (issue #192). */
+  getBriefingWork?: () => DailyBriefingWork;
   /** The standing Transcript ↔ Meeting join (issue #153); see MeetingBriefHostDeps. */
   associateTranscripts?: () => Promise<void> | void;
 }
@@ -124,6 +127,7 @@ export function createMeetingBriefTestRuntime(
     getOwnerEmail: () => "owner@example.com",
     ...(options.personProfiles ? { personProfiles: options.personProfiles } : {}),
     ...(options.oldestTranscriptAt ? { oldestTranscriptAt: options.oldestTranscriptAt } : {}),
+    ...(options.getBriefingWork ? { getBriefingWork: options.getBriefingWork } : {}),
     ...(options.associateTranscripts ? { associateTranscripts: options.associateTranscripts } : {}),
     enrich: async (input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });

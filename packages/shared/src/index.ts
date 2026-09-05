@@ -12,6 +12,7 @@ export * from "./content-engine.js";
 export * from "./person-profile.js";
 export * from "./task.js";
 export * from "./task-grouping.js";
+export * from "./task-overview.js";
 export * from "./action-item.js";
 export * from "./workspace.js";
 export * from "./llm.js";
