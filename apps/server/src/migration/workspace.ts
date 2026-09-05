@@ -120,6 +120,7 @@ export type CategoryName =
   | "person-profiles"
   | "content-state"
   | "meeting-state"
+  | "task-state"
   | "research-state"
   | "transcript-catalog"
   | "module-state-and-checkpoints"
@@ -189,6 +190,12 @@ const CATEGORIES: ReadonlyArray<readonly [CategoryName, WorkspaceMigrationDispos
   ["person-profiles", "disposable-product-state"],
   ["content-state", "disposable-product-state"],
   ["research-state", "disposable-product-state"],
+  /* The durable Meeting store, and the canonical Tasks and Action Items the
+     Debrief materializes into. Both are assignable from DIRECTORIES, so both
+     have to be reported: a category the reset deletes but the preview never
+     names is a deletion the owner authorizes without being told about it. */
+  ["meeting-state", "disposable-product-state"],
+  ["task-state", "disposable-product-state"],
   /* The Transcript Catalog's retained corpus, identity decisions, relevance
      candidates and its tombstones and deletion receipts. */
   ["transcript-catalog", "disposable-product-state"],
@@ -239,6 +246,12 @@ export const DIRECTORIES: Readonly<Record<string, CategoryName>> = {
      Without this row the migration preview fails closed on every Workspace
      that has recorded a Meeting, and the generated-data clear leaves it. */
   meetings: "meeting-state",
+  /* ADR-0058: the Tasks product area's canonical Tasks, Task Lists and the
+     Action Items a Debrief proposed. Without this row the preview fails closed
+     on any Workspace holding a Task, and the generated-data clear deletes the
+     Meetings and Debriefs those Action Items cite while leaving the Action
+     Items themselves behind. */
+  tasks: "task-state",
   "transcript-catalog": "transcript-catalog",
   onboarding: "owner-onboarding-state",
 };

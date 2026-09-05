@@ -4,6 +4,8 @@ import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConfigSchema } from "@chief-of-staff-demo/shared";
 import {
+  DIRECTORIES,
+  WHOLE_FILES,
   previewWorkspaceMigration,
   type RemoteRecordDisclosure,
   type UnsafeMixedStateFinding,
@@ -17,6 +19,8 @@ import { PersonResearchQueue } from "../../../apps/server/src/person-profile/res
 import type { PersonResearch } from "../../../apps/server/src/person-profile/research";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { TaskStore } from "../../../apps/server/src/tasks/store";
+import { previewGeneratedData } from "../../../apps/server/src/clear-data/workspace";
 
 /**
  * The Workspace migration contract — issue://119, ADR-0043. Every fixture is a
@@ -324,6 +328,8 @@ describe("Workspace migration preview", () => {
       "person-profiles",
       "content-state",
       "research-state",
+      "meeting-state",
+      "task-state",
       "transcript-catalog",
       "module-state-and-checkpoints",
       "intake-schedules",
@@ -745,6 +751,47 @@ describe("Workspace migration preview", () => {
       "disposable-product-state",
     );
     expect(inventory(preview).get("person-profiles")?.count).toBeGreaterThan(0);
+  });
+
+  /* The vocabulary itself, on an empty Workspace so no fixture's contents can
+     stand in for it: every category a boundary table can assign has to be one
+     the preview reports. `meeting-state` was assignable from DIRECTORIES while
+     no preview ever named it, so a reset deleted the Meeting store and the
+     inventory the owner reads before authorizing never mentioned it. A
+     category that deletes without disclosing is the one failure this preview
+     exists to prevent. */
+  it("reports every category the boundary tables can assign", () => {
+    const preview = previewWorkspaceMigration(workspace("boundary-vocabulary"));
+    const reported = new Set(inventory(preview).keys());
+    const assignable = new Set<string>([
+      ...Object.values(DIRECTORIES),
+      ...Object.values(WHOLE_FILES),
+    ]);
+    expect([...assignable].filter((name) => !reported.has(name)).sort()).toEqual([]);
+  });
+
+  /* Tasks became canonical Workspace state in #172 without joining the
+     boundary, which broke both consumers at once: the migration preview failed
+     closed on any Workspace holding a Task, and the generated-data clear —
+     which shares this table and is reachable from Settings — deleted the
+     Meetings and Debriefs that Action Items point at while leaving the Action
+     Items themselves standing. Driving the real store means the next product
+     area that writes a directory fails here. */
+  it("inventories canonical Task state for both consumers of the boundary", () => {
+    const root = workspace("task-state");
+    const tasks = new TaskStore(root);
+    tasks.writeTasks([]);
+    tasks.writeActionItems([]);
+
+    const preview = previewWorkspaceMigration(root);
+
+    expect(preview.outcome).toBe("inventory");
+    expect(inventory(preview).get("task-state")).toEqual({
+      classification: "disposable-product-state",
+      count: 2,
+    });
+    // The clear shares the table, so the same directory has to reach its inventory.
+    expect(previewGeneratedData(root).entries.map((entry) => entry.name)).toContain("tasks");
   });
 
   it("fails closed on an unrecognized Workspace entry", () => {
