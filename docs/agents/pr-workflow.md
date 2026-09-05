@@ -80,6 +80,19 @@ Ask first, every time:
 This supersedes the earlier "commit to `main`, never push" default. The ruleset now enforces most
 of it mechanically rather than by convention; the entries above are the parts a rule cannot cover.
 
+## Dependabot
+
+Dependabot PRs merge themselves. `.github/workflows/dependabot-automerge.yml` turns on auto-merge
+for anything authored by `dependabot[bot]`, and the `main` ruleset lists the Dependabot app as a
+bypass actor, so nothing Dependabot does is restricted.
+
+The merge itself is still gated on the four checks, and that is a platform limit rather than a
+policy choice: the workflow merges with `GITHUB_TOKEN`, so the acting party is `github-actions[bot]`,
+and GitHub refuses to accept the Actions app as a bypass actor on a user-owned repository
+(`Actor GitHub Actions integration must be part of the ruleset source or owner organization`).
+Un-gating it would mean granting bypass to the admin role, which the agent also holds — see the
+reasoning in *Agent authority*. So a green Dependabot PR lands unattended; a red one waits.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on pull requests and on pushes to `main`: the `check` job
