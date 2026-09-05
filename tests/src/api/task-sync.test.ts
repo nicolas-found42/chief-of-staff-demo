@@ -111,6 +111,10 @@ describe.each([
   });
 
   afterEach(async () => {
+    /* Restored here rather than only where they are installed: a test that
+       installs fake timers and then hangs never reaches its own cleanup, and
+       the leaked clock times out every sibling after it. */
+    vi.useRealTimers();
     await app.close();
   });
 
@@ -801,29 +805,25 @@ describe.each([
       const task = await captureToGoogle("Send the pricing sheet");
       await link(task.id);
       vi.useFakeTimers();
-      try {
-        const runtime = new TaskLinking(linkingDeps());
-        readRemote.mockClear();
-        createRemote.mockClear();
+      const runtime = new TaskLinking(linkingDeps());
+      readRemote.mockClear();
+      createRemote.mockClear();
 
-        /* Startup: the same reconciliation the Refresh button asks for. */
-        runtime.start();
-        await vi.advanceTimersByTimeAsync(0);
-        expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1"]);
+      /* Startup: the same reconciliation the Refresh button asks for. */
+      runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1"]);
 
-        /* And again on the tick, five minutes later. */
-        await vi.advanceTimersByTimeAsync(5 * 60_000);
-        expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1", "google_1"]);
+      /* And again on the tick, five minutes later. */
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1", "google_1"]);
 
-        /* Idempotent throughout: no second remote record, no rewrites of an
-           agreeing one. */
-        expect(createRemote).not.toHaveBeenCalled();
-        expect(updateRemoteContent).not.toHaveBeenCalled();
-        runtime.stop();
-        expect(tasks.get(task.id)?.externalLink).toMatchObject({ state: "synchronized" });
-      } finally {
-        vi.useRealTimers();
-      }
+      /* Idempotent throughout: no second remote record, no rewrites of an
+         agreeing one. */
+      expect(createRemote).not.toHaveBeenCalled();
+      expect(updateRemoteContent).not.toHaveBeenCalled();
+      runtime.stop();
+      expect(tasks.get(task.id)?.externalLink).toMatchObject({ state: "synchronized" });
     });
 
     it("leaves missing, conflicted and changed-externally links alone when retrying all failures", async () => {
