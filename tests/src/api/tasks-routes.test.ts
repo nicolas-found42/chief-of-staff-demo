@@ -791,6 +791,148 @@ describe("promoting one reviewed Action Item", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Possible duplicates (issue #180)
+// ---------------------------------------------------------------------------
+
+describe("warning about a possible duplicate", () => {
+  async function duplicatesOf(payload: Record<string, unknown>): Promise<Task[]> {
+    const response = await app.inject({ method: "POST", url: "/api/tasks/duplicates", payload });
+    expect(response.statusCode).toBe(200);
+    return response.json<{ duplicates: Task[] }>().duplicates;
+  }
+
+  async function capture(payload: Record<string, unknown>): Promise<Task> {
+    const response = await app.inject({ method: "POST", url: "/api/tasks", payload });
+    expect(response.statusCode).toBe(201);
+    return response.json<Task>();
+  }
+
+  function materialize(title: string): ActionItem {
+    return new WorkspaceActionItems({ store, now: () => clock }).materialize({
+      debriefRunId: "run_dup",
+      transcriptId: "transcript_dup",
+      meetingId: "meeting_dup",
+      actionItems: [
+        { title, owner: "Dana", ownerMentionId: null, ownerProfileId: null, dueDate: null },
+      ],
+    })[0];
+  }
+
+  it("warns when the normalized title, Responsible Person, and due date all match", async () => {
+    const existing = await capture({
+      title: "Send the pricing sheet",
+      dueDate: "2026-09-10",
+      responsiblePerson: { kind: "owner" },
+    });
+
+    /* Case and whitespace differences are not difference: the comparison is
+       of the normalized tuple. The Responsible Person left out is the owner,
+       the same default creation applies. */
+    const found = await duplicatesOf({
+      title: "  send   THE pricing sheet  ",
+      dueDate: "2026-09-10",
+    });
+    expect(found.map((task) => task.id)).toEqual([existing.id]);
+  });
+
+  it("does not warn when any part of the tuple differs", async () => {
+    await capture({
+      title: "Send the pricing sheet",
+      dueDate: "2026-09-10",
+      responsiblePerson: { kind: "owner" },
+    });
+
+    expect(await duplicatesOf({ title: "Send the pricing sheet", dueDate: "2026-09-11" })).toEqual(
+      [],
+    );
+    expect(await duplicatesOf({ title: "Send the pricing sheet", dueDate: null })).toEqual([]);
+    expect(await duplicatesOf({ title: "Reply to the pricing question" })).toEqual([]);
+  });
+
+  it("treats Responsible Person as part of the tuple, Nobody included", async () => {
+    confirmedProfiles.add("p1");
+    await capture({
+      title: "Draft the offsite agenda",
+      responsiblePerson: { kind: "person-profile", profileId: "p1" },
+    });
+
+    const byProfile = await duplicatesOf({
+      title: "draft the offsite agenda",
+      responsiblePerson: { kind: "person-profile", profileId: "p1" },
+    });
+    expect(byProfile).toHaveLength(1);
+    expect(
+      await duplicatesOf({
+        title: "draft the offsite agenda",
+        responsiblePerson: { kind: "owner" },
+      }),
+    ).toEqual([]);
+
+    const nobody = await capture({
+      title: "Water the office plants",
+      responsiblePerson: null,
+    });
+    const nobodyMatches = await duplicatesOf({
+      title: "Water the office plants",
+      responsiblePerson: null,
+    });
+    expect(nobodyMatches.map((task) => task.id)).toEqual([nobody.id]);
+  });
+  it("warns only about open work: completed and trashed Tasks are history", async () => {
+    const done = await capture({ title: "File the expense report" });
+    await app.inject({ method: "POST", url: `/api/tasks/${done.id}/complete` });
+    const gone = await capture({ title: "Shred the draft contracts" });
+    await app.inject({ method: "POST", url: `/api/tasks/${gone.id}/trash` });
+
+    expect(await duplicatesOf({ title: "File the expense report" })).toEqual([]);
+    expect(await duplicatesOf({ title: "Shred the draft contracts" })).toEqual([]);
+  });
+
+  it("refuses to compare a candidate with no title or an impossible date", async () => {
+    const blank = await app.inject({
+      method: "POST",
+      url: "/api/tasks/duplicates",
+      payload: { title: "   " },
+    });
+    expect(blank.statusCode).toBe(400);
+    expect(blank.json()).toMatchObject({ error: "invalid-title" });
+
+    const impossible = await app.inject({
+      method: "POST",
+      url: "/api/tasks/duplicates",
+      payload: { title: "Send the pricing sheet", dueDate: "2026-02-30" },
+    });
+    expect(impossible.statusCode).toBe(400);
+    expect(impossible.json()).toMatchObject({ error: "invalid-due-date" });
+  });
+
+  it("never blocks: the owner can still create the duplicate, by hand or by promotion", async () => {
+    await capture({ title: "Send the pricing sheet", dueDate: "2026-09-10" });
+    expect(
+      await duplicatesOf({ title: "Send the pricing sheet", dueDate: "2026-09-10" }),
+    ).toHaveLength(1);
+
+    /* The check is a warning's input and nothing more: neither creation route
+       gained a confirmation token or a gate. */
+    const byHand = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "send the pricing sheet", dueDate: "2026-09-10" },
+    });
+    expect(byHand.statusCode).toBe(201);
+
+    const item = materialize("Send the pricing sheet");
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: { title: "Send the pricing sheet", dueDate: "2026-09-10" },
+    });
+    expect(promoted.statusCode).toBe(201);
+    expect((await index()).tasks).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Dismissal (issue #179)
 // ---------------------------------------------------------------------------
 

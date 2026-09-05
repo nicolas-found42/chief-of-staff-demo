@@ -30,10 +30,11 @@ The product area in which the workspace owner reviews Action Items and manages T
 source, including Tasks created manually. It is not owned by Meeting Wizard because a Task need not
 come from a Meeting.
 _Status_: live at `/tasks` — manual capture, editing, completion, Task Lists, the pending Action
-Item queue, Task Groups with search and filters, Trash, promotion of a reviewed Action Item, one
-External Task Link into Google Tasks, and two-way completion synchronization with recoverable
-missing-link state (issues #173, #174, #175, #176, #177, #178, #184, #185). External Task Drift,
-Task Link Conflict, and link retries remain planned (ADR-0056).
+Item queue, Task Groups with search and filters, Trash, promotion of a reviewed Action Item,
+possible-duplicate warnings on capture and promotion, one External Task Link into Google Tasks,
+and two-way completion synchronization with recoverable missing-link state (issues #173, #174,
+#175, #176, #177, #178, #180, #184, #185). External Task Drift, Task Link Conflict, and link
+retries remain planned (ADR-0056).
 _Avoid_: Task dashboard, Google Tasks
 
 **Task**:
@@ -56,6 +57,13 @@ _Avoid_: Project, tag, queue
 The workspace owner or confirmed Person Profile expected to perform a Task. This records
 responsibility only; it grants no access and sends no notification.
 _Avoid_: Assignee, owner (the workspace owner still owns every Task)
+
+**Possible duplicate**:
+The warning raised when a Task would be created — by hand or from an Action Item review — while an
+open Task already holds the exact same normalized title, Responsible Person, and due date. It links
+to the existing Task and advises only: the owner can still create the Task, and nothing is merged
+or refused.
+_Avoid_: Duplicate block, merge, Task Link Conflict (that one is competing state changes)
 
 **Action Item**:
 One proposed commitment extracted into a Meeting Debrief for the workspace owner to review. It may

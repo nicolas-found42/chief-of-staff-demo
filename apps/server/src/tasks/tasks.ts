@@ -4,6 +4,7 @@ import type {
   Task,
   TaskCreateInput,
   TaskDestination,
+  TaskDuplicateCandidate,
   TaskList,
   TaskPriority,
   TaskResponsiblePerson,
@@ -272,6 +273,34 @@ export class WorkspaceTasks {
 
   get(taskId: string): Task | null {
     return this.store.readTasks().find((task) => task.id === taskId) ?? null;
+  }
+
+  /**
+   * The open Tasks a would-be Task would duplicate (issue #180): an exact
+   * match on the normalized title, the Responsible Person, and the due date.
+   * Only open work can be duplicated — a completed or trashed Task is
+   * history, not a competing commitment. The answer feeds a warning and
+   * nothing else: this method refuses no one and creates nothing, because
+   * whether two similarly-described commitments are really the same work is
+   * the owner's judgment, not the Workspace's.
+   */
+  findDuplicates(candidate: TaskDuplicateCandidate): Task[] {
+    const title = normalizedTitle(requireTitle(candidate.title));
+    const dueDate = requireDueDate(candidate.dueDate ?? null);
+    /* Absent, like in `create`: the owner. `null` stays Nobody. */
+    const responsible: TaskResponsiblePerson | null =
+      candidate.responsiblePerson === undefined ? { kind: "owner" } : candidate.responsiblePerson;
+    return this.store
+      .readTasks()
+      .filter(
+        (task) =>
+          task.status === "open" &&
+          task.deletedAt === null &&
+          task.dueDate === dueDate &&
+          normalizedTitle(task.title) === title &&
+          sameResponsiblePerson(task.responsiblePerson, responsible),
+      )
+      .sort(compareTasks);
   }
 
   /**
@@ -596,6 +625,28 @@ function responsibleMatches(
   if (actual === null) return false;
   if (expected.kind === "owner") return actual.kind === "owner";
   return actual.kind === "person-profile" && actual.profileId === expected.profileId;
+}
+
+/** Identity for Responsible Person: the owner, nobody, or the same Profile. */
+function sameResponsiblePerson(
+  a: TaskResponsiblePerson | null,
+  b: TaskResponsiblePerson | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.kind === "owner" || b.kind === "owner") {
+    return a.kind === "owner" && b.kind === "owner";
+  }
+  return a.profileId === b.profileId;
+}
+
+/**
+ * A title reduced to what the duplicate comparison treats as its identity:
+ * trimmed, lowercased, inner whitespace collapsed. So "Call Dana", "call dana"
+ * and "Call  Dana" are one title. Both sides of the comparison go through
+ * here, which is what keeps them in lockstep.
+ */
+function normalizedTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function requireTitle(value: unknown): string {

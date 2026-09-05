@@ -4,6 +4,8 @@ import type {
   ActionItemState,
   TaskCreateInput,
   TaskDestination,
+  TaskDuplicateCandidate,
+  TaskDuplicateCheck,
   TaskIndex,
   TaskPriority,
 } from "@chief-of-staff-demo/shared";
@@ -181,6 +183,22 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       const created = tasks.create((request.body ?? {}) as TaskCreateInput);
       reply.code(201);
       return created;
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /**
+   * The open Tasks a would-be Task would duplicate (issue #180). A read that
+   * creates nothing and refuses nothing: the answer feeds the review form's
+   * Possible duplicate warning, and the decision it informs stays with the
+   * owner — no confirmation token, no gate on creation itself.
+   */
+  app.post("/api/tasks/duplicates", async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const candidate = (request.body ?? {}) as TaskDuplicateCandidate;
+      const check: TaskDuplicateCheck = { duplicates: tasks.findDuplicates(candidate) };
+      return check;
     } catch (error) {
       return refuse(reply, error);
     }

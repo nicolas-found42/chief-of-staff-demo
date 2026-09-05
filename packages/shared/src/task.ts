@@ -215,6 +215,22 @@ export interface TaskUpdateInput {
   responsiblePerson?: TaskResponsiblePerson | null;
 }
 
+/**
+ * The candidate a Possible duplicate check compares (issue #180): exactly the
+ * tuple the warning matches on. Everything else about a Task — notes, list,
+ * priority, destination — says nothing about whether two records are the same
+ * work, so none of it takes part.
+ */
+export type TaskDuplicateCandidate = Pick<
+  TaskCreateInput,
+  "title" | "dueDate" | "responsiblePerson"
+>;
+
+/** What the check answers: the open Tasks the candidate would duplicate. */
+export interface TaskDuplicateCheck {
+  duplicates: Task[];
+}
+
 /** What the Tasks product reads: the Tasks and the lists they are filed into. */
 export interface TaskIndex {
   tasks: Task[];

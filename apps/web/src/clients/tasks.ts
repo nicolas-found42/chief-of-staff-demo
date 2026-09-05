@@ -4,6 +4,8 @@ import type {
   ActionItemState,
   Task,
   TaskCreateInput,
+  TaskDuplicateCandidate,
+  TaskDuplicateCheck,
   TaskIndex,
   TaskList,
   TaskStatus,
@@ -81,6 +83,13 @@ export const tasksApi = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
+    }),
+  /** The open Tasks this candidate would duplicate — the warning's input. */
+  checkDuplicates: (candidate: TaskDuplicateCandidate) =>
+    request<TaskDuplicateCheck>("/api/tasks/duplicates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(candidate),
     }),
   updateTask: (taskId: string, input: TaskUpdateInput) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}`, {

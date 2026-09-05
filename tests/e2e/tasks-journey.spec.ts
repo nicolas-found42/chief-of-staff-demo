@@ -266,3 +266,156 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
   await page.goto("/tasks");
   await expect(pendingRow().first()).toBeVisible();
 });
+
+test("tasks journey — a possible duplicate warns, and the owner can still decide", async ({
+  page,
+  request,
+}) => {
+  // A Debrief proposes one commitment; the same work is about to be captured
+  // twice, once by hand and once by promotion (issue #180).
+  const fileName = "Tasks duplicate - 2026-08-21T13-00-00.000Z.md";
+  const seeded = await request.post("/api/test/meeting-debrief/seed", {
+    data: {
+      transcript: {
+        id: "drive_tasks_duplicate_r1",
+        source: {
+          sourceSystem: "drive",
+          externalFileId: "tasks-duplicate",
+          fileName,
+          sourceUrl: null,
+          checksum: "tasks-duplicate-checksum",
+          observedRevision: 1,
+          modifiedAt: "2026-08-21T13:05:00.000Z",
+        },
+        ingestedAt: "2026-08-31T12:00:00.000Z",
+        extractorVersion: 1,
+        normalizedText: [
+          "Dana: We decided to renew the TLS certificate this quarter.",
+          "Dana: I will own the certificate renewal.",
+        ].join("\n"),
+        meetingDate: "2026-08-21",
+        occurrence: null,
+        speakers: ["Dana"],
+        speakerIdentityMappings: [],
+        roster: [],
+      },
+    },
+  });
+  expect(seeded.ok(), `seed failed: ${seeded.status()}`).toBe(true);
+  const { runId } = (await seeded.json()) as { runId: string };
+  await expect
+    .poll(async () => {
+      const detail = await request.get(`/api/meeting-debrief/${encodeURIComponent(runId)}`);
+      return ((await detail.json()) as { status: string }).status;
+    })
+    .toBe("done");
+
+  const openTasks = async (): Promise<Array<{ id: string; title: string }>> => {
+    const index = (await (await request.get("/api/tasks")).json()) as {
+      tasks: Array<{ id: string; title: string }>;
+    };
+    return index.tasks;
+  };
+
+  const queue = (await (await request.get("/api/action-items?state=pending")).json()) as {
+    items: Array<{ proposal: { title: string } }>;
+  };
+  const proposed = queue.items.find((one) => /certificate renewal/i.test(one.proposal.title));
+  expect(proposed, "the seeded Debrief proposed the renewal").toBeDefined();
+  const title = proposed!.proposal.title;
+
+  await page.goto("/tasks");
+
+  // The first Task with a title is nobody's duplicate: no warning, one row.
+  await page.getByLabel("Task title").fill(title);
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect
+    .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
+    .toBe(1);
+  const firstId = (await openTasks()).find((task) => task.title === title)!.id;
+  await expect(page.locator(`#task-${firstId}`)).toBeVisible();
+
+  // The second attempt warns instead of creating, and the warning links to
+  // the Task it is about.
+  await page.getByLabel("Task title").fill(title);
+  await page.getByRole("button", { name: "Add task" }).click();
+  const warning = page.locator("div.banner-warn").filter({ hasText: "Possible duplicate." });
+  await expect(warning).toBeVisible();
+  await expect(warning.getByRole("link", { name: title })).toHaveAttribute(
+    "href",
+    `/tasks#task-${firstId}`,
+  );
+  await expect(page.getByRole("button", { name: "Add anyway" })).toBeVisible();
+  await expect
+    .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
+    .toBe(1);
+
+  // Submitting again is the owner's explicit decision, and it creates.
+  await page.getByRole("button", { name: "Add anyway" }).click();
+  await expect
+    .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
+    .toBe(2);
+
+  // Promotion warns the same way. The proposal names Dana, not the owner, so
+  // the review first decides who is responsible — the editability that makes
+  // the tuple an owner decision rather than an extraction's guess.
+  const proposal = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("button", { name: "Dismiss" }) })
+    .filter({ hasText: title })
+    .first();
+  await proposal.getByRole("button", { name: "Create Task", exact: true }).click();
+  // The proposal arrives with the meeting's due date; the Tasks above have
+  // none. Clearing it — and naming the owner — is the review making the
+  // tuple match, which is exactly the editability the panel exists for.
+  await proposal.getByLabel("Due date").fill("");
+  await proposal.getByLabel("Responsible Person").selectOption("owner");
+  await proposal.locator("form").getByRole("button", { name: "Create Task", exact: true }).click();
+  await expect(warning).toBeVisible();
+  await expect(
+    proposal.locator("form").getByRole("button", { name: "Create Task anyway", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
+    .toBe(2);
+
+  // And the same explicit decision promotes the proposal regardless.
+  await proposal
+    .locator("form")
+    .getByRole("button", { name: "Create Task anyway", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
+    .toBe(3);
+
+  await scanForViolations(page);
+});
+
+test("tasks journey — a duplicate check that fails never stands between the owner and the Task", async ({
+  page,
+  request,
+}) => {
+  // The warning is advisory, so an unanswerable check is not an objection
+  // (issue #180). Capture must survive the check being unavailable: before
+  // #180 this path had no gate at all, and a warning may not invent one.
+  const title = `Unreachable check ${Date.now()}`;
+  const openTasks = async (): Promise<Array<{ id: string; title: string }>> => {
+    const index = (await (await request.get("/api/tasks")).json()) as {
+      tasks: Array<{ id: string; title: string }>;
+    };
+    return index.tasks;
+  };
+
+  await page.route("**/api/tasks/duplicates", (route) => route.abort("failed"));
+  await page.goto("/tasks");
+
+  // One submit, one Task: the failed check is not a warning and not a wall.
+  await page.getByLabel("Task title").fill(title);
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect
+    .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
+    .toBe(1);
+  await expect(
+    page.locator("div.banner-warn").filter({ hasText: "Possible duplicate." }),
+  ).toHaveCount(0);
+});

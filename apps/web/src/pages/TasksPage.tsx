@@ -4,6 +4,7 @@ import type {
   ActionItem,
   PersonProfile,
   Task,
+  TaskDuplicateCandidate,
   TaskList,
   TaskPriority,
   TaskResponsiblePerson,
@@ -169,6 +170,28 @@ function TaskFields({
           Responsibility only. Nobody is granted access and nobody is notified.
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The Possible duplicate warning (issue #180): the open Tasks a would-be Task
+ * would duplicate, each linked. It is advisory by construction — the create
+ * and promote routes take no confirmation token — so the form's next submit,
+ * the one labeled "anyway", is the whole override mechanism.
+ */
+function DuplicateWarning({ duplicates }: { duplicates: Task[] }) {
+  return (
+    <div className="banner banner-warn" role="status">
+      <strong>Possible duplicate.</strong> An open Task already has this title, Responsible Person,
+      and due date:{" "}
+      {duplicates.map((duplicate, index) => (
+        <span key={duplicate.id}>
+          {index > 0 ? " · " : ""}
+          <Link to={`/tasks#task-${duplicate.id}`}>{duplicate.title}</Link>
+        </span>
+      ))}
+      . Submit again to create the Task anyway.
     </div>
   );
 }
@@ -381,19 +404,22 @@ function TaskRow({
 
 /**
  * One pending Action Item, and the review that promotes or dismisses it
- * (issues #178, #179).
+ * (issues #178, #179, #180).
  *
  * The panel is where a proposal becomes accepted work: every field is editable
  * before anything is created, and both buttons open the same panel — creating
  * a completed Task is the same decision about the same fields, made about work
  * the meeting already finished. Dismissal is the other decision: immediate and
- * local-only, with an Undo on the page that dismissed it.
+ * local-only, with an Undo on the page that dismissed it. A submit that
+ * matches an open Task warns first and stops; submitting again is the owner's
+ * decision that the work really is different.
  */
 function ActionItemRow({
   item,
   lists,
   profiles,
   busy,
+  checkDuplicates,
   onPromote,
   onDismiss,
 }: {
@@ -401,6 +427,7 @@ function ActionItemRow({
   lists: TaskList[];
   profiles: PersonProfile[];
   busy: boolean;
+  checkDuplicates: TasksClient["checkDuplicates"];
   onPromote: (values: TaskFormValues, completed: boolean) => Promise<boolean>;
   onDismiss: () => Promise<void>;
 }) {
@@ -413,6 +440,46 @@ function ActionItemRow({
     listId: INBOX_TASK_LIST_ID,
     responsible: responsibleValue(item.proposal.responsiblePerson),
   });
+  /* The Possible duplicate warning (issue #180). Its presence is the armed
+     override: the next submit creates the Task, and any edit clears it. */
+  const [duplicates, setDuplicates] = useState<Task[] | null>(null);
+
+  /* Closing the panel drops its transient states with it: reopening is a
+     fresh look at the proposal, not the old warning again. */
+  const closeReview = () => {
+    setReviewing(null);
+    setDuplicates(null);
+  };
+
+  const edit = (next: TaskFormValues) => {
+    setValues(next);
+    setDuplicates(null);
+  };
+
+  async function submitReview() {
+    if (duplicates === null) {
+      try {
+        const check = await checkDuplicates({
+          title: values.title,
+          dueDate: values.dueDate === "" ? null : values.dueDate,
+          responsiblePerson: responsibleFromValue(values.responsible),
+        });
+        if (check.duplicates.length > 0) {
+          setDuplicates(check.duplicates);
+          return;
+        }
+      } catch {
+        /* An unanswerable check is not an objection. The warning is advisory,
+           so when it cannot be produced the promotion proceeds exactly as it
+           did before there was a check at all. */
+      }
+    }
+    setDuplicates(null);
+    void onPromote(values, reviewing === "completed").then((promoted) => {
+      if (promoted) closeReview();
+    });
+  }
+
   return (
     <li className="card">
       <h3>{item.proposal.title}</h3>
@@ -440,7 +507,7 @@ function ActionItemRow({
             type="button"
             className="action-button"
             aria-expanded={reviewing === "open"}
-            onClick={() => setReviewing(reviewing === "open" ? null : "open")}
+            onClick={() => (reviewing === "open" ? closeReview() : setReviewing("open"))}
           >
             Create Task
           </button>
@@ -448,7 +515,7 @@ function ActionItemRow({
             type="button"
             className="action-button"
             aria-expanded={reviewing === "completed"}
-            onClick={() => setReviewing(reviewing === "completed" ? null : "completed")}
+            onClick={() => (reviewing === "completed" ? closeReview() : setReviewing("completed"))}
           >
             Create completed Task
           </button>
@@ -466,9 +533,7 @@ function ActionItemRow({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void onPromote(values, reviewing === "completed").then((promoted) => {
-              if (promoted) setReviewing(null);
-            });
+            void submitReview();
           }}
         >
           <div className="field-row">
@@ -477,7 +542,7 @@ function ActionItemRow({
               id={`action-item-${item.id}-title`}
               value={values.title}
               autoFocus
-              onChange={(event) => setValues({ ...values, title: event.target.value })}
+              onChange={(event) => edit({ ...values, title: event.target.value })}
             />
           </div>
           <TaskFields
@@ -485,13 +550,20 @@ function ActionItemRow({
             values={values}
             lists={lists}
             profiles={profiles}
-            onChange={setValues}
+            onChange={edit}
           />
+          {duplicates && <DuplicateWarning duplicates={duplicates} />}
           <div className="toolbar">
             <button type="submit" className="action-button primary" aria-disabled={busy}>
-              {reviewing === "completed" ? "Create completed Task" : "Create Task"}
+              {reviewing === "completed"
+                ? duplicates
+                  ? "Create completed Task anyway"
+                  : "Create completed Task"
+                : duplicates
+                  ? "Create Task anyway"
+                  : "Create Task"}
             </button>
-            <button type="button" className="action-button" onClick={() => setReviewing(null)}>
+            <button type="button" className="action-button" onClick={closeReview}>
               Cancel
             </button>
           </div>
@@ -616,7 +688,20 @@ export function TasksPage({
     listId: INBOX_TASK_LIST_ID,
     responsible: OWNER_VALUE,
   });
+  /* The Possible duplicate warning (issue #180), set when a submit matched an
+     open Task. Its presence is also the armed override: the next submit is
+     the owner's explicit decision to create the Task anyway. */
+  const [quickDuplicates, setQuickDuplicates] = useState<Task[] | null>(null);
   const quickInput = useRef<HTMLInputElement>(null);
+  /** Any edit after a warning makes it stale: it described other values. */
+  const editQuick = (values: TaskFormValues) => {
+    setQuickValues(values);
+    setQuickDuplicates(null);
+  };
+  const editQuickTitle = (title: string) => {
+    setQuickTitle(title);
+    setQuickDuplicates(null);
+  };
   const [newListName, setNewListName] = useState("");
 
   /** What the page shows: the filtered Tasks, Trash, and the Action Items. */
@@ -748,6 +833,28 @@ export function TasksPage({
   async function quickAdd(event: React.FormEvent) {
     event.preventDefault();
     const title = quickOpen ? quickValues.title : quickTitle;
+    const candidate: TaskDuplicateCandidate = {
+      title,
+      dueDate: quickOpen && quickValues.dueDate !== "" ? quickValues.dueDate : null,
+      responsiblePerson: quickOpen
+        ? responsibleFromValue(quickValues.responsible)
+        : { kind: "owner" },
+    };
+    /* Warn, then stop: the first submit that matches an open Task asks the
+       question, and the next one — "Add anyway" — is the owner's answer. The
+       check itself refuses nothing, so neither does this form. */
+    if (quickDuplicates === null && title.trim() !== "") {
+      try {
+        const { duplicates } = await client.checkDuplicates(candidate);
+        if (duplicates.length > 0) {
+          setQuickDuplicates(duplicates);
+          return;
+        }
+      } catch {
+        /* As above: a check that cannot answer lets the capture through. */
+      }
+    }
+    setQuickDuplicates(null);
     const added = await act(`Added ${title.trim()}.`, () =>
       client.createTask(
         quickOpen
@@ -867,12 +974,12 @@ export function TasksPage({
             autoComplete="off"
             onChange={(event) =>
               quickOpen
-                ? setQuickValues({ ...quickValues, title: event.target.value })
-                : setQuickTitle(event.target.value)
+                ? editQuick({ ...quickValues, title: event.target.value })
+                : editQuickTitle(event.target.value)
             }
           />
           <button type="submit" className="action-button primary" aria-disabled={busy}>
-            Add task
+            {quickDuplicates ? "Add anyway" : "Add task"}
           </button>
         </div>
         <button
@@ -882,6 +989,9 @@ export function TasksPage({
           onClick={() => {
             setQuickValues({ ...quickValues, title: quickOpen ? quickValues.title : quickTitle });
             setQuickTitle(quickOpen ? quickValues.title : quickTitle);
+            /* The values the form means may change with the layout it is in,
+               so the toggle re-arms the duplicate check like any edit. */
+            setQuickDuplicates(null);
             setQuickOpen((shown) => !shown);
           }}
         >
@@ -893,9 +1003,10 @@ export function TasksPage({
             values={quickValues}
             lists={lists}
             profiles={profiles}
-            onChange={setQuickValues}
+            onChange={editQuick}
           />
         )}
+        {quickDuplicates && <DuplicateWarning duplicates={quickDuplicates} />}
       </form>
 
       <h2>Open</h2>
@@ -1024,6 +1135,7 @@ export function TasksPage({
             lists={lists}
             profiles={profiles}
             busy={busy}
+            checkDuplicates={client.checkDuplicates}
             onPromote={(values, completed) =>
               act(`Created ${values.title.trim()}.`, () =>
                 client.promoteActionItem(item.id, {
