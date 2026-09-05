@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@chief-of-staff-demo/shared": "workspace:*",
-    "lucide-react": "^1.40.0",
     "motion": "^13.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

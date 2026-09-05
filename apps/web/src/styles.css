@@ -1150,6 +1150,7 @@ h2.home-section::after {
 }
 
 .home-rail-card,
+.home-work-card,
 .home-feed-card {
   margin: 0;
   border-radius: 14px;

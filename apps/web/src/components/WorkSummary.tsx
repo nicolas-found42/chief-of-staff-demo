@@ -25,18 +25,37 @@ const METRICS: Array<{ key: keyof TaskOverviewCounts; label: string; to: string 
   { key: "conflictedLinks", label: "Needs a decision", to: "/tasks" },
 ];
 
-function WorkMetrics({ counts }: { counts: TaskOverviewCounts }) {
+/** One figure and the surface it belongs to. Value first: the strip is read for its numbers. */
+export interface Metric {
+  label: string;
+  value: number;
+  to: string;
+}
+
+export function MetricStrip({ metrics }: { metrics: Metric[] }) {
   return (
     <ul className="work-metrics">
-      {METRICS.map((metric) => (
-        <li key={metric.key} className="work-metric">
+      {metrics.map((metric) => (
+        <li key={metric.label} className="work-metric">
           <Link to={metric.to}>
-            <span className="work-metric-value">{counts[metric.key]}</span>
+            <span className="work-metric-value">{metric.value}</span>
             <span className="work-metric-label">{metric.label}</span>
           </Link>
         </li>
       ))}
     </ul>
+  );
+}
+
+function WorkMetrics({ counts }: { counts: TaskOverviewCounts }) {
+  return (
+    <MetricStrip
+      metrics={METRICS.map((metric) => ({
+        label: metric.label,
+        value: counts[metric.key],
+        to: metric.to,
+      }))}
+    />
   );
 }
 
@@ -75,10 +94,10 @@ function CompactGroup({
   );
 }
 
-export function WorkSummary({ overview }: { overview: TaskOverview }) {
+/** The two compact groups on their own, for a surface with its own metric strip. */
+export function WorkGroups({ overview }: { overview: TaskOverview }) {
   return (
-    <div className="work-summary">
-      <WorkMetrics counts={overview.counts} />
+    <>
       <CompactGroup
         heading="Tasks"
         total={overview.counts.open}
@@ -127,6 +146,16 @@ export function WorkSummary({ overview }: { overview: TaskOverview }) {
           </li>
         ))}
       </CompactGroup>
+    </>
+  );
+}
+
+/** Metrics above both groups — Home's shape (issue #192). */
+export function WorkSummary({ overview }: { overview: TaskOverview }) {
+  return (
+    <div className="work-summary">
+      <WorkMetrics counts={overview.counts} />
+      <WorkGroups overview={overview} />
     </div>
   );
 }

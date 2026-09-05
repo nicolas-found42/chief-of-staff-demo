@@ -285,7 +285,9 @@ test("the front door is Home, and the Shell's runs list lives at /runs", async (
   // which are the bento's business and not a contract.
   await page.goto("/");
   await expect(page.locator(".home-sentence")).toBeVisible();
-  const tiles = page.locator("main#main").getByRole("heading", { level: 3 });
+  /* The product tiles, not every h3 in main: the Home work card carries its
+     own group headings at the same level (issue #192). */
+  const tiles = page.locator("main#main .module-grid").getByRole("heading", { level: 3 });
   await expect(tiles).toHaveCount(5);
   await expect(tiles.filter({ hasText: "Content Engine" })).not.toContainText("Planned");
   await expect(tiles.filter({ hasText: "Content Research" })).not.toContainText("Planned");

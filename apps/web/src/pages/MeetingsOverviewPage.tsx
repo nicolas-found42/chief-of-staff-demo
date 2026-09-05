@@ -1,41 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type {
   DailyBriefingBriefStatus,
   DailyBriefingState,
   MeetingIndex,
+  TaskOverview,
   WeeklyBriefingState,
 } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
-import { onboardingApi } from "../clients/workspace";
-import { peopleApi } from "../clients/people";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
+import { tasksApi, type TasksClient } from "../clients/tasks";
+import { MetricStrip, WorkGroups } from "../components/WorkSummary";
 import { formatMeetingDate, formatMeetingTime } from "../display";
-import { selectHomeActionItems, type HomeActionItem } from "../homeActionItems";
-import { todaysMeetings } from "../todaysMeetings";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
-// PROTOTYPE — throwaway design-system exploration (?variant=a|b|c). Delete with losers.
-import { PrototypeSwitcher } from "../components/PrototypeSwitcher";
-import { ProtoState, VariantA, VariantB, VariantC } from "./meetingsPrototypeVariants";
-import "./meetingsPrototype.css";
+import "./meetingWizard.css";
 
-/* PROTOTYPE — the three design-system directions on offer here. */
-const PROTO_VARIANTS = [
-  { key: "current", name: "Current" },
-  { key: "a", name: "Quiet Rail" },
-  { key: "b", name: "Day Spine" },
-  { key: "c", name: "Editorial Ledger" },
-];
-
-/** Past today, in the reader's own timezone. Dates are plain `YYYY-MM-DD`. */
-function isOverdue(dueDate: string): boolean {
-  const today = new Date();
-  const local = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-    today.getDate(),
-  ).padStart(2, "0")}`;
-  return dueDate < local;
-}
+/**
+ * Meeting Wizard — Today (issues #151, #193). The Workspace's Meetings for the
+ * day, the week's rollup, and the canonical work beside them.
+ *
+ * The visual system is Editorial Ledger hierarchy over Day Spine metrics under
+ * Quiet Rail restraint (spec: user story 99): numbered sections and ruled
+ * ledger lines rather than a grid of cards, one strip of figures so the day's
+ * shape reads before any list does, and no shadow, no dense card and no Run
+ * concept anywhere on the page. Runs are diagnostics; this is preparation.
+ *
+ * Tasks and pending Action Items are two groups, never one queue: accepted
+ * work and a proposal awaiting a decision are different commitments, and both
+ * are read from the Tasks product rather than from Debrief Run receipts.
+ */
 
 /**
  * What a Brief's state means, and whether it is something to act on. `failed`
@@ -49,8 +43,8 @@ const BRIEF_STATUS: Record<DailyBriefingBriefStatus, { label: string; attention:
   missing: { label: "No brief", attention: false },
 };
 
-/** One meeting row. Both briefings render through it, so they cannot disagree. */
-function MeetingRow({
+/** One ledger line. Both briefings render through it, so they cannot disagree. */
+function MeetingLine({
   meetingId,
   title,
   startAt,
@@ -63,34 +57,57 @@ function MeetingRow({
 }) {
   const status = BRIEF_STATUS[briefStatus];
   return (
-    <li className="card">
-      <h3>
-        <Link to={`/meetings/${meetingId}`}>{title}</Link>
-      </h3>
-      <p>
-        <time dateTime={startAt}>{formatMeetingTime(startAt)}</time>
-        {" · "}
-        {status.attention ? (
-          <span className="status-badge status-attention">{status.label}</span>
-        ) : (
-          <span className="muted">{status.label}</span>
-        )}
-      </p>
+    <li className="wizard-line">
+      <Link to={`/meetings/${meetingId}`}>{title}</Link>
+      <span className="wizard-leader" aria-hidden="true" />
+      {status.attention ? (
+        <span className="status-badge status-attention">{status.label}</span>
+      ) : (
+        <span className="muted">{status.label}</span>
+      )}
+      <time className="wizard-time" dateTime={startAt}>
+        {formatMeetingTime(startAt)}
+      </time>
     </li>
   );
 }
 
-/**
- * Meeting Wizard home (issue #151): reads the Workspace's Meetings rather
- * than projecting over Brief records, and lists today's Meetings in start
- * order, each linking to its page. The Brief and Debrief journeys stay
- * separate workflows (ADR-0043); their surfaces live at their own routes.
- */
-export function MeetingsOverviewPage({ client = meetingsApi }: { client?: MeetingsClient }) {
+/** A numbered section head with the count it covers. The ordinal is decorative. */
+function SectionHead({
+  ordinal,
+  id,
+  heading,
+  count,
+}: {
+  ordinal: string;
+  id: string;
+  heading: string;
+  count: string;
+}) {
+  return (
+    <div className="wizard-section-head">
+      <span className="wizard-num" aria-hidden="true">
+        {ordinal}
+      </span>
+      <h2 id={id}>{heading}</h2>
+      <span className="wizard-count">{count}</span>
+    </div>
+  );
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+export function MeetingsOverviewPage({
+  client = meetingsApi,
+  tasksClient = tasksApi,
+}: {
+  client?: MeetingsClient;
+  tasksClient?: TasksClient;
+}) {
   useTitle("Meeting Wizard");
   const headingRef = usePageFocus<HTMLHeadingElement>();
-  // PROTOTYPE — reads `?variant=`; delete with the losing variants.
-  const [searchParams] = useSearchParams();
   const [index, setIndex] = useState<MeetingIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,34 +115,18 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
   const [briefingBusy, setBriefingBusy] = useState(false);
   const [weekly, setWeekly] = useState<WeeklyBriefingState | null>(null);
   const [weeklyBusy, setWeeklyBusy] = useState(false);
-  const [actionItems, setActionItems] = useState<HomeActionItem[] | null>(null);
-  const [actionItemsError, setActionItemsError] = useState<string | null>(null);
+  const [work, setWork] = useState<TaskOverview | null>(null);
+  const [workError, setWorkError] = useState<string | null>(null);
 
-  /**
-   * Home action-item rollup (issue #159): the owner's open, undismissed items
-   * across every Debrief, in one read. Ownership is settled by the resolved
-   * Profile and, failing that, by the owner's own name — the Catalog resolves
-   * few mentions, and without the name every unowned item read as theirs.
-   */
-  const loadActionItems = useCallback(async () => {
+  const refresh = useCallback(async () => {
+    setBusy(true);
     try {
-      const [rollup, owner] = await Promise.all([
-        client.meetingDebriefActionItems(),
-        onboardingApi.owner().catch(() => ({ proposal: null, confirmed: null })),
-      ]);
-      const profileId = owner.confirmed?.profileId ?? null;
-      /* The owner's name, for items the Catalog left unresolved. A failed
-         lookup only costs the name fallback, never the whole list. */
-      const ownerName = profileId
-        ? await peopleApi
-            .personProfile(profileId)
-            .then((profile) => profile.fullName)
-            .catch(() => null)
-        : null;
-      setActionItems(selectHomeActionItems(rollup.items, profileId, ownerName));
-      setActionItemsError(null);
+      setIndex(await client.meetings());
+      setError(null);
     } catch (err) {
-      setActionItemsError(errorMessage(err));
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
     }
   }, [client]);
 
@@ -157,86 +158,82 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
     [client],
   );
 
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    setError(null);
+  /* Canonical work (issue #192). Read from the Tasks product, which owns the
+     records; this page shows them and edits none of them. */
+  const loadWork = useCallback(async () => {
     try {
-      setIndex(await client.meetings());
+      setWork(await tasksClient.overview());
+      setWorkError(null);
     } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
+      setWorkError(errorMessage(err));
     }
-  }, [client]);
+  }, [tasksClient]);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     void refresh();
     void loadBriefing(false);
     void loadWeekly(false);
-    void loadActionItems();
-  }, [refresh, loadBriefing, loadWeekly, loadActionItems]);
+    void loadWork();
+  }, [refresh, loadBriefing, loadWeekly, loadWork]);
 
-  const meetings = index?.meetings ?? null;
-  const todays = meetings ? todaysMeetings(meetings, new Date()) : null;
-  /* Meeting names for the action-item rollup, which carries a Meeting id and
-     no title. The Meetings are already loaded for this page. */
-  const meetingTitles = useMemo(
-    () => new Map((meetings ?? []).map((meeting) => [meeting.id, meeting.title])),
-    [meetings],
-  );
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
-  /* PROTOTYPE — sub-shape A: all the fetching above is untouched, only the
-     rendering swaps. `?variant=a|b|c`; anything else renders the real page. */
-  const variant = searchParams.get("variant") ?? "current";
-  if (variant === "a" || variant === "b" || variant === "c") {
-    const protoData = {
-      index,
-      briefing,
-      weekly,
-      actionItems,
-      actionItemsError,
-      meetingTitles,
-      busy,
-      onRefresh: () => {
-        void refresh();
-        void loadBriefing(false);
-        void loadWeekly(false);
-        void loadActionItems();
-      },
-    };
-    return (
-      <div className="page">
-        <h1 ref={headingRef} tabIndex={-1} className="visually-hidden-proto">
-          Meeting Wizard
-        </h1>
-        <div className="mtg-proto">
-          {variant === "a" && <VariantA data={protoData} />}
-          {variant === "b" && <VariantB data={protoData} />}
-          {variant === "c" && <VariantC data={protoData} />}
-        </div>
-        <ProtoState data={protoData} variant={variant} />
-        <PrototypeSwitcher current={variant} variants={PROTO_VARIANTS} />
-      </div>
-    );
-  }
+  const todayCount = briefing?.briefing?.meetings.length ?? 0;
+  const weekCount = weekly?.briefing?.meetings.length ?? 0;
 
   return (
     <div className="page">
-      <h1 ref={headingRef} tabIndex={-1}>
-        Meeting Wizard
-      </h1>
-      <p className="muted">
-        Every meeting the workspace knows about — from your calendar, and from transcripts of
-        meetings that were never on it. Each links to its own page, carrying its brief beforehand
-        and its debrief afterwards.
-      </p>
-
-      {index?.historyBeginsAt ? (
-        <p className="muted">
-          Meeting history begins{" "}
-          <time dateTime={index.historyBeginsAt}>{formatMeetingDate(index.historyBeginsAt)}</time>.
+      <header className="wizard-head">
+        <h1 ref={headingRef} tabIndex={-1}>
+          Meeting Wizard
+        </h1>
+        <p className="wizard-standfirst">
+          Every meeting the workspace knows about — from your calendar, and from transcripts of
+          meetings that were never on it. Each carries its brief beforehand and its debrief
+          afterwards.
+          {index?.historyBeginsAt ? (
+            <>
+              {" "}
+              Meeting history begins{" "}
+              <time dateTime={index.historyBeginsAt}>
+                {formatMeetingDate(index.historyBeginsAt)}
+              </time>
+              .
+            </>
+          ) : null}
         </p>
-      ) : null}
+
+        {/* The day's shape in five figures, before any list is read. Each is a
+            link to the surface that owns it, so the strip is navigation as
+            well as a read-out. */}
+        <MetricStrip
+          metrics={[
+            { label: "Today", value: todayCount, to: "/meetings" },
+            { label: "This week", value: weekCount, to: "/meetings" },
+            {
+              label: "Pending",
+              value: work?.counts.pendingActionItems ?? 0,
+              to: "/tasks#action-items",
+            },
+            { label: "Open", value: work?.counts.open ?? 0, to: "/tasks" },
+            { label: "Overdue", value: work?.counts.overdue ?? 0, to: "/tasks" },
+          ]}
+        />
+
+        <div className="wizard-actions">
+          <Link to="/meetings/brief" className="action-button">
+            Open the Brief journey
+          </Link>
+          <Link to="/meeting-debrief" className="action-button">
+            Open the Debrief journey
+          </Link>
+          <button type="button" className="action-button" onClick={reload} aria-disabled={busy}>
+            {busy ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+      </header>
 
       {error ? (
         <div className="banner banner-error" role="alert">
@@ -244,32 +241,15 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
         </div>
       ) : null}
 
-      <div className="field-row">
-        <button
-          type="button"
-          className="action-button"
-          onClick={() => {
-            void refresh();
-            void loadBriefing(false);
-            void loadWeekly(false);
-            void loadActionItems();
-          }}
-          aria-disabled={busy}
-        >
-          {busy ? "Refreshing…" : "Refresh"}
-        </button>
-        <Link to="/meetings/brief" className="action-button">
-          Open the Brief journey
-        </Link>
-        <Link to="/meeting-debrief" className="action-button">
-          Open the Debrief journey
-        </Link>
-      </div>
-
-      <section aria-labelledby="overview-briefing-heading">
-        <h2 id="overview-briefing-heading">Today</h2>
+      <section className="wizard-section" aria-labelledby="wizard-today-heading">
+        <SectionHead
+          ordinal="01"
+          id="wizard-today-heading"
+          heading="Today"
+          count={plural(todayCount, "meeting")}
+        />
         {!briefing ? (
-          <p className="muted" role="status">
+          <p className="wizard-empty" role="status">
             Loading briefing…
           </p>
         ) : briefing.error ? (
@@ -277,7 +257,7 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
             <div className="banner banner-error" role="alert">
               {briefing.error}
             </div>
-            <div className="field-row">
+            <div className="wizard-actions">
               <button
                 type="button"
                 className="action-button"
@@ -288,31 +268,34 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
               </button>
             </div>
           </div>
-        ) : briefing.briefing ? (
-          <div>
-            <p className="muted">{briefing.briefing.summary}</p>
+        ) : briefing.briefing && briefing.briefing.meetings.length > 0 ? (
+          <>
+            <p className="wizard-note">{briefing.briefing.summary}</p>
             {briefing.stale ? (
-              <p className="muted" role="status">
+              <p className="wizard-note" role="status">
                 Being updated — showing the previous briefing.
               </p>
             ) : null}
-            <ul className="card-list">
+            <ul className="wizard-ledger">
               {briefing.briefing.meetings.map((entry) => (
-                <MeetingRow key={entry.meetingId} {...entry} />
+                <MeetingLine key={entry.meetingId} {...entry} />
               ))}
             </ul>
-          </div>
+          </>
         ) : (
-          /* A briefing of null is a day with no Meetings, which is worth
-             saying — silence here reads as a section that failed to load. */
-          <p className="muted">No meetings today.</p>
+          <p className="wizard-empty">No meetings today.</p>
         )}
       </section>
 
-      <section aria-labelledby="overview-weekly-heading">
-        <h2 id="overview-weekly-heading">This week</h2>
+      <section className="wizard-section" aria-labelledby="wizard-weekly-heading">
+        <SectionHead
+          ordinal="02"
+          id="wizard-weekly-heading"
+          heading="This week"
+          count={plural(weekCount, "meeting")}
+        />
         {!weekly ? (
-          <p className="muted" role="status">
+          <p className="wizard-empty" role="status">
             Loading weekly briefing…
           </p>
         ) : weekly.error ? (
@@ -320,7 +303,7 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
             <div className="banner banner-error" role="alert">
               {weekly.error}
             </div>
-            <div className="field-row">
+            <div className="wizard-actions">
               <button
                 type="button"
                 className="action-button"
@@ -331,111 +314,54 @@ export function MeetingsOverviewPage({ client = meetingsApi }: { client?: Meetin
               </button>
             </div>
           </div>
-        ) : weekly.briefing ? (
-          <div>
-            <p className="muted">{weekly.briefing.ranking}</p>
+        ) : weekly.briefing && weekly.briefing.meetings.length > 0 ? (
+          <>
+            <p className="wizard-note">{weekly.briefing.ranking}</p>
             {weekly.stale ? (
-              <p className="muted" role="status">
+              <p className="wizard-note" role="status">
                 Being updated — showing the previous briefing.
               </p>
             ) : null}
-            <ul className="card-list">
+            <ul className="wizard-ledger">
               {weekly.briefing.meetings.map((entry) => (
-                <MeetingRow key={entry.meetingId} {...entry} />
+                <MeetingLine key={entry.meetingId} {...entry} />
               ))}
             </ul>
+          </>
+        ) : (
+          <p className="wizard-empty">No meetings this week.</p>
+        )}
+      </section>
+
+      {/* Accepted work and the proposals still awaiting a decision, as two
+          groups under one head. Both are capped at eight with their totals
+          beside them, and both link back to the Tasks product (issue #192). */}
+      <section className="wizard-section" aria-labelledby="wizard-work-heading">
+        <SectionHead
+          ordinal="03"
+          id="wizard-work-heading"
+          heading="Your work"
+          count={
+            work
+              ? `${plural(work.counts.open, "open Task")} · ${plural(
+                  work.counts.pendingActionItems,
+                  "awaiting review",
+                )}`
+              : "—"
+          }
+        />
+        {workError ? (
+          <div className="banner banner-error" role="alert">
+            {workError}
           </div>
+        ) : work === null ? (
+          <p className="wizard-empty" role="status">
+            Loading work…
+          </p>
         ) : (
-          <p className="muted">No meetings this week.</p>
+          <WorkGroups overview={work} />
         )}
       </section>
-
-      <section aria-labelledby="overview-action-items-heading">
-        <h2 id="overview-action-items-heading">Your action items</h2>
-        {actionItems === null ? (
-          actionItemsError ? (
-            <div className="banner banner-error" role="alert">
-              {actionItemsError}
-            </div>
-          ) : (
-            <p className="muted" role="status">
-              Loading action items…
-            </p>
-          )
-        ) : actionItems.length === 0 ? (
-          <p className="muted">No open action items.</p>
-        ) : (
-          <ul className="card-list">
-            {actionItems.map((item) => (
-              <li key={`${item.runId}:${item.index}`} className="card">
-                <h3>
-                  {item.meetingId ? (
-                    <Link to={`/meetings/${item.meetingId}`}>{item.title}</Link>
-                  ) : (
-                    <Link to={`/meeting-debrief/${encodeURIComponent(item.runId)}`}>
-                      {item.title}
-                    </Link>
-                  )}
-                </h3>
-                <p>
-                  {item.dueDate ? (
-                    isOverdue(item.dueDate) ? (
-                      <span className="status-badge status-attention">Overdue {item.dueDate}</span>
-                    ) : (
-                      <span className="muted">Due {item.dueDate}</span>
-                    )
-                  ) : (
-                    <span className="muted">No due date</span>
-                  )}
-                  {/* Which meeting asked for it. "Polish slides together" with
-                      no meeting beside it is a task nobody can place. */}
-                  {item.meetingId && meetingTitles.get(item.meetingId) ? (
-                    <span className="muted"> · from {meetingTitles.get(item.meetingId)}</span>
-                  ) : null}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* The Meeting store's own view of today. The Daily briefing above is
-          this list plus Brief state, so it is only worth drawing when that
-          briefing could not be built — otherwise it is the same meetings a
-          second time. */}
-      {briefing?.error ? (
-        <section aria-labelledby="overview-today-heading">
-          <h2 id="overview-today-heading">Today&apos;s meetings</h2>
-          {!todays ? (
-            <p className="muted" role="status">
-              Loading meetings…
-            </p>
-          ) : todays.length === 0 ? (
-            <p className="muted">No meetings today.</p>
-          ) : (
-            <ul className="card-list">
-              {todays.map((meeting) => (
-                <li key={meeting.id} className="card">
-                  <h3>
-                    <Link to={`/meetings/${meeting.id}`}>{meeting.title}</Link>
-                  </h3>
-                  <p>
-                    <time dateTime={meeting.startAt}>{formatMeetingTime(meeting.startAt)}</time>
-                    {meeting.cancelled ? (
-                      <>
-                        {" · "}
-                        <span className="status-badge status-active">Cancelled</span>
-                      </>
-                    ) : null}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
-      {/* PROTOTYPE — dev-only entry point to ?variant=a|b|c; null in prod builds. */}
-      <PrototypeSwitcher current={variant} variants={PROTO_VARIANTS} />
     </div>
   );
 }

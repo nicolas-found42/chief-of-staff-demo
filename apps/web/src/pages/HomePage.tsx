@@ -219,7 +219,7 @@ export function HomePage() {
               Run feed: what is open is the reason to be here, and what merely
               ran is not (issue #192). Omitted only when the Tasks read failed
               — a Workspace with no Tasks still says so, in zeroes. */}
-          <section className="card home-rail-card" aria-labelledby="home-work-heading">
+          <section className="card home-work-card" aria-labelledby="home-work-heading">
             <h2 id="home-work-heading">Your work</h2>
             {workError ? (
               <div className="banner banner-error" role="alert">

@@ -176,8 +176,8 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
   await expect(page.getByRole("heading", { name: "Upcoming eligible meetings" })).toHaveCount(0);
   /* One section for the day, not two: the Daily briefing is today's meetings
      plus their Brief state, so the separate list it duplicated is gone. */
-  const todaySection = page.locator('section[aria-labelledby="overview-briefing-heading"]');
-  const cards = todaySection.locator("li.card");
+  const todaySection = page.locator('section[aria-labelledby="wizard-today-heading"]');
+  const cards = todaySection.locator("li.wizard-line");
   await expect(cards.filter({ hasText: "Internal planning" })).toHaveCount(1);
 
   await expect(
