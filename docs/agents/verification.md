@@ -15,7 +15,7 @@ supported way to run the app.
 | App behavior | `npm run check:all` | The whole-tree gate plus the Playwright suite |
 | Prompt eval | `pnpm exec tsx scripts/run-debrief-eval-all.mts --models upstage/solar-pro4 --score` | Solar-pro4 debrief extractions on all 20 real fixture transcripts score clean against hand-written goldens |
 | Production image | `docker compose build`, boot, then `GET /api/health` | The pruned runtime image contains a working server and web bundle |
-| Clean checkout | GitHub Actions on pushes to `main` | Clean installs, the gates above, coverage, and the production image boot |
+| Clean checkout | GitHub Actions on pull requests and pushes to `main` | Clean installs, the gates above, coverage, and the production image boot |
 
 The unit coverage gate measures `apps/server/src`, excluding the process bootstrap and the
 test-only e2e seed seam. CI reports the result in its job summary and enforces the global lines

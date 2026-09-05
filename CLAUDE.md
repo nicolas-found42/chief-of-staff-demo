@@ -20,6 +20,11 @@ The five canonical triage roles map 1:1 to GitHub label strings (`needs-triage`,
 Single-context: one `CONTEXT.md` glossary and `docs/adr/` at the root; the
 workspaces are build units, not domains. See `docs/agents/domain.md`.
 
+### Pull requests
+
+Substantial work goes `branch → PR → squash merge`; typos and one-liners still commit straight
+to `main`. See `docs/agents/pr-workflow.md`.
+
 ### Verification gates
 
 Run the narrowest gate covering the change while working; whole-tree `pnpm run
