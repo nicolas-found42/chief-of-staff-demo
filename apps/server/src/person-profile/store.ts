@@ -1,3 +1,5 @@
+import { identifier } from "./resolver.js";
+import { parsePersonIdentifier } from "./identifier.js";
 import {
   existsSync,
   mkdirSync,
@@ -116,6 +118,7 @@ export class PersonProfileStore {
   }
 
   save(profile: PersonProfile): void {
+    if (this.getTombstone(profile.id)) throw new Error("Cannot recreate a privacy-deleted Profile");
     const root = join(this.profilesDir, profile.id);
     const revisions = join(root, "revisions");
     mkdirSync(revisions, { recursive: true });
@@ -181,6 +184,12 @@ export class PersonProfileStore {
       join(this.tombstonesDir, `${profile.id}.json`),
       `${JSON.stringify(tombstone, null, 2)}\n`,
     );
+    for (const value of [...profile.emails, ...profile.profileUrls]) {
+      const signals = parsePersonIdentifier(value);
+      const keys = [identifier(signals), identifier({ ...signals, handles: {} })];
+      for (const key of keys)
+        this.writeAtomic(join(this.tombstonesDir, `${key}.json`), `${JSON.stringify(tombstone)}\n`);
+    }
     return {
       canonicalProfileRecords: 1,
       revisions: revisions.length,

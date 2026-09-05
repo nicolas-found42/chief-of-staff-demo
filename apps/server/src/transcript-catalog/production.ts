@@ -69,6 +69,7 @@ export function createTranscriptCatalogRuntime(
   const identity = new TranscriptIdentityService({
     store: new TranscriptIdentityStore(options.workspaceDir),
     people: options.people,
+    automaticCreation: true,
   });
 
   const config = options.getConfig();

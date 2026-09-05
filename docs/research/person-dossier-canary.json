@@ -1,0 +1,341 @@
+{
+  "recordedAt": "2026-09-05T06:51:47.185Z",
+  "model": "inception/mercury-2.5-preview",
+  "provider": "openrouter",
+  "workspaceDir": "/var/folders/vj/z460ltg56p122lsl4_s8pd140000gp/T/person-dossier-canary-ydyKwN",
+  "results": [
+    {
+      "name": "Simon Willison",
+      "url": "https://simonwillison.net/about/",
+      "result": {
+        "state": "incomplete",
+        "calls": 8,
+        "sources": 1,
+        "detail": "Research allowance reached; completed evidence is available."
+      },
+      "elapsedMilliseconds": 72433,
+      "modelCalls": 1,
+      "claims": 4,
+      "works": 2,
+      "sections": ["overview", "career", "context"],
+      "verifiedPassages": 4
+    },
+    {
+      "name": "Rich Hickey",
+      "url": "https://clojure.org/about/rich_hickey",
+      "result": {
+        "state": "incomplete",
+        "calls": 8,
+        "sources": 0,
+        "detail": "Research allowance reached; completed evidence is available."
+      },
+      "elapsedMilliseconds": 61769,
+      "modelCalls": 0,
+      "claims": 0,
+      "works": 0,
+      "sections": [],
+      "verifiedPassages": 0
+    }
+  ],
+  "diagnostics": [
+    {
+      "provider": "arctic-shift",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 7
+    },
+    {
+      "provider": "wayback",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 4
+    },
+    {
+      "provider": "wikipedia",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 77
+    },
+    {
+      "provider": "wikidata",
+      "outcome": "ok",
+      "results": 1,
+      "ms": 248
+    },
+    {
+      "provider": "bing-news",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 264
+    },
+    {
+      "provider": "wiby",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 263
+    },
+    {
+      "provider": "stackexchange",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 271
+    },
+    {
+      "provider": "google-news",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 317
+    },
+    {
+      "provider": "duckduckgo",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 345
+    },
+    {
+      "provider": "orcid",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 339
+    },
+    {
+      "provider": "mojeek",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 355
+    },
+    {
+      "provider": "reddit-rss",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 374
+    },
+    {
+      "provider": "ia-tvnews",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 374
+    },
+    {
+      "provider": "internet-archive",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 378
+    },
+    {
+      "provider": "marginalia",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 392
+    },
+    {
+      "provider": "github-users",
+      "outcome": "ok",
+      "results": 2,
+      "ms": 387
+    },
+    {
+      "provider": "openalex",
+      "outcome": "ok",
+      "results": 1,
+      "ms": 393
+    },
+    {
+      "provider": "dblp",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 474
+    },
+    {
+      "provider": "edgar",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 478
+    },
+    {
+      "provider": "ror",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 631
+    },
+    {
+      "provider": "gleif",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 643
+    },
+    {
+      "provider": "europepmc",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 649
+    },
+    {
+      "provider": "gdelt",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 16888
+    },
+    {
+      "provider": "openverse",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 60000
+    },
+    {
+      "provider": "duckduckgo",
+      "outcome": "cooldown",
+      "results": 0,
+      "ms": 0
+    },
+    {
+      "provider": "mojeek",
+      "outcome": "cooldown",
+      "results": 0,
+      "ms": 0
+    },
+    {
+      "provider": "marginalia",
+      "outcome": "cooldown",
+      "results": 0,
+      "ms": 0
+    },
+    {
+      "provider": "dblp",
+      "outcome": "cooldown",
+      "results": 0,
+      "ms": 0
+    },
+    {
+      "provider": "arctic-shift",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 3
+    },
+    {
+      "provider": "wayback",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 2
+    },
+    {
+      "provider": "wikipedia",
+      "outcome": "ok",
+      "results": 4,
+      "ms": 20
+    },
+    {
+      "provider": "orcid",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 129
+    },
+    {
+      "provider": "stackexchange",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 135
+    },
+    {
+      "provider": "wiby",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 136
+    },
+    {
+      "provider": "wikidata",
+      "outcome": "ok",
+      "results": 1,
+      "ms": 181
+    },
+    {
+      "provider": "openalex",
+      "outcome": "ok",
+      "results": 2,
+      "ms": 179
+    },
+    {
+      "provider": "github-users",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 179
+    },
+    {
+      "provider": "bing-news",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 213
+    },
+    {
+      "provider": "edgar",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 271
+    },
+    {
+      "provider": "ror",
+      "outcome": "ok",
+      "results": 3,
+      "ms": 320
+    },
+    {
+      "provider": "google-news",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 332
+    },
+    {
+      "provider": "ia-tvnews",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 344
+    },
+    {
+      "provider": "internet-archive",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 409
+    },
+    {
+      "provider": "reddit-rss",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 530
+    },
+    {
+      "provider": "europepmc",
+      "outcome": "ok",
+      "results": 8,
+      "ms": 531
+    },
+    {
+      "provider": "gleif",
+      "outcome": "empty",
+      "results": 0,
+      "ms": 529
+    },
+    {
+      "provider": "gdelt",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 10500
+    },
+    {
+      "provider": "openverse",
+      "outcome": "refused",
+      "results": 0,
+      "ms": 60005
+    }
+  ],
+  "usage": {
+    "modelCalls": 1,
+    "inputCharacters": 6388,
+    "outputCharacters": 5063,
+    "actualTokens": "Unavailable from CompleteJson",
+    "estimatedCost": "Unavailable: no measured token usage or verified pricing; no monetary cap claimed"
+  },
+  "limits": {
+    "canaryProfileOperations": 8,
+    "canaryMilliseconds": 120000
+  }
+}

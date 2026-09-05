@@ -1,3 +1,4 @@
+import { PersonDossierPanel } from "./PersonDossierPanel";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
@@ -328,6 +329,29 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
     background: false,
     profileUrls: false,
   });
+  const [duplicateQuery, setDuplicateQuery] = useState("");
+  const [duplicates, setDuplicates] = useState<PersonProfile[]>([]);
+  useEffect(() => {
+    if (duplicateQuery.trim().length < 2) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      void client
+        .people(duplicateQuery)
+        .then((profiles) => {
+          if (active)
+            setDuplicates(
+              profiles.filter((profile) => profile.id !== profileId && !profile.mergedInto),
+            );
+        })
+        .catch((error) => {
+          if (active) setActionError(errorMessage(error));
+        });
+    }, 200);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [client, duplicateQuery, profileId]);
   const [mergeForm, setMergeForm] = useState({
     duplicateId: "",
     fullName: "",
@@ -592,510 +616,534 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
       )}
       <p className="muted">{described(profile) || "No resolved facts yet."}</p>
 
-      {!current.mergedInto && !current.archivedAt && !isHistorical && (
-        <div className="card">
-          <h2>Search the public web again</h2>
-          <p className="muted">
-            Runs the same search the typed-identifier lookup runs, from the identity this Profile
-            already holds — its emails, names, handles and profile addresses. Anything new is added
-            as a further revision; nothing already recorded is removed. A Profile a meeting minted
-            from an email alone starts here.
-          </p>
-          <button
-            type="button"
-            className="action-button"
-            aria-disabled={busy}
-            onClick={() => void runRepair(() => client.enrichPersonProfile(profileId))}
-          >
-            {busy ? "Searching…" : "Search again"}
-          </button>
-        </div>
+      {!current.mergedInto && !isHistorical && (
+        <PersonDossierPanel key={profileId} profileId={profileId} />
       )}
-
-      <div className="card">
-        <h2>Current facts</h2>
-        <dl>
-          <dt>Full name</dt>
-          <dd>{profile.fullName ?? "—"}</dd>
-          <dt>Primary email</dt>
-          <dd>{profile.primaryEmail ?? "—"}</dd>
-          <dt>Role</dt>
-          <dd>{profile.role ?? "—"}</dd>
-          <dt>Current employer</dt>
-          <dd>{profile.currentEmployer ?? "—"}</dd>
-          <dt>Background</dt>
-          <dd>{profile.background ?? "—"}</dd>
-        </dl>
-      </div>
-
-      {!current.mergedInto && (
-        <div className="card">
-          <h2>Correct facts</h2>
-          <p className="muted">
-            A correction appends a new revision; the superseded snapshot stays readable.
-          </p>
-          <form onSubmit={(event) => void submitCorrection(event)}>
-            <div className="field-row">
-              <label htmlFor="correct-full-name">Full name</label>
-              <input
-                id="correct-full-name"
-                autoComplete="off"
-                value={correction.fullName}
-                onChange={(event) => setCorrection({ ...correction, fullName: event.target.value })}
-              />
-            </div>
-            {repairableFactFields.map(({ key, label, control }) => {
-              const id = `correct-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
-              return (
-                <RepairFactControl
-                  key={key}
-                  id={id}
-                  label={label}
-                  control={control}
-                  value={correction[key]}
-                  onChange={(value) => setCorrection({ ...correction, [key]: value })}
-                  clear={{
-                    checked: clearCorrection[key],
-                    label: `Clear ${label.toLowerCase()}`,
-                    onChange: (checked) =>
-                      setClearCorrection({ ...clearCorrection, [key]: checked }),
-                  }}
-                />
-              );
-            })}
-            <div className="field-row">
-              <label htmlFor="correct-profile-urls">Profile URLs</label>
-              <textarea
-                id="correct-profile-urls"
-                rows={3}
-                autoComplete="off"
-                placeholder="linkedin.com/in/someone, x.com/someone, their site"
-                aria-describedby="correct-profile-urls-hint"
-                value={correction.profileUrls}
-                onChange={(event) =>
-                  setCorrection({ ...correction, profileUrls: event.target.value })
-                }
-              />
-              <p id="correct-profile-urls-hint" className="muted">
-                One per line or comma-separated; a stated list replaces the current one. Public
-                evidence matches on a name alone only at medium confidence, and role, employer and
-                social profiles are drawn from high-confidence matches — so these are what let a
-                search populate the Profile. Handles are derived from the URLs.
-              </p>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={clearCorrection.profileUrls}
-                  onChange={(event) =>
-                    setClearCorrection({ ...clearCorrection, profileUrls: event.target.checked })
-                  }
-                />{" "}
-                Clear profile URLs
-              </label>
-            </div>
-            <div className="field-row">
-              <label htmlFor="correct-note">What was wrong?</label>
-              <input
-                id="correct-note"
-                autoComplete="off"
-                value={correction.note}
-                onChange={(event) => setCorrection({ ...correction, note: event.target.value })}
-              />
-            </div>
-            <div className="field-row">
-              <button type="submit" className="primary" aria-disabled={busy}>
-                {busy ? "Working…" : "Append correction"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {!current.mergedInto && (
-        <div className="card">
-          <h2>Merge a duplicate</h2>
-          <p className="muted">
-            Merges another Profile into this one through an audited decision; conflicting facts must
-            be resolved explicitly and the duplicate stays readable as a redirect.
-          </p>
-          <form onSubmit={(event) => void submitMerge(event)}>
-            <div className="field-row">
-              <label htmlFor="merge-duplicate">Duplicate profile id</label>
-              <input
-                id="merge-duplicate"
-                autoComplete="off"
-                required
-                value={mergeForm.duplicateId}
-                onChange={(event) =>
-                  setMergeForm({ ...mergeForm, duplicateId: event.target.value })
-                }
-              />
-            </div>
-            {mergeRepairFactFields.map(({ key, label, control }) => {
-              const id = `merge-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
-              return (
-                <RepairFactControl
-                  key={key}
-                  id={id}
-                  label={`Resolved ${label.toLowerCase()}`}
-                  control={control}
-                  value={mergeForm[key]}
-                  onChange={(value) => setMergeForm({ ...mergeForm, [key]: value })}
-                />
-              );
-            })}
-            <div className="field-row">
-              <label htmlFor="merge-note">Merge note</label>
-              <input
-                id="merge-note"
-                autoComplete="off"
-                value={mergeForm.note}
-                onChange={(event) => setMergeForm({ ...mergeForm, note: event.target.value })}
-              />
-            </div>
-            <div className="field-row">
-              <button type="submit" className="primary" aria-disabled={busy}>
-                {busy ? "Working…" : "Merge profile"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {!current.mergedInto && detachableEvidence.length > 0 && (
-        <div className="card">
-          <h2>Detach evidence</h2>
-          <p className="muted">
-            Removes one evidence record from this Profile and marks the old attribution invalid;
-            optionally re-attributes it to the correct Profile.
-          </p>
-          <form onSubmit={(event) => void submitDetach(event)}>
-            <div className="field-row">
-              <label htmlFor="detach-evidence">Evidence</label>
-              <select
-                id="detach-evidence"
-                required
-                value={detachForm.evidenceId}
-                onChange={(event) =>
-                  setDetachForm({ ...detachForm, evidenceId: event.target.value })
-                }
-              >
-                <option value="">Choose evidence…</option>
-                {detachableEvidence.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field-row">
-              <label htmlFor="detach-to">Move to profile id (optional)</label>
-              <input
-                id="detach-to"
-                autoComplete="off"
-                value={detachForm.toProfileId}
-                onChange={(event) =>
-                  setDetachForm({ ...detachForm, toProfileId: event.target.value })
-                }
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="detach-note">Detach note</label>
-              <input
-                id="detach-note"
-                autoComplete="off"
-                value={detachForm.note}
-                onChange={(event) => setDetachForm({ ...detachForm, note: event.target.value })}
-              />
-            </div>
-            <div className="field-row">
-              <button type="submit" className="primary" aria-disabled={busy}>
-                {busy ? "Working…" : "Detach evidence"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="card">
-        <h2>Identity signals</h2>
-        {signals.length === 0 ? (
-          <p className="muted">No identity signals recorded.</p>
-        ) : (
-          <ul>
-            {signals.map((signal) => (
-              <li key={signal}>{signal}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Sites</h2>
-        {profile.websites.length === 0 &&
-        profile.feeds.length === 0 &&
-        profile.socialProfiles.length === 0 ? (
-          <p className="muted">No sites recorded.</p>
-        ) : (
-          <>
-            {profile.websites.length > 0 && (
-              <ul>
-                {profile.websites.map((url) => (
-                  <li key={url}>
-                    <a href={url}>{url}</a>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {profile.feeds.length > 0 && (
-              <ul>
-                {profile.feeds.map((feed) => (
-                  <li key={feed.url}>
-                    <a href={feed.url}>{feed.title ?? feed.url}</a> (feed)
-                  </li>
-                ))}
-              </ul>
-            )}
-            {profile.socialProfiles.length > 0 && (
-              <ul>
-                {profile.socialProfiles.map((social) => (
-                  <li key={social.url}>
-                    <a href={social.url}>{social.handle ?? social.platform}</a> ({social.platform})
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Publications</h2>
-        {profile.publications.length === 0 ? (
-          <p className="muted">No publications recorded.</p>
-        ) : (
-          <ul>
-            {profile.publications.map((item) => (
-              <li key={item.id}>
-                <strong>{item.title}</strong> — {item.summary}
-                <br />
-                <span className="muted">
-                  Source: <a href={item.url}>{item.url}</a>
-                  {item.publishedAt ? ` · published ${item.publishedAt.slice(0, 10)}` : ""} ·{" "}
-                  {CONFIDENCE_LABELS[item.matchConfidence]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Evidence</h2>
-        {profile.evidence.length === 0 ? (
-          <p className="muted">No evidence recorded.</p>
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Kind</th>
-                  <th scope="col">Title</th>
-                  <th scope="col">Claims</th>
-                  <th scope="col">Provenance</th>
-                  <th scope="col">Match confidence</th>
-                  <th scope="col">Observed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {profile.evidence.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.kind}</td>
-                    <td>{item.title}</td>
-                    <td>
-                      {[
-                        item.claims.fullName,
-                        item.claims.role,
-                        item.claims.currentEmployer,
-                        item.claims.background,
-                      ]
-                        .filter((claim) => claim !== undefined)
-                        .join(" · ") || "—"}
-                    </td>
-                    <td>
-                      {item.source}:{" "}
-                      <a href={item.url} rel="noreferrer">
-                        {item.url}
-                      </a>
-                    </td>
-                    <td>{CONFIDENCE_LABELS[item.matchConfidence]}</td>
-                    <td>{item.observedAt.slice(0, 10)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Diagnostics</h2>
-        {profile.sourceDiagnostics.length === 0 ? (
-          <p className="muted">No enrichment diagnostics recorded.</p>
-        ) : (
-          <ul>
-            {profile.sourceDiagnostics.map((diagnostic) => (
-              <li key={`${diagnostic.source}-${diagnostic.status}`}>
-                {diagnostic.source}: {diagnostic.status} — {diagnostic.detail}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Identity repairs</h2>
-        {(current.invalidations ?? []).length === 0 ? (
-          <p className="muted">No corrections, merges, or detaches recorded.</p>
-        ) : (
-          <ul>
-            {(current.invalidations ?? []).map((record) => (
-              <li key={record.id}>
-                <strong>{REPAIR_LABELS[record.kind]}</strong> — revision {record.affectedRevision}{" "}
-                superseded · {record.detail}
-                {record.mergedInto && (
-                  <>
-                    {" "}
-                    · merged into{" "}
-                    <Link to={`/people/${record.mergedInto}`}>{record.mergedInto}</Link>
-                  </>
-                )}
-                {record.mergedFrom && (
-                  <>
-                    {" "}
-                    · merged from{" "}
-                    <Link to={`/people/${record.mergedFrom}`}>{record.mergedFrom}</Link>
-                  </>
-                )}
-                {record.movedTo && (
-                  <>
-                    {" "}
-                    · evidence moved to{" "}
-                    <Link to={`/people/${record.movedTo}`}>{record.movedTo}</Link>
-                  </>
-                )}
-                {record.movedFrom && (
-                  <>
-                    {" "}
-                    · evidence re-attributed from{" "}
-                    <Link to={`/people/${record.movedFrom}`}>{record.movedFrom}</Link>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Revision history</h2>
-        <ul>
-          {revisions.map((revision) => (
-            <li key={revision}>
-              {/* Every row opens the exact recorded revision, the current one
-                  included: reading what was true then is always one click. */}
-              <button
-                type="button"
-                className="linklike"
-                onClick={() => setSearchParams({ revision: String(revision) })}
-              >
-                Revision {revision}
-                {revision === current.revision ? " (current)" : ""}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="card">
-        <h2>Lifecycle</h2>
-        <p className="muted">
-          {current.archivedAt
-            ? "This Profile is archived: no consumer can newly select it. Restoring makes the same canonical identity available again."
-            : "Archiving stops new selection and consumption without destroying history. It is reversible."}
-        </p>
-        <div className="field-row">
-          <button
-            type="button"
-            className="primary"
-            aria-disabled={busy}
-            onClick={() =>
-              void runLifecycle(() =>
-                current.archivedAt
-                  ? client.restorePersonProfile(profileId)
-                  : client.archivePersonProfile(profileId),
-              )
-            }
-          >
-            {busy ? "Working…" : current.archivedAt ? "Restore profile" : "Archive profile"}
-          </button>
-        </div>
-
-        <h3>Dependent configuration</h3>
-        {lifecycle === null ? (
-          <p className="muted">Loading…</p>
-        ) : (
-          <DependentConfigurationDisclosure lifecycle={lifecycle} />
-        )}
-
-        <h3>Privacy delete</h3>
-        <p className="muted">
-          Privacy deletion is the explicit, audited exception to otherwise immutable local history.
-          It removes the canonical Profile, its revisions, evidence, aliases, candidates, learned
-          mappings, structured identity decisions, active consumer links, and person-specific
-          derived snapshots. It cannot be undone, and it never deletes remote provider data.
-        </p>
-        {!deleteOpen ? (
-          <div className="field-row">
-            <button type="button" onClick={() => setDeleteOpen(true)}>
-              Privacy delete this profile…
+      <details open={isHistorical}>
+        <summary>Profile maintenance and revision history</summary>
+        {!current.mergedInto && !current.archivedAt && !isHistorical && (
+          <div className="card">
+            <h2>Search the public web again</h2>
+            <p className="muted">
+              Runs the same search the typed-identifier lookup runs, from the identity this Profile
+              already holds — its emails, names, handles and profile addresses. Anything new is
+              added as a further revision; nothing already recorded is removed. A Profile a meeting
+              minted from an email alone starts here.
+            </p>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void runRepair(() => client.enrichPersonProfile(profileId))}
+            >
+              {busy ? "Searching…" : "Search again"}
             </button>
           </div>
-        ) : (
-          /* Spec #117: the confirmation surface lists the residual source
+        )}
+
+        <div className="card">
+          <h2>Current facts</h2>
+          <dl>
+            <dt>Full name</dt>
+            <dd>{profile.fullName ?? "—"}</dd>
+            <dt>Primary email</dt>
+            <dd>{profile.primaryEmail ?? "—"}</dd>
+            <dt>Role</dt>
+            <dd>{profile.role ?? "—"}</dd>
+            <dt>Current employer</dt>
+            <dd>{profile.currentEmployer ?? "—"}</dd>
+            <dt>Background</dt>
+            <dd>{profile.background ?? "—"}</dd>
+          </dl>
+        </div>
+
+        {!current.mergedInto && (
+          <div className="card">
+            <h2>Correct facts</h2>
+            <p className="muted">
+              A correction appends a new revision; the superseded snapshot stays readable.
+            </p>
+            <form onSubmit={(event) => void submitCorrection(event)}>
+              <div className="field-row">
+                <label htmlFor="correct-full-name">Full name</label>
+                <input
+                  id="correct-full-name"
+                  autoComplete="off"
+                  value={correction.fullName}
+                  onChange={(event) =>
+                    setCorrection({ ...correction, fullName: event.target.value })
+                  }
+                />
+              </div>
+              {repairableFactFields.map(({ key, label, control }) => {
+                const id = `correct-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+                return (
+                  <RepairFactControl
+                    key={key}
+                    id={id}
+                    label={label}
+                    control={control}
+                    value={correction[key]}
+                    onChange={(value) => setCorrection({ ...correction, [key]: value })}
+                    clear={{
+                      checked: clearCorrection[key],
+                      label: `Clear ${label.toLowerCase()}`,
+                      onChange: (checked) =>
+                        setClearCorrection({ ...clearCorrection, [key]: checked }),
+                    }}
+                  />
+                );
+              })}
+              <div className="field-row">
+                <label htmlFor="correct-profile-urls">Profile URLs</label>
+                <textarea
+                  id="correct-profile-urls"
+                  rows={3}
+                  autoComplete="off"
+                  placeholder="linkedin.com/in/someone, x.com/someone, their site"
+                  aria-describedby="correct-profile-urls-hint"
+                  value={correction.profileUrls}
+                  onChange={(event) =>
+                    setCorrection({ ...correction, profileUrls: event.target.value })
+                  }
+                />
+                <p id="correct-profile-urls-hint" className="muted">
+                  One per line or comma-separated; a stated list replaces the current one. Public
+                  evidence matches on a name alone only at medium confidence, and role, employer and
+                  social profiles are drawn from high-confidence matches — so these are what let a
+                  search populate the Profile. Handles are derived from the URLs.
+                </p>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={clearCorrection.profileUrls}
+                    onChange={(event) =>
+                      setClearCorrection({ ...clearCorrection, profileUrls: event.target.checked })
+                    }
+                  />{" "}
+                  Clear profile URLs
+                </label>
+              </div>
+              <div className="field-row">
+                <label htmlFor="correct-note">What was wrong?</label>
+                <input
+                  id="correct-note"
+                  autoComplete="off"
+                  value={correction.note}
+                  onChange={(event) => setCorrection({ ...correction, note: event.target.value })}
+                />
+              </div>
+              <div className="field-row">
+                <button type="submit" className="primary" aria-disabled={busy}>
+                  {busy ? "Working…" : "Append correction"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {!current.mergedInto && (
+          <div className="card">
+            <h2>Merge a duplicate</h2>
+            <p className="muted">
+              Merges another Profile into this one through an audited decision; conflicting facts
+              must be resolved explicitly and the duplicate stays readable as a redirect.
+            </p>
+            <form onSubmit={(event) => void submitMerge(event)}>
+              <div className="field-row">
+                <label htmlFor="merge-search">Find duplicate person</label>
+                <input
+                  id="merge-search"
+                  value={duplicateQuery}
+                  onChange={(event) => setDuplicateQuery(event.target.value)}
+                  placeholder="Name, email or employer"
+                />
+                <label htmlFor="merge-duplicate">Duplicate person</label>
+                <select
+                  id="merge-duplicate"
+                  required
+                  value={mergeForm.duplicateId}
+                  onChange={(event) =>
+                    setMergeForm({ ...mergeForm, duplicateId: event.target.value })
+                  }
+                >
+                  <option value="">Choose a person from search results</option>
+                  {duplicates.map((person) => (
+                    <option value={person.id} key={person.id}>
+                      {person.fullName ?? "Unnamed"} —{" "}
+                      {person.primaryEmail ?? person.currentEmployer ?? "No employer recorded"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {mergeRepairFactFields.map(({ key, label, control }) => {
+                const id = `merge-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+                return (
+                  <RepairFactControl
+                    key={key}
+                    id={id}
+                    label={`Resolved ${label.toLowerCase()}`}
+                    control={control}
+                    value={mergeForm[key]}
+                    onChange={(value) => setMergeForm({ ...mergeForm, [key]: value })}
+                  />
+                );
+              })}
+              <div className="field-row">
+                <label htmlFor="merge-note">Merge note</label>
+                <input
+                  id="merge-note"
+                  autoComplete="off"
+                  value={mergeForm.note}
+                  onChange={(event) => setMergeForm({ ...mergeForm, note: event.target.value })}
+                />
+              </div>
+              <div className="field-row">
+                <button type="submit" className="primary" aria-disabled={busy}>
+                  {busy ? "Working…" : "Merge profile"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {!current.mergedInto && detachableEvidence.length > 0 && (
+          <div className="card">
+            <h2>Detach evidence</h2>
+            <p className="muted">
+              Removes one evidence record from this Profile and marks the old attribution invalid;
+              optionally re-attributes it to the correct Profile.
+            </p>
+            <form onSubmit={(event) => void submitDetach(event)}>
+              <div className="field-row">
+                <label htmlFor="detach-evidence">Evidence</label>
+                <select
+                  id="detach-evidence"
+                  required
+                  value={detachForm.evidenceId}
+                  onChange={(event) =>
+                    setDetachForm({ ...detachForm, evidenceId: event.target.value })
+                  }
+                >
+                  <option value="">Choose evidence…</option>
+                  {detachableEvidence.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field-row">
+                <label htmlFor="detach-to">Move to profile id (optional)</label>
+                <input
+                  id="detach-to"
+                  autoComplete="off"
+                  value={detachForm.toProfileId}
+                  onChange={(event) =>
+                    setDetachForm({ ...detachForm, toProfileId: event.target.value })
+                  }
+                />
+              </div>
+              <div className="field-row">
+                <label htmlFor="detach-note">Detach note</label>
+                <input
+                  id="detach-note"
+                  autoComplete="off"
+                  value={detachForm.note}
+                  onChange={(event) => setDetachForm({ ...detachForm, note: event.target.value })}
+                />
+              </div>
+              <div className="field-row">
+                <button type="submit" className="primary" aria-disabled={busy}>
+                  {busy ? "Working…" : "Detach evidence"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="card">
+          <h2>Identity signals</h2>
+          {signals.length === 0 ? (
+            <p className="muted">No identity signals recorded.</p>
+          ) : (
+            <ul>
+              {signals.map((signal) => (
+                <li key={signal}>{signal}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>Sites</h2>
+          {profile.websites.length === 0 &&
+          profile.feeds.length === 0 &&
+          profile.socialProfiles.length === 0 ? (
+            <p className="muted">No sites recorded.</p>
+          ) : (
+            <>
+              {profile.websites.length > 0 && (
+                <ul>
+                  {profile.websites.map((url) => (
+                    <li key={url}>
+                      <a href={url}>{url}</a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {profile.feeds.length > 0 && (
+                <ul>
+                  {profile.feeds.map((feed) => (
+                    <li key={feed.url}>
+                      <a href={feed.url}>{feed.title ?? feed.url}</a> (feed)
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {profile.socialProfiles.length > 0 && (
+                <ul>
+                  {profile.socialProfiles.map((social) => (
+                    <li key={social.url}>
+                      <a href={social.url}>{social.handle ?? social.platform}</a> ({social.platform}
+                      )
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>Publications</h2>
+          {profile.publications.length === 0 ? (
+            <p className="muted">No publications recorded.</p>
+          ) : (
+            <ul>
+              {profile.publications.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.title}</strong> — {item.summary}
+                  <br />
+                  <span className="muted">
+                    Source: <a href={item.url}>{item.url}</a>
+                    {item.publishedAt ? ` · published ${item.publishedAt.slice(0, 10)}` : ""} ·{" "}
+                    {CONFIDENCE_LABELS[item.matchConfidence]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>Evidence</h2>
+          {profile.evidence.length === 0 ? (
+            <p className="muted">No evidence recorded.</p>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Claims</th>
+                    <th scope="col">Provenance</th>
+                    <th scope="col">Match confidence</th>
+                    <th scope="col">Observed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profile.evidence.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.kind}</td>
+                      <td>{item.title}</td>
+                      <td>
+                        {[
+                          item.claims.fullName,
+                          item.claims.role,
+                          item.claims.currentEmployer,
+                          item.claims.background,
+                        ]
+                          .filter((claim) => claim !== undefined)
+                          .join(" · ") || "—"}
+                      </td>
+                      <td>
+                        {item.source}:{" "}
+                        <a href={item.url} rel="noreferrer">
+                          {item.url}
+                        </a>
+                      </td>
+                      <td>{CONFIDENCE_LABELS[item.matchConfidence]}</td>
+                      <td>{item.observedAt.slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>Diagnostics</h2>
+          {profile.sourceDiagnostics.length === 0 ? (
+            <p className="muted">No enrichment diagnostics recorded.</p>
+          ) : (
+            <ul>
+              {profile.sourceDiagnostics.map((diagnostic) => (
+                <li key={`${diagnostic.source}-${diagnostic.status}`}>
+                  {diagnostic.source}: {diagnostic.status} — {diagnostic.detail}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>Identity repairs</h2>
+          {(current.invalidations ?? []).length === 0 ? (
+            <p className="muted">No corrections, merges, or detaches recorded.</p>
+          ) : (
+            <ul>
+              {(current.invalidations ?? []).map((record) => (
+                <li key={record.id}>
+                  <strong>{REPAIR_LABELS[record.kind]}</strong> — revision {record.affectedRevision}{" "}
+                  superseded · {record.detail}
+                  {record.mergedInto && (
+                    <>
+                      {" "}
+                      · merged into{" "}
+                      <Link to={`/people/${record.mergedInto}`}>{record.mergedInto}</Link>
+                    </>
+                  )}
+                  {record.mergedFrom && (
+                    <>
+                      {" "}
+                      · merged from{" "}
+                      <Link to={`/people/${record.mergedFrom}`}>{record.mergedFrom}</Link>
+                    </>
+                  )}
+                  {record.movedTo && (
+                    <>
+                      {" "}
+                      · evidence moved to{" "}
+                      <Link to={`/people/${record.movedTo}`}>{record.movedTo}</Link>
+                    </>
+                  )}
+                  {record.movedFrom && (
+                    <>
+                      {" "}
+                      · evidence re-attributed from{" "}
+                      <Link to={`/people/${record.movedFrom}`}>{record.movedFrom}</Link>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>Revision history</h2>
+          <ul>
+            {revisions.map((revision) => (
+              <li key={revision}>
+                {/* Every row opens the exact recorded revision, the current one
+                  included: reading what was true then is always one click. */}
+                <button
+                  type="button"
+                  className="linklike"
+                  onClick={() => setSearchParams({ revision: String(revision) })}
+                >
+                  Revision {revision}
+                  {revision === current.revision ? " (current)" : ""}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="card">
+          <h2>Lifecycle</h2>
+          <p className="muted">
+            {current.archivedAt
+              ? "This Profile is archived: no consumer can newly select it. Restoring makes the same canonical identity available again."
+              : "Archiving stops new selection and consumption without destroying history. It is reversible."}
+          </p>
+          <div className="field-row">
+            <button
+              type="button"
+              className="primary"
+              aria-disabled={busy}
+              onClick={() =>
+                void runLifecycle(() =>
+                  current.archivedAt
+                    ? client.restorePersonProfile(profileId)
+                    : client.archivePersonProfile(profileId),
+                )
+              }
+            >
+              {busy ? "Working…" : current.archivedAt ? "Restore profile" : "Archive profile"}
+            </button>
+          </div>
+
+          <h3>Dependent configuration</h3>
+          {lifecycle === null ? (
+            <p className="muted">Loading…</p>
+          ) : (
+            <DependentConfigurationDisclosure lifecycle={lifecycle} />
+          )}
+
+          <h3>Privacy delete</h3>
+          <p className="muted">
+            Privacy deletion is the explicit, audited exception to otherwise immutable local
+            history. It removes the canonical Profile, its revisions, evidence, aliases, candidates,
+            learned mappings, structured identity decisions, active consumer links, and
+            person-specific derived snapshots. It cannot be undone, and it never deletes remote
+            provider data.
+          </p>
+          {!deleteOpen ? (
+            <div className="field-row">
+              <button type="button" onClick={() => setDeleteOpen(true)}>
+                Privacy delete this profile…
+              </button>
+            </div>
+          ) : (
+            /* Spec #117: the confirmation surface lists the residual source
              artifacts before anything is deleted, and says where a separate
              source deletion exists. */
-          <form onSubmit={submitPrivacyDelete}>
-            <h4>Source documents that will remain</h4>
-            <ResidualSourceDisclosure artifacts={lifecycle?.residualSourceArtifacts ?? []} />
-            <div className="field-row">
-              <label htmlFor="privacy-delete-confirmation">
-                Type {PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION} to confirm
-              </label>
-              <input
-                id="privacy-delete-confirmation"
-                autoComplete="off"
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-              />
-            </div>
-            <div className="field-row">
-              <button type="submit" className="primary" aria-disabled={busy}>
-                {busy ? "Working…" : "Permanently delete this profile"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteOpen(false);
-                  setConfirmation("");
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
+            <form onSubmit={submitPrivacyDelete}>
+              <h4>Source documents that will remain</h4>
+              <ResidualSourceDisclosure artifacts={lifecycle?.residualSourceArtifacts ?? []} />
+              <div className="field-row">
+                <label htmlFor="privacy-delete-confirmation">
+                  Type {PERSON_PROFILE_PRIVACY_DELETE_CONFIRMATION} to confirm
+                </label>
+                <input
+                  id="privacy-delete-confirmation"
+                  autoComplete="off"
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                />
+              </div>
+              <div className="field-row">
+                <button type="submit" className="primary" aria-disabled={busy}>
+                  {busy ? "Working…" : "Permanently delete this profile"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setConfirmation("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </details>
     </>
   );
 }

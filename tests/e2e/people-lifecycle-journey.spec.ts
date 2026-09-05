@@ -46,6 +46,8 @@ test("person profile lifecycle journey — archive badge → archive → restore
 
   // 2. Archiving from the detail page is explicit and reversible state.
   await page.goto(`/people/${profileId}`);
+  if (await page.getByText("Profile maintenance and revision history", { exact: true }).count())
+    await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByRole("button", { name: "Archive profile" }).click();
   await expect(page.getByText("Archived", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Restore profile" })).toBeVisible();
@@ -60,6 +62,8 @@ test("person profile lifecycle journey — archive badge → archive → restore
 
   // 4. Restoring makes the same canonical identity selectable again.
   await page.goto(`/people/${profileId}`);
+  if (await page.getByText("Profile maintenance and revision history", { exact: true }).count())
+    await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByRole("button", { name: "Restore profile" }).click();
   await expect(page.getByText("Archived", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Archive profile" })).toBeVisible();
@@ -71,6 +75,8 @@ test("person profile lifecycle journey — archive badge → archive → restore
   // 5. Privacy deletion demands its own distinct typed confirmation before
   //    anything happens; a wrong confirmation refuses and deletes nothing.
   await page.goto(`/people/${profileId}`);
+  if (await page.getByText("Profile maintenance and revision history", { exact: true }).count())
+    await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByRole("button", { name: "Privacy delete this profile…" }).click();
   await expect(page.getByText("Source documents that will remain")).toBeVisible();
   await expect(
@@ -147,6 +153,8 @@ test("person profile lifecycle journey — archive badge → archive → restore
   await scanForViolations(page);
 
   await page.goto(`/people/${profileId}`);
+  if (await page.getByText("Profile maintenance and revision history", { exact: true }).count())
+    await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await expect(
     page.getByRole("heading", { level: 1, name: "Profile privacy-deleted" }),
   ).toBeVisible();
@@ -189,6 +197,7 @@ test("person profile lifecycle journey — archive badge → archive → restore
     });
   });
   await page.goto(`/people/${residualId}`);
+  await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByRole("button", { name: "Privacy delete this profile…" }).click();
   await page.getByLabel("Type DELETE PROFILE to confirm").fill("DELETE PROFILE");
   await page.getByRole("button", { name: "Permanently delete this profile" }).click();

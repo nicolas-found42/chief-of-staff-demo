@@ -1,3 +1,5 @@
+import type { PersonDossierStore } from "./dossier-store.js";
+import { parsePersonIdentifier } from "./identifier.js";
 import { identifier } from "./resolver.js";
 import { socialUrl } from "./sources.js";
 import type { PersonProfileStore } from "./store.js";
@@ -151,9 +153,11 @@ export class WorkspacePersonProfiles {
   private readonly store: PersonProfileStore;
   private readonly now: () => Date;
   private readonly registries: PersonProfileLifecycleRegistry[];
+  private readonly dossiers: PersonDossierStore | undefined;
 
   constructor(deps: {
     store: PersonProfileStore;
+    dossiers?: PersonDossierStore;
     now?: () => Date;
     /* Stated at every composition site, never defaulted: a deletion receipt
        that reports zero references because nobody was asked would certify a
@@ -161,6 +165,7 @@ export class WorkspacePersonProfiles {
        this Workspace holds Profile references nowhere else. */
     lifecycle: PersonProfileLifecycleRegistry[];
   }) {
+    this.dossiers = deps.dossiers;
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
     this.registries = deps.lifecycle;
@@ -269,10 +274,139 @@ export class WorkspacePersonProfiles {
     return this.store.getDeletionReceipt(profileId);
   }
 
+  acceptResearchFacts(
+    profileId: string,
+    expectedRevision: number,
+    facts: {
+      field: "fullName" | "role" | "currentEmployer" | "background";
+      value: string;
+      sourceIds: string[];
+      effectiveFrom: string | null;
+      authority: "self-report" | "independent-account" | "primary-artifact";
+      reason: string;
+    }[],
+  ): PersonProfile | null {
+    const current = this.store.get(profileId);
+    if (
+      !current ||
+      current.archivedAt ||
+      current.mergedInto ||
+      current.revision !== expectedRevision
+    )
+      return current;
+    const next = { ...current };
+    const reasons: string[] = [];
+    for (const fact of facts) {
+      if (!fact.sourceIds.length || !fact.value.trim() || next[fact.field] === fact.value) continue;
+      if (
+        facts.some(
+          (other) =>
+            other.field === fact.field &&
+            other.value !== fact.value &&
+            other.effectiveFrom === fact.effectiveFrom,
+        )
+      )
+        continue;
+      const effective = fact.effectiveFrom === null ? null : Date.parse(fact.effectiveFrom);
+      if (effective !== null && (!Number.isFinite(effective) || effective > this.now().getTime()))
+        continue;
+      const latestCorrection = current.invalidations
+        ?.filter((record) => record.kind === "correction")
+        .at(-1);
+      if (
+        next[fact.field] !== null &&
+        (fact.authority !== "primary-artifact" ||
+          effective === null ||
+          !fact.reason.trim() ||
+          (latestCorrection && effective <= Date.parse(latestCorrection.occurredAt)))
+      )
+        continue;
+      next[fact.field] = fact.value;
+      next.researchFacts = {
+        ...next.researchFacts,
+        [fact.field]: {
+          value: fact.value,
+          sourceIds: fact.sourceIds,
+          effectiveFrom: fact.effectiveFrom,
+        },
+      };
+      reasons.push(
+        `${fact.field}: ${fact.reason || "Matched source supplies the previously unknown fact."} Sources: ${fact.sourceIds.join(", ")}. Effective: ${fact.effectiveFrom ?? "undated"}.`,
+      );
+    }
+    if (!reasons.length) return current;
+    return this.appendRevision(next, {
+      kind: "correction",
+      affectedRevision: current.revision,
+      detail: `Automatic research update. ${reasons.join(" ")}`,
+    });
+  }
+
+  forgetResearchSource(profileId: string, sourceId: string): PersonProfile | null {
+    const current = this.store.get(profileId);
+    if (!current) return null;
+    const next = { ...current, researchFacts: { ...current.researchFacts } };
+    let changed = false;
+    for (const field of ["fullName", "role", "currentEmployer", "background"] as const) {
+      const lineage = next.researchFacts[field];
+      if (!lineage?.sourceIds.includes(sourceId)) continue;
+      if (next[field] === lineage.value) next[field] = null;
+      delete next.researchFacts[field];
+      changed = true;
+    }
+    return changed
+      ? this.appendRevision(next, {
+          kind: "evidence-detached",
+          affectedRevision: current.revision,
+          evidenceId: sourceId,
+          detail: "Removed automatic facts that depended on a rejected source attribution.",
+        })
+      : current;
+  }
+
+  ensureIdentifier(value: string): PersonProfile {
+    const signals = parsePersonIdentifier(value);
+    const holders = this.store
+      .list()
+      .filter(
+        (profile) =>
+          profile.emails.some((email) => signals.emails.includes(email)) ||
+          profile.profileUrls.some((url) => signals.profileUrls.includes(url)),
+      );
+    const canonical = holders.filter((profile) => !profile.mergedInto);
+    if (canonical.length > 1)
+      throw new PersonProfileValidationError(
+        "conflicting-identity",
+        "Several Profiles hold that identity.",
+      );
+    if (canonical[0]) {
+      if (canonical[0].archivedAt)
+        throw new PersonProfileValidationError(
+          "conflicting-identity",
+          "Restore the archived Profile before reusing it.",
+        );
+      return canonical[0];
+    }
+    if (this.store.getTombstone(identifier(signals)))
+      throw new PersonProfileValidationError(
+        "conflicting-identity",
+        "This identity was privacy-deleted.",
+      );
+    return this.create({
+      ...(signals.emails[0] ? { primaryEmail: signals.emails[0] } : {}),
+      profileUrls: signals.profileUrls,
+    });
+  }
+
   create(input: PersonProfileCreateInput): PersonProfile {
+    const profileUrls = [
+      ...new Set(
+        (input.profileUrls ?? []).flatMap((url) => parsePersonIdentifier(url).profileUrls),
+      ),
+    ];
     const fullName = trimmed(input.fullName);
     const primaryEmail = trimmed(input.primaryEmail)?.toLowerCase() ?? null;
-    if (!fullName && !primaryEmail)
+    if (!fullName && !primaryEmail && profileUrls.length === 0)
       throw new PersonProfileValidationError(
         "missing-identity-input",
         "A Person Profile needs at least a full name or an email address.",
@@ -307,7 +441,7 @@ export class WorkspacePersonProfiles {
           emails: primaryEmail ? [primaryEmail] : [],
           fullNames: fullName ? [fullName] : [],
           handles: {},
-          profileUrls: [],
+          profileUrls,
           employerHints: [],
         }),
       ),
@@ -318,7 +452,7 @@ export class WorkspacePersonProfiles {
       primaryEmail,
       emails: primaryEmail ? [primaryEmail] : [],
       handles: {},
-      profileUrls: [],
+      profileUrls,
       employerHints: [],
       role: trimmed(input.role),
       background: trimmed(input.background),
@@ -332,6 +466,11 @@ export class WorkspacePersonProfiles {
       sourceDiagnostics: [],
       archivedAt: null,
     };
+    if (this.store.getTombstone(candidate.id))
+      throw new PersonProfileValidationError(
+        "conflicting-identity",
+        "This identity was privacy-deleted.",
+      );
     this.store.save(candidate);
     return candidate;
   }
@@ -632,6 +771,7 @@ export class WorkspacePersonProfiles {
       evidence: unionBy(survivor.evidence, duplicate.evidence, (item) => item.id),
     };
 
+    this.dossiers?.merge(survivorId, duplicate.id);
     const merged = this.appendRevision(next, {
       kind: "merge",
       affectedRevision: survivor.revision,
@@ -889,6 +1029,11 @@ export class WorkspacePersonProfiles {
       profileUrls: [],
       employerHints: [],
     });
+    if (this.store.getTombstone(id))
+      throw new PersonProfileValidationError(
+        "conflicting-identity",
+        "This Calendar identity was privacy-deleted.",
+      );
     const squatter = this.store.get(id);
     if (squatter)
       throw new PersonProfileValidationError(

@@ -1,3 +1,4 @@
+import type { PersonResearchQueue } from "../person-profile/research-queue.js";
 import type { FastifyInstance } from "fastify";
 import { DEFAULT_MODELS, ConfigUpdateSchema } from "@chief-of-staff-demo/shared";
 import type { ConfigStore } from "../config.js";
@@ -45,6 +46,7 @@ export interface ApiContext {
   meetingJoin: WorkspaceMeetingJoin;
   /** Public-web identity resolution behind the typed-identifier lookup. */
   peopleResolver: PersonProfileResolver;
+  personResearchQueue?: PersonResearchQueue;
   /** Owner onboarding (issue #123): the proposal/confirmation namespace. */
   onboarding: OwnerOnboarding;
   /** The Content Engine product area's Workspace-owned interface (spec #147). */
@@ -278,7 +280,11 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
 
   /* The Person Profiles product area is a Workspace resource, not a hosted
      Module: its routes hang off the Shell under /api/people (ADR-0043). */
-  registerPeopleApi(app, { people: ctx.people, resolver: ctx.peopleResolver });
+  registerPeopleApi(app, {
+    people: ctx.people,
+    resolver: ctx.peopleResolver,
+    ...(ctx.personResearchQueue ? { research: ctx.personResearchQueue } : {}),
+  });
   /* Meetings are a Workspace resource too: the Meeting Wizard presents them,
      and their Transcripts follow them (issue #153). */
   registerMeetingsApi(app, {

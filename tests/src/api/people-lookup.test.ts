@@ -129,7 +129,7 @@ describe("POST /api/people/lookup", () => {
 });
 
 describe("POST /api/people/lookup/accept", () => {
-  it("mints the Profile the search proposed", async () => {
+  it("creates the stable identity immediately without waiting for public research", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/people/lookup/accept",
@@ -139,7 +139,8 @@ describe("POST /api/people/lookup/accept", () => {
     const { profile } = response.json<{ profile: { id: string } }>();
     const saved = store.get(profile.id);
     expect(saved?.emails).toContain("ada@example.com");
-    expect(saved?.evidence.length).toBeGreaterThan(0);
+    expect(saved?.evidence).toEqual([]);
+    expect(queries).toEqual([]);
   });
 
   it("reports a second accept against the same identity as existing", async () => {

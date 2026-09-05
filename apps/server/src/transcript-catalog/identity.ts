@@ -30,6 +30,7 @@ export interface TranscriptIdentityDeps {
   store: TranscriptIdentityStore;
   people: WorkspacePersonProfiles;
   now?: () => Date;
+  automaticCreation?: boolean;
 }
 
 /**
@@ -88,8 +89,10 @@ export class TranscriptIdentityService {
   private readonly store: TranscriptIdentityStore;
   private readonly people: WorkspacePersonProfiles;
   private readonly now: () => Date;
+  private readonly automaticCreation: boolean;
 
   constructor(deps: TranscriptIdentityDeps) {
+    this.automaticCreation = deps.automaticCreation ?? false;
     this.store = deps.store;
     this.people = deps.people;
     this.now = deps.now ?? (() => new Date());
@@ -192,6 +195,36 @@ export class TranscriptIdentityService {
     const mentions = this.store
       .readMentions()
       .filter((mention) => mention.provenance.transcriptId === transcriptId);
+    if (this.automaticCreation) {
+      const allMentions = this.store.readMentions();
+      for (const mention of mentions) {
+        if (mention.kind !== "person") continue;
+        const current = this.store.latestDecision(mention.id);
+        if (current && !isDerivedIdentityDecision(current)) continue;
+        const emails = [
+          ...new Set([
+            ...mention.emails,
+            ...(mention.speakerCalendarEmail ? [mention.speakerCalendarEmail] : []),
+          ]),
+        ];
+        const identifiers = emails.length ? emails : mention.profileUrls;
+        if (identifiers.length !== 1) continue;
+        const identifier = identifiers[0]!;
+        const rejectedElsewhere = allMentions.some(
+          (other) =>
+            (other.emails.includes(identifier) || other.profileUrls.includes(identifier)) &&
+            ["not-person", "unresolved"].includes(
+              this.store.latestDecision(other.id)?.action ?? "",
+            ),
+        );
+        if (rejectedElsewhere) continue;
+        try {
+          this.people.ensureIdentifier(identifier);
+        } catch {
+          /* Conflicts, archives and tombstones stay in the review lane. */
+        }
+      }
+    }
     const profiles = this.matchableProfiles();
     const mappings = this.store.readMappings();
     const generatedAt = this.now().toISOString();

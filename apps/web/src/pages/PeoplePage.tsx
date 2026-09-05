@@ -1,3 +1,4 @@
+import { PersonDossierSearch } from "./PersonDossierSearch";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
@@ -71,6 +72,7 @@ export function PeoplePage({ client = peopleApi }: { client?: PeopleClient }) {
           Review queue
         </Link>
       </div>
+      <PersonDossierSearch profiles={profiles ?? []} />
       {profiles === null ? (
         <p className="muted">Loading…</p>
       ) : profiles.length === 0 ? (

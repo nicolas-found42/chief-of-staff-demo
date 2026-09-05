@@ -64,6 +64,23 @@ if (!process.env.MIGRATION_TEST_WORKSPACE_DIR) {
       2,
     ),
   );
+  writeFileSync(
+    join(workspace, "person-research.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      settings: {
+        paused: true,
+        concurrency: 1,
+        profileCalls: 8,
+        profileMilliseconds: 120000,
+        dailyCalls: 100,
+        refreshHours: 168,
+      },
+      day: new Date().toISOString().slice(0, 10),
+      usedCalls: 0,
+      jobs: [],
+    }),
+  );
   copyFileSync(join(root, "tests/fixtures/mock-result.json"), join(workspace, "mock-result.json"));
   /* The hermetic server boots post-cutover: the one-time migration marker is
      present, so the gate is inactive and every existing journey runs ungated

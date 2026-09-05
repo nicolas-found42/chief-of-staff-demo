@@ -1,3 +1,8 @@
+import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
+import { PersonDossierStore } from "../person-profile/dossier-store.js";
+import { PersonResearch } from "../person-profile/research.js";
+import { PersonResearchQueue } from "../person-profile/research-queue.js";
+import { registerPersonDossierApi } from "../api/person-dossiers.js";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
@@ -8,7 +13,11 @@ import { registerStaticServing } from "../api/static.js";
 import { registerRelayRoutes } from "../relay/routes.js";
 import { seedRelayBaseUrlFromEnv } from "../relay/state.js";
 import { registerMeetingBriefHubSpotRoutes } from "../modules/meeting-brief-generator/hubspot/routes.js";
-import { contentScoutTestPorts, registerTestSeed } from "../api/testSeed.js";
+import {
+  contentScoutTestPorts,
+  personDossierTestPorts,
+  registerTestSeed,
+} from "../api/testSeed.js";
 import { PersonProfileStore } from "../person-profile/store.js";
 import { WorkspaceMeetings } from "../meetings/store.js";
 import { WorkspaceMeetingJoin } from "../meetings/join.js";
@@ -222,6 +231,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     },
   };
   function stopModules(): void {
+    personResearchQueue.stop();
     taskProduct.stop();
     weeklyWorkspace.stop();
     for (const module of modules) {
@@ -245,6 +255,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      same Runs, not one object per Module over one directory. */
   const runs = openRuns(workspaceDir);
   const peopleStore = new PersonProfileStore(workspaceDir);
+  const personDossiers = new PersonDossierStore(workspaceDir);
   /* Content Research owns its watches, so its Profile references are disclosed
      by a registry over the same store the Module runs on (spec #134, ADR-0042):
      archive and privacy deletion refuse while a watch is active, and privacy
@@ -258,6 +269,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const transcriptCatalogStore = new TranscriptCatalogStore(workspaceDir);
   const peopleProfiles: WorkspacePersonProfiles = new WorkspacePersonProfiles({
     store: peopleStore,
+    dossiers: personDossiers,
     lifecycle: [
       new WorkspacePersonProfileReferences(runs, {
         ownerReference: (): ConfirmedOwnerReference | null => ownerOnboarding.confirmed(),
@@ -265,6 +277,35 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         publicItems: () => contentResearch.listSourceItems(),
       }),
       new ContentResearchWatchRegistry(contentResearchStore),
+      {
+        inspect: (profile) => ({
+          dependentConfigurations: [],
+          residualSourceArtifacts: [
+            ...new Set(
+              personDossiers
+                .get(profile.id)
+                ?.claims.flatMap((c) => c.citations.map((p) => p.sourceId)) ?? [],
+            ),
+          ].map((artifactId) => ({
+            artifactId,
+            kind: "public-source" as const,
+            separateDeleteSupported: false,
+          })),
+        }),
+        privacyDelete: (profileId) => {
+          const existed = personDossiers.get(profileId) !== null;
+          personDossiers.privacyDelete(profileId);
+          personResearchQueue.remove(profileId);
+          return {
+            aliases: 0,
+            candidates: 0,
+            mappings: 0,
+            decisions: 0,
+            activeLinks: 0,
+            personSnapshots: existed ? 1 : 0,
+          };
+        },
+      },
     ],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
@@ -365,6 +406,64 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     diagnostics: publicSearchDiagnostics,
     ...(searxngUrl !== undefined ? { searxngUrl } : {}),
   });
+  const personResearch = new PersonResearch({
+    dossiers: personDossiers,
+    people: peopleProfiles,
+    search: publicSearch,
+    complete: (request) => peopleCompleteJson()(request),
+    privateDocuments: (profile) =>
+      transcriptCatalogStore.listTranscripts().flatMap((transcript) => {
+        const confirmed = () =>
+          transcriptIdentityStore
+            .readMentions()
+            .some(
+              (mention) =>
+                mention.provenance.transcriptId === transcript.id &&
+                transcriptIdentityStore.latestDecision(mention.id)?.profileId === profile.id &&
+                ["linked", "created"].includes(
+                  transcriptIdentityStore.latestDecision(mention.id)?.outcome ?? "",
+                ),
+            );
+        return confirmed()
+          ? [
+              {
+                transcriptId: transcript.id,
+                title: transcript.source.fileName,
+                text: transcript.normalizedText,
+                active: () =>
+                  transcriptCatalogStore.readTranscript(transcript.id)?.source.checksum ===
+                    transcript.source.checksum && confirmed(),
+              },
+            ]
+          : [];
+      }),
+    ...(process.env.ENABLE_TEST_SEED === "1" ? personDossierTestPorts : {}),
+  });
+  const personResearchQueue = new PersonResearchQueue({
+    workspaceDir,
+    people: peopleProfiles,
+    research: personResearch,
+    enabled: () => !migrationGate.isActive(),
+    upcomingProfileIds: () => {
+      const emails = new Set(
+        meetings
+          .list()
+          .filter(
+            (meeting) =>
+              !meeting.cancelled &&
+              Date.parse(meeting.startAt) >= Date.now() &&
+              Date.parse(meeting.startAt) <= Date.now() + 48 * 3600000,
+          )
+          .flatMap((meeting) =>
+            meeting.participants.map((participant) => participant.email.toLowerCase()),
+          ),
+      );
+      return peopleProfiles
+        .search()
+        .filter((person) => person.emails.some((email) => emails.has(email)))
+        .map((person) => person.id);
+    },
+  });
   const peopleResolver = new PersonProfileResolver({
     store: peopleStore,
     sources: [
@@ -395,6 +494,44 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      A consumer built on transcript-derived Runs registers here the same way. */
   const transcriptConsumerRegistries: TranscriptConsumerRegistry[] = [
     new WorkspacePersonProfileTranscriptEvidence(peopleStore),
+    {
+      consumer: "person-dossiers",
+      label: "Dossier claims and interpretations",
+      inspect: (record) =>
+        peopleProfiles
+          .search({ includeArchived: true })
+          .reduce(
+            (count, profile) =>
+              count +
+              (personDossiers
+                .get(profile.id)
+                ?.claims.filter((c) =>
+                  c.citations.some(
+                    (p) =>
+                      personDossiers.source(profile.id, p.sourceId)?.transcriptId === record.id,
+                  ),
+                ).length ?? 0),
+            0,
+          ),
+      purge: (transcriptId) => {
+        const before = peopleProfiles
+          .search({ includeArchived: true })
+          .reduce(
+            (count, profile) => count + (personDossiers.get(profile.id)?.claims.length ?? 0),
+            0,
+          );
+        personDossiers.removeTranscript(transcriptId);
+        return (
+          before -
+          peopleProfiles
+            .search({ includeArchived: true })
+            .reduce(
+              (count, profile) => count + (personDossiers.get(profile.id)?.claims.length ?? 0),
+              0,
+            )
+        );
+      },
+    },
   ];
   const transcriptDeletion = new TranscriptDeletionService({
     catalog: transcriptCatalogStore,
@@ -789,6 +926,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      place. Mounted behind the migration gate's hold like every other route:
      a pre-cutover Workspace holds no generated data of this shape to clear. */
   const drainModules = async (): Promise<void> => {
+    await personResearchQueue.drain();
     await transcriptCatalogRuntime.drain();
     if (meetingBriefProduction) {
       await meetingBriefProduction.relayPoller.drain();
@@ -818,6 +956,72 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   if (meetingDebriefTest) {
     registerMeetingDebriefTestRoutes(app, meetingDebriefTest);
   }
+  registerPersonDossierApi(app, {
+    people: peopleProfiles,
+    dossiers: personDossiers,
+    queue: personResearchQueue,
+    history: (profileId) => {
+      const person = peopleProfiles.get(profileId);
+      if (!person) return [];
+      const records: PersonRelationshipRecord[] = meetings
+        .list()
+        .filter((meeting) =>
+          meeting.participants.some((p) => person.emails.includes(p.email.toLowerCase())),
+        )
+        .map((meeting) => ({
+          kind: "meeting",
+          id: meeting.id,
+          title: meeting.title,
+          date: meeting.startAt,
+          href: `/meetings/${encodeURIComponent(meeting.id)}`,
+          detail: "Calendar participant with an exact matching email.",
+        }));
+      for (const mention of transcriptIdentityStore.readMentions()) {
+        const decision = transcriptIdentityStore.latestDecision(mention.id);
+        if (decision?.profileId !== profileId || !["linked", "created"].includes(decision.outcome))
+          continue;
+        const transcript = transcriptCatalogStore.readTranscript(mention.provenance.transcriptId);
+        if (transcript)
+          records.push({
+            kind: "transcript",
+            id: mention.id,
+            title: transcript.source.fileName,
+            date: transcript.meetingDate,
+            href: transcript.meetingId
+              ? `/meetings/${encodeURIComponent(transcript.meetingId)}`
+              : "/people/review",
+            detail: mention.provenance.quote,
+          });
+      }
+      for (const task of tasks.list())
+        if (
+          task.responsiblePerson?.kind === "person-profile" &&
+          task.responsiblePerson.profileId === profileId
+        )
+          records.push({
+            kind: "task",
+            id: task.id,
+            title: task.title,
+            date: task.dueDate,
+            href: "/tasks",
+            detail: task.status,
+          });
+      for (const item of actionItems.list())
+        if (
+          item.proposal.responsiblePerson?.kind === "person-profile" &&
+          item.proposal.responsiblePerson.profileId === profileId
+        )
+          records.push({
+            kind: "action-item",
+            id: item.id,
+            title: item.proposal.title,
+            date: item.proposal.dueDate,
+            href: "/tasks",
+            detail: item.state,
+          });
+      return records;
+    },
+  });
   await registerApi(app, {
     runs,
     port,
@@ -827,6 +1031,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     google: googleConnection,
     people: peopleProfiles,
     peopleResolver,
+    personResearchQueue,
     meetings,
     meetingJoin,
     onboarding: ownerOnboarding,
@@ -1009,6 +1214,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     }
     transcriptCatalogRuntime.start();
     meetingBriefProduction?.relayPoller.start();
+    personResearchQueue.start();
     taskProduct.start();
     weeklyWorkspace.start();
     modulesRunning = true;

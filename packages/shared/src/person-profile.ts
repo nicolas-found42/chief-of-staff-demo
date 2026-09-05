@@ -80,6 +80,7 @@ export interface PersonPublishingFeed {
 
 /** What explicit manual creation records: identity inputs plus optional known facts. */
 export interface PersonProfileCreateInput {
+  profileUrls?: string[];
   fullName?: string;
   primaryEmail?: string;
   role?: string;
@@ -88,6 +89,12 @@ export interface PersonProfileCreateInput {
 }
 
 export interface PersonProfile {
+  researchFacts?: Partial<
+    Record<
+      "fullName" | "role" | "currentEmployer" | "background",
+      { value: string; sourceIds: string[]; effectiveFrom: string | null }
+    >
+  >;
   id: string;
   revision: number;
   createdAt: string;

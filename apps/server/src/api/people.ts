@@ -1,3 +1,4 @@
+import type { PersonResearchQueue } from "../person-profile/research-queue.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   PersonProfileCorrectionInput,
@@ -20,6 +21,7 @@ export interface PeopleApiContext {
   people: WorkspacePersonProfiles;
   /** Public-web identity resolution behind the typed-identifier lookup. */
   resolver: PersonProfileResolver;
+  research?: PersonResearchQueue;
 }
 
 const PURPOSES: readonly PersonProfileProjectionPurpose[] = ["public-safe", "meeting"];
@@ -56,6 +58,7 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
     try {
       const input: PersonProfileCreateInput = request.body ?? {};
       const profile = people.create(input);
+      ctx.research?.enqueue(profile.id, "created");
       reply.code(201);
       return profile;
     } catch (error) {
@@ -86,8 +89,9 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
       const signals = parsePersonIdentifier(body.identifier);
       const profile =
         mode === "accept"
-          ? await ctx.resolver.resolve(signals)
+          ? people.ensureIdentifier(body.identifier)
           : await ctx.resolver.preview(signals);
+      if (mode === "accept") ctx.research?.enqueue(profile.id, "created");
       return { profile, signals, existing: people.get(profile.id) !== null };
     } catch (error) {
       if (error instanceof PersonIdentifierError) {
@@ -125,6 +129,11 @@ export function registerPeopleApi(app: FastifyInstance, ctx: PeopleApiContext): 
         error: "profile-archived",
         message: "Restore this Person Profile before searching for it again.",
       };
+    }
+    if (ctx.research) {
+      ctx.research.enqueue(profileId, "explicit");
+      reply.code(202);
+      return { profile, signals: null, existing: true };
     }
     const enriched = await ctx.resolver.resolve({
       emails: profile.emails,

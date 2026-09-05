@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
@@ -1665,4 +1665,27 @@ describe("rematching against changed Profiles and authority", () => {
       )!;
     expect(elsewhere.decision).toMatchObject({ outcome: "linked", decidedBy: "policy" });
   });
+});
+
+it("automatically creates one email-anchored Profile across repeated Transcript mining when enabled", async () => {
+  const h = makeHarness();
+  try {
+    const service = new TranscriptIdentityService({
+      store: h.store,
+      people: h.people,
+      now: NOW,
+      automaticCreation: true,
+    });
+    const record = makeRecord("Email grace@example.com before the review.");
+    await service.process(record);
+    await service.process(record);
+    expect(h.people.search()).toHaveLength(1);
+    expect(h.people.search()[0]?.primaryEmail).toBe("grace@example.com");
+    const item = service
+      .reviewQueue()
+      .items.find((item) => item.mention.emails.includes("grace@example.com"));
+    expect(item?.decision?.outcome).toBe("linked");
+  } finally {
+    rmSync(h.workspaceDir, { recursive: true, force: true });
+  }
 });

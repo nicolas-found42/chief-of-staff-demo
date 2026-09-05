@@ -98,6 +98,11 @@ const SEED_CORPUS = [
  * cannot expose it (no NODE_ENV string compare).
  */
 export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContext): Promise<void> {
+  app.post("/api/test/person-dossier-source", async (request) => {
+    const input = request.body as { url: string; text: string; extraction: unknown };
+    dossierSources.set(input.url, { text: input.text, extraction: input.extraction });
+    return { ok: true };
+  });
   app.post("/api/test/seed", async (request, reply) => {
     try {
       const query = request.query as { scenario?: string };
@@ -574,3 +579,31 @@ export function contentScoutTestPorts(now: () => Date): {
     },
   };
 }
+
+/** The browser suite replaces only remote I/O; the production research pipeline stays intact. */
+const dossierSources = new Map<string, { text: string; extraction: unknown }>();
+export const personDossierTestPorts: {
+  search: import("../source-adapters/search.js").PublicSearch;
+  fetch: import("../source-adapters/http.js").PublicHttpFetch;
+  complete: import("../llm/providers.js").CompleteJson;
+} = {
+  search: async (query) =>
+    [...dossierSources]
+      .filter(([, source]) =>
+        source.text.toLowerCase().includes(query.replace(/"/g, "").toLowerCase()),
+      )
+      .map(([url, source]) => ({ url, title: "Fixture source", snippet: source.text })),
+  fetch: async (url) => ({
+    url,
+    status: dossierSources.has(url) ? 200 : 404,
+    contentType: "text/plain",
+    etag: null,
+    lastModified: null,
+    retryAfter: null,
+    body: dossierSources.get(url)?.text ?? "",
+  }),
+  complete: async (request) => {
+    const input = JSON.parse(request.user) as { document: { url: string } };
+    return dossierSources.get(input.document.url)?.extraction ?? {};
+  },
+};

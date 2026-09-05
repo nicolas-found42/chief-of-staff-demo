@@ -104,21 +104,7 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
   const [identifier, setIdentifier] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const [proposal, setProposal] = useState<PersonProfileLookup | null>(null);
-
-  async function runLookup() {
-    if (lookupBusy) return;
-    setLookupBusy(true);
-    setLookupError(null);
-    setProposal(null);
-    try {
-      setProposal(await client.lookupPersonProfile(identifier));
-    } catch (err) {
-      setLookupError(errorMessage(err));
-    } finally {
-      setLookupBusy(false);
-    }
-  }
+  const [proposal] = useState<PersonProfileLookup | null>(null);
 
   async function acceptLookup() {
     if (lookupBusy) return;
@@ -174,17 +160,15 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
       </h1>
       <p className="muted">
         Start from an identifier and let the public web fill the Profile in, or enter the facts
-        yourself. Manual creation is explicit: it records what you type as the Profile's first
-        revision, and runs no external enrichment.
+        yourself. The Profile is saved immediately and researched automatically in the background.
       </p>
 
       <div className="card">
         <h2>Find by email or profile URL</h2>
         <p className="muted">
           An email address or a profile address — <code>linkedin.com/in/someone</code> — is searched
-          against the public web, and what comes back is a proposal. Nothing is saved until you
-          accept it. The address is a search term only: no page is signed into, and no LinkedIn
-          session is used.
+          automatically. A matching existing Profile is reused; otherwise a new Profile is created.
+          Research fills its dossier as sources are found. Uncertain information remains labeled.
         </p>
         <div className="field-row">
           <label htmlFor="profile-identifier">Email or profile URL</label>
@@ -198,10 +182,10 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
           <button
             type="button"
             className="action-button"
-            onClick={() => void runLookup()}
+            onClick={() => void acceptLookup()}
             aria-disabled={lookupBusy || identifier.trim() === ""}
           >
-            {lookupBusy ? "Searching…" : "Search"}
+            {lookupBusy ? "Adding…" : "Add and research"}
           </button>
         </div>
         {lookupError && (

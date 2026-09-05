@@ -50,6 +50,7 @@ test("person profiles journey — nav → search → create → detail → revis
   // 3. The detail route is stable and shows the auditable first revision.
   await expect(page).toHaveURL(/\/people\/person_[0-9a-f]+$/);
   await expect(page.getByRole("heading", { level: 1, name: "Grace Hopper" })).toBeVisible();
+  await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await expect(page.getByText("Revision 1 (current)")).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: "grace@example.com" })).toBeVisible();
   await expect(page.getByText("Pioneered compilers.")).toBeVisible();
@@ -83,6 +84,7 @@ test("person profiles journey — nav → search → create → detail → revis
   await page.goto(`/runs/${linkedRunId}`);
   await expect(page.getByRole("alert")).toContainText("Profile-derived claims need refresh");
   await page.goto(`/people/${profileId}`);
+  await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByLabel("Clear primary email").check();
   await page.getByLabel("Clear current employer").check();
   await page.getByLabel("Clear background").check();
@@ -113,6 +115,7 @@ test("person profiles journey — nav → search → create → detail → revis
 
   // 5. The revision history links to the exact recorded revision.
   await page.getByRole("cell", { name: "Grace Hopper" }).getByRole("link").click();
+  await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByRole("button", { name: "Revision 1", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
     "Viewing revision 1 exactly as it was recorded",
@@ -131,7 +134,8 @@ test("person profiles journey — nav → search → create → detail → revis
   });
   expect(conflictingResponse.ok()).toBe(true);
   const conflictingId = (await conflictingResponse.json()).id as string;
-  await page.getByLabel("Duplicate profile id").fill(conflictingId);
+  await page.getByLabel("Find duplicate person").fill("Grace");
+  await page.getByLabel("Duplicate person", { exact: true }).selectOption(conflictingId);
   await page.getByRole("button", { name: "Merge profile" }).click();
   await expect(page.getByRole("alert")).toContainText("different role");
   await page.getByLabel("Resolved role").fill("Professor of Computer Science");
