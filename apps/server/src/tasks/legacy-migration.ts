@@ -77,12 +77,13 @@ export function migrateLegacyActionReview(
     const before = new Set(
       deps.actionItems.list({ debriefRunId: summary.id }).map((item) => item.id),
     );
-    const materialized = deps.actionItems.materialize({
+    const materialization = {
       debriefRunId: summary.id,
       transcriptId: stored.transcriptId,
       meetingId: deps.meetingIdFor?.(stored.transcriptId) ?? null,
       actionItems: stored.debrief.actionItems,
-    });
+    };
+    const materialized = deps.actionItems.materialize(materialization);
     result.actionItems += materialized.filter((item) => !before.has(item.id)).length;
     const review = readReview(run);
     if (!review) continue;
@@ -93,7 +94,7 @@ export function migrateLegacyActionReview(
     const dropped = new Set(review.review.droppedActionItems);
     const done = new Set(review.review.completedActionItems);
     const receipted = taskReceiptIndexes(run);
-    for (const [index, item] of materialized.entries()) {
+    for (const [index, item] of deps.actionItems.materialize(materialization).entries()) {
       if (item.state !== "pending") continue;
       if (dropped.has(index)) {
         deps.actionItems.dismiss(item.id);
@@ -186,7 +187,10 @@ export async function migrateLegacyTaskReceipts(
     const stored = readResult(run);
     const raw = run.readArtifact("tasks.json");
     if (!stored || !raw) continue;
-    let receipt: { tasks?: Array<{ index?: unknown; taskId?: unknown }> };
+    let receipt: {
+      taskListId?: string;
+      tasks?: Array<{ index?: unknown; taskId?: unknown; taskListId?: string }>;
+    };
     try {
       receipt = JSON.parse(raw) as typeof receipt;
     } catch {
@@ -207,6 +211,11 @@ export async function migrateLegacyTaskReceipts(
         entry.taskId === ""
       )
         continue;
+      const destination = {
+        ...deps.destination,
+        googleTaskListId:
+          entry.taskListId ?? receipt.taskListId ?? deps.destination.googleTaskListId,
+      };
       const item = items[entry.index];
       if (!item) continue;
       if (
@@ -224,7 +233,7 @@ export async function migrateLegacyTaskReceipts(
         status: task.status,
       };
       deps.tasks.recordExternalLink(task.id, {
-        destination: deps.destination,
+        destination,
         remoteId: entry.taskId,
         url: null,
         state: "waiting",
@@ -233,11 +242,11 @@ export async function migrateLegacyTaskReceipts(
         failure: null,
       });
       try {
-        const remote = await deps.read(deps.destination, entry.taskId);
+        const remote = await deps.read(destination, entry.taskId);
         if (remote?.status === "completed") deps.tasks.complete(task.id);
         if (remote?.status === "open") deps.tasks.reopen(task.id);
         deps.tasks.refreshExternalLink(task.id, {
-          destination: deps.destination,
+          destination,
           remoteId: entry.taskId,
           url: null,
           state: remote ? "synchronized" : "missing",
@@ -250,7 +259,7 @@ export async function migrateLegacyTaskReceipts(
       } catch (error) {
         const failure = classifyTaskLinkError(error, "Google Tasks");
         deps.tasks.refreshExternalLink(task.id, {
-          destination: deps.destination,
+          destination,
           remoteId: entry.taskId,
           url: null,
           state: failure.kind === "not-found" ? "missing" : "failed",

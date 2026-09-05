@@ -31,6 +31,7 @@ export class PersonResearchQueue {
       now?: () => Date;
       enabled: () => boolean;
       upcomingProfileIds?: () => string[];
+      evidenceRevision?: (profileId: string) => string;
     },
   ) {
     this.file = join(deps.workspaceDir, "person-research.json");
@@ -53,8 +54,14 @@ export class PersonResearchQueue {
     // A process cannot carry its old in-flight lease through restart.
     for (const job of this.state.jobs)
       if (job.state === "researching") {
+        job.elapsedMilliseconds = Math.min(
+          this.state.settings.profileMilliseconds,
+          (job.elapsedMilliseconds ?? 0) +
+            (job.startedAt ? Math.max(0, Date.parse(this.now()) - Date.parse(job.startedAt)) : 0),
+        );
+        delete job.startedAt;
         job.state = "queued";
-        job.detail = "Resuming interrupted research.";
+        job.detail = "Resuming interrupted research with the saved traversal and time allowance.";
       }
   }
   private now(): string {
@@ -81,7 +88,7 @@ export class PersonResearchQueue {
   }
   enqueue(
     profileId: string,
-    reason: "created" | "meeting" | "explicit" | "viewed" | "backfill" | "refresh",
+    reason: "created" | "meeting" | "explicit" | "viewed" | "backfill" | "refresh" | "evidence",
   ): void {
     if (!this.deps.enabled()) return;
     const profile = this.deps.people.get(profileId);
@@ -90,16 +97,25 @@ export class PersonResearchQueue {
     const now = this.now();
     if (old) {
       if (!old.reasons.includes(reason)) old.reasons.push(reason);
-      if (old.state === "researching" || old.state === "queued") {
+      if (old.state === "researching" || old.state === "queued" || old.state === "paused") {
         this.save();
         return;
       }
-      if (reason !== "explicit" && old.nextAt > now) {
+      const ageHours = (Date.parse(now) - Date.parse(old.updatedAt)) / 3600000;
+      const urgent =
+        reason === "explicit" ||
+        reason === "evidence" ||
+        (reason === "meeting" && ageHours >= 24) ||
+        (reason === "viewed" && ageHours >= 48);
+      if (!urgent && old.nextAt > now) {
         this.save();
         return;
       }
       old.state = "queued";
       old.calls = 0;
+      old.elapsedMilliseconds = 0;
+      delete old.checkpoint;
+      delete old.startedAt;
       old.sources = 0;
       old.queuedAt = now;
       old.nextAt = now;
@@ -153,7 +169,16 @@ export class PersonResearchQueue {
   async tick(): Promise<void> {
     if (!this.deps.enabled() || this.state.settings.paused) return;
     this.rollDay();
-    for (const profile of this.deps.people.search()) this.enqueue(profile.id, "backfill");
+    for (const profile of this.deps.people.search()) {
+      this.enqueue(profile.id, "backfill");
+      const job = this.state.jobs.find((candidate) => candidate.profileId === profile.id);
+      const revision = this.deps.evidenceRevision?.(profile.id);
+      if (job && revision !== undefined && revision !== job.evidenceRevision) {
+        if (job.evidenceRevision !== undefined) this.enqueue(profile.id, "evidence");
+        job.evidenceRevision = revision;
+        this.save();
+      }
+    }
     for (const profileId of this.deps.upcomingProfileIds?.() ?? [])
       this.enqueue(profileId, "meeting");
     const now = this.now();
@@ -198,12 +223,20 @@ export class PersonResearchQueue {
     }
     const generation = this.generation;
     const fingerprint = JSON.stringify(profile);
+    const evidenceRevision = this.deps.evidenceRevision?.(profile.id);
+    const historical =
+      !job.lastHistoricalAt ||
+      Date.parse(this.now()) - Date.parse(job.lastHistoricalAt) >=
+        (this.state.settings.historicalRefreshHours ?? 720) * 3600000;
     const active = () =>
       this.deps.enabled() &&
       !this.state.settings.paused &&
       generation === this.generation &&
       this.state.jobs.includes(job) &&
-      JSON.stringify(this.deps.people.get(job.profileId)) === fingerprint;
+      JSON.stringify(this.deps.people.get(job.profileId)) === fingerprint &&
+      this.deps.evidenceRevision?.(profile.id) === evidenceRevision;
+    const started = Date.now();
+    job.startedAt = this.now();
     job.state = "researching";
     job.attempts += 1;
     job.updatedAt = this.now();
@@ -211,8 +244,18 @@ export class PersonResearchQueue {
     this.save();
     try {
       const result = await this.deps.research.run(profile, {
+        scope: historical ? "full" : "current",
         maxCalls: Math.max(0, this.state.settings.profileCalls - job.calls),
-        maxMilliseconds: this.state.settings.profileMilliseconds,
+        maxMilliseconds: Math.max(
+          0,
+          this.state.settings.profileMilliseconds - (job.elapsedMilliseconds ?? 0),
+        ),
+        ...(job.checkpoint ? { checkpoint: job.checkpoint } : {}),
+        saveCheckpoint: (checkpoint) => {
+          if (!active()) return;
+          job.checkpoint = structuredClone(checkpoint);
+          this.save();
+        },
         active,
         reserve: () => {
           this.rollDay();
@@ -232,6 +275,11 @@ export class PersonResearchQueue {
         this.state.jobs.includes(job);
       if (!active() && !ownUpdate) {
         if (this.state.jobs.includes(job)) {
+          if (
+            JSON.stringify(this.deps.people.get(job.profileId)) !== fingerprint ||
+            this.deps.evidenceRevision?.(profile.id) !== evidenceRevision
+          )
+            delete job.checkpoint;
           job.state = "queued";
           job.detail = "Profile or research policy changed; stale results were stopped.";
         }
@@ -240,6 +288,8 @@ export class PersonResearchQueue {
           this.state.usedCalls >= this.state.settings.dailyCalls && result.state === "incomplete"
             ? "paused"
             : result.state;
+        if (historical && ["current", "empty"].includes(result.state))
+          job.lastHistoricalAt = this.now();
         job.sources += result.sources;
         job.diagnostics = result.diagnostics;
         job.detail = result.detail;
@@ -258,6 +308,8 @@ export class PersonResearchQueue {
         job.nextAt = new Date(Date.parse(this.now()) + 3600000).toISOString();
       }
     } finally {
+      job.elapsedMilliseconds = (job.elapsedMilliseconds ?? 0) + Date.now() - started;
+      delete job.startedAt;
       this.running.delete(job.profileId);
       job.updatedAt = this.now();
       this.save();

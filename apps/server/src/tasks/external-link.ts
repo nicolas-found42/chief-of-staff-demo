@@ -55,6 +55,7 @@ type RemoteTaskContent = Omit<ExternalTaskBaseline, "status">;
  * would make "restore my version" also assert a completion nobody chose.
  */
 export interface RemoteTaskConnector<D extends ExternalTaskDestination = ExternalTaskDestination> {
+  resolveDestination?(destination: D): Promise<D>;
   create(task: Task, destination: D): Promise<{ remoteId: string; url: string | null }>;
   read(destination: D, remoteId: string): Promise<RemoteTaskSnapshot | null>;
   updateStatus(destination: D, remoteId: string, completed: boolean): Promise<void>;
@@ -74,6 +75,8 @@ export interface GoogleTasksDestinationSettings {
 
 export interface TaskLinkingDeps {
   tasks: WorkspaceTasks;
+  /** Changes when the owner reconnects; credentials themselves never leave composition. */
+  authorizationRevision?: (provider: ExternalTaskDestination["provider"]) => string;
   /** The stored Google Tasks settings, read live. */
   settings: () => GoogleTasksDestinationSettings;
   save: (settings: GoogleTasksDestinationSettings) => void;
@@ -164,10 +167,26 @@ export function classifyTaskLinkError(error: unknown, provider: string): TaskLin
 }
 
 export class TaskLinking {
+  private readonly authorizationRevisions = new Map<string, string>();
   private readonly pending = new Map<string, Promise<Task>>();
   private timer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly deps: TaskLinkingDeps) {}
+  constructor(private readonly deps: TaskLinkingDeps) {
+    for (const provider of ["google-tasks", "asana"] as const) {
+      const revision = deps.authorizationRevision?.(provider);
+      if (revision !== undefined) this.authorizationRevisions.set(provider, revision);
+    }
+  }
+
+  private classify(error: unknown, provider: string): TaskLinkFailure {
+    const failure = classifyTaskLinkError(error, provider);
+    const revision = this.deps.authorizationRevision?.(
+      provider === "Asana" ? "asana" : "google-tasks",
+    );
+    return failure.kind === "authorization" && revision !== undefined
+      ? { ...failure, authorizationRevision: revision }
+      : failure;
+  }
 
   start(): void {
     if (this.timer) return;
@@ -183,13 +202,28 @@ export class TaskLinking {
 
   /** All lifecycle triggers use the same per-Task path and isolate provider failures. */
   async refresh(options: { failedOnly?: boolean; manual?: boolean } = {}): Promise<Task[]> {
+    const reconnected = new Set<string>();
+    for (const provider of ["google-tasks", "asana"] as const) {
+      const revision = this.deps.authorizationRevision?.(provider);
+      if (revision !== undefined && this.authorizationRevisions.get(provider) !== revision) {
+        reconnected.add(provider);
+        this.authorizationRevisions.set(provider, revision);
+      }
+    }
     const selected = [...this.deps.tasks.list(), ...this.deps.tasks.list({ trashed: true })].filter(
       (task) => {
         const link = task.externalLink;
         return (
           link !== null &&
           (!options.failedOnly || link.state === "failed") &&
-          (options.manual || link.failure?.kind !== "authorization")
+          (options.manual ||
+            reconnected.has(link.destination.provider) ||
+            (this.deps.authorizationRevision !== undefined &&
+              link.failure?.authorizationRevision !== undefined &&
+              link.destination.provider !== "local" &&
+              link.failure.authorizationRevision !==
+                this.deps.authorizationRevision(link.destination.provider)) ||
+            link.failure?.kind !== "authorization")
         );
       },
     );
@@ -214,7 +248,11 @@ export class TaskLinking {
       return task;
     }
     if (link.remoteId === null) return this.link(taskId);
-    task = await this.synchronize(taskId);
+    const read = { failed: false };
+    task = await this.inspect(taskId, () => {
+      read.failed = true;
+    });
+    if (read.failed) return task;
     if (["missing", "conflicted", "changed-externally"].includes(task.externalLink?.state ?? "")) {
       return task;
     }
@@ -251,7 +289,7 @@ export class TaskLinking {
     try {
       await connector.delete(link.destination, link.remoteId);
     } catch (error) {
-      const failure = classifyTaskLinkError(error, this.providerName(link.destination));
+      const failure = this.classify(error, this.providerName(link.destination));
       if (failure.kind !== "not-found") {
         return this.deps.tasks.refreshExternalLink(taskId, { ...link, state: "failed", failure });
       }
@@ -325,8 +363,42 @@ export class TaskLinking {
    * rather than raised at the owner: the work is captured either way, and the
    * link is what is waiting.
    */
+  async recoverCreation(taskId: string, remoteId: string): Promise<Task> {
+    const task = this.requireTask(taskId);
+    const link = task.externalLink;
+    if (!link?.creationUncertain || !remoteId.trim() || link.destination.provider === "local")
+      throw new TaskValidationError(
+        "invalid-destination",
+        "Supply the existing provider record ID for an uncertain creation.",
+      );
+    const remote = await this.connectorFor(link.destination.provider)?.read(
+      link.destination,
+      remoteId,
+    );
+    if (!remote)
+      throw new TaskValidationError("task-not-found", "That provider record was not found.");
+    this.deps.tasks.recordExternalLink(task.id, {
+      ...link,
+      creationUncertain: false,
+      remoteId,
+      state: "synchronized",
+      failure: null,
+    });
+    return this.retry(task.id);
+  }
+
   async link(taskId: string): Promise<Task> {
     const task = this.requireTask(taskId);
+    if (task.externalLink?.creationUncertain)
+      return this.deps.tasks.recordExternalLink(task.id, {
+        ...task.externalLink,
+        state: "failed",
+        failure: {
+          kind: "network",
+          message:
+            "The creation response was lost. Inspect the provider and recover its existing record by ID before retrying.",
+        },
+      });
     /* A link that names a live record is one link already — whether it is
        synchronized or a failed outward write on top of it. Re-linking over
        one would strand the record Google still holds. Only a link that never
@@ -357,10 +429,11 @@ export class TaskLinking {
        silently says nothing happened. */
     this.deps.tasks.recordExternalLink(task.id, {
       state: "waiting",
+      creationUncertain: true,
       destination: task.destination,
       remoteId: null,
       url: null,
-      baseline: this.baselineFor(task, task.status),
+      baseline: this.baselineFor(task, "open"),
       external: null,
       failure: null,
     });
@@ -375,11 +448,24 @@ export class TaskLinking {
         destination: task.destination,
         remoteId: null,
         url: null,
-        baseline: this.baselineFor(task, task.status),
+        baseline: this.baselineFor(task, "open"),
         external: null,
-        failure: classifyTaskLinkError(error, provider),
+        failure: this.classify(error, provider),
+        creationUncertain: !["authorization", "validation", "rate-limit"].includes(
+          this.classify(error, provider).kind,
+        ),
       });
     }
+    // Persist the remote identity before the separate status write can be interrupted.
+    this.deps.tasks.recordExternalLink(task.id, {
+      state: "synchronized",
+      destination,
+      remoteId: created.remoteId,
+      url: created.url,
+      baseline: this.baselineFor(task, "open"),
+      external: null,
+      failure: null,
+    });
     /* Creation cannot carry completion on either provider (the record arrives
        open — Google's insert has no completed field, and Asana's is sent as
        its own call so the sequence stays recoverable), so a completed Task is
@@ -390,18 +476,18 @@ export class TaskLinking {
       try {
         await connector.updateStatus(destination, created.remoteId, true);
       } catch (error) {
-        return this.deps.tasks.recordExternalLink(task.id, {
+        return this.deps.tasks.refreshExternalLink(task.id, {
           state: "failed",
           destination: task.destination,
           remoteId: created.remoteId,
           url: created.url,
           baseline: this.baselineFor(task, "open"),
           external: null,
-          failure: classifyTaskLinkError(error, provider),
+          failure: this.classify(error, provider),
         });
       }
     }
-    return this.deps.tasks.recordExternalLink(task.id, {
+    return this.deps.tasks.refreshExternalLink(task.id, {
       state: "synchronized",
       destination,
       remoteId: created.remoteId,
@@ -451,7 +537,7 @@ export class TaskLinking {
         failure: null,
       });
     } catch (error) {
-      const classified = classifyTaskLinkError(error, this.providerName(link.destination));
+      const classified = this.classify(error, this.providerName(link.destination));
       /* The provider answering not-found means the record is gone, not that
          the write was wrong: the local Task stays intact and the link says
          missing, which is what `recreate` and `removeLink` below resolve. */
@@ -485,12 +571,16 @@ export class TaskLinking {
    * A record the provider no longer holds marks the link missing with the
    * local Task intact. Repeated reads that agree with the Task write nothing.
    */
-  async synchronize(taskId: string): Promise<Task> {
+  synchronize(taskId: string): Promise<Task> {
+    return this.inspect(taskId, () => {});
+  }
+
+  private async inspect(taskId: string, readFailed: () => void): Promise<Task> {
     const task = this.deps.tasks.get(taskId);
     if (!task) {
       throw new TaskValidationError("task-not-found", `No Task with id ${taskId}`);
     }
-    const link = task.externalLink;
+    let link = task.externalLink;
     if (
       link === null ||
       link.remoteId === null ||
@@ -523,9 +613,17 @@ export class TaskLinking {
     }
     let remote: RemoteTaskSnapshot | null;
     try {
-      remote = await connector.read(link.destination, link.remoteId);
+      const destination = connector.resolveDestination
+        ? await connector.resolveDestination(link.destination)
+        : link.destination;
+      if (JSON.stringify(destination) !== JSON.stringify(link.destination)) {
+        link = { ...link, destination };
+        this.deps.tasks.refreshExternalLink(task.id, link);
+      }
+      remote = await connector.read(destination, link.remoteId!);
     } catch (error) {
-      const classified = classifyTaskLinkError(error, this.providerName(link.destination));
+      readFailed();
+      const classified = this.classify(error, this.providerName(link.destination));
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: classified.kind === "not-found" ? "missing" : "failed",
@@ -639,7 +737,7 @@ export class TaskLinking {
         failure: null,
       });
     } catch (error) {
-      const classified = classifyTaskLinkError(error, this.providerName(link.destination));
+      const classified = this.classify(error, this.providerName(link.destination));
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: classified.kind === "not-found" ? "missing" : "failed",
@@ -707,7 +805,7 @@ export class TaskLinking {
          link keeps saying so with the new reason attached. */
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
-        failure: classifyTaskLinkError(error, this.providerName(link.destination)),
+        failure: this.classify(error, this.providerName(link.destination)),
       });
     }
     return this.deps.tasks.refreshExternalLink(task.id, {
@@ -769,7 +867,7 @@ export class TaskLinking {
     } catch (error) {
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
-        failure: classifyTaskLinkError(error, this.providerName(link.destination)),
+        failure: this.classify(error, this.providerName(link.destination)),
       });
     }
     return this.deps.tasks.refreshExternalLink(task.id, {
@@ -797,58 +895,14 @@ export class TaskLinking {
         "Only a missing External Task Link can be recreated.",
       );
     }
-    const connector = this.connectorFor(link.destination.provider);
-    if (connector === null) {
-      throw new TaskValidationError(
-        "invalid-destination",
-        `The Workspace does not compose ${this.providerName(link.destination)} as a Task Destination.`,
-      );
-    }
-    const destination = link.destination;
-    /* Only the provider calls sit inside try: a Workspace refusal from
-       recordExternalLink below is a domain fact and must reach its caller
-       as one, never be laundered into provider-failure prose on the link. */
-    let created: { remoteId: string; url: string | null };
-    try {
-      created = await connector.create(task, destination);
-    } catch (error) {
-      /* Still missing: the replacement never arrived, so the link keeps
-         naming the record that went away with the new reason attached. */
-      return this.deps.tasks.refreshExternalLink(task.id, {
-        ...link,
-        failure: classifyTaskLinkError(error, this.providerName(destination)),
-      });
-    }
-    /* As in `link`: the replacement record is created open, so a completed
-       Task is completed in the same operation, and the baseline always
-       records what the provider actually holds. A completion that fails
-       leaves the new record live and the link failed against it — the Task
-       is intact either way. */
-    const sent = task.status;
-    if (task.status === "completed") {
-      try {
-        await connector.updateStatus(destination, created.remoteId, true);
-      } catch (error) {
-        return this.deps.tasks.recordExternalLink(task.id, {
-          state: "failed",
-          destination,
-          remoteId: created.remoteId,
-          url: created.url,
-          baseline: this.baselineFor(task, "open"),
-          external: null,
-          failure: classifyTaskLinkError(error, this.providerName(destination)),
-        });
-      }
-    }
-    return this.deps.tasks.recordExternalLink(task.id, {
-      state: "synchronized",
-      destination,
-      remoteId: created.remoteId,
-      url: created.url,
-      baseline: this.baselineFor(task, sent),
-      external: null,
+    this.deps.tasks.refreshExternalLink(task.id, {
+      ...link,
+      state: "waiting",
+      remoteId: null,
       failure: null,
+      creationUncertain: false,
     });
+    return this.link(task.id);
   }
 
   /**

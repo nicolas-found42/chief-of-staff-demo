@@ -1,8 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
-import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
+import { afterEach, expect, test, vi } from "vitest";
+import {
+  PersonDossierStore,
+  synthesizeSections,
+} from "../../../apps/server/src/person-profile/dossier-store.js";
 
 const roots: string[] = [];
 function workspace() {
@@ -533,4 +536,71 @@ test("exact dossier revisions remain readable until a source is detached or the 
   expect(store.getRevision("maya", 1)?.claims).toEqual([]);
   store.privacyDelete("maya");
   expect(store.getRevision("maya", 2)).toBeNull();
+});
+
+test("unrelated current evidence does not refresh an unchanged historical section", () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+    const store = new PersonDossierStore(workspace());
+    const source = store.retainSource({
+      url: "https://example.com/history",
+      title: "History",
+      author: null,
+      publishedAt: null,
+      retrievedAt: "2026-09-01",
+      text: "Maya was an engineer. Maya is preparing a launch.",
+      family: "example.com",
+      sourceClass: "primary-artifact",
+      visibility: "public",
+      completeness: "full",
+      access: "retrieved",
+      acquisition: "website",
+    });
+    const claim = {
+      id: "career",
+      section: "career" as const,
+      statement: "Maya was an engineer.",
+      status: "supported" as const,
+      nature: "statement" as const,
+      matchConfidence: "high" as const,
+      effectiveFrom: "2024",
+      effectiveTo: "2025",
+      citations: [{ sourceId: source.id, quote: "Maya was an engineer." }],
+      supports: [],
+      supersedes: [],
+      changeReason: null,
+    };
+    const first = store.publish("maya", 0, {
+      claims: [claim],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: synthesizeSections([claim]),
+    });
+    vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
+    const current = {
+      ...claim,
+      id: "current",
+      section: "context" as const,
+      statement: "Maya is preparing a launch.",
+      effectiveFrom: null,
+      effectiveTo: null,
+      citations: [{ sourceId: source.id, quote: "Maya is preparing a launch." }],
+    };
+    const next = store.publish("maya", 1, {
+      ...first,
+      claims: [claim, current],
+      sections: synthesizeSections([claim, current]),
+    });
+    expect(next.sections.find((section) => section.key === "career")?.updatedAt).toBe(
+      "2026-09-01T00:00:00.000Z",
+    );
+    expect(next.sections.find((section) => section.key === "context")?.updatedAt).toBe(
+      "2026-09-05T00:00:00.000Z",
+    );
+    expect(next.sections.find((section) => section.key === "ideas")?.updatedAt).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });

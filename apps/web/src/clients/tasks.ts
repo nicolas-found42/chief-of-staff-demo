@@ -144,6 +144,12 @@ export const tasksApi = {
     }),
   refresh: () => request<{ tasks: Task[] }>("/api/tasks/refresh", { method: "POST" }),
   retryFailed: () => request<{ tasks: Task[] }>("/api/tasks/retry-failed", { method: "POST" }),
+  recoverCreation: (taskId: string, remoteId: string) =>
+    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/recover-creation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ remoteId }),
+    }),
   retryTask: (taskId: string) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST" }),
   restoreTask: (taskId: string) =>

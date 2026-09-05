@@ -160,6 +160,7 @@ export function PersonDossierSearch({ profiles = [] }: { profiles?: PersonProfil
                   <p>
                     {edge.from ?? "Start unknown"} — {edge.to ?? "End unknown"}
                   </p>
+                  <p>Shared work records: {edge.workIds.join(", ") || "none documented"}</p>
                   {edge.citations.map((citation, i) => (
                     <blockquote key={i}>
                       {citation.quote}
@@ -197,7 +198,16 @@ export function PersonDossierSearch({ profiles = [] }: { profiles?: PersonProfil
               {result[group].length ? (
                 result[group].map((person) => (
                   <article className="card" key={person.profileId}>
-                    <a href={`/people/${encodeURIComponent(person.profileId)}`}>{person.name}</a>
+                    <a
+                      href={`/people/${encodeURIComponent(person.profileId)}?dossierRevision=${person.dossierRevision}`}
+                    >
+                      {person.name}
+                    </a>
+                    <p>
+                      Evidence at dossier revision {person.dossierRevision}. Work records:{" "}
+                      {person.workIds.join(", ") || "none"}. Claims:{" "}
+                      {person.claimIds.join(", ") || "none"}.
+                    </p>
                     {person.gaps.map((gap) => (
                       <p key={gap}>{gap}</p>
                     ))}
@@ -206,7 +216,7 @@ export function PersonDossierSearch({ profiles = [] }: { profiles?: PersonProfil
                         {citation.quote}
                         <br />
                         <a
-                          href={`/people/${encodeURIComponent(person.profileId)}?source=${encodeURIComponent(citation.sourceId)}`}
+                          href={`/people/${encodeURIComponent(person.profileId)}?dossierRevision=${person.dossierRevision}&source=${encodeURIComponent(citation.sourceId)}`}
                         >
                           Inspect source in Profile
                         </a>

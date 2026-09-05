@@ -82,8 +82,9 @@ export function promoteActionItem(
     .concat(deps.tasks.list({ trashed: true }))
     .find((candidate) => candidate.source?.actionItemId === item.id);
   if (orphan) {
+    if (input.completed === true && orphan.status !== "completed") deps.tasks.complete(orphan.id);
     return {
-      task: orphan,
+      task: deps.tasks.get(orphan.id) ?? orphan,
       actionItem: deps.actionItems.recordPromotion(item.id, orphan.id),
       created: false,
     };

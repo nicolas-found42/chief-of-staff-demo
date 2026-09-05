@@ -401,3 +401,135 @@ test("a source rejected during a run is an attribution diagnostic rather than a 
   });
   expect(outcome.state).toBe("empty");
 });
+
+test("retains an anchored retrieved source when extraction fails", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-retained-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ fullName: "Maya Chen", primaryEmail: "maya@example.com" });
+  const dossiers = new PersonDossierStore(root);
+  const research = new PersonResearch({
+    dossiers,
+    search: async () => [{ url: "https://example.com/maya", title: "Maya", snippet: "" }],
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "maya@example.com built Atlas.",
+    }),
+    complete: async () => {
+      throw new Error("model unavailable");
+    },
+  });
+  await research.run(person, {
+    maxCalls: 3,
+    maxMilliseconds: 10000,
+    reserve: () => true,
+    active: () => true,
+  });
+  const dossier = dossiers.get(person.id);
+  expect(dossier?.sourceIds).toHaveLength(1);
+  expect(dossier?.claims).toHaveLength(0);
+  expect(dossiers.source(person.id, dossier!.sourceIds[0])?.text).toBe(
+    "maya@example.com built Atlas.",
+  );
+});
+
+test("source revisions keep one work identity and dated current facts supersede older open-ended claims", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-version-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const dossiers = new PersonDossierStore(root);
+  let year = "2024";
+  const quote = () =>
+    `maya@example.com is ${year === "2024" ? "Engineer" : "CTO"} and built Atlas.`;
+  const research = new PersonResearch({
+    dossiers,
+    search: async () => [{ url: "https://example.com/maya", title: "Maya", snippet: "" }],
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: quote(),
+    }),
+    complete: async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [
+        {
+          id: "role",
+          section: "career",
+          statement: quote(),
+          fact: { field: "role", value: year === "2024" ? "Engineer" : "CTO" },
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: `${year}-01-01`,
+          effectiveTo: null,
+          citations: [{ sourceId: "source", quote: quote() }],
+          supports: [],
+          supersedes: [],
+          changeReason: "Official appointment effective on the stated date.",
+        },
+      ],
+      works: [
+        {
+          id: "atlas",
+          title: "Atlas",
+          url: "https://example.com/atlas",
+          kind: "system",
+          startedAt: null,
+          endedAt: null,
+          claimIds: ["role"],
+          contribution: { text: "Built Atlas", claimIds: ["role"] },
+          teamContribution: null,
+          authority: [],
+          scale: [],
+          constraints: [],
+          outcomes: [],
+        },
+      ],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const allowance = {
+    maxCalls: 3,
+    maxMilliseconds: 10000,
+    reserve: () => true,
+    active: () => true,
+  };
+  await research.run(person, allowance);
+  const first = dossiers.get(person.id)!;
+  year = "2025";
+  await research.run(person, allowance);
+  const current = dossiers.get(person.id)!;
+  expect(current.works).toHaveLength(1);
+  expect(current.works[0].id).toBe(first.works[0].id);
+  expect(current.works[0].claimIds).toHaveLength(2);
+  expect(current.claims.find((claim) => claim.fact?.value === "Engineer")).toMatchObject({
+    status: "superseded",
+    effectiveTo: "2025-01-01",
+  });
+  expect(current.claims.find((claim) => claim.fact?.value === "CTO")?.supersedes).toContain(
+    first.claims[0].id,
+  );
+  expect(dossiers.getRevision(person.id, first.revision)?.claims[0].status).toBe("supported");
+});

@@ -224,6 +224,7 @@ function TaskRow({
   onTrash,
   onLink,
   onRecreate,
+  onRecover,
   onRetry,
   onRemoveLink,
   onResolve,
@@ -239,6 +240,7 @@ function TaskRow({
   onTrash: (external?: "delete" | "preserve") => Promise<void>;
   onLink: () => Promise<void>;
   onRecreate: () => Promise<void>;
+  onRecover: (remoteId: string) => Promise<void>;
   onRetry: () => Promise<void>;
   onRemoveLink: () => Promise<void>;
   /** Settle a drift or a conflict by keeping one side (issue #186). */
@@ -246,6 +248,7 @@ function TaskRow({
   /** False once what the Task was promoted from has been deleted. */
   sourceAvailable: boolean;
 }) {
+  const [recoveryId, setRecoveryId] = useState("");
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [trashExternal, setTrashExternal] = useState<"delete" | "preserve">("delete");
   const [editing, setEditing] = useState(false);
@@ -307,6 +310,28 @@ function TaskRow({
             </a>
           )}
         </p>
+      )}
+      {task.externalLink?.creationUncertain && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onRecover(recoveryId);
+          }}
+        >
+          <p>
+            The provider may have created this Task. Retry will not create another copy. Inspect the
+            provider and enter the existing record ID to recover the link.
+          </p>
+          <label htmlFor={`recover-${task.id}`}>Existing provider Task ID</label>
+          <input
+            id={`recover-${task.id}`}
+            value={recoveryId}
+            onChange={(event) => setRecoveryId(event.target.value)}
+          />
+          <button type="submit" disabled={busy || !recoveryId.trim()}>
+            Recover existing Task
+          </button>
+        </form>
       )}
       {confirmTrash && (
         <fieldset>
@@ -1064,6 +1089,11 @@ export function TasksPage({
       }}
       onRetry={async () => {
         await act("Retried the External Task Link.", () => client.retryTask(task.id));
+      }}
+      onRecover={async (remoteId) => {
+        await act("Recovered the existing External Task Link.", () =>
+          client.recoverCreation(task.id, remoteId),
+        );
       }}
       onRecreate={async () => {
         await act(`Recreated ${task.title} in ${providerName(task.destination)}.`, () =>

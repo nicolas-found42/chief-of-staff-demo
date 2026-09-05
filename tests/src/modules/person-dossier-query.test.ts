@@ -275,6 +275,21 @@ test("observed activity and repeated collaboration count distinct work rather th
     expect(analysis.activity).toEqual([{ period: "2024-02", kind: "paper", count: 2 }]);
     expect(analysis.collaborations[0]?.distinctWorks).toBe(2);
     expect(analysis.quality.singleSourceClaims).toBe(1);
+    const current = dossiers.get(person.id)!;
+    dossiers.publish(person.id, current.revision, {
+      ...current,
+      connections: [
+        ...current.connections,
+        { ...current.connections[0], id: "different-daniel", from: "2025", workIds: ["nova"] },
+      ],
+    });
+    const separated = new PersonDossierQueries({ people, dossiers }).analyse(person.id, "public")!;
+    expect(separated.collaborations).toHaveLength(2);
+    expect(separated.collaborations.map((entry) => entry.distinctWorks)).toEqual([2, 1]);
+    dossiers.detach(person.id, source.id);
+    const detached = new PersonDossierQueries({ people, dossiers }).analyse(person.id, "public")!;
+    expect(detached.collaborations).toEqual([]);
+    expect(detached.activity).toEqual([]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

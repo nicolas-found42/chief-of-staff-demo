@@ -30,11 +30,13 @@ export const PersonSourceDocumentSchema = z.object({
     "primary-artifact",
     "workspace",
     "manual",
+    "unclassified",
   ]),
   attribution: z
     .enum(["self-report", "independent-account", "primary-artifact", "unknown"])
     .optional(),
   visibility: z.enum(["public", "private"]),
+  extractionCoverage: z.enum(["unattempted", "partial", "full"]).optional(),
   completeness: z.enum(["full", "partial", "snippet", "unavailable"]),
   access: z.enum(["retrieved", "blocked", "failed", "unsupported"]),
   acquisition: text,
@@ -183,13 +185,34 @@ export const PersonResearchSettingsSchema = z.object({
   profileMilliseconds: z.number().int().min(1000).max(600000),
   dailyCalls: z.number().int().min(1).max(10000),
   refreshHours: z.number().min(1).max(8760),
+  historicalRefreshHours: z.number().min(24).max(8760).optional(),
 });
 export type PersonResearchSettings = z.infer<typeof PersonResearchSettingsSchema>;
+const researchResult = z.object({
+  url: z.string().max(4000),
+  title: z.string().max(4000),
+  snippet: z.string().max(10000),
+});
+export const PersonResearchCheckpointSchema = z.object({
+  queries: z.array(z.string().max(4000)).max(4),
+  pass: z.number().int().min(0).max(4),
+  results: z.array(researchResult).max(8),
+  direct: z.array(researchResult).max(40),
+  visited: z.array(z.string().max(4000)).max(40),
+  linked: z.array(z.string().max(4000)).max(40),
+  pendingSourceId: id.optional(),
+});
+export type PersonResearchCheckpoint = z.infer<typeof PersonResearchCheckpointSchema>;
 export const PersonResearchJobSchema = z.object({
   diagnostics: z
     .array(z.object({ url: z.string(), stage: z.string(), reason: z.string() }))
     .max(100)
     .optional(),
+  evidenceRevision: z.string().optional(),
+  lastHistoricalAt: z.string().optional(),
+  checkpoint: PersonResearchCheckpointSchema.optional(),
+  elapsedMilliseconds: z.number().nonnegative().optional(),
+  startedAt: z.string().optional(),
   profileId: z.string(),
   state: z.enum([
     "queued",

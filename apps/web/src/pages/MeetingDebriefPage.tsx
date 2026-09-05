@@ -191,6 +191,11 @@ export function MeetingDebriefPage({ client = meetingsApi }: { client?: Meetings
                     <Link to={`/meeting-debrief/${encodeURIComponent(entry.runId)}`}>
                       {meetingDebriefName(entry, meetingTitles)}
                     </Link>
+                    <div>
+                      <Link to={`/meeting-debrief/${encodeURIComponent(entry.runId)}`}>
+                        Open full Debrief
+                      </Link>
+                    </div>
                     {/* The Meeting is the record this retrospective is about;
                         the row above only reaches its Run. */}
                     {entry.meetingId ? (

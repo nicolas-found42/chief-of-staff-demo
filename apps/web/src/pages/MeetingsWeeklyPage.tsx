@@ -231,6 +231,13 @@ export function MeetingsWeeklyPage({ client = meetingsApi }: { client?: Meetings
 
   useEffect(() => {
     void load("read");
+    const timer = window.setInterval(() => void load("read"), 3_000);
+    const refresh = () => void load("read");
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
   }, [load]);
 
   const consent = useCallback(async () => {

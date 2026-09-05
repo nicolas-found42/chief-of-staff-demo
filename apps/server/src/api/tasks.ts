@@ -380,6 +380,23 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     }
   });
 
+  app.post(
+    "/api/tasks/:taskId/recover-creation",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { taskId } = request.params as { taskId: string };
+      const linking = requireLinking(reply);
+      if (!linking) return NO_DESTINATION;
+      const body = request.body as { remoteId?: unknown } | null;
+      if (typeof body?.remoteId !== "string")
+        return reply.code(400).send({ error: "remote-id-required" });
+      try {
+        return await linking.recoverCreation(taskId, body.remoteId);
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
   app.post("/api/tasks/:taskId/retry", async (request: FastifyRequest, reply: FastifyReply) => {
     const { taskId } = request.params as { taskId: string };
     const linking = requireLinking(reply);

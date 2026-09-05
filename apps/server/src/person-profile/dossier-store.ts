@@ -47,7 +47,7 @@ export function synthesizeSections(claims: PersonClaim[]): PersonDossierSection[
         .join(" ")
         .slice(0, 8000),
       claimIds: relevant.map((claim) => claim.id),
-      updatedAt: new Date().toISOString(),
+      updatedAt: relevant.length ? new Date().toISOString() : null,
       state: relevant.length ? ("incomplete" as const) : ("unresearched" as const),
       gaps: relevant.length
         ? ["This account reflects the sources collected so far; further evidence may exist."]
@@ -68,7 +68,17 @@ export class PersonDossierStore {
     const family = (this.read(familyPath) as { family: string } | null)?.family ?? input.family;
     if (!existsSync(familyPath)) this.write(familyPath, { family });
     const id = createHash("sha256")
-      .update(JSON.stringify([input.url, hash, input.visibility, input.sourceClass, family]))
+      .update(
+        JSON.stringify([
+          input.url,
+          hash,
+          input.visibility,
+          input.sourceClass,
+          family,
+          input.attribution,
+          input.extractionCoverage,
+        ]),
+      )
       .digest("hex");
     const source = PersonSourceDocumentSchema.parse({
       ...input,
@@ -135,6 +145,11 @@ export class PersonDossierStore {
       if (ids.some((id) => !claims.has(id))) throw new Error("Dangling claim reference");
     };
     const rejected = new Set(this.rejectedEntries(profileId));
+    for (const id of content.sourceIds) {
+      const source = this.document(id)!;
+      if (rejected.has(source.url) || rejected.has(source.hash))
+        throw new Error("Rejected attribution");
+    }
     for (const claim of content.claims) {
       requireClaims([...claim.supports, ...claim.supersedes]);
       if (claim.status !== "unknown" && !claim.citations.length)
@@ -167,6 +182,18 @@ export class PersonDossierStore {
       if (expertise.support === "demonstrated" && !expertise.workIds.length)
         throw new Error("Demonstrated expertise requires work");
     for (const section of content.sections) requireClaims(section.claimIds);
+    const prior = this.get(profileId);
+    content.sections = content.sections.map((section) => {
+      const old = prior?.sections.find((candidate) => candidate.key === section.key);
+      if (
+        old &&
+        old.summary === section.summary &&
+        JSON.stringify(old.claimIds) === JSON.stringify(section.claimIds) &&
+        old.state === section.state
+      )
+        return { ...section, updatedAt: old.updatedAt };
+      return section;
+    });
     const dossier = PersonDossierSchema.parse({
       ...content,
       schemaVersion: 1,

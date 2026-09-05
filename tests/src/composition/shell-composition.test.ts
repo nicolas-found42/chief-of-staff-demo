@@ -1,3 +1,5 @@
+import type { PersonProfile } from "@chief-of-staff-demo/shared";
+import { openRuns } from "../../../apps/server/src/runs";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,6 +79,11 @@ function workspaceDirectory(migrated: boolean): string {
         drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
         ollama: { baseUrl: "http://127.0.0.1:11434" },
         modules: {
+          "content-research": {
+            dailyTime: "23:59",
+            weeklyDiscoveryDay: 7,
+            weeklyDiscoveryTime: "23:59",
+          },
           "content-scout": {
             dailyTime: "23:59",
             weeklyDiscoveryDay: 7,
@@ -192,6 +199,48 @@ describe("composition writes nothing while the gate holds a pre-cutover Workspac
     ).toEqual(before);
   });
 
+  it("holds historical receipts with Google disabled and preserves every byte until exact cutover", async () => {
+    const dir = workspaceDirectory(true);
+    const run = openRuns(dir).create({
+      module: "meeting-debrief",
+      moduleVersion: 1,
+      intake: "transcript",
+      sourceUrl: null,
+      externalId: null,
+    });
+    run.writeArtifact(
+      "result.json",
+      JSON.stringify({
+        transcriptId: "historical",
+        debrief: {
+          actionItems: [
+            {
+              title: "Historical commitment",
+              owner: null,
+              ownerProfileId: null,
+              ownerMentionId: null,
+              dueDate: null,
+            },
+          ],
+        },
+      }),
+    );
+    run.writeArtifact(
+      "tasks.json",
+      JSON.stringify({
+        tasks: [{ index: 0, taskId: "remote-existing", taskListId: "historical-list" }],
+      }),
+    );
+    const before = snapshot(dir);
+    const shell = await compose(dir);
+    expect(shell.gate.isActive()).toBe(true);
+    const response = await shell.app.inject({ method: "GET", url: "/api/migration/inventory" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().counts).toMatchObject({ receipts: 1, tasks: 1, actionItems: 1 });
+    expect(snapshot(dir)).toEqual(before);
+    expect((await shell.app.inject({ method: "GET", url: "/api/tasks" })).statusCode).toBe(503);
+  });
+
   it("holds the product API and answers the migration surface", async () => {
     const shell = await compose(workspaceDirectory(false));
 
@@ -297,6 +346,121 @@ function heldClasses(roots: unknown): Set<string> {
 const NOT_HELD = new Set(["RelayStateStore"]);
 
 describe("the five product areas and the Task runtimes compose in production (#200)", () => {
+  it("automatically researches manual, typed, Calendar, Transcript and legacy entries through the production queue", async () => {
+    const previous = process.env.ENABLE_TEST_SEED;
+    process.env.ENABLE_TEST_SEED = "1";
+    let runningShell: Shell | undefined;
+    try {
+      const dir = workspaceDirectory(true);
+      const shell = await compose(dir);
+      runningShell = shell;
+      const call = async <T = unknown>(method: "POST" | "PATCH", url: string, payload: object) => {
+        const result = await shell.app.inject({ method, url, payload });
+        expect(result.statusCode).toBeLessThan(300);
+        return result.json<T>();
+      };
+      const manual = await call<PersonProfile>("POST", "/api/people", {
+        primaryEmail: "manual@entries.example",
+      });
+      const typed = (
+        await call<{ profile: PersonProfile }>("POST", "/api/people/lookup/accept", {
+          identifier: "typed@entries.example",
+        })
+      ).profile;
+      const calendar = shell.workspace.profiles.ensureCalendarAttendeeProfile({
+        email: "calendar@entries.example",
+        provenance: "calendar:acceptance",
+      }).profile;
+      const legacy = shell.workspace.profiles.create({
+        primaryEmail: "legacy@entries.example",
+        role: "Owner correction",
+      });
+      shell.workspace.transcripts.saveTranscript({
+        id: "drive_entry_r1",
+        source: {
+          sourceSystem: "drive",
+          externalFileId: "entry",
+          fileName: "Entry.md",
+          sourceUrl: null,
+          checksum: "entry",
+          observedRevision: 1,
+          modifiedAt: null,
+        },
+        ingestedAt: "2026-09-05T00:00:00Z",
+        extractorVersion: 1,
+        normalizedText: "Email transcript@entries.example before the review.",
+        meetingDate: "2026-09-05",
+        occurrence: null,
+        speakers: [],
+        speakerIdentityMappings: [],
+        roster: [],
+        meetingId: null,
+      });
+      const attach = () =>
+        shell.workspace.transcriptCatalog.catalog.attachMeeting("drive_entry_r1", {
+          id: "meeting-entry",
+          occurrenceKey: null,
+          calendarEventId: null,
+        });
+      await attach();
+      await attach();
+      const transcript = shell.workspace.profiles
+        .search()
+        .filter((profile) => profile.primaryEmail === "transcript@entries.example");
+      expect(transcript).toHaveLength(1);
+      const profiles = [manual, typed, calendar, legacy, transcript[0]];
+      for (const profile of profiles)
+        await call("POST", "/api/test/person-dossier-source", {
+          url: `https://entries.example/${profile.id}`,
+          text: `${profile.primaryEmail} has retained evidence.`,
+          extraction: {
+            fullName: null,
+            employer: null,
+            sourceClass: "primary-artifact",
+            author: null,
+            publishedAt: null,
+            claims: [],
+            works: [],
+            expertise: [],
+            connections: [],
+            sections: [],
+          },
+        });
+      await call("PATCH", "/api/people/research/settings", {
+        concurrency: 3,
+        profileCalls: 4,
+        dailyCalls: 100,
+      });
+      await shell.start();
+      await expect
+        .poll(
+          async () => {
+            const responses = await Promise.all(
+              profiles.map((profile) =>
+                shell.app.inject({ method: "GET", url: `/api/people/${profile.id}/dossier` }),
+              ),
+            );
+            return responses.every((response) => response.json().dossier?.sourceIds.length > 0);
+          },
+          { timeout: 12000 },
+        )
+        .toBe(true);
+      expect(shell.workspace.profiles.get(legacy.id)?.role).toBe("Owner correction");
+      expect(
+        shell.workspace.profiles.ensureCalendarAttendeeProfile({
+          email: "calendar@entries.example",
+        }).created,
+      ).toBe(false);
+    } finally {
+      if (runningShell) {
+        await runningShell.app.inject({ method: "POST", url: "/api/test/migration/arm" });
+        await runningShell.app.close();
+      }
+      if (previous === undefined) delete process.env.ENABLE_TEST_SEED;
+      else process.env.ENABLE_TEST_SEED = previous;
+    }
+  }, 15000);
+
   it("answers every product area's own surface with no test-only wiring", async () => {
     const shell = await compose(workspaceDirectory(true));
 

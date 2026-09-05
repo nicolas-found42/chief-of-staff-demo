@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { weeklyMeetingSources } from "../../../apps/server/src/meetings/weekly-sources";
+import { mkdtempSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WorkspaceMeetings } from "../../../apps/server/src/meetings/store";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
@@ -44,21 +45,26 @@ function setup(
   const tasks = new WorkspaceTasks({ store, now });
   const actionItems = new WorkspaceActionItems({ store, now });
   const runs = openRuns(workspaceDir);
-  const weekly = new WeeklyWorkspace({
-    workspaceDir,
-    meetings,
-    tasks,
-    actionItems,
-    runs,
-    now,
-    timezone: () => "America/New_York",
-    ...(meetingIdForTranscript ? { meetingIdForTranscript } : {}),
-    ...(complete ? { model: () => ({ provider, model: "deterministic", complete }) } : {}),
-    ...(delivery
-      ? { email: { deliver: delivery, enabled: () => true, ownerConfirmed: () => true } }
-      : {}),
-    log: () => {},
-  });
+  const createWeekly = () =>
+    new WeeklyWorkspace({
+      workspaceDir,
+      meetings,
+      tasks,
+      actionItems,
+      sources: weeklyMeetingSources({
+        meetings,
+        runs,
+        ...(meetingIdForTranscript ? { meetingIdForTranscript } : {}),
+      }),
+      now,
+      timezone: () => "America/New_York",
+      ...(complete ? { model: () => ({ provider, model: "deterministic", complete }) } : {}),
+      ...(delivery
+        ? { email: { deliver: delivery, enabled: () => true, ownerConfirmed: () => true } }
+        : {}),
+      log: () => {},
+    });
+  const weekly = createWeekly();
   const app = fastify();
   weekly.registerRoutes(app);
   return {
@@ -68,6 +74,10 @@ function setup(
     runs,
     weekly,
     workspaceDir,
+    restart: () => {
+      weekly.stop();
+      return createWeekly();
+    },
     setProvider: (value: string) => {
       provider = value;
     },
@@ -497,6 +507,7 @@ describe("the completed-Meeting Debrief projection", () => {
       date: "2026-09-02T14:00:00Z",
       group: "completed",
       sourceId: run.id,
+      sourceRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
       summary: "The team agreed the rollout order",
       decisions: [{ statement: "Ship the pricing page first", evidence: "Consensus at 12:04" }],
       actionItems: [{ title: "Draft the rollout note", owner: "Alex", dueDate: "2026-09-08" }],
@@ -508,6 +519,93 @@ describe("the completed-Meeting Debrief projection", () => {
 });
 
 describe("the Weekly Summary Result Shape", () => {
+  it("autonomously regenerates after the latest source change, independent of email and reads", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const fixture = setup(async () => {
+      calls += 1;
+      return { text: "A supported release plan." };
+    });
+    fixture.meetings.upsertFromCalendar(
+      occurrence("Review", "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"),
+    );
+    const source = briefRun(fixture.runs, "Review");
+    try {
+      fixture.weekly.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls).toBe(1);
+      fixture.setNow("2026-09-03T14:01:00Z");
+      source.revise("Changed preparation");
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.setNow("2026-09-03T14:10:00Z");
+      source.revise("Latest preparation");
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      expect(calls).toBe(1);
+      fixture.setNow("2026-09-03T14:25:00Z");
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(calls).toBe(2);
+    } finally {
+      fixture.weekly.stop();
+      vi.useRealTimers();
+      await fixture.app.close();
+    }
+  });
+
+  it("caps long preparation fields and records artifact revision identity without guest evidence", async () => {
+    let input = "";
+    const fixture = setup(async (request) => {
+      input = request.user;
+      return { text: "Prepare the launch." };
+    });
+    fixture.meetings.upsertFromCalendar(
+      occurrence("Review", "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"),
+    );
+    const { run } = briefRun(fixture.runs, "Review");
+    run.writeArtifact(
+      "result.json",
+      JSON.stringify({
+        meetingBrief: {
+          summary: "s".repeat(10000),
+          conversationStarters: [],
+          uncertainty: [],
+          guests: [
+            {
+              background: "PRIVATE BACKGROUND",
+              talkingPoints: Array(100).fill("Confirm launch " + "x".repeat(10000)),
+            },
+          ],
+        },
+      }),
+    );
+    await fixture.weekly.read();
+    const [source] = JSON.parse(input);
+    expect(source.preparation).toHaveLength(8);
+    expect(source.preparation[0]).toContain("Confirm launch");
+    expect(source.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+    expect(input.length).toBeLessThan(10000);
+    expect(input).not.toContain("PRIVATE BACKGROUND");
+    await fixture.app.close();
+  });
+
+  it.each(["consent.json", "2026-08-30.json"])(
+    "returns a typed failure and preserves corrupt %s",
+    async (name) => {
+      const fixture = setup(async () => ({ text: "The release is ready." }));
+      fixture.meetings.upsertFromCalendar(
+        occurrence("Review", "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"),
+      );
+      briefRun(fixture.runs, "Review");
+      mkdirSync(join(fixture.workspaceDir, "weekly"), { recursive: true });
+      const path = join(fixture.workspaceDir, "weekly", name);
+      writeFileSync(path, "corrupt{");
+      const response = await fixture.app.inject({ method: "GET", url: "/api/meetings/weekly" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().summary.state).toBe("failed");
+      expect(readFileSync(path, "utf8")).toBe("corrupt{");
+      await fixture.app.close();
+    },
+  );
+
   it("rejects a Summary that breaks the four-sentence, one-paragraph bound", async () => {
     let overlong = false;
     const { app, meetings, runs } = setup(async () =>
@@ -603,6 +701,57 @@ describe("the Monday Weekly Briefing email", () => {
     setNow("2026-09-05T11:00:00Z");
     await weekly.sendWeeklyEmailIfDue();
     expect(delivery.sent).toHaveLength(1);
+  });
+
+  it("does not consume the week's email when generation fails and retries after recovery", async () => {
+    let fail = true;
+    const delivery = new FakeDelivery();
+    const fixture = setup(async () => {
+      if (fail) throw new Error("model offline");
+      return { text: "The release plan is ready." };
+    }, delivery);
+    fixture.meetings.upsertFromCalendar(
+      occurrence("Review", "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"),
+    );
+    briefRun(fixture.runs, "Review");
+    fixture.setNow("2026-08-31T11:00:00Z");
+    await fixture.weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(0);
+    fail = false;
+    await fixture.weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(1);
+    expect(delivery.sent[0].text).toContain("The release plan is ready.");
+    await fixture.app.close();
+  });
+
+  it("reconciles a remotely sent message after acknowledgement loss and a real runtime restart", async () => {
+    const delivery = new FakeDelivery();
+    const send = delivery.send.bind(delivery);
+    vi.spyOn(delivery, "send").mockImplementationOnce(async (params) => {
+      await send(params);
+      throw new Error("response lost");
+    });
+    const fixture = setup(undefined, delivery);
+    fixture.setNow("2026-08-31T11:00:00Z");
+    await fixture.weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(1);
+    const restarted = fixture.restart();
+    await restarted.sendWeeklyEmailIfDue();
+    await restarted.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(1);
+    expect(
+      JSON.parse(readFileSync(join(fixture.workspaceDir, "weekly", "delivery.json"), "utf8")),
+    ).toMatchObject({ messageId: "msg_1" });
+    await fixture.app.close();
+  });
+
+  it("serializes simultaneous reconciliation and sends", async () => {
+    const delivery = new FakeDelivery();
+    const fixture = setup(undefined, delivery);
+    fixture.setNow("2026-08-31T11:00:00Z");
+    await Promise.all(Array.from({ length: 8 }, () => fixture.weekly.sendWeeklyEmailIfDue()));
+    expect(delivery.sent).toHaveLength(1);
+    await fixture.app.close();
   });
 
   it("records no success a failed send did not have, and retries into one message", async () => {
@@ -728,7 +877,10 @@ describe("the Monday Weekly Briefing email", () => {
       meetings: new WorkspaceMeetings(workspaceDir, now),
       tasks: new WorkspaceTasks({ store, now }),
       actionItems: new WorkspaceActionItems({ store, now }),
-      runs: openRuns(workspaceDir),
+      sources: weeklyMeetingSources({
+        meetings: new WorkspaceMeetings(workspaceDir, now),
+        runs: openRuns(workspaceDir),
+      }),
       now,
       timezone: () => "UTC",
       email: { deliver: delivery, enabled: () => true, ownerConfirmed: () => false },
@@ -738,4 +890,65 @@ describe("the Monday Weekly Briefing email", () => {
 
     expect(delivery.sent).toEqual([]);
   });
+});
+
+it("keeps all deterministic meetings while bounding model source cardinality", async () => {
+  let projection: unknown[] = [];
+  const h = setup(async (request) => {
+    projection = JSON.parse(request.user);
+    return { text: "Prepare the documented meetings." };
+  });
+  for (let index = 0; index < 45; index++) {
+    h.meetings.upsertFromCalendar(
+      occurrence(`Meeting ${index}`, "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"),
+    );
+    briefRun(h.runs, `Meeting ${index}`);
+  }
+  const view = await h.weekly.read();
+  expect(view.meetings).toHaveLength(45);
+  expect(view.meetings.every((meeting) => meeting.artifactStatus === "ready")).toBe(true);
+  expect(projection).toHaveLength(40);
+});
+
+it("shutdown fences a model completion before cache publication", async () => {
+  let release!: (answer: { text: string }) => void;
+  const answer = new Promise<{ text: string }>((resolve) => {
+    release = resolve;
+  });
+  const h = setup(async () => answer);
+  h.meetings.upsertFromCalendar(occurrence("Late", "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"));
+  briefRun(h.runs, "Late");
+  const pending = h.weekly.read();
+  h.weekly.stop();
+  release({ text: "This completion must not be persisted." });
+  expect((await pending).summary.state).toBe("failed");
+  expect(() => readFileSync(join(h.workspaceDir, "weekly", "2026-08-30.json"))).toThrow();
+});
+
+it("restarted refresh respects the original persisted dirty deadline", async () => {
+  vi.useFakeTimers();
+  const complete = vi.fn(async () => ({ text: "Prepare the revised plan." }));
+  const h = setup(complete);
+  let restarted: WeeklyWorkspace | undefined;
+  try {
+    h.meetings.upsertFromCalendar(
+      occurrence("Restart", "2026-09-04T14:00:00Z", "2026-09-04T15:00:00Z"),
+    );
+    const source = briefRun(h.runs, "Restart");
+    await h.weekly.read();
+    source.revise("Revised source");
+    await h.weekly.read();
+    h.setNow("2026-09-03T14:10:00Z");
+    restarted = h.restart();
+    restarted.start();
+    await restarted.read();
+    expect(complete).toHaveBeenCalledTimes(1);
+    h.setNow("2026-09-03T14:15:00Z");
+    await vi.advanceTimersByTimeAsync(5 * 60000);
+    expect(complete).toHaveBeenCalledTimes(2);
+  } finally {
+    restarted?.stop();
+    h.weekly.stop();
+    vi.useRealTimers();
+  }
 });

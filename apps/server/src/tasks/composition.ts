@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ConfigStore } from "../config.js";
 import type { GoogleConnectionState } from "@chief-of-staff-demo/shared";
 import type { GoogleConnection } from "../google/connection.js";
@@ -57,7 +58,6 @@ export interface TasksCompositionDeps {
 
 /** The Tasks product as one handle. Routes and ordering stay with the Shell. */
 export interface TasksComposition {
-  store: TaskStore;
   tasks: WorkspaceTasks;
   actionItems: WorkspaceActionItems;
   linking: TaskLinking;
@@ -106,15 +106,30 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
     }
     return access.auth;
   };
+  const resolveGoogleDestination = async (
+    destination: GoogleTasksDestination,
+  ): Promise<GoogleTasksDestination> => {
+    if (destination.googleTaskListId) return destination;
+    const matches = (await listGoogleTaskLists(googleAuth(401))).filter(
+      (list) => list.title === destination.googleTaskListTitle,
+    );
+    if (matches.length !== 1)
+      throw Object.assign(new Error("Historical Google Task List cannot be resolved uniquely."), {
+        status: 400,
+      });
+    return { ...destination, googleTaskListId: matches[0]!.id };
+  };
   const googleConnector: RemoteTaskConnector<GoogleTasksDestination> = {
+    resolveDestination: resolveGoogleDestination,
     delete: async (destination, remoteId) =>
       deleteGoogleTask(googleAuth(401), destination.googleTaskListId, remoteId),
     create: async (task, destination) => {
-      const created = await insertGoogleTask(googleAuth(), destination.googleTaskListId, task);
+      const created = await insertGoogleTask(googleAuth(401), destination.googleTaskListId, task);
       return { remoteId: created.googleId, url: created.webViewLink };
     },
     read: async (destination, remoteId) => {
-      const remote = await getGoogleTask(googleAuth(), destination.googleTaskListId, remoteId);
+      const resolved = await resolveGoogleDestination(destination);
+      const remote = await getGoogleTask(googleAuth(401), resolved.googleTaskListId, remoteId);
       return remote === null
         ? null
         : {
@@ -162,6 +177,18 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
 
   const linking = new TaskLinking({
     tasks,
+    authorizationRevision: (provider) => {
+      const config = deps.configStore.get();
+      return createHash("sha256")
+        .update(
+          JSON.stringify(
+            provider === "asana"
+              ? [config.tasks.asana.token, config.tasks.asana.lastVerifiedAt]
+              : [config.google.refreshToken, config.google.lastConnectedAt],
+          ),
+        )
+        .digest("hex");
+    },
     settings: () => deps.configStore.get().tasks.googleTasks,
     save: (settings) => {
       deps.configStore.setGoogleTasksDestination(settings);
@@ -209,7 +236,6 @@ export function composeTasks(deps: TasksCompositionDeps): TasksComposition {
   };
 
   return {
-    store,
     tasks,
     actionItems,
     linking,

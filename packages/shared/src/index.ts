@@ -18,3 +18,9 @@ export * from "./workspace.js";
 export * from "./llm.js";
 export * from "./weekly-workspace.js";
 export * from "./person-dossier.js";
+
+export type { TaskCutoverPreview, TaskCutoverReceipt } from "./task-cutover.js";
+
+export type { PersonResearchCheckpoint } from "./person-dossier.js";
+
+export { TaskCutoverReceiptSchema } from "./task-cutover.js";

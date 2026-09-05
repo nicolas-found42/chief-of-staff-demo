@@ -18,6 +18,7 @@
     "golden.mts",
     "lint-golden.mts",
     "person-dossier-canary.mts",
+    "task-cutover.mts",
     "run-debrief-eval-all.mts",
     "run-debrief-eval.mts",
     "score-debrief-eval.mts"

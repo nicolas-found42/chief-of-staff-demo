@@ -335,6 +335,20 @@ test("meeting wizard tabs — Today and This week are routes, and survive refres
   );
   await expect(page.locator('section[aria-labelledby="weekly-upcoming-heading"]')).toBeVisible();
 
+  // Keep the page open while canonical work changes in another client.
+  const added = await (
+    await request.post("/api/tasks", {
+      data: { title: "Live weekly update", dueDate: "2020-01-01" },
+    })
+  ).json();
+  await expect(page.getByRole("link", { name: "Live weekly update", exact: true })).toBeVisible({
+    timeout: 10000,
+  });
+  expect((await request.post(`/api/tasks/${added.id}/complete`)).ok()).toBe(true);
+  await expect(page.getByRole("link", { name: "Live weekly update", exact: true })).toHaveCount(0, {
+    timeout: 10000,
+  });
+
   // Refresh-safe: the tab is the URL, not component state.
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "This week" })).toBeVisible();

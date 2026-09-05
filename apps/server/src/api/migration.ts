@@ -1,3 +1,4 @@
+import type { TaskCutover } from "../tasks/cutover.js";
 import type { FastifyInstance } from "fastify";
 import {
   executeWorkspaceMigration,
@@ -27,6 +28,7 @@ export interface MigrationGate {
 
 export interface MigrationRouteDeps extends OnboardingStatusDeps {
   workspaceDir: string;
+  taskCutover?: TaskCutover;
   gate: MigrationGate;
 }
 
@@ -34,11 +36,19 @@ export function registerMigrationRoutes(app: FastifyInstance, deps: MigrationRou
   /* Always mounted, never gated — the gate page reads it while every other
      namespace rejects with 503. */
   app.get("/api/migration/status", async () => ({
-    state: readMigrationState(deps.workspaceDir),
+    state: deps.taskCutover
+      ? deps.gate.isActive()
+        ? "required"
+        : deps.taskCutover.receipt()
+          ? "completed"
+          : "fresh"
+      : readMigrationState(deps.workspaceDir),
+    kind: deps.taskCutover ? "canonical-tasks" : "legacy-reset",
     onboarding: await buildOnboardingStatus(deps),
   }));
 
   app.get("/api/migration/inventory", async (_request, reply) => {
+    if (deps.taskCutover) return deps.taskCutover.preview();
     if (readMigrationState(deps.workspaceDir) !== "required") {
       reply.code(409).send({ error: "not-required" });
       return;
@@ -47,6 +57,28 @@ export function registerMigrationRoutes(app: FastifyInstance, deps: MigrationRou
   });
 
   app.post("/api/migration/confirm", async (request, reply) => {
+    if (deps.taskCutover) {
+      const body = request.body as Record<string, unknown> | null;
+      if (
+        typeof body?.workspace !== "string" ||
+        typeof body.fingerprint !== "string" ||
+        typeof body.typedConfirmation !== "string"
+      )
+        return reply.code(403).send({ error: "Exact Workspace authorization required" });
+      try {
+        const receipt = await deps.taskCutover.execute({
+          workspace: body.workspace,
+          fingerprint: body.fingerprint,
+          typedConfirmation: body.typedConfirmation,
+        });
+        deps.gate.complete();
+        return { receipt };
+      } catch (error) {
+        return reply
+          .code(409)
+          .send({ error: error instanceof Error ? error.message : "Cutover failed" });
+      }
+    }
     if (readMigrationState(deps.workspaceDir) !== "required") {
       reply.code(409).send({ error: "not-required" });
       return;
@@ -78,7 +110,9 @@ export function registerMigrationRoutes(app: FastifyInstance, deps: MigrationRou
   });
 
   app.get("/api/migration/receipt", async (_request, reply) => {
-    const receipt = readMigrationReceipt(deps.workspaceDir);
+    const receipt = deps.taskCutover
+      ? deps.taskCutover.receipt()
+      : readMigrationReceipt(deps.workspaceDir);
     if (!receipt) {
       reply.code(404).send({ error: "no-receipt" });
       return;

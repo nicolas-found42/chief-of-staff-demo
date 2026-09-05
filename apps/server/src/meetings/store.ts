@@ -1,3 +1,4 @@
+import { notifyWorkspaceChange } from "../engine/workspace-changes.js";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -119,6 +120,7 @@ export class WorkspaceMeetings {
       ? meetings.map((current) => (current.id === meeting.id ? meeting : current))
       : [...meetings, meeting];
     atomicWriteJson(this.filePath, next);
+    notifyWorkspaceChange(join(this.dirPath, ".."));
     return meeting;
   }
 
@@ -165,6 +167,7 @@ export class WorkspaceMeetings {
       updatedAt: at,
     };
     atomicWriteJson(this.filePath, [...meetings, meeting]);
+    notifyWorkspaceChange(join(this.dirPath, ".."));
     return meeting;
   }
 
@@ -177,6 +180,7 @@ export class WorkspaceMeetings {
     const next = meetings.filter((meeting) => meeting.id !== id);
     if (next.length === meetings.length) return false;
     atomicWriteJson(this.filePath, next);
+    notifyWorkspaceChange(join(this.dirPath, ".."));
     return true;
   }
 

@@ -1,6 +1,7 @@
+import { TaskCutoverReceiptSchema } from "@chief-of-staff-demo/shared";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ActionItem, Task, TaskList } from "@chief-of-staff-demo/shared";
+import type { ActionItem, Task, TaskList, TaskCutoverReceipt } from "@chief-of-staff-demo/shared";
 import { atomicWriteJson } from "../engine/atomic.js";
 
 /**
@@ -20,12 +21,14 @@ import { atomicWriteJson } from "../engine/atomic.js";
  * one.
  */
 export class TaskStore {
+  private readonly snapshotFile: string;
   private readonly tasksFile: string;
   private readonly listsFile: string;
   private readonly actionItemsFile: string;
 
   constructor(workspaceDir: string) {
     const dir = join(workspaceDir, "tasks");
+    this.snapshotFile = join(dir, "state.json");
     this.tasksFile = join(dir, "tasks.json");
     this.listsFile = join(dir, "task-lists.json");
     this.actionItemsFile = join(dir, "action-items.json");
@@ -46,7 +49,7 @@ export class TaskStore {
   }
 
   writeTasks(tasks: Task[]): void {
-    atomicWriteJson(this.tasksFile, tasks);
+    this.write("tasks", this.tasksFile, tasks);
   }
 
   readLists(): TaskList[] {
@@ -54,7 +57,7 @@ export class TaskStore {
   }
 
   writeLists(lists: TaskList[]): void {
-    atomicWriteJson(this.listsFile, lists);
+    this.write("lists", this.listsFile, lists);
   }
 
   readActionItems(): ActionItem[] {
@@ -62,10 +65,69 @@ export class TaskStore {
   }
 
   writeActionItems(items: ActionItem[]): void {
-    atomicWriteJson(this.actionItemsFile, items);
+    this.write("actionItems", this.actionItemsFile, items);
+  }
+
+  cutoverReceipt(): TaskCutoverReceipt | null {
+    return this.bundle()?.receipt ?? null;
+  }
+
+  /** One atomic publication: readers observe either all old records or all migrated records. */
+  publishCutover(
+    records: { tasks: Task[]; lists: TaskList[]; actionItems: ActionItem[] },
+    receipt: TaskCutoverReceipt,
+  ): void {
+    atomicWriteJson(this.snapshotFile, { ...records, receipt });
+  }
+
+  private bundle(): {
+    tasks: Task[];
+    lists: TaskList[];
+    actionItems: ActionItem[];
+    receipt: TaskCutoverReceipt;
+  } | null {
+    if (!existsSync(this.snapshotFile)) return null;
+    try {
+      const value = JSON.parse(readFileSync(this.snapshotFile, "utf8")) as ReturnType<
+        TaskStore["bundle"]
+      >;
+      if (
+        !value ||
+        !Array.isArray(value.tasks) ||
+        !value.tasks.every(isTask) ||
+        !Array.isArray(value.lists) ||
+        !value.lists.every(isTaskList) ||
+        !Array.isArray(value.actionItems) ||
+        !value.actionItems.every(isActionItem) ||
+        !TaskCutoverReceiptSchema.safeParse(value.receipt).success
+      )
+        throw new Error("invalid snapshot");
+      return value;
+    } catch {
+      throw new TaskStoreCorruptionError(this.snapshotFile, "the canonical snapshot is unreadable");
+    }
+  }
+
+  private write(
+    key: "tasks" | "lists" | "actionItems",
+    path: string,
+    records: Task[] | TaskList[] | ActionItem[],
+  ): void {
+    const bundle = this.bundle();
+    if (bundle) atomicWriteJson(this.snapshotFile, { ...bundle, [key]: records });
+    else atomicWriteJson(path, records);
   }
 
   private read<T>(path: string, record: string, guard: (value: unknown) => value is T): T[] {
+    const bundle = this.bundle();
+    if (bundle)
+      return (
+        path === this.tasksFile
+          ? bundle.tasks
+          : path === this.listsFile
+            ? bundle.lists
+            : bundle.actionItems
+      ) as T[];
     if (!existsSync(path)) return [];
     let parsed: unknown;
     try {

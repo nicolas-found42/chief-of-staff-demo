@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   MeetingDebriefActionItem,
   MeetingDebriefReviewState,
@@ -255,6 +255,48 @@ describe("migrating legacy Debrief review", () => {
       source: { actionItemId: item.id },
     });
     expect(task.completedAt).not.toBeNull();
+  });
+
+  it("resumes a crash after Task creation before applying legacy Done", () => {
+    legacyRun({ actionItems: [proposal()], completed: [0] });
+    const crash = vi.spyOn(tasks, "complete").mockImplementationOnce(() => {
+      throw new Error("power loss");
+    });
+    expect(migrate).toThrow("power loss");
+    crash.mockRestore();
+    const store = new TaskStore(workspaceDir);
+    tasks = new WorkspaceTasks({ store, now: () => NOW });
+    actionItems = new WorkspaceActionItems({ store, now: () => NOW });
+    runs = openRuns(workspaceDir);
+    migrate();
+    migrate();
+    expect(tasks.list()).toHaveLength(1);
+    expect(tasks.list()[0].status).toBe("completed");
+    expect(actionItems.list()[0].promotedTaskId).toBe(tasks.list()[0].id);
+  });
+
+  it("keeps legacy positions when identical proposals precede Done and dismissal", () => {
+    legacyRun({
+      actionItems: [
+        proposal(),
+        proposal(),
+        proposal({ title: "Done work" }),
+        proposal({ title: "Dismissed work" }),
+      ],
+      completed: [2],
+      dropped: [3],
+    });
+    migrate();
+    expect(tasks.list().map((task) => [task.title, task.status])).toEqual([
+      ["Done work", "completed"],
+    ]);
+    expect(actionItems.list().find((item) => item.proposal.title === "Dismissed work")?.state).toBe(
+      "dismissed",
+    );
+    const before = actionItems.list();
+    migrate();
+    expect(actionItems.list()).toEqual(before);
+    expect(tasks.list()).toHaveLength(1);
   });
 
   it("leaves a Google-backed done decision for the provider migration", () => {

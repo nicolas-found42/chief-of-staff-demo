@@ -4,6 +4,30 @@ _Recorded 2026-09-05 for [issue #212](https://github.com/nicolas-found42/chief-o
 Binding acceptance is [issue #204](https://github.com/nicolas-found42/chief-of-staff-demo/issues/204);
 the durable decision is [ADR-0062](../adr/0062-person-profiles-are-automatically-researched-dossiers.md)._
 
+## Follow-up implementation and evidence
+
+The remaining-work pass adds durable finite checkpoints, cumulative elapsed allowances, a real
+SIGKILL-during-extraction restart regression, URL-bound pending documents, lifecycle fencing,
+retained failed extractions, explicit extraction coverage, supported temporal supersession and
+stable Work Record identity. Historical research refresh defaults to 720 hours; current research
+uses 168 hours. Upcoming-meeting refresh can bypass cooldown after 24 hours, viewed Profiles after
+48 hours, and material evidence or explicit requests can refresh sooner. In-flight work coalesces;
+daily rollover preserves its original scope and consumption. A completed historical pass alone
+advances historical freshness. Defaults remain bounded operation/time allowances, not monetary caps.
+
+The refreshed two-person public canary in `person-dossier-canary.json` records per-URL diagnostics.
+Simon Willison: one model call returned non-JSON, zero extracted claims/work, incomplete after eight
+operations (about 17.2 seconds). Rich Hickey: the known page was blocked and other discovered pages
+lacked established identity support, zero model calls/claims/work, incomplete after eight operations
+(about 11.0 seconds). Useful matched retrieved text is now retained despite extraction failure.
+Actual token usage and cost are unavailable from the configured completion interface. These results
+show operational limitations, not successful dossier quality; the twenty-row hermetic coverage
+matrix remains separate evidence. No provider email or remote Task was created by this canary.
+
+The issue-by-issue follow-up, final gates and recovery instructions live in
+[the remaining-work ledger](remaining-work-2026-09-05/progress.md). Earlier results below are historical
+and must not be mistaken for proof of the later diff.
+
 ## What this document is
 
 Issue #204 states twenty coverage requirements and one rule over all of them: _"Every requirement

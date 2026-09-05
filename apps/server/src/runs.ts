@@ -1,3 +1,4 @@
+import { notifyWorkspaceChange } from "./engine/workspace-changes.js";
 import {
   appendFileSync,
   existsSync,
@@ -204,6 +205,7 @@ class RunHandleImpl implements RunHandle {
     for (const event of events) {
       appendEvent(this.dir, event.type, event.detail);
     }
+    notifyWorkspaceChange(join(this.dir, "../.."));
     return meta;
   }
 
@@ -356,11 +358,13 @@ class RunHandleImpl implements RunHandle {
   writeArtifact(name: string, text: string): void {
     validateArtifactName(name);
     writeFileSync(join(this.dir, name), text, "utf8");
+    notifyWorkspaceChange(join(this.dir, "../.."));
   }
 
   deleteArtifact(name: string): void {
     validateArtifactName(name);
     rmSync(join(this.dir, name), { force: true });
+    notifyWorkspaceChange(join(this.dir, "../.."));
   }
 }
 

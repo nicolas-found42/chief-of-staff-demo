@@ -97,6 +97,8 @@ export type ExternalTaskLinkState =
  * truth, and this is a pointer to a copy of it.
  */
 export interface ExternalTaskLink {
+  /** Persisted before create; an unacknowledged create must never be repeated blindly. */
+  creationUncertain?: boolean;
   state: ExternalTaskLinkState;
   destination: TaskDestination;
   /**
@@ -142,6 +144,8 @@ export type TaskLinkFailureKind =
   "authorization" | "validation" | "network" | "rate-limit" | "not-found" | "unavailable";
 
 export interface TaskLinkFailure {
+  /** Non-secret credential revision that failed; reconnect is a different revision. */
+  authorizationRevision?: string;
   kind: TaskLinkFailureKind;
   message: string;
 }

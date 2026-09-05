@@ -45,20 +45,6 @@ import { expect, serverOrigin, test } from "./fixture";
    MIGRATION_CONFIRMATION_PHRASE (apps/server/src/migration/workspace.ts): the
    suite imports no app module, so the constant's stability is asserted by the
    journey's own success — a renamed phrase fails the confirm step loudly. */
-const PHRASE = "RESET WORKSPACE";
-const OWNER_EMAIL = "migration-owner@example.com";
-
-/* The seven exact step ids in their fixed order (spec: Migration and Cutover). */
-const ONBOARDING_STEP_IDS = [
-  "provider-enablement",
-  "owner-profile",
-  "brand-voice",
-  "internal-domains",
-  "transcript-folder",
-  "sheets-destinations",
-  "workflow-bundles",
-] as const;
-
 const SHARED_ORIGIN = serverOrigin;
 const SECOND_PORT = 4410;
 const SECOND_ORIGIN = `http://127.0.0.1:${SECOND_PORT}`;
@@ -190,194 +176,51 @@ test.afterAll(async () => {
   await disarmSharedServer();
 });
 
-test("migration cutover journey — gate holds, Cancel touches nothing, the phrase cutover lands on onboarding, and Home is live again", async ({
+test("canonical Tasks cutover preserves work, requires exact authorization, and activates all five areas", async ({
   page,
 }) => {
-  // Seed one known Run while ungated, so the gate's inventory has real content
-  // to prove it never excerpts: the preview reports counts, never content.
-  const seed = await page.request.post("/api/test/seed");
-  expect(seed.ok(), `seed failed: ${seed.status()} ${await seed.text()}`).toBe(true);
-
-  // AC 1: arming clears the completed marker and activates the hold.
-  const arm = await page.request.post("/api/test/migration/arm");
-  expect(arm.ok(), `arm failed: ${arm.status()} ${await arm.text()}`).toBe(true);
-  expect(await arm.json()).toEqual({ state: "required" });
-
-  // AC 2: while the gate holds, every normal /api route refuses 503.
-  const runsRefused = await page.request.get("/api/runs");
-  expect(runsRefused.status()).toBe(503);
-  expect(await runsRefused.json()).toEqual({ error: "migration-required" });
-
-  // AC 3: the Shell's landmarks hold, but no product navigation is offered.
-  await page.goto("/");
-  await expect(page.locator(".app-shell .skip-link")).toBeAttached();
-  await expect(page.locator("main.app-main")).toBeAttached();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Workspace migration" }),
-    "the gate page is what '/' renders while gated",
-  ).toBeVisible();
-  for (const label of ["Products", "Modules", "Settings"]) {
-    await expect(
-      page.locator(`nav[aria-label="${label}"]`),
-      `no ${label} nav is offered while gated`,
-    ).toHaveCount(0);
-  }
-
-  // The inventory is content-free: every category renders its name and count,
-  // and the seeded Run's file name — content — appears nowhere on the page.
-  const inventoryResponse = await page.request.get("/api/migration/inventory");
-  expect(inventoryResponse.ok(), `inventory failed: ${inventoryResponse.status()}`).toBe(true);
-  const inventory = (await inventoryResponse.json()) as {
-    outcome: string;
-    categories?: { name: string; classification: string; count: number }[];
-  };
-  expect(inventory.outcome).toBe("inventory");
-  const runsCategory = inventory.categories?.find(
-    (category) => category.name === "runs-and-artifacts",
-  );
-  expect(runsCategory, "the preview must inventory the Runs category").toBeDefined();
-  expect(runsCategory?.count ?? 0).toBeGreaterThan(0);
-  await expect(
-    page.locator("main#main"),
-    `the gate page must show the ${runsCategory?.name} count the preview named`,
-  ).toContainText(`${runsCategory?.name} — ${runsCategory?.count}`);
-  await expect(page.locator("main#main")).not.toContainText("sample-transcript.md");
-
-  // A direct load of a product route still renders the gate: the boot gate is
-  // the Shell's, not a redirect — no route escapes it client-side.
-  await page.goto("/runs");
-  await expect(page.getByRole("heading", { level: 1, name: "Workspace migration" })).toBeVisible();
-
-  // AC 5 (first half): cancelling is a client-only action. Watch every
-  // response for the receipt endpoint while navigating away.
-  const confirmRequests: string[] = [];
-  const watchConfirm = (response: { url(): string }): void => {
-    if (response.url().includes("/api/migration/confirm")) confirmRequests.push(response.url());
-  };
-  page.on("response", watchConfirm);
-  await page.getByRole("button", { name: "Cancel and keep this Workspace" }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Workspace migration" })).toBeVisible();
-  expect(confirmRequests, "Cancel must send no confirm request").toEqual([]);
-  page.off("response", watchConfirm);
-
-  // AC 5 (second half): a wrong phrase is refused inline, announced, focused,
-  // and leaves the gate standing with nothing changed.
-  const phraseField = page.getByLabel(`Type ${PHRASE} to confirm`);
-  await phraseField.fill("DELETE PROFILE");
-  await page.getByRole("button", { name: "Confirm and reset" }).click();
-  const alert = page.getByRole("alert");
-  await expect(alert).toContainText("confirmation-mismatch");
-  await expect(alert).toBeFocused();
-  await expect(page.getByRole("button", { name: "Confirm and reset" })).toBeVisible();
-
-  // The exact phrase performs the in-process cutover: receipt shown
-  // content-free, then the Shell hands the user to onboarding.
-  await phraseField.fill(PHRASE);
-  await page.getByRole("button", { name: "Confirm and reset" }).click();
-  await expect(page.getByRole("heading", { name: "Migration complete" })).toBeVisible();
-  await expect(page.locator(".receipt-grid")).toContainText("Credentials preserved");
-  await expect(page.locator(".receipt-grid")).toContainText("Files removed");
-  await expect(page).toHaveURL(/\/onboarding$/, { timeout: 5_000 });
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Set up your workspace" }),
-  ).toBeVisible();
-
-  // AC 7: onboarding lists the seven exact step ids in order, read from the
-  // status aggregator — and the clean Workspace is not usable yet.
-  const status = await page.request.get("/api/migration/status");
-  expect(status.ok(), `status failed: ${status.status()}`).toBe(true);
-  const statusBody = (await status.json()) as {
-    state: string;
-    onboarding: { complete: boolean; steps: { id: string }[] };
-  };
-  expect(statusBody.state).toBe("completed");
-  expect(statusBody.onboarding.steps.map((step) => step.id)).toEqual(ONBOARDING_STEP_IDS);
-  /* The ids and their order are pinned above from the status aggregator; the
-     rows render the human labels, so the DOM check mirrors them in the same
-     fixed order (apps/server/src/api/onboarding.ts). */
-  const ONBOARDING_STEP_LABELS = [
-    "Enable providers",
-    "Confirm the owner Profile",
-    "Create Brand Voice",
-    "Select Internal Domains",
-    "Choose the Transcripts folder",
-    "Configure clean Sheets destinations",
-    "Configure workflow bundles",
-  ] as const;
-  const stepRows = page.locator(".setup-check-list li");
-  await expect(stepRows).toHaveCount(7);
-  for (const [index, label] of ONBOARDING_STEP_LABELS.entries()) {
-    await expect(
-      stepRows.nth(index),
-      `onboarding step ${index} must render ${ONBOARDING_STEP_IDS[index]} as "${label}" in order`,
-    ).toContainText(label);
-  }
-  await expect(
-    stepRows.filter({ hasText: "To do" }).first(),
-    "at least one step is still to do",
-  ).toBeVisible();
-
-  // Complete the owner-profile step through the same real flow
-  // content-project-journey.spec.ts uses (identity seam → Profile → confirm),
-  // and watch it flip on the polling page without a reload.
-  await page.request.post("/api/test/owner-identity", { data: { email: OWNER_EMAIL } });
-  const peopleResponse = await page.request.get("/api/people");
-  const people = (await peopleResponse.json()) as { id: string; emails: string[] }[];
-  let owner = people.find((profile) => profile.emails.includes(OWNER_EMAIL));
-  if (!owner) {
-    const created = await page.request.post("/api/people", {
-      data: { fullName: "Migration Workspace Owner", primaryEmail: OWNER_EMAIL },
-    });
-    expect(created.ok()).toBe(true);
-    owner = (await created.json()) as { id: string; emails: string[] };
-  }
-  const confirmation = await page.request.post("/api/onboarding/owner/confirm", {
-    data: { profileId: owner.id },
+  const captured = await page.request.post("/api/tasks", {
+    data: { title: "Preserved cutover work" },
   });
-  expect(confirmation.ok(), `owner confirm failed: ${confirmation.status()}`).toBe(true);
-  const ownerRow = page.locator(".setup-check-list li", { hasText: "Confirm the owner Profile" });
-  await expect(ownerRow).toContainText("Done", { timeout: 15_000 });
-
-  // Home while onboarding is still incomplete: the Finish setup banner is the
-  // one persistent surface for it. (Full completion — and the banner's
-  // disappearance — needs a real connected Google grant; see the docblock.)
-  await page.getByRole("link", { name: "Found42 — Chief of Staff" }).click();
-  await expect(page).toHaveURL(/\/$/);
-  const setupBanner = page.locator(".banner[role='status']");
-  await expect(setupBanner).toContainText("Workspace setup is not finished.");
-  await expect(setupBanner.getByRole("link", { name: "Finish setup" })).toHaveAttribute(
-    "href",
-    "/onboarding",
-  );
-
-  // AC 8: the product is live again the moment the cutover completed.
-  const productsNav = page.locator('nav[aria-label="Products"]');
-  for (const [name, href] of PRODUCT_AREAS) {
+  expect(captured.ok()).toBe(true);
+  const task = await captured.json();
+  expect((await page.request.post("/api/test/migration/arm")).ok()).toBe(true);
+  expect((await page.request.get("/api/tasks")).status()).toBe(503);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Workspace migration", exact: true }),
+  ).toBeVisible();
+  const preview = await (await page.request.get("/api/migration/inventory")).json();
+  expect(preview.kind).toBe("canonical-tasks");
+  expect(preview.authenticationPreserved).toBe(true);
+  expect(preview.counts.tasks).toBeGreaterThan(0);
+  await expect(page.locator("main")).not.toContainText("Preserved cutover work");
+  const wrong = await page.request.post("/api/migration/confirm", {
+    data: { ...preview, typedConfirmation: "RESET WORKSPACE" },
+  });
+  expect(wrong.status()).toBe(409);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Migration cancelled" })).toBeVisible();
+  expect((await page.request.get("/api/migration/receipt")).status()).toBe(404);
+  await page.getByRole("button", { name: "Review preview" }).click();
+  await page
+    .getByLabel("Type MIGRATE TASKS to authorize this Workspace cutover")
+    .fill("MIGRATE TASKS");
+  await page.getByRole("button", { name: "Migrate Tasks", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Migration complete" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue to Home" }).click();
+  await expect(page.getByRole("navigation", { name: "Products" })).toBeVisible();
+  for (const [name, href] of PRODUCT_AREAS)
     await expect(
-      productsNav.getByRole("link", { name }),
-      `${name} must be a nav area again`,
+      page.getByRole("navigation", { name: "Products" }).getByRole("link", { name }),
     ).toHaveAttribute("href", href);
-  }
-  const runsLive = await page.request.get("/api/runs");
-  expect(runsLive.status()).toBe(200);
-
-  // Restore the hermetic post-cutover state for the rest of this worker's files.
-  const disarm = await page.request.post("/api/test/migration/disarm");
-  expect(disarm.ok(), `disarm failed: ${disarm.status()}`).toBe(true);
-  expect(await disarm.json()).toEqual({ state: "completed" });
-
-  // AC 9 (compatibility endpoints): the retired API namespaces answer the
-  // framework's plain 404 — JSON, no redirect, no compat shim.
-  for (const endpoint of ["/api/drive/sync", "/api/idea-engine/runs"]) {
-    const response = await page.request.get(endpoint);
-    expect(response.status(), `${endpoint} must be gone`).toBe(404);
-    expect(response.headers()["location"], `${endpoint} must not redirect`).toBeUndefined();
-    expect(response.headers()["content-type"]).toContain("application/json");
-    const body = (await response.json()) as { error?: unknown };
-    expect(typeof body.error, `${endpoint} must be the not-found JSON`).toBe("string");
-    expect((body.error as string).length).toBeGreaterThan(0);
-  }
+  expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).title).toBe(
+    "Preserved cutover work",
+  );
+  const receipt = await (await page.request.get("/api/migration/receipt")).json();
+  expect(receipt.fingerprint).toBe(preview.fingerprint);
+  await page.reload();
+  await expect(page.getByRole("navigation", { name: "Products" })).toBeVisible();
 });
 
 test("a gated boot leaves the pre-cutover Workspace byte-for-byte unchanged through the Cancel", async ({
@@ -426,12 +269,12 @@ test("a gated boot leaves the pre-cutover Workspace byte-for-byte unchanged thro
   // with the Workspace snapshot still deep-equal to the pre-boot bytes.
   await page.goto(`${SECOND_ORIGIN}/`);
   await expect(page.getByRole("heading", { level: 1, name: "Workspace migration" })).toBeVisible();
-  await expect(page.locator("main#main")).toContainText("runs-and-artifacts");
+  await expect(page.locator("main#main")).toContainText("Canonical Tasks preview");
   const confirmRequests: string[] = [];
   page.on("response", (response) => {
     if (response.url().includes("/api/migration/confirm")) confirmRequests.push(response.url());
   });
-  await page.getByRole("button", { name: "Cancel and keep this Workspace" }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`:${SECOND_PORT}/$`));
   expect(confirmRequests, "Cancel must send no confirm request").toEqual([]);
   expect(

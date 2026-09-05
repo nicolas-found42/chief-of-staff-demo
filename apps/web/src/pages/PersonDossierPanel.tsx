@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   PersonClaim,
   PersonDossier,
@@ -16,7 +16,7 @@ interface DossierView {
   research: PersonResearchJob | null;
 }
 export interface DossierClient {
-  read(id: string): Promise<DossierView>;
+  read(id: string, revision?: number): Promise<DossierView>;
   source(id: string, sourceId: string): Promise<PersonSourceDocument>;
   history(id: string): Promise<PersonRelationshipRecord[]>;
   analysis(id: string): Promise<PersonDossierAnalysis | null>;
@@ -26,7 +26,15 @@ export interface DossierClient {
   configure(settings: Partial<PersonResearchSettings>): Promise<unknown>;
 }
 const api: DossierClient = {
-  read: (id) => request(`/api/people/${encodeURIComponent(id)}/dossier`),
+  read: async (id, revision) =>
+    revision === undefined
+      ? request(`/api/people/${encodeURIComponent(id)}/dossier`)
+      : {
+          dossier: await request<PersonDossier>(
+            `/api/people/${encodeURIComponent(id)}/dossier/revisions/${revision}`,
+          ),
+          research: null,
+        },
   source: (id, sourceId) =>
     request(`/api/people/${encodeURIComponent(id)}/sources/${encodeURIComponent(sourceId)}`),
   analysis: (id) => request(`/api/people/${encodeURIComponent(id)}/dossier-analysis`),
@@ -74,6 +82,11 @@ export function PersonDossierPanel({
   profileId: string;
   client?: DossierClient;
 }) {
+  const [revision, setRevision] = useState<number | undefined>(() => {
+    const value = Number(new URLSearchParams(window.location.search).get("dossierRevision"));
+    return Number.isInteger(value) && value > 0 ? value : undefined;
+  });
+  const [latestRevision, setLatestRevision] = useState(0);
   const [view, setView] = useState<DossierView | null>(null);
   const [tab, setTab] = useState<keyof typeof tabs>("overview");
   const [source, setSource] = useState<{ document: PersonSourceDocument; quote: string } | null>(
@@ -81,15 +94,24 @@ export function PersonDossierPanel({
   );
   const [analysis, setAnalysis] = useState<PersonDossierAnalysis | null>(null);
   const [history, setHistory] = useState<PersonRelationshipRecord[]>([]);
+  const editingSettings = useRef(false);
   const [settings, setSettings] = useState<PersonResearchStatus | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     let live = true;
     const refresh = async () => {
       try {
-        const data = await client.read(profileId);
+        const [current, progress] = await Promise.all([client.read(profileId), client.settings()]);
+        if (live)
+          setSettings((previous) =>
+            editingSettings.current && previous
+              ? { ...progress, settings: previous.settings }
+              : progress,
+          );
+        if (live) setLatestRevision(current.dossier?.revision ?? 0);
+        const data = revision === undefined ? current : await client.read(profileId, revision);
         if (live) setView(data);
-        if (data.dossier) {
+        if (data.dossier && revision === undefined) {
           const analysis = await client.analysis(profileId);
           if (live) setAnalysis(analysis);
         }
@@ -120,22 +142,15 @@ export function PersonDossierPanel({
       .catch((error) => {
         if (live) setError(errorMessage(error));
       });
-    void client
-      .settings()
-      .then((value) => {
-        if (live) setSettings(value);
-      })
-      .catch((error) => {
-        if (live) setError(errorMessage(error));
-      });
     return () => {
       live = false;
       clearInterval(timer);
     };
-  }, [profileId, client]);
+  }, [profileId, client, revision]);
   async function act(action: () => Promise<unknown>) {
     try {
       await action();
+      editingSettings.current = false;
       setSettings(await client.settings());
       setView(await client.read(profileId));
       setError("");
@@ -170,7 +185,7 @@ export function PersonDossierPanel({
       </button>
     ));
   const claim = (item: PersonClaim) => (
-    <article className="card" key={item.id}>
+    <article className="card" key={item.id} id={`claim-${item.id}`}>
       <p>{item.statement}</p>
       <p className="muted">
         {item.status} · {item.nature} · {item.effectiveFrom ?? "Date unknown"}
@@ -191,6 +206,36 @@ export function PersonDossierPanel({
   );
   return (
     <section aria-label="Person dossier">
+      {latestRevision > 0 && (
+        <label>
+          Dossier revision{" "}
+          <select
+            aria-label="Dossier revision"
+            value={revision ?? "current"}
+            onChange={(event) => {
+              setRevision(
+                event.target.value === "current" ? undefined : Number(event.target.value),
+              );
+              setAnalysis(null);
+            }}
+          >
+            <option value="current">Current</option>
+            {Array.from({ length: latestRevision }, (_, index) => index + 1)
+              .reverse()
+              .map((value) => (
+                <option key={value} value={value}>
+                  Revision {value}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
+      {revision !== undefined && (
+        <p role="status">
+          Reading historical dossier revision {revision}. Source removal and privacy deletion may
+          invalidate historical evidence.
+        </p>
+      )}
       <div className="card">
         <p role="status">
           <strong>
@@ -213,9 +258,17 @@ export function PersonDossierPanel({
           {settings && (
             <>
               <p>
-                {settings.usedCalls} / {settings.settings.dailyCalls} research operations today. A
-                search operation can contact several providers. This is an operation allowance, not
-                a monetary cap.
+                Backfill:{" "}
+                {
+                  settings.jobs.filter(
+                    (job) => !["queued", "researching", "paused"].includes(job.state),
+                  ).length
+                }{" "}
+                of {settings.jobs.length} Profiles attempted;{" "}
+                {settings.jobs.filter((job) => ["queued", "paused"].includes(job.state)).length}{" "}
+                waiting. {settings.usedCalls} / {settings.settings.dailyCalls} research operations
+                today. A search operation can contact several providers. This is an operation
+                allowance, not a monetary cap.
               </p>
               <button
                 type="button"
@@ -232,6 +285,7 @@ export function PersonDossierPanel({
                   "concurrency",
                   "profileMilliseconds",
                   "refreshHours",
+                  "historicalRefreshHours",
                 ] as const
               ).map((key) => (
                 <label key={key} style={{ display: "block", marginTop: 12 }}>
@@ -242,18 +296,20 @@ export function PersonDossierPanel({
                       concurrency: "Concurrent Profiles",
                       profileMilliseconds: "Time per Profile (milliseconds)",
                       refreshHours: "Current facts refresh (hours)",
+                      historicalRefreshHours: "Historical research refresh (hours)",
                     }[key]
                   }{" "}
                   <input
                     type="number"
                     min={1}
-                    value={settings.settings[key]}
-                    onChange={(event) =>
+                    value={settings.settings[key] ?? 720}
+                    onChange={(event) => {
+                      editingSettings.current = true;
                       setSettings({
                         ...settings,
                         settings: { ...settings.settings, [key]: Number(event.target.value) },
-                      })
-                    }
+                      });
+                    }}
                   />
                 </label>
               ))}
@@ -270,6 +326,7 @@ export function PersonDossierPanel({
                       concurrency: settings.settings.concurrency,
                       profileMilliseconds: settings.settings.profileMilliseconds,
                       refreshHours: settings.settings.refreshHours,
+                      historicalRefreshHours: settings.settings.historicalRefreshHours ?? 720,
                     }),
                   )
                 }
@@ -399,7 +456,7 @@ export function PersonDossierPanel({
           ))}
         {tab === "work" &&
           dossier?.works.map((work) => (
-            <article className="card" key={work.id}>
+            <article className="card" key={work.id} id={`work-${work.id}`}>
               <h3>{work.title}</h3>
               <p>
                 {work.kind} · {work.startedAt ?? "Start unknown"} — {work.endedAt ?? "End unknown"}
@@ -485,6 +542,15 @@ export function PersonDossierPanel({
               Inspect the passages behind each statement. Retrieval dates describe collection, not
               when a fact became true. Repeated copies do not establish independent corroboration.
             </p>
+            <ul>
+              {(dossier?.sourceIds ?? []).map((sourceId, index) => (
+                <li key={sourceId}>
+                  <button type="button" onClick={() => void inspect(sourceId, "")}>
+                    Inspect retained source {index + 1}
+                  </button>
+                </li>
+              ))}
+            </ul>
             {claims.map(claim)}
           </>
         ) : (
@@ -520,7 +586,9 @@ export function PersonDossierPanel({
           </p>
           <p>
             {source.document.sourceClass} · {source.document.completeness} ·{" "}
-            {source.document.access} · Source family {source.document.family}
+            {source.document.access} · Extraction{" "}
+            {source.document.extractionCoverage ?? "coverage not recorded"} · Source family{" "}
+            {source.document.family}
           </p>
           <p>{source.document.url}</p>
           <blockquote>{source.quote}</blockquote>

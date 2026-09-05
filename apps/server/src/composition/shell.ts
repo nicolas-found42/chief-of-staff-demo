@@ -1,3 +1,4 @@
+import { weeklyMeetingSources } from "../meetings/weekly-sources.js";
 import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
 import { PersonDossierStore } from "../person-profile/dossier-store.js";
 import { PersonResearch } from "../person-profile/research.js";
@@ -38,7 +39,7 @@ import { composeTasks } from "../tasks/composition.js";
 import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
 import type { TaskLinking } from "../tasks/external-link.js";
-import { migrateLegacyActionReview, migrateLegacyTaskReceipts } from "../tasks/legacy-migration.js";
+import { TaskCutover } from "../tasks/cutover.js";
 import { buildDailyBriefingWork } from "../tasks/briefing-projection.js";
 import { WeeklyWorkspace } from "../meetings/weekly.js";
 import type { HostedModule } from "../engine/host.js";
@@ -116,7 +117,6 @@ import {
   type MigrationGate,
 } from "../api/migration.js";
 import { registerClearDataApi } from "../api/clear-data.js";
-import { readMigrationState } from "../migration/workspace.js";
 
 /** The module id fixture Runs are attributed to in the browser suite only. */
 const SEED_FIXTURE_MODULE_ID = "seed-fixture";
@@ -208,7 +208,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      `modulesRunning` is the gate's knowledge of what it started and stopped:
      the arm seam stops Modules, and neither restart path may double-start a
      scheduler the confirm already restarted. */
-  let gateActive = readMigrationState(workspaceDir) === "required";
+  let gateActive = new TaskCutover({ workspaceDir }).state() === "required";
   let modulesRunning = false;
   const migrationGate: MigrationGate = {
     isActive() {
@@ -312,39 +312,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const { tasks, actionItems, linking: taskLinking, asanaLinking } = taskProduct;
   const materializeActionItemsUnderPolicy = taskProduct.materialize;
 
-  /* Legacy Debrief review, carried into canonical records (issue #183). One
-     pass at composition, before anything serves: the positional decisions in
-     old Run files are real work the owner did, and every surface below reads
-     the canonical records rather than those arrays. Idempotent by
-     construction, so this runs on every boot and does nothing on all but the
-     first. */
-  const legacyMigrationDeps = {
-    runs,
-    tasks,
-    actionItems,
-    meetingIdFor: (transcriptId: string) =>
+  const taskCutover = new TaskCutover({
+    workspaceDir,
+    meetingIdFor: (transcriptId) =>
       transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
-    log: (message: string) => console.log(`[tasks] ${message}`),
-  };
-  /* The Google Task receipts those same Runs wrote (issue #188). Only the
-     configured destination can be adopted, because a receipt records the
-     remote identity and not the list it was filed in, and the app only ever
-     wrote to the list the Workspace configured. Without that destination the
-     review migration still runs and the receipts wait for the next boot. */
-  const legacyGoogleTasks = configStore.get().tasks.googleTasks;
-  if (legacyGoogleTasks.enabled && legacyGoogleTasks.taskListId !== "") {
-    await migrateLegacyTaskReceipts({
-      ...legacyMigrationDeps,
-      destination: {
-        provider: "google-tasks",
-        googleTaskListId: legacyGoogleTasks.taskListId,
-        googleTaskListTitle: legacyGoogleTasks.taskListTitle,
-      },
-      read: (destination, remoteId) => taskProduct.googleConnector.read(destination, remoteId),
-    });
-  } else {
-    migrateLegacyActionReview(legacyMigrationDeps);
-  }
+    readRemote: (destination, remoteId) => taskProduct.googleConnector.read(destination, remoteId),
+  });
 
   /* The public-web identity resolver, wired here for the first time: the seam
      and its source existed but nothing in production built them, so a Profile
@@ -416,6 +389,24 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     people: peopleProfiles,
     research: personResearch,
     enabled: () => !migrationGate.isActive(),
+    evidenceRevision: (profileId) =>
+      JSON.stringify(
+        transcriptIdentityStore
+          .readMentions()
+          .flatMap((mention) => {
+            const decision = transcriptIdentityStore.latestDecision(mention.id);
+            if (
+              decision?.profileId !== profileId ||
+              !["linked", "created"].includes(decision.outcome)
+            )
+              return [];
+            const transcript = transcriptCatalogStore.readTranscript(
+              mention.provenance.transcriptId,
+            );
+            return transcript ? [[transcript.id, transcript.source.checksum]] : [];
+          })
+          .sort(),
+      ),
     upcomingProfileIds: () => {
       const emails = new Set(
         meetings
@@ -751,7 +742,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     meetings,
     tasks,
     actionItems,
-    runs,
+    sources: weeklyMeetingSources({
+      meetings,
+      runs,
+      meetingIdForTranscript: (transcriptId) =>
+        transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
+    }),
     now: () => new Date(),
     timezone: () =>
       configStore.getModuleConfig("content-research").timeZone ||
@@ -764,8 +760,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         complete: meetingBriefCompleteJson(),
       };
     },
-    meetingIdForTranscript: (transcriptId) =>
-      transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
     /* The Monday owner email (issue #197). The delivery adapter resolves its
        own recipient from the authenticated Gmail account, so the message can
        only ever reach the owner; a Workspace with no Gmail delivery composed
@@ -877,6 +871,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   registerMigrationGate(app, migrationGate);
   registerMigrationRoutes(app, {
     workspaceDir,
+    taskCutover,
     gate: migrationGate,
     configStore,
     googleConnection,

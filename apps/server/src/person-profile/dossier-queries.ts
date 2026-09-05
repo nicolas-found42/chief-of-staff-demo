@@ -137,7 +137,7 @@ export class PersonDossierQueries {
         !connection.claimIds.every((id) => validClaims.has(id))
       )
         continue;
-      const key = connection.profileId ?? canonical(connection.counterparty);
+      const key = connection.profileId ?? connection.counterpartyUrl ?? connection.id;
       const entry = collaborations.get(key) ?? {
         counterparty: connection.counterparty,
         works: new Map<string, string>(),

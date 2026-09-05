@@ -1,3 +1,4 @@
+import { observeWorkspaceChanges } from "../engine/workspace-changes.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -5,15 +6,12 @@ import { atomicWriteJson } from "../engine/atomic.js";
 import type { WeeklySummaryState } from "@chief-of-staff-demo/shared";
 import { z } from "zod";
 import type { CompleteJson } from "../llm/providers.js";
-import type { MeetingBriefRunResult, MeetingDebriefRunResult } from "@chief-of-staff-demo/shared";
-import { MEETING_BRIEF_MODULE_ID, MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
 import { DateTime } from "luxon";
 import type { FastifyInstance } from "fastify";
 import type { WeeklyMeeting, WeeklyWorkspaceView } from "@chief-of-staff-demo/shared";
 import type { WorkspaceMeetings } from "./store.js";
 import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
-import type { Runs } from "../runs.js";
 
 /** Owner-only Gmail delivery, as the Meeting Brief module's adapter provides it. */
 interface WeeklyEmailDelivery {
@@ -28,14 +26,13 @@ interface WeeklyEmailDelivery {
 
 interface WeeklyWorkspaceDeps {
   workspaceDir: string;
-  meetings: WorkspaceMeetings;
-  tasks: WorkspaceTasks;
-  actionItems: WorkspaceActionItems;
-  runs: Runs;
+  meetings: Pick<WorkspaceMeetings, "list">;
+  tasks: Pick<WorkspaceTasks, "list">;
+  actionItems: Pick<WorkspaceActionItems, "list">;
+  sources: (view: WeeklyWorkspaceView) => object[];
   now: () => Date;
   timezone: () => string;
   model?: () => { provider: string; model: string; complete: CompleteJson };
-  meetingIdForTranscript?: (transcriptId: string) => string | null;
   /**
    * The Monday owner email (issue #197). Absent when the Workspace composes no
    * Gmail delivery, and then the tab is the only surface. The recipient is
@@ -52,6 +49,10 @@ interface WeeklyWorkspaceDeps {
 
 /** Meeting Wizard reads bounded projections; source records retain their owners. */
 export class WeeklyWorkspace {
+  private generation = 0;
+  private unobserve: (() => void) | undefined;
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private emailInFlight: Promise<void> | null = null;
   private inFlight: Promise<WeeklyWorkspaceView> | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   constructor(private readonly deps: WeeklyWorkspaceDeps) {}
@@ -107,81 +108,28 @@ export class WeeklyWorkspace {
     };
   }
 
-  private sources(view: WeeklyWorkspaceView): object[] {
-    const sources: object[] = [];
-    for (const meeting of view.meetings) {
-      const sourceMeeting = this.deps.meetings.get(meeting.id)!;
-      const completed = meeting.group === "completed";
-      const module = completed ? MEETING_DEBRIEF_MODULE_ID : MEETING_BRIEF_MODULE_ID;
-      for (const summary of this.deps.runs.list({ module }).runs) {
-        const run = this.deps.runs.open(summary.id);
-        if (!run) continue;
-        const raw = run.readArtifact("result.json");
-        let result: (MeetingBriefRunResult & MeetingDebriefRunResult) | null = null;
-        try {
-          result = raw
-            ? (JSON.parse(raw) as MeetingBriefRunResult & MeetingDebriefRunResult)
-            : null;
-        } catch {
-          /* missing artifact */
-        }
-        const matches = completed
-          ? result && this.deps.meetingIdForTranscript?.(result.transcriptId) === meeting.id
-          : run.read().externalId === sourceMeeting.occurrenceKey;
-        if (!matches) continue;
-        if (run.read().status !== "done" || !(completed ? result?.debrief : result?.meetingBrief)) {
-          if (meeting.artifactStatus === "missing")
-            meeting.artifactStatus = run.read().status === "failed" ? "failed" : "pending";
-          continue;
-        }
-        meeting.artifactStatus = "ready";
-        meeting.sourceId = run.id;
-        const common = {
-          meetingId: meeting.id,
-          title: meeting.title,
-          date: meeting.startAt,
-          group: meeting.group,
-          sourceId: run.id,
-        };
-        if (completed && result?.debrief) {
-          const debrief = result.debrief;
-          sources.push({
-            ...common,
-            summary: debrief.summary,
-            decisions: debrief.decisions,
-            actionItems: debrief.actionItems.map(({ title, owner, dueDate }) => ({
-              title,
-              owner,
-              dueDate,
-            })),
-            openQuestions: debrief.openQuestions,
-          });
-        } else if (result?.meetingBrief) {
-          const brief = result.meetingBrief;
-          sources.push({
-            ...common,
-            summary: brief.summary,
-            topics: brief.conversationStarters,
-            uncertainties: brief.uncertainty,
-          });
-        }
-        break;
-      }
-    }
-    return sources;
-  }
-
   read(force = false): Promise<WeeklyWorkspaceView> {
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.build(force).finally(() => {
-      this.inFlight = null;
-    });
+    this.inFlight = this.build(force)
+      .catch(() => {
+        const view = this.view();
+        view.summary = {
+          ...view.summary,
+          state: "failed",
+          error: "Saved Weekly state is unreadable. Restore the saved file before retrying.",
+        };
+        return view;
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
     return this.inFlight;
   }
 
   private async build(force: boolean): Promise<WeeklyWorkspaceView> {
+    const generation = this.generation;
     const view = this.view();
-    const sources = this.sources(view);
+    const sources = this.deps.sources(view);
     const model = this.deps.model?.();
     if (!sources.length || !model) return view;
     const consentPath = join(this.deps.workspaceDir, "weekly", "consent.json");
@@ -223,6 +171,16 @@ export class WeeklyWorkspace {
           failedFingerprint?: string;
         })
       : null;
+    if (cached)
+      z.object({
+        fingerprint: z.string(),
+        summary: z.object({
+          state: z.enum(["empty", "ready", "stale", "failed", "consent-required", "generating"]),
+          text: z.string().nullable(),
+        }),
+      }).parse(cached);
+    if (consent && (typeof consent.provider !== "string" || typeof consent.model !== "string"))
+      throw new Error("Invalid saved Weekly consent");
     if (cached?.fingerprint === fingerprint && !force) return { ...view, summary: cached.summary };
     if (cached && !force) {
       if (cached.failedFingerprint === fingerprint)
@@ -239,7 +197,13 @@ export class WeeklyWorkspace {
         cached.dirtyAt = this.deps.now().getTime();
         atomicWriteJson(path, cached);
       }
-      if (this.deps.now().getTime() - (cached.dirtyAt ?? 0) < 15 * 60_000) {
+      const remaining = 15 * 60_000 - (this.deps.now().getTime() - (cached.dirtyAt ?? 0));
+      if (remaining > 0) {
+        if (this.unobserve) {
+          clearTimeout(this.refreshTimer);
+          this.refreshTimer = setTimeout(() => this.refresh(), remaining);
+          this.refreshTimer.unref();
+        }
         return { ...view, summary: { ...cached.summary, state: "stale" } };
       }
     }
@@ -252,6 +216,7 @@ export class WeeklyWorkspace {
           schema: summaryShape,
         }),
       );
+      if (generation !== this.generation) throw new Error("Weekly runtime stopped");
       view.summary = {
         ...view.summary,
         text: answer.text,
@@ -264,6 +229,11 @@ export class WeeklyWorkspace {
          A BYOK owner who switches providers can see which one wrote this. */
       atomicWriteJson(path, { week: view.weekStart, fingerprint, sources, summary: view.summary });
     } catch {
+      if (generation !== this.generation)
+        return {
+          ...view,
+          summary: { ...view.summary, state: "failed", error: "Weekly runtime stopped." },
+        };
       view.summary = {
         ...(cached?.summary ?? view.summary),
         state: "failed",
@@ -290,7 +260,16 @@ export class WeeklyWorkspace {
    * reconciles a lost acknowledgement, so a retry after a dropped response
    * converges on one message rather than a second one.
    */
-  async sendWeeklyEmailIfDue(force = false): Promise<void> {
+  sendWeeklyEmailIfDue(force = false): Promise<void> {
+    if (this.emailInFlight) return this.emailInFlight;
+    this.emailInFlight = this.sendEmail(force).finally(() => {
+      this.emailInFlight = null;
+    });
+    return this.emailInFlight;
+  }
+
+  private async sendEmail(force: boolean): Promise<void> {
+    const generation = this.generation;
     const email = this.deps.email;
     if (!email || !email.enabled() || !email.ownerConfirmed()) return;
     const now = this.deps.now();
@@ -300,13 +279,16 @@ export class WeeklyWorkspace {
     const receipt = existsSync(path)
       ? (JSON.parse(readFileSync(path, "utf8")) as { weekStart: string })
       : null;
-    const view = await this.read();
+    let view = await this.read();
     /* One successful delivery per week. A Meeting completing later in the week
        changes the tab, and changes nothing here. */
     if (!force && receipt?.weekStart === view.weekStart) return;
     const deliveryId = `weekly-briefing-${view.weekStart}`;
     try {
       const already = await email.deliver.findByDeliveryId(deliveryId);
+      if (!already && view.summary.state === "failed") view = await this.read(true);
+      if (!already && ["failed", "consent-required"].includes(view.summary.state)) return;
+      if (generation !== this.generation || !email.enabled() || !email.ownerConfirmed()) return;
       const rendered = renderWeeklyBriefingEmail(view);
       const sent = already ?? (await email.deliver.send({ ...rendered, deliveryId }));
       atomicWriteJson(path, {
@@ -322,15 +304,27 @@ export class WeeklyWorkspace {
     }
   }
 
-  /** The Monday schedule. Hourly, because the send is gated on the hour, not the tick. */
+  private refresh(): void {
+    void this.read().catch(() => this.deps.log?.("Weekly state could not be read."));
+    void this.sendWeeklyEmailIfDue().catch(() =>
+      this.deps.log?.("Weekly delivery state could not be read."),
+    );
+  }
+
+  /** Source notifications coalesce work; the minute tick also handles clock boundaries. */
   start(): void {
     if (this.timer) return;
-    void this.sendWeeklyEmailIfDue();
-    this.timer = setInterval(() => void this.sendWeeklyEmailIfDue(), 60 * 60_000);
+    this.unobserve = observeWorkspaceChanges(this.deps.workspaceDir, () => this.refresh());
+    this.refresh();
+    this.timer = setInterval(() => this.refresh(), 60_000);
     this.timer.unref();
   }
 
   stop(): void {
+    this.generation += 1;
+    this.unobserve?.();
+    this.unobserve = undefined;
+    clearTimeout(this.refreshTimer);
     clearInterval(this.timer);
     this.timer = undefined;
   }
@@ -340,7 +334,11 @@ export class WeeklyWorkspace {
        Items, with no Weekly Summary and so no model call. The Today tab reads
        this for its This week figure — a metric on another tab must not spend a
        generation (issue #196). */
-    app.get("/api/meetings/weekly/deterministic", async () => this.view());
+    app.get("/api/meetings/weekly/deterministic", async () => {
+      const view = this.view();
+      this.deps.sources(view);
+      return view;
+    });
     app.get("/api/meetings/weekly", async () => this.read());
     app.post("/api/meetings/weekly/regenerate", async () => this.read(true));
     app.post("/api/meetings/weekly/consent", async (request, reply) => {

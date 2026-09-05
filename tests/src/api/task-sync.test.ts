@@ -216,6 +216,65 @@ describe.each([
       expect(retried.statusCode).toBe(200);
       expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1"]);
     });
+    it("resumes authorization-paused links on the next automatic refresh after reconnection", async () => {
+      await enable();
+      const task = await captureToGoogle("Resume me");
+      await link(task.id);
+      updateRemoteStatus.mockRejectedValueOnce(
+        Object.assign(new Error("unauthorized"), { code: 401 }),
+      );
+      await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
+      let revision = "original";
+      const runtime = new TaskLinking({ ...linkingDeps(), authorizationRevision: () => revision });
+      // Establish the current credential while the provider still rejects it.
+      readRemote.mockRejectedValueOnce(Object.assign(new Error("unauthorized"), { code: 401 }));
+      await runtime.refresh({ manual: true });
+      readRemote.mockClear();
+      await runtime.refresh();
+      expect(readRemote).not.toHaveBeenCalled();
+      const restarted = new TaskLinking({
+        ...linkingDeps(),
+        authorizationRevision: () => revision,
+      });
+      await restarted.refresh();
+      expect(readRemote).not.toHaveBeenCalled();
+      revision = "reconnected";
+      await runtime.refresh();
+      expect(tasks.get(task.id)?.externalLink?.state).toBe("synchronized");
+      expect(createRemote).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["open", "completed"] as const)(
+      "recovers uncertain %s creation after restart without duplicating or losing local completion",
+      async (status) => {
+        await enable();
+        const task = await captureToGoogle("Lost create response");
+        if (status === "completed") tasks.complete(task.id);
+        createRemote.mockRejectedValueOnce(new Error("response lost after remote commit"));
+        await link(task.id);
+        const restarted = new TaskLinking(linkingDeps());
+        await restarted.retry(task.id);
+        await restarted.refresh({ manual: true });
+        expect(createRemote).toHaveBeenCalledTimes(1);
+        expect(tasks.get(task.id)?.externalLink?.creationUncertain).toBe(true);
+        readRemote.mockResolvedValue(snapshot("Lost create response"));
+        await restarted.recoverCreation(task.id, "remote-that-already-exists");
+        expect(tasks.get(task.id)?.status).toBe(status);
+        if (status === "completed")
+          expect(updateRemoteStatus).toHaveBeenCalledWith(
+            expect.anything(),
+            "remote-that-already-exists",
+            true,
+          );
+        expect(tasks.get(task.id)?.externalLink).toMatchObject({
+          remoteId: "remote-that-already-exists",
+          state: "synchronized",
+          creationUncertain: false,
+        });
+        expect(createRemote).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it("retries a failed status write against the existing remote record", async () => {
       await enable();
       const task = await captureToGoogle("Retry accepted work");
@@ -385,6 +444,22 @@ describe.each([
           baseline: { title: "Send the pricing sheet", status: "open" },
         },
       });
+    });
+
+    it("does not duplicate a recreated remote record after losing its acknowledgement", async () => {
+      await enable();
+      const task = await captureToGoogle("Replacement recovery");
+      await link(task.id);
+      readRemote.mockResolvedValueOnce(null);
+      await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
+      createRemote.mockRejectedValueOnce(
+        new Error("Response lost after provider accepted replacement"),
+      );
+      await app.inject({ method: "POST", url: `/api/tasks/${task.id}/recreate` });
+      const restarted = new TaskLinking(linkingDeps());
+      await restarted.retry(task.id);
+      expect(createRemote).toHaveBeenCalledTimes(2);
+      expect(tasks.get(task.id)?.externalLink?.creationUncertain).toBe(true);
     });
 
     it("removes the link while preserving the local Task", async () => {
@@ -938,8 +1013,12 @@ describe("Google Tasks and Asana enabled together", () => {
 
   let app: FastifyInstance;
   let tasks: WorkspaceTasks;
-  let google: { [K in keyof RemoteTaskConnector]: Mock<RemoteTaskConnector[K]> };
-  let asana: { [K in keyof RemoteTaskConnector]: Mock<RemoteTaskConnector[K]> };
+  let google: {
+    [K in keyof Omit<RemoteTaskConnector, "resolveDestination">]: Mock<RemoteTaskConnector[K]>;
+  };
+  let asana: {
+    [K in keyof Omit<RemoteTaskConnector, "resolveDestination">]: Mock<RemoteTaskConnector[K]>;
+  };
 
   /** A connector double that answers with whatever the Workspace last sent it. */
   function connector(prefix: string) {

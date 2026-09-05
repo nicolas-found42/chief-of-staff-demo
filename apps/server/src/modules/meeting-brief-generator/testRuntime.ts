@@ -131,6 +131,15 @@ export function createMeetingBriefTestRuntime(
     ...(options.associateTranscripts ? { associateTranscripts: options.associateTranscripts } : {}),
     enrich: async (input, ctx) => {
       ctx.event("fixture_enrich", { provider: "hermetic-system-boundary" });
+      // Keep canonical Calendar entry policy real while replacing remote enrichment I/O.
+      for (const attendee of input.attendees.filter(
+        (person) => !person.organizer && !person.resource,
+      ))
+        options.personProfiles?.ensureCalendarAttendeeProfile({
+          email: attendee.email,
+          provenance: `calendar:${input.eventId}`,
+        });
+
       const personProfileLinks = options.personProfiles
         ? input.attendees.flatMap((attendee) => {
             const profile = options.personProfiles!.search({ query: attendee.email })[0];
