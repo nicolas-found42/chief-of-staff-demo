@@ -18,8 +18,9 @@ supported way to run the app.
 | Clean checkout | GitHub Actions on pull requests and pushes to `main` | Clean installs, the gates above, coverage, and the production image boot |
 
 The unit coverage gate measures `apps/server/src`, excluding the process bootstrap and the
-test-only e2e seed seam. CI reports the result in its job summary and enforces the global lines
-floor in `tests/vitest.config.ts`.
+test-only e2e seed seam. CI reports the result in its job summary and enforces the lines,
+statements, functions, and branches floors in `tests/vitest.config.ts`. A run that produces no
+coverage report fails the job rather than passing quietly.
 
 ## Prompt eval gate
 

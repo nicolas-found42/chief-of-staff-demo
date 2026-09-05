@@ -1,21 +1,26 @@
 # Pull request workflow
 
-Substantial work goes `branch → PR → squash merge`. Small work still commits straight to `main`.
-This is the outbound development workflow; triaging *inbound* PRs from outside contributors is a
-separate flag in `issue-tracker.md`, currently off.
+Every change to `main` goes `branch → PR → squash merge`. This is the outbound development
+workflow; triaging *inbound* PRs from outside contributors is a separate flag in
+`issue-tracker.md`, currently off.
 
-## What needs a PR
+## Everything goes through a PR
 
-| Goes through a PR | Commits straight to `main` |
-| --- | --- |
-| A spec's or issue's implementation | Typo and wording fixes |
-| A change touching more than one workspace | A version or dependency bump |
-| Anything that lands an ADR | A one-line fix with an obvious blast radius |
-| A new module, route, or migration | Regenerating a lockfile or a formatting pass |
-| Anything whose review value is in the diff | Reverting a commit made minutes ago |
+A ruleset on `main` (no bypass actors) requires a pull request and the four CI checks — `check`,
+`test`, `e2e`, `image` — and blocks force-pushes and branch deletion. There is no direct-commit
+lane, deliberately: the agent works with the repo owner's own credentials, so any bypass granted
+to a human is a bypass granted to the agent, and a rule that exempts everyone enforces nothing.
 
-The test is whether the diff is worth reading as a unit later. When it is genuinely unclear, open
-the PR — an unnecessary PR costs a minute, an unreviewable direct commit costs a bisect.
+The cost is small because trivial changes do not have to be babysat:
+
+```bash
+git switch -c docs/fix-typo && git commit -am "docs: fix a typo" && git push -u origin HEAD
+gh pr create --fill && gh pr merge --auto --squash
+```
+
+Auto-merge lands it the moment CI is green; nothing waits on you. Scale the *care* to the change,
+not the mechanism — a one-liner gets `--fill` and auto-merge, a spec's implementation gets a
+written body and a read-through.
 
 ## Branch naming
 
@@ -25,7 +30,8 @@ the PR — an unnecessary PR costs a minute, an unreviewable direct commit costs
 Work that closes a tracked issue puts the number first: `feat/202-live-cutover`. That makes the
 branch, the PR, and the issue greppable as one string.
 
-Never work directly on `main` for PR-scoped work — branch before the first commit, not after.
+Branch before the first commit, not after. A commit made on `main` by mistake has to be moved
+onto a branch before it can go anywhere, since `main` rejects direct pushes.
 
 ## Opening a PR
 
@@ -46,8 +52,10 @@ so the merge closes the issue. A PR with no issue says so in one line; that abse
 `main`, so the history stays bisectable and a revert is a single hash. The squash commit message is
 the PR title plus body, so the PR title carries the conventional-commit prefix.
 
-Merge only when CI is green — `gh pr checks <n> --watch` blocks until it resolves. A failing check
-is a fix on the branch, never a merge with an override.
+Merge only when CI is green. `gh pr merge --auto --squash` is usually better than watching:
+it lands the PR when the checks pass and does nothing if they fail. `gh pr checks <n> --watch`
+blocks until they resolve when you do want to wait. A failing check is a fix on the branch, never
+a merge with an override.
 
 Rebase onto `main` rather than merging `main` in when the branch falls behind:
 `git fetch origin && git rebase origin/main`, then force-push **the feature branch only**
@@ -64,13 +72,13 @@ Pre-authorized, no prompt needed:
 
 Ask first, every time:
 
-- Any force-push or history rewrite touching `main` (an ordinary push of a small direct commit is fine)
+- Weakening, disabling, or adding a bypass actor to the `main` ruleset
 - Merging with a failing or skipped required check
 - Deleting a remote branch that is not the just-merged PR's own branch
 - `gh pr close` on a PR someone else opened
 
-This supersedes the earlier "commit to `main`, never push" default for PR-scoped work. Direct
-commits to `main` for small work are still committed locally and pushed as part of normal flow.
+This supersedes the earlier "commit to `main`, never push" default. The ruleset now enforces most
+of it mechanically rather than by convention; the entries above are the parts a rule cannot cover.
 
 ## CI
 

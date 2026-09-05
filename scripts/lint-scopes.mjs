@@ -26,10 +26,14 @@ let failed = false;
 for (const [index, scope] of SCOPES.entries()) {
   process.stdout.write(`[lint ${index + 1}/${SCOPES.length}] ${scope} …\n`);
   const scopeStarted = Date.now();
-  const result = spawnSync("pnpm", ["exec", "eslint", scope, "--cache", "--concurrency", "auto"], {
-    stdio: "inherit",
-    env: process.env,
-  });
+  const result = spawnSync(
+    "pnpm",
+    ["exec", "eslint", scope, "--max-warnings", "0", "--cache", "--concurrency", "auto"],
+    {
+      stdio: "inherit",
+      env: process.env,
+    },
+  );
   const elapsed = ((Date.now() - scopeStarted) / 1000).toFixed(1);
   if (result.status !== 0) {
     process.stdout.write(`[lint ${index + 1}/${SCOPES.length}] ${scope} FAILED (${elapsed}s)\n`);

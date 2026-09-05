@@ -8,6 +8,9 @@ on:
 
 # Canary failures are diagnostic evidence, not a merge gate: a public-route
 # change must not block unrelated work via a required check.
+permissions:
+  contents: read
+
 concurrency:
   group: canary-${{ github.ref }}
   cancel-in-progress: true
@@ -15,6 +18,7 @@ concurrency:
 jobs:
   canary:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # This job is intentionally non-blocking: canary breakage is visible in
     # the workflow run and in persisted receipts, but must not fail CI.
     continue-on-error: true

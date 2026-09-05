@@ -22,8 +22,8 @@ workspaces are build units, not domains. See `docs/agents/domain.md`.
 
 ### Pull requests
 
-Substantial work goes `branch → PR → squash merge`; typos and one-liners still commit straight
-to `main`. See `docs/agents/pr-workflow.md`.
+Every change to `main` goes `branch → PR → squash merge`; a ruleset with no bypass requires a PR
+and the four CI checks. See `docs/agents/pr-workflow.md`.
 
 ### Verification gates
 
