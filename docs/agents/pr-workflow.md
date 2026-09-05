@@ -58,6 +58,23 @@ To use administrator privileges to immediately merge the pull request, add the `
 `gh` advertises `--admin` there, but the ruleset carries **no bypass actors**, so it fails too. The
 only way past a red check is a green one. Fix the branch.
 
+### The stale-base window is accepted
+
+Required checks are **non-strict**: a PR merges on a result that tested it against `main` as it was
+when the checks ran. Two PRs that each pass alone can therefore break together, and that is the one
+remaining way `main` goes red.
+
+This is a decision, not an oversight. Do not re-propose the two standard fixes:
+
+- **A merge queue** is unavailable. GitHub refuses the `merge_queue` ruleset rule on this repo —
+  `Invalid rule 'merge_queue'` — because the owner is a user account, not an organization, and
+  Nicolas has ruled out moving to an org.
+- **`strict: true`** blocks the stale PR and waits for a human to press "Update branch"; automating
+  that press needs a PAT, because a `GITHUB_TOKEN` push does not start a new workflow run. Nicolas
+  asked for the stronger gate only if the re-run were automatic, so it stays off.
+
+The window only matters with two PRs open at once. Work one PR at a time and it never opens.
+
 ## Agent authority
 
 Pre-authorized, no prompt:
