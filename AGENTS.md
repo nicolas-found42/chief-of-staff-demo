@@ -27,6 +27,6 @@ with no bypass for anyone. See `docs/agents/pr-workflow.md`.
 
 ### Verification gates
 
-Run the narrowest gate covering the change while working; whole-tree `pnpm run
-check` before each commit; container changes add a Docker boot check. See
+Run the narrowest gate covering the change while working, `pnpm run check` before pushing;
+container changes add a Docker boot check. Test commands go through `pnpm --filter`. See
 `docs/agents/verification.md`.

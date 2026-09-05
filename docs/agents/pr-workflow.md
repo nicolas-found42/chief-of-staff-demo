@@ -48,15 +48,8 @@ The required list lives in the ruleset, which no file in the repo records. Read 
 gh api repos/nicolas-found42/chief-of-staff-demo/rules/branches/main
 ```
 
-A red PR refuses to merge:
-
-```
-X ... is not mergeable: the base branch policy prohibits the merge.
-To use administrator privileges to immediately merge the pull request, add the `--admin` flag.
-```
-
-`gh` advertises `--admin` there, but the ruleset carries **no bypass actors**, so it fails too. The
-only way past a red check is a green one. Fix the branch.
+A red PR refuses to merge, and `gh` suggests `--admin` in the refusal. That fails too: the ruleset
+carries **no bypass actors**. Green is the only way through, so fix the branch.
 
 ### The stale-base window is accepted
 
@@ -64,16 +57,15 @@ Required checks are **non-strict**: a PR merges on a result that tested it again
 when the checks ran. Two PRs that each pass alone can therefore break together, and that is the one
 remaining way `main` goes red.
 
-This is a decision, not an oversight. Do not re-propose the two standard fixes:
+Both standard fixes were tried on 2026-09-05 and are closed. Treat the question as settled:
 
-- **A merge queue** is unavailable. GitHub refuses the `merge_queue` ruleset rule on this repo —
-  `Invalid rule 'merge_queue'` — because the owner is a user account, not an organization, and
-  Nicolas has ruled out moving to an org.
-- **`strict: true`** blocks the stale PR and waits for a human to press "Update branch"; automating
-  that press needs a PAT, because a `GITHUB_TOKEN` push does not start a new workflow run. Nicolas
-  asked for the stronger gate only if the re-run were automatic, so it stays off.
+- **A merge queue** is refused by GitHub here — `Invalid rule 'merge_queue'` — because the repo
+  belongs to a user account rather than an organization, and Nicolas has ruled out an org.
+- **`strict: true`** blocks the stale PR until a human presses "Update branch". Automating that
+  press needs a PAT, because a `GITHUB_TOKEN` push starts no workflow run. Nicolas wanted the
+  stronger gate only with an automatic re-run, so it stays off.
 
-The window only matters with two PRs open at once. Work one PR at a time and it never opens.
+The window opens only with two PRs in flight. One PR at a time keeps it shut.
 
 ## Agent authority
 
