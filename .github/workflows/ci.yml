@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -14,6 +17,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -30,6 +34,7 @@ jobs:
       - run: pnpm run knip
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -40,21 +45,24 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @chief-of-staff-demo/tests test -- --coverage
+      - run: pnpm --filter @chief-of-staff-demo/tests exec vitest run --coverage
       - name: Add coverage to the job summary
         if: always()
         run: |
-          if [[ -f coverage/coverage-summary.txt ]]; then
-            {
-              echo "## Server unit coverage"
-              echo '```text'
-              cat coverage/coverage-summary.txt
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+          if [[ ! -f coverage/coverage-summary.txt ]]; then
+            echo "::error::No coverage report was produced - the coverage gate did not run."
+            exit 1
           fi
+          {
+            echo "## Server unit coverage"
+            echo '```text'
+            cat coverage/coverage-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -82,6 +90,7 @@ jobs:
 
   image:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - run: docker compose build

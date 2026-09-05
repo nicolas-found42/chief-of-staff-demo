@@ -28,7 +28,10 @@ export default defineConfig({
         "apps/server/src/api/testSeed.ts",
       ],
       reporter: ["text", ["text-summary", { file: "coverage-summary.txt" }], "json-summary"],
-      thresholds: { lines: 83.2 },
+      // Floors sit just under the measured totals; raise them when a change
+      // moves the real number up. Measured 2026-09-05: lines 85.97,
+      // statements 83.64, functions 85.98, branches 73.49.
+      thresholds: { lines: 85.5, statements: 83, functions: 85.5, branches: 73 },
     },
   },
 });
