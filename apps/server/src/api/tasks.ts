@@ -46,6 +46,8 @@ const REFUSAL_STATUS: Record<TaskValidationError["code"], number> = {
   "inbox-is-permanent": 409,
   "task-not-in-trash": 409,
   "task-already-linked": 409,
+  "task-not-linked": 409,
+  "link-not-missing": 409,
   "action-item-not-found": 404,
   "action-item-already-promoted": 409,
   "action-item-dismissed": 409,
@@ -187,11 +189,15 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
 
   /* POST, not PUT: completing is an action on a Task, and both directions are
      idempotent, so a repeated request is the same answer rather than a
-     second completion time. */
+     second completion time. The local commit answers first; a linked Google
+     Task is then pushed best-effort (issue #185), and a Google failure is
+     recorded on the link the answer carries rather than failing the Task. */
   app.post("/api/tasks/:taskId/complete", async (request: FastifyRequest, reply: FastifyReply) => {
     const { taskId } = request.params as { taskId: string };
     try {
-      return tasks.complete(taskId);
+      tasks.complete(taskId);
+      if (ctx.linking) return await ctx.linking.pushStatus(taskId);
+      return tasks.get(taskId);
     } catch (error) {
       return refuse(reply, error);
     }
@@ -200,7 +206,9 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
   app.post("/api/tasks/:taskId/reopen", async (request: FastifyRequest, reply: FastifyReply) => {
     const { taskId } = request.params as { taskId: string };
     try {
-      return tasks.reopen(taskId);
+      tasks.reopen(taskId);
+      if (ctx.linking) return await ctx.linking.pushStatus(taskId);
+      return tasks.get(taskId);
     } catch (error) {
       return refuse(reply, error);
     }
@@ -253,6 +261,55 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     }
   });
 
+  /**
+   * Synchronize one linked Task with its Google Task (issue #185). Applies an
+   * unopposed external completion or reopening, marks a gone record missing,
+   * and otherwise answers with the Task unchanged: repeated reads that agree
+   * write nothing. A Task with nothing linked is refused, not silently
+   * answered.
+   */
+  app.post("/api/tasks/:taskId/sync", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { taskId } = request.params as { taskId: string };
+    const linking = requireLinking(reply);
+    if (!linking) return NO_DESTINATION;
+    try {
+      return await linking.synchronize(taskId);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /**
+   * Recreate the remote record for a missing link (issue #185). Answers with
+   * the Task carrying the replacement identity; a Task whose link is not
+   * missing is refused rather than duplicated outward.
+   */
+  app.post("/api/tasks/:taskId/recreate", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { taskId } = request.params as { taskId: string };
+    const linking = requireLinking(reply);
+    if (!linking) return NO_DESTINATION;
+    try {
+      return await linking.recreate(taskId);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /**
+   * Remove one External Task Link (issue #185). The local Task is preserved
+   * and the remote record is never deleted by this route. Idempotent: a Task
+   * with no link answers with itself.
+   */
+  app.delete("/api/tasks/:taskId/link", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { taskId } = request.params as { taskId: string };
+    const linking = requireLinking(reply);
+    if (!linking) return NO_DESTINATION;
+    try {
+      return await linking.removeLink(taskId);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
   /**
    * The Google Tasks destination (issue #184). Reading it never reaches
    * Google; only choosing a list does, and only to list the containers the

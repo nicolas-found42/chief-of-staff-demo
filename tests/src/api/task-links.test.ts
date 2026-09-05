@@ -54,6 +54,8 @@ beforeEach(() => {
       },
       listRemoteLists: async () => remoteLists,
       createRemote,
+      readRemoteStatus: async () => ({ completed: false }),
+      updateRemoteStatus: async () => {},
     }),
   });
   return app.ready();

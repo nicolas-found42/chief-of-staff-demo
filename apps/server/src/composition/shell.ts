@@ -28,7 +28,12 @@ import { TaskStore } from "../tasks/store.js";
 import { WorkspaceTasks } from "../tasks/tasks.js";
 import { WorkspaceActionItems } from "../tasks/action-items.js";
 import { TaskLinking } from "../tasks/external-link.js";
-import { insertGoogleTask, listGoogleTaskLists } from "../google/tasks.js";
+import {
+  getGoogleTaskStatus,
+  insertGoogleTask,
+  listGoogleTaskLists,
+  setGoogleTaskStatus,
+} from "../google/tasks.js";
 import type { HostedModule } from "../engine/host.js";
 import { makeCompleteJson } from "../llm/providers.js";
 import { googleFailureHint, openGoogleConnection } from "../google/connection.js";
@@ -288,9 +293,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       configStore.getModuleConfig("content-research").timeZone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
-  /* Google Tasks as an optional Task Destination (issue #184). The Workspace
-     write always commits first; this only ever adds a representation of it,
-     and never reads a Google Task back. */
+  /* Google Tasks as an optional Task Destination (issues #184, #185). The
+     Workspace write always commits first; this only ever adds a
+     representation of it. Completion is read and written per linked Task —
+     nothing is ever listed or imported, so unrelated account Tasks stay out. */
   const taskLinking = new TaskLinking({
     tasks,
     settings: () => configStore.get().tasks.googleTasks,
@@ -310,6 +316,16 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       if (!access.ok) throw new Error(googleFailureHint(access.state));
       const created = await insertGoogleTask(access.auth, taskListId, task);
       return { remoteId: created.googleId, url: created.webViewLink };
+    },
+    readRemoteStatus: async (taskListId, remoteId) => {
+      const access = googleConnection.auth();
+      if (!access.ok) throw new Error(googleFailureHint(access.state));
+      return getGoogleTaskStatus(access.auth, taskListId, remoteId);
+    },
+    updateRemoteStatus: async (taskListId, remoteId, completed) => {
+      const access = googleConnection.auth();
+      if (!access.ok) throw new Error(googleFailureHint(access.state));
+      await setGoogleTaskStatus(access.auth, taskListId, remoteId, completed);
     },
   });
   const actionItems = new WorkspaceActionItems({
@@ -600,17 +616,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
-         confirmed owner reference; eligibility keeps the raw identity. */
+       confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
-         before the Brief pins its revision, so a Calendar shell is not the
-         whole of what the Brief knows about a new person. */
+       before the Brief pins its revision, so a Calendar shell is not the
+       whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
-         Catalog's confirmed links and its reviewed relevance decisions. */
+       Catalog's confirmed links and its reviewed relevance decisions. */
         /* Meeting history (issue #152): the backward read reaches as far as
-         the oldest Transcript. */
+       the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,

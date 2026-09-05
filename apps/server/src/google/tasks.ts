@@ -144,3 +144,23 @@ export async function getGoogleTaskStatus(
     throw error;
   }
 }
+
+/**
+ * Sets one Google Task's completion (issue #185). Idempotent: completing a
+ * completed Task, or reopening an open one, is the same state written again.
+ * A Task Google no longer holds surfaces as the caller's 404, which the
+ * linking layer records as a missing link rather than a failed write.
+ */
+export async function setGoogleTaskStatus(
+  auth: GoogleAuth,
+  tasklistId: string,
+  taskId: string,
+  completed: boolean,
+): Promise<void> {
+  const tasks = google.tasks({ version: "v1", auth });
+  await tasks.tasks.patch({
+    tasklist: tasklistId,
+    task: taskId,
+    requestBody: completed ? { status: "completed" } : { status: "needsAction" },
+  });
+}

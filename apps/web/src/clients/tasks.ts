@@ -131,6 +131,10 @@ export const tasksApi = {
     }),
   linkTask: (taskId: string) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/link`, { method: "POST" }),
+  recreateTask: (taskId: string) =>
+    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/recreate`, { method: "POST" }),
+  removeTaskLink: (taskId: string) =>
+    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/link`, { method: "DELETE" }),
 };
 
 /** The typed surface a Tasks page (or its test double) binds to. */

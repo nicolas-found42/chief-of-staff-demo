@@ -52,8 +52,10 @@ export const LOCAL_TASK_DESTINATION: TaskDestination = { provider: "local" };
  * How far one Task's outward representation has got. A local Task commits
  * before any external write, so `waiting` and `failed` are ordinary states of
  * a Task that is entirely usable — never a reason to refuse the local work.
+ * `missing` means the provider no longer holds the remote record; the local
+ * Task is intact and the owner recreates the record or removes the link.
  */
-export type ExternalTaskLinkState = "waiting" | "synchronized" | "failed";
+export type ExternalTaskLinkState = "waiting" | "synchronized" | "failed" | "missing";
 
 /**
  * The one representation a Task may have in an external system (ADR-0056).
@@ -63,7 +65,10 @@ export type ExternalTaskLinkState = "waiting" | "synchronized" | "failed";
 export interface ExternalTaskLink {
   state: ExternalTaskLinkState;
   destination: TaskDestination;
-  /** The external system's own id; null while waiting or after a failure. */
+  /**
+   * The external system's own id; null while waiting or after a failure.
+   * Kept while missing, so the link still names the record that went away.
+   */
   remoteId: string | null;
   /** A link a person can open; null when the provider returned none. */
   url: string | null;

@@ -30,10 +30,10 @@ The product area in which the workspace owner reviews Action Items and manages T
 source, including Tasks created manually. It is not owned by Meeting Wizard because a Task need not
 come from a Meeting.
 _Status_: live at `/tasks` — manual capture, editing, completion, Task Lists, the pending Action
-Item queue, Task Groups with search and filters, Trash, promotion of a reviewed Action Item, and
-one External Task Link into Google Tasks (issues #173, #174, #175, #176, #177, #178, #184).
-Synchronizing an existing link — External Task Drift, Task Link Conflict, retries and the missing
-state — is planned (ADR-0056).
+Item queue, Task Groups with search and filters, Trash, promotion of a reviewed Action Item, one
+External Task Link into Google Tasks, and two-way completion synchronization with recoverable
+missing-link state (issues #173, #174, #175, #176, #177, #178, #184, #185). External Task Drift,
+Task Link Conflict, and link retries remain planned (ADR-0056).
 _Avoid_: Task dashboard, Google Tasks
 
 **Task**:

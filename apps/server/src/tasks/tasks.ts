@@ -38,6 +38,8 @@ export class TaskValidationError extends Error {
       | "task-not-in-trash"
       | "confirmation-required"
       | "task-already-linked"
+      | "task-not-linked"
+      | "link-not-missing"
       | "action-item-not-found"
       | "action-item-already-promoted"
       | "action-item-dismissed",
@@ -391,19 +393,27 @@ export class WorkspaceTasks {
   }
 
   /**
-   * Record the one External Task Link a Task may have (ADR-0056). Refused
-   * when the Task already carries a link that reached the provider — a second
-   * link would make two external records answer for one piece of accepted
-   * work. A `waiting` or `failed` link reached nothing the provider kept, so
-   * writing over one is the attempt it was recording, not a second link.
+   * Record the one External Task Link a Task may have (ADR-0056, #185).
+   * Refused when the Task already carries a link whose record Google may
+   * still hold — a synchronized link, or a failed outward write on top of
+   * one: two live records must never answer for one piece of accepted work.
+   * A link with no remote id reached nothing Google kept, and a missing
+   * link's record is gone by definition, so writing over either is the
+   * attempt being recorded (or the replacement `recreate` promised), not a
+   * second link.
    *
    * Only the link changes, and only through here: the outward write happens
-   * after the local commit, so this is always an update to a Task that already
-   * exists and is already usable.
+   * after the local commit, so this is always an update to a Task that
+   * already exists and is already usable.
    */
   recordExternalLink(taskId: string, link: Omit<ExternalTaskLink, "updatedAt">): Task {
     return this.edit(taskId, (task) => {
-      if (task.externalLink !== null && task.externalLink.state === "synchronized") {
+      const existing = task.externalLink;
+      if (
+        existing !== null &&
+        (existing.state === "synchronized" ||
+          (existing.state === "failed" && existing.remoteId !== null))
+      ) {
         throw new TaskValidationError(
           "task-already-linked",
           "That Task already has an External Task Link.",
@@ -411,6 +421,35 @@ export class WorkspaceTasks {
       }
       return { ...task, externalLink: { ...link, updatedAt: this.now().toISOString() } };
     });
+  }
+  /**
+   * Overwrite the External Task Link a synchronization step just resolved
+   * (issue #185). Unlike creation above, this runs on a Task that already
+   * carries a link — pushing a completion, recording a failure, or marking
+   * the remote record missing all rewrite the link rather than adding one.
+   */
+  refreshExternalLink(taskId: string, link: Omit<ExternalTaskLink, "updatedAt">): Task {
+    return this.edit(taskId, (task) => {
+      if (task.externalLink === null) {
+        throw new TaskValidationError(
+          "task-not-linked",
+          "That Task has no External Task Link to update.",
+        );
+      }
+      return { ...task, externalLink: { ...link, updatedAt: this.now().toISOString() } };
+    });
+  }
+
+  /**
+   * Remove the External Task Link while keeping the Task (issue #185).
+   * Idempotent: removing a link that is already gone is the same Task.
+   * Never reaches the provider, so the remote record is preserved by
+   * construction rather than by asking it to survive.
+   */
+  clearExternalLink(taskId: string): Task {
+    return this.edit(taskId, (task) =>
+      task.externalLink === null ? task : { ...task, externalLink: null },
+    );
   }
 
   // ---------------------------------------------------------------------------

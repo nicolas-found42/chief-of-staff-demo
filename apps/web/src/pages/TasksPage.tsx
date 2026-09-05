@@ -178,6 +178,8 @@ function TaskRow({
   onSave,
   onTrash,
   onLink,
+  onRecreate,
+  onRemoveLink,
   sourceAvailable,
 }: {
   task: Task;
@@ -189,6 +191,8 @@ function TaskRow({
   onSave: (values: TaskFormValues) => Promise<boolean>;
   onTrash: () => Promise<void>;
   onLink: () => Promise<void>;
+  onRecreate: () => Promise<void>;
+  onRemoveLink: () => Promise<void>;
   /** False once what the Task was promoted from has been deleted. */
   sourceAvailable: boolean;
 }) {
@@ -238,7 +242,9 @@ function TaskRow({
             ? "Sent to Google Tasks."
             : task.externalLink.state === "failed"
               ? `Google Tasks refused it: ${task.externalLink.failure ?? "no reason given"}`
-              : "Waiting to reach Google Tasks."}{" "}
+              : task.externalLink.state === "missing"
+                ? "Google no longer holds this Task. Recreate it there or remove the link — this Task is unaffected."
+                : "Waiting to reach Google Tasks."}{" "}
           {task.externalLink.url && (
             <a href={task.externalLink.url} target="_blank" rel="noreferrer">
               Open in Google Tasks
@@ -267,7 +273,11 @@ function TaskRow({
           </button>
         )}
         {task.destination.provider === "google-tasks" &&
-          task.externalLink?.state !== "synchronized" && (
+          task.externalLink?.state !== "synchronized" &&
+          task.externalLink?.state !== "missing" &&
+          /* A failed push that left a record behind is one link already:
+             offering another create would strand a second Google Task. */
+          task.externalLink?.remoteId === null && (
             <button
               type="button"
               className="action-button"
@@ -277,6 +287,26 @@ function TaskRow({
               Send to Google Tasks
             </button>
           )}
+        {task.externalLink?.state === "missing" && (
+          <>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onRecreate()}
+            >
+              Recreate in Google Tasks
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onRemoveLink()}
+            >
+              Remove link
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="action-button"
@@ -719,6 +749,14 @@ export function TasksPage({
       }}
       onLink={async () => {
         await act(`Sent ${task.title} to Google Tasks.`, () => client.linkTask(task.id));
+      }}
+      onRecreate={async () => {
+        await act(`Recreated ${task.title} in Google Tasks.`, () => client.recreateTask(task.id));
+      }}
+      onRemoveLink={async () => {
+        await act(`Removed the Google Tasks link from ${task.title}.`, () =>
+          client.removeTaskLink(task.id),
+        );
       }}
       onSave={async (values) => {
         const saved = await act(`Saved ${values.title.trim()}.`, () =>
