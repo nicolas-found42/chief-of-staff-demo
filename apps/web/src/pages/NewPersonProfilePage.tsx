@@ -1,89 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../client";
-import { peopleApi, type PeopleClient, type PersonProfileLookup } from "../clients/people";
+import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
-
-/**
- * What the public-web search proposed, before anything is written. Evidence is
- * shown with the confidence it matched at, because that is what the person is
- * being asked to judge — a medium-confidence name match is exactly the case
- * where accepting blind would mint the wrong Profile.
- */
-function LookupProposal({
-  lookup,
-  busy,
-  onAccept,
-}: {
-  lookup: PersonProfileLookup;
-  busy: boolean;
-  onAccept: () => Promise<void>;
-}) {
-  const { profile } = lookup;
-  const failures = profile.sourceDiagnostics.filter((diagnostic) => diagnostic.status === "failed");
-  return (
-    <section className="card" aria-label="Search proposal">
-      <h3>Proposed Profile</h3>
-      {lookup.existing && (
-        <p role="status">
-          A Profile with this identity already exists — accepting adds the new evidence to it as a
-          further revision.
-        </p>
-      )}
-      <dl>
-        <dt>Name</dt>
-        <dd>{profile.fullName ?? "— none found"}</dd>
-        <dt>Email</dt>
-        <dd>{profile.primaryEmail ?? "—"}</dd>
-        <dt>Role</dt>
-        <dd>{profile.role ?? "—"}</dd>
-        <dt>Current employer</dt>
-        <dd>{profile.currentEmployer ?? "—"}</dd>
-      </dl>
-      {failures.length > 0 && (
-        <p role="status">
-          {failures.length} source{failures.length === 1 ? "" : "s"} failed:{" "}
-          {failures.map((diagnostic) => diagnostic.detail).join("; ")}
-        </p>
-      )}
-      {profile.evidence.length === 0 ? (
-        <p className="muted">
-          No public evidence matched that identifier. Accepting would create a Profile holding only
-          what you typed — the manual form below does the same thing more directly.
-        </p>
-      ) : (
-        <>
-          <p className="muted">
-            {profile.evidence.length} evidence item
-            {profile.evidence.length === 1 ? "" : "s"} matched.
-          </p>
-          <ul className="setup-check-list">
-            {profile.evidence.slice(0, 12).map((item) => (
-              <li key={item.id}>
-                <a href={item.url} target="_blank" rel="noreferrer noopener">
-                  {item.title || item.url}
-                </a>{" "}
-                <span className={item.matchConfidence === "high" ? "ok" : "muted"}>
-                  {item.matchConfidence} confidence
-                </span>
-                <span className="muted"> · {item.kind}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      <button
-        type="button"
-        className="action-button primary"
-        onClick={() => void onAccept()}
-        aria-disabled={busy}
-      >
-        {busy ? "Creating…" : "Accept and create Profile"}
-      </button>
-    </section>
-  );
-}
 
 /**
  * Explicit manual creation (spec #117): the one form that mints a canonical
@@ -104,7 +24,6 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
   const [identifier, setIdentifier] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const [proposal] = useState<PersonProfileLookup | null>(null);
 
   async function acceptLookup() {
     if (lookupBusy) return;
@@ -193,7 +112,6 @@ export function NewPersonProfilePage({ client = peopleApi }: { client?: PeopleCl
             {lookupError}
           </p>
         )}
-        {proposal && <LookupProposal lookup={proposal} busy={lookupBusy} onAccept={acceptLookup} />}
       </div>
       {error && (
         <p className="banner-error" role="alert">

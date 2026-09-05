@@ -206,6 +206,68 @@ test("removing a private source purges dependent interpretations and work while 
   expect(store.source("maya", privateSource.id)).toBeNull();
 });
 
+test("a claim cited by both a surviving public source and a purged transcript keeps its independent support", () => {
+  const store = new PersonDossierStore(workspace());
+  const base = {
+    title: "Record",
+    author: null,
+    publishedAt: null,
+    retrievedAt: "2026-09-05T00:00:00Z",
+    family: "original",
+    completeness: "full" as const,
+    access: "retrieved" as const,
+    acquisition: "test",
+  };
+  const publicSource = store.retainSource({
+    ...base,
+    url: "https://example.com/work",
+    text: "Maya built Atlas.",
+    visibility: "public",
+    sourceClass: "primary-artifact",
+  });
+  const privateSource = store.retainSource({
+    ...base,
+    url: "transcript:meeting9",
+    text: "Maya recommended the migration.",
+    visibility: "private",
+    sourceClass: "workspace",
+    transcriptId: "meeting9",
+  });
+  const claim = {
+    section: "work" as const,
+    status: "supported" as const,
+    nature: "statement" as const,
+    matchConfidence: "high" as const,
+    effectiveFrom: null,
+    effectiveTo: null,
+    supports: [],
+    supersedes: [],
+    changeReason: null,
+  };
+  store.publish("maya", 0, {
+    claims: [
+      {
+        ...claim,
+        id: "mixed",
+        statement: "Built Atlas and recommended the migration",
+        citations: [
+          { sourceId: publicSource.id, quote: publicSource.text },
+          { sourceId: privateSource.id, quote: privateSource.text },
+        ],
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  store.removeTranscript("meeting9");
+  const surviving = store.get("maya")?.claims ?? [];
+  expect(surviving.map((c) => c.id)).toEqual(["mixed"]);
+  expect(surviving[0]?.citations.map((c) => c.sourceId)).toEqual([publicSource.id]);
+  expect(store.project("maya", "public")?.claims.map((c) => c.id)).toEqual(["mixed"]);
+});
+
 test("merge retains grounded records on the survivor and removes the duplicate dossier", () => {
   const store = new PersonDossierStore(workspace());
   store.publish("duplicate", 0, {
@@ -232,6 +294,68 @@ test("merge retains grounded records on the survivor and removes the duplicate d
   });
   store.merge("survivor", "duplicate");
   expect(store.get("survivor")?.claims[0]?.statement).toBe("Working language is unknown");
+  expect(store.get("duplicate")).toBeNull();
+});
+
+test("merge rebuilds the survivor's sections from the merged claims and keeps one copy of identical expertise", () => {
+  const store = new PersonDossierStore(workspace());
+  const source = store.retainSource({
+    url: "https://example.com/work",
+    title: "Work",
+    author: null,
+    publishedAt: null,
+    retrievedAt: "2026-09-05",
+    text: "Maya built Atlas.",
+    family: "example.com",
+    sourceClass: "primary-artifact",
+    visibility: "public",
+    completeness: "full",
+    access: "retrieved",
+    acquisition: "website",
+  });
+  const claim = (id: string) => ({
+    id,
+    section: "work" as const,
+    statement: `${id}: Maya built Atlas.`,
+    status: "supported" as const,
+    nature: "statement" as const,
+    matchConfidence: "high" as const,
+    effectiveFrom: null,
+    effectiveTo: null,
+    citations: [{ sourceId: source.id, quote: source.text }],
+    supports: [],
+    supersedes: [],
+    changeReason: null,
+  });
+  const expertise = {
+    category: "rust",
+    originalWording: "systems programming",
+    support: "claimed" as const,
+    workIds: [],
+    claimIds: ["d"],
+  };
+  store.publish("survivor", 0, {
+    claims: [claim("s")],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  store.publish("duplicate", 0, {
+    claims: [claim("d")],
+    works: [],
+    expertise: [expertise],
+    connections: [],
+    sections: [],
+  });
+  store.merge("survivor", "duplicate");
+  const survivor = store.get("survivor")!;
+  expect(survivor.sections.map((s) => s.key)).toHaveLength(8);
+  const work = survivor.sections.find((s) => s.key === "work")!;
+  expect(work.claimIds).toHaveLength(2);
+  expect(work.state).toBe("incomplete");
+  expect(work.claimIds).toEqual(expect.arrayContaining(["s", "d"]));
+  expect(survivor.expertise).toEqual([expertise]);
   expect(store.get("duplicate")).toBeNull();
 });
 
@@ -277,6 +401,62 @@ test("detaching a wrongly attributed source rejects future publication from that
   store.detach("maya", source.id);
   expect(store.get("maya")?.claims).toEqual([]);
   expect(() => store.publish("maya", 2, content)).toThrow(/rejected attribution/i);
+});
+
+test("detaching a source removes same-text mirrors instead of failing the detach", () => {
+  const store = new PersonDossierStore(workspace());
+  const input = {
+    url: "https://original.example/work",
+    title: "Work",
+    author: "Maya",
+    publishedAt: "2024-01-01",
+    retrievedAt: "2026-09-05",
+    text: "Maya wrote the Atlas compiler.",
+    family: "original.example",
+    sourceClass: "primary-artifact" as const,
+    visibility: "public" as const,
+    completeness: "full" as const,
+    access: "retrieved" as const,
+    acquisition: "website",
+  };
+  const original = store.retainSource(input);
+  const mirror = store.retainSource({
+    ...input,
+    url: "https://mirror.example/work",
+    family: "mirror.example",
+  });
+  const claim = (id: string, source: { id: string }) => ({
+    id,
+    section: "work" as const,
+    statement: input.text,
+    status: "supported" as const,
+    nature: "statement" as const,
+    matchConfidence: "high" as const,
+    effectiveFrom: null,
+    effectiveTo: null,
+    citations: [{ sourceId: source.id, quote: input.text }],
+    supports: [],
+    supersedes: [],
+    changeReason: null,
+  });
+  store.publish("maya", 0, {
+    claims: [claim("original", original), claim("mirror", mirror)],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  store.detach("maya", original.id);
+  expect(store.get("maya")?.claims).toEqual([]);
+  expect(() =>
+    store.publish("maya", 2, {
+      claims: [claim("again", mirror)],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  ).toThrow(/rejected attribution/i);
 });
 
 test("identical mirrored source text is one independent source family", () => {

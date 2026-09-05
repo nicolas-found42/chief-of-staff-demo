@@ -1,5 +1,5 @@
 import { PersonDossierPanel } from "./PersonDossierPanel";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
   PersonProfile,
@@ -22,6 +22,28 @@ import { ApiError, errorMessage } from "../client";
 import { peopleApi, type PeopleClient } from "../clients/people";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
+
+// PROTOTYPE — throwaway Person Profile UI exploration (?variant=a|b|c|d).
+// Delete with the losing variants; the switcher is null in prod builds.
+// The variants are loaded lazily so the exploration — its stylesheet and its
+// animation library — lands in its own chunk instead of the bundle every reader
+// of a real Profile downloads.
+import { PrototypeSwitcher, type PrototypeVariant } from "../components/PrototypeSwitcher";
+import { usePrototypeDossier } from "./personProfilePrototypeData";
+
+const prototypeVariants = () => import("./personProfilePrototypeVariants");
+const VariantA = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantA })));
+const VariantB = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantB })));
+const VariantC = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantC })));
+const VariantD = lazy(() => prototypeVariants().then((m) => ({ default: m.VariantD })));
+
+const PROFILE_VARIANTS: PrototypeVariant[] = [
+  { key: "current", name: "Current" },
+  { key: "a", name: "Critical Edition" },
+  { key: "b", name: "Spine" },
+  { key: "c", name: "Provenance" },
+  { key: "d", name: "Prep Sheet" },
+];
 
 const CONFIDENCE_LABELS: Record<PersonProfileMatchConfidence, string> = {
   high: "High confidence",
@@ -243,9 +265,20 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
 
   useTitle(viewed?.fullName ?? current?.fullName ?? "Person Profile");
 
+  /* PROTOTYPE — read-only dossier for the ?variant= exploration. Called here so
+     it sits above the lifecycle early returns and the hook order never shifts. */
+  const variant = searchParams.get("variant") ?? "current";
+  const prototyping = variant === "a" || variant === "b" || variant === "c" || variant === "d";
+  const prototypeView = usePrototypeDossier(
+    profileId,
+    viewed?.fullName ?? current?.fullName ?? "(unnamed)",
+    prototyping,
+  );
+
   /* Profile lifecycle (ticket #122): archive is reversible state; privacy
      deletion is the audited exception, behind its own confirmation. */
   const [lifecycle, setLifecycle] = useState<PersonProfileLifecycleState | null>(null);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [receipt, setReceipt] = useState<PersonProfileDeletionReceipt | null>(null);
@@ -495,6 +528,14 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
     setSearchParams({});
   }, [setSearchParams]);
 
+  /* The maintenance disclosure belongs to the reader, not to the router.
+     Opening a historical revision reveals it, and returning to the current
+     revision must not collapse the section the reader was working in (#209). */
+  useEffect(() => {
+    if (viewed !== null && current !== null && viewed.revision !== current.revision)
+      setMaintenanceOpen(true);
+  }, [viewed, current]);
+
   /* The receipt for a deletion this surface just performed, and the tombstone
      for one performed earlier, are the same fact seen at two moments. */
   if (receipt !== null || deleted !== null) {
@@ -547,6 +588,40 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
       </>
     );
   }
+  /* PROTOTYPE — the four variants replace the reading surface (heading, facts
+     line and dossier panel) and own the route's single <h1>. The Shell's header,
+     nav and footer stay, so each design is judged at real density. Profile
+     maintenance is unchanged and stays on ?variant=current. Placed above the
+     load and error returns on purpose: a UI prototype has to be viewable on a
+     Workspace with no researched Profile, which is every dev Workspace, and the
+     demo corpus needs nothing from the API. */
+  if (prototyping) {
+    if (!prototypeView) return <p className="muted">Loading dossier…</p>;
+    const shared = { view: prototypeView, headingRef: focusRef };
+    return (
+      <>
+        {current?.archivedAt && (
+          <p className="status-badge" role="status">
+            Archived
+          </p>
+        )}
+        {current?.mergedInto && (
+          <p className="banner-error" role="alert">
+            This Profile was merged into{" "}
+            <Link to={`/people/${current.mergedInto}`}>another Profile</Link>.
+          </p>
+        )}
+        <Suspense fallback={<p className="muted">Loading dossier…</p>}>
+          {variant === "a" && <VariantA {...shared} />}
+          {variant === "b" && <VariantB {...shared} />}
+          {variant === "c" && <VariantC {...shared} />}
+          {variant === "d" && <VariantD {...shared} />}
+        </Suspense>
+        <PrototypeSwitcher current={variant} variants={PROFILE_VARIANTS} />
+      </>
+    );
+  }
+
   if (error) {
     return (
       <>
@@ -615,11 +690,16 @@ export function PersonProfileDetailPage({ client = peopleApi }: { client?: Peopl
         </p>
       )}
       <p className="muted">{described(profile) || "No resolved facts yet."}</p>
+      {/* PROTOTYPE — dev-only entry point to ?variant=a|b|c|d; null in prod. */}
+      <PrototypeSwitcher current={variant} variants={PROFILE_VARIANTS} />
 
       {!current.mergedInto && !isHistorical && (
         <PersonDossierPanel key={profileId} profileId={profileId} />
       )}
-      <details open={isHistorical}>
+      <details
+        open={maintenanceOpen}
+        onToggle={(event) => setMaintenanceOpen(event.currentTarget.open)}
+      >
         <summary>Profile maintenance and revision history</summary>
         {!current.mergedInto && !current.archivedAt && !isHistorical && (
           <div className="card">

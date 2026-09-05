@@ -221,6 +221,17 @@ export const DIRECTORIES: Readonly<Record<string, CategoryName>> = {
   "person-profiles": "person-profiles",
   "person-profile-tombstones": "person-profiles",
   "person-profile-deletion-receipts": "person-profiles",
+  /* ADR-0062: a Profile's automatically researched dossier, its revisions, the
+     source documents its claims quote, and the rejection and tombstone records
+     that keep a detached source or a deleted person from being researched back
+     into existence. Every one of them is generated from public and Workspace
+     material, so the reset takes them with the Profiles they describe. */
+  "person-dossiers": "person-profiles",
+  "person-dossier-revisions": "person-profiles",
+  "person-dossier-rejections": "person-profiles",
+  "person-dossier-tombstones": "person-profiles",
+  "person-source-documents": "person-profiles",
+  "person-source-families": "person-profiles",
   "content-scout": "content-state",
   "content-engine": "content-state",
   "content-research": "research-state",
@@ -238,6 +249,8 @@ export const WHOLE_FILES: Readonly<Record<string, CategoryName>> = {
   // Drive Intake's ingested transcript ids, YouTube Trends' last run day, Idea Engine's ingested ids.
   "state.json": "module-state-and-checkpoints",
   "intake-schedules.json": "intake-schedules",
+  // The dossier research queue: allowances, job states and their retry bookkeeping.
+  "person-research.json": "person-profiles",
   // The Calendar watch channel and sync checkpoint are re-established after a reset, never preserved.
   "meeting-brief-calendar.json": "calendar-schedule-and-checkpoints",
   "mock-result.json": "mock-provider-state",

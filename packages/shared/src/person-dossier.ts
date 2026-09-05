@@ -159,7 +159,14 @@ export const PersonDossierContentSchema = z.object({
     )
     .max(8),
 });
+/**
+ * A published dossier. `sourceIds` loses its optionality here: publishing
+ * derives the list from the content's own citations, so a stored dossier always
+ * names every source it retains, and readers never have to guess whether an
+ * absent list means "no sources" or "not recorded".
+ */
 export const PersonDossierSchema = PersonDossierContentSchema.extend({
+  sourceIds: z.array(id).max(1000),
   schemaVersion: z.literal(1),
   profileId: id,
   revision: z.number().int().positive(),

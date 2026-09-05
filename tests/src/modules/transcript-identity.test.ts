@@ -1584,3 +1584,41 @@ it("automatically creates one email-anchored Profile across repeated Transcript 
     rmSync(h.workspaceDir, { recursive: true, force: true });
   }
 });
+
+it("a standing not-a-person decision blocks automatic creation for later mentions sharing the identifier", async () => {
+  const h = makeHarness();
+  try {
+    const reviewOnly = new TranscriptIdentityService({
+      store: h.store,
+      people: h.people,
+      now: NOW,
+    });
+    await reviewOnly.process(makeRecord("Email grace@example.com before the review."));
+    const rejected = reviewOnly
+      .reviewQueue()
+      .items.find((item) => item.mention.emails.includes("grace@example.com"))!;
+    reviewOnly.decide({ mentionId: rejected.mention.id, action: "not-a-person" });
+    expect(h.people.search()).toHaveLength(0);
+
+    const mining = new TranscriptIdentityService({
+      store: h.store,
+      people: h.people,
+      now: NOW,
+      automaticCreation: true,
+    });
+    await mining.process(
+      makeRecord("Grace wrote the notes; reach grace@example.com.", "drive_other_r2"),
+    );
+    expect(h.people.search()).toHaveLength(0);
+    const second = mining
+      .reviewQueue()
+      .items.find(
+        (item) =>
+          item.transcriptId === "drive_other_r2" &&
+          item.mention.emails.includes("grace@example.com"),
+      );
+    expect(second).toBeDefined();
+  } finally {
+    rmSync(h.workspaceDir, { recursive: true, force: true });
+  }
+});

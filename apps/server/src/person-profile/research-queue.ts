@@ -10,6 +10,11 @@ import {
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
 
+/** The settings an owner edit actually names; the rest keep their live values. */
+export type PersonResearchSettingsPatch = {
+  [K in keyof PersonResearchSettings]?: PersonResearchSettings[K] | undefined;
+};
+
 /** One Workspace runtime owns dispatch; every allowance is persisted before use. */
 export class PersonResearchQueue {
   private readonly file: string;
@@ -59,8 +64,17 @@ export class PersonResearchQueue {
     this.rollDay();
     return structuredClone(this.state);
   }
-  configure(input: Partial<PersonResearchSettings>): PersonResearchStatus {
-    this.state.settings = PersonResearchSettingsSchema.parse({ ...this.state.settings, ...input });
+  configure(input: PersonResearchSettingsPatch): PersonResearchStatus {
+    /* A patch names only the settings the owner changed: an absent key leaves
+       the live value alone, so an unrelated edit cannot re-assert `paused` and
+       cancel the research it was not about. */
+    const changes = Object.fromEntries(
+      Object.entries(input).filter(([, value]) => value !== undefined),
+    );
+    this.state.settings = PersonResearchSettingsSchema.parse({
+      ...this.state.settings,
+      ...changes,
+    });
     if (input.paused) this.generation += 1;
     this.save();
     return this.status();

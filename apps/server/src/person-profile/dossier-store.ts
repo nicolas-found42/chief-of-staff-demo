@@ -12,11 +12,49 @@ import { join } from "node:path";
 import {
   PersonDossierContentSchema,
   PersonDossierSchema,
+  PersonDossierSectionSchema,
   PersonSourceDocumentSchema,
+  type PersonClaim,
   type PersonDossier,
   type PersonDossierContent,
   type PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
+
+type PersonDossierSection = PersonDossierContent["sections"][number];
+
+/**
+ * Sections are derived accounts, never stored truth: they are rebuilt from the
+ * claims on every publish, merge included, so a merged survivor reads the
+ * merged record instead of waiting for the next research run.
+ */
+export function synthesizeSections(claims: PersonClaim[]): PersonDossierSection[] {
+  return PersonDossierSectionSchema.options.map((key) => {
+    const relevant = claims
+      .filter(
+        (claim) => claim.status !== "superseded" && (key === "overview" || claim.section === key),
+      )
+      .slice(0, key === "overview" ? 8 : 20);
+    return {
+      key,
+      summary: [
+        ...new Set(
+          relevant.map(
+            (claim) =>
+              `${claim.status === "contested" ? "Contested account: " : claim.status === "claimed" ? "Claimed: " : claim.nature === "interpretation" ? "Interpretation: " : ""}${claim.statement}`,
+          ),
+        ),
+      ]
+        .join(" ")
+        .slice(0, 8000),
+      claimIds: relevant.map((claim) => claim.id),
+      updatedAt: new Date().toISOString(),
+      state: relevant.length ? ("incomplete" as const) : ("unresearched" as const),
+      gaps: relevant.length
+        ? ["This account reflects the sources collected so far; further evidence may exist."]
+        : ["No grounded evidence collected in this section yet."],
+    };
+  });
+}
 
 /** Source versions live separately so consumers and revisions never duplicate raw text. */
 export class PersonDossierStore {
@@ -59,17 +97,20 @@ export class PersonDossierStore {
   }
 
   private revisionPath(profileId: string, revision: number): string {
-    this.path("person-dossiers", profileId);
+    /* A revision lives in a directory named for the Profile, so the id has to
+       clear the same identity check every flat record path does before it is
+       joined — otherwise it could walk out of the Workspace root. */
+    this.requireRecordIdentity(profileId);
     return join(this.root, "person-dossier-revisions", profileId, `${revision}.json`);
   }
 
   source(profileId: string, sourceId: string): PersonSourceDocument | null {
-    if (
-      !this.get(profileId)?.sourceIds?.includes(sourceId) &&
-      !this.get(profileId)?.claims.some((c) => c.citations.some((p) => p.sourceId === sourceId))
-    )
-      return null;
-    return this.document(sourceId);
+    const dossier = this.get(profileId);
+    const attributed =
+      !!dossier &&
+      (dossier.sourceIds.includes(sourceId) ||
+        dossier.claims.some((c) => c.citations.some((p) => p.sourceId === sourceId)));
+    return attributed ? this.document(sourceId) : null;
   }
 
   publish(profileId: string, expectedRevision: number, input: PersonDossierContent): PersonDossier {
@@ -93,15 +134,14 @@ export class PersonDossierStore {
     const requireClaims = (ids: string[]) => {
       if (ids.some((id) => !claims.has(id))) throw new Error("Dangling claim reference");
     };
+    const rejected = new Set(this.rejectedEntries(profileId));
     for (const claim of content.claims) {
       requireClaims([...claim.supports, ...claim.supersedes]);
       if (claim.status !== "unknown" && !claim.citations.length)
         throw new Error("Claim needs a source passage");
       for (const passage of claim.citations) {
         const source = this.document(passage.sourceId);
-        const rejected = (this.read(this.path("person-dossier-rejections", profileId)) ??
-          []) as string[];
-        if (source && (rejected.includes(source.url) || rejected.includes(source.hash)))
+        if (source && (rejected.has(source.url) || rejected.has(source.hash)))
           throw new Error("Rejected attribution");
         if (!source || !source.text.includes(passage.quote))
           throw new Error("Invalid source passage");
@@ -191,7 +231,9 @@ export class PersonDossierStore {
 
   private prune(dossier: PersonDossier, keep: (id: string) => boolean): PersonDossier {
     const removed = new Set(
-      dossier.claims.filter((c) => c.citations.some((p) => !keep(p.sourceId))).map((c) => c.id),
+      dossier.claims
+        .filter((c) => c.citations.length > 0 && c.citations.every((p) => !keep(p.sourceId)))
+        .map((c) => c.id),
     );
     for (let changed = true; changed;) {
       changed = false;
@@ -204,7 +246,11 @@ export class PersonDossierStore {
     const valid = (ids: string[]) => ids.every((id) => !removed.has(id));
     const claims = dossier.claims
       .filter((c) => !removed.has(c.id))
-      .map((c) => ({ ...c, supersedes: c.supersedes.filter((id) => !removed.has(id)) }));
+      .map((c) => ({
+        ...c,
+        citations: c.citations.filter((p) => keep(p.sourceId)),
+        supersedes: c.supersedes.filter((id) => !removed.has(id)),
+      }));
     const works = dossier.works
       .filter((w) => valid(w.claimIds))
       .map((w) => ({
@@ -220,7 +266,7 @@ export class PersonDossierStore {
     const workIds = new Set(works.map((w) => w.id));
     return {
       ...dossier,
-      sourceIds: dossier.sourceIds?.filter(keep) ?? [],
+      sourceIds: dossier.sourceIds.filter(keep),
       claims,
       works,
       expertise: dossier.expertise.filter(
@@ -243,19 +289,26 @@ export class PersonDossierStore {
     };
   }
 
+  /** URL and content-hash strings the owner rejected for this Profile. */
+  rejectedEntries(profileId: string): string[] {
+    return (this.read(this.path("person-dossier-rejections", profileId)) ?? []) as string[];
+  }
+
   detach(profileId: string, sourceId: string): void {
     const source = this.source(profileId, sourceId);
     const dossier = this.get(profileId);
     if (!source || !dossier) throw new Error("Source not attributed to this Profile");
     const path = this.path("person-dossier-rejections", profileId);
-    const rejected = (this.read(path) ?? []) as string[];
-    this.write(path, [...new Set([...rejected, source.url, source.hash])]);
-    this.publish(
-      profileId,
-      dossier.revision,
-      this.prune(dossier, (id) => this.document(id)?.url !== source.url),
-    );
-    this.scrubHistory(profileId, (id) => this.document(id)?.url !== source.url);
+    this.write(path, [...new Set([...this.rejectedEntries(profileId), source.url, source.hash])]);
+    /* Identical text is the same wrong-person content at another URL: the
+       rejection covers the content hash, so mirrors cannot survive the detach
+       and the publish guard below never trips on the store's own pruning. */
+    const keep = (id: string) => {
+      const document = this.document(id);
+      return !!document && document.url !== source.url && document.hash !== source.hash;
+    };
+    this.publish(profileId, dossier.revision, this.prune(dossier, keep));
+    this.scrubHistory(profileId, keep);
   }
 
   merge(survivorId: string, duplicateId: string): void {
@@ -266,13 +319,21 @@ export class PersonDossierStore {
     const unique = <T extends { id: string }>(items: T[]) => [
       ...new Map(items.map((item) => [item.id, item])).values(),
     ];
+    const claims = unique([...duplicate.claims, ...(survivor?.claims ?? [])]);
     this.publish(survivorId, survivor?.revision ?? 0, {
-      sourceIds: [...new Set([...(duplicate.sourceIds ?? []), ...(survivor?.sourceIds ?? [])])],
-      claims: unique([...duplicate.claims, ...(survivor?.claims ?? [])]),
+      sourceIds: [...new Set([...duplicate.sourceIds, ...(survivor?.sourceIds ?? [])])],
+      claims,
       works: unique([...duplicate.works, ...(survivor?.works ?? [])]),
       connections: unique([...duplicate.connections, ...(survivor?.connections ?? [])]),
-      expertise: [...duplicate.expertise, ...(survivor?.expertise ?? [])],
-      sections: [],
+      expertise: [
+        ...new Map(
+          [...duplicate.expertise, ...(survivor?.expertise ?? [])].map((entry) => [
+            JSON.stringify(entry),
+            entry,
+          ]),
+        ).values(),
+      ],
+      sections: synthesizeSections(claims),
     });
     this.privacyDelete(duplicateId);
   }
@@ -294,8 +355,11 @@ export class PersonDossierStore {
     return raw === null ? null : PersonSourceDocumentSchema.parse(raw);
   }
   private path(folder: string, id: string): string {
-    if (!/^[a-zA-Z0-9_-]{1,160}$/.test(id)) throw new Error("Invalid record identity");
+    this.requireRecordIdentity(id);
     return join(this.root, folder, `${id}.json`);
+  }
+  private requireRecordIdentity(id: string): void {
+    if (!/^[a-zA-Z0-9_-]{1,160}$/.test(id)) throw new Error("Invalid record identity");
   }
   private read(path: string): unknown {
     return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;

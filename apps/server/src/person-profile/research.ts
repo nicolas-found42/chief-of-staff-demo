@@ -5,7 +5,6 @@ import { Readability } from "@mozilla/readability";
 import { z } from "zod";
 import {
   PersonDossierContentSchema,
-  PersonDossierSectionSchema,
   PersonClaimSchema,
   PersonWorkRecordSchema,
   PersonExpertiseSchema,
@@ -17,7 +16,7 @@ import {
 import type { CompleteJson } from "../llm/providers.js";
 import type { PublicSearch, PublicSearchResult } from "../source-adapters/search.js";
 import { publicHttpFetch, type PublicHttpFetch } from "../source-adapters/http.js";
-import type { PersonDossierStore } from "./dossier-store.js";
+import { synthesizeSections, type PersonDossierStore } from "./dossier-store.js";
 
 const Extraction = PersonDossierContentSchema.extend({
   fullName: z.string().max(200).nullable(),
@@ -35,7 +34,7 @@ export interface ResearchAllowance {
 export interface ResearchOutcome {
   diagnostics: { url: string; stage: string; reason: string }[];
   publishedProfileRevision?: number;
-  state: "current" | "incomplete" | "unavailable" | "empty" | "paused";
+  state: "current" | "incomplete" | "unavailable" | "empty";
   calls: number;
   sources: number;
   detail: string;
@@ -128,7 +127,12 @@ export class PersonResearch {
       privateDocuments.map((document) => [`transcript:${document.transcriptId}`, document]),
     );
     const visited = new Set<string>();
-    const linked = new Map<string, string>();
+    /* Detached sources stay rejected for this Profile: their URL must not be
+       re-crawled on later runs (#204). */
+    const rejected = new Set(this.deps.dossiers.rejectedEntries(profile.id));
+    /* URLs a matched source linked to: reaching one through its own page is
+       what anchors it, so membership is the whole question asked of this set. */
+    const linked = new Set<string>();
     let direct: PublicSearchResult[] = profile.profileUrls.map((url) => ({
       url,
       title: url,
@@ -159,6 +163,14 @@ export class PersonResearch {
         if (visited.has(result.url)) continue;
         visited.add(result.url);
         const privateDocument = privateByUrl.get(result.url);
+        if (rejected.has(result.url)) {
+          diagnostics.push({
+            url: result.url,
+            stage: "attribution",
+            reason: "Owner rejected this source; not re-crawled.",
+          });
+          continue;
+        }
         if (privateDocument && !privateDocument.active()) continue;
         if (!privateDocument && !permit()) break;
         const collected = privateDocument
@@ -304,13 +316,21 @@ export class PersonResearch {
             queries.push(`${extracted.fullName} ${extracted.employer ?? ""} work publications`);
           for (const work of privateDocument ? [] : content.works)
             if (work.url && collected.outboundUrls?.includes(work.url) && work.contribution) {
-              linked.set(work.url, source.id);
+              linked.add(work.url);
               direct.push({ url: work.url, title: work.title, snippet: "" });
             }
           const work = content.works[0];
           if (!privateDocument && work && queries.length < 4)
             queries.push(`${extracted.fullName ?? name ?? queries[0]} ${work.title}`);
         } catch (error) {
+          if (error instanceof Error && error.message === "Rejected attribution") {
+            diagnostics.push({
+              url: result.url,
+              stage: "attribution",
+              reason: "Owner rejected this source during the run; its content was discarded.",
+            });
+            continue;
+          }
           failures += 1;
           const reason =
             error instanceof z.ZodError
@@ -549,32 +569,6 @@ export class PersonResearch {
         );
         if (conflict) claim.status = "contested";
       }
-    const sections = PersonDossierSectionSchema.options.map((key) => {
-      const relevant = claims
-        .filter(
-          (claim) => claim.status !== "superseded" && (key === "overview" || claim.section === key),
-        )
-        .slice(0, key === "overview" ? 8 : 20);
-      return {
-        key,
-        summary: [
-          ...new Set(
-            relevant.map(
-              (claim) =>
-                `${claim.status === "contested" ? "Contested account: " : claim.status === "claimed" ? "Claimed: " : claim.nature === "interpretation" ? "Interpretation: " : ""}${claim.statement}`,
-            ),
-          ),
-        ]
-          .join(" ")
-          .slice(0, 8000),
-        claimIds: relevant.map((claim) => claim.id),
-        updatedAt: new Date().toISOString(),
-        state: relevant.length ? ("incomplete" as const) : ("unresearched" as const),
-        gaps: relevant.length
-          ? ["This account reflects the sources collected so far; further evidence may exist."]
-          : ["No grounded evidence collected in this section yet."],
-      };
-    });
     return {
       sourceIds: [...new Set([...(old.sourceIds ?? []), ...(incoming.sourceIds ?? [])])],
       claims,
@@ -585,7 +579,7 @@ export class PersonResearch {
           [...old.expertise, ...incoming.expertise].map((e) => [JSON.stringify(e), e]),
         ).values(),
       ],
-      sections,
+      sections: synthesizeSections(claims),
     };
   }
 }

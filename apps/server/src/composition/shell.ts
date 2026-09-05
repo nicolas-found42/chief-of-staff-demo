@@ -1,6 +1,7 @@
 import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
 import { PersonDossierStore } from "../person-profile/dossier-store.js";
 import { PersonResearch } from "../person-profile/research.js";
+import { personDossierRegistry } from "../person-profile/lifecycle.js";
 import { PersonResearchQueue } from "../person-profile/research-queue.js";
 import { registerPersonDossierApi } from "../api/person-dossiers.js";
 import { mkdirSync } from "node:fs";
@@ -276,35 +277,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         publicItems: () => contentResearch.listSourceItems(),
       }),
       new ContentResearchWatchRegistry(contentResearchStore),
-      {
-        inspect: (profile) => ({
-          dependentConfigurations: [],
-          residualSourceArtifacts: [
-            ...new Set(
-              personDossiers
-                .get(profile.id)
-                ?.claims.flatMap((c) => c.citations.map((p) => p.sourceId)) ?? [],
-            ),
-          ].map((artifactId) => ({
-            artifactId,
-            kind: "public-source" as const,
-            separateDeleteSupported: false,
-          })),
-        }),
-        privacyDelete: (profileId) => {
-          const existed = personDossiers.get(profileId) !== null;
-          personDossiers.privacyDelete(profileId);
-          personResearchQueue.remove(profileId);
-          return {
-            aliases: 0,
-            candidates: 0,
-            mappings: 0,
-            decisions: 0,
-            activeLinks: 0,
-            personSnapshots: existed ? 1 : 0,
-          };
-        },
-      },
+      personDossierRegistry(personDossiers, (profileId) => personResearchQueue.remove(profileId)),
     ],
   });
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
@@ -513,22 +486,18 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
             0,
           ),
       purge: (transcriptId) => {
-        const before = peopleProfiles
-          .search({ includeArchived: true })
-          .reduce(
-            (count, profile) => count + (personDossiers.get(profile.id)?.claims.length ?? 0),
-            0,
-          );
-        personDossiers.removeTranscript(transcriptId);
-        return (
-          before -
+        /* The purge count is what the Transcript's removal actually cost the
+           dossiers, so it is the same census taken on both sides of the call. */
+        const claimCensus = () =>
           peopleProfiles
             .search({ includeArchived: true })
             .reduce(
               (count, profile) => count + (personDossiers.get(profile.id)?.claims.length ?? 0),
               0,
-            )
-        );
+            );
+        const before = claimCensus();
+        personDossiers.removeTranscript(transcriptId);
+        return before - claimCensus();
       },
     },
   ];
@@ -755,17 +724,17 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         google: googleConnection,
         getCompleteJson: meetingBriefCompleteJson,
         /* Owner onboarding (issue #123): delivery's outward send waits for the
-     confirmed owner reference; eligibility keeps the raw identity. */
+   confirmed owner reference; eligibility keeps the raw identity. */
         isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
         personProfiles: peopleProfiles,
         /* An attendee met for the first time is enriched from the public web
-     before the Brief pins its revision, so a Calendar shell is not the
-     whole of what the Brief knows about a new person. */
+   before the Brief pins its revision, so a Calendar shell is not the
+   whole of what the Brief knows about a new person. */
         resolveNewAttendee: (email) => peopleResolver.resolve(parsePersonIdentifier(email)),
         /* Confirmed transcript evidence (issue #138): the Brief reads the
-     Catalog's confirmed links and its reviewed relevance decisions. */
+   Catalog's confirmed links and its reviewed relevance decisions. */
         /* Meeting history (issue #152): the backward read reaches as far as
-     the oldest Transcript. */
+   the oldest Transcript. */
         oldestTranscriptAt: () => transcriptCatalogStore.oldestRecordedDate(),
         associateTranscripts,
         transcriptRelevance,

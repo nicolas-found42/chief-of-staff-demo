@@ -251,11 +251,18 @@ export class PersonDossierQueries {
             .includes(query.query.toLowerCase()),
       );
       if (query.query && !matchedClaims.length && !matchingWorks.length) continue;
+      /* Team output is not the person's contribution (#204 row 1 and row 3):
+         demonstrated expertise needs a matching work whose individual
+         contribution is itself documented and supported. */
+      const documentedContribution = (workId: string) => {
+        const work = works.find((w) => w.id === workId);
+        return !!work?.contribution && work.contribution.claimIds.every((id) => supported.has(id));
+      };
       const demonstratedExpertise = expertise.filter(
         (e) =>
           e.support === "demonstrated" &&
           e.claimIds.every((id) => supported.has(id)) &&
-          e.workIds.some((id) => workIds.has(id)),
+          e.workIds.some(documentedContribution),
       );
       const isDemonstrated = categories.length
         ? categories.every((category) =>

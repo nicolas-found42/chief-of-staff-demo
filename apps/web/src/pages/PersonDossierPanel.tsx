@@ -259,7 +259,20 @@ export function PersonDossierPanel({
               ))}
               <button
                 type="button"
-                onClick={() => void act(() => client.configure(settings.settings))}
+                onClick={() =>
+                  void act(() =>
+                    /* Limits only: sending the whole settings object back would
+                       re-assert `paused` and cancel in-flight research that this
+                       edit never touched (#207). */
+                    client.configure({
+                      dailyCalls: settings.settings.dailyCalls,
+                      profileCalls: settings.settings.profileCalls,
+                      concurrency: settings.settings.concurrency,
+                      profileMilliseconds: settings.settings.profileMilliseconds,
+                      refreshHours: settings.settings.refreshHours,
+                    }),
+                  )
+                }
               >
                 Save research limits
               </button>

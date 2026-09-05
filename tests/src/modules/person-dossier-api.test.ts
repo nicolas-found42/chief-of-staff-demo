@@ -41,6 +41,27 @@ test("owner can inspect research states, change budgets, and enqueue without wai
       payload: { dailyCalls: 12, paused: true },
     });
     expect(settings.json().settings.dailyCalls).toBe(12);
+    expect(settings.json().settings.paused).toBe(true);
+    /* A patch names only what the owner changed (#207): editing the refresh
+       interval must not carry the rest of the form back as a fresh pause, and
+       must not silently unpause research either. */
+    const narrowed = await app.inject({
+      method: "PATCH",
+      url: "/api/people/research/settings",
+      payload: { refreshHours: 24 },
+    });
+    expect(narrowed.json().settings.refreshHours).toBe(24);
+    expect(narrowed.json().settings.dailyCalls).toBe(12);
+    expect(narrowed.json().settings.paused).toBe(true);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/people/research/settings",
+          payload: { paused: false },
+        })
+      ).json().settings.paused,
+    ).toBe(false);
     expect(
       (
         await app.inject({

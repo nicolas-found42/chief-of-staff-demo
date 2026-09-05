@@ -115,6 +115,91 @@ test("workspace intersections distinguish demonstrated work from self-report and
   }
 });
 
+test("category queries keep undocumented-contribution work out of the demonstrated group", () => {
+  const root = mkdtempSync(join(tmpdir(), "dossier-contribution-"));
+  try {
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const dossiers = new PersonDossierStore(root);
+    const maya = people.create({ fullName: "Maya" });
+    const source = dossiers.retainSource({
+      url: "https://example.com/team",
+      title: "Team",
+      author: null,
+      publishedAt: null,
+      retrievedAt: "2026-09-05",
+      text: "The Northline team built its user interface.",
+      family: "example.com",
+      sourceClass: "independent-account",
+      visibility: "public",
+      completeness: "full",
+      access: "retrieved",
+      acquisition: "website",
+    });
+    dossiers.publish(maya.id, 0, {
+      claims: [
+        {
+          id: "team",
+          section: "work" as const,
+          statement: "The Northline team built its user interface.",
+          nature: "statement" as const,
+          status: "supported" as const,
+          citations: [
+            { sourceId: source.id, quote: "The Northline team built its user interface." },
+          ],
+          matchConfidence: "high" as const,
+          effectiveFrom: null,
+          effectiveTo: null,
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ],
+      works: [
+        {
+          id: "atlas",
+          title: "Atlas",
+          kind: "system" as const,
+          url: null,
+          startedAt: null,
+          endedAt: null,
+          claimIds: ["team"],
+          contribution: null,
+          teamContribution: null,
+          authority: [],
+          scale: [],
+          constraints: [],
+          outcomes: [],
+        },
+      ],
+      expertise: [
+        {
+          category: "deployment",
+          originalWording: "deployment",
+          support: "demonstrated" as const,
+          workIds: ["atlas"],
+          claimIds: ["team"],
+        },
+      ],
+      connections: [],
+      sections: [],
+    });
+    const result = new PersonDossierQueries({ people, dossiers }).search({
+      categories: ["deployment"],
+      visibility: "public",
+    });
+    expect(result.demonstrated).toEqual([]);
+    expect(result.claimed.map((match) => match.profileId)).toEqual([maya.id]);
+    expect(result.claimed[0]?.gaps).toContain(
+      "Individual contribution is undocumented for some work.",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("observed activity and repeated collaboration count distinct work rather than mirrored records", () => {
   const root = mkdtempSync(join(tmpdir(), "dossier-activity-"));
   try {

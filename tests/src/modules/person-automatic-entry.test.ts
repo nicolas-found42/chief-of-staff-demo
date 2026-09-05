@@ -69,6 +69,41 @@ test("dated primary evidence can supersede a manual role correction while retain
   }
 });
 
+test("a dated primary-artifact fact can supersede a manual correction that was wrong when recorded", () => {
+  const root = mkdtempSync(join(tmpdir(), "person-authority-"));
+  try {
+    const now = new Date("2026-09-05T00:00:00Z");
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+      now: () => now,
+    });
+    const person = people.create({
+      fullName: "Maya",
+      primaryEmail: "maya@example.com",
+      role: "Engineer",
+    });
+    people.correct(person.id, { role: "Director", note: "A mistaken correction" });
+    expect(people.get(person.id)?.role).toBe("Director");
+    expect(
+      people.acceptResearchFacts(person.id, 2, [
+        {
+          field: "role",
+          value: "Engineer",
+          sourceIds: ["official-record"],
+          effectiveFrom: "2025-01-01",
+          authority: "primary-artifact",
+          reason: "The official appointment record shows the role never changed.",
+        },
+      ])?.role,
+    ).toBe("Engineer");
+    expect(people.getRevision(person.id, 2)?.role).toBe("Director");
+    expect(people.invalidations(person.id).at(-1)?.detail).toContain("official-record");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("privacy deletion prevents recreation through a secondary profile URL", () => {
   const root = mkdtempSync(join(tmpdir(), "person-alias-delete-"));
   try {

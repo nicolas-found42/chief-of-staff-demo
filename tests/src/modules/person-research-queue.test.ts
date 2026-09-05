@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -88,4 +88,38 @@ test("a profile archived during retrieval cannot receive the late research resul
   await tick;
   expect(dossiers.get(person.id)).toBeNull();
   expect(queue.status().usedCalls).toBe(1);
+});
+
+test("repeated enqueues and absent removes do not rewrite the queue state file", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-quiet-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const now = new Date("2026-09-05T12:00:00Z");
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    now: () => now,
+    enabled: () => true,
+  });
+  queue.enqueue(person.id, "created");
+  const stateFile = join(root, "person-research.json");
+  const persisted = readFileSync(stateFile, "utf8");
+  queue.enqueue(person.id, "meeting");
+  expect(readFileSync(stateFile, "utf8")).not.toBe(persisted);
+  const afterReason = readFileSync(stateFile, "utf8");
+  queue.enqueue(person.id, "meeting");
+  queue.enqueue(person.id, "meeting");
+  expect(readFileSync(stateFile, "utf8")).toBe(afterReason);
+  queue.remove("person_absent");
+  expect(readFileSync(stateFile, "utf8")).toBe(afterReason);
 });

@@ -4,6 +4,8 @@
  * variant list rather than forking the bar:
  *   Home       `/`         current | a | b | c   (Airy Bento / Command Deck / Editorial Warmth)
  *   Meetings   `/meetings` current | a | b | c   (Quiet Rail / Day Spine / Editorial Ledger)
+ *   Profile    `/people/:id` current | a | b | c | d
+ *              (Critical Edition / Spine / Provenance / Prep Sheet)
  * Delete with the losing variants when one wins; never ship to prod
  * (returns null under Vite production builds).
  */

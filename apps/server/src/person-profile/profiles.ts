@@ -310,15 +310,13 @@ export class WorkspacePersonProfiles {
       const effective = fact.effectiveFrom === null ? null : Date.parse(fact.effectiveFrom);
       if (effective !== null && (!Number.isFinite(effective) || effective > this.now().getTime()))
         continue;
-      const latestCorrection = current.invalidations
-        ?.filter((record) => record.kind === "correction")
-        .at(-1);
+      /* Anti-recency protection is the authority, effective-date and reason
+         triple — never comparison with the correction's audit timestamp: a
+         primary artifact dated before the correction can establish that the
+         correction was already wrong when it was recorded (#204). */
       if (
         next[fact.field] !== null &&
-        (fact.authority !== "primary-artifact" ||
-          effective === null ||
-          !fact.reason.trim() ||
-          (latestCorrection && effective <= Date.parse(latestCorrection.occurredAt)))
+        (fact.authority !== "primary-artifact" || effective === null || !fact.reason.trim())
       )
         continue;
       next[fact.field] = fact.value;
@@ -409,7 +407,7 @@ export class WorkspacePersonProfiles {
     if (!fullName && !primaryEmail && profileUrls.length === 0)
       throw new PersonProfileValidationError(
         "missing-identity-input",
-        "A Person Profile needs at least a full name or an email address.",
+        "A Person Profile needs at least a full name, an email address, or a profile URL.",
       );
     if (primaryEmail && !EMAIL_PATTERN.test(primaryEmail))
       throw new PersonProfileValidationError(

@@ -200,7 +200,7 @@ export class TranscriptIdentityService {
         const rejectedElsewhere = allMentions.some(
           (other) =>
             (other.emails.includes(identifier) || other.profileUrls.includes(identifier)) &&
-            ["not-person", "unresolved"].includes(
+            ["not-a-person", "unresolved"].includes(
               this.store.latestDecision(other.id)?.action ?? "",
             ),
         );

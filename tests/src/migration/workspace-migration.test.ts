@@ -12,6 +12,11 @@ import {
   type WorkspaceMigrationClassification,
   type WorkspaceMigrationPreview,
 } from "../../../apps/server/src/migration/workspace";
+import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store";
+import { PersonResearchQueue } from "../../../apps/server/src/person-profile/research-queue";
+import type { PersonResearch } from "../../../apps/server/src/person-profile/research";
+import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
+import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 
 /**
  * The Workspace migration contract — issue://119, ADR-0043. Every fixture is a
@@ -671,6 +676,75 @@ describe("Workspace migration preview", () => {
       },
     ]);
     expect(JSON.stringify(preview)).not.toContain("a mapping credential");
+  });
+
+  /* ADR-0062 put six new directories and one queue file in the Workspace. The
+     boundary is one table with two consumers, so a writer that is not in it
+     fails the preview closed and survives the generated-data clear. This drives
+     the real store rather than a copied list of names, so a seventh directory
+     fails here rather than in a Playwright journey. */
+  it("inventories automatically researched dossier state with the Profiles it describes", () => {
+    const root = workspace("person-dossiers");
+    const dossiers = new PersonDossierStore(root);
+    const people = new WorkspacePersonProfiles({
+      store: new PersonProfileStore(root),
+      lifecycle: [],
+    });
+    const person = people.create({ fullName: "Ada Fixture", primaryEmail: "ada@example.com" });
+    const quote = "Ada Fixture maintains the fictional Ledger indexer.";
+    const source = dossiers.retainSource({
+      url: "https://example.com/ada",
+      title: "Fictional source",
+      author: null,
+      publishedAt: null,
+      retrievedAt: TIMESTAMP,
+      text: quote,
+      family: "example.com",
+      sourceClass: "independent-account",
+      visibility: "public",
+      completeness: "full",
+      access: "retrieved",
+      acquisition: "public-search/website",
+    });
+    dossiers.publish(person.id, 0, {
+      claims: [
+        {
+          id: "ledger",
+          section: "work",
+          statement: quote,
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [{ sourceId: source.id, quote }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    });
+    // Detaching writes the rejection record and a scrubbed revision; deleting writes the tombstone.
+    dossiers.detach(person.id, source.id);
+    dossiers.privacyDelete(person.id);
+    new PersonResearchQueue({
+      workspaceDir: root,
+      people,
+      research: {} as unknown as PersonResearch,
+      enabled: () => true,
+    }).configure({});
+
+    const preview = previewWorkspaceMigration(root);
+
+    expect(preview.outcome).toBe("inventory");
+    expect(inventory(preview).get("person-profiles")?.classification).toBe(
+      "disposable-product-state",
+    );
+    expect(inventory(preview).get("person-profiles")?.count).toBeGreaterThan(0);
   });
 
   it("fails closed on an unrecognized Workspace entry", () => {

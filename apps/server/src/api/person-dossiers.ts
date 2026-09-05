@@ -74,9 +74,10 @@ export function registerPersonDossierApi(
         error: "invalid-research-settings",
         message: "Research limits must be within the supported ranges.",
       });
-    return deps.queue.configure(
-      PersonResearchSettingsSchema.parse({ ...deps.queue.status().settings, ...parsed.data }),
-    );
+    /* The queue owns the merge onto its live settings; sending it a whole
+       object here would re-assert `paused` on every unrelated edit and cancel
+       in-flight research for a changed refresh interval (#207). */
+    return deps.queue.configure(parsed.data);
   });
   app.get<{ Params: { profileId: string } }>(
     "/api/people/:profileId/dossier",

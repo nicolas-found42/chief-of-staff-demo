@@ -163,6 +163,8 @@ test("person profiles journey — nav → search → create → detail → revis
   });
   expect(evidenceResponse.ok()).toBe(true);
   await page.goto(`/people/${profileId}`);
+  // Maintenance is secondary to the dossier (#209), so a fresh load discloses it again.
+  await page.getByText("Profile maintenance and revision history", { exact: true }).click();
   await page.getByLabel("Evidence").selectOption("ev_wrong_person");
   await page.getByLabel("Move to profile id (optional)").fill(correctId);
   await page.getByLabel("Detach note").fill("This source describes Katherine, not Grace.");

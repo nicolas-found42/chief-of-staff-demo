@@ -223,3 +223,181 @@ test("confirmed Transcript evidence populates the owner's dossier without leakin
   dossiers.removeTranscript("meeting-private");
   expect(dossiers.get(person.id)?.claims).toEqual([]);
 });
+
+test("research does not re-crawl a source the owner detached", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-rejected-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ fullName: "Maya Chen", primaryEmail: "maya@example.com" });
+  const dossiers = new PersonDossierStore(root);
+  const body = "Contact maya@example.com. Maya designed the Atlas scheduler.";
+  const complete = async () => ({
+    fullName: "Maya Chen",
+    employer: null,
+    sourceClass: "primary-artifact",
+    author: null,
+    publishedAt: null,
+    claims: [
+      {
+        id: "scheduler",
+        section: "work",
+        statement: "Maya designed the Atlas scheduler.",
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        citations: [{ sourceId: "source", quote: "Maya designed the Atlas scheduler." }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  const result = { url: "https://example.com/maya", title: "Maya", snippet: "" };
+  const research = new PersonResearch({
+    dossiers,
+    search: async () => [result],
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body,
+    }),
+    complete,
+  });
+  await research.run(person, {
+    maxCalls: 3,
+    maxMilliseconds: 10000,
+    reserve: () => true,
+    active: () => true,
+  });
+  const sourceId = dossiers.get(person.id)!.sourceIds[0];
+  dossiers.detach(person.id, sourceId);
+  people.forgetResearchSource(person.id, sourceId);
+
+  const fetched: string[] = [];
+  const next = new PersonResearch({
+    dossiers,
+    search: async () => [result],
+    fetch: async (url) => {
+      fetched.push(url);
+      return {
+        url,
+        status: 200,
+        contentType: "text/plain",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body,
+      };
+    },
+    complete,
+  });
+  const outcome = await next.run(person, {
+    maxCalls: 3,
+    maxMilliseconds: 10000,
+    reserve: () => true,
+    active: () => true,
+  });
+  expect(fetched).toEqual([]);
+  expect(outcome.diagnostics).toEqual([
+    { url: "https://example.com/maya", stage: "attribution", reason: expect.any(String) },
+  ]);
+  expect(outcome.state).not.toBe("unavailable");
+});
+
+test("a source rejected during a run is an attribution diagnostic rather than a failure", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-midrun-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ fullName: "Maya Chen", primaryEmail: "maya@example.com" });
+  const dossiers = new PersonDossierStore(root);
+  const body = "Contact maya@example.com. Maya designed the Atlas scheduler.";
+  const result = { url: "https://example.com/maya", title: "Maya", snippet: "" };
+  const complete = async () => ({
+    fullName: null,
+    employer: null,
+    sourceClass: "primary-artifact",
+    author: null,
+    publishedAt: null,
+    claims: [
+      {
+        id: "scheduler",
+        section: "work",
+        statement: "Maya designed the Atlas scheduler.",
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        citations: [{ sourceId: "source", quote: "Maya designed the Atlas scheduler." }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  const fetchResponse = (url: string) => ({
+    url,
+    status: 200,
+    contentType: "text/plain",
+    etag: null,
+    lastModified: null,
+    retryAfter: null,
+    body,
+  });
+  const research = new PersonResearch({
+    dossiers,
+    search: async () => [result],
+    fetch: async (url) => fetchResponse(url),
+    complete,
+  });
+  await research.run(person, {
+    maxCalls: 3,
+    maxMilliseconds: 10000,
+    reserve: () => true,
+    active: () => true,
+  });
+  const sourceId = dossiers.get(person.id)!.sourceIds[0];
+
+  const midrun = new PersonResearch({
+    dossiers,
+    search: async () => [result],
+    fetch: async (url) => {
+      dossiers.detach(person.id, sourceId);
+      people.forgetResearchSource(person.id, sourceId);
+      return fetchResponse(url);
+    },
+    complete,
+  });
+  const outcome = await midrun.run(person, {
+    maxCalls: 6,
+    maxMilliseconds: 10000,
+    reserve: () => true,
+    active: () => true,
+  });
+  expect(outcome.diagnostics).toContainEqual({
+    url: "https://example.com/maya",
+    stage: "attribution",
+    reason: expect.any(String),
+  });
+  expect(outcome.state).toBe("empty");
+});
