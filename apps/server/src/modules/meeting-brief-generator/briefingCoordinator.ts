@@ -11,7 +11,7 @@ import type { WorkspaceMeetings } from "../../meetings/store.js";
 import type { GmailDeliveryProvider } from "./google/gmailDelivery.js";
 import { buildDailyBriefing, dayBoundsFor } from "./dailyBriefing.js";
 import { buildWeeklyBriefing, weekBoundsFor } from "./weeklyBriefing.js";
-import { renderDailyBriefingEmail, renderWeeklyBriefingEmail } from "./output.js";
+import { renderDailyBriefingEmail } from "./output.js";
 
 interface MeetingBriefingCoordinatorOptions {
   runs: Runs;
@@ -35,7 +35,6 @@ export class MeetingBriefingCoordinator {
   private dailyBriefingError: string | null = null;
   private dailyBriefingDirty: { date: string; regenAtMs: number } | null = null;
   private lastDailyEmailDay: string | null = null;
-  private lastWeeklyEmailWeek: string | null = null;
   private lastWeeklyBriefingWeek: string | null = null;
   private weeklyBriefingCache: WeeklyBriefing | null = null;
   private weeklyBriefingError: string | null = null;
@@ -215,7 +214,6 @@ export class MeetingBriefingCoordinator {
     if (!local.isValid || local.weekday !== 1 || local.hour < 6) return;
     if (this.lastWeeklyBriefingWeek === weekBoundsFor(now, timezone).weekStart) return;
     this.refreshWeekly(now, timezone);
-    await this.sendWeeklyEmailIfDue(now, timezone);
   }
 
   async sendDailyEmailIfDue(
@@ -239,31 +237,6 @@ export class MeetingBriefingCoordinator {
     } catch (error) {
       this.options.log?.(
         `daily briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  async sendWeeklyEmailIfDue(
-    now = this.options.now(),
-    timezone = this.options.getTimezone(),
-  ): Promise<void> {
-    try {
-      const provider = this.options.gmailDeliveryProvider;
-      if (this.options.briefingEmails !== true || !provider) return;
-      const weekStart = weekBoundsFor(now, timezone).weekStart;
-      if (this.lastWeeklyEmailWeek === weekStart) return;
-      const state = this.getWeekly(now, timezone);
-      if (state.error !== null || state.briefing === null || !this.options.getOwnerEmail()) return;
-      if (this.options.isOwnerProfileConfirmed && !this.options.isOwnerProfileConfirmed()) return;
-      const deliveryId = `mb-weekly-${weekStart}`;
-      if (!(await provider.findByDeliveryId(deliveryId))) {
-        const rendered = renderWeeklyBriefingEmail(state.briefing);
-        await provider.send({ ...rendered, deliveryId });
-      }
-      this.lastWeeklyEmailWeek = weekStart;
-    } catch (error) {
-      this.options.log?.(
-        `weekly briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

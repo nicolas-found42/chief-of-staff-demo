@@ -242,7 +242,7 @@ describe("single-email policy (issue #163)", () => {
     await app.close();
   });
 
-  it("emails the Weekly Briefing once per week and skips empty weeks", async () => {
+  it("no longer emails a Weekly Briefing — the Weekly Summary owns that (issue #197)", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "mb-weekly-email-"));
     const runs = openRuns(workspaceDir);
     const fakeGmail = new FakeGmailDeliveryProvider({ ownerEmail: "owner@example.com" });
@@ -267,20 +267,18 @@ describe("single-email policy (issue #163)", () => {
       endAt: "2026-09-01T15:00:00.000Z",
     });
 
+    /* The week's read model is still refreshed on Monday; the message is not
+       sent from here any more, because two weekly emails would be one too
+       many and the Weekly Summary is the one the owner asked for. */
     await host.maintenanceTick(new Date(monday));
-    expect(fakeGmail.messages.map((message) => message.subject)).toEqual([
-      "Weekly Briefing: week of 2026-08-30",
-    ]);
-
-    await host.maintenanceTick(new Date("2026-08-31T08:00:00.000Z"));
-    expect(fakeGmail.count).toBe(1);
+    expect(fakeGmail.messages).toEqual([]);
 
     const app = fastify({ logger: false });
     await host.routes(app);
     await app.ready();
     const retry = await app.inject({ method: "POST", url: "/api/meeting-brief/weekly/retry" });
     expect(retry.statusCode).toBe(200);
-    expect(fakeGmail.count).toBe(1);
+    expect(fakeGmail.count).toBe(0);
     await app.close();
   });
 });

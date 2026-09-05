@@ -246,6 +246,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   };
   function stopModules(): void {
     taskLinking.stop();
+    weeklyWorkspace.stop();
     for (const module of modules) {
       module.stop?.();
     }
@@ -735,31 +736,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const associateTranscripts = async (): Promise<void> => {
     await meetingJoin.associateTranscripts();
   };
-  /* The canonical This week view (issue #194). Reads the Meetings store, the
-     Tasks product and the Runs index; owns none of them. The model seam is the
-     configured one, resolved per call so a provider change in Settings needs
-     no restart. */
-  const weeklyWorkspace = new WeeklyWorkspace({
-    workspaceDir,
-    meetings,
-    tasks,
-    actionItems,
-    runs,
-    now: () => new Date(),
-    timezone: () =>
-      configStore.getModuleConfig("content-research").timeZone ||
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-    model: () => {
-      const current = configStore.get();
-      return {
-        provider: current.provider,
-        model: current.model,
-        complete: meetingBriefCompleteJson(),
-      };
-    },
-    meetingIdForTranscript: (transcriptId) =>
-      transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
-  });
   const meetingBriefTest =
     process.env.ENABLE_TEST_SEED === "1"
       ? createMeetingBriefTestRuntime({
@@ -800,6 +776,45 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         log: meetingBriefLog,
       });
   const meetingBrief: MeetingBriefHost = meetingBriefTest?.host ?? meetingBriefProduction!.host;
+  /* The canonical This week view (issue #194). Reads the Meetings store, the
+     Tasks product and the Runs index; owns none of them. The model seam is the
+     configured one, resolved per call so a provider change in Settings needs
+     no restart. */
+  const weeklyWorkspace = new WeeklyWorkspace({
+    workspaceDir,
+    meetings,
+    tasks,
+    actionItems,
+    runs,
+    now: () => new Date(),
+    timezone: () =>
+      configStore.getModuleConfig("content-research").timeZone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    model: () => {
+      const current = configStore.get();
+      return {
+        provider: current.provider,
+        model: current.model,
+        complete: meetingBriefCompleteJson(),
+      };
+    },
+    meetingIdForTranscript: (transcriptId) =>
+      transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
+    /* The Monday owner email (issue #197). The delivery adapter resolves its
+       own recipient from the authenticated Gmail account, so the message can
+       only ever reach the owner; a Workspace with no Gmail delivery composed
+       has the tab and nothing else. */
+    ...(meetingBriefProduction
+      ? {
+          email: {
+            deliver: meetingBriefProduction.gmailDelivery,
+            enabled: () => true,
+            ownerConfirmed: () => ownerOnboarding.confirmed() !== null,
+          },
+        }
+      : {}),
+    log: meetingBriefLog,
+  });
   /* Debrief action-item mutations mark the derived briefings stale (#162):
      the thin shell seam beside the associateTranscripts wiring above — done /
      dismissed items touch day/week staleness instead of rebuilding at once. */
@@ -1132,6 +1147,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     transcriptCatalogRuntime.start();
     meetingBriefProduction?.relayPoller.start();
     taskLinking.start();
+    weeklyWorkspace.start();
     modulesRunning = true;
   }
 

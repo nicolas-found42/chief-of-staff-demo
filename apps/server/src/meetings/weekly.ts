@@ -15,6 +15,17 @@ import type { WorkspaceTasks } from "../tasks/tasks.js";
 import type { WorkspaceActionItems } from "../tasks/action-items.js";
 import type { Runs } from "../runs.js";
 
+/** Owner-only Gmail delivery, as the Meeting Brief module's adapter provides it. */
+interface WeeklyEmailDelivery {
+  send(params: {
+    subject: string;
+    text: string;
+    html: string;
+    deliveryId: string;
+  }): Promise<{ messageId: string; recipient: string }>;
+  findByDeliveryId(deliveryId: string): Promise<{ messageId: string; recipient: string } | null>;
+}
+
 interface WeeklyWorkspaceDeps {
   workspaceDir: string;
   meetings: WorkspaceMeetings;
@@ -25,11 +36,24 @@ interface WeeklyWorkspaceDeps {
   timezone: () => string;
   model?: () => { provider: string; model: string; complete: CompleteJson };
   meetingIdForTranscript?: (transcriptId: string) => string | null;
+  /**
+   * The Monday owner email (issue #197). Absent when the Workspace composes no
+   * Gmail delivery, and then the tab is the only surface. The recipient is
+   * resolved by the adapter from the authenticated Gmail account, never from
+   * Calendar or model output, so the message can only reach the owner.
+   */
+  email?: {
+    deliver: WeeklyEmailDelivery;
+    enabled: () => boolean;
+    ownerConfirmed: () => boolean;
+  };
+  log?: (message: string) => void;
 }
 
 /** Meeting Wizard reads bounded projections; source records retain their owners. */
 export class WeeklyWorkspace {
   private inFlight: Promise<WeeklyWorkspaceView> | null = null;
+  private timer: ReturnType<typeof setInterval> | undefined;
   constructor(private readonly deps: WeeklyWorkspaceDeps) {}
 
   view(): WeeklyWorkspaceView {
@@ -247,6 +271,62 @@ export class WeeklyWorkspace {
     return view;
   }
 
+  /**
+   * Send the week's owner email, once (issue #197). Monday morning in the
+   * Workspace timezone, and only after a receipt says this week has not
+   * already been delivered.
+   *
+   * The receipt is written after the send returns, never before: a generation
+   * or Gmail failure has to stay retryable, and recording a success that did
+   * not happen would silently cost the owner the week. `findByDeliveryId`
+   * reconciles a lost acknowledgement, so a retry after a dropped response
+   * converges on one message rather than a second one.
+   */
+  async sendWeeklyEmailIfDue(force = false): Promise<void> {
+    const email = this.deps.email;
+    if (!email || !email.enabled() || !email.ownerConfirmed()) return;
+    const now = this.deps.now();
+    const local = DateTime.fromJSDate(now).setZone(this.deps.timezone());
+    if (!force && (!local.isValid || local.weekday !== 1 || local.hour < 6)) return;
+    const path = join(this.deps.workspaceDir, "weekly", "delivery.json");
+    const receipt = existsSync(path)
+      ? (JSON.parse(readFileSync(path, "utf8")) as { weekStart: string })
+      : null;
+    const view = await this.read();
+    /* One successful delivery per week. A Meeting completing later in the week
+       changes the tab, and changes nothing here. */
+    if (!force && receipt?.weekStart === view.weekStart) return;
+    const deliveryId = `weekly-briefing-${view.weekStart}`;
+    try {
+      const already = await email.deliver.findByDeliveryId(deliveryId);
+      const rendered = renderWeeklyBriefingEmail(view);
+      const sent = already ?? (await email.deliver.send({ ...rendered, deliveryId }));
+      atomicWriteJson(path, {
+        weekStart: view.weekStart,
+        deliveryId,
+        messageId: sent.messageId,
+        sentAt: now.toISOString(),
+      });
+    } catch (error) {
+      this.deps.log?.(
+        `weekly briefing email failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /** The Monday schedule. Hourly, because the send is gated on the hour, not the tick. */
+  start(): void {
+    if (this.timer) return;
+    void this.sendWeeklyEmailIfDue();
+    this.timer = setInterval(() => void this.sendWeeklyEmailIfDue(), 60 * 60_000);
+    this.timer.unref();
+  }
+
+  stop(): void {
+    clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
   registerRoutes(app: FastifyInstance): void {
     /* The deterministic week alone: Meeting groups, Tasks and pending Action
        Items, with no Weekly Summary and so no model call. The Today tab reads
@@ -288,3 +368,60 @@ const summaryShape = z.strictObject({
       "Use one paragraph of no more than four sentences and 120 words.",
     ),
 });
+
+/**
+ * The Monday owner email (issue #197): the current Weekly Summary and the
+ * deterministic Upcoming Meeting list, and nothing else. The Summary's
+ * degraded states are named in the same words the tab uses — a stale or
+ * missing summary is said, never quietly omitted, and the Meeting list stands
+ * on its own either way.
+ */
+function renderWeeklyBriefingEmail(view: WeeklyWorkspaceView): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const subject = `Weekly Briefing: week of ${view.weekStart}`;
+  const upcoming = view.meetings.filter((meeting) => meeting.group === "upcoming");
+  const summaryLine =
+    view.summary.state === "ready" && view.summary.text
+      ? view.summary.text
+      : view.summary.text
+        ? `${view.summary.text} (This summary is out of date; the tab has the current state.)`
+        : "No Weekly Summary is available for this week yet.";
+  const when = (meeting: WeeklyMeeting): string =>
+    `${meeting.startAt} · ${ARTIFACT_LABEL[meeting.artifactStatus]}`;
+  const lines = [subject, "", summaryLine, "", "Upcoming this week:"];
+  for (const meeting of upcoming) lines.push(`- ${meeting.title} · ${when(meeting)}`);
+  if (upcoming.length === 0) lines.push("- Nothing upcoming.");
+  const html = [
+    `<div style="font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; line-height:1.5; color:#111; max-width:640px">`,
+    `<h2 style="margin:0 0 8px 0">${escapeHtml(subject)}</h2>`,
+    `<p>${escapeHtml(summaryLine)}</p>`,
+    `<h3 style="margin:16px 0 8px 0">Upcoming this week</h3><ul>`,
+    ...(upcoming.length === 0
+      ? ["<li>Nothing upcoming.</li>"]
+      : upcoming.map(
+          (meeting) =>
+            `<li><strong>${escapeHtml(meeting.title)}</strong> · ${escapeHtml(when(meeting))}</li>`,
+        )),
+    `</ul></div>`,
+  ].join("\n");
+  return { subject, text: lines.join("\n"), html };
+}
+
+/** What a Meeting's expected Brief or Debrief is doing, in the tab's own words. */
+const ARTIFACT_LABEL: Record<WeeklyMeeting["artifactStatus"], string> = {
+  ready: "Ready",
+  pending: "Preparing",
+  failed: "Failed",
+  missing: "Not yet prepared",
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}

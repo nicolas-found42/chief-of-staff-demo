@@ -12,7 +12,22 @@ import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import { WeeklyWorkspace } from "../../../apps/server/src/meetings/weekly";
 import type { WeeklyWorkspaceView } from "@chief-of-staff-demo/shared";
 
-function setup(complete?: CompleteJson) {
+/** A Gmail delivery double: one message per deliveryId, reconcilable like the real one. */
+class FakeDelivery {
+  readonly sent: Array<{ subject: string; text: string; deliveryId: string }> = [];
+  fail = false;
+  async send(params: { subject: string; text: string; html: string; deliveryId: string }) {
+    if (this.fail) throw new Error("gmail refused");
+    this.sent.push({ subject: params.subject, text: params.text, deliveryId: params.deliveryId });
+    return { messageId: `msg_${this.sent.length}`, recipient: "owner@example.com" };
+  }
+  async findByDeliveryId(deliveryId: string) {
+    const index = this.sent.findIndex((message) => message.deliveryId === deliveryId);
+    return index === -1 ? null : { messageId: `msg_${index + 1}`, recipient: "owner@example.com" };
+  }
+}
+
+function setup(complete?: CompleteJson, delivery?: FakeDelivery) {
   const workspaceDir = mkdtempSync(join(tmpdir(), "cos-weekly-"));
   let instant = new Date("2026-09-03T14:00:00Z");
   let provider = "mock";
@@ -31,6 +46,10 @@ function setup(complete?: CompleteJson) {
     now,
     timezone: () => "America/New_York",
     ...(complete ? { model: () => ({ provider, model: "deterministic", complete }) } : {}),
+    ...(delivery
+      ? { email: { deliver: delivery, enabled: () => true, ownerConfirmed: () => true } }
+      : {}),
+    log: () => {},
   });
   const app = fastify();
   weekly.registerRoutes(app);
@@ -227,5 +246,90 @@ describe("the canonical This week API", () => {
     expect(view.overdue.map((task) => task.title)).toEqual(["Overdue"]);
     expect(view.dueThisWeek.map((task) => task.title)).toEqual(["Saturday work"]);
     await app.close();
+  });
+});
+
+describe("the Monday Weekly Briefing email", () => {
+  it("sends once for the week, survives restart, and never sends twice for a later change", async () => {
+    const delivery = new FakeDelivery();
+    const { weekly, meetings, setNow } = setup(undefined, delivery);
+    meetings.upsertFromCalendar({
+      occurrenceKey: "kickoff",
+      calendarEventId: "kickoff",
+      occurrenceId: "kickoff",
+      title: "Launch kickoff",
+      startAt: "2026-09-04T14:00:00Z",
+      endAt: "2026-09-04T15:00:00Z",
+      cancelled: false,
+      participants: [],
+      ineligibleReason: null,
+    });
+
+    /* Not Monday: the schedule is a schedule, not a suggestion. */
+    await weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toEqual([]);
+
+    setNow("2026-08-31T11:00:00Z");
+    await weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(1);
+    expect(delivery.sent[0].subject).toBe("Weekly Briefing: week of 2026-08-30");
+    expect(delivery.sent[0].text).toContain("Upcoming this week:");
+    expect(delivery.sent[0].text).toContain("Launch kickoff");
+    expect(delivery.sent[0].text).toContain("No Weekly Summary is available");
+
+    /* A Meeting completing later in the week changes the tab, not the mailbox. */
+    setNow("2026-09-05T11:00:00Z");
+    await weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(1);
+  });
+
+  it("records no success a failed send did not have, and retries into one message", async () => {
+    const delivery = new FakeDelivery();
+    const { weekly, meetings, setNow } = setup(undefined, delivery);
+    meetings.upsertFromCalendar({
+      occurrenceKey: "kickoff",
+      calendarEventId: "kickoff",
+      occurrenceId: "kickoff",
+      title: "Launch kickoff",
+      startAt: "2026-09-04T14:00:00Z",
+      endAt: "2026-09-04T15:00:00Z",
+      cancelled: false,
+      participants: [],
+      ineligibleReason: null,
+    });
+    setNow("2026-08-31T11:00:00Z");
+    delivery.fail = true;
+
+    await weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toEqual([]);
+
+    delivery.fail = false;
+    await weekly.sendWeeklyEmailIfDue();
+    expect(delivery.sent).toHaveLength(1);
+
+    /* And an explicit re-send reconciles rather than duplicating. */
+    await weekly.sendWeeklyEmailIfDue(true);
+    expect(delivery.sent).toHaveLength(1);
+  });
+
+  it("stays silent while the owner is unconfirmed", async () => {
+    const delivery = new FakeDelivery();
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-weekly-owner-"));
+    const store = new TaskStore(workspaceDir);
+    const now = () => new Date("2026-08-31T11:00:00Z");
+    const weekly = new WeeklyWorkspace({
+      workspaceDir,
+      meetings: new WorkspaceMeetings(workspaceDir, now),
+      tasks: new WorkspaceTasks({ store, now }),
+      actionItems: new WorkspaceActionItems({ store, now }),
+      runs: openRuns(workspaceDir),
+      now,
+      timezone: () => "UTC",
+      email: { deliver: delivery, enabled: () => true, ownerConfirmed: () => false },
+    });
+
+    await weekly.sendWeeklyEmailIfDue();
+
+    expect(delivery.sent).toEqual([]);
   });
 });

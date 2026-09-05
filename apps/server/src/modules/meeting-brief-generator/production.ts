@@ -73,6 +73,8 @@ export interface MeetingBriefProductionRuntime {
   invalidateGoogleIdentity(): void;
   /** Read the connected Google identity and cache it as the workspace owner. */
   refreshOwnerIdentity(): Promise<string | null>;
+  /** Owner-only Gmail delivery, for the Shell's Weekly Briefing email (issue #197). */
+  gmailDelivery: GmailDeliveryProvider;
 }
 
 /** Production composition root for the complete live Meeting Brief Generator. */
@@ -220,5 +222,9 @@ export function createMeetingBriefProductionRuntime(
     hubSpotConnection,
     invalidateGoogleIdentity,
     refreshOwnerIdentity,
+    /* Owner-only Gmail delivery, exposed so the Shell can hand it to the
+       Weekly Briefing email (issue #197). The adapter, not a raw Gmail
+       client: the recipient stays the authenticated account's own. */
+    gmailDelivery: gmailDeliveryProvider,
   };
 }

@@ -1352,11 +1352,7 @@ export class MeetingBriefHost implements HostedModule {
       return this.getWeeklyBriefing();
     });
 
-    app.post("/api/meeting-brief/weekly/retry", async () => {
-      const state = this.refreshWeeklyBriefing();
-      await this.briefings.sendWeeklyEmailIfDue();
-      return state;
-    });
+    app.post("/api/meeting-brief/weekly/retry", async () => this.refreshWeeklyBriefing());
 
     // GET /api/meetings/overview — the Meeting Wizard read projection (spec
     // Implementation Decision 3, kept separate per Decision 9): a read over
