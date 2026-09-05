@@ -70,12 +70,11 @@ import {
 import { modelOpportunityRanker } from "../modules/content-scout/model.js";
 import { WorkspaceContentProjects } from "../content-projects/projects.js";
 import {
-  createModelDraftProvider,
-  createModelOutlineProvider,
+  createModelDraftGenerator,
+  createModelOutlineGenerator,
 } from "../content-projects/generation.js";
 import { createPublicSearchResearchProvider } from "../content-projects/research.js";
 import { contentProjectOpportunityStarter } from "../content-projects/opportunity-projects.js";
-import { CONTENT_PROJECT_TARGETS } from "@chief-of-staff-demo/shared";
 import { workspaceLayout } from "../paths.js";
 import { openRuns, type Runs } from "../runs.js";
 import { ContentResearchHost } from "../modules/content-research/host.js";
@@ -574,12 +573,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     ownerOnboarding,
     brandProfiles: new WorkspaceBrandProfileStore(workspaceDir, () => new Date()),
     researchProviders: [createPublicSearchResearchProvider(publicSearch, () => new Date())],
-    outlineProviders: CONTENT_PROJECT_TARGETS.map((target) =>
-      createModelOutlineProvider(contentScoutCompleteJson, target),
-    ),
-    draftProviders: CONTENT_PROJECT_TARGETS.map((target) =>
-      createModelDraftProvider(contentScoutCompleteJson, target),
-    ),
+    outlineGenerator: createModelOutlineGenerator(contentScoutCompleteJson),
+    draftGenerator: createModelDraftGenerator(contentScoutCompleteJson),
   });
   const contentScout = new ContentScoutHost({
     runs,

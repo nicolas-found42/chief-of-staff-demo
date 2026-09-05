@@ -6,10 +6,10 @@ import type { PersonEvidence } from "@chief-of-staff-demo/shared";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import { WorkspaceContentProjects } from "../../../apps/server/src/content-projects/projects";
 import {
-  createModelDraftProvider,
-  createModelOutlineProvider,
-  type ContentEngineDraftProviderResult,
-  type PlatformOutlineProviderResult,
+  createModelDraftGenerator,
+  createModelOutlineGenerator,
+  type ContentEngineDraftResult,
+  type PlatformOutlineResult,
 } from "../../../apps/server/src/content-projects/generation";
 import type {
   ResearchProvider,
@@ -218,7 +218,7 @@ function transcriptOriginEvidence(id: string): PersonEvidence {
   };
 }
 
-const OUTLINE_ANSWER: PlatformOutlineProviderResult = {
+const OUTLINE_ANSWER: PlatformOutlineResult = {
   title: "A grounded case for evidence-led content",
   hookDirection: "Open with the review gate the owner knows.",
   targetLength: "900 to 1,200 characters",
@@ -236,7 +236,7 @@ const OUTLINE_ANSWER: PlatformOutlineProviderResult = {
   productionNotes: ["Draft the hook last."],
 };
 
-const DRAFT_ANSWER: ContentEngineDraftProviderResult = {
+const DRAFT_ANSWER: ContentEngineDraftResult = {
   copy: "Finished post copy grounded in the frozen public evidence.",
   productionNotes: ["Paste-ready copy."],
   claims: [{ text: "Frozen public evidence preserves lineage.", sourceItemIds: [SOURCE_ITEM.id] }],
@@ -377,10 +377,8 @@ async function makeWorkspace(): Promise<Workspace> {
     ownerOnboarding,
     brandProfiles,
     researchProviders: [research],
-    outlineProviders: [
-      createModelOutlineProvider(() => generation.completeJson, "linkedin-standard-post"),
-    ],
-    draftProviders: [createModelDraftProvider(() => draft.completeJson, "linkedin-standard-post")],
+    outlineGenerator: createModelOutlineGenerator(() => generation.completeJson),
+    draftGenerator: createModelDraftGenerator(() => draft.completeJson),
     now: NOW,
   });
   projects.approveContentVoice(owner.id, "Clear, practical, and evidence-led.");

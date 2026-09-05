@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
 import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
+import { stubDraftGenerator, stubOutlineGenerator } from "./content-project-fixtures";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import {
   ContentProjectError,
@@ -96,8 +97,8 @@ function setup(researchProviders: ResearchProvider[]) {
     ownerOnboarding,
     brandProfiles,
     researchProviders,
-    outlineProviders: [],
-    draftProviders: [],
+    outlineGenerator: stubOutlineGenerator(),
+    draftGenerator: stubDraftGenerator(),
     now: () => NOW,
   });
   projects.approveContentVoice(owner.id, "Approved Content Voice.");

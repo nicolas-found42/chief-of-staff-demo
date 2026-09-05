@@ -14,14 +14,20 @@ import {
   type OutlineCharter,
   type OutlineSetOutcome,
 } from "@chief-of-staff-demo/shared";
-import { DIAGNOSTIC, NOW, SOURCE_ITEM, SOURCE_ITEM_2 } from "./content-project-fixtures";
+import {
+  DIAGNOSTIC,
+  NOW,
+  SOURCE_ITEM,
+  SOURCE_ITEM_2,
+  stubDraftGenerator,
+} from "./content-project-fixtures";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import type {
-  ContentEngineDraftProvider,
+  ContentEngineDraftGenerator,
   DraftGenerationRequest,
   OutlineGenerationRequest,
-  PlatformOutlineProvider,
-  PlatformOutlineProviderResult,
+  PlatformOutlineGenerator,
+  PlatformOutlineResult,
 } from "../../../apps/server/src/content-projects/generation";
 import {
   ContentProjectError,
@@ -32,7 +38,7 @@ import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 
-const BASE_RESULT: PlatformOutlineProviderResult = {
+const BASE_RESULT: PlatformOutlineResult = {
   title: "A grounded case for immutable inputs",
   hookDirection: "Open with the reproducibility failure the owner knows.",
   targetLength: "900 to 1,200 characters",
@@ -56,14 +62,15 @@ const BASE_RESULT: PlatformOutlineProviderResult = {
 };
 
 function fakeDraftProvider(target: ContentProjectTarget): {
-  provider: ContentEngineDraftProvider;
+  target: ContentProjectTarget;
+  provider: ContentEngineDraftGenerator;
   calls: DraftGenerationRequest[];
 } {
   const calls: DraftGenerationRequest[] = [];
   return {
+    target,
     calls,
     provider: {
-      target,
       async generate(request) {
         calls.push(structuredClone(request));
         return {
@@ -79,8 +86,22 @@ function fakeDraftProvider(target: ContentProjectTarget): {
   };
 }
 
+/** Routes each Draft generation call to the per-target fake bound to that target. */
+function draftGeneratorFor(
+  fakes: ReturnType<typeof fakeDraftProvider>[],
+): ContentEngineDraftGenerator {
+  const byTarget = new Map(fakes.map((fake) => [fake.target, fake.provider]));
+  return {
+    async generate(request) {
+      const provider = byTarget.get(request.target);
+      if (!provider) throw new Error(`No Draft fake is bound to the ${request.target} target.`);
+      return provider.generate(request);
+    },
+  };
+}
+
 /**
- * One Outline provider per selected target, with deterministic fault
+ * One Outline generation serving every selected target, with deterministic fault
  * injection. `hold` blocks every call after it has been recorded until
  * `releaseAll()`, so the concurrency bound is observed without wall-clock
  * waits: when the bound is 2, exactly two calls can have arrived before the
@@ -88,7 +109,7 @@ function fakeDraftProvider(target: ContentProjectTarget): {
  * all nine.
  */
 interface OutlineSetHarness {
-  providers: PlatformOutlineProvider[];
+  outlineGenerator: PlatformOutlineGenerator;
   calls: Array<{ target: ContentProjectTarget; request: OutlineGenerationRequest }>;
   /** Resolves once `count` calls have arrived and are held (requires `hold`). */
   held(count: number): Promise<void>;
@@ -96,7 +117,6 @@ interface OutlineSetHarness {
 }
 
 function fakeOutlineSetProviders(
-  targets: readonly ContentProjectTarget[],
   options: {
     hold?: boolean;
     /** The target whose provider rejects its first call, then succeeds (a healable failure). */
@@ -112,9 +132,9 @@ function fakeOutlineSetProviders(
   let released = false;
   let waiter: { count: number; resolve: () => void } | null = null;
   const attempts = new Map<ContentProjectTarget, number>();
-  const providers: PlatformOutlineProvider[] = targets.map((target) => ({
-    target,
+  const outlineGenerator: PlatformOutlineGenerator = {
     async generate(request) {
+      const target = request.target;
       const attempt = (attempts.get(target) ?? 0) + 1;
       attempts.set(target, attempt);
       const index = calls.push({ target, request: structuredClone(request) }) - 1;
@@ -125,7 +145,7 @@ function fakeOutlineSetProviders(
         await gate.promise;
       }
       if (options.alwaysReject === target || (options.failFirstCall === target && attempt === 1)) {
-        throw new Error(`The ${target} provider is unavailable.`);
+        throw new Error(`The ${target} generation is unavailable.`);
       }
       if (options.badCitation === target && attempt === 1) {
         return {
@@ -141,9 +161,9 @@ function fakeOutlineSetProviders(
       }
       return structuredClone(BASE_RESULT);
     },
-  }));
+  };
   return {
-    providers,
+    outlineGenerator,
     calls,
     held(count) {
       if (calls.length >= count) return Promise.resolve();
@@ -158,9 +178,9 @@ function fakeOutlineSetProviders(
   };
 }
 
-function setupWorkspace(providers: {
-  outline: PlatformOutlineProvider[];
-  draft: ContentEngineDraftProvider[];
+function setupWorkspace(generators: {
+  outlineGenerator: PlatformOutlineGenerator;
+  draftGenerator: ContentEngineDraftGenerator;
 }): { workspaceDir: string; people: WorkspacePersonProfiles; projects: WorkspaceContentProjects } {
   const workspaceDir = mkdtempSync(join(tmpdir(), "content-outline-sets-"));
   const people = new WorkspacePersonProfiles({
@@ -179,8 +199,8 @@ function setupWorkspace(providers: {
     ownerOnboarding,
     brandProfiles,
     researchProviders: [],
-    outlineProviders: providers.outline,
-    draftProviders: providers.draft,
+    outlineGenerator: generators.outlineGenerator,
+    draftGenerator: generators.draftGenerator,
     now: () => NOW,
   });
   projects.approveContentVoice(owner.id, "Clear, practical, and evidence-led.");
@@ -204,14 +224,14 @@ interface ApprovedSetup {
 /** A ready Project revision: gates present, evidence frozen, Brief proposed and approved. */
 function setupApprovedProject(
   targets: readonly ContentProjectTarget[],
-  providers: {
-    outline: PlatformOutlineProvider[];
-    draft?: ContentEngineDraftProvider[];
+  generators: {
+    outlineGenerator: PlatformOutlineGenerator;
+    draftGenerator?: ContentEngineDraftGenerator;
   },
 ): ApprovedSetup {
   const { projects } = setupWorkspace({
-    outline: providers.outline,
-    draft: providers.draft ?? [],
+    outlineGenerator: generators.outlineGenerator,
+    draftGenerator: generators.draftGenerator ?? stubDraftGenerator(),
   });
   const project = projects.create({
     subject: { kind: "topic", topic: "Immutable approved inputs beat in-app editors" },
@@ -296,9 +316,9 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
       "email-newsletter",
       "youtube-short",
     ];
-    const harness = fakeOutlineSetProviders(selected);
+    const harness = fakeOutlineSetProviders();
     const { projects, project, brief } = setupApprovedProject(selected, {
-      outline: harness.providers,
+      outlineGenerator: harness.outlineGenerator,
     });
 
     const outcome: OutlineSetOutcome = await projects.generateOutlineSet(project.id);
@@ -320,7 +340,9 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     // with the same approved Brief and nothing else.
     expect(harness.calls.map((call) => call.target).sort()).toEqual([...selected].sort());
     for (const call of harness.calls) {
-      expect(Object.keys(call.request).sort()).toEqual(["brief", "evidence", "instruction"].sort());
+      expect(Object.keys(call.request).sort()).toEqual(
+        ["brief", "evidence", "instruction", "target"].sort(),
+      );
       expect(call.request.brief.id).toBe(brief.id);
       expect(call.request.instruction).toBeNull();
     }
@@ -332,9 +354,9 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
   });
 
   it("starts the selected targets concurrently within the configured bound and refuses an invalid bound", async () => {
-    const harness = fakeOutlineSetProviders(CONTENT_PROJECT_TARGETS, { hold: true });
+    const harness = fakeOutlineSetProviders({ hold: true });
     const { projects, project } = setupApprovedProject(CONTENT_PROJECT_TARGETS, {
-      outline: harness.providers,
+      outlineGenerator: harness.outlineGenerator,
     });
 
     const pending = projects.generateOutlineSet(project.id, { concurrency: 2 });
@@ -362,9 +384,9 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
 
     // A second set proves the default configured bound applies when the
     // caller does not name one.
-    const defaultHarness = fakeOutlineSetProviders(CONTENT_PROJECT_TARGETS, { hold: true });
+    const defaultHarness = fakeOutlineSetProviders({ hold: true });
     const defaultSetup = setupApprovedProject(CONTENT_PROJECT_TARGETS, {
-      outline: defaultHarness.providers,
+      outlineGenerator: defaultHarness.outlineGenerator,
     });
     const defaultPending = defaultSetup.projects.generateOutlineSet(defaultSetup.project.id);
     await defaultHarness.held(DEFAULT_OUTLINE_SET_CONCURRENCY);
@@ -374,8 +396,11 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
   });
 
   it("refuses to generate a set until an Outline Charter is approved", async () => {
-    const harness = fakeOutlineSetProviders(["linkedin-standard-post"]);
-    const { projects } = setupWorkspace({ outline: harness.providers, draft: [] });
+    const harness = fakeOutlineSetProviders();
+    const { projects } = setupWorkspace({
+      outlineGenerator: harness.outlineGenerator,
+      draftGenerator: stubDraftGenerator(),
+    });
     const project = projects.create({
       subject: { kind: "topic", topic: "No approved Brief yet" },
       objective: "educate",
@@ -410,9 +435,9 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
   it("keeps successful siblings when one target fails, and a retry regenerates only the missing target", async () => {
     const failing = "email-newsletter";
     const selected: ContentProjectTarget[] = ["linkedin-standard-post", failing, "youtube-short"];
-    const harness = fakeOutlineSetProviders(selected, { failFirstCall: failing });
+    const harness = fakeOutlineSetProviders({ failFirstCall: failing });
     const { projects, project, brief } = setupApprovedProject(selected, {
-      outline: harness.providers,
+      outlineGenerator: harness.outlineGenerator,
     });
 
     const first: OutlineSetOutcome = await projects.generateOutlineSet(project.id);
@@ -456,8 +481,10 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
   it("records a provider-contract failure for a target whose result cites unapproved evidence while its siblings persist", async () => {
     const bad = "youtube-short";
     const selected: ContentProjectTarget[] = ["linkedin-standard-post", bad];
-    const harness = fakeOutlineSetProviders(selected, { badCitation: bad });
-    const { projects, project } = setupApprovedProject(selected, { outline: harness.providers });
+    const harness = fakeOutlineSetProviders({ badCitation: bad });
+    const { projects, project } = setupApprovedProject(selected, {
+      outlineGenerator: harness.outlineGenerator,
+    });
 
     const outcome = await projects.generateOutlineSet(project.id);
     expect(outcome.generated.map((outline) => outline.target)).toEqual(["linkedin-standard-post"]);
@@ -480,12 +507,12 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
 
   it("preserves parent lineage and immutable prior versions across Outline and Draft regeneration", async () => {
     const selected: ContentProjectTarget[] = ["linkedin-standard-post", "email-newsletter"];
-    const harness = fakeOutlineSetProviders(selected);
+    const harness = fakeOutlineSetProviders();
     const postDraft = fakeDraftProvider("linkedin-standard-post");
     const newsletterDraft = fakeDraftProvider("email-newsletter");
     const { projects, project, brief } = setupApprovedProject(selected, {
-      outline: harness.providers,
-      draft: [postDraft.provider, newsletterDraft.provider],
+      outlineGenerator: harness.outlineGenerator,
+      draftGenerator: draftGeneratorFor([postDraft, newsletterDraft]),
     });
 
     const set = await projects.generateOutlineSet(project.id);
@@ -529,12 +556,12 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
 
   it("never lets a Draft consume a sibling output", async () => {
     const selected: ContentProjectTarget[] = ["linkedin-standard-post", "email-newsletter"];
-    const harness = fakeOutlineSetProviders(selected);
+    const harness = fakeOutlineSetProviders();
     const postDraft = fakeDraftProvider("linkedin-standard-post");
     const newsletterDraft = fakeDraftProvider("email-newsletter");
     const { projects, project } = setupApprovedProject(selected, {
-      outline: harness.providers,
-      draft: [postDraft.provider, newsletterDraft.provider],
+      outlineGenerator: harness.outlineGenerator,
+      draftGenerator: draftGeneratorFor([postDraft, newsletterDraft]),
     });
 
     await projects.generateOutlineSet(project.id);
@@ -546,7 +573,7 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     // Each Draft was prompted with its own target's Outline and nothing from
     // its sibling: no sibling outline, no sibling reference, no sibling id.
     expect(Object.keys(postDraft.calls[0]).sort()).toEqual(
-      ["brief", "outline", "evidence", "instruction"].sort(),
+      ["brief", "outline", "evidence", "instruction", "target"].sort(),
     );
     expect(postDraft.calls[0].outline.target).toBe("linkedin-standard-post");
     expect(postDraft.calls[0].outline.id).toBe(post.platformOutlineId);
@@ -577,8 +604,10 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
     expect(publicMethods.filter((name) => /drafts?/i.test(name))).toEqual(["generateDraft"]);
 
     const selected: ContentProjectTarget[] = ["linkedin-standard-post", "email-newsletter"];
-    const harness = fakeOutlineSetProviders(selected);
-    const { projects, project } = setupApprovedProject(selected, { outline: harness.providers });
+    const harness = fakeOutlineSetProviders();
+    const { projects, project } = setupApprovedProject(selected, {
+      outlineGenerator: harness.outlineGenerator,
+    });
     await projects.generateOutlineSet(project.id);
     // The Outline Set creates Outline work only; Drafts stay per-action.
     expect(storedRevision(projects, project.id).drafts).toHaveLength(0);
@@ -588,11 +617,11 @@ describe("WorkspaceContentProjects.generateOutlineSet (#132)", () => {
 describe("Copy and Markdown exports (#132)", () => {
   it("renders Outline and Draft Markdown deterministically and retains the structured records", async () => {
     const selected: ContentProjectTarget[] = ["linkedin-standard-post", "email-newsletter"];
-    const harness = fakeOutlineSetProviders(selected);
+    const harness = fakeOutlineSetProviders();
     const postDraft = fakeDraftProvider("linkedin-standard-post");
     const { projects, project } = setupApprovedProject(selected, {
-      outline: harness.providers,
-      draft: [postDraft.provider],
+      outlineGenerator: harness.outlineGenerator,
+      draftGenerator: draftGeneratorFor([postDraft]),
     });
 
     const set = await projects.generateOutlineSet(project.id);

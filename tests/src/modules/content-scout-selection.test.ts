@@ -17,6 +17,7 @@ import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import type { RankedOpportunity } from "@chief-of-staff-demo/shared";
+import { stubDraftGenerator, stubOutlineGenerator } from "./content-project-fixtures";
 
 const NOW = new Date("2026-09-01T12:00:00.000Z");
 
@@ -196,8 +197,8 @@ function makeWorkspace(input: {
     ownerOnboarding,
     brandProfiles,
     researchProviders: [],
-    outlineProviders: [],
-    draftProviders: [],
+    outlineGenerator: stubOutlineGenerator(),
+    draftGenerator: stubDraftGenerator(),
     now: () => NOW,
   });
   const host = new ContentScoutHost({

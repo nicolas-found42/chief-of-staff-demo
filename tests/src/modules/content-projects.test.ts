@@ -7,6 +7,7 @@ import type {
   ContentProjectCreateInput,
   SourceItem,
 } from "@chief-of-staff-demo/shared";
+import { stubDraftGenerator, stubOutlineGenerator } from "./content-project-fixtures";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import {
   ContentProjectError,
@@ -80,8 +81,8 @@ function setup() {
     ownerOnboarding,
     brandProfiles,
     researchProviders: [],
-    outlineProviders: [],
-    draftProviders: [],
+    outlineGenerator: stubOutlineGenerator(),
+    draftGenerator: stubDraftGenerator(),
     now: () => NOW,
   });
   return {
@@ -672,8 +673,8 @@ describe("WorkspaceContentProjects revisions", () => {
       ownerOnboarding,
       brandProfiles,
       researchProviders: [],
-      outlineProviders: [],
-      draftProviders: [],
+      outlineGenerator: stubOutlineGenerator(),
+      draftGenerator: stubDraftGenerator(),
       now: () => NOW,
     });
     expect(restarted.get(project.id)).toEqual(reread);

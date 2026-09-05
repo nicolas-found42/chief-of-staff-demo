@@ -1,5 +1,9 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import type { AdapterDiagnostic, SourceItem } from "@chief-of-staff-demo/shared";
+import type {
+  ContentEngineDraftGenerator,
+  PlatformOutlineGenerator,
+} from "../../../apps/server/src/content-projects/generation";
 
 /** Fixtures shared by the Content Project generation suites (#131, #132). */
 
@@ -40,3 +44,23 @@ export const DIAGNOSTIC: AdapterDiagnostic = fromPartial<AdapterDiagnostic>({
   affectedCapabilities: ["body"],
   causeChain: [],
 });
+
+/**
+ * Generation stubs for suites that never reach Outline or Draft generation:
+ * any call fails loudly instead of answering with invented content.
+ */
+export function stubOutlineGenerator(): PlatformOutlineGenerator {
+  return {
+    async generate() {
+      throw new Error("This suite does not wire Outline generation.");
+    },
+  };
+}
+
+export function stubDraftGenerator(): ContentEngineDraftGenerator {
+  return {
+    async generate() {
+      throw new Error("This suite does not wire Draft generation.");
+    },
+  };
+}

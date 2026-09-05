@@ -10,17 +10,24 @@ import {
   type OutlineCharter,
   type PlatformOutline,
 } from "@chief-of-staff-demo/shared";
-import { DIAGNOSTIC, NOW, SOURCE_ITEM, SOURCE_ITEM_2 } from "./content-project-fixtures";
+import {
+  DIAGNOSTIC,
+  NOW,
+  SOURCE_ITEM,
+  SOURCE_ITEM_2,
+  stubDraftGenerator,
+  stubOutlineGenerator,
+} from "./content-project-fixtures";
 import { WorkspaceBrandProfileStore } from "../../../apps/server/src/brand-profile/store";
 import {
-  createModelDraftProvider,
-  createModelOutlineProvider,
+  createModelDraftGenerator,
+  createModelOutlineGenerator,
   MAX_GENERATION_INSTRUCTION_LENGTH,
-  type ContentEngineDraftProvider,
+  type ContentEngineDraftGenerator,
   type DraftGenerationRequest,
   type OutlineGenerationRequest,
-  type PlatformOutlineProvider,
-  type PlatformOutlineProviderResult,
+  type PlatformOutlineGenerator,
+  type PlatformOutlineResult,
 } from "../../../apps/server/src/content-projects/generation";
 import type { CompleteJson } from "../../../apps/server/src/llm/providers";
 import {
@@ -32,8 +39,8 @@ import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 
 interface SetupOptions {
-  outlineProviders?: PlatformOutlineProvider[];
-  draftProviders?: ContentEngineDraftProvider[];
+  outlineGenerator?: PlatformOutlineGenerator;
+  draftGenerator?: ContentEngineDraftGenerator;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -55,8 +62,8 @@ function setup(options: SetupOptions = {}) {
     ownerOnboarding,
     brandProfiles,
     researchProviders: [],
-    outlineProviders: options.outlineProviders ?? [],
-    draftProviders: options.draftProviders ?? [],
+    outlineGenerator: options.outlineGenerator ?? stubOutlineGenerator(),
+    draftGenerator: options.draftGenerator ?? stubDraftGenerator(),
     now: () => NOW,
   });
   return { workspaceDir, people, owner, brandProfiles, projects };
@@ -104,12 +111,12 @@ function setupApprovedProject(options: SetupOptions = {}) {
 }
 
 interface OutlineProviderHarness {
-  provider: PlatformOutlineProvider;
+  provider: PlatformOutlineGenerator;
   calls: OutlineGenerationRequest[];
 }
 
 function fakeOutlineProvider(
-  respond: () => PlatformOutlineProviderResult = () => ({
+  respond: () => PlatformOutlineResult = () => ({
     title: "A grounded case for immutable inputs",
     hookDirection: "Open with the reproducibility failure the owner knows.",
     targetLength: "900 to 1,200 characters",
@@ -136,7 +143,6 @@ function fakeOutlineProvider(
   return {
     calls,
     provider: {
-      target: "linkedin-standard-post",
       async generate(request) {
         calls.push(structuredClone(request));
         return respond();
@@ -146,7 +152,7 @@ function fakeOutlineProvider(
 }
 
 interface DraftProviderHarness {
-  provider: ContentEngineDraftProvider;
+  provider: ContentEngineDraftGenerator;
   calls: DraftGenerationRequest[];
 }
 
@@ -172,7 +178,6 @@ function fakeDraftProvider(
   return {
     calls,
     provider: {
-      target: "linkedin-standard-post",
       async generate(request) {
         calls.push(structuredClone(request));
         return respond(request);
@@ -185,10 +190,10 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
   it("refuses to generate until an Outline Charter is explicitly approved, then records every approved input", async () => {
     const outline = fakeOutlineProvider();
     const { projects, project, brief } = setupApprovedProject({
-      outlineProviders: [outline.provider],
+      outlineGenerator: outline.provider,
     });
 
-    const gated = setup({ outlineProviders: [outline.provider] });
+    const gated = setup({ outlineGenerator: outline.provider });
     gated.projects.approveContentVoice(gated.owner.id, "Voice.");
     gated.brandProfiles.accept({
       markdown: "# Brand Profile\n\n## Voice\nVoice.",
@@ -255,7 +260,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
     expect(generated.warnings.length).toBeGreaterThan(0);
     expect(generated.productionNotes).toEqual(["Draft the hook last."]);
 
-    // The provider is prompted with the frozen public-evidence projection only.
+    // Generation is prompted with the frozen public-evidence projection only.
     expect(outline.calls).toHaveLength(1);
     expect(Object.keys(outline.calls[0].evidence).sort()).toEqual(
       [
@@ -291,7 +296,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       productionNotes: [],
     }));
     const { projects, project } = setupApprovedProject({
-      outlineProviders: [badCitation.provider],
+      outlineGenerator: badCitation.provider,
     });
     await expect(
       projects.generateOutline(project.id, "linkedin-standard-post"),
@@ -318,7 +323,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       warnings: [],
       productionNotes: [],
     }));
-    const third = setupApprovedProject({ outlineProviders: [unapprovedCitation.provider] });
+    const third = setupApprovedProject({ outlineGenerator: unapprovedCitation.provider });
     await expect(
       third.projects.generateOutline(third.project.id, "linkedin-standard-post"),
     ).rejects.toThrowError(
@@ -336,7 +341,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
       warnings: [],
       productionNotes: [],
     }));
-    const second = setupApprovedProject({ outlineProviders: [noBeats.provider] });
+    const second = setupApprovedProject({ outlineGenerator: noBeats.provider });
     await expect(
       second.projects.generateOutline(second.project.id, "linkedin-standard-post"),
     ).rejects.toThrowError(
@@ -346,11 +351,9 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
     );
   });
 
-  it("refuses a target the revision did not select or that has no provider", async () => {
-    const { projects, project } = setupApprovedProject({ outlineProviders: [] });
-    await expect(
-      projects.generateOutline(project.id, "linkedin-standard-post"),
-    ).rejects.toThrowError(
+  it("refuses a target the revision did not select", async () => {
+    const { projects, project } = setupApprovedProject();
+    await expect(projects.generateOutline(project.id, "email-newsletter")).rejects.toThrowError(
       expect.objectContaining<Partial<ContentProjectError>>({
         code: "outline-not-supported",
       }),
@@ -359,7 +362,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
 
   it("appends a new immutable Outline version for a bounded regeneration instruction and never edits the previous result", async () => {
     const outline = fakeOutlineProvider();
-    const { projects, project } = setupApprovedProject({ outlineProviders: [outline.provider] });
+    const { projects, project } = setupApprovedProject({ outlineGenerator: outline.provider });
     const first = await projects.generateOutline(project.id, "linkedin-standard-post");
     const firstSnapshot = structuredClone(first);
 
@@ -389,13 +392,12 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
     ]);
   });
 
-  it("does not land an outline on a revision created while the provider was generating", async () => {
+  it("does not land an outline on a revision created while generation was in flight", async () => {
     let projectsRef: WorkspaceContentProjects | null = null;
     let projectIdRef: string | null = null;
     const racing: OutlineProviderHarness = {
       calls: [],
       provider: {
-        target: "linkedin-standard-post",
         async generate() {
           projectsRef!.reviseIntent(projectIdRef!, { audience: "Changed mid flight" });
           return {
@@ -418,7 +420,7 @@ describe("WorkspaceContentProjects Platform Outline generation (#131)", () => {
         },
       },
     };
-    const { projects, project } = setupApprovedProject({ outlineProviders: [racing.provider] });
+    const { projects, project } = setupApprovedProject({ outlineGenerator: racing.provider });
     projectsRef = projects;
     projectIdRef = project.id;
     await expect(
@@ -437,8 +439,8 @@ describe("WorkspaceContentProjects Content Engine Draft generation (#131)", () =
     const outline = fakeOutlineProvider();
     const draft = fakeDraftProvider();
     const { projects, project, brief } = setupApprovedProject({
-      outlineProviders: [outline.provider],
-      draftProviders: [draft.provider],
+      outlineGenerator: outline.provider,
+      draftGenerator: draft.provider,
     });
 
     await expect(projects.generateDraft(project.id, "linkedin-standard-post")).rejects.toThrowError(
@@ -487,8 +489,8 @@ describe("WorkspaceContentProjects Content Engine Draft generation (#131)", () =
     const outline = fakeOutlineProvider();
     const draft = fakeDraftProvider();
     const { projects, project, brief } = setupApprovedProject({
-      outlineProviders: [outline.provider],
-      draftProviders: [draft.provider],
+      outlineGenerator: outline.provider,
+      draftGenerator: draft.provider,
     });
     await projects.generateOutline(project.id, "linkedin-standard-post");
     projects.approveOutline(project.id, "linkedin-standard-post");
@@ -520,8 +522,8 @@ describe("WorkspaceContentProjects Content Engine Draft generation (#131)", () =
       claims: [],
     }));
     const { projects, project } = setupApprovedProject({
-      outlineProviders: [outline.provider],
-      draftProviders: [emptyDraft.provider],
+      outlineGenerator: outline.provider,
+      draftGenerator: emptyDraft.provider,
     });
     await projects.generateOutline(project.id, "linkedin-standard-post");
     projects.approveOutline(project.id, "linkedin-standard-post");
@@ -539,8 +541,8 @@ describe("Content Engine generation performs no outward write (#131)", () => {
     const outline = fakeOutlineProvider();
     const draft = fakeDraftProvider();
     const { workspaceDir, projects, project } = setupApprovedProject({
-      outlineProviders: [outline.provider],
-      draftProviders: [draft.provider],
+      outlineGenerator: outline.provider,
+      draftGenerator: draft.provider,
     });
     await projects.generateOutline(project.id, "linkedin-standard-post");
     projects.approveOutline(project.id, "linkedin-standard-post");
@@ -569,7 +571,7 @@ describe("Content Engine generation performs no outward write (#131)", () => {
   });
 });
 
-describe("Model-backed generation adapters (#131)", () => {
+describe("Model-backed generation (#131)", () => {
   it("answers in the Platform Outline Result Shape and refuses a shape failure", async () => {
     const calls: unknown[] = [];
     const completeJson: CompleteJson = async (request) => {
@@ -589,9 +591,10 @@ describe("Model-backed generation adapters (#131)", () => {
         productionNotes: [],
       };
     };
-    const provider = createModelOutlineProvider(() => completeJson, "linkedin-standard-post");
+    const generator = createModelOutlineGenerator(() => completeJson);
     const brief = fromPartial<OutlineCharter>({ thesis: "T", evidenceMap: [], version: 1 });
-    const result = await provider.generate({
+    const result = await generator.generate({
+      target: "linkedin-standard-post",
       brief,
       evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
       instruction: null,
@@ -599,12 +602,10 @@ describe("Model-backed generation adapters (#131)", () => {
     expect(result.title).toBe("The approved path");
     expect(calls).toHaveLength(1);
 
-    const broken = createModelOutlineProvider(
-      () => async () => ({ title: "" }),
-      "linkedin-standard-post",
-    );
+    const broken = createModelOutlineGenerator(() => async () => ({ title: "" }));
     await expect(
       broken.generate({
+        target: "linkedin-standard-post",
         brief,
         evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),
         instruction: null,
@@ -622,8 +623,9 @@ describe("Model-backed generation adapters (#131)", () => {
         claims: [{ text: "Frozen inputs preserve lineage.", sourceItemIds: [SOURCE_ITEM.id] }],
       };
     };
-    const provider = createModelDraftProvider(() => completeJson, "linkedin-standard-post");
-    const result = await provider.generate({
+    const generator = createModelDraftGenerator(() => completeJson);
+    const result = await generator.generate({
+      target: "linkedin-standard-post",
       brief: fromPartial<OutlineCharter>({ thesis: "T", evidenceMap: [] }),
       outline: fromPartial<PlatformOutline>({ id: "outline_1", thesis: "T", version: 2 }),
       evidence: fromPartial<ContentProjectPromptEvidence>({ projectId: "project_1" }),

@@ -9,6 +9,7 @@ import { WorkspaceContentProjects } from "../../../apps/server/src/content-proje
 import { OwnerOnboarding } from "../../../apps/server/src/onboarding/owner";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
+import { stubDraftGenerator, stubOutlineGenerator } from "../modules/content-project-fixtures";
 
 /**
  * The Content Engine product namespace over a real server instance and a
@@ -59,8 +60,8 @@ beforeEach(async () => {
     /* No Run and no model call happens in these tests: only routes that read or
        refuse are exercised, so the generation seams are never reached. */
     researchProviders: [],
-    outlineProviders: [],
-    draftProviders: [],
+    outlineGenerator: stubOutlineGenerator(),
+    draftGenerator: stubDraftGenerator(),
     now: () => NOW,
   });
   app = fastify();

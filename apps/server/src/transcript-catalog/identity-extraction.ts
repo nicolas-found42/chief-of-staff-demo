@@ -4,7 +4,6 @@ import type {
   TranscriptMention,
   TranscriptMentionConfidence,
   TranscriptMentionProvenance,
-  TranscriptIdentityExtractionResult,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 
@@ -755,7 +754,6 @@ export interface TranscriptExtraction {
 
 export function extractMentions(
   record: TranscriptRecord,
-  supplement: TranscriptIdentityExtractionResult,
   options: TranscriptExtractionOptions = {
     knownProfileUrls: [],
   },
@@ -1062,19 +1060,6 @@ export function extractMentions(
     };
   });
 
-  const idRewrites = applyModelSupplement(record, lines, mentions, organizations, supplement);
-  /* A supplement reclassification of an existing span rewrites its mention id;
-     the organization links captured before that pass must follow the rewrite
-     (or die with the old id) so they never reference a nonexistent mention. */
-  if (idRewrites.size > 0) {
-    const liveIds = new Set(mentions.map((mention) => mention.id));
-    for (const organization of organizations) {
-      organization.relatedMentionIds = organization.relatedMentionIds.flatMap((id) => {
-        const mapped = idRewrites.get(id) ?? id;
-        return liveIds.has(mapped) ? [mapped] : [];
-      });
-    }
-  }
   linkAssertedOrganizationContext(mentions, organizations);
   for (const mention of mentions) {
     const forms = new Set(
@@ -1122,157 +1107,4 @@ function linkAssertedOrganizationContext(
       break;
     }
   }
-}
-
-function evidenceText(value: string): string {
-  return value.normalize("NFC").trim();
-}
-
-function assertionsOf(
-  assertions: TranscriptIdentityExtractionResult["mentions"][number]["relationshipAssertions"],
-): TranscriptMention["relationshipAssertions"] {
-  return assertions.map((assertion) => ({
-    subject: evidenceText(assertion.subject),
-    relationship: evidenceText(assertion.relationship),
-    object: evidenceText(assertion.object),
-  }));
-}
-
-function checkedSurface(record: TranscriptRecord, spanStart: number, spanEnd: number): string {
-  if (spanEnd <= spanStart || spanEnd > record.normalizedText.length) {
-    throw new Error(`Identity extraction returned invalid span ${spanStart}:${spanEnd}`);
-  }
-  const surface = record.normalizedText.slice(spanStart, spanEnd);
-  if (surface.length === 0) throw new Error("Identity extraction returned an empty span");
-  return surface;
-}
-
-function contextFor(
-  lines: ExtractedLine[],
-  spanStart: number,
-): { timestamp: string | null; speakerLabel: string | null } {
-  const line = lines.find(
-    (candidate) =>
-      spanStart >= candidate.utteranceStart - 200 &&
-      spanStart <= candidate.utteranceStart + candidate.utterance.length,
-  );
-  return { timestamp: line?.timestamp ?? null, speakerLabel: line?.speakerLabel ?? null };
-}
-
-/** Merge strict model classifications into deterministic recognition. The
- * deterministic spans remain the floor; a valid model span may supplement or
- * add evidence, but never invent text outside the immutable artifact. Returns
- * every mention id the supplement rewrote, so dependent references can follow. */
-function applyModelSupplement(
-  record: TranscriptRecord,
-  lines: ExtractedLine[],
-  mentions: TranscriptMention[],
-  organizations: OrganizationMention[],
-  supplement: TranscriptIdentityExtractionResult,
-): Map<string, string> {
-  const idRewrites = new Map<string, string>();
-  for (const extracted of supplement.mentions) {
-    const surfaceText = checkedSurface(record, extracted.spanStart, extracted.spanEnd);
-    const existing = mentions.find(
-      (mention) =>
-        mention.provenance.spanStart === extracted.spanStart &&
-        mention.provenance.spanEnd === extracted.spanEnd,
-    );
-    const normalizedForms = unique([normalizeName(surfaceText)]);
-    const context = contextFor(lines, extracted.spanStart);
-    const evidence = {
-      titles: unique(extracted.titles.map(evidenceText)),
-      roles: unique(extracted.roles.map(evidenceText)),
-      aliases: unique(extracted.aliases.map(evidenceText)),
-      relationshipAssertions: assertionsOf(extracted.relationshipAssertions),
-    };
-    if (existing) {
-      const rewritten = mentionId(
-        record.id,
-        extracted.spanStart,
-        existing.normalizedForms[0] ?? normalizedForms[0] ?? "",
-        extracted.kind,
-      );
-      if (rewritten !== existing.id) idRewrites.set(existing.id, rewritten);
-      existing.id = rewritten;
-      existing.kind = extracted.kind;
-      existing.confidence = extracted.confidence;
-      Object.assign(existing, evidence);
-      continue;
-    }
-    mentions.push({
-      id: mentionId(record.id, extracted.spanStart, normalizedForms[0] ?? "", extracted.kind),
-      kind: extracted.kind,
-      surfaceText,
-      normalizedForms,
-      emails: [],
-      profileUrls: [],
-      verifiedHandles: {},
-      externalContactIds: [],
-      speakerCalendarEmail: null,
-      ...evidence,
-      rosterContext: [],
-      organizationContext: null,
-      attendeeStatus: context.speakerLabel === null ? "unknown" : "third-person",
-      confidence: extracted.confidence,
-      provenance: {
-        transcriptId: record.id,
-        spanStart: extracted.spanStart,
-        spanEnd: extracted.spanEnd,
-        quote: surfaceText,
-        timestamp: context.timestamp,
-        speakerLabel: context.speakerLabel,
-        meetingDate: record.meetingDate,
-      },
-      minedAt: record.ingestedAt,
-      algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
-    });
-  }
-
-  for (const extracted of supplement.organizations) {
-    const surfaceText = checkedSurface(record, extracted.spanStart, extracted.spanEnd);
-    const normalizedName = normalizeName(surfaceText);
-    const context = contextFor(lines, extracted.spanStart);
-    const evidence = {
-      aliases: unique(extracted.aliases.map(evidenceText)),
-      domains: unique(
-        extracted.domains.map((domain) => domain.normalize("NFKC").trim().toLowerCase()),
-      ),
-      externalCompanyIds: normalizeExternalContactIds(extracted.externalCompanyIds),
-      relationshipAssertions: assertionsOf(extracted.relationshipAssertions),
-    };
-    const existing = organizations.find(
-      (organization) =>
-        organization.provenance.spanStart === extracted.spanStart &&
-        organization.provenance.spanEnd === extracted.spanEnd,
-    );
-    if (existing) {
-      existing.confidence = extracted.confidence;
-      existing.aliases = unique([...existing.aliases, ...evidence.aliases]);
-      existing.domains = unique([...existing.domains, ...evidence.domains]);
-      existing.externalCompanyIds = evidence.externalCompanyIds;
-      existing.relationshipAssertions = evidence.relationshipAssertions;
-      continue;
-    }
-    organizations.push({
-      id: organizationId(record.id, extracted.spanStart, normalizedName),
-      surfaceText,
-      normalizedName,
-      ...evidence,
-      relatedMentionIds: [],
-      confidence: extracted.confidence,
-      provenance: {
-        transcriptId: record.id,
-        spanStart: extracted.spanStart,
-        spanEnd: extracted.spanEnd,
-        quote: surfaceText,
-        timestamp: context.timestamp,
-        speakerLabel: context.speakerLabel,
-        meetingDate: record.meetingDate,
-      },
-      minedAt: record.ingestedAt,
-      algorithmVersion: IDENTITY_MINING_ALGORITHM_VERSION,
-    });
-  }
-  return idRewrites;
 }
