@@ -25,6 +25,11 @@ import {
 } from "./identity-matching.js";
 import { type TranscriptIdentityMeta, TranscriptIdentityStore } from "./identity-store.js";
 
+/* The mining algorithm's version stamps every mention, candidate and decision
+   this service writes, so it is read from the service rather than from the
+   extraction internals it happens to live in (#166). */
+export { IDENTITY_MINING_ALGORITHM_VERSION } from "./identity-extraction.js";
+
 export interface TranscriptIdentityDeps {
   store: TranscriptIdentityStore;
   people: WorkspacePersonProfiles;

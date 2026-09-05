@@ -18,10 +18,9 @@ import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-cat
 const NOW = () => new Date("2026-08-31T12:00:00.000Z");
 
 import {
-  extractMentions,
   IDENTITY_MINING_ALGORITHM_VERSION,
-} from "../../../apps/server/src/transcript-catalog/identity-extraction";
-import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
+  TranscriptIdentityService,
+} from "../../../apps/server/src/transcript-catalog/identity";
 
 function makeRecord(text: string, id = "drive_file1_r1"): TranscriptRecord {
   return {
@@ -444,10 +443,29 @@ describe("Transcript Catalog identity processing", () => {
 });
 
 describe("deterministic mention extraction", () => {
-  it("preserves span, quote, timestamp, speaker label, provenance, and classification", async () => {
-    const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
+  /* Mining outcomes, read back through the service that persisted them, not
+     through the extractor: the settle rules below are what a caller can
+     observe after `process`, so a future second extraction strategy has to
+     keep them without any test being rewritten (#166). The Review queue is
+     the owner-facing read and carries only person and ambiguous-name work;
+     mentions it deliberately withholds — products, organizations named on
+     their own, unknowns, sentence-initial capitals — are asserted against the
+     retained mention record, because "retained and not proposed for review"
+     is exactly the outcome those rules exist to produce. */
+  async function mine(text: string, id?: string) {
+    const h = makeHarness();
+    await h.service.process(makeRecord(text, id));
+    return {
+      queue: h.service.reviewQueue(),
+      mentions: h.store.readMentions(),
+      organizations: h.store.readOrganizations(),
+    };
+  }
 
-    const alan = mentions.find((m) => m.surfaceText === "Alan Turing");
+  it("preserves span, quote, timestamp, speaker label, provenance, and classification", async () => {
+    const { queue } = await mine(SYNC_TEXT);
+
+    const alan = queue.items.find((item) => item.mention.surfaceText === "Alan Turing")?.mention;
     expect(alan).toBeDefined();
     expect(alan!.kind).toBe("person");
     expect(alan!.normalizedForms).toContain("alan turing");
@@ -468,19 +486,21 @@ describe("deterministic mention extraction", () => {
   });
 
   it("keeps source speaker labels as speaker person mentions", async () => {
-    const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
-    const grace = mentions.filter((m) => m.surfaceText === "Grace Hopper");
+    const { queue } = await mine(SYNC_TEXT);
+    const grace = queue.items.filter((item) => item.mention.surfaceText === "Grace Hopper");
     expect(grace.length).toBeGreaterThanOrEqual(1);
-    expect(grace.some((m) => m.attendeeStatus === "speaker")).toBe(true);
-    const sam = mentions.find((m) => m.surfaceText === "Sam");
+    expect(grace.some((item) => item.mention.attendeeStatus === "speaker")).toBe(true);
+    const sam = queue.items.find((item) => item.mention.surfaceText === "Sam")?.mention;
     expect(sam).toBeDefined();
     expect(sam!.attendeeStatus).toBe("speaker");
   });
 
   it("yields the speaker mention when the label colon is followed by several spaces", async () => {
     const body = "Grace Hopper:  I agree.";
-    const { mentions } = extractMentions(makeRecord(body, "drive_wide_gap_r1"));
-    const speaker = mentions.find((m) => m.surfaceText === "Grace Hopper");
+    const { queue } = await mine(body, "drive_wide_gap_r1");
+    const speaker = queue.items.find(
+      (item) => item.mention.surfaceText === "Grace Hopper",
+    )?.mention;
     expect(speaker).toBeDefined();
     expect(speaker!.attendeeStatus).toBe("speaker");
     expect(body.slice(speaker!.provenance.spanStart, speaker!.provenance.spanEnd)).toBe(
@@ -489,18 +509,20 @@ describe("deterministic mention extraction", () => {
   });
 
   it("retains organizations with normalized names and person relationships", async () => {
-    const { mentions, organizations } = extractMentions(makeRecord(SYNC_TEXT));
-    const acme = organizations.find((o) => o.normalizedName === "acme corp");
+    const { queue } = await mine(SYNC_TEXT);
+    const acme = queue.organizations.find(
+      (item) => item.organization.normalizedName === "acme corp",
+    );
     expect(acme).toBeDefined();
-    expect(acme!.surfaceText).toBe("Acme Corp");
-    expect(acme!.confidence).toBe("high");
-    const alan = mentions.find((m) => m.surfaceText === "Alan Turing")!;
-    expect(acme!.relatedMentionIds).toContain(alan.id);
+    expect(acme!.organization.surfaceText).toBe("Acme Corp");
+    expect(acme!.organization.confidence).toBe("high");
+    const alan = queue.items.find((item) => item.mention.surfaceText === "Alan Turing")!.mention;
+    expect(acme!.relatedPeople.map((person) => person.mentionId)).toContain(alan.id);
   });
 
   it("retains organizations named without a related person", async () => {
-    const { mentions, organizations } = extractMentions(
-      makeRecord("[00:01] Sam: We reviewed the proposal with OpenAI."),
+    const { mentions, organizations } = await mine(
+      "[00:01] Sam: We reviewed the proposal with OpenAI.",
     );
 
     expect(organizations).toContainEqual(
@@ -510,11 +532,9 @@ describe("deterministic mention extraction", () => {
   });
 
   it("does not coerce a non-attendee person into an Organization after a preposition", async () => {
-    const { mentions, organizations } = extractMentions(
-      makeRecord("[00:01] Sam: I met with Alan Turing."),
-    );
+    const { queue, organizations } = await mine("[00:01] Sam: I met with Alan Turing.");
 
-    expect(mentions).toContainEqual(
+    expect(queue.items.map((item) => item.mention)).toContainEqual(
       expect.objectContaining({ surfaceText: "Alan Turing", kind: "person" }),
     );
     expect(organizations.some((organization) => organization.surfaceText === "Alan Turing")).toBe(
@@ -523,27 +543,31 @@ describe("deterministic mention extraction", () => {
   });
 
   it("classifies product-cued names as products, never person candidates", async () => {
-    const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
-    const atlas = mentions.find((m) => m.surfaceText === "Atlas");
+    const { queue, mentions } = await mine(SYNC_TEXT);
+    const atlas = mentions.find((mention) => mention.surfaceText === "Atlas");
     expect(atlas).toBeDefined();
     expect(atlas!.kind).toBe("product");
+    expect(queue.items.some((item) => item.mention.surfaceText === "Atlas")).toBe(false);
   });
 
   it("retains unknown entities without coercing them into people", async () => {
-    const { mentions } = extractMentions(makeRecord("[00:01] Sam: GDPR came up in review."));
+    const { queue, mentions } = await mine("[00:01] Sam: GDPR came up in review.");
     const gdpr = mentions.find((mention) => mention.surfaceText === "GDPR");
 
     expect(gdpr).toBeDefined();
     expect(gdpr!.kind).toBe("unknown");
+    expect(queue.items.some((item) => item.mention.surfaceText === "GDPR")).toBe(false);
   });
 
   it("retains ambiguous single names and third-person references without coercion", async () => {
-    const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
-    const graceRef = mentions.find((m) => m.surfaceText === "Grace" && m.kind === "ambiguous-name");
+    const { queue, mentions } = await mine(SYNC_TEXT);
+    const graceRef = queue.items.find(
+      (item) => item.mention.surfaceText === "Grace" && item.mention.kind === "ambiguous-name",
+    )?.mention;
     expect(graceRef).toBeDefined();
     expect(graceRef!.attendeeStatus).toBe("third-person");
     // Common sentence words, days, and greetings are not mentions at all.
-    const surfaces = mentions.map((m) => m.surfaceText);
+    const surfaces = mentions.map((mention) => mention.surfaceText);
     for (const noise of ["Hi", "Friday", "Email", "Hi all"]) {
       expect(surfaces).not.toContain(noise);
     }
@@ -555,13 +579,11 @@ describe("deterministic mention extraction", () => {
        corpus produced 4,843 unresolved mentions and buried the two people who
        actually spoke. A real name in the same position is still mined
        everywhere else it is said, and a multi-word run is untouched. */
-    const { mentions } = extractMentions(
-      makeRecord(
-        [
-          "[00:01] Sam: In the meantime, Adejoke Olaosebikan will lead.",
-          "[00:02] Sam: Secondly, Grace Hopper has the ticket numbers.",
-        ].join("\n"),
-      ),
+    const { mentions } = await mine(
+      [
+        "[00:01] Sam: In the meantime, Adejoke Olaosebikan will lead.",
+        "[00:02] Sam: Secondly, Grace Hopper has the ticket numbers.",
+      ].join("\n"),
     );
     const surfaces = mentions.map((mention) => mention.surfaceText);
 
@@ -572,16 +594,20 @@ describe("deterministic mention extraction", () => {
   });
 
   it("captures emails as exact stable identifiers on person mentions", async () => {
-    const { mentions } = extractMentions(makeRecord(SYNC_TEXT));
-    const email = mentions.find((m) => m.emails.includes("grace@example.com"));
+    const { queue } = await mine(SYNC_TEXT);
+    const email = queue.items.find((item) =>
+      item.mention.emails.includes("grace@example.com"),
+    )?.mention;
     expect(email).toBeDefined();
     expect(email!.kind).toBe("person");
     expect(email!.normalizedForms).toContain("grace@example.com");
   });
 
   it("normalizes honorifics and credentials into comparison forms", async () => {
-    const { mentions } = extractMentions(makeRecord("[00:01] Dr. Ada Lovelace, PhD: Ready."));
-    const ada = mentions.find((m) => m.surfaceText === "Dr. Ada Lovelace");
+    const { queue } = await mine("[00:01] Dr. Ada Lovelace, PhD: Ready.");
+    const ada = queue.items.find(
+      (item) => item.mention.surfaceText === "Dr. Ada Lovelace",
+    )?.mention;
     expect(ada).toBeDefined();
     expect(ada!.normalizedForms).toContain("ada lovelace");
   });

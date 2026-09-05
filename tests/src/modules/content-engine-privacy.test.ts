@@ -36,10 +36,11 @@ const NOW = () => AT;
  * Content Engine prompts or results.
  * The seams under proof are the only paths Content Engine generation can take
  * (main.ts wires exactly these): every Outline/Draft generation goes through
- * WorkspaceContentProjects.promptEvidence → PlatformOutlineProvider /
- * ContentEngineDraftProvider, whose model-backed implementations compose the
- * prompt at the Shell's one LLM seam from the Brief and the frozen prompt
- * evidence alone (content-projects/generation.ts). Research Requests ask their
+ * WorkspaceContentProjects.promptEvidence → the one Outline generation and the
+ * one Draft generation, parameterized by the target contract, whose
+ * model-backed implementations compose the prompt at the Shell's one LLM seam
+ * from the Brief and the frozen prompt evidence alone
+ * (content-projects/generation.ts). Research Requests ask their
  * providers only through runFiniteResearch's query plan, derived from the
  * pinned Profile revision's identity fields (content-projects/research.ts).
  * Content Opportunity ranking and Brand Profile proposal compose their prompts

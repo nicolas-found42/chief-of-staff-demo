@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import type { PersonProfile, TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
-import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
+import {
+  TRANSCRIPT_RELEVANCE_INDEX_VERSION,
+  TranscriptRelevanceService,
+} from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
-import { TRANSCRIPT_RELEVANCE_INDEX_VERSION } from "../../../apps/server/src/transcript-catalog/relevance-index";
 
 const NOW = () => new Date("2026-08-31T12:00:00.000Z");
 

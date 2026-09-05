@@ -5,9 +5,11 @@ import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { registerTranscriptRelevanceApi } from "../../../apps/server/src/api/transcript-review";
-import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
+import {
+  TRANSCRIPT_RELEVANCE_INDEX_VERSION,
+  TranscriptRelevanceService,
+} from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
-import { TRANSCRIPT_RELEVANCE_INDEX_VERSION } from "../../../apps/server/src/transcript-catalog/relevance-index";
 
 /**
  * The semantic relevance Review surface (issue #127): the owner searches the

@@ -11,6 +11,11 @@ import type {
 import type { TranscriptRelevanceStore } from "./relevance-store.js";
 import { TRANSCRIPT_RELEVANCE_INDEX_VERSION, searchLexicalIndex } from "./relevance-index.js";
 
+/* The lexical index version is stamped on every candidate this service
+   persists, so callers read it from the service rather than from the index
+   internals behind it (#166). */
+export { TRANSCRIPT_RELEVANCE_INDEX_VERSION } from "./relevance-index.js";
+
 /**
  * What the relevance service needs from the Catalog: the retained corpus. The
  * Catalog is the sole writer for Transcript records; relevance only reads.
