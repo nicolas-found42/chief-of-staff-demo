@@ -296,6 +296,63 @@ function heldClasses(roots: unknown): Set<string> {
  */
 const NOT_HELD = new Set(["RelayStateStore"]);
 
+describe("the five product areas and the Task runtimes compose in production (#200)", () => {
+  it("answers every product area's own surface with no test-only wiring", async () => {
+    const shell = await compose(workspaceDirectory(true));
+
+    /* One read per top-level product area, plus the two Tasks surfaces the
+       Meeting Wizard and Home draw from. A route that answers here answers
+       through the real composition root — this Shell composes no test seam. */
+    for (const url of [
+      "/api/content-scout",
+      "/api/content-engine/projects",
+      "/api/content-research/people",
+      "/api/people",
+      "/api/meetings/list",
+      "/api/tasks",
+      "/api/tasks/overview",
+      "/api/task-lists",
+      "/api/action-items",
+      "/api/action-item-policy",
+      "/api/meeting-brief/daily",
+      "/api/meetings/weekly/deterministic",
+    ]) {
+      const response = await shell.app.inject({ method: "GET", url });
+      expect(response.statusCode, `${url} did not answer from the composed Shell`).toBe(200);
+    }
+  });
+
+  it("holds the Task and Weekly runtimes the boot sequence has to schedule", async () => {
+    const shell = await compose(workspaceDirectory(true));
+
+    /* The handles the boot sequence starts and stops. Naming them on the root
+       is what makes the schedulers reachable at all: a runtime the Shell
+       constructs and then holds nowhere is one nothing can be seen to start. */
+    expect(shell.workspace.taskLinking).toBeDefined();
+    expect(shell.workspace.weeklyWorkspace).toBeDefined();
+
+    /* Idempotent, like the boot sequence that calls them. */
+    await shell.start();
+    await shell.start();
+    shell.stop();
+  });
+
+  it("keeps the Debrief out of the Tasks the owner accepts", async () => {
+    const shell = await compose(workspaceDirectory(true));
+
+    /* Meeting Debrief produces Action Items and drafts; the Tasks product owns
+       what those become. The retired positional routes prove the boundary from
+       the other side (issue #199). */
+    const rollup = await shell.app.inject({
+      method: "GET",
+      url: "/api/meeting-debrief/action-items",
+    });
+
+    expect(rollup.statusCode).toBe(404);
+    expect((await shell.app.inject({ method: "GET", url: "/api/tasks" })).statusCode).toBe(200);
+  });
+});
+
 describe("the composed graph holds every Workspace store the server declares (#125)", () => {
   it("holds each one, in the root's own graph or inside a Module", async () => {
     const shell = await compose(workspaceDirectory(true));

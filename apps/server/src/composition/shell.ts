@@ -24,38 +24,13 @@ import { convertToText } from "../text/convert.js";
 import { conversionStageFailure } from "../text/failure.js";
 
 import { OwnerOnboarding } from "../onboarding/owner.js";
-import { TaskStore } from "../tasks/store.js";
-import { WorkspaceTasks } from "../tasks/tasks.js";
-import { WorkspaceActionItems, type ActionItemMaterialization } from "../tasks/action-items.js";
-import { materializeUnderPolicy } from "../tasks/auto-promotion.js";
+import { composeTasks } from "../tasks/composition.js";
+import type { WorkspaceTasks } from "../tasks/tasks.js";
+import type { WorkspaceActionItems } from "../tasks/action-items.js";
+import type { TaskLinking } from "../tasks/external-link.js";
 import { migrateLegacyActionReview, migrateLegacyTaskReceipts } from "../tasks/legacy-migration.js";
-import {
-  TaskLinking,
-  type AsanaDestination,
-  type GoogleTasksDestination,
-  type RemoteTaskConnector,
-} from "../tasks/external-link.js";
-import { AsanaLinking } from "../tasks/asana-link.js";
 import { buildDailyBriefingWork } from "../tasks/briefing-projection.js";
 import { WeeklyWorkspace } from "../meetings/weekly.js";
-import {
-  getGoogleTask,
-  deleteGoogleTask,
-  setGoogleTaskContent,
-  insertGoogleTask,
-  listGoogleTaskLists,
-  setGoogleTaskStatus,
-} from "../google/tasks.js";
-import {
-  asanaMe,
-  createAsanaTask,
-  deleteAsanaTask,
-  getAsanaTask,
-  setAsanaTaskContent,
-  listAsanaProjects,
-  listAsanaSections,
-  setAsanaTaskStatus,
-} from "../asana/client.js";
 import type { HostedModule } from "../engine/host.js";
 import { makeCompleteJson } from "../llm/providers.js";
 import { googleFailureHint, openGoogleConnection } from "../google/connection.js";
@@ -204,6 +179,8 @@ interface ShellWorkspace {
   tasks: WorkspaceTasks;
   actionItems: WorkspaceActionItems;
   taskLinking: TaskLinking;
+  /** Meeting Wizard's This week runtime, and the Monday email it schedules (issues #194, #197). */
+  weeklyWorkspace: WeeklyWorkspace;
   transcripts: TranscriptCatalogStore;
   transcriptIdentity: TranscriptIdentityStore;
   transcriptRelevance: TranscriptRelevanceService;
@@ -245,7 +222,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     },
   };
   function stopModules(): void {
-    taskLinking.stop();
+    taskProduct.stop();
     weeklyWorkspace.stop();
     for (const module of modules) {
       module.stop?.();
@@ -295,153 +272,32 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      builds its own reader over the same file; the store keeps no memory, so
      the two never hold competing caches. */
   const meetings = new WorkspaceMeetings(workspaceDir, () => new Date());
-  /* Tasks (ADR-0052, ADR-0058): the canonical record of accepted work, and the
-     Action Items a Meeting Debrief proposes. One file-backed store under both,
-     so a Debrief materializing proposals and an owner completing a Task write
-     the same Workspace directory rather than two copies of it. Responsibility
-     resolves against canonical identity: the workspace owner, or a Person
-     Profile that is neither archived nor merged away. */
-  const taskStore = new TaskStore(workspaceDir);
-  const tasks = new WorkspaceTasks({
-    store: taskStore,
+  /* Tasks (ADR-0052, ADR-0058, issue #200): the canonical record of accepted
+     work, and the Action Items a Meeting Debrief proposes, composed as their
+     own product. The Shell hands over Workspace handles, credentials, and the
+     identity and timezone questions only it can answer; the store, the
+     provider adapters and the promotion policy are the module's own. */
+  const taskProduct = composeTasks({
+    workspaceDir,
+    configStore,
+    googleConnection,
+    googleFailureHint,
     isConfirmedPerson: (profileId) => {
       const profile = peopleProfiles.get(profileId);
       return profile !== null && profile.archivedAt === null && profile.mergedInto === undefined;
     },
-    isGoogleTasksEnabled: () => configStore.get().tasks.googleTasks.enabled,
-    isAsanaEnabled: () => configStore.get().tasks.asana.enabled,
-    /* The Workspace timezone a due date is read in. The Workspace has one
-       configured timezone rather than a Tasks-specific one — the owner's day
-       is the owner's day whichever product asks — and the host's own zone is
-       the fallback, never a silent UTC. */
+    ownerProfileId: () => ownerOnboarding.confirmed()?.profileId ?? null,
+    /* The Workspace has one configured timezone rather than a Tasks-specific
+       one — the owner's day is the owner's day whichever product asks — and
+       the host's own zone is the fallback, never a silent UTC. */
     timezone: () =>
       configStore.getModuleConfig("content-research").timeZone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone,
+    onActionItemsChanged: () => notifyBriefActionItemsChanged(),
+    log: (message) => console.log(`[tasks] ${message}`),
   });
-  /* Google Tasks and Asana as optional Task Destinations (issues #184, #185,
-     #189). The Workspace write always commits first; linking only ever adds a
-     representation of it. Completion is read and written per linked Task —
-     nothing is ever listed or imported, so unrelated account Tasks stay out.
-     The Asana token is read live from the config on every call: it is stored
-     after this composition ran, and connecting must not need a restart. */
-  const googleConnector: RemoteTaskConnector<GoogleTasksDestination> = {
-    delete: async (destination, remoteId) => {
-      const access = googleConnection.auth();
-      if (!access.ok)
-        throw Object.assign(new Error(googleFailureHint(access.state)), { status: 401 });
-      await deleteGoogleTask(access.auth, destination.googleTaskListId, remoteId);
-    },
-    create: async (task, destination) => {
-      const access = googleConnection.auth();
-      if (!access.ok) throw new Error(googleFailureHint(access.state));
-      const created = await insertGoogleTask(access.auth, destination.googleTaskListId, task);
-      return { remoteId: created.googleId, url: created.webViewLink };
-    },
-    read: async (destination, remoteId) => {
-      const access = googleConnection.auth();
-      if (!access.ok) throw new Error(googleFailureHint(access.state));
-      const remote = await getGoogleTask(access.auth, destination.googleTaskListId, remoteId);
-      return remote === null
-        ? null
-        : {
-            title: remote.title,
-            notes: remote.notes,
-            dueDate: remote.dueDate,
-            status: remote.completed ? "completed" : "open",
-          };
-    },
-    updateStatus: async (destination, remoteId, completed) => {
-      const access = googleConnection.auth();
-      if (!access.ok) throw new Error(googleFailureHint(access.state));
-      await setGoogleTaskStatus(access.auth, destination.googleTaskListId, remoteId, completed);
-    },
-    updateContent: async (destination, remoteId, content) => {
-      const access = googleConnection.auth();
-      if (!access.ok) throw new Error(googleFailureHint(access.state));
-      await setGoogleTaskContent(access.auth, destination.googleTaskListId, remoteId, content);
-    },
-  };
-  /** The stored Asana token, or the refusal an unconnected Workspace owes its calls. */
-  const requireAsanaToken = (): string => {
-    const token = configStore.get().tasks.asana.token;
-    if (token === "") throw new Error("Asana is not connected. Connect Asana in Tasks first.");
-    return token;
-  };
-  const asanaConnector: RemoteTaskConnector<AsanaDestination> = {
-    delete: async (_destination, remoteId) => deleteAsanaTask(requireAsanaToken(), remoteId),
-    create: async (task, destination) => createAsanaTask(requireAsanaToken(), destination, task),
-    read: async (_destination, remoteId) => {
-      const remote = await getAsanaTask(requireAsanaToken(), remoteId);
-      return remote === null
-        ? null
-        : {
-            title: remote.title,
-            notes: remote.notes,
-            dueDate: remote.dueDate,
-            status: remote.completed ? "completed" : "open",
-          };
-    },
-    updateStatus: async (_destination, remoteId, completed) => {
-      await setAsanaTaskStatus(requireAsanaToken(), remoteId, completed);
-    },
-    updateContent: async (_destination, remoteId, content) => {
-      await setAsanaTaskContent(requireAsanaToken(), remoteId, content);
-    },
-  };
-  const taskLinking = new TaskLinking({
-    tasks,
-    settings: () => configStore.get().tasks.googleTasks,
-    save: (settings) => {
-      configStore.setGoogleTasksDestination(settings);
-      /* The Tasks scope is part of the grant only while this is enabled, so
-         the remembered connection state has to be asked again. */
-      googleConnection.invalidate();
-    },
-    listRemoteLists: async () => {
-      const access = googleConnection.auth();
-      if (!access.ok) throw new Error(googleFailureHint(access.state));
-      return listGoogleTaskLists(access.auth);
-    },
-    google: googleConnector,
-    asana: asanaConnector,
-  });
-  const asanaLinking = new AsanaLinking({
-    settings: () => configStore.get().tasks.asana,
-    save: (settings) => configStore.setAsanaDestination(settings),
-    me: (token) => asanaMe(token),
-    projects: (token, workspaceGid) => listAsanaProjects(token, workspaceGid),
-    sections: (token, projectGid) => listAsanaSections(token, projectGid),
-  });
-  const actionItems = new WorkspaceActionItems({
-    store: taskStore,
-    ownerProfileId: () => ownerOnboarding.confirmed()?.profileId ?? null,
-  });
-  /* Automatic promotion (issue #181). The Debrief hands proposals over here
-     rather than straight to the queue, because the policy's eligibility
-     depends on what the queue held before this extraction. Delivery to a
-     configured provider happens after the local Task has committed, and its
-     failure lands on the External Task Link rather than on the work. */
-  const materializeActionItemsUnderPolicy = (handover: ActionItemMaterialization): void => {
-    /* Canonical materialization is what touches briefing staleness now: the
-       positional decisions that used to do it are gone (issue #199), and the
-       Briefings read the canonical records. Best effort, never into the
-       extraction path. */
-    try {
-      notifyBriefActionItemsChanged();
-    } catch {
-      /* a staleness touch must not fail an extraction */
-    }
-    materializeUnderPolicy(
-      {
-        tasks,
-        actionItems,
-        policy: () => configStore.get().tasks.actionItemPolicy,
-        deliver: (taskId) => taskLinking.link(taskId),
-        log: (message) => console.log(`[tasks] ${message}`),
-      },
-      handover,
-    );
-  };
+  const { tasks, actionItems, linking: taskLinking, asanaLinking } = taskProduct;
+  const materializeActionItemsUnderPolicy = taskProduct.materialize;
 
   /* Legacy Debrief review, carried into canonical records (issue #183). One
      pass at composition, before anything serves: the positional decisions in
@@ -471,7 +327,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         googleTaskListId: legacyGoogleTasks.taskListId,
         googleTaskListTitle: legacyGoogleTasks.taskListTitle,
       },
-      read: (destination, remoteId) => googleConnector.read(destination, remoteId),
+      read: (destination, remoteId) => taskProduct.googleConnector.read(destination, remoteId),
     });
   } else {
     migrateLegacyActionReview(legacyMigrationDeps);
@@ -1153,7 +1009,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     }
     transcriptCatalogRuntime.start();
     meetingBriefProduction?.relayPoller.start();
-    taskLinking.start();
+    taskProduct.start();
     weeklyWorkspace.start();
     modulesRunning = true;
   }
@@ -1174,6 +1030,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       tasks,
       actionItems,
       taskLinking,
+      weeklyWorkspace,
       transcripts: transcriptCatalogStore,
       transcriptIdentity: transcriptIdentityStore,
       transcriptRelevance,
