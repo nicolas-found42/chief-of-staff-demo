@@ -1,101 +1,88 @@
 # Pull request workflow
 
-Every change to `main` goes `branch → PR → squash merge`. This is the outbound development
-workflow; triaging *inbound* PRs from outside contributors is a separate flag in
-`issue-tracker.md`, currently off.
+Every change to `main` goes `branch → PR → squash merge`. A ruleset enforces it: `main` takes no
+direct push, no force-push, no deletion, and no merge until four CI checks are **green**.
 
-## Everything goes through a PR
+This is the outbound workflow. Triaging _inbound_ PRs from outside contributors is a separate flag
+in `issue-tracker.md`, currently off.
 
-A ruleset on `main` (no bypass actors) requires a pull request and the four CI checks — `check`,
-`test`, `e2e`, `image` — and blocks force-pushes and branch deletion. There is no direct-commit
-lane, deliberately: the agent works with the repo owner's own credentials, so any bypass granted
-to a human is a bypass granted to the agent, and a rule that exempts everyone enforces nothing.
-
-The cost is small because trivial changes do not have to be babysat:
+## The loop
 
 ```bash
-git switch -c docs/fix-typo && git commit -am "docs: fix a typo" && git push -u origin HEAD
-gh pr create --fill && gh pr merge --auto --squash
+git switch -c <type>/<slug>     # branch before the first commit
+pnpm run check                  # green locally first
+git push -u origin HEAD
+gh pr create --fill             # --title/--body for anything worth reading
+gh pr merge --auto --squash     # lands itself when the gate goes green
 ```
 
-Auto-merge lands it the moment CI is green; nothing waits on you. Scale the *care* to the change,
-not the mechanism — a one-liner gets `--fill` and auto-merge, a spec's implementation gets a
-written body and a read-through.
+`--auto` is the normal ending: it merges when the gate passes and does nothing when it fails, so no
+step blocks on a watch. Use `gh pr checks <n> --watch` when you need the result in-session.
 
-## Branch naming
+Done means **merged and green**. A PR left open is unfinished work; say so rather than reporting
+the task complete.
 
-`<type>/<slug>`, where `<type>` matches the conventional-commit prefix the work will carry:
-`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `build`. Slug is kebab-case and short.
+`verification.md` has the narrower gates to run while working, before `pnpm run check` is worth it.
 
-Work that closes a tracked issue puts the number first: `feat/202-live-cutover`. That makes the
-branch, the PR, and the issue greppable as one string.
+## Naming
 
-Branch before the first commit, not after. A commit made on `main` by mistake has to be moved
-onto a branch before it can go anywhere, since `main` rejects direct pushes.
+`<type>/<slug>`, where `<type>` is the conventional-commit prefix the squash commit will carry:
+`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `build`. Issue number first when there is one —
+`feat/202-live-cutover` — so the branch, the PR, and the issue share one greppable string.
 
-## Opening a PR
+The squash commit takes the **PR title**, so the title carries the prefix and the body becomes the
+commit body. Close the issue from the body with `Closes #202`.
 
-1. Branch from an up-to-date `main`: `git switch main && git pull && git switch -c <type>/<slug>`.
-2. Commit as the work completes, same message conventions as `main`.
-3. Run the whole-tree gate — `pnpm run check` — before pushing. CI runs it again, but a red PR
-   wastes a round trip. See `verification.md` for the narrower gates to use while working.
-4. `git push -u origin <branch>`.
-5. `gh pr create --fill` for a straightforward change, or `--title`/`--body` with a heredoc when the
-   body needs structure.
+A branch that falls behind rebases, never merges `main` in: `git fetch origin && git rebase origin/main`,
+then `git push --force-with-lease` on the feature branch.
 
-The body states what changed and why, and links its issue with a closing keyword — `Closes #202` —
-so the merge closes the issue. A PR with no issue says so in one line; that absence is information.
+## The gate
 
-## Merging
+Four required checks, all from `.github/workflows/ci.yml`: `check` (typecheck, lint, format,
+knip), `test` (unit plus the four coverage floors), `e2e` (Playwright), `image` (Docker boot).
+`canary.yml` is scheduled and diagnostic — deliberately not a gate.
 
-**Squash merge, always**: `gh pr merge <n> --squash --delete-branch`. One PR is one commit on
-`main`, so the history stays bisectable and a revert is a single hash. The squash commit message is
-the PR title plus body, so the PR title carries the conventional-commit prefix.
+The required list lives in the ruleset, which no file in the repo records. Read it live:
 
-Merge only when CI is green. `gh pr merge --auto --squash` is usually better than watching:
-it lands the PR when the checks pass and does nothing if they fail. `gh pr checks <n> --watch`
-blocks until they resolve when you do want to wait. A failing check is a fix on the branch, never
-a merge with an override.
+```bash
+gh api repos/nicolas-found42/chief-of-staff-demo/rules/branches/main
+```
 
-Rebase onto `main` rather than merging `main` in when the branch falls behind:
-`git fetch origin && git rebase origin/main`, then force-push **the feature branch only**
-(`git push --force-with-lease`).
+A red PR refuses to merge, and `gh` names the escape hatch when it happens:
+
+```
+X ... is not mergeable: the base branch policy prohibits the merge.
+To use administrator privileges to immediately merge the pull request, add the `--admin` flag.
+```
+
+`--admin` does work, because the ruleset bypasses the admin role. Fix the branch until it is green
+instead. `--admin` is Nicolas's call on a named PR.
 
 ## Agent authority
 
-Pre-authorized, no prompt needed:
+Pre-authorized, no prompt:
 
-- Creating branches, committing to them, and `git push` of a feature branch
+- Branch, commit, `git push` a feature branch, `--force-with-lease` on one
 - `gh pr create`, `gh pr edit`, `gh pr comment`
-- `gh pr merge --squash` once CI is green
-- `--force-with-lease` on a feature branch that is not `main`
+- `gh pr merge --auto --squash`, and `--squash` on a green PR
 
 Ask first, every time:
 
-- Weakening, disabling, or adding a bypass actor to the `main` ruleset
-- Merging with a failing or skipped required check
-- Deleting a remote branch that is not the just-merged PR's own branch
+- `gh pr merge --admin`, or any merge past a red or skipped check
+- Changing the ruleset: bypass actors, required checks, enforcement
 - `gh pr close` on a PR someone else opened
+- Deleting a remote branch other than the just-merged PR's own
 
-This supersedes the earlier "commit to `main`, never push" default. The ruleset now enforces most
-of it mechanically rather than by convention; the entries above are the parts a rule cannot cover.
+The ruleset bypasses the **admin role**, and the agent holds it: `gh auth status` reports
+`nicolas-found42`, Nicolas's own account, so GitHub cannot tell agent pushes from his. The platform
+therefore does not stop a red merge — this list does. Treat it as binding rather than advisory.
 
 ## Dependabot
 
-Dependabot PRs merge themselves. `.github/workflows/dependabot-automerge.yml` turns on auto-merge
-for anything authored by `dependabot[bot]`, and the `main` ruleset lists the Dependabot app as a
-bypass actor, so nothing Dependabot does is restricted.
+Dependabot PRs merge themselves. `.github/workflows/dependabot-automerge.yml` enables auto-merge
+for `dependabot[bot]`, and the ruleset bypasses the Dependabot app, so a green one lands
+unattended.
 
-The merge itself is still gated on the four checks, and that is a platform limit rather than a
-policy choice: the workflow merges with `GITHUB_TOKEN`, so the acting party is `github-actions[bot]`,
-and GitHub refuses to accept the Actions app as a bypass actor on a user-owned repository
-(`Actor GitHub Actions integration must be part of the ruleset source or owner organization`).
-Un-gating it would mean granting bypass to the admin role, which the agent also holds — see the
-reasoning in *Agent authority*. So a green Dependabot PR lands unattended; a red one waits.
-
-## CI
-
-`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`: the `check` job
-(typecheck, lint, format, knip), `test` with coverage, `e2e` under Playwright, and `image` for the
-Docker boot. All four are the merge gate. `canary.yml` is scheduled and diagnostic — it is
-deliberately **not** a merge gate.
+A red one waits. Report it to Nicolas with the failing check named; merging it is his call, per PR.
+The config groups updates weekly on Monday and does not exclude majors, so a red Dependabot PR is
+usually a breaking major rather than a flake — read the failure before assuming a retry helps.
