@@ -281,7 +281,10 @@ describe("classified provider failures", () => {
       externalLink: {
         state: "failed",
         remoteId: "google_1",
-        failure: "Google Tasks refused the saved sign-in. Sign in again.",
+        failure: {
+          kind: "authorization",
+          message: "Google Tasks refused the saved sign-in. Sign in again.",
+        },
       },
     });
   });
@@ -297,7 +300,7 @@ describe("classified provider failures", () => {
     const first = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
     expect(first.json<Task>().externalLink).toMatchObject({
       state: "failed",
-      failure: "Google Tasks is rate-limited. Retry shortly.",
+      failure: { kind: "rate-limit", message: "Google Tasks is rate-limited. Retry shortly." },
     });
   });
   it("reads Google's 403 quota exhaustion as a rate limit, not a sign-in problem", async () => {
@@ -311,7 +314,7 @@ describe("classified provider failures", () => {
     const completed = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
     expect(completed.json<Task>().externalLink).toMatchObject({
       state: "failed",
-      failure: "Google Tasks is rate-limited. Retry shortly.",
+      failure: { kind: "rate-limit", message: "Google Tasks is rate-limited. Retry shortly." },
     });
   });
 
@@ -324,8 +327,9 @@ describe("classified provider failures", () => {
     );
 
     const completed = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
-    const failure = completed.json<Task>().externalLink?.failure ?? "";
-    expect(failure).not.toContain("ya29.secret-token-value");
+    const failure = completed.json<Task>().externalLink?.failure;
+    expect(failure?.kind).toBe("unavailable");
+    expect(failure?.message ?? "").not.toContain("ya29.secret-token-value");
     expect(completed.json<Task>().externalLink).toMatchObject({ state: "failed" });
   });
 });

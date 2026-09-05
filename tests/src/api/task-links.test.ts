@@ -197,7 +197,11 @@ describe("creating one External Task Link", () => {
     expect(attempted.json<Task>()).toMatchObject({
       title: "Book the room",
       status: "open",
-      externalLink: { state: "failed", remoteId: null, failure: "Google is unreachable" },
+      externalLink: {
+        state: "failed",
+        remoteId: null,
+        failure: { kind: "unavailable", message: "Google is unreachable" },
+      },
     });
   });
 

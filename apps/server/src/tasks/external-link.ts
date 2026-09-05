@@ -1,4 +1,4 @@
-import type { ExternalTaskBaseline, Task } from "@chief-of-staff-demo/shared";
+import type { ExternalTaskBaseline, Task, TaskLinkFailure } from "@chief-of-staff-demo/shared";
 import { TaskValidationError, type WorkspaceTasks } from "./tasks.js";
 
 /**
@@ -45,15 +45,6 @@ export interface TaskLinkingDeps {
   updateRemoteStatus: (taskListId: string, remoteId: string, completed: boolean) => Promise<void>;
 }
 
-/**
- * What a provider failure was, as far as the link is concerned. The Workspace
- * never stores a raw provider body or credential: the message below is the
- * whole of what the owner reads, and the kind is what the next step branches
- * on — not-found becomes a missing link, everything else a failed one.
- */
-type TaskLinkFailureKind =
-  "authentication" | "validation" | "network" | "rate-limit" | "not-found" | "unavailable";
-
 /** The HTTP-ish status a provider failure carries, whatever its shape. */
 function providerStatus(error: unknown): number | null {
   if (error !== null && typeof error === "object") {
@@ -89,15 +80,12 @@ function sanitizeDetail(message: string): string {
 
 /**
  * Classify a provider failure at the site that raised it (ADR-0008) and
- * answer with the sanitized sentence the link stores. Classified kinds get a
- * fixed sentence — a code is a fact, not prose to quote — while an
- * unclassified failure keeps its redacted detail, which is why a refusal the
- * tests raise by hand still reads the way it was raised.
+ * answer the classified fact the link stores. Classified kinds get a fixed
+ * sentence — a code is a fact, not prose to quote — while an unclassified
+ * failure keeps its redacted detail, which is why a refusal the tests raise
+ * by hand still reads the way it was raised.
  */
-function classifyTaskLinkError(error: unknown): {
-  kind: TaskLinkFailureKind;
-  message: string;
-} {
+function classifyTaskLinkError(error: unknown): TaskLinkFailure {
   const status = providerStatus(error);
   const raw = error instanceof Error ? error.message : String(error);
   /* Google reports quota exhaustion over 403 with a reason in the body, so
@@ -108,7 +96,7 @@ function classifyTaskLinkError(error: unknown): {
   }
   if (status === 401 || status === 403 || /invalid_grant/.test(raw)) {
     return {
-      kind: "authentication",
+      kind: "authorization",
       message: "Google Tasks refused the saved sign-in. Sign in again.",
     };
   }
@@ -221,39 +209,11 @@ export class TaskLinking {
       baseline: this.baselineFor(task, task.status),
       failure: null,
     });
+    /* Only the provider calls sit inside try, for the same reason as
+       `recreate`: a Workspace refusal is a domain fact, never provider prose. */
+    let created: { remoteId: string; url: string | null };
     try {
-      const created = await this.deps.createRemote(task.destination.googleTaskListId, task);
-      /* Creation cannot carry completion (the insert sends title, notes and
-         due date only), so a completed Task is completed in the same
-         recoverable operation — and the baseline records the status Google
-         actually holds, never the status the Task wishes it held. */
-      const sent = task.status;
-      if (task.status === "completed") {
-        try {
-          await this.deps.updateRemoteStatus(
-            task.destination.googleTaskListId,
-            created.remoteId,
-            true,
-          );
-        } catch (error) {
-          return this.deps.tasks.recordExternalLink(task.id, {
-            state: "failed",
-            destination: task.destination,
-            remoteId: created.remoteId,
-            url: created.url,
-            baseline: this.baselineFor(task, "open"),
-            failure: classifyTaskLinkError(error).message,
-          });
-        }
-      }
-      return this.deps.tasks.recordExternalLink(task.id, {
-        state: "synchronized",
-        destination: task.destination,
-        remoteId: created.remoteId,
-        url: created.url,
-        baseline: this.baselineFor(task, sent),
-        failure: null,
-      });
+      created = await this.deps.createRemote(task.destination.googleTaskListId, task);
     } catch (error) {
       return this.deps.tasks.recordExternalLink(task.id, {
         state: "failed",
@@ -261,9 +221,40 @@ export class TaskLinking {
         remoteId: null,
         url: null,
         baseline: this.baselineFor(task, task.status),
-        failure: classifyTaskLinkError(error).message,
+        failure: classifyTaskLinkError(error),
       });
     }
+    /* Creation cannot carry completion (the insert sends title, notes and
+       due date only), so a completed Task is completed in the same
+       recoverable operation — and the baseline records the status Google
+       actually holds, never the status the Task wishes it held. */
+    const sent = task.status;
+    if (task.status === "completed") {
+      try {
+        await this.deps.updateRemoteStatus(
+          task.destination.googleTaskListId,
+          created.remoteId,
+          true,
+        );
+      } catch (error) {
+        return this.deps.tasks.recordExternalLink(task.id, {
+          state: "failed",
+          destination: task.destination,
+          remoteId: created.remoteId,
+          url: created.url,
+          baseline: this.baselineFor(task, "open"),
+          failure: classifyTaskLinkError(error),
+        });
+      }
+    }
+    return this.deps.tasks.recordExternalLink(task.id, {
+      state: "synchronized",
+      destination: task.destination,
+      remoteId: created.remoteId,
+      url: created.url,
+      baseline: this.baselineFor(task, sent),
+      failure: null,
+    });
   }
 
   /**
@@ -312,7 +303,7 @@ export class TaskLinking {
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: classified.kind === "not-found" ? "missing" : "failed",
-        failure: classified.message,
+        failure: classified,
       });
     }
   }
@@ -357,14 +348,14 @@ export class TaskLinking {
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: classified.kind === "not-found" ? "missing" : "failed",
-        failure: classified.message,
+        failure: classified,
       });
     }
     if (remote === null) {
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
         state: "missing",
-        failure: "Google no longer holds that Task.",
+        failure: { kind: "not-found", message: "Google no longer holds that Task." },
       });
     }
     const remoteStatus = remote.completed ? "completed" : "open";
@@ -429,48 +420,52 @@ export class TaskLinking {
         "Only a missing External Task Link can be recreated.",
       );
     }
+    /* Only the provider calls sit inside try: a Workspace refusal from
+       recordExternalLink below is a domain fact and must reach its caller
+       as one, never be laundered into provider-failure prose on the link. */
+    let created: { remoteId: string; url: string | null };
     try {
-      const created = await this.deps.createRemote(link.destination.googleTaskListId, task);
-      /* As in `link`: the replacement record is created open, so a completed
-         Task is completed in the same operation, and the baseline always
-         records what Google actually holds. A completion that fails leaves
-         the new record live and the link failed against it — the Task is
-         intact either way. */
-      const sent = task.status;
-      if (task.status === "completed") {
-        try {
-          await this.deps.updateRemoteStatus(
-            link.destination.googleTaskListId,
-            created.remoteId,
-            true,
-          );
-        } catch (error) {
-          return this.deps.tasks.recordExternalLink(task.id, {
-            state: "failed",
-            destination: task.destination,
-            remoteId: created.remoteId,
-            url: created.url,
-            baseline: this.baselineFor(task, "open"),
-            failure: classifyTaskLinkError(error).message,
-          });
-        }
-      }
-      return this.deps.tasks.recordExternalLink(task.id, {
-        state: "synchronized",
-        destination: task.destination,
-        remoteId: created.remoteId,
-        url: created.url,
-        baseline: this.baselineFor(task, sent),
-        failure: null,
-      });
+      created = await this.deps.createRemote(link.destination.googleTaskListId, task);
     } catch (error) {
       /* Still missing: the replacement never arrived, so the link keeps
          naming the record that went away with the new reason attached. */
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
-        failure: classifyTaskLinkError(error).message,
+        failure: classifyTaskLinkError(error),
       });
     }
+    /* As in `link`: the replacement record is created open, so a completed
+       Task is completed in the same operation, and the baseline always
+       records what Google actually holds. A completion that fails leaves
+       the new record live and the link failed against it — the Task is
+       intact either way. */
+    const sent = task.status;
+    if (task.status === "completed") {
+      try {
+        await this.deps.updateRemoteStatus(
+          link.destination.googleTaskListId,
+          created.remoteId,
+          true,
+        );
+      } catch (error) {
+        return this.deps.tasks.recordExternalLink(task.id, {
+          state: "failed",
+          destination: task.destination,
+          remoteId: created.remoteId,
+          url: created.url,
+          baseline: this.baselineFor(task, "open"),
+          failure: classifyTaskLinkError(error),
+        });
+      }
+    }
+    return this.deps.tasks.recordExternalLink(task.id, {
+      state: "synchronized",
+      destination: task.destination,
+      remoteId: created.remoteId,
+      url: created.url,
+      baseline: this.baselineFor(task, sent),
+      failure: null,
+    });
   }
 
   /**

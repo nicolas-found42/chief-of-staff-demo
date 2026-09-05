@@ -78,9 +78,29 @@ export interface ExternalTaskLink {
    * told apart from a local one.
    */
   baseline: ExternalTaskBaseline | null;
-  /** Why the last attempt failed; null when it did not. */
-  failure: string | null;
+  /**
+   * Why the last attempt failed, as a classified fact and the sentence that
+   * carries it (ADR-0030: callers branch on the kind, never by matching the
+   * message); null when the last attempt did not fail.
+   */
+  failure: TaskLinkFailure | null;
   updatedAt: string;
+}
+
+/**
+ * One classified provider failure on an External Task Link (issue #185).
+ * The kind is the fact retry policy branches on — an `authorization`
+ * failure pauses automatic retry until reconnection, `not-found` becomes a
+ * missing link, the rest stay transient — and the message is the sanitized
+ * sentence a person reads. No provider body, URL, or credential survives
+ * into either field.
+ */
+export type TaskLinkFailureKind =
+  "authorization" | "validation" | "network" | "rate-limit" | "not-found" | "unavailable";
+
+export interface TaskLinkFailure {
+  kind: TaskLinkFailureKind;
+  message: string;
 }
 
 /** The fields the Workspace sends outward, as they were last sent. */

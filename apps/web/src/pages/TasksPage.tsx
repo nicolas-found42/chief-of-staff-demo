@@ -241,7 +241,7 @@ function TaskRow({
           {task.externalLink.state === "synchronized"
             ? "Sent to Google Tasks."
             : task.externalLink.state === "failed"
-              ? `Google Tasks refused it: ${task.externalLink.failure ?? "no reason given"}`
+              ? `Google Tasks refused it: ${task.externalLink.failure?.message ?? "no reason given"}`
               : task.externalLink.state === "missing"
                 ? "Google no longer holds this Task. Recreate it there or remove the link — this Task is unaffected."
                 : "Waiting to reach Google Tasks."}{" "}
