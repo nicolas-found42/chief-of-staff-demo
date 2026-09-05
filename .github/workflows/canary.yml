@@ -23,8 +23,8 @@ jobs:
     # the workflow run and in persisted receipts, but must not fail CI.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -32,7 +32,7 @@ jobs:
       - run: npm run build
       - name: Restore cumulative canary receipts
         id: restore-canary-receipts
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: workspace/content-scout/canary-state.json
           key: canary-receipts-${{ github.ref }}-${{ github.run_id }}
@@ -43,13 +43,13 @@ jobs:
         continue-on-error: true
       - name: Save cumulative canary receipts
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: workspace/content-scout/canary-state.json
           key: canary-receipts-${{ github.ref }}-${{ github.run_id }}
       - name: Upload canary receipts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: canary-receipts
           path: |
