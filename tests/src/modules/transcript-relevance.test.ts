@@ -7,10 +7,7 @@ import { PersonProfileStore } from "../../../apps/server/src/person-profile/stor
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import { TranscriptRelevanceService } from "../../../apps/server/src/transcript-catalog/relevance";
 import { TranscriptRelevanceStore } from "../../../apps/server/src/transcript-catalog/relevance-store";
-import {
-  TRANSCRIPT_RELEVANCE_INDEX_VERSION,
-  searchLexicalIndex,
-} from "../../../apps/server/src/transcript-catalog/relevance-index";
+import { TRANSCRIPT_RELEVANCE_INDEX_VERSION } from "../../../apps/server/src/transcript-catalog/relevance-index";
 
 const NOW = () => new Date("2026-08-31T12:00:00.000Z");
 
@@ -310,8 +307,8 @@ describe("Relevance state survives an index rebuild and a restart", () => {
   });
 });
 describe("The local relevance index", () => {
-  it("ranks phrase matches above scattered term matches and explains itself", () => {
-    const records = [
+  it("ranks phrase matches above scattered term matches and explains itself", async () => {
+    const h = makeHarness([
       record({
         id: "drive_phrase_r1",
         fileName: "Phrase.md",
@@ -326,31 +323,31 @@ describe("The local relevance index", () => {
         sourceUrl: null,
         text: "We discussed a background, and later a job.",
       }),
-    ];
-    const hits = searchLexicalIndex({
-      query: { text: "background job" },
-      records,
-    });
-    const byId = new Map(hits.map((hit) => [hit.transcriptId, hit.score] as const));
-    expect(byId.get("drive_phrase_r1")).toBeGreaterThan(byId.get("drive_scatter_r1")!);
-    const phrase = hits.find((hit) => hit.transcriptId === "drive_phrase_r1")!;
+    ]);
+    const candidates = await h.service.search({ text: "background job" });
+    const byId = new Map(candidates.map((candidate) => [candidate.transcriptId, candidate]));
+    expect(byId.get("drive_phrase_r1")!.score).toBeGreaterThan(byId.get("drive_scatter_r1")!.score);
+    const phrase = byId.get("drive_phrase_r1")!;
     expect(phrase.explanation).toContain("background job");
-    expect(phrase.excerpt.toLowerCase()).toContain("background job for exports");
+    // Every excerpt is grounded: it is the transcript's own text at the span
+    // the candidate cites, never a paraphrase the index invented.
+    expect(phrase.excerpt.text.toLowerCase()).toContain("background job for exports");
+    const source = h.corpus.find((entry) => entry.id === phrase.transcriptId)!;
+    expect(source.normalizedText.slice(phrase.excerpt.spanStart, phrase.excerpt.spanEnd)).toBe(
+      phrase.excerpt.text,
+    );
   });
 
-  it("finds nothing when the query shares no vocabulary with the corpus", () => {
-    const hits = searchLexicalIndex({
-      query: { text: "quantum entanglement calibration" },
-      records: [
-        record({
-          id: "drive_sync_r1",
-          fileName: "Sync.md",
-          meetingDate: null,
-          sourceUrl: null,
-          text: CORPUS_TEXT,
-        }),
-      ],
-    });
-    expect(hits).toEqual([]);
+  it("finds nothing when the query shares no vocabulary with the corpus", async () => {
+    const h = makeHarness([
+      record({
+        id: "drive_sync_r1",
+        fileName: "Sync.md",
+        meetingDate: null,
+        sourceUrl: null,
+        text: CORPUS_TEXT,
+      }),
+    ]);
+    expect(await h.service.search({ text: "quantum entanglement calibration" })).toEqual([]);
   });
 });

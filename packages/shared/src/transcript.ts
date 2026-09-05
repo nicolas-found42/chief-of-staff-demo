@@ -339,42 +339,6 @@ export const TranscriptRelationshipAssertionSchema = z.strictObject({
 
 export type TranscriptRelationshipAssertion = z.infer<typeof TranscriptRelationshipAssertionSchema>;
 
-const TranscriptExtractedSpanSchema = z.strictObject({
-  spanStart: z.number().int().nonnegative(),
-  spanEnd: z.number().int().positive(),
-  confidence: z.enum(["high", "medium", "low"]),
-});
-
-/** Strict model Result Shape. Deterministic recognition supplements this
- * output, and the service validates every adapter response before persisting
- * any classification. */
-export const TranscriptIdentityExtractionResultSchema = z.strictObject({
-  version: z.literal(1),
-  mentions: z.array(
-    TranscriptExtractedSpanSchema.extend({
-      kind: z.enum(["person", "organization", "ambiguous-name", "product", "unknown"]),
-      titles: z.array(z.string().min(1)),
-      roles: z.array(z.string().min(1)),
-      aliases: z.array(z.string().min(1)),
-      relationshipAssertions: z.array(TranscriptRelationshipAssertionSchema),
-    }).strict(),
-  ),
-  organizations: z.array(
-    TranscriptExtractedSpanSchema.extend({
-      aliases: z.array(z.string().min(1)),
-      domains: z.array(z.string().min(1)),
-      externalCompanyIds: z.array(
-        z.strictObject({ system: z.string().min(1), externalId: z.string().min(1) }),
-      ),
-      relationshipAssertions: z.array(TranscriptRelationshipAssertionSchema),
-    }).strict(),
-  ),
-});
-
-export type TranscriptIdentityExtractionResult = z.infer<
-  typeof TranscriptIdentityExtractionResultSchema
->;
-
 /** Where in which immutable Transcript the span was preserved from. */
 export interface TranscriptMentionProvenance {
   transcriptId: string;

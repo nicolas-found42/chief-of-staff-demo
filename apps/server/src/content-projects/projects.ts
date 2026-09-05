@@ -41,10 +41,10 @@ import { runFiniteResearch, uniqueBy, type ResearchProvider } from "./research.j
 import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import {
   MAX_GENERATION_INSTRUCTION_LENGTH,
-  type ContentEngineDraftProvider,
-  type ContentEngineDraftProviderResult,
-  type PlatformOutlineProvider,
-  type PlatformOutlineProviderResult,
+  type ContentEngineDraftGenerator,
+  type ContentEngineDraftResult,
+  type PlatformOutlineGenerator,
+  type PlatformOutlineResult,
 } from "./generation.js";
 
 interface ContentProjectState {
@@ -117,10 +117,10 @@ export class WorkspaceContentProjects {
       brandProfiles: WorkspaceBrandProfileStore;
       /** The public-research providers a Research Request bundle may be configured from. */
       researchProviders: ResearchProvider[];
-      /** The platform Outline generation adapters, one per supported target. */
-      outlineProviders: PlatformOutlineProvider[];
-      /** The platform Draft generation adapters, one per supported target. */
-      draftProviders: ContentEngineDraftProvider[];
+      /** The one Outline generation, parameterized by the target contract. */
+      outlineGenerator: PlatformOutlineGenerator;
+      /** The one Draft generation, parameterized by the target contract. */
+      draftGenerator: ContentEngineDraftGenerator;
       now?: () => Date;
     },
   ) {
@@ -633,7 +633,8 @@ export class WorkspaceContentProjects {
       plan: (revision) => this.plannedOutlineGeneration(revision, target),
       noEvidence: frozenEvidenceRequired(),
       call: (planned, evidence) =>
-        planned.provider.generate({
+        this.deps.outlineGenerator.generate({
+          target,
           brief: clone(planned.brief),
           evidence: clone(evidence),
           instruction,
@@ -679,14 +680,14 @@ export class WorkspaceContentProjects {
     const planned = this.plannedOutlineSet(currentRevision(project));
     const evidence = this.promptEvidence(projectId);
     if (!evidence) throw frozenEvidenceRequired();
-    const settled = await runBounded(planned.pending, concurrency, async (target) => {
-      const provider = planned.providers.get(target)!;
-      return provider.generate({
+    const settled = await runBounded(planned.pending, concurrency, async (target) =>
+      this.deps.outlineGenerator.generate({
+        target,
         brief: clone(planned.brief),
         evidence: clone(evidence),
         instruction: null,
-      });
-    });
+      }),
+    );
 
     /* Re-read after awaiting the providers: this is a method that yields, so
        it must not write back a project it read before the pause. The set only
@@ -789,7 +790,8 @@ export class WorkspaceContentProjects {
         ["evidence-review"],
       ),
       call: (planned, evidence) =>
-        planned.provider.generate({
+        this.deps.draftGenerator.generate({
+          target,
           brief: clone(planned.brief),
           outline: clone(planned.outline),
           evidence: clone(evidence),
@@ -880,23 +882,11 @@ export class WorkspaceContentProjects {
     return brief;
   }
 
-  private outlineProviderFor(target: ContentProjectTarget): PlatformOutlineProvider {
-    const provider = this.deps.outlineProviders.find((candidate) => candidate.target === target);
-    if (!provider) {
-      throw new ContentProjectError(
-        "outline-not-supported",
-        `No Platform Outline provider is configured for the ${target} target.`,
-      );
-    }
-    return provider;
-  }
-
   private plannedOutlineGeneration(
     revision: ContentProjectRevision,
     target: ContentProjectTarget,
   ): {
     brief: OutlineCharter;
-    provider: PlatformOutlineProvider;
     version: number;
     approvedEvidenceIds: Set<string>;
   } {
@@ -909,7 +899,6 @@ export class WorkspaceContentProjects {
     }
     return {
       brief,
-      provider: this.outlineProviderFor(target),
       version: revision.platformOutlines.filter((outline) => outline.target === target).length + 1,
       approvedEvidenceIds: new Set(brief.evidenceMap.flatMap((entry) => entry.sourceItemIds)),
     };
@@ -917,27 +906,21 @@ export class WorkspaceContentProjects {
 
   /**
    * The set-level plan behind `generateOutlineSet`: the approved Brief every
-   * sibling is generated from, one configured provider per selected target,
-   * and the targets still missing Outline work that cites that Brief. The
-   * missing-only rule lives here, not with callers.
+   * sibling is generated from, and the targets still missing Outline work that
+   * cites that Brief. The missing-only rule lives here, not with callers.
    */
   private plannedOutlineSet(revision: ContentProjectRevision): {
     brief: OutlineCharter;
-    providers: Map<ContentProjectTarget, PlatformOutlineProvider>;
     pending: ContentProjectTarget[];
   } {
     const brief = this.plannedBrief(revision);
-    const providers = new Map<ContentProjectTarget, PlatformOutlineProvider>();
-    for (const target of brief.targets) {
-      providers.set(target, this.outlineProviderFor(target));
-    }
     const pending = brief.targets.filter(
       (target) =>
         !revision.platformOutlines.some(
           (outline) => outline.target === target && outline.outlineCharterId === brief.id,
         ),
     );
-    return { brief, providers, pending };
+    return { brief, pending };
   }
 
   private plannedDraftGeneration(
@@ -946,7 +929,6 @@ export class WorkspaceContentProjects {
   ): {
     brief: OutlineCharter;
     outline: PlatformOutline;
-    provider: ContentEngineDraftProvider;
     version: number;
     approvedEvidenceIds: Set<string>;
   } {
@@ -971,13 +953,6 @@ export class WorkspaceContentProjects {
         `The Project revision does not select the ${target} target.`,
       );
     }
-    const provider = this.deps.draftProviders.find((candidate) => candidate.target === target);
-    if (!provider) {
-      throw new ContentProjectError(
-        "draft-not-supported",
-        `No Draft provider is configured for the ${target} target.`,
-      );
-    }
     const brief = revision.outlineCharters.find(
       (candidate) => candidate.id === outline.outlineCharterId,
     );
@@ -990,7 +965,6 @@ export class WorkspaceContentProjects {
     return {
       brief,
       outline,
-      provider,
       version: revision.drafts.filter((draft) => draft.target === target).length + 1,
       approvedEvidenceIds: new Set(brief.evidenceMap.flatMap((entry) => entry.sourceItemIds)),
     };
@@ -1352,7 +1326,7 @@ function buildOutline(input: {
   target: ContentProjectTarget;
   version: number;
   instruction: string | null;
-  result: PlatformOutlineProviderResult;
+  result: PlatformOutlineResult;
   approvedEvidenceIds: Set<string>;
   now: Date;
 }): PlatformOutline {
@@ -1408,7 +1382,7 @@ function buildDraft(input: {
   target: ContentProjectTarget;
   version: number;
   instruction: string | null;
-  result: ContentEngineDraftProviderResult;
+  result: ContentEngineDraftResult;
   approvedEvidenceIds: Set<string>;
   now: Date;
 }): ContentEngineDraft {

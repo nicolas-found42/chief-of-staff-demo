@@ -4,7 +4,6 @@ import type {
   OrganizationMergeDecision,
   PersonProfile,
   RememberedMapping,
-  TranscriptIdentityExtractionResult,
   TranscriptMatchCandidate,
   TranscriptMention,
   TranscriptRecord,
@@ -31,18 +30,6 @@ export interface TranscriptIdentityDeps {
   people: WorkspacePersonProfiles;
   now?: () => Date;
 }
-
-/**
- * The deterministic mining supplement: no model-backed supplement adapter
- * exists, so mining runs on the immutable Transcript alone. A second
- * extraction source reintroduces an extractor seam; until then the empty
- * supplement is an implementation detail, not a caller-provided adapter.
- */
-const EMPTY_SUPPLEMENT: TranscriptIdentityExtractionResult = {
-  version: 1,
-  mentions: [],
-  organizations: [],
-};
 
 class UnknownMentionError extends Error {
   constructor(mentionId: string) {
@@ -76,10 +63,10 @@ export interface MergeOrganizationsInput {
 
 /**
  * Identity mining over the Transcript Catalog (issue #126). Deterministic
- * recognition over the immutable Transcript is the whole of mining: no
- * supplement adapter exists, so the strict extraction Result Shape merges an
- * empty supplement and the service persists mentions, Organization Mentions,
- * and explainable candidates. Only a non-conflicting exact stable identifier
+ * recognition over the immutable Transcript is the whole of mining: extraction
+ * is an implementation detail of this service rather than an adapter seam, and
+ * the service persists mentions, Organization Mentions, and explainable
+ * candidates. Only a non-conflicting exact stable identifier
  * may auto-link to an EXISTING Profile. Remembered mappings apply as explicit
  * owner authority, and no processing path creates a Person Profile; explicit
  * review does.
@@ -170,7 +157,7 @@ export class TranscriptIdentityService {
   }
 
   private extract(record: TranscriptRecord, extractionVersion: string): void {
-    const { mentions, organizations } = extractMentions(record, EMPTY_SUPPLEMENT, {
+    const { mentions, organizations } = extractMentions(record, {
       knownProfileUrls: this.knownProfileUrls(),
     });
     this.store.saveTranscriptMeta(record.id, {

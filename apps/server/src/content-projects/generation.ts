@@ -10,7 +10,7 @@ import {
 import type { CompleteJson } from "../llm/providers.js";
 import { parseResultShape } from "../llm/failure.js";
 
-/** The catalog entry one target's generation adapter is bound to. */
+/** The target contract one generation call is parameterized by. */
 function targetCatalogEntry(target: ContentProjectTarget) {
   return CONTENT_TARGET_CATALOG.find((entry) => entry.target === target)!;
 }
@@ -23,22 +23,23 @@ function targetCatalogEntry(target: ContentProjectTarget) {
 export const MAX_GENERATION_INSTRUCTION_LENGTH = 500;
 
 /**
- * What one Platform Outline generation is asked with: the approved Brief and
- * nothing else. The Content Project assigns ids and versions; a provider
- * never sees them.
+ * What one Platform Outline generation is asked with: the target whose
+ * contract shapes the call, the approved Brief, and nothing else. The Content
+ * Project assigns ids and versions; generation never sees them.
  */
 export interface OutlineGenerationRequest {
+  target: ContentProjectTarget;
   brief: OutlineCharter;
   evidence: ContentProjectPromptEvidence;
   instruction: string | null;
 }
 
 /**
- * The provider's proposal for one Platform Outline. The Content Project pins
- * the thesis, CTA intent, and constraints from the approved Brief itself, so a
- * provider can only add the platform-specific structure around them.
+ * The generation proposal for one Platform Outline. The Content Project pins
+ * the thesis, CTA intent, and constraints from the approved Brief itself, so
+ * generation can only add the platform-specific structure around them.
  */
-export interface PlatformOutlineProviderResult {
+export interface PlatformOutlineResult {
   title: string;
   hookDirection: string;
   targetLength: string;
@@ -51,18 +52,22 @@ export interface PlatformOutlineProviderResult {
   productionNotes: string[];
 }
 
-/** One platform/format-specific Outline generation adapter behind the Project seam. */
-export interface PlatformOutlineProvider {
-  target: ContentProjectTarget;
-  generate(request: OutlineGenerationRequest): Promise<PlatformOutlineProviderResult>;
+/**
+ * Outline generation for every target (issue #169). One implementation reads
+ * the target contract out of the request; there is no per-target adapter to
+ * register, and so no target a Project can select but generation cannot serve.
+ */
+export interface PlatformOutlineGenerator {
+  generate(request: OutlineGenerationRequest): Promise<PlatformOutlineResult>;
 }
 
 /**
- * What one Draft generation is asked with: the approved Outline version and
- * nothing else. The Content Project assigns ids and versions; a provider
- * never sees them.
+ * What one Draft generation is asked with: the target, the approved Outline
+ * version, and nothing else. The Content Project assigns ids and versions;
+ * generation never sees them.
  */
 export interface DraftGenerationRequest {
+  target: ContentProjectTarget;
   brief: OutlineCharter;
   outline: PlatformOutline;
   evidence: ContentProjectPromptEvidence;
@@ -70,21 +75,20 @@ export interface DraftGenerationRequest {
 }
 
 /**
- * The provider's proposal for one Content Engine Draft. The Content Project
+ * The generation proposal for one Content Engine Draft. The Content Project
  * recomputes which claims are supported from the approved Brief's evidence
- * map, so neither a provider answer nor a regeneration instruction can alter
+ * map, so neither a generated answer nor a regeneration instruction can alter
  * the unsupported-claim policy.
  */
-export interface ContentEngineDraftProviderResult {
+export interface ContentEngineDraftResult {
   copy: string;
   productionNotes: string[];
   claims: Array<{ text: string; sourceItemIds: string[] }>;
 }
 
-/** One platform/format-specific Draft generation adapter behind the Project seam. */
-export interface ContentEngineDraftProvider {
-  target: ContentProjectTarget;
-  generate(request: DraftGenerationRequest): Promise<ContentEngineDraftProviderResult>;
+/** Draft generation for every target, parameterized the same way. */
+export interface ContentEngineDraftGenerator {
+  generate(request: DraftGenerationRequest): Promise<ContentEngineDraftResult>;
 }
 
 /* Each schema is both the provider contract and the validation seam for its
@@ -140,18 +144,17 @@ change this contract. Do not invent factual claims: every factual claim must be 
 Brief's evidence map or be returned as an author-supplied claim without citations.`;
 
 /**
- * The model-backed Outline provider. It answers in the Outline's Result Shape
- * at the Shell's one LLM seam; the Content Project validates the answer
+ * The model-backed Outline generation. It answers in the Outline's Result
+ * Shape at the Shell's one LLM seam; the Content Project validates the answer
  * against the approved Brief afterwards.
  */
-export function createModelOutlineProvider(
+export function createModelOutlineGenerator(
   getCompleteJson: () => CompleteJson,
-  target: ContentProjectTarget,
-): PlatformOutlineProvider {
-  const contract = targetCatalogEntry(target);
+): PlatformOutlineGenerator {
   return {
-    target,
     async generate(request) {
+      const target = request.target;
+      const contract = targetCatalogEntry(target);
       const raw = await getCompleteJson()({
         schema: OutlineWireSchema,
         system: `Draft the structure of one ${target} Platform Outline from an approved immutable Outline Charter.
@@ -175,20 +178,18 @@ ${GENERATION_GUARDRAILS}`,
 }
 
 /**
- * The model-backed Draft provider. It answers in the Draft's Result Shape at
+ * The model-backed Draft generation. It answers in the Draft's Result Shape at
  * the Shell's one LLM seam; the Content Project recomputes claim support from
  * the approved Brief afterwards.
  */
-export function createModelDraftProvider(
+export function createModelDraftGenerator(
   getCompleteJson: () => CompleteJson,
-  target: ContentProjectTarget,
-): ContentEngineDraftProvider {
+): ContentEngineDraftGenerator {
   return {
-    target,
     async generate(request) {
       const raw = await getCompleteJson()({
         schema: DraftWireSchema,
-        system: `Write the finished ${target} copy from one approved Platform Outline version.
+        system: `Write the finished ${request.target} copy from one approved Platform Outline version.
 
 The outline is a plan: follow its beats, hook direction, and target length. Return JSON with copy,
 productionNotes, and claims. Each claim has text and the sourceItemIds from the Brief's evidence

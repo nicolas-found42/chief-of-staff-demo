@@ -4,10 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { describe, expect, it } from "vitest";
-import type {
-  TranscriptIdentityExtractionResult,
-  TranscriptRecord,
-} from "@chief-of-staff-demo/shared";
+import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles";
 import {
@@ -21,20 +18,10 @@ import { TranscriptIdentityStore } from "../../../apps/server/src/transcript-cat
 const NOW = () => new Date("2026-08-31T12:00:00.000Z");
 
 import {
-  extractMentions as extractMentionsWithModel,
+  extractMentions,
   IDENTITY_MINING_ALGORITHM_VERSION,
 } from "../../../apps/server/src/transcript-catalog/identity-extraction";
 import { TranscriptIdentityService } from "../../../apps/server/src/transcript-catalog/identity";
-
-const EMPTY_EXTRACTION: TranscriptIdentityExtractionResult = {
-  version: 1,
-  mentions: [],
-  organizations: [],
-};
-
-function extractMentions(record: TranscriptRecord) {
-  return extractMentionsWithModel(record, EMPTY_EXTRACTION);
-}
 
 function makeRecord(text: string, id = "drive_file1_r1"): TranscriptRecord {
   return {
@@ -336,60 +323,6 @@ describe("Transcript Catalog identity processing", () => {
     ).toMatchObject({ matched: true });
   });
 
-  it("supplements deterministic spans with a strict extraction Result Shape", () => {
-    const body = "Grace Hopper from Acme Corp joined the review.";
-    const graceStart = body.indexOf("Grace Hopper");
-    const acmeStart = body.indexOf("Acme Corp");
-    const { mentions, organizations } = extractMentionsWithModel(makeRecord(body), {
-      version: 1,
-      mentions: [
-        {
-          spanStart: graceStart,
-          spanEnd: graceStart + "Grace Hopper".length,
-          kind: "person",
-          confidence: "high",
-          titles: ["Rear Admiral"],
-          roles: ["technical advisor"],
-          aliases: ["Amazing Grace"],
-          relationshipAssertions: [
-            { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
-          ],
-        },
-      ],
-      organizations: [
-        {
-          spanStart: acmeStart,
-          spanEnd: acmeStart + "Acme Corp".length,
-          confidence: "high",
-          aliases: ["Acme"],
-          domains: ["acme.example"],
-          externalCompanyIds: [{ system: "HubSpot", externalId: "company-7" }],
-          relationshipAssertions: [
-            { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
-          ],
-        },
-      ],
-    } satisfies TranscriptIdentityExtractionResult);
-
-    const grace = mentions.find((mention) => mention.surfaceText === "Grace Hopper")!;
-    expect(grace).toMatchObject({
-      titles: ["Rear Admiral"],
-      roles: ["technical advisor"],
-      aliases: ["Amazing Grace"],
-      relationshipAssertions: [
-        { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
-      ],
-    });
-    expect(organizations[0]).toMatchObject({
-      aliases: ["Acme"],
-      domains: ["acme.example"],
-      externalCompanyIds: [{ system: "hubspot", externalId: "company-7" }],
-      relationshipAssertions: [
-        { subject: "Grace Hopper", relationship: "advises", object: "Acme Corp" },
-      ],
-    });
-  });
-
   it("retrieves candidates from deterministic extraction and Calendar roster context", async () => {
     const body = "Grace Hopper: Ready for review.";
     const h = makeHarness();
@@ -563,44 +496,6 @@ describe("deterministic mention extraction", () => {
     expect(acme!.confidence).toBe("high");
     const alan = mentions.find((m) => m.surfaceText === "Alan Turing")!;
     expect(acme!.relatedMentionIds).toContain(alan.id);
-  });
-
-  it("remaps organization links when the strict model reclassifies a related span", async () => {
-    const body = "Alan Turing from Acme Corp joined the review.";
-    const alanStart = body.indexOf("Alan Turing");
-    const supplement: TranscriptIdentityExtractionResult = {
-      version: 1,
-      mentions: [
-        {
-          spanStart: alanStart,
-          spanEnd: alanStart + "Alan Turing".length,
-          kind: "unknown",
-          confidence: "high",
-          titles: [],
-          roles: [],
-          aliases: [],
-          relationshipAssertions: [],
-        },
-      ],
-      organizations: [],
-    };
-    const { mentions, organizations } = extractMentionsWithModel(
-      makeRecord(body, "drive_reclass_r1"),
-      supplement,
-    );
-    const acme = organizations.find((o) => o.normalizedName === "acme corp")!;
-    expect(acme).toBeDefined();
-    // The supplement reclassified "Alan Turing" from person to unknown, which
-    // gives the span a new mention id; the organization must never reference
-    // a nonexistent mention.
-    const mentionIds = new Set(mentions.map((mention) => mention.id));
-    expect(acme.relatedMentionIds.length).toBeGreaterThan(0);
-    expect(acme.relatedMentionIds.every((id) => mentionIds.has(id))).toBe(true);
-    const reclassified = mentions.find(
-      (m) => m.provenance.spanStart === alanStart && m.kind === "unknown",
-    );
-    expect(reclassified).toBeDefined();
-    expect(acme.relatedMentionIds).toContain(reclassified!.id);
   });
 
   it("retains organizations named without a related person", async () => {
