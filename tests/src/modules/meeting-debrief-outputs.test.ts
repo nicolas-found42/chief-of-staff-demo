@@ -14,7 +14,6 @@ import type {
   DebriefDraft,
   DebriefExtractInput,
   DebriefIdentityReview,
-  DebriefTask,
 } from "../../../apps/server/src/modules/meeting-debrief/deps";
 import { workspaceProfileDirectory } from "../../../apps/server/src/modules/meeting-debrief/profiles";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store";
@@ -149,40 +148,16 @@ function fakeExtraction(input: DebriefExtractInput) {
  */
 function recordingOutputs(): {
   drafts: DebriefDraft[];
-  tasks: DebriefTask[];
-  failTasks: boolean;
-  /** Google Tasks answers per task id; missing ids read as open. */
-  googleCompleted: Map<string, boolean>;
-  /** When true Google no longer holds the Task — the host falls back local. */
-  googleMissing: boolean;
   createDraft: (d: DebriefDraft) => Promise<string>;
-  createTask: (t: DebriefTask) => Promise<string>;
-  getTaskStatus: (taskId: string) => Promise<{ completed: boolean } | null>;
 } {
   const drafts: DebriefDraft[] = [];
-  const tasks: DebriefTask[] = [];
-  const googleCompleted = new Map<string, boolean>();
-  const surface = {
+  return {
     drafts,
-    tasks,
-    failTasks: false,
-    googleCompleted,
-    googleMissing: false,
     createDraft: (draft: DebriefDraft) => {
       drafts.push(draft);
       return Promise.resolve(`draft_${drafts.length}`);
     },
-    createTask: (task: DebriefTask) => {
-      if (surface.failTasks) return Promise.reject(new Error("tasks unavailable"));
-      tasks.push(task);
-      return Promise.resolve(`task_${tasks.length}`);
-    },
-    getTaskStatus: (taskId: string) => {
-      if (surface.googleMissing) return Promise.resolve(null);
-      return Promise.resolve({ completed: surface.googleCompleted.get(taskId) ?? false });
-    },
   };
-  return surface;
 }
 
 interface Harness {
@@ -213,11 +188,7 @@ beforeEach(() => {
     extract: (input) => Promise.resolve(fakeExtraction(input)),
     profiles: workspaceProfileDirectory(people),
     ownerEmail: () => OWNER_EMAIL,
-    outputs: {
-      createDraft: outputs.createDraft,
-      createTask: outputs.createTask,
-      getTaskStatus: outputs.getTaskStatus,
-    },
+    outputs: { createDraft: outputs.createDraft },
     log: () => {},
   });
   const app = fastify({ logger: false });
@@ -314,7 +285,8 @@ describe("Meeting Debrief approval outputs — Tasks and retry (#141)", () => {
        unrelated things — accepted work now comes from the Action Item queue,
        which needs no Gmail. */
     expect(h.outputs.drafts).toHaveLength(1);
-    expect(h.outputs.tasks).toEqual([]);
+    /* The outward surface has no Task seam left to reach for (issue #199). */
+    expect(h.outputs).not.toHaveProperty("createTask");
   });
 
   it("offers the created draft in Gmail, and never reports it as sent", async () => {
@@ -377,49 +349,29 @@ describe("Meeting Debrief action-item lifecycle (#158)", () => {
     return h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
   }
 
-  async function detail(runId: string): Promise<{
-    review: { droppedActionItems: number[]; actionItemTasks: unknown[] };
-  }> {
-    const res = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
-    const body: unknown = res.json();
-    return body as {
-      review: { droppedActionItems: number[]; actionItemTasks: unknown[] };
-    };
-  }
-
-  it("never creates a Google Task for a dismissed item, even when approved later", async () => {
+  it("creates no Task at all when the whole Debrief is published (#182, #199)", async () => {
     const runId = await readyToApprove();
-    const dismissed = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/dismiss`,
-    });
-    expect(dismissed.statusCode).toBe(200);
-    await approve(runId);
+
+    expect((await approve(runId)).statusCode).toBe(200);
     await h.host.idle();
 
-    /* The filter holds at Task-creation time, not just in the UI: the one
-       owner action was dismissed, so no Task reaches the outward surface. */
-    expect(h.outputs.tasks).toEqual([]);
-    const served = await detail(runId);
-    expect(served.review.droppedActionItems).toEqual([0]);
-    expect(served.review.actionItemTasks).toEqual([]);
+    /* Publication is the email draft and nothing else. Accepted work is a
+       canonical Task, promoted from an Action Item one decision at a time —
+       never a bulk write the whole Debrief performs on the owner's behalf,
+       and no receipt of one is written either. */
+    expect(h.outputs.drafts).toHaveLength(1);
+    expect(h.runs.open(runId)!.readArtifact("tasks.json")).toBeNull();
   });
 
-  it("keeps a locally done item local, because the draft creates no Task", async () => {
+  it("offers no positional decision that could have excluded an item from one", async () => {
     const runId = await readyToApprove();
-    const done = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/done`,
-    });
-    expect(done.statusCode).toBe(200);
-    await approve(runId);
-    await h.host.idle();
 
-    /* Issue #182: creating the email draft creates no Task, so there is no
-       Google record for a done decision to be read back from. Accepted work
-       lives in the Action Item queue and the Tasks it is promoted into. */
-    expect(h.outputs.tasks).toEqual([]);
-    const served = await detail(runId);
-    expect(served.review.actionItemTasks).toEqual([]);
+    for (const verb of ["drop", "done", "dismiss"]) {
+      const response = await h.app.inject({
+        method: "POST",
+        url: `/api/meeting-debrief/${runId}/action-items/0/${verb}`,
+      });
+      expect(response.statusCode).toBe(404);
+    }
   });
 });

@@ -126,17 +126,8 @@ export interface MeetingDebriefReviewView {
   automaticRecipients: MeetingDebriefRecipient[];
   /** Explicit non-attendee recipients, each an explicit confirmed Profile selection. */
   additionalRecipients: MeetingDebriefRecipient[];
-  /** Action-item indexes the owner dismissed. Dismissed items never become Google Tasks. */
-  droppedActionItems: number[];
   /** What the extraction suggested from follow-up context; each needs explicit confirmation. */
   suggestedRecipients: Array<{ name: string; email: string | null }>;
-  /** What the owner marked done locally — Google Tasks take over once a Task exists. */
-  completedActionItems: number[];
-  /**
-   * One entry per action item already created as a Google Task. `completed`
-   * is read from Google Tasks with a local-done fallback (issue #158).
-   */
-  actionItemTasks: Array<{ index: number; taskId: string; completed: boolean }>;
   /** Why approval is blocked right now; empty when ready. */
   approvalBlockers: MeetingDebriefApprovalBlocker[];
   /** Set when this Run re-extracts a transcript that already has an approved Debrief. */
@@ -303,18 +294,4 @@ export interface MeetingDebriefDetail {
   reviewReadiness: MeetingDebriefReviewReadiness;
   /** The review workflow's view; null before the Run holds a review record. */
   review: MeetingDebriefReviewView | null;
-}
-
-/**
- * One open action item as the cross-Debrief rollup reports it. Ownership is
- * carried, never applied: the caller decides whose list it belongs on.
- */
-export interface MeetingDebriefActionItemRollup {
-  runId: string;
-  meetingId: string | null;
-  index: number;
-  title: string;
-  owner: string | null;
-  ownerProfileId: string | null;
-  dueDate: string | null;
 }

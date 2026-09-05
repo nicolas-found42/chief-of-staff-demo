@@ -24,7 +24,6 @@ export interface MeetingDebriefTestRuntimeOptions {
    * Staleness hand-off to the Brief side (issue #162): fired after a review
    * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
    */
-  onActionItemsChanged?: () => void;
   /** Where extracted proposals become durable Workspace Action Items (issue #177). */
   materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
   log?: (message: string) => void;
@@ -187,7 +186,6 @@ export function createMeetingDebriefTestRuntime(
     ...(options.materializeActionItems
       ? { materializeActionItems: options.materializeActionItems }
       : {}),
-    ...(options.onActionItemsChanged ? { onActionItemsChanged: options.onActionItemsChanged } : {}),
     ...(options.log ? { log: options.log } : {}),
   });
 

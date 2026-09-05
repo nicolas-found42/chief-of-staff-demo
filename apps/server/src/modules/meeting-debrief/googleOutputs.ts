@@ -1,5 +1,5 @@
 import type { GoogleConnection } from "../../google/connection.js";
-import type { DebriefDraft, DebriefOutputsDeps, DebriefTask } from "./deps.js";
+import type { DebriefDraft, DebriefOutputsDeps } from "./deps.js";
 
 /**
  * The Debrief's outward surface, over the Workspace's shared Google adapters
@@ -11,10 +11,7 @@ import type { DebriefDraft, DebriefOutputsDeps, DebriefTask } from "./deps.js";
  * between approval and a Tasks retry must surface as a failure the Run can
  * retry, not as a stale client (ADR-0008).
  */
-export function googleDebriefOutputs(
-  google: GoogleConnection,
-  tasklistTitle: string,
-): DebriefOutputsDeps {
+export function googleDebriefOutputs(google: GoogleConnection): DebriefOutputsDeps {
   const surface = () => {
     const access = google.outputs();
     if (!access.ok) {
@@ -33,33 +30,6 @@ export function googleDebriefOutputs(
         subject: draft.subject,
         body: draft.body,
       });
-    },
-    async createTask(task: DebriefTask): Promise<string> {
-      const outputs = surface();
-      const tasklistId = await outputs.findOrCreateTasklist(tasklistTitle);
-      const created = await outputs.createTask(
-        tasklistId,
-        {
-          title: task.title,
-          ...(task.due ? { due: task.due } : {}),
-          notes: task.notes,
-        },
-        /* The Task's source reference is the debrief, not a transcript file
-           the owner would have to go and open. */
-        { sourceFileName: task.notes, sourceUrl: null },
-      );
-      return created.googleId;
-    },
-    /**
-     * Issue #158: a Task-backed item reads completion from Google Tasks.
-     * Null when Google no longer holds the Task — the host falls back to
-     * the review store's local done. Throws when Google is unreachable, so
-     * the host can fall back the same way.
-     */
-    async getTaskStatus(taskId: string): Promise<{ completed: boolean } | null> {
-      const outputs = surface();
-      const tasklistId = await outputs.findOrCreateTasklist(tasklistTitle);
-      return await outputs.getTask(tasklistId, taskId);
     },
   };
 }

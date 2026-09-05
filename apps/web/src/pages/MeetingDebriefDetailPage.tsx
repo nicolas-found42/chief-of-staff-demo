@@ -48,23 +48,11 @@ function blockerTarget(blocker: string): string | null {
 }
 
 /**
- * What the Debrief extracted, and the two decisions the owner can take on an
- * action item. Done and Dismiss used to live in a second copy of this list
- * further down the page — the same items twice, one showing state and the
- * other offering the buttons — so a reader had to hold both in their head to
- * see where an item stood. One list carries both.
+ * What the Debrief extracted. A record of the meeting, and only that: the
+ * decisions the owner takes on a proposed commitment belong to its canonical
+ * Action Item, which has a stable identity this array does not (issue #199).
  */
-function ExtractionSection({
-  detail,
-  act,
-  actionable,
-  client,
-}: {
-  detail: MeetingDebriefDetail;
-  act: (run: () => Promise<unknown>) => void;
-  actionable: boolean;
-  client: MeetingsClient;
-}) {
+function ExtractionSection({ detail }: { detail: MeetingDebriefDetail }) {
   const debrief = detail.extraction;
   if (!debrief) {
     return (
@@ -97,71 +85,35 @@ function ExtractionSection({
         <p className="muted">No action items.</p>
       ) : (
         <ul>
-          {debrief.actionItems.map((item, index) => {
-            const dismissed = detail.review?.droppedActionItems.includes(index) ?? false;
-            const task = detail.review?.actionItemTasks.find((entry) => entry.index === index);
-            const doneLocal = detail.review?.completedActionItems.includes(index) ?? false;
-            return (
-              <li key={index}>
-                {item.title} — owner: {item.owner ?? "unassigned"}
-                {item.ownerProfileId && (
-                  <>
-                    {" "}
-                    <Link to={`/people/${encodeURIComponent(item.ownerProfileId)}`}>
-                      (confirmed Profile)
-                    </Link>
-                  </>
-                )}
-                {!item.ownerProfileId && item.ownerMentionId && (
-                  <span className="muted"> (identity not confirmed)</span>
-                )}
-                {item.dueDate && <span className="muted"> — due {item.dueDate}</span>}
-                {dismissed && <span className="status-badge status-attention"> Dismissed</span>}
-                {!dismissed && task?.completed && (
-                  <span className="status-badge status-ok"> Done in Google Tasks</span>
-                )}
-                {!dismissed && task && !task.completed && (
-                  <span className="muted"> (Google Task open)</span>
-                )}
-                {!dismissed && !task && doneLocal && (
-                  <span className="status-badge status-ok"> Done</span>
-                )}
-                {actionable && !doneLocal && !task?.completed && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        act(() => client.meetingDebriefDoneActionItem(detail.runId, index))
-                      }
-                    >
-                      Done
-                    </button>
-                  </>
-                )}
-                {actionable && !dismissed && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        act(() => client.meetingDebriefDismissActionItem(detail.runId, index))
-                      }
-                    >
-                      Dismiss
-                    </button>
-                  </>
-                )}
-              </li>
-            );
-          })}
+          {debrief.actionItems.map((item, index) => (
+            <li key={index}>
+              {item.title} — owner: {item.owner ?? "unassigned"}
+              {item.ownerProfileId && (
+                <>
+                  {" "}
+                  <Link to={`/people/${encodeURIComponent(item.ownerProfileId)}`}>
+                    (confirmed Profile)
+                  </Link>
+                </>
+              )}
+              {!item.ownerProfileId && item.ownerMentionId && (
+                <span className="muted"> (identity not confirmed)</span>
+              )}
+              {item.dueDate && <span className="muted"> — due {item.dueDate}</span>}
+            </li>
+          ))}
         </ul>
       )}
-      {actionable && debrief.actionItems.length > 0 && (
+      {/* What the meeting proposed is above; what the owner decided is a
+          canonical Action Item with a stable identity, and it is reviewed
+          where it lives (issues #177, #199). This page no longer carries
+          positional Done and Dismiss buttons, because an index into an
+          extracted array is not an identity a decision can be pinned to. */}
+      {debrief.actionItems.length > 0 && (
         <p className="muted">
-          Done marks an item complete — its Google Task takes over once one exists. Dismiss removes
-          it: a dismissed item never becomes a Google Task, even when the Debrief is published
-          later. Marking one clears the other; regenerating action items clears both.
+          These are the commitments the meeting proposed. Review them — create a Task, create a
+          completed Task, or dismiss — in <Link to="/tasks#action-items">Tasks</Link>, where each
+          one has a stable identity of its own that regenerating this Debrief cannot disturb.
         </p>
       )}
       <h3>Open questions</h3>
@@ -864,12 +816,7 @@ export function MeetingDebriefDetailPage({
               </Link>
             </p>
           )}
-          <ExtractionSection
-            detail={detail}
-            act={actions.act}
-            actionable={detail.review !== null && detail.review.state !== "published"}
-            client={client}
-          />
+          <ExtractionSection detail={detail} />
           <ReviewSection detail={detail} actions={actions} client={client} />
           <ActionItemHistorySection runId={detail.runId} tasksClient={tasksClient} />
           <IdentitySection detail={detail} />

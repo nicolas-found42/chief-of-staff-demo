@@ -5,7 +5,6 @@ import type {
   MeetingDebriefIdentitySummary,
   MeetingDebriefIndex,
   MeetingDebriefIndexEntry,
-  MeetingDebriefActionItemRollup,
   MeetingDebriefReviewState,
   MeetingDebriefReviewView,
   MeetingDebriefRunResult,
@@ -76,7 +75,6 @@ export interface MeetingDebriefHostDeps {
    * briefings that derive from action items go stale. Never throws into the
    * review path — the shell wires it to MeetingBriefHost.notifyActionItemsChanged.
    */
-  onActionItemsChanged?: () => void;
 }
 
 function parseRunResult(raw: string | null): MeetingDebriefRunResult | null {
@@ -159,13 +157,10 @@ export class MeetingDebriefHost implements HostedModule {
   private readonly gate: DebriefApprovalGateDeps;
   private readonly profiles: DebriefProfileDirectory | null;
   private readonly meetingTitle: ((meetingId: string) => string | null) | null;
-  /** The outward-write surface, also the Task read-through for item status (issue #158). */
-  private readonly outputs: MeetingDebriefModuleDeps["outputs"];
   /** transcriptId → runId, rebuilt once per process from Runs and the log. */
   private knownRuns: Map<string, string> | null = null;
   /** `process` serializes through one chain, so two passes never race a scan. */
   private chain: Promise<void> = Promise.resolve();
-  private readonly onActionItemsChanged: (() => void) | null;
 
   constructor(deps: MeetingDebriefHostDeps) {
     this.runs = deps.runs;
@@ -173,8 +168,6 @@ export class MeetingDebriefHost implements HostedModule {
     this.identity = deps.identity;
     this.profiles = deps.profiles ?? null;
     this.meetingTitle = deps.meetingTitle ?? null;
-    this.outputs = deps.outputs;
-    this.onActionItemsChanged = deps.onActionItemsChanged ?? null;
     /* A host without owner identity or a Profile directory keeps the gate
        closed: approval then reports its blockers instead of passing. */
     this.gate = {
@@ -411,27 +404,6 @@ export class MeetingDebriefHost implements HostedModule {
   }
 
   /**
-   * The Tasks receipt entries for one Run: the action-item indexes already
-   * created as Google Tasks. Malformed entries are skipped, never trusted.
-   */
-  private taskReceiptEntries(run: RunHandle): Array<{ index: number; taskId: string }> {
-    const entries: Array<{ index: number; taskId: string }> = [];
-    const raw = run.readArtifact("tasks.json");
-    if (!raw) return entries;
-    try {
-      const receipt = JSON.parse(raw) as { tasks?: Array<{ index: unknown; taskId: unknown }> };
-      for (const entry of receipt.tasks ?? []) {
-        if (typeof entry.index === "number" && typeof entry.taskId === "string") {
-          entries.push({ index: entry.index, taskId: entry.taskId });
-        }
-      }
-    } catch {
-      return entries;
-    }
-    return entries;
-  }
-
-  /**
    * The Gmail draft this Run created, read from its receipt (issue #182). A
    * draft, never a sent message: the URL opens Gmail's own compose view of
    * it, so finishing and sending stays the owner's own act.
@@ -450,35 +422,6 @@ export class MeetingDebriefHost implements HostedModule {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Issue #158 read-through: a Task-backed item reads completion from Google
-   * Tasks; an item with no Task holds its local done. Google takes over once
-   * a Task exists — a null or unreachable Google answer falls back to local.
-   */
-  private async actionItemTasks(
-    run: RunHandle,
-    state: MeetingDebriefReviewState,
-  ): Promise<MeetingDebriefReviewView["actionItemTasks"]> {
-    const receipt = this.taskReceiptEntries(run);
-    if (receipt.length === 0) return [];
-    const outputs = this.outputs;
-    const localDone = new Set(state.review.completedActionItems);
-    const resolved: MeetingDebriefReviewView["actionItemTasks"] = [];
-    for (const entry of receipt) {
-      let completed = localDone.has(entry.index);
-      if (outputs?.getTaskStatus) {
-        try {
-          const status = await outputs.getTaskStatus(entry.taskId);
-          if (status !== null) completed = status.completed;
-        } catch {
-          /* Google unreachable — the local done above stands. */
-        }
-      }
-      resolved.push({ index: entry.index, taskId: entry.taskId, completed });
-    }
-    return resolved;
   }
 
   private async buildReviewView(
@@ -512,9 +455,6 @@ export class MeetingDebriefHost implements HostedModule {
       automaticRecipients,
       additionalRecipients: state.recipients.additional,
       suggestedRecipients: extraction?.suggestedRecipients ?? [],
-      droppedActionItems: state.review.droppedActionItems,
-      completedActionItems: state.review.completedActionItems,
-      actionItemTasks: await this.actionItemTasks(run, state),
       /* Blockers describe the outward writes, which are the one thing still
          gated — so they are reported until those writes have gone out. */
       approvalBlockers: stateName === "published" ? [] : approvalBlockers(state, this.gate),
@@ -570,51 +510,6 @@ export class MeetingDebriefHost implements HostedModule {
       rosterConfirmed: state?.roster.status === "confirmed",
       recipientCount: automaticCount + (state?.recipients.additional.length ?? 0),
     };
-  }
-
-  /**
-   * Every open action item across every Debrief, in one read.
-   *
-   * The Meeting Wizard home used to build this by fetching the index and then
-   * one detail per Run — thirty-odd requests on every page load, growing with
-   * the corpus. The work is all local file reads, so it belongs on this side
-   * of the wire. Filtering to the owner stays with the caller, which knows who
-   * that is; this route only flattens what the Runs hold.
-   */
-  private async buildActionItems(): Promise<{ items: MeetingDebriefActionItemRollup[] }> {
-    const items: MeetingDebriefActionItemRollup[] = [];
-    for (const summary of this.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
-      const run = this.runs.open(summary.id);
-      if (!run) continue;
-      const extraction = parseRunResult(run.readArtifact("result.json"))?.debrief;
-      if (!extraction) continue;
-      const meta = run.read();
-      const record = meta.externalId ? this.catalog.getTranscript(meta.externalId) : null;
-      /* Same rule as the index: a retired copy's items are the kept copy's
-         items, and counting both listed one commitment as many times as Drive
-         held the file. */
-      if (record === null) continue;
-      const state = parseReviewState(run.readArtifact("review.json"));
-      const dropped = new Set(state?.review.droppedActionItems ?? []);
-      const doneLocal = new Set(state?.review.completedActionItems ?? []);
-      const tasks = state
-        ? new Map((await this.actionItemTasks(run, state)).map((t) => [t.index, t.completed]))
-        : new Map<number, boolean>();
-      extraction.actionItems.forEach((item, index) => {
-        if (dropped.has(index)) return;
-        if (tasks.has(index) ? tasks.get(index)! : doneLocal.has(index)) return;
-        items.push({
-          runId: summary.id,
-          meetingId: record.meetingId,
-          index,
-          title: item.title,
-          owner: item.owner,
-          ownerProfileId: item.ownerProfileId,
-          dueDate: item.dueDate,
-        });
-      });
-    }
-    return { items };
   }
 
   private buildIndex(): MeetingDebriefIndex {
@@ -673,76 +568,8 @@ export class MeetingDebriefHost implements HostedModule {
     };
   }
 
-  /**
-   * Issue #158: done and dismiss are separate persisted states, thin over
-   * the review store. Done marks local completion (Google Tasks take over
-   * once a Task exists); dismiss excludes the item from Task creation when
-   * the Debrief is approved later. The two exclude each other — marking one
-   * clears the other — so a dismissed item can never become a Google Task.
-   */
-  private markActionItem(
-    runId: string,
-    rawIndex: string,
-    kind: "done" | "dismissed",
-  ): { status: number; body: Record<string, unknown> } {
-    const found = this.reviewable(runId);
-    if (!found) return { status: 409, body: { error: "run-not-reviewable" } };
-    const itemIndex = Number.parseInt(rawIndex, 10);
-    const extraction = parseRunResult(found.run.readArtifact("result.json"));
-    if (
-      !Number.isInteger(itemIndex) ||
-      itemIndex < 0 ||
-      !extraction ||
-      itemIndex >= extraction.debrief.actionItems.length
-    ) {
-      return { status: 400, body: { error: "unknown-action-item" } };
-    }
-    const done = new Set(found.state.review.completedActionItems);
-    const dismissed = new Set(found.state.review.droppedActionItems);
-    if (kind === "done" ? done.has(itemIndex) : dismissed.has(itemIndex)) {
-      return {
-        status: 409,
-        body: { error: kind === "done" ? "already-done" : "already-dismissed" },
-      };
-    }
-    if (kind === "done") {
-      done.add(itemIndex);
-      dismissed.delete(itemIndex);
-    } else {
-      dismissed.add(itemIndex);
-      done.delete(itemIndex);
-    }
-    found.state.review.completedActionItems = [...done].sort((a, b) => a - b);
-    found.state.review.droppedActionItems = [...dismissed].sort((a, b) => a - b);
-    this.writeState(found.run, found.state);
-    found.run.appendEvent(
-      kind === "done" ? "review_action_item_done" : "review_action_item_dismissed",
-      {
-        index: itemIndex,
-        title: extraction.debrief.actionItems[itemIndex]?.title ?? null,
-      },
-    );
-    // Debrief action changes mark the derived briefings stale (#162) — best
-    // effort, never into the review path.
-    try {
-      this.onActionItemsChanged?.();
-    } catch {
-      /* staleness touch must not fail the review mutation */
-    }
-    return {
-      status: 200,
-      body:
-        kind === "done"
-          ? { completed: found.state.review.completedActionItems }
-          : { dismissed: found.state.review.droppedActionItems },
-    };
-  }
-
   routes(app: FastifyInstance): void {
     app.get("/api/meeting-debrief/index", async () => this.buildIndex());
-    /* Registered before the `:runId` route so "action-items" is not read as a
-       Run id. */
-    app.get("/api/meeting-debrief/action-items", async () => this.buildActionItems());
     app.get("/api/meeting-debrief/:runId", async (request, reply) => {
       const { runId } = request.params as { runId: string };
       const detail = await this.buildDetail(runId);
@@ -782,33 +609,6 @@ export class MeetingDebriefHost implements HostedModule {
         throw error;
       }
       return { resumed: true, field };
-    });
-
-    app.post("/api/meeting-debrief/:runId/action-items/:index/done", async (request, reply) => {
-      const { runId, index } = request.params as { runId: string; index: string };
-      const result = this.markActionItem(runId, index, "done");
-      reply.code(result.status).send(result.body);
-    });
-
-    app.post("/api/meeting-debrief/:runId/action-items/:index/dismiss", async (request, reply) => {
-      const { runId, index } = request.params as { runId: string; index: string };
-      const result = this.markActionItem(runId, index, "dismissed");
-      reply.code(result.status).send(result.body);
-    });
-
-    /* Legacy alias for dismiss: pre-#158 clients drop what #158 dismisses. */
-    app.post("/api/meeting-debrief/:runId/action-items/:index/drop", async (request, reply) => {
-      const { runId, index } = request.params as { runId: string; index: string };
-      const result = this.markActionItem(runId, index, "dismissed");
-      if (result.status === 409 && result.body["error"] === "already-dismissed") {
-        reply.code(409).send({ error: "already-dropped" });
-        return;
-      }
-      if (result.status === 200 && "dismissed" in result.body) {
-        reply.code(200).send({ dropped: result.body["dismissed"] });
-        return;
-      }
-      reply.code(result.status).send(result.body);
     });
 
     app.post("/api/meeting-debrief/:runId/roster", async (request, reply) => {

@@ -273,7 +273,7 @@ async function confirmOwner(request: APIRequestContext): Promise<void> {
   throw new Error("Owner identity could not be confirmed for the review journey");
 }
 
-test("meeting debrief review journey — regenerate, dismiss, roster, recipients, approval lock, redo", async ({
+test("meeting debrief review journey — regenerate, roster, recipients, approval lock, redo", async ({
   page,
   request,
 }) => {
@@ -327,10 +327,11 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
     1,
   );
 
-  // 2. Dismiss the action item; it is marked on the surface and never
-  //    becomes a Google Task, even after the later approval.
-  await page.getByRole("button", { name: "Dismiss", exact: true }).first().click();
-  await expect(page.getByText("Dismissed").first()).toBeVisible();
+  // 2. The extracted action items are a record of the meeting, not a queue:
+  //    the decisions on them are taken against canonical Action Items with
+  //    stable identities, in Tasks (issue #199).
+  await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Tasks", exact: true }).first()).toBeVisible();
 
   // 3. Confirm the roster through the Calendar seam; the owner is excluded.
   await page

@@ -10,7 +10,6 @@ import type {
   MeetingDebriefDetail,
   MeetingDebriefField,
   MeetingDebriefIndex,
-  MeetingDebriefActionItemRollup,
   MeetingDebriefRecipient,
 } from "@chief-of-staff-demo/shared";
 import { request } from "../client";
@@ -103,10 +102,6 @@ export const meetingsApi = {
       method: "POST",
     }),
   meetingDebriefIndex: () => request<MeetingDebriefIndex>("/api/meeting-debrief/index"),
-  /* Every open action item in one read, instead of the index plus one detail
-     per Run the Meeting Wizard home used to fan out. */
-  meetingDebriefActionItems: () =>
-    request<{ items: MeetingDebriefActionItemRollup[] }>("/api/meeting-debrief/action-items"),
   meetingDebriefDetail: (runId: string) =>
     request<MeetingDebriefDetail>(`/api/meeting-debrief/${encodeURIComponent(runId)}`),
   meetingDebriefRegenerate: (runId: string, field: MeetingDebriefField) =>
@@ -115,21 +110,6 @@ export const meetingsApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ field }),
     }),
-  meetingDebriefDropActionItem: (runId: string, index: number) =>
-    request<{ dropped: number[] }>(
-      `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/drop`,
-      { method: "POST" },
-    ),
-  meetingDebriefDoneActionItem: (runId: string, index: number) =>
-    request<{ completed: number[] }>(
-      `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/done`,
-      { method: "POST" },
-    ),
-  meetingDebriefDismissActionItem: (runId: string, index: number) =>
-    request<{ dismissed: number[] }>(
-      `/api/meeting-debrief/${encodeURIComponent(runId)}/action-items/${index}/dismiss`,
-      { method: "POST" },
-    ),
   meetingDebriefConfirmRoster: (
     runId: string,
     entries: Array<{ email: string; displayName?: string | null }>,

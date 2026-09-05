@@ -56,32 +56,13 @@ export interface DebriefDraft {
  * outward write is structurally possible, so that property stays a wiring
  * decision rather than a promise in prose.
  */
-/**
- * One Google Task, as the Debrief hands it over. Only retained actions the
- * Catalog confidently resolved to the Workspace owner's own Profile reach
- * here, so a Task is never created for work that is someone else's or for an
- * owner the Catalog could not resolve.
- */
-export interface DebriefTask {
-  title: string;
-  notes: string;
-  /** ISO date the action is due, or null when the meeting stated none. */
-  due: string | null;
-}
 
+/**
+ * The Debrief's outward surface. One draft, and nothing else: publication is
+ * email-only (issue #182), and accepted work is a canonical Task promoted one
+ * decision at a time rather than a bulk write the Debrief performs (#199).
+ */
 export interface DebriefOutputsDeps {
   /** Creates exactly one draft and returns the provider's id for the receipt. */
   createDraft(draft: DebriefDraft): Promise<string>;
-  /**
-   * Creates one Task and returns the provider's id for the receipt. Optional:
-   * a surface that can draft but not create Tasks writes the draft and stops,
-   * which is the same shape as a Workspace that never granted Tasks scope.
-   */
-  createTask?: (task: DebriefTask) => Promise<string>;
-  /**
-   * Reads one Task's completion from Google Tasks (issue #158). Optional:
-   * absent, a Task-backed item falls back to the review store's local done.
-   * Null when Google no longer holds the Task — also a local-fallback case.
-   */
-  getTaskStatus?: (taskId: string) => Promise<{ completed: boolean } | null>;
 }

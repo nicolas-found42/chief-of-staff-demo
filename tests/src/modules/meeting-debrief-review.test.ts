@@ -292,14 +292,8 @@ describe("Meeting Debrief whole-field regeneration (#140, ADR-0037)", () => {
     expect(bad.statusCode).toBe(400);
   });
 
-  it("regenerating action items clears earlier drop decisions; other fields keep them", async () => {
+  it("regenerates a whole field, leaving the review record untouched", async () => {
     const runId = await startRun(makeRecord());
-
-    const dropped = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
-    });
-    expect(dropped.statusCode).toBe(200);
 
     const regenerateSummary = await h.app.inject({
       method: "POST",
@@ -308,8 +302,6 @@ describe("Meeting Debrief whole-field regeneration (#140, ADR-0037)", () => {
     });
     expect(regenerateSummary.statusCode).toBe(200);
     await h.host.idle();
-    let state = reviewStateOf(runId);
-    expect(state.review.droppedActionItems).toEqual([0]);
 
     await h.app.inject({
       method: "POST",
@@ -317,8 +309,12 @@ describe("Meeting Debrief whole-field regeneration (#140, ADR-0037)", () => {
       payload: { field: "actionItems" },
     });
     await h.host.idle();
-    state = reviewStateOf(runId);
-    expect(state.review.droppedActionItems).toEqual([]);
+    /* Nothing positional survives a regeneration to be cleared: review
+       decisions live on canonical Action Items now (issue #199). */
+    expect(reviewStateOf(runId).review).toEqual({
+      droppedActionItems: [],
+      completedActionItems: [],
+    });
     const result = JSON.parse(
       h.runs.open(runId)!.readArtifact("result.json")!,
     ) as MeetingDebriefRunResult;
@@ -351,98 +347,49 @@ describe("Meeting Debrief whole-field regeneration (#140, ADR-0037)", () => {
   });
 });
 
-describe("Meeting Debrief dropping action items (#140, ADR-0037)", () => {
-  it("drops an individual action item and shows it on the detail surface", async () => {
-    const runId = await startRun(makeRecord());
+describe("the retired positional review routes (#199)", () => {
+  /* The contract half of the expand-contract migration. An index into an
+     extracted array was never an identity a decision could be pinned to, and
+     no production caller may reach for one again. */
+  it.each(["drop", "done", "dismiss"])(
+    "answers not-found for /action-items/:index/%s",
+    async (verb) => {
+      const runId = await startRun(makeRecord());
 
-    const dropped = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
+      const response = await h.app.inject({
+        method: "POST",
+        url: `/api/meeting-debrief/${runId}/action-items/0/${verb}`,
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(reviewStateOf(runId).review).toEqual({
+        droppedActionItems: [],
+        completedActionItems: [],
+      });
+    },
+  );
+
+  it("answers not-found for the cross-Debrief action-item rollup", async () => {
+    await startRun(makeRecord());
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: "/api/meeting-debrief/action-items",
     });
-    expect(dropped.statusCode).toBe(200);
 
-    const state = reviewStateOf(runId);
-    expect(state.review.droppedActionItems).toEqual([0]);
-    const detail = await (
-      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
-    ).json();
-    expect(detail.review.droppedActionItems).toEqual([0]);
-    expect(detail.review.automaticRecipients).toEqual([]);
+    expect(response.statusCode).toBe(404);
   });
 
-  it("refuses a duplicate drop and an out-of-range item", async () => {
+  it("reports no positional review state on the detail surface", async () => {
     const runId = await startRun(makeRecord());
-    await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
-    });
-    const duplicate = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
-    });
-    expect(duplicate.statusCode).toBe(409);
-    const missing = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/9/drop`,
-    });
-    expect(missing.statusCode).toBe(400);
-  });
-});
-
-describe("Meeting Debrief done vs dismiss lifecycle (#158)", () => {
-  it("holds done and dismiss as separate persisted states that clear each other", async () => {
-    const runId = await startRun(makeRecord());
-
-    const done = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/done`,
-    });
-    expect(done.statusCode).toBe(200);
-    expect(done.json()).toEqual({ completed: [0] });
-    let state = reviewStateOf(runId);
-    expect(state.review.completedActionItems).toEqual([0]);
-    expect(state.review.droppedActionItems).toEqual([]);
-
-    const duplicate = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/done`,
-    });
-    expect(duplicate.statusCode).toBe(409);
-
-    const dismissed = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/dismiss`,
-    });
-    expect(dismissed.statusCode).toBe(200);
-    expect(dismissed.json()).toEqual({ dismissed: [0] });
-    state = reviewStateOf(runId);
-    expect(state.review.droppedActionItems).toEqual([0]);
-    expect(state.review.completedActionItems).toEqual([]);
 
     const detail = await (
       await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` })
     ).json();
-    expect(detail.review.droppedActionItems).toEqual([0]);
-    expect(detail.review.completedActionItems).toEqual([]);
-    expect(detail.review.actionItemTasks).toEqual([]);
-  });
 
-  it("keeps the legacy drop route as a dismiss alias", async () => {
-    const runId = await startRun(makeRecord());
-
-    const dropped = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
-    });
-    expect(dropped.statusCode).toBe(200);
-    expect(dropped.json()).toEqual({ dropped: [0] });
-    expect(reviewStateOf(runId).review.droppedActionItems).toEqual([0]);
-
-    const again = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
-    });
-    expect(again.statusCode).toBe(409);
+    expect(detail.review).not.toHaveProperty("droppedActionItems");
+    expect(detail.review).not.toHaveProperty("completedActionItems");
+    expect(detail.review).not.toHaveProperty("actionItemTasks");
   });
 });
 
@@ -812,11 +759,6 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     });
     expect(locked.statusCode).toBe(409);
     expect(locked.json().error).toBe("run-not-reviewable");
-    const dropLocked = await h.app.inject({
-      method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
-    });
-    expect(dropLocked.statusCode).toBe(409);
     const rosterLocked = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/roster`,
@@ -1074,11 +1016,12 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     );
 
     // Every mutation seam answers again — no run-not-reviewable strand.
-    const drop = await h.app.inject({
+    const rosterAgain = await h.app.inject({
       method: "POST",
-      url: `/api/meeting-debrief/${runId}/action-items/0/drop`,
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: { entries: [] },
     });
-    expect(drop.statusCode).toBe(200);
+    expect(rosterAgain.statusCode).toBe(200);
     const retried = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,

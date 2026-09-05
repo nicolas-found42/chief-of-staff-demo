@@ -422,6 +422,15 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      configured provider happens after the local Task has committed, and its
      failure lands on the External Task Link rather than on the work. */
   const materializeActionItemsUnderPolicy = (handover: ActionItemMaterialization): void => {
+    /* Canonical materialization is what touches briefing staleness now: the
+       positional decisions that used to do it are gone (issue #199), and the
+       Briefings read the canonical records. Best effort, never into the
+       extraction path. */
+    try {
+      notifyBriefActionItemsChanged();
+    } catch {
+      /* a staleness touch must not fail an extraction */
+    }
     materializeUnderPolicy(
       {
         tasks,
@@ -832,7 +841,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           runs,
           workspaceDir,
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
-          onActionItemsChanged: notifyBriefActionItemsChanged,
           materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
@@ -865,7 +873,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         const current = configStore.get();
         return { provider: current.provider, model: current.model };
       },
-      onActionItemsChanged: notifyBriefActionItemsChanged,
       /* Issue #177: a successful extraction's proposals become durable
          Workspace Action Items. The Debrief produces them; Tasks owns them.
          Issue #181: the Action Item Policy then decides whether any of them
