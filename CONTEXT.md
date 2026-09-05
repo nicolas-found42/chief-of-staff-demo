@@ -499,6 +499,13 @@ The durable reviewed or policy-made conclusion that a Transcript Mention refers 
 Profile, is not a person, or remains unresolved.
 _Avoid_: Match score, candidate, guess
 
+**Confirmed Identity Decision**:
+An Identity Decision whose outcome linked a Transcript Mention to an existing Person Profile or
+created one from it. It is what makes a Transcript count as evidence for that Profile; a decision
+that resolved to not-a-person or remains unresolved is not one. No caller outside the Transcript
+Catalog reads the outcome values to work this out — the Catalog answers the question directly.
+_Avoid_: Confirmed mention, match, resolved decision
+
 **Identity Supplement**:
 The optional model-backed addition to deterministic mention extraction: further titles, roles,
 aliases or relationships on a span the patterns found, or on one they missed. It supplements

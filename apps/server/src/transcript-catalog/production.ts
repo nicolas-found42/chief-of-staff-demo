@@ -8,8 +8,7 @@ import {
   type TranscriptDebriefProcessor,
 } from "./catalog.js";
 import { createDriveCatalogSource } from "./drive-source.js";
-import { TranscriptIdentityService } from "./identity.js";
-import { TranscriptIdentityStore } from "./identity-store.js";
+import type { TranscriptIdentityService } from "./identity.js";
 
 /**
  * Production composition of the Transcript Catalog (issue #142, completing the
@@ -30,6 +29,13 @@ export interface TranscriptCatalogRuntimeOptions {
   workspaceDir: string;
   port: number;
   google: GoogleConnection;
+  /**
+   * The Workspace's one identity service. Built by the Shell rather than
+   * here: the Person Profiles product and the Meeting Debrief ask it the
+   * same questions over the same directory, and a service constructed
+   * privately in here is one nothing outside this file can be seen to hold.
+   */
+  identity: TranscriptIdentityService;
   people: WorkspacePersonProfiles;
   getConfig: () => AppConfig;
   /** Disclosed in the pre-consent inventory, so consent is informed. */
@@ -66,11 +72,7 @@ export function createTranscriptCatalogRuntime(
   options: TranscriptCatalogRuntimeOptions,
 ): TranscriptCatalogRuntime {
   const log = options.log ?? (() => {});
-  const identity = new TranscriptIdentityService({
-    store: new TranscriptIdentityStore(options.workspaceDir),
-    people: options.people,
-    automaticCreation: true,
-  });
+  const identity = options.identity;
 
   const config = options.getConfig();
   /* The disclosure is read per inventory, so a provider or model edited in

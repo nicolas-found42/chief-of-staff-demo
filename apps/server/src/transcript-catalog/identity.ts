@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   IdentityDecision,
+  OrganizationMention,
   OrganizationMergeDecision,
   PersonProfile,
   RememberedMapping,
@@ -66,6 +67,34 @@ export interface MergeOrganizationsInput {
   targetOrganizationMentionId: string;
   note?: string;
 }
+
+/**
+ * One Transcript Mention this service has confirmed against a Person Profile.
+ * It names the Transcript rather than carrying it: what the Transcript says,
+ * when it happened and whether its bytes still match are the Catalog store's
+ * answers, and the callers that need them already hold it.
+ */
+export interface ConfirmedMention {
+  transcriptId: string;
+  mentionId: string;
+  /** The preserved span the decision was made on. */
+  quote: string;
+}
+
+/** Everything mined from one Transcript, for a consumer that reviews it whole. */
+export interface TranscriptIdentityReview {
+  mentions: TranscriptMention[];
+  decisions: IdentityDecision[];
+  organizations: OrganizationMention[];
+}
+
+/**
+ * The outcomes that make a Transcript evidence for a Person Profile — a
+ * Confirmed Identity Decision. Deliberately not exported: a caller holding
+ * this set would be one `readMentions()` away from re-deriving the walk
+ * `confirmedMentions` exists to own.
+ */
+const CONFIRMED_OUTCOMES = new Set<IdentityDecision["outcome"]>(["linked", "created"]);
 
 /**
  * Identity mining over the Transcript Catalog (issue #126). Deterministic
@@ -491,6 +520,74 @@ export class TranscriptIdentityService {
         mergeDecision: this.store.latestOrganizationDecision(organization.id),
       })),
     };
+  }
+
+  /**
+   * Every Confirmed Identity Decision naming this Person Profile, one entry
+   * per Transcript Mention, ordered by Transcript then mention.
+   *
+   * This is the question five call sites used to reassemble for themselves —
+   * walk the mentions, resolve each one's latest decision, compare the
+   * outcome against a literal. The walk lives here now, with the vocabulary
+   * that decides it: the same `settle` that writes an outcome is what reads
+   * it back. The order is part of the answer, so a caller deriving a revision
+   * string from it gets one that is stable by construction rather than by a
+   * sort it remembered to apply.
+   */
+  confirmedMentions(profileId: string): ConfirmedMention[] {
+    const latest = this.latestDecisions();
+    return this.store
+      .readMentions()
+      .flatMap((mention) => {
+        const decision = latest.get(mention.id);
+        if (decision === undefined || decision.profileId !== profileId) return [];
+        return CONFIRMED_OUTCOMES.has(decision.outcome)
+          ? [
+              {
+                transcriptId: mention.provenance.transcriptId,
+                mentionId: mention.id,
+                quote: mention.provenance.quote,
+              },
+            ]
+          : [];
+      })
+      .sort(
+        (left, right) =>
+          left.transcriptId.localeCompare(right.transcriptId) ||
+          left.mentionId.localeCompare(right.mentionId),
+      );
+  }
+
+  /**
+   * Everything mined from one Transcript. The Meeting Debrief's runtimes each
+   * assembled this from three filtered store reads; it is one question about
+   * one Transcript, so it is one method.
+   */
+  reviewFor(transcriptId: string): TranscriptIdentityReview {
+    return {
+      mentions: this.store
+        .readMentions()
+        .filter((mention) => mention.provenance.transcriptId === transcriptId),
+      decisions: this.store
+        .readDecisions()
+        .filter((decision) => decision.transcriptId === transcriptId),
+      organizations: this.store
+        .readOrganizations()
+        .filter((organization) => organization.provenance.transcriptId === transcriptId),
+    };
+  }
+
+  /**
+   * The current decision for every mention, from one read of the append-only
+   * record. `latestDecision` answers for one mention and re-reads the whole
+   * file to do it; a query that spans mentions reads once and indexes.
+   */
+  private latestDecisions(): Map<string, IdentityDecision> {
+    const latest = new Map<string, IdentityDecision>();
+    /* Append order is decision order: the last entry for a mention is the
+       one that stands, exactly as `latestDecision` resolves it. */
+    for (const decision of this.store.readDecisions()) latest.set(decision.mentionId, decision);
+    return latest;
   }
 
   /**
