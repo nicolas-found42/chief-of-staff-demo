@@ -344,3 +344,74 @@ test("meeting wizard tabs — Today and This week are routes, and survive refres
   await expect(page).toHaveURL(/\/meetings$/);
   await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
 });
+
+test("meeting wizard Today — the Day Spine metric strip, and the restraint around it", async ({
+  page,
+  request,
+}) => {
+  // One Meeting today, one overdue Task, one pending proposal: enough for the
+  // strip to have five real figures rather than five zeroes.
+  const startAt = atTodayLocal(10);
+  const event = fixtureEvent({ eventId: "evt_spine_1", occurrenceId: startAt, startAt });
+  expect((await request.post("/api/test/meeting-brief/schedule", { data: { event } })).ok()).toBe(
+    true,
+  );
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+
+  await page.goto("/meetings");
+
+  // The day's shape in five figures, in the order the day is read, each one a
+  // link to the surface that owns it (issue #193).
+  const strip = page.locator("ul.work-metrics");
+  await expect(strip).toBeVisible();
+  await expect(strip.locator("li.work-metric")).toHaveCount(5);
+  await expect(strip.locator(".work-metric-label")).toHaveText([
+    "Today",
+    "This week",
+    "Pending",
+    "Open",
+    "Overdue",
+  ]);
+  for (const [label, href] of [
+    ["Today", "/meetings"],
+    ["This week", "/meetings/weekly"],
+    ["Pending", "/tasks#action-items"],
+    ["Open", "/tasks"],
+    ["Overdue", "/tasks"],
+  ] as const) {
+    await expect(
+      strip.locator("li.work-metric").filter({ hasText: label }).getByRole("link"),
+    ).toHaveAttribute("href", href);
+  }
+  // The figures are real, not decoration: one more overdue Task moves the
+  // Overdue figure by exactly one. Asserted as a delta because the hermetic
+  // server is shared across specs, so no absolute count is this test's to own.
+  const overdue = strip
+    .locator("li.work-metric")
+    .filter({ hasText: "Overdue" })
+    .locator(".work-metric-value");
+  const before = Number(await overdue.textContent());
+  expect(Number.isInteger(before)).toBe(true);
+  expect(
+    (
+      await request.post("/api/tasks", {
+        data: { title: "Overdue spine work", dueDate: "2020-01-01" },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.reload();
+  await expect(overdue).toHaveText(String(before + 1));
+
+  // Canonical Tasks and pending Action Items stay two headed groups, never one
+  // merged queue.
+  await expect(page.getByRole("heading", { name: /^Tasks \(/ })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /^Action Items awaiting review \(/ }),
+  ).toBeVisible();
+
+  // Quiet Rail restraint: no prototype-only switch and no admin Run concepts
+  // reach the production Meeting Wizard surface.
+  await expect(page.getByRole("radiogroup", { name: /prototype/i })).toHaveCount(0);
+  await expect(page.getByText(/prototype/i)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Runs$/ })).toHaveCount(0);
+});

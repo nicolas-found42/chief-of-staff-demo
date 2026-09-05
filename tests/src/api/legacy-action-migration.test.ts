@@ -154,6 +154,68 @@ describe("migrating legacy Debrief review", () => {
     expect(reads).toEqual(["google_0"]);
     expect(run.readArtifact("tasks.json")).toBe(receiptBefore);
   });
+  it.each([
+    {
+      name: "a provider that no longer holds the record",
+      read: async () => null,
+      state: "missing",
+      failure: { kind: "not-found" },
+    },
+    {
+      name: "a provider that refuses the saved credential",
+      read: async () => {
+        throw Object.assign(new Error("unauthorized"), { code: 401 });
+      },
+      state: "failed",
+      failure: { kind: "authorization" },
+    },
+    {
+      name: "a provider that cannot be reached at all",
+      read: async () => {
+        throw Object.assign(new Error("offline"), { code: 503 });
+      },
+      state: "failed",
+      failure: { kind: "network" },
+    },
+  ])("still yields a usable Task and a recoverable link against $name", async (scenario) => {
+    const run = legacyRun({ actionItems: [proposal()], taskReceipts: [0] });
+    const receiptBefore = run.readArtifact("tasks.json");
+    const deps = {
+      runs,
+      tasks,
+      actionItems,
+      destination: {
+        provider: "google-tasks" as const,
+        googleTaskListId: "legacy_list",
+        googleTaskListTitle: "Meeting actions",
+      },
+      read: scenario.read,
+    };
+
+    await migrateLegacyTaskReceipts(deps);
+
+    /* The Task is the point of the migration; the provider is not. */
+    const [task] = tasks.list({});
+    expect(task).toMatchObject({
+      title: "Follow up on the billing fix",
+      status: "open",
+      externalLink: {
+        remoteId: "google_0",
+        state: scenario.state,
+        failure: scenario.failure,
+        /* Recoverable: the identity to retry against is still on the link. */
+        baseline: { title: "Follow up on the billing fix", status: "open" },
+      },
+    });
+    expect(actionItems.list()[0]).toMatchObject({ state: "promoted", promotedTaskId: task.id });
+
+    /* And resuming against the same unavailable provider duplicates nothing. */
+    await migrateLegacyTaskReceipts(deps);
+    expect(tasks.list({})).toHaveLength(1);
+    expect(actionItems.list()).toHaveLength(1);
+    expect(run.readArtifact("tasks.json")).toBe(receiptBefore);
+  });
+
   it("materializes every undecided proposal as a pending Action Item", () => {
     legacyRun({ actionItems: [proposal(), proposal({ title: "Book the follow-up" })] });
 

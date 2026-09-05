@@ -214,7 +214,9 @@ export class WeeklyWorkspace {
     const path = join(this.deps.workspaceDir, "weekly", `${view.weekStart}.json`);
     const cached = existsSync(path)
       ? (JSON.parse(readFileSync(path, "utf8")) as {
+          week?: string;
           fingerprint: string;
+          sources?: object[];
           summary: WeeklySummaryState;
           dirtyFingerprint?: string;
           dirtyAt?: number;
@@ -256,7 +258,11 @@ export class WeeklyWorkspace {
         state: "ready",
         generatedAt: this.deps.now().toISOString(),
       };
-      atomicWriteJson(path, { fingerprint, sources, summary: view.summary });
+      /* The whole record a later reader needs: which week, which Runs of which
+         Meetings produced it, the fingerprint that settles reuse, and — inside
+         `summary` — the text, the generation time, the provider and the model.
+         A BYOK owner who switches providers can see which one wrote this. */
+      atomicWriteJson(path, { week: view.weekStart, fingerprint, sources, summary: view.summary });
     } catch {
       view.summary = {
         ...(cached?.summary ?? view.summary),
@@ -265,6 +271,8 @@ export class WeeklyWorkspace {
       };
       atomicWriteJson(path, {
         ...(cached ?? { fingerprint: "", summary: view.summary }),
+        week: view.weekStart,
+        sources: cached?.sources ?? sources,
         failedFingerprint: fingerprint,
       });
     }

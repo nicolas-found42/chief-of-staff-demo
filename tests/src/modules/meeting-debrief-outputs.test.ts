@@ -148,16 +148,24 @@ function fakeExtraction(input: DebriefExtractInput) {
  */
 function recordingOutputs(): {
   drafts: DebriefDraft[];
+  /** Set to make the next Gmail write fail, the way a real one can. */
+  failNext: boolean;
   createDraft: (d: DebriefDraft) => Promise<string>;
 } {
   const drafts: DebriefDraft[] = [];
-  return {
+  const outputs = {
     drafts,
+    failNext: false,
     createDraft: (draft: DebriefDraft) => {
+      if (outputs.failNext) {
+        outputs.failNext = false;
+        return Promise.reject(new Error("Gmail refused the draft"));
+      }
       drafts.push(draft);
       return Promise.resolve(`draft_${drafts.length}`);
     },
   };
+  return outputs;
 }
 
 interface Harness {
@@ -302,6 +310,44 @@ describe("Meeting Debrief approval outputs — Tasks and retry (#141)", () => {
     expect(review.draft?.url).toContain("mail.google.com");
     /* One recipient: the roster's confirmed attendee other than the owner. */
     expect(review.draft?.recipientCount).toBe(1);
+  });
+
+  it("leaves review state untouched when Gmail refuses, and retries into one draft", async () => {
+    const runId = await readyToApprove();
+    const before = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
+    const reviewBefore = before.json<{ review: { draft: unknown; review: unknown } }>().review;
+
+    h.outputs.failNext = true;
+    await approve(runId);
+    await h.host.idle();
+
+    /* Nothing reached Gmail, and nothing pretends it did. */
+    expect(h.outputs.drafts).toHaveLength(0);
+    const failed = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
+    const reviewAfter = failed.json<{ review: { draft: unknown; review: unknown } }>().review;
+    expect(reviewAfter.draft).toBeNull();
+    /* The Action Item decisions the owner made are exactly as they were: a
+       recipient problem is not allowed to touch accepted work (issue #182). */
+    expect(reviewAfter.review).toEqual(reviewBefore.review);
+
+    /* A refused Gmail write fails the Run rather than half-approving it, and
+       the approval is not repeatable while it stands. */
+    expect((await approve(runId)).statusCode).toBe(409);
+
+    /* Retry, the way the Run list offers it: one draft, because the attempt
+       that failed wrote no receipt to be counted twice. */
+    await h.host.retryRun(runId);
+    await h.host.idle();
+    expect(h.outputs.drafts).toHaveLength(1);
+    const served = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
+    expect(
+      served.json<{ review: { draft: { draftId: string } | null } }>().review.draft,
+    ).toMatchObject({ draftId: "draft_1" });
+
+    /* And there is nothing left to retry: the Run succeeded, so a second
+       attempt cannot draft a second time. */
+    await expect(h.host.retryRun(runId)).rejects.toThrow(/not retryable/);
+    expect(h.outputs.drafts).toHaveLength(1);
   });
 
   it("drafts nothing twice when the action is repeated", async () => {

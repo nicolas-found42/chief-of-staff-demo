@@ -47,6 +47,31 @@ describe.each([
   let updateRemoteContent: Mock<RemoteTaskConnector["updateContent"]>;
   let deleteRemote: Mock<RemoteTaskConnector["delete"]>;
 
+  /**
+   * The linking dependencies this suite composes, built fresh from the current
+   * mocks. Both providers dispatch to the same connector double, which is what
+   * makes `describe.each` above one shared contract rather than two suites.
+   */
+  function linkingDeps() {
+    const connector = {
+      create: createRemote,
+      read: readRemote,
+      updateStatus: updateRemoteStatus,
+      updateContent: updateRemoteContent,
+      delete: deleteRemote,
+    };
+    return {
+      tasks,
+      settings: () => settings,
+      save: (next: GoogleTasksDestinationSettings) => {
+        settings = next;
+      },
+      listRemoteLists: async () => [{ id: "list_work", title: "Work" }],
+      asana: connector,
+      google: connector,
+    };
+  }
+
   /** One provider projection, in the four fields a linked record has. */
   function snapshot(title: string, status: Task["status"] = "open", overrides = {}) {
     return { title, notes: "", dueDate: null, status, ...overrides };
@@ -80,28 +105,7 @@ describe.each([
     registerTasksApi(app, {
       tasks,
       actionItems: new WorkspaceActionItems({ store }),
-      linking: new TaskLinking({
-        tasks,
-        settings: () => settings,
-        save: (next) => {
-          settings = next;
-        },
-        listRemoteLists: async () => [{ id: "list_work", title: "Work" }],
-        asana: {
-          create: createRemote,
-          read: readRemote,
-          updateStatus: updateRemoteStatus,
-          updateContent: updateRemoteContent,
-          delete: deleteRemote,
-        },
-        google: {
-          create: createRemote,
-          read: readRemote,
-          updateStatus: updateRemoteStatus,
-          updateContent: updateRemoteContent,
-          delete: deleteRemote,
-        },
-      }),
+      linking: new TaskLinking(linkingDeps()),
     });
     return app.ready();
   });
@@ -791,6 +795,102 @@ describe.each([
     });
   });
 
+  describe("triggers other than the Refresh button", () => {
+    it("runs the same idempotent path at startup and on the five-minute tick", async () => {
+      await enable();
+      const task = await captureToGoogle("Send the pricing sheet");
+      await link(task.id);
+      vi.useFakeTimers();
+      try {
+        const runtime = new TaskLinking(linkingDeps());
+        readRemote.mockClear();
+        createRemote.mockClear();
+
+        /* Startup: the same reconciliation the Refresh button asks for. */
+        runtime.start();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1"]);
+
+        /* And again on the tick, five minutes later. */
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_1", "google_1"]);
+
+        /* Idempotent throughout: no second remote record, no rewrites of an
+           agreeing one. */
+        expect(createRemote).not.toHaveBeenCalled();
+        expect(updateRemoteContent).not.toHaveBeenCalled();
+        runtime.stop();
+        expect(tasks.get(task.id)?.externalLink).toMatchObject({ state: "synchronized" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("leaves missing, conflicted and changed-externally links alone when retrying all failures", async () => {
+      await enable();
+
+      const missing = await captureToGoogle("Gone from the provider");
+      await link(missing.id);
+      readRemote.mockResolvedValueOnce(null);
+      await app.inject({ method: "POST", url: `/api/tasks/${missing.id}/sync` });
+
+      const drifted = await captureToGoogle("Changed outside");
+      createRemote.mockResolvedValueOnce({ remoteId: "google_2", url: null });
+      await link(drifted.id);
+      readRemote.mockResolvedValueOnce(snapshot("Changed outside, elsewhere", "open"));
+      await app.inject({ method: "POST", url: `/api/tasks/${drifted.id}/sync` });
+
+      const conflicted = await captureToGoogle("Both sides moved");
+      createRemote.mockResolvedValueOnce({ remoteId: "google_3", url: null });
+      await link(conflicted.id);
+      updateRemoteStatus.mockRejectedValueOnce(
+        Object.assign(new Error("backend error"), { code: 500 }),
+      );
+      await app.inject({ method: "POST", url: `/api/tasks/${conflicted.id}/complete` });
+      readRemote.mockResolvedValueOnce(snapshot("Both sides moved", "completed"));
+      await app.inject({ method: "POST", url: `/api/tasks/${conflicted.id}/sync` });
+
+      const failed = await captureToGoogle("Transient failure");
+      createRemote.mockResolvedValueOnce({ remoteId: "google_4", url: null });
+      await link(failed.id);
+      updateRemoteStatus.mockRejectedValueOnce(Object.assign(new Error("offline"), { code: 503 }));
+      await app.inject({ method: "POST", url: `/api/tasks/${failed.id}/complete` });
+
+      const before = await Promise.all(
+        [missing, drifted, conflicted].map(async (task) =>
+          (await app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json<Task>(),
+        ),
+      );
+      expect(before.map((task) => task.externalLink?.state)).toEqual([
+        "missing",
+        "changed-externally",
+        "conflicted",
+      ]);
+      readRemote.mockClear();
+      updateRemoteStatus.mockClear();
+
+      const retried = await app.inject({ method: "POST", url: "/api/tasks/retry-failed" });
+      expect(retried.statusCode).toBe(200);
+
+      /* Only the failed link is touched at all. */
+      expect(readRemote.mock.calls.map((call) => call[1])).toEqual(["google_4"]);
+      expect(updateRemoteStatus.mock.calls.map((call) => call[1])).toEqual(["google_4"]);
+      const after = await Promise.all(
+        [missing, drifted, conflicted].map(async (task) =>
+          (await app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json<Task>(),
+        ),
+      );
+      /* The three owner decisions still stand, unresolved and unchanged. */
+      expect(after.map((task) => task.externalLink)).toEqual(
+        before.map((task) => task.externalLink),
+      );
+      expect(
+        (await app.inject({ method: "GET", url: `/api/tasks/${failed.id}` })).json<Task>()
+          .externalLink,
+      ).toMatchObject({ state: "synchronized" });
+    });
+  });
+
   describe("the synchronization baseline", () => {
     it("survives a restart, because it lives on the Task the Workspace stored", async () => {
       await enable();
@@ -811,5 +911,165 @@ describe.each([
         status: "open",
       });
     });
+  });
+});
+
+/**
+ * Cross-provider isolation (issue #190). The parameterized suite above proves
+ * the shared contract one provider at a time; this one enables Google Tasks
+ * and Asana together, because "one failing link never blocks another Task **or
+ * provider**" is only provable while both are live at once.
+ */
+describe("Google Tasks and Asana enabled together", () => {
+  const GOOGLE = {
+    provider: "google-tasks",
+    googleTaskListId: "list_work",
+    googleTaskListTitle: "Work",
+  } as const;
+  const ASANA = {
+    provider: "asana",
+    workspaceGid: "workspace",
+    workspaceName: "Workspace",
+    projectGid: "project",
+    projectName: "Project",
+    sectionGid: null,
+    sectionName: null,
+  } as const;
+
+  let app: FastifyInstance;
+  let tasks: WorkspaceTasks;
+  let google: { [K in keyof RemoteTaskConnector]: Mock<RemoteTaskConnector[K]> };
+  let asana: { [K in keyof RemoteTaskConnector]: Mock<RemoteTaskConnector[K]> };
+
+  /** A connector double that answers with whatever the Workspace last sent it. */
+  function connector(prefix: string) {
+    let issued = 0;
+    return {
+      create: vi.fn(async () => ({ remoteId: `${prefix}_${++issued}`, url: null })),
+      read: vi.fn(async (_destination, remoteId: string) => {
+        const linked = tasks.list({}).find((task) => task.externalLink?.remoteId === remoteId);
+        return linked?.externalLink?.baseline ?? null;
+      }),
+      updateStatus: vi.fn(async () => {}),
+      updateContent: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+    };
+  }
+
+  beforeEach(async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "cos-task-sync-both-"));
+    const store = new TaskStore(workspaceDir);
+    let settings: GoogleTasksDestinationSettings = {
+      enabled: true,
+      taskListId: "list_work",
+      taskListTitle: "Work",
+    };
+    google = connector("google");
+    asana = connector("asana");
+    tasks = new WorkspaceTasks({
+      store,
+      now: () => new Date("2026-09-04T09:00:00.000Z"),
+      isGoogleTasksEnabled: () => settings.enabled,
+      isAsanaEnabled: () => true,
+    });
+    app = fastify();
+    registerTasksApi(app, {
+      tasks,
+      actionItems: new WorkspaceActionItems({ store }),
+      linking: new TaskLinking({
+        tasks,
+        settings: () => settings,
+        save: (next) => {
+          settings = next;
+        },
+        listRemoteLists: async () => [{ id: "list_work", title: "Work" }],
+        google,
+        asana,
+      }),
+    });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  async function capture(title: string, destination: object): Promise<Task> {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title, destination },
+    });
+    expect(created.statusCode).toBe(201);
+    const task = created.json<Task>();
+    const linked = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/link` });
+    expect(linked.statusCode).toBe(200);
+    return linked.json<Task>();
+  }
+
+  it("never lets a failing Google link block an Asana Task, or the reverse", async () => {
+    const googleTask = await capture("Send the pricing sheet", GOOGLE);
+    const asanaTask = await capture("Book the room", ASANA);
+    expect(googleTask.externalLink?.remoteId).toBe("google_1");
+    expect(asanaTask.externalLink?.remoteId).toBe("asana_1");
+
+    /* Google refuses the saved credential — the failure that pauses automatic
+       retry for its own links and must not reach Asana's. */
+    google.updateStatus.mockRejectedValueOnce(
+      Object.assign(new Error("unauthorized"), { code: 401 }),
+    );
+    await app.inject({ method: "POST", url: `/api/tasks/${googleTask.id}/complete` });
+    expect(
+      (await app.inject({ method: "GET", url: `/api/tasks/${googleTask.id}` })).json<Task>()
+        .externalLink,
+    ).toMatchObject({ state: "failed", failure: { kind: "authorization" } });
+
+    /* Asana carries on, in the same refresh, over the same shared path. */
+    const refreshed = await app.inject({ method: "POST", url: "/api/tasks/refresh" });
+    expect(refreshed.statusCode).toBe(200);
+    expect(asana.read).toHaveBeenCalledWith(ASANA, "asana_1");
+    expect(
+      (await app.inject({ method: "GET", url: `/api/tasks/${asanaTask.id}` })).json<Task>()
+        .externalLink,
+    ).toMatchObject({ state: "synchronized" });
+
+    /* And a completion on the Asana Task still reaches Asana. */
+    const completed = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${asanaTask.id}/complete`,
+    });
+    expect(completed.json<Task>()).toMatchObject({
+      status: "completed",
+      externalLink: { state: "synchronized" },
+    });
+    expect(asana.updateStatus).toHaveBeenCalledWith(ASANA, "asana_1", true);
+
+    /* Neither provider was ever handed the other's record. */
+    expect(google.read.mock.calls.every((call) => call[1].startsWith("google_"))).toBe(true);
+    expect(asana.read.mock.calls.every((call) => call[1].startsWith("asana_"))).toBe(true);
+    expect(google.updateStatus.mock.calls.every((call) => call[1].startsWith("google_"))).toBe(
+      true,
+    );
+  });
+
+  it("keeps one provider's outage off the other's Tasks during a whole-Workspace refresh", async () => {
+    const googleTask = await capture("Send the pricing sheet", GOOGLE);
+    const asanaTask = await capture("Book the room", ASANA);
+    google.read.mockRejectedValue(Object.assign(new Error("offline"), { code: 503 }));
+
+    const refreshed = await app.inject({ method: "POST", url: "/api/tasks/refresh" });
+
+    expect(refreshed.statusCode).toBe(200);
+    expect(
+      (await app.inject({ method: "GET", url: `/api/tasks/${googleTask.id}` })).json<Task>()
+        .externalLink,
+    ).toMatchObject({ state: "failed", failure: { kind: "network" } });
+    expect(
+      (await app.inject({ method: "GET", url: `/api/tasks/${asanaTask.id}` })).json<Task>()
+        .externalLink,
+    ).toMatchObject({ state: "synchronized" });
+    /* And the Tasks themselves are untouched by either. */
+    expect(tasks.get(googleTask.id)?.title).toBe("Send the pricing sheet");
+    expect(tasks.get(asanaTask.id)?.title).toBe("Book the room");
   });
 });

@@ -163,6 +163,40 @@ describe("Automatically create my Tasks", () => {
     expect(tasks.list({})).toHaveLength(1);
   });
 
+  it("creates no second Task when the same extraction is materialized after a restart", () => {
+    const first = materialize([proposal()]);
+    expect(first[0]?.state).toBe("promoted");
+
+    /* A second Workspace over the same directory — the shape a restart has.
+       Nothing is carried in memory, so the store alone has to say this
+       proposal already became a Task. */
+    const restartedStore = new TaskStore(workspaceDir);
+    const restartedTasks = new WorkspaceTasks({
+      store: restartedStore,
+      now: () => NOW,
+      isGoogleTasksEnabled: () => googleTasksEnabled,
+    });
+    const restartedActionItems = new WorkspaceActionItems({
+      store: restartedStore,
+      now: () => NOW,
+      ownerProfileId: () => OWNER_PROFILE,
+    });
+    const again = materializeUnderPolicy(
+      { tasks: restartedTasks, actionItems: restartedActionItems, policy: () => policy },
+      {
+        debriefRunId: "run_1",
+        transcriptId: "drive_fileA_r1",
+        meetingId: "meeting_1",
+        actionItems: [proposal()],
+      },
+    );
+
+    expect(again.map((item) => item.id)).toEqual(first.map((item) => item.id));
+    expect(again[0]?.promotedTaskId).toBe(first[0]?.promotedTaskId);
+    expect(restartedTasks.list({})).toHaveLength(1);
+    expect(restartedActionItems.list()).toHaveLength(1);
+  });
+
   it("commits the Task before delivering it, and keeps it when delivery fails", async () => {
     googleTasksEnabled = true;
     tasks.updateList("inbox", {

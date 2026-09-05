@@ -87,6 +87,36 @@ test("tasks journey — nav → quick add → complete → reopen → edit → l
   await scanForViolations(page);
 });
 
+test("tasks journey — opening Tasks reconciles linked records without being asked", async ({
+  page,
+}) => {
+  // The Tasks-open trigger (issues #187, #190). Startup, the five-minute tick,
+  // a local change and the Refresh button are proven at the API; this is the
+  // fifth entry point, and it lives in the page rather than the server — a
+  // `useEffect` in TasksPage that runs once per open.
+  const reconciliations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/tasks/refresh")) {
+      reconciliations.push(request.url());
+    }
+  });
+
+  await page.goto("/tasks");
+  await expect(page.getByRole("heading", { level: 1, name: "Tasks" })).toBeVisible();
+  await expect.poll(() => reconciliations.length).toBe(1);
+
+  // Once per open, not once per filter change: a projection read is not a
+  // reason to spend provider calls.
+  await page.getByLabel("Search Tasks").fill("a filter that changes nothing outward");
+  await page.waitForTimeout(250);
+  expect(reconciliations).toHaveLength(1);
+
+  // And opening the page again reconciles again.
+  await page.goto("/");
+  await page.goto("/tasks");
+  await expect.poll(() => reconciliations.length).toBe(2);
+});
+
 test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks", async ({
   page,
   request,
@@ -152,6 +182,29 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
     tasks: Array<{ title: string }>;
   };
   expect(tasks.tasks.map((task) => task.title)).not.toContain("own the pricing page rewrite");
+
+  // Home and the Daily Briefing link every pending proposal to
+  // `/tasks#action-item-<id>` (issue #192). The anchor those links point at
+  // was missing outright until `153eb8a`, and a link to an anchor nothing
+  // renders looks exactly like a working one — so the target is asserted here,
+  // on the page that owns it, and the link is followed to prove it lands.
+  const queue = (await (await request.get("/api/action-items?state=pending")).json()) as {
+    items: Array<{ id: string; proposal: { title: string } }>;
+  };
+  const pending = queue.items.find((item) =>
+    /own the pricing page rewrite/i.test(item.proposal.title),
+  );
+  expect(pending, "the seeded Debrief proposed the rewrite").toBeDefined();
+  const anchor = page.locator(`#action-item-${pending!.id}`);
+  await expect(anchor).toBeVisible();
+  await expect(anchor).toContainText("own the pricing page rewrite");
+
+  await page.goto("/");
+  const compact = page.getByRole("link", { name: "own the pricing page rewrite" }).first();
+  await expect(compact).toHaveAttribute("href", `/tasks#action-item-${pending!.id}`);
+  await compact.click();
+  await expect(page).toHaveURL(new RegExp(`/tasks#action-item-${pending!.id}$`));
+  await expect(page.locator(`#action-item-${pending!.id}`)).toBeVisible();
 });
 
 test("tasks journey — dismissing an Action Item offers Undo and later restore", async ({
