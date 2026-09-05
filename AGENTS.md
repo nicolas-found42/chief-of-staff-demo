@@ -1,4 +1,4 @@
-# AGENTS.md
+# Agent instructions
 
 Local web app hosting Found42's meeting and content workflows as tabs in one
 app. Pnpm monorepo: `apps/server`, `apps/web`, `packages/shared`, `tests`, `relay`.
@@ -22,8 +22,8 @@ workspaces are build units, not domains. See `docs/agents/domain.md`.
 
 ### Pull requests
 
-Every change to `main` goes `branch → PR → squash merge`; a ruleset with no bypass requires a PR
-and the four CI checks. See `docs/agents/pr-workflow.md`.
+Every change to `main` goes `branch → PR → squash merge`; four green CI checks are the only gate,
+with no bypass for anyone. See `docs/agents/pr-workflow.md`.
 
 ### Verification gates
 
