@@ -175,13 +175,27 @@ function SummaryPanel({
         <div className="banner banner-warn" role="status">
           {summary.error} Provider <strong>{summary.provider}</strong>, model{" "}
           <strong>{summary.model}</strong>.{" "}
-          <button type="button" className="action-button" disabled={busy} onClick={onConsent}>
+          <button
+            type="button"
+            className="action-button"
+            aria-disabled={busy}
+            onClick={() => {
+              if (!busy) onConsent();
+            }}
+          >
             Send projections to this provider and model
           </button>
         </div>
       ) : null}
       <div className="wizard-actions">
-        <button type="button" className="action-button" disabled={busy} onClick={onRegenerate}>
+        <button
+          type="button"
+          className="action-button"
+          aria-disabled={busy}
+          onClick={() => {
+            if (!busy) onRegenerate();
+          }}
+        >
           {busy ? "Working…" : summary.state === "failed" ? "Retry summary" : "Regenerate summary"}
         </button>
       </div>

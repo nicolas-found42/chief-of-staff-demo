@@ -602,7 +602,8 @@ function ActionItemRow({
   }
 
   return (
-    <li className="card">
+    /* The anchor a compact surface links a proposal by (issue #192). */
+    <li className="card" id={`action-item-${item.id}`}>
       <h3>{item.proposal.title}</h3>
       <p className="muted">
         Proposed · {item.proposal.dueDate ? `due ${item.proposal.dueDate}` : "no due date"} ·{" "}
@@ -1288,7 +1289,7 @@ export function TasksPage({
         ),
       )}
 
-      <h2>Action Items</h2>
+      <h2 id="action-items">Action Items</h2>
       <p className="muted">
         Commitments a Meeting Debrief proposed. A proposal is not a Task, and nothing here has been
         accepted.
