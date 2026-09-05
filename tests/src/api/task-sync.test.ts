@@ -32,18 +32,36 @@ const G_LIST = {
 
 let app: FastifyInstance;
 let settings: GoogleTasksDestinationSettings;
+let tasks: WorkspaceTasks;
+let workspaceDir: string;
 let createRemote: Mock<RemoteTaskConnector<GoogleTasksDestination>["create"]>;
-let readRemoteStatus: Mock<RemoteTaskConnector<GoogleTasksDestination>["readStatus"]>;
+let readRemote: Mock<RemoteTaskConnector<GoogleTasksDestination>["read"]>;
 let updateRemoteStatus: Mock<RemoteTaskConnector<GoogleTasksDestination>["updateStatus"]>;
+let updateRemoteContent: Mock<RemoteTaskConnector<GoogleTasksDestination>["updateContent"]>;
+
+/** One provider projection, in the four fields a linked record has. */
+function snapshot(title: string, status: Task["status"] = "open", overrides = {}) {
+  return { title, notes: "", dueDate: null, status, ...overrides };
+}
 
 beforeEach(() => {
-  const workspaceDir = mkdtempSync(join(tmpdir(), "cos-task-sync-"));
+  workspaceDir = mkdtempSync(join(tmpdir(), "cos-task-sync-"));
   const store = new TaskStore(workspaceDir);
   settings = { enabled: false, taskListId: "", taskListTitle: "" };
   createRemote = vi.fn(async () => ({ remoteId: "google_1", url: "https://tasks.google.com/1" }));
-  readRemoteStatus = vi.fn(async () => ({ completed: false }));
+  /* Google agreeing with what the Workspace last sent it, which is the
+     ordinary case: the tests that want a drift or an outside completion say
+     so with a mockResolvedValueOnce of their own. */
+  readRemote = vi.fn(async (_destination, remoteId) => {
+    const linked = tasks
+      .list({})
+      .concat(tasks.list({ trashed: true }))
+      .find((task) => task.externalLink?.remoteId === remoteId);
+    return linked?.externalLink?.baseline ?? snapshot("");
+  });
   updateRemoteStatus = vi.fn(async () => {});
-  const tasks = new WorkspaceTasks({
+  updateRemoteContent = vi.fn(async () => {});
+  tasks = new WorkspaceTasks({
     store,
     now: () => new Date("2026-09-04T09:00:00.000Z"),
     isGoogleTasksEnabled: () => settings.enabled,
@@ -61,8 +79,9 @@ beforeEach(() => {
       listRemoteLists: async () => [{ id: "list_work", title: "Work" }],
       google: {
         create: createRemote,
-        readStatus: readRemoteStatus,
+        read: readRemote,
         updateStatus: updateRemoteStatus,
+        updateContent: updateRemoteContent,
       },
     }),
   });
@@ -159,7 +178,7 @@ describe("applying an unopposed external completion", () => {
     await enable();
     const task = await captureToGoogle("Send the pricing sheet");
     await link(task.id);
-    readRemoteStatus.mockResolvedValueOnce({ completed: true });
+    readRemote.mockResolvedValueOnce(snapshot("Send the pricing sheet", "completed"));
 
     const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     expect(synced.statusCode).toBe(200);
@@ -176,7 +195,7 @@ describe("applying an unopposed external completion", () => {
     const task = await captureToGoogle("Book the room");
     await link(task.id);
     await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
-    readRemoteStatus.mockResolvedValueOnce({ completed: false });
+    readRemote.mockResolvedValueOnce(snapshot("Book the room", "open"));
 
     const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     expect(synced.statusCode).toBe(200);
@@ -205,7 +224,7 @@ describe("a Google Task that went missing", () => {
     await enable();
     const task = await captureToGoogle("Send the pricing sheet");
     await link(task.id);
-    readRemoteStatus.mockResolvedValueOnce(null);
+    readRemote.mockResolvedValueOnce(null);
 
     const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     expect(synced.statusCode).toBe(200);
@@ -235,7 +254,7 @@ describe("a Google Task that went missing", () => {
     await enable();
     const task = await captureToGoogle("Send the pricing sheet");
     await link(task.id);
-    readRemoteStatus.mockResolvedValue(null);
+    readRemote.mockResolvedValue(null);
     await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     createRemote.mockResolvedValueOnce({ remoteId: "google_2", url: "https://tasks.google.com/2" });
 
@@ -257,7 +276,7 @@ describe("a Google Task that went missing", () => {
     await enable();
     const task = await captureToGoogle("Send the pricing sheet");
     await link(task.id);
-    readRemoteStatus.mockResolvedValueOnce(null);
+    readRemote.mockResolvedValueOnce(null);
     await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
 
     const removed = await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}/link` });
@@ -356,7 +375,7 @@ describe("completed Tasks stay completed", () => {
 
     /* And the next read agrees, writing nothing: the fake Google now holds
        the completion the linking just sent, so the read converges for free. */
-    readRemoteStatus.mockResolvedValueOnce({ completed: true });
+    readRemote.mockResolvedValueOnce(snapshot("Already done", "completed"));
     const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     expect(synced.json<Task>()).toMatchObject({
       status: "completed",
@@ -371,7 +390,7 @@ describe("completed Tasks stay completed", () => {
     await link(task.id);
     /* Google loses the record; the sync discovers it and marks the link
        missing with the Task still completed. */
-    readRemoteStatus.mockResolvedValueOnce(null);
+    readRemote.mockResolvedValueOnce(null);
     await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     createRemote.mockResolvedValueOnce({ remoteId: "google_2", url: "https://tasks.google.com/2" });
 
@@ -400,7 +419,7 @@ describe("completed Tasks stay completed", () => {
     /* The read finds Google still open while the Task is completed and the
        baseline is open: only the Workspace moved, so applying Google would
        revert accepted work. The read refuses, and the Task stays completed. */
-    readRemoteStatus.mockResolvedValueOnce({ completed: false });
+    readRemote.mockResolvedValueOnce(snapshot("Push failed", "open"));
     const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
     expect(synced.statusCode).toBe(200);
     expect(synced.json<Task>()).toMatchObject({
@@ -431,5 +450,235 @@ describe("completed Tasks stay completed", () => {
     expect(second.statusCode).toBe(409);
     expect(second.json<{ error: string }>().error).toBe("task-already-linked");
     expect(createRemote).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * External Task Drift and Task Link Conflict (issue #186). Three readings
+ * meet at a link — the Task, the baseline, and the provider — and the whole
+ * point of these states is that when both sides moved, the app refuses to
+ * pick a winner.
+ */
+describe("content changed outside the Workspace", () => {
+  async function drifted(): Promise<Task> {
+    await enable();
+    const task = await captureToGoogle("Send the pricing sheet");
+    await link(task.id);
+    readRemote.mockResolvedValueOnce(snapshot("Send the pricing deck", "open"));
+    const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
+    expect(synced.statusCode).toBe(200);
+    return synced.json<Task>();
+  }
+
+  it("never overwrites canonical content, and keeps both projections", async () => {
+    const task = await drifted();
+
+    /* The Task still says what the Workspace means. The link says what the
+       Workspace sent and what Google holds now — three readings, one of
+       which is the owner's to choose. */
+    expect(task.title).toBe("Send the pricing sheet");
+    expect(task.externalLink).toMatchObject({
+      state: "changed-externally",
+      baseline: { title: "Send the pricing sheet" },
+      external: { title: "Send the pricing deck" },
+    });
+  });
+
+  it("reads nothing further while the owner is comparing", async () => {
+    const task = await drifted();
+    readRemote.mockClear();
+
+    const again = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
+    expect(again.json<Task>().externalLink).toMatchObject({ state: "changed-externally" });
+    expect(readRemote).not.toHaveBeenCalled();
+  });
+
+  it("restores the app version by pushing canonical content", async () => {
+    const task = await drifted();
+
+    const resolved = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/drift`,
+      payload: { keep: "app" },
+    });
+    expect(resolved.statusCode).toBe(200);
+    expect(updateRemoteContent).toHaveBeenCalledWith(G_LIST, "google_1", {
+      title: "Send the pricing sheet",
+      notes: "",
+      dueDate: null,
+    });
+    expect(resolved.json<Task>()).toMatchObject({
+      title: "Send the pricing sheet",
+      externalLink: { state: "synchronized", external: null },
+    });
+  });
+
+  it("leaves the drift standing when restoring the app version fails", async () => {
+    const task = await drifted();
+    updateRemoteContent.mockRejectedValueOnce(
+      Object.assign(new Error("backend error"), { code: 500 }),
+    );
+
+    const resolved = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/drift`,
+      payload: { keep: "app" },
+    });
+    expect(resolved.json<Task>().externalLink).toMatchObject({
+      state: "changed-externally",
+      external: { title: "Send the pricing deck" },
+      failure: { kind: "network" },
+    });
+  });
+
+  it("accepts the external values as canonical when the owner says so", async () => {
+    const task = await drifted();
+
+    const resolved = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/drift`,
+      payload: { keep: "external" },
+    });
+    expect(resolved.statusCode).toBe(200);
+    /* No outward call: Google already holds these values. */
+    expect(updateRemoteContent).not.toHaveBeenCalled();
+    expect(resolved.json<Task>()).toMatchObject({
+      title: "Send the pricing deck",
+      externalLink: {
+        state: "synchronized",
+        baseline: { title: "Send the pricing deck" },
+        external: null,
+      },
+    });
+  });
+
+  it("removes the link and preserves both records", async () => {
+    const task = await drifted();
+
+    const removed = await app.inject({ method: "DELETE", url: `/api/tasks/${task.id}/link` });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json<Task>()).toMatchObject({
+      title: "Send the pricing sheet",
+      externalLink: null,
+    });
+  });
+
+  it("refuses a drift resolution on a link that has not drifted", async () => {
+    await enable();
+    const task = await captureToGoogle("Nothing drifted");
+    await link(task.id);
+
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/drift`,
+      payload: { keep: "app" },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ error: string }>().error).toBe("link-not-drifted");
+  });
+});
+
+describe("both sides changed completion", () => {
+  async function conflicted(): Promise<Task> {
+    await enable();
+    const task = await captureToGoogle("Send the pricing sheet");
+    await link(task.id);
+    /* The Workspace completes, and the outward write never lands — so the
+       baseline still says open while the Task says completed. */
+    updateRemoteStatus.mockRejectedValueOnce(
+      Object.assign(new Error("backend error"), { code: 500 }),
+    );
+    await app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
+    /* Meanwhile somebody completed it in Google too — no, reopened it: the
+       provider moved away from the baseline on its own. */
+    readRemote.mockResolvedValueOnce(snapshot("Send the pricing sheet", "completed"));
+    const synced = await app.inject({ method: "POST", url: `/api/tasks/${task.id}/sync` });
+    expect(synced.statusCode).toBe(200);
+    return synced.json<Task>();
+  }
+
+  it("enters the conflicted state without either side winning", async () => {
+    const task = await conflicted();
+
+    expect(task).toMatchObject({
+      status: "completed",
+      externalLink: { state: "conflicted", external: { status: "completed" } },
+    });
+  });
+
+  it("resolves to the app status only after the provider write succeeds", async () => {
+    const task = await conflicted();
+    updateRemoteStatus.mockClear();
+    updateRemoteStatus.mockRejectedValueOnce(
+      Object.assign(new Error("backend error"), { code: 500 }),
+    );
+
+    const failed = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/conflict`,
+      payload: { keep: "app" },
+    });
+    expect(failed.json<Task>().externalLink).toMatchObject({ state: "conflicted" });
+
+    const resolved = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/conflict`,
+      payload: { keep: "app" },
+    });
+    expect(updateRemoteStatus).toHaveBeenLastCalledWith(G_LIST, "google_1", true);
+    expect(resolved.json<Task>()).toMatchObject({
+      status: "completed",
+      externalLink: { state: "synchronized", baseline: { status: "completed" }, external: null },
+    });
+  });
+
+  it("resolves to the external status by applying it locally", async () => {
+    const task = await conflicted();
+    await app.inject({ method: "POST", url: `/api/tasks/${task.id}/reopen` });
+
+    const resolved = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/conflict`,
+      payload: { keep: "external" },
+    });
+    expect(resolved.statusCode).toBe(200);
+    expect(resolved.json<Task>()).toMatchObject({
+      status: "completed",
+      externalLink: { state: "synchronized", baseline: { status: "completed" }, external: null },
+    });
+  });
+
+  it("refuses a request that names neither side", async () => {
+    const task = await conflicted();
+
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/conflict`,
+      payload: {},
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<{ error: string }>().error).toBe("invalid-resolution");
+  });
+});
+
+describe("the synchronization baseline", () => {
+  it("survives a restart, because it lives on the Task the Workspace stored", async () => {
+    await enable();
+    const task = await captureToGoogle("Send the pricing sheet");
+    await link(task.id);
+
+    /* A second Workspace over the same directory — the shape a restart has.
+       The baseline it reads is what drift is measured against. */
+    const reopened = new WorkspaceTasks({
+      store: new TaskStore(workspaceDir),
+      now: () => new Date("2026-09-05T09:00:00.000Z"),
+      isGoogleTasksEnabled: () => true,
+    });
+    expect(reopened.get(task.id)?.externalLink?.baseline).toEqual({
+      title: "Send the pricing sheet",
+      notes: "",
+      dueDate: null,
+      status: "open",
+    });
   });
 });

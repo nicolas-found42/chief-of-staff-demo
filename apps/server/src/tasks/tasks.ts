@@ -38,6 +38,8 @@ export class TaskValidationError extends Error {
       | "inbox-is-permanent"
       | "task-not-found"
       | "task-not-in-trash"
+      | "link-not-drifted"
+      | "link-not-conflicted"
       | "confirmation-required"
       | "task-already-linked"
       | "task-not-linked"

@@ -71,7 +71,25 @@ export const LOCAL_TASK_DESTINATION: TaskDestination = { provider: "local" };
  * `missing` means the provider no longer holds the remote record; the local
  * Task is intact and the owner recreates the record or removes the link.
  */
-export type ExternalTaskLinkState = "waiting" | "synchronized" | "failed" | "missing";
+export type ExternalTaskLinkState =
+  | "waiting"
+  | "synchronized"
+  | "failed"
+  | "missing"
+  /**
+   * The provider's copy of the title, notes or due date has been edited
+   * outside the Workspace (issue #186). The canonical Task is untouched —
+   * an outside edit never silently replaces accepted content — and both
+   * projections are available until the owner restores the app version or
+   * accepts the external one.
+   */
+  | "changed-externally"
+  /**
+   * Both sides changed completion since the last baseline (issue #186).
+   * Neither wins implicitly: the owner picks the app status or the external
+   * one, and the link stays conflicted until the chosen operation succeeds.
+   */
+  | "conflicted";
 
 /**
  * The one representation a Task may have in an external system (ADR-0056).
@@ -94,6 +112,15 @@ export interface ExternalTaskLink {
    * told apart from a local one.
    */
   baseline: ExternalTaskBaseline | null;
+  /**
+   * The provider's own projection, captured when drift or a conflict was
+   * detected (issue #186); null at every other time. This is the second half
+   * of "both projections available": `baseline` says what the Workspace last
+   * sent, this says what the provider holds now, and the Task itself says
+   * what the Workspace means — three readings the owner chooses between
+   * rather than one the app picks for them.
+   */
+  external: ExternalTaskBaseline | null;
   /**
    * Why the last attempt failed, as a classified fact and the sentence that
    * carries it (ADR-0030: callers branch on the kind, never by matching the

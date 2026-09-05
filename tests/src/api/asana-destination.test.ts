@@ -58,7 +58,7 @@ let projects: Mock<
 >;
 let sections: Mock<(token: string, projectGid: string) => Promise<{ gid: string; name: string }[]>>;
 let createRemote: Mock<RemoteTaskConnector<AsanaDestination>["create"]>;
-let readRemote: Mock<RemoteTaskConnector<AsanaDestination>["readStatus"]>;
+let readRemote: Mock<RemoteTaskConnector<AsanaDestination>["read"]>;
 let updateRemote: Mock<RemoteTaskConnector<AsanaDestination>["updateStatus"]>;
 
 function fakeMe(): FakeMe {
@@ -99,7 +99,12 @@ beforeEach(() => {
   ]);
   sections = vi.fn(async () => [{ gid: "s1", name: "Doing" }]);
   createRemote = vi.fn(async () => ({ remoteId: "asana_1", url: "https://app.asana.com/0/1/1" }));
-  readRemote = vi.fn(async () => ({ completed: false }));
+  readRemote = vi.fn(async () => ({
+    title: "",
+    notes: "",
+    dueDate: null,
+    status: "open" as const,
+  }));
   updateRemote = vi.fn(async () => {});
   const tasks = new WorkspaceTasks({
     store,
@@ -120,10 +125,16 @@ beforeEach(() => {
       listRemoteLists: async () => [],
       google: {
         create: async () => ({ remoteId: "google_1", url: null }),
-        readStatus: async () => ({ completed: false }),
+        read: async () => ({ title: "", notes: "", dueDate: null, status: "open" as const }),
+        updateContent: async () => {},
         updateStatus: async () => {},
       },
-      asana: { create: createRemote, readStatus: readRemote, updateStatus: updateRemote },
+      asana: {
+        create: createRemote,
+        read: readRemote,
+        updateStatus: updateRemote,
+        updateContent: async () => {},
+      },
     }),
     asana: new AsanaLinking({
       settings: () => settings,
@@ -521,7 +532,14 @@ describe("creating one linked Task in Asana", () => {
     expect(updateRemote).toHaveBeenCalledWith(ASANA_DESTINATION, "asana_1", true);
     /* The completion is pushed, then an unopposed read applies the same state
        — the link converges rather than fighting the owner's own change. */
-    readRemote.mockResolvedValueOnce({ completed: true });
+    /* The provider now holds the completion, and the content the Workspace
+       sent it — so the read converges rather than reporting a drift. */
+    readRemote.mockResolvedValueOnce({
+      title: "Publish the post",
+      notes: "With screenshots",
+      dueDate: "2026-09-30",
+      status: "completed",
+    });
     const synced = await app.inject({
       method: "POST",
       url: `/api/tasks/${response.json<Task>().id}/sync`,

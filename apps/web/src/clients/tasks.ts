@@ -216,6 +216,14 @@ export const tasksApi = {
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/link`, { method: "POST" }),
   recreateTask: (taskId: string) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/recreate`, { method: "POST" }),
+  /* One route per fact, like the server has: an outside edit and an outside
+     completion are settled by different answers (issue #186). */
+  resolveTaskLink: (taskId: string, kind: "drift" | "conflict", keep: "app" | "external") =>
+    request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/${kind}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keep }),
+    }),
   removeTaskLink: (taskId: string) =>
     request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/link`, { method: "DELETE" }),
 };

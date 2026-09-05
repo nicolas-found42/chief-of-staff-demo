@@ -146,6 +146,65 @@ export async function getGoogleTaskStatus(
 }
 
 /**
+ * Reads one linked Google Task whole (issue #186): the three content fields
+ * and the completion, in the Workspace's own terms. Drift detection compares
+ * against what the Workspace last sent, so the due date is narrowed back to
+ * the date Google actually stores rather than the RFC 3339 instant it
+ * answers with. Null when Google no longer holds the Task.
+ */
+export async function getGoogleTask(
+  auth: GoogleAuth,
+  tasklistId: string,
+  taskId: string,
+): Promise<{ title: string; notes: string; dueDate: string | null; completed: boolean } | null> {
+  const tasks = google.tasks({ version: "v1", auth });
+  try {
+    const res = await tasks.tasks.get({ tasklist: tasklistId, task: taskId });
+    return {
+      title: res.data.title ?? "",
+      notes: res.data.notes ?? "",
+      dueDate: dateOnly(res.data.due ?? null),
+      completed: res.data.status === "completed",
+    };
+  } catch (error) {
+    if (error !== null && typeof error === "object" && "code" in error && error.code === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Writes one linked Google Task's content (issue #186). A cleared field is
+ * sent as an empty value rather than omitted: omitting it would leave the
+ * outside edit standing, which is the opposite of restoring the app version.
+ */
+export async function setGoogleTaskContent(
+  auth: GoogleAuth,
+  tasklistId: string,
+  taskId: string,
+  content: { title: string; notes: string; dueDate: string | null },
+): Promise<void> {
+  const tasks = google.tasks({ version: "v1", auth });
+  await tasks.tasks.patch({
+    tasklist: tasklistId,
+    task: taskId,
+    requestBody: {
+      title: content.title,
+      notes: content.notes,
+      due: content.dueDate === null ? null : normalizeDue(content.dueDate),
+    },
+  });
+}
+
+/** Google answers a due date as an instant; the Workspace holds the date. */
+function dateOnly(due: string | null): string | null {
+  if (due === null || due === "") return null;
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(due);
+  return match?.[1] ?? null;
+}
+
+/**
  * Sets one Google Task's completion (issue #185). Idempotent: completing a
  * completed Task, or reopening an open one, is the same state written again.
  * A Task Google no longer holds surfaces as the caller's 404, which the

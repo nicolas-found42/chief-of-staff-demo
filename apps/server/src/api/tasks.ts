@@ -23,7 +23,7 @@ import {
 } from "../tasks/tasks.js";
 import type { ActionItemQuery, WorkspaceActionItems } from "../tasks/action-items.js";
 import { promoteActionItem } from "../tasks/promotion.js";
-import type { TaskLinking } from "../tasks/external-link.js";
+import type { TaskLinking, TaskLinkResolution } from "../tasks/external-link.js";
 import type { AsanaLinking } from "../tasks/asana-link.js";
 
 export interface TasksApiContext {
@@ -72,6 +72,8 @@ const REFUSAL_STATUS: Record<TaskValidationError["code"], number> = {
   "task-already-linked": 409,
   "task-not-linked": 409,
   "link-not-missing": 409,
+  "link-not-drifted": 409,
+  "link-not-conflicted": 409,
   "action-item-not-found": 404,
   "action-item-already-promoted": 409,
   "action-item-dismissed": 409,
@@ -95,6 +97,18 @@ const NO_POLICY = {
   error: "action-item-policy-unavailable",
   message: "This Workspace has no Action Item Policy setting.",
 };
+
+/** The refusal a resolution request without a side earns. */
+const KEEP_REQUIRED = {
+  error: "invalid-resolution",
+  message: 'Resolving a link needs "keep": "app" or "keep": "external".',
+};
+
+/** Which side a resolution request kept, or null when it named neither. */
+function resolutionOf(body: unknown): TaskLinkResolution | null {
+  const keep = (body as { keep?: unknown } | null)?.keep;
+  return keep === "app" || keep === "external" ? keep : null;
+}
 
 /** The body `requireLinking` refuses with, alongside the 409 it sets. */
 const NO_DESTINATION = {
@@ -347,6 +361,48 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
     if (!linking) return NO_DESTINATION;
     try {
       return await linking.recreate(taskId);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  /**
+   * Settle an External Task Drift or a Task Link Conflict (issue #186). The
+   * body names the side the owner kept — `app` or `external` — and nothing
+   * else: an outside edit and an outside completion are different facts about
+   * a link, so each has its own route rather than one that guesses which the
+   * caller meant.
+   *
+   * Both refuse a link that is not in the state they resolve, and both leave
+   * the state standing when the operation the owner chose fails.
+   */
+  app.post("/api/tasks/:taskId/drift", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { taskId } = request.params as { taskId: string };
+    const linking = requireLinking(reply);
+    if (!linking) return NO_DESTINATION;
+    const choice = resolutionOf(request.body);
+    if (choice === null) {
+      reply.code(400);
+      return KEEP_REQUIRED;
+    }
+    try {
+      return await linking.resolveDrift(taskId, choice);
+    } catch (error) {
+      return refuse(reply, error);
+    }
+  });
+
+  app.post("/api/tasks/:taskId/conflict", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { taskId } = request.params as { taskId: string };
+    const linking = requireLinking(reply);
+    if (!linking) return NO_DESTINATION;
+    const choice = resolutionOf(request.body);
+    if (choice === null) {
+      reply.code(400);
+      return KEEP_REQUIRED;
+    }
+    try {
+      return await linking.resolveConflict(taskId, choice);
     } catch (error) {
       return refuse(reply, error);
     }

@@ -31,17 +31,38 @@ export type GoogleTasksDestination = Extract<TaskDestination, { provider: "googl
 export type AsanaDestination = Extract<TaskDestination, { provider: "asana" }>;
 
 /**
+ * The provider's own copy of one linked record, in the Workspace's own terms
+ * (issue #186). Deliberately the same four fields as `ExternalTaskBaseline`:
+ * detecting an outside edit is comparing what the provider holds now against
+ * what the Workspace last sent, and a comparison between two different shapes
+ * would eventually compare the wrong things.
+ */
+type RemoteTaskSnapshot = ExternalTaskBaseline;
+
+/** Just the content half — what an outward content write carries. */
+type RemoteTaskContent = Omit<ExternalTaskBaseline, "status">;
+
+/**
  * One provider's outward write, as the shared state machine calls it. The
  * destination comes from the Task or link being worked on, so a connector
- * never guesses which container it was pointed at. `readStatus` answers null
- * when the provider no longer holds the record — the machine marks the link
+ * never guesses which container it was pointed at. `read` answers null when
+ * the provider no longer holds the record — the machine marks the link
  * missing rather than failing the local Task.
+ *
+ * Content and status are separate writes because they are separate decisions:
+ * an outside edit to the title and an outside completion are different facts
+ * about a link, resolved by different answers, and one call that carried both
+ * would make "restore my version" also assert a completion nobody chose.
  */
 export interface RemoteTaskConnector<D extends ExternalTaskDestination = ExternalTaskDestination> {
   create(task: Task, destination: D): Promise<{ remoteId: string; url: string | null }>;
-  readStatus(destination: D, remoteId: string): Promise<{ completed: boolean } | null>;
+  read(destination: D, remoteId: string): Promise<RemoteTaskSnapshot | null>;
   updateStatus(destination: D, remoteId: string, completed: boolean): Promise<void>;
+  updateContent(destination: D, remoteId: string, content: RemoteTaskContent): Promise<void>;
 }
+
+/** Which side of a drift or a conflict the owner chose to keep. */
+export type TaskLinkResolution = "app" | "external";
 
 /** What the owner chose for Google Tasks, as the Workspace stores it. */
 export interface GoogleTasksDestinationSettings {
@@ -246,6 +267,7 @@ export class TaskLinking {
       remoteId: null,
       url: null,
       baseline: this.baselineFor(task, task.status),
+      external: null,
       failure: null,
     });
     /* Only the provider calls sit inside try, for the same reason as
@@ -260,6 +282,7 @@ export class TaskLinking {
         remoteId: null,
         url: null,
         baseline: this.baselineFor(task, task.status),
+        external: null,
         failure: classifyTaskLinkError(error, provider),
       });
     }
@@ -279,6 +302,7 @@ export class TaskLinking {
           remoteId: created.remoteId,
           url: created.url,
           baseline: this.baselineFor(task, "open"),
+          external: null,
           failure: classifyTaskLinkError(error, provider),
         });
       }
@@ -289,6 +313,7 @@ export class TaskLinking {
       remoteId: created.remoteId,
       url: created.url,
       baseline: this.baselineFor(task, sent),
+      external: null,
       failure: null,
     });
   }
@@ -343,16 +368,26 @@ export class TaskLinking {
   }
 
   /**
-   * Read the linked provider record and apply an unopposed external
-   * completion or reopening locally (issue #185). Unopposed means the
-   * Workspace has not moved since the baseline: local and baseline agree, so
-   * the external side is the only one that changed and applying it loses
-   * nothing.
+   * Read the linked provider record and reconcile it with the canonical Task
+   * (issues #185, #186).
    *
-   * A competing local change is left alone for the conflict handling in
-   * issue #186 — neither side wins implicitly here. A remote record the
-   * provider no longer holds marks the link missing with the local Task
-   * intact. Repeated reads that agree with the Task write nothing.
+   * Three readings meet here: the Task (what the Workspace means), the
+   * baseline (what the Workspace last sent) and the provider's snapshot (what
+   * the provider holds now). Which of them moved decides what this read may
+   * do, and the one thing it may never do is pick a winner when both did.
+   *
+   * - Only the provider moved, on completion: applied locally. Checking work
+   *   off in either supported surface is the point of a link.
+   * - Only the provider moved, on content: `changed-externally`, with both
+   *   projections kept. An outside edit never silently replaces canonical
+   *   content, because the Workspace is the source of truth for what a Task
+   *   says.
+   * - Both moved on completion: `conflicted`. Neither side wins implicitly.
+   * - Only the Workspace moved: nothing to apply; `pushStatus` and
+   *   `pushContent` are what carry it outward.
+   *
+   * A record the provider no longer holds marks the link missing with the
+   * local Task intact. Repeated reads that agree with the Task write nothing.
    */
   async synchronize(taskId: string): Promise<Task> {
     const task = this.deps.tasks.get(taskId);
@@ -380,11 +415,19 @@ export class TaskLinking {
     }
     /* A missing link is resolved by recreating or removing it, never by
        reading: polling a record known to be gone would only spend quota to
-       learn the same answer. */
-    if (link.state === "missing") return task;
-    let remote: { completed: boolean } | null;
+       learn the same answer. A drift or a conflict is resolved by the owner,
+       and re-reading one would keep overwriting the projection they are in
+       the middle of comparing. */
+    if (
+      link.state === "missing" ||
+      link.state === "changed-externally" ||
+      link.state === "conflicted"
+    ) {
+      return task;
+    }
+    let remote: RemoteTaskSnapshot | null;
     try {
-      remote = await connector.readStatus(link.destination, link.remoteId);
+      remote = await connector.read(link.destination, link.remoteId);
     } catch (error) {
       const classified = classifyTaskLinkError(error, this.providerName(link.destination));
       return this.deps.tasks.refreshExternalLink(task.id, {
@@ -403,48 +446,239 @@ export class TaskLinking {
         },
       });
     }
-    const remoteStatus = remote.completed ? "completed" : "open";
-    const baselineStatus = link.baseline?.status;
-    if (remoteStatus === task.status) {
-      /* In agreement. Converge a stale baseline or clear a past failure
-         without touching the provider; a converged link reads free. */
-      if (baselineStatus === task.status && link.failure === null) return task;
+    /* Who moved since the baseline. Every branch below is a reading of these
+       two, and both are measured against the baseline rather than against
+       each other: "they differ" says nothing about whose change it was. */
+    const baseline = link.baseline;
+    const remoteMovedStatus = baseline !== null && remote.status !== baseline.status;
+    const localMovedStatus = baseline !== null && task.status !== baseline.status;
+    /* Completion first. Both sides moving on the same field is the sharper
+       claim, and the stored projection carries the content too — so an
+       outside edit that accompanied an outside completion is still there to
+       resolve once the completion has been settled. */
+    if (remoteMovedStatus && localMovedStatus) {
       return this.deps.tasks.refreshExternalLink(task.id, {
         ...link,
-        state: "synchronized",
-        baseline: {
-          title: link.baseline?.title ?? task.title,
-          notes: link.baseline?.notes ?? task.notes,
-          dueDate: link.baseline?.dueDate ?? task.dueDate,
-          status: task.status,
-        },
+        state: "conflicted",
+        external: remote,
         failure: null,
       });
     }
-    /* The remote differs from the Task, and whose move it was decides what
-       this read may do. baseline == Task would mean only the provider moved —
-       but that is the apply branch below. Here the baseline differs from the
-       Task, so the Workspace moved too: either the provider also moved (a
-       Task Link Conflict, which issue #186 resolves) or it still sits at the
-       baseline (an interrupted push, which pushStatus retries). Applying the
-       provider's stale state would revert accepted work, so this read answers
-       unchanged and refuses to pick a winner. */
-    if (baselineStatus !== undefined && baselineStatus !== task.status) {
+    if (remoteMovedStatus) {
+      const applied =
+        remote.status === "completed"
+          ? this.deps.tasks.complete(task.id)
+          : this.deps.tasks.reopen(task.id);
+      return this.deps.tasks.refreshExternalLink(applied.id, {
+        ...link,
+        state: "synchronized",
+        baseline: { ...contentOf(baseline), status: applied.status },
+        external: null,
+        failure: null,
+      });
+    }
+    /* Only the Workspace moved: an interrupted push, which `pushStatus`
+       retries. Applying the provider's stale state here would revert accepted
+       work, so this read answers unchanged. */
+    if (localMovedStatus) return task;
+    /* Content next, the same way. An unsent local edit is the Workspace
+       moving, which `pushContent` carries outward — it is not the provider
+       drifting, so the comparison is against the baseline. */
+    if (baseline !== null && !sameContent(remote, baseline)) {
+      return this.deps.tasks.refreshExternalLink(task.id, {
+        ...link,
+        state: "changed-externally",
+        external: remote,
+        failure: null,
+      });
+    }
+    /* In agreement. Converge a stale baseline or clear a past failure without
+       touching the provider; a converged link reads free. */
+    if (baseline !== null && baseline.status === task.status && link.failure === null) {
       return task;
     }
-    const applied =
-      remote.completed === true
-        ? this.deps.tasks.complete(task.id)
-        : this.deps.tasks.reopen(task.id);
-    return this.deps.tasks.refreshExternalLink(applied.id, {
+    return this.deps.tasks.refreshExternalLink(task.id, {
       ...link,
       state: "synchronized",
-      baseline: {
-        title: link.baseline?.title ?? applied.title,
-        notes: link.baseline?.notes ?? applied.notes,
-        dueDate: link.baseline?.dueDate ?? applied.dueDate,
-        status: applied.status,
-      },
+      baseline: { ...contentOf(baseline ?? remote), status: task.status },
+      external: null,
+      failure: null,
+    });
+  }
+
+  /**
+   * Send the Task's current title, notes and due date to its linked record
+   * (issues #186, story 72). The provider's copy is a representation of the
+   * canonical Task, so this is how it catches up — and it is what "Restore
+   * app version" performs after an outside edit.
+   *
+   * Local-first, like every other outward write: the Task is already what it
+   * is, and a failure lands on the link.
+   */
+  async pushContent(taskId: string): Promise<Task> {
+    const task = this.requireTask(taskId);
+    const link = task.externalLink;
+    if (
+      link === null ||
+      link.remoteId === null ||
+      link.state === "missing" ||
+      link.destination.provider === "local"
+    ) {
+      return task;
+    }
+    const connector = this.connectorFor(link.destination.provider);
+    if (connector === null) return task;
+    if (link.baseline !== null && sameContent(link.baseline, this.baselineFor(task, task.status))) {
+      return task;
+    }
+    try {
+      await connector.updateContent(link.destination, link.remoteId, contentOf(task));
+      return this.deps.tasks.refreshExternalLink(task.id, {
+        ...link,
+        state: "synchronized",
+        baseline: { ...contentOf(task), status: link.baseline?.status ?? task.status },
+        external: null,
+        failure: null,
+      });
+    } catch (error) {
+      const classified = classifyTaskLinkError(error, this.providerName(link.destination));
+      return this.deps.tasks.refreshExternalLink(task.id, {
+        ...link,
+        state: classified.kind === "not-found" ? "missing" : "failed",
+        failure: classified,
+      });
+    }
+  }
+
+  /**
+   * Settle an External Task Drift (issue #186). `app` reasserts the canonical
+   * content over the provider's copy; `external` accepts the outside edit as
+   * canonical, which is a deliberate act rather than something a read did on
+   * the owner's behalf.
+   *
+   * Either way the link only leaves the drifted state once the operation the
+   * owner chose has actually succeeded — a failed push leaves the drift
+   * standing, with both projections still there to try again from.
+   */
+  async resolveDrift(taskId: string, choice: TaskLinkResolution): Promise<Task> {
+    const task = this.requireTask(taskId);
+    const link = task.externalLink;
+    if (
+      link === null ||
+      link.state !== "changed-externally" ||
+      link.external === null ||
+      link.remoteId === null ||
+      link.destination.provider === "local"
+    ) {
+      throw new TaskValidationError(
+        "link-not-drifted",
+        "Only a link changed outside the Workspace can be restored or accepted.",
+      );
+    }
+    const destination = link.destination;
+    const remoteId = link.remoteId;
+    if (choice === "external") {
+      /* The local write first, and the baseline only after it: the provider
+         already holds these values, so accepting them is one Workspace
+         write and no outward call at all. */
+      const external = link.external;
+      const updated = this.deps.tasks.update(task.id, {
+        title: external.title,
+        notes: external.notes,
+        dueDate: external.dueDate,
+      });
+      return this.deps.tasks.refreshExternalLink(updated.id, {
+        ...link,
+        state: "synchronized",
+        baseline: { ...contentOf(external), status: link.baseline?.status ?? updated.status },
+        external: null,
+        failure: null,
+      });
+    }
+    const connector = this.connectorFor(destination.provider);
+    if (connector === null) {
+      throw new TaskValidationError(
+        "invalid-destination",
+        `The Workspace does not compose ${this.providerName(destination)} as a Task Destination.`,
+      );
+    }
+    try {
+      await connector.updateContent(destination, remoteId, contentOf(task));
+    } catch (error) {
+      /* Still drifted: the provider still holds the outside edit, so the
+         link keeps saying so with the new reason attached. */
+      return this.deps.tasks.refreshExternalLink(task.id, {
+        ...link,
+        failure: classifyTaskLinkError(error, this.providerName(link.destination)),
+      });
+    }
+    return this.deps.tasks.refreshExternalLink(task.id, {
+      ...link,
+      state: "synchronized",
+      baseline: { ...contentOf(task), status: link.baseline?.status ?? task.status },
+      external: null,
+      failure: null,
+    });
+  }
+
+  /**
+   * Settle a Task Link Conflict (issue #186). `app` sends the Workspace's
+   * completion state outward; `external` accepts the provider's. Neither is
+   * the default, and the link stays conflicted until the chosen operation
+   * succeeds — a conflict quietly resolved by a failed write would be the
+   * silent winner this whole state exists to prevent.
+   */
+  async resolveConflict(taskId: string, choice: TaskLinkResolution): Promise<Task> {
+    const task = this.requireTask(taskId);
+    const link = task.externalLink;
+    if (
+      link === null ||
+      link.state !== "conflicted" ||
+      link.external === null ||
+      link.remoteId === null ||
+      link.destination.provider === "local"
+    ) {
+      throw new TaskValidationError(
+        "link-not-conflicted",
+        "Only a conflicted External Task Link can have its status resolved.",
+      );
+    }
+    const destination = link.destination;
+    const remoteId = link.remoteId;
+    const external = link.external;
+    if (choice === "external") {
+      const applied =
+        external.status === "completed"
+          ? this.deps.tasks.complete(task.id)
+          : this.deps.tasks.reopen(task.id);
+      return this.deps.tasks.refreshExternalLink(applied.id, {
+        ...link,
+        state: "synchronized",
+        baseline: { ...contentOf(link.baseline ?? external), status: applied.status },
+        external: null,
+        failure: null,
+      });
+    }
+    const connector = this.connectorFor(destination.provider);
+    if (connector === null) {
+      throw new TaskValidationError(
+        "invalid-destination",
+        `The Workspace does not compose ${this.providerName(destination)} as a Task Destination.`,
+      );
+    }
+    try {
+      await connector.updateStatus(destination, remoteId, task.status === "completed");
+    } catch (error) {
+      return this.deps.tasks.refreshExternalLink(task.id, {
+        ...link,
+        failure: classifyTaskLinkError(error, this.providerName(link.destination)),
+      });
+    }
+    return this.deps.tasks.refreshExternalLink(task.id, {
+      ...link,
+      state: "synchronized",
+      baseline: { ...contentOf(link.baseline ?? external), status: task.status },
+      external: null,
       failure: null,
     });
   }
@@ -503,6 +737,7 @@ export class TaskLinking {
           remoteId: created.remoteId,
           url: created.url,
           baseline: this.baselineFor(task, "open"),
+          external: null,
           failure: classifyTaskLinkError(error, this.providerName(destination)),
         });
       }
@@ -513,6 +748,7 @@ export class TaskLinking {
       remoteId: created.remoteId,
       url: created.url,
       baseline: this.baselineFor(task, sent),
+      external: null,
       failure: null,
     });
   }
@@ -553,4 +789,14 @@ export class TaskLinking {
       status: sentStatus,
     };
   }
+}
+
+/** The three outward content fields, without the status beside them. */
+function contentOf(source: RemoteTaskSnapshot | Task): RemoteTaskContent {
+  return { title: source.title, notes: source.notes, dueDate: source.dueDate };
+}
+
+/** Whether two projections say the same thing about the content. */
+function sameContent(a: RemoteTaskSnapshot, b: RemoteTaskSnapshot): boolean {
+  return a.title === b.title && a.notes === b.notes && a.dueDate === b.dueDate;
 }

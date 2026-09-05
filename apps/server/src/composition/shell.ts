@@ -37,7 +37,8 @@ import {
 } from "../tasks/external-link.js";
 import { AsanaLinking } from "../tasks/asana-link.js";
 import {
-  getGoogleTaskStatus,
+  getGoogleTask,
+  setGoogleTaskContent,
   insertGoogleTask,
   listGoogleTaskLists,
   setGoogleTaskStatus,
@@ -45,7 +46,8 @@ import {
 import {
   asanaMe,
   createAsanaTask,
-  getAsanaTaskStatus,
+  getAsanaTask,
+  setAsanaTaskContent,
   listAsanaProjects,
   listAsanaSections,
   setAsanaTaskStatus,
@@ -323,15 +325,28 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       const created = await insertGoogleTask(access.auth, destination.googleTaskListId, task);
       return { remoteId: created.googleId, url: created.webViewLink };
     },
-    readStatus: async (destination, remoteId) => {
+    read: async (destination, remoteId) => {
       const access = googleConnection.auth();
       if (!access.ok) throw new Error(googleFailureHint(access.state));
-      return getGoogleTaskStatus(access.auth, destination.googleTaskListId, remoteId);
+      const remote = await getGoogleTask(access.auth, destination.googleTaskListId, remoteId);
+      return remote === null
+        ? null
+        : {
+            title: remote.title,
+            notes: remote.notes,
+            dueDate: remote.dueDate,
+            status: remote.completed ? "completed" : "open",
+          };
     },
     updateStatus: async (destination, remoteId, completed) => {
       const access = googleConnection.auth();
       if (!access.ok) throw new Error(googleFailureHint(access.state));
       await setGoogleTaskStatus(access.auth, destination.googleTaskListId, remoteId, completed);
+    },
+    updateContent: async (destination, remoteId, content) => {
+      const access = googleConnection.auth();
+      if (!access.ok) throw new Error(googleFailureHint(access.state));
+      await setGoogleTaskContent(access.auth, destination.googleTaskListId, remoteId, content);
     },
   };
   /** The stored Asana token, or the refusal an unconnected Workspace owes its calls. */
@@ -342,9 +357,22 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   };
   const asanaConnector: RemoteTaskConnector<AsanaDestination> = {
     create: async (task, destination) => createAsanaTask(requireAsanaToken(), destination, task),
-    readStatus: async (_destination, remoteId) => getAsanaTaskStatus(requireAsanaToken(), remoteId),
+    read: async (_destination, remoteId) => {
+      const remote = await getAsanaTask(requireAsanaToken(), remoteId);
+      return remote === null
+        ? null
+        : {
+            title: remote.title,
+            notes: remote.notes,
+            dueDate: remote.dueDate,
+            status: remote.completed ? "completed" : "open",
+          };
+    },
     updateStatus: async (_destination, remoteId, completed) => {
       await setAsanaTaskStatus(requireAsanaToken(), remoteId, completed);
+    },
+    updateContent: async (_destination, remoteId, content) => {
+      await setAsanaTaskContent(requireAsanaToken(), remoteId, content);
     },
   };
   const taskLinking = new TaskLinking({

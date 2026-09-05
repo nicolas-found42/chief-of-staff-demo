@@ -215,6 +215,7 @@ function TaskRow({
   onLink,
   onRecreate,
   onRemoveLink,
+  onResolve,
   sourceAvailable,
 }: {
   task: Task;
@@ -228,6 +229,8 @@ function TaskRow({
   onLink: () => Promise<void>;
   onRecreate: () => Promise<void>;
   onRemoveLink: () => Promise<void>;
+  /** Settle a drift or a conflict by keeping one side (issue #186). */
+  onResolve: (kind: "drift" | "conflict", keep: "app" | "external") => Promise<void>;
   /** False once what the Task was promoted from has been deleted. */
   sourceAvailable: boolean;
 }) {
@@ -279,7 +282,11 @@ function TaskRow({
               ? `${providerName(task.destination)} refused it: ${task.externalLink.failure?.message ?? "no reason given"}`
               : task.externalLink.state === "missing"
                 ? `${providerName(task.destination)} no longer holds this Task. Recreate it there or remove the link — this Task is unaffected.`
-                : `Waiting to reach ${providerName(task.destination)}.`}{" "}
+                : task.externalLink.state === "changed-externally"
+                  ? `Changed in ${providerName(task.destination)}: “${task.externalLink.external?.title ?? ""}”. This Task still says what you wrote.`
+                  : task.externalLink.state === "conflicted"
+                    ? `You and ${providerName(task.destination)} both changed whether this is done. Nothing was applied — choose which is right.`
+                    : `Waiting to reach ${providerName(task.destination)}.`}{" "}
           {task.externalLink.url && (
             <a href={task.externalLink.url} target="_blank" rel="noreferrer">
               Open in {providerName(task.destination)}
@@ -322,6 +329,65 @@ function TaskRow({
               Send to {providerName(task.destination)}
             </button>
           )}
+        {/* An outside edit and an outside completion are different facts, so
+            each is settled by its own pair of answers — and neither is a
+            default (issue #186). */}
+        {task.externalLink?.state === "changed-externally" && (
+          <>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onResolve("drift", "app")}
+            >
+              Restore app version
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onResolve("drift", "external")}
+            >
+              Use {providerName(task.destination)} values
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onRemoveLink()}
+            >
+              Remove link
+            </button>
+          </>
+        )}
+        {task.externalLink?.state === "conflicted" && (
+          <>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onResolve("conflict", "app")}
+            >
+              Use app status
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onResolve("conflict", "external")}
+            >
+              Use {providerName(task.destination)} status
+            </button>
+            <button
+              type="button"
+              className="action-button"
+              aria-disabled={busy}
+              onClick={() => void onRemoveLink()}
+            >
+              Remove link
+            </button>
+          </>
+        )}
         {task.externalLink?.state === "missing" && (
           <>
             <button
@@ -929,6 +995,14 @@ export function TasksPage({
       onRemoveLink={async () => {
         await act(`Removed the ${providerName(task.destination)} link from ${task.title}.`, () =>
           client.removeTaskLink(task.id),
+        );
+      }}
+      onResolve={async (kind, keep) => {
+        await act(
+          keep === "app"
+            ? `Kept this Workspace's version of ${task.title}.`
+            : `Kept the ${providerName(task.destination)} version of ${task.title}.`,
+          () => client.resolveTaskLink(task.id, kind, keep),
         );
       }}
       onSave={async (values) => {

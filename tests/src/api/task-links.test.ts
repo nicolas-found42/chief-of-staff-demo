@@ -51,7 +51,8 @@ beforeEach(() => {
       listRemoteLists: async () => remoteLists,
       google: {
         create: createRemote,
-        readStatus: async () => ({ completed: false }),
+        read: async () => ({ title: "", notes: "", dueDate: null, status: "open" as const }),
+        updateContent: async () => {},
         updateStatus: async () => {},
       },
     }),

@@ -234,6 +234,55 @@ export async function getAsanaTaskStatus(
   return { completed: body.data?.completed === true };
 }
 
+/**
+ * Read one linked Asana Task whole (issue #186): the three content fields and
+ * the completion, in the Workspace's own terms. `due_on` is already a
+ * date-only value, which is what a Workspace due date is. Null when Asana no
+ * longer holds the record.
+ */
+export async function getAsanaTask(
+  token: string,
+  remoteId: string,
+): Promise<{ title: string; notes: string; dueDate: string | null; completed: boolean } | null> {
+  let body: {
+    data?: { name?: string; notes?: string; due_on?: string | null; completed?: boolean };
+  };
+  try {
+    body = (await asanaFetch(
+      `/tasks/${encodeURIComponent(remoteId)}?opt_fields=name,notes,due_on,completed`,
+      token,
+    )) as typeof body;
+  } catch (error) {
+    if (error instanceof AsanaApiError && error.status === 404) return null;
+    throw error;
+  }
+  return {
+    title: body.data?.name ?? "",
+    notes: body.data?.notes ?? "",
+    dueDate: body.data?.due_on ?? null,
+    completed: body.data?.completed === true,
+  };
+}
+
+/**
+ * Write one linked Asana Task's content (issue #186). A cleared due date is
+ * sent as null rather than omitted: omitting it would leave an outside edit
+ * standing, which is the opposite of restoring the app version. The assignee
+ * is untouched here as everywhere — a Responsible Person is a local concept.
+ */
+export async function setAsanaTaskContent(
+  token: string,
+  remoteId: string,
+  content: { title: string; notes: string; dueDate: string | null },
+): Promise<void> {
+  await asanaFetch(`/tasks/${encodeURIComponent(remoteId)}`, token, {
+    method: "PUT",
+    body: JSON.stringify({
+      data: { name: content.title, notes: content.notes, due_on: content.dueDate },
+    }),
+  });
+}
+
 /** Set one Task's completion. Idempotent, like the local operation. */
 export async function setAsanaTaskStatus(
   token: string,
