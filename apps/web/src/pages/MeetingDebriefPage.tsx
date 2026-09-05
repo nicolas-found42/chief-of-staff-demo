@@ -45,14 +45,14 @@ function IdentityBadge({ entry }: { entry: MeetingDebriefIndexEntry }) {
 /**
  * What a Debrief's state means for the owner. A Debrief is finished as soon as
  * it is extracted — nothing waits for review — so the only outstanding state
- * is whether its gated outward writes (the Gmail draft, the Google Tasks) have
- * gone out.
+ * is whether its one outward write, the Gmail draft, has been created (issue
+ * #182). Tasks do not come from here at all.
  */
 function ReviewStateBadge({ entry }: { entry: MeetingDebriefIndexEntry }) {
   if (entry.reviewState === "published") {
     return (
       <span className="status-badge status-ok" role="status">
-        Published
+        Draft created
       </span>
     );
   }
@@ -212,7 +212,16 @@ export function MeetingDebriefPage({ client = meetingsApi }: { client?: Meetings
                       column reported plumbing, so thirty rows read identically
                       and none of them said what was in the debrief. */}
                   <td role="cell" data-label="Found">
-                    {entry.summary ? entry.summary : <span className="muted">—</span>}
+                    {/* The summary is the row's most readable thing, so it is
+                        also a way into the Debrief it summarizes (issue
+                        #182) — a real link, reachable by keyboard. */}
+                    {entry.summary ? (
+                      <Link to={`/meeting-debrief/${encodeURIComponent(entry.runId)}`}>
+                        {entry.summary}
+                      </Link>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
                   </td>
                   <td role="cell" data-label="Calendar">
                     {entry.linked ? "Linked" : "Not linked"}

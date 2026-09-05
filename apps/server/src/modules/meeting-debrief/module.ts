@@ -103,23 +103,17 @@ interface DebriefActionItemHandover {
 }
 
 /**
- * The one outward write terminal approval performs (issue #141). Recipients are
- * every confirmed attendee other than the owner, plus the recipients the owner
- * confirmed explicitly. With no outward surface wired the approval still
+ * The one outward write the Debrief performs (issues #141, #182). Recipients
+ * are every confirmed attendee other than the owner, plus the recipients the
+ * owner confirmed explicitly. With no outward surface wired the action still
  * completes and nothing leaves the app, which is how #139's "no outward write"
  * property survives as structure rather than as a promise.
  */
-/** The Gmail draft receipt: written before Tasks, read on every retry. */
+/** The Gmail draft receipt, read on every retry so a repeat drafts nothing twice. */
 interface DebriefDraftReceipt {
   version: 1;
   draftId: string;
   to: string[];
-}
-
-/** The Tasks receipt: one entry per action item index already created. */
-interface DebriefTasksReceipt {
-  version: 1;
-  tasks: Array<{ index: number; taskId: string }>;
 }
 
 function readReceipt<T>(ctx: RunContext, file: string): T | null {
@@ -133,12 +127,14 @@ function readReceipt<T>(ctx: RunContext, file: string): T | null {
 }
 
 /**
- * The outward writes terminal approval performs (issue #141). Ordering is
- * load-bearing: the Gmail draft is created and its receipt written before any
- * Task, so a Tasks outage can never leave Tasks referring to a debrief nobody
- * was sent. Both adapters are driven from Run receipts rather than from
- * whether this function has run before, so a retry after a partial failure
- * re-sends nothing and re-creates only what is missing.
+ * Create the Gmail draft, and nothing else (issue #182). This used to create
+ * Google Tasks too, which made one button mean two unrelated things: a
+ * recipient problem could block accepted work, and an owner who wanted the
+ * work without the email had no way to say so. Tasks now come from the Action
+ * Item queue, which needs no Gmail at all.
+ *
+ * The draft is driven from its Run receipt rather than from whether this
+ * function has run before, so a retry after a failure drafts nothing twice.
  */
 async function writeApprovalOutputs(
   ctx: RunContext,
@@ -146,7 +142,6 @@ async function writeApprovalOutputs(
   record: TranscriptRecord,
   state: MeetingDebriefReviewState,
   ownerEmail: string | null,
-  ownerProfileId: string | null,
 ): Promise<void> {
   const outputs = deps.outputs;
   if (outputs === undefined) return;
@@ -168,35 +163,6 @@ async function writeApprovalOutputs(
     draft = { version: 1, draftId, to };
     ctx.writeFile("draft.json", `${JSON.stringify(draft, null, 2)}\n`);
     ctx.event("debrief_draft_created", { draftId, recipientCount: to.length });
-  }
-
-  const createTask = outputs.createTask;
-  if (createTask === undefined) return;
-
-  /* Retained actions only — a dropped action is not an action — and of those,
-     only the ones the Catalog resolved to the owner's own Profile. A null
-     ownerProfileId means the Catalog did not resolve the mention, which is
-     not the same as resolving it to the owner. */
-  const dropped = new Set(state.review.droppedActionItems);
-  const receipt = readReceipt<DebriefTasksReceipt>(ctx, "tasks.json") ?? {
-    version: 1 as const,
-    tasks: [],
-  };
-  const created = new Set(receipt.tasks.map((entry) => entry.index));
-  for (const [index, action] of debrief.actionItems.entries()) {
-    if (dropped.has(index)) continue;
-    if (ownerProfileId === null || action.ownerProfileId !== ownerProfileId) continue;
-    if (created.has(index)) continue;
-    const taskId = await createTask({
-      title: action.title,
-      notes: `From the meeting debrief for ${record.source.fileName}.`,
-      due: action.dueDate,
-    });
-    /* Persisted per Task, not once at the end: a failure halfway through must
-       leave behind exactly the Tasks that succeeded. */
-    receipt.tasks.push({ index, taskId });
-    ctx.writeFile("tasks.json", `${JSON.stringify(receipt, null, 2)}\n`);
-    ctx.event("debrief_task_created", { taskId, actionIndex: index });
   }
 }
 
@@ -409,7 +375,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           const held = currentDebrief(ctx);
           return {
             status: "done",
-            summary: `Not published — ${blockers.length} thing${
+            summary: `No email draft — ${blockers.length} thing${
               blockers.length === 1 ? "" : "s"
             } to settle first (${held.actionItems.length} action item${
               held.actionItems.length === 1 ? "" : "s"
@@ -418,8 +384,6 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           };
         }
         const owner = gate.ownerEmail();
-        const ownerProfileId =
-          owner === null ? null : (gate.verifiedForEmail(owner)?.profileId ?? null);
         const approvedAt = state.approval?.approvedAt ?? now().toISOString();
         const locked: MeetingDebriefReviewState = {
           ...state,
@@ -433,10 +397,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         if (!state.approval) {
           ctx.event("debrief_approved", { approvedAt, recipientCount });
         }
-        await writeApprovalOutputs(ctx, deps, record, locked, owner, ownerProfileId);
+        await writeApprovalOutputs(ctx, deps, record, locked, owner);
         return {
           status: "done",
-          summary: `Published to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
+          summary: `Email draft created for ${recipientCount} recipient${
+            recipientCount === 1 ? "" : "s"
+          }`,
           detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
         };
       });
@@ -449,15 +415,15 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     if (state.approval) {
       return ctx.stage("review", async () => {
         const owner = gate.ownerEmail();
-        const ownerProfileId =
-          owner === null ? null : (gate.verifiedForEmail(owner)?.profileId ?? null);
-        await writeApprovalOutputs(ctx, deps, record, state, owner, ownerProfileId);
+        await writeApprovalOutputs(ctx, deps, record, state, owner);
         const recipientCount =
           state.roster.entries.filter((entry) => entry.email !== owner).length +
           state.recipients.additional.length;
         return {
           status: "done",
-          summary: `Published to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`,
+          summary: `Email draft created for ${recipientCount} recipient${
+            recipientCount === 1 ? "" : "s"
+          }`,
           detail: { transcriptId, rosterStatus: rosterStatusOf(record), approved: true },
         };
       });

@@ -159,12 +159,12 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
   await expect(
     page.getByText("Prefilled from the meeting's calendar attendees, and waiting to be confirmed."),
   ).toBeVisible();
-  await expect(page.getByText("Confirm the roster to publish the draft and Tasks.")).toBeVisible();
+  await expect(page.getByText("Confirm the roster to create the email draft.")).toBeVisible();
   await expect(page.getByText("Extracted").first()).toBeVisible();
   // The gate's refusal surface, whatever the shared server's owner state is:
   // journey 1 guarantees only the unconfirmed roster, so assert that blocker
   // rather than one that depends on other specs' onboarding state.
-  await expect(page.getByText("Publishing needs:")).toBeVisible();
+  await expect(page.getByText("Creating the email draft needs:")).toBeVisible();
   await expect(page.getByText("The attendee roster is not confirmed yet.")).toBeVisible();
   await expect(page.getByText("Alice — Profile")).toBeVisible();
   /* Unresolved mentions are grouped by name and counted, not listed once per
@@ -344,8 +344,8 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
 
   // 4. A linked roster binds Calendar shells, so the gate opens: the
   //    approval section shows the Approve button and no blockers.
-  await expect(page.getByRole("heading", { name: "Publish outward" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Publish draft and Tasks" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Email draft" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create email draft" })).toBeVisible();
   await expect(page.getByText("Approval is blocked until:")).toBeHidden();
 
   // 5. Add a suggested non-attendee recipient through an explicit,
@@ -359,7 +359,7 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
 
   // 6. Approve: the Run locks, and every mutation seam refuses. Approval is
   //    verified through the API before anything is built on top of it.
-  await page.getByRole("button", { name: "Publish draft and Tasks" }).click();
+  await page.getByRole("button", { name: "Create email draft" }).click();
   await waitForStatus(request, seeded.runId, "done");
   await expect
     .poll(async () => {
@@ -369,8 +369,11 @@ test("meeting debrief review journey — regenerate, dismiss, roster, recipients
       return detail.review?.state;
     })
     .toBe("published");
-  await expect(page.getByText(/Published — draft and Tasks written/).first()).toBeVisible();
-  await expect(page.getByText(/^Published/).first()).toBeVisible();
+  await expect(page.getByText(/Email draft created/).first()).toBeVisible();
+  /* A draft, never a sent message. The Gmail link itself needs a real draft
+     receipt, which this hermetic server has no outward surface to create —
+     the module test at that seam is where the link is proven. */
+  await expect(page.getByText(/nothing has been sent/).first()).toBeVisible();
   const approvedDetail = (await (
     await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
   ).json()) as {
@@ -466,7 +469,7 @@ test("meeting debrief journey — a Debrief never expires, and publishing stays 
       "dana@example.com has no Person Profile with a verified (Calendar-anchored) email.",
     ),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Publish draft and Tasks" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Create email draft" })).toBeHidden();
 
   /* Time passing takes nothing away. A Debrief used to skip itself after
      thirty unreviewed days, which meant work the owner had not got to was

@@ -427,7 +427,7 @@ function MeetingDebriefTab({
       <p className="muted">
         {detail.review?.state === "published" ? (
           <span className="status-badge status-ok" role="status">
-            Published
+            Email draft created
           </span>
         ) : null}
       </p>

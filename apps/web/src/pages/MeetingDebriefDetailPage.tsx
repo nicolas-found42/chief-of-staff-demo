@@ -272,7 +272,7 @@ function IdentitySection({ detail }: { detail: MeetingDebriefDetail }) {
 
 const STATE_LABELS: Record<string, string> = {
   extracted: "Extracted",
-  published: "Published — draft and Tasks written",
+  published: "Email draft created",
 };
 
 /**
@@ -435,7 +435,7 @@ function ReviewSection({
         </p>
       ) : (
         <p className="status-badge status-attention" role="status">
-          Confirm the roster to publish the draft and Tasks.
+          Confirm the roster to create the email draft.
         </p>
       )}
       {/* The confirmed roster if there is one, else what Calendar gave the
@@ -599,24 +599,35 @@ function ReviewSection({
         </ul>
       )}
 
-      {/* The one gate left in the product. The Debrief itself is finished and
-          readable above; this writes outward — a Gmail draft to the confirmed
-          recipients, and Google Tasks for the owner's own actions. */}
-      <h3>Publish outward</h3>
+      {/* The one outward write left in the product (issue #182). The Debrief
+          itself is finished and readable above; this creates a Gmail draft to
+          the confirmed recipients and does nothing else — Tasks come from the
+          Action Item queue, which needs no Gmail at all. */}
+      <h3>Email draft</h3>
       <p className="muted">
-        Publishing creates the Gmail draft and the Google Tasks. Nothing above waits on it — the
-        Debrief is already complete.
+        This creates a draft in Gmail addressed to the confirmed recipients. It does not send the
+        email, and it does not create Tasks. Nothing above waits on it — the Debrief is already
+        complete, and its Action Items are reviewable on Tasks whether a draft exists or not.
       </p>
       {review.state === "published" ? (
-        <p>
-          Published{review.approvedAt ? ` ${formatMeetingTime(review.approvedAt)}` : ""}. The
-          Debrief, roster, recipients, and decisions are locked so they stay aligned with what went
-          out; redo starts a separate debrief.
-        </p>
+        <div>
+          <p>
+            Draft created{review.approvedAt ? ` ${formatMeetingTime(review.approvedAt)}` : ""} and
+            waiting in Gmail — nothing has been sent. The Debrief, roster, recipients, and decisions
+            are locked so they stay aligned with the draft; redo starts a separate debrief.
+          </p>
+          {review.draft && (
+            <p>
+              <a href={review.draft.url} target="_blank" rel="noreferrer">
+                Open draft in Gmail
+              </a>
+            </p>
+          )}
+        </div>
       ) : review.approvalBlockers.length > 0 ? (
         <div>
           <p className="muted" role="status">
-            Publishing needs:
+            Creating the email draft needs:
           </p>
           {/* Each blocker reaches whatever settles it. The list used to name
               the roster with the roster form a screen away and no way to it. */}
@@ -637,7 +648,7 @@ function ReviewSection({
           disabled={busy}
           onClick={() => act(() => client.meetingDebriefApprove(detail.runId))}
         >
-          Publish draft and Tasks
+          Create email draft
         </button>
       )}
       {review.state === "published" && (
@@ -758,7 +769,7 @@ function StatusLine({ detail }: { detail: MeetingDebriefDetail }) {
         <>
           {" · "}
           <span className="status-badge status-ok" role="status">
-            Published
+            Email draft created
           </span>
         </>
       )}

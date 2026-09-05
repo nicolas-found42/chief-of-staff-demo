@@ -105,12 +105,18 @@ export interface MeetingDebriefReviewState {
 /** The review half of the Debrief detail journey's payload. */
 export interface MeetingDebriefReviewView {
   /**
-   * `published` once the gated outward writes have gone out; `extracted`
-   * before that. A Debrief is never "awaiting review" — it finishes when it
-   * is extracted — and never expires.
+   * `published` once the Gmail draft has been created; `extracted` before
+   * that. A Debrief is never "awaiting review" — it finishes when it is
+   * extracted — and never expires.
    */
   state: "extracted" | "published";
   approvedAt: string | null;
+  /**
+   * The Gmail draft this Debrief created, or null when none exists (issue
+   * #182). A draft, never a sent message: `url` opens it in Gmail for the
+   * owner to finish and send themselves.
+   */
+  draft: { draftId: string; url: string; recipientCount: number } | null;
   roster: {
     status: "unconfirmed" | "confirmed";
     confirmedAt: string | null;

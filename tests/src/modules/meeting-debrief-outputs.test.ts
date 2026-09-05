@@ -304,36 +304,43 @@ describe("Meeting Debrief approval outputs — Tasks and retry (#141)", () => {
     return h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
   }
 
-  it("creates Tasks only for actions confidently assigned to the owner", async () => {
+  it("creates a Gmail draft and no Task at all", async () => {
     const runId = await readyToApprove();
     await approve(runId);
     await h.host.idle();
 
-    /* Two action items; only the one the Catalog linked to the owner's own
-       Profile becomes a Task. "Follow up with Alice" is someone else's, and
-       an unresolved owner is not the Workspace owner. */
-    expect(h.outputs.tasks.map((task) => task.title)).toEqual(["Send the release note"]);
-    expect(h.outputs.tasks[0]?.due).toBe("2026-08-21");
-  });
-
-  it("preserves the draft receipt when Tasks fail and creates only what is missing", async () => {
-    const runId = await readyToApprove();
-    h.outputs.failTasks = true;
-    await approve(runId);
-    await h.host.idle();
-
-    /* The draft is out. Tasks are not, and the Run is not done. */
+    /* Issue #182: the action is email-only. It used to create Google Tasks
+       for the owner's own actions too, which made one button mean two
+       unrelated things — accepted work now comes from the Action Item queue,
+       which needs no Gmail. */
     expect(h.outputs.drafts).toHaveLength(1);
     expect(h.outputs.tasks).toEqual([]);
+  });
 
-    /* The retry heals the Task without sending a second draft to everyone
-       who already received the first — the receipt is what prevents it. */
-    h.outputs.failTasks = false;
-    await h.host.retryRun(runId);
+  it("offers the created draft in Gmail, and never reports it as sent", async () => {
+    const runId = await readyToApprove();
+    await approve(runId);
+    await h.host.idle();
+
+    const served = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
+    const review = served.json<{
+      review: { draft: { draftId: string; url: string; recipientCount: number } | null };
+    }>().review;
+    expect(review.draft?.draftId).toBe("draft_1");
+    expect(review.draft?.url).toContain("mail.google.com");
+    /* One recipient: the roster's confirmed attendee other than the owner. */
+    expect(review.draft?.recipientCount).toBe(1);
+  });
+
+  it("drafts nothing twice when the action is repeated", async () => {
+    const runId = await readyToApprove();
+    await approve(runId);
+    await h.host.idle();
+
+    await approve(runId);
     await h.host.idle();
 
     expect(h.outputs.drafts).toHaveLength(1);
-    expect(h.outputs.tasks.map((task) => task.title)).toEqual(["Send the release note"]);
   });
 });
 
@@ -398,7 +405,7 @@ describe("Meeting Debrief action-item lifecycle (#158)", () => {
     expect(served.review.actionItemTasks).toEqual([]);
   });
 
-  it("reads Task-backed completion from Google Tasks, falling back to local done", async () => {
+  it("keeps a locally done item local, because the draft creates no Task", async () => {
     const runId = await readyToApprove();
     const done = await h.app.inject({
       method: "POST",
@@ -408,27 +415,11 @@ describe("Meeting Debrief action-item lifecycle (#158)", () => {
     await approve(runId);
     await h.host.idle();
 
-    /* A locally-done owner action still becomes a Task; Google takes over
-       once the Task exists. */
-    expect(h.outputs.tasks.map((task) => task.title)).toEqual(["Send the release note"]);
-
-    /* Google open beats local done while the Task stands. */
-    let served = await detail(runId);
-    expect(served.review.actionItemTasks).toEqual([
-      { index: 0, taskId: "task_1", completed: false },
-    ]);
-
-    h.outputs.googleCompleted.set("task_1", true);
-    served = await detail(runId);
-    expect(served.review.actionItemTasks).toEqual([
-      { index: 0, taskId: "task_1", completed: true },
-    ]);
-
-    /* Google no longer holds the Task — the local done stands. */
-    h.outputs.googleMissing = true;
-    served = await detail(runId);
-    expect(served.review.actionItemTasks).toEqual([
-      { index: 0, taskId: "task_1", completed: true },
-    ]);
+    /* Issue #182: creating the email draft creates no Task, so there is no
+       Google record for a done decision to be read back from. Accepted work
+       lives in the Action Item queue and the Tasks it is promoted into. */
+    expect(h.outputs.tasks).toEqual([]);
+    const served = await detail(runId);
+    expect(served.review.actionItemTasks).toEqual([]);
   });
 });

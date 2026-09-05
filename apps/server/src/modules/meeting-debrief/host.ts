@@ -432,6 +432,27 @@ export class MeetingDebriefHost implements HostedModule {
   }
 
   /**
+   * The Gmail draft this Run created, read from its receipt (issue #182). A
+   * draft, never a sent message: the URL opens Gmail's own compose view of
+   * it, so finishing and sending stays the owner's own act.
+   */
+  private draftFor(run: RunHandle): MeetingDebriefReviewView["draft"] {
+    const raw = run.readArtifact("draft.json");
+    if (!raw) return null;
+    try {
+      const receipt = JSON.parse(raw) as { draftId?: unknown; to?: unknown };
+      if (typeof receipt.draftId !== "string") return null;
+      return {
+        draftId: receipt.draftId,
+        url: `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(receipt.draftId)}`,
+        recipientCount: Array.isArray(receipt.to) ? receipt.to.length : 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Issue #158 read-through: a Task-backed item reads completion from Google
    * Tasks; an item with no Task holds its local done. Google takes over once
    * a Task exists — a null or unreachable Google answer falls back to local.
@@ -482,6 +503,7 @@ export class MeetingDebriefHost implements HostedModule {
     return {
       state: stateName,
       approvedAt: state.approval?.approvedAt ?? null,
+      draft: this.draftFor(run),
       roster: {
         status: state.roster.status,
         confirmedAt: state.roster.confirmedAt,

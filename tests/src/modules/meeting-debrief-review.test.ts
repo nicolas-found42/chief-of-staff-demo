@@ -789,7 +789,7 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     expect(detail.status).toBe("done");
     // The owner is never a recipient of their own Debrief: the count names
     // the confirmed attendees plus explicit selections, not the owner.
-    expect(detail.summary).toContain("Published to 3 recipients");
+    expect(detail.summary).toContain("Email draft created for 3 recipients");
     const events = detail.events.map((event) => event.type);
     expect(events).toContain("debrief_approved");
 
