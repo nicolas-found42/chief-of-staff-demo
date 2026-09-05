@@ -408,7 +408,7 @@ describe("Workspace migration preview", () => {
        calendar keys stay classified in the inventory for legacy Workspaces,
        but a clean config carries none. */
     expect(categories.get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 30),
+      category("disposable-product-state", 31),
     );
     expect(categories.get("mock-provider-state")).toEqual(category("disposable-product-state", 1));
     expect(categories.get("operating-system-metadata")).toEqual(
@@ -437,7 +437,7 @@ describe("Workspace migration preview", () => {
     /* Those same 8 values are on the delete side, inside the category every
        disclosure names, so nothing is preserved by being disclosed. */
     expect(inventory(preview).get("non-auth-workflow-configuration")).toEqual(
-      category("disposable-product-state", 30),
+      category("disposable-product-state", 31),
     );
     /* No category answers "deleted or kept" with a remote reference: the
        destination gids drop with the rest of the non-auth configuration, and

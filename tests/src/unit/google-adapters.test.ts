@@ -99,6 +99,7 @@ const config: AppConfig = {
   apiKey: "test-key",
   tasklistName: "Meeting Followups",
   tasks: {
+    actionItemPolicy: "stage-all",
     googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
     asana: {
       token: "",

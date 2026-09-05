@@ -284,6 +284,11 @@ const CONFIG_KEYS: Record<string, TableEntry> = {
   "drive.folderId": "google-drive-folders",
   "drive.folderName": "google-drive-folders",
   "drive.pollIntervalMinutes": "non-auth-workflow-configuration",
+  /* The Action Item Policy (issue #181): a Workspace-local preference about
+     how a proposal is reviewed. It names no remote record and holds no
+     credential, so a reset returns it to Stage all with the rest of the
+     workflow configuration. */
+  "tasks.actionItemPolicy": "non-auth-workflow-configuration",
   /* The Google Tasks destination (issue #184): a choice about where work is
      filed, and the id of a Google-owned Task List. Neither is a credential —
      the grant itself lives in `google.refreshToken`. */

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   ActionItemIndex,
+  ActionItemPolicy,
   ActionItemState,
   TaskCreateInput,
   TaskDestination,
@@ -9,7 +10,11 @@ import type {
   TaskIndex,
   TaskPriority,
 } from "@chief-of-staff-demo/shared";
-import { TASK_PRIORITIES } from "@chief-of-staff-demo/shared";
+import {
+  ACTION_ITEM_POLICIES,
+  INBOX_TASK_LIST_ID,
+  TASK_PRIORITIES,
+} from "@chief-of-staff-demo/shared";
 import {
   TaskValidationError,
   type ResponsibleFilter,
@@ -37,6 +42,16 @@ export interface TasksApiContext {
    * Workspace composes no Asana connection; every route below still answers.
    */
   asana?: AsanaLinking;
+  /**
+   * The Action Item Policy (issue #181), read and written here because it is
+   * the Tasks product's own setting. Absent when the Workspace composes no
+   * configuration store, and then the policy is the Stage all default that
+   * every other route already behaves as if it were.
+   */
+  actionItemPolicy?: {
+    get: () => ActionItemPolicy;
+    set: (policy: ActionItemPolicy) => void;
+  };
 }
 
 /** HTTP status per refusal: bad input, a missing record, or a refused state change. */
@@ -74,6 +89,12 @@ function responsibleFilter(value: string | undefined): ResponsibleFilter | undef
 }
 
 const ACTION_ITEM_STATES: readonly ActionItemState[] = ["pending", "promoted", "dismissed"];
+
+/** The body the policy routes refuse with when no configuration is composed. */
+const NO_POLICY = {
+  error: "action-item-policy-unavailable",
+  message: "This Workspace has no Action Item Policy setting.",
+};
 
 /** The body `requireLinking` refuses with, alongside the 409 it sets. */
 const NO_DESTINATION = {
@@ -647,4 +668,70 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       }
     },
   );
+
+  /**
+   * The Action Item Policy (issue #181). Stage all is what a Workspace does
+   * until the owner says otherwise here, and turning automatic promotion on
+   * while Tasks are filed outward is a decision with an outbound consequence:
+   * a Debrief would then write into a provider with nobody watching. So that
+   * one combination is refused until the request says the owner was told —
+   * 428, the same shape permanent deletion uses, because what is missing is
+   * the person saying so rather than anything about the request.
+   */
+  app.get("/api/action-item-policy", async () => policyAnswer());
+
+  app.put("/api/action-item-policy", async (request: FastifyRequest, reply: FastifyReply) => {
+    const setting = ctx.actionItemPolicy;
+    if (!setting) {
+      reply.code(409);
+      return NO_POLICY;
+    }
+    const body = (request.body ?? {}) as { policy?: string; confirmedExternalWrites?: boolean };
+    if (!ACTION_ITEM_POLICIES.includes(body.policy as ActionItemPolicy)) {
+      reply.code(400);
+      return {
+        error: "invalid-action-item-policy",
+        message: `Action Item Policy has to be one of: ${ACTION_ITEM_POLICIES.join(", ")}.`,
+      };
+    }
+    const policy = body.policy as ActionItemPolicy;
+    const outward = outwardDestination();
+    if (
+      policy === "auto-create-mine" &&
+      outward !== null &&
+      body.confirmedExternalWrites !== true
+    ) {
+      reply.code(428);
+      return {
+        error: "confirmation-required",
+        message:
+          `Automatically created Tasks would be written to ${outward} without review. ` +
+          "Confirm the outbound writes to turn this on.",
+      };
+    }
+    setting.set(policy);
+    return policyAnswer();
+  });
+
+  /** The policy and what selecting automatic promotion would send outward. */
+  function policyAnswer(): {
+    policy: ActionItemPolicy;
+    externalDestination: string | null;
+  } {
+    return {
+      policy: ctx.actionItemPolicy?.get() ?? "stage-all",
+      externalDestination: outwardDestination(),
+    };
+  }
+
+  /**
+   * The provider an automatically promoted Task would reach, or null when
+   * none would. Automatic promotion files into the default Task List with no
+   * override, so that list's own default destination is the whole answer.
+   */
+  function outwardDestination(): string | null {
+    const destination = tasks.getList(INBOX_TASK_LIST_ID)?.defaultDestination;
+    if (!destination || destination.provider === "local") return null;
+    return destination.provider === "asana" ? "Asana" : "Google Tasks";
+  }
 }

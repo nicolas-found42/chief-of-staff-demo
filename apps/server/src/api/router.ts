@@ -296,5 +296,12 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
     actionItems: ctx.actionItems,
     linking: ctx.taskLinking,
     asana: ctx.asanaLinking,
+    /* The Action Item Policy (issue #181): the Tasks product's own setting,
+       read and written on its own routes rather than through `PUT /api/config`
+       — turning it on has an outbound consequence the route has to gate. */
+    actionItemPolicy: {
+      get: () => ctx.configStore.get().tasks.actionItemPolicy,
+      set: (policy) => ctx.configStore.setActionItemPolicy(policy),
+    },
   });
 }

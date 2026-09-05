@@ -1,6 +1,7 @@
 import type {
   ActionItem,
   ActionItemIndex,
+  ActionItemPolicy,
   ActionItemState,
   Task,
   TaskCreateInput,
@@ -68,6 +69,17 @@ export interface AsanaDestination {
   sectionName: string | null;
   /** False when this Workspace composes no Asana destination at all. */
   available: boolean;
+}
+
+/**
+ * The Action Item Policy and what turning it on would send outward (issue
+ * #181). `externalDestination` names the provider an automatically created
+ * Task would reach, or is null when none would — the surface warns from this
+ * rather than deciding for itself what a destination implies.
+ */
+export interface ActionItemPolicySetting {
+  policy: ActionItemPolicy;
+  externalDestination: string | null;
 }
 
 /** What Check connection answers: who the token belongs to and what it reaches. */
@@ -153,6 +165,16 @@ export const tasksApi = {
       `/api/action-items/${encodeURIComponent(actionItemId)}/restore`,
       { method: "POST" },
     ),
+  actionItemPolicy: () => request<ActionItemPolicySetting>("/api/action-item-policy"),
+  /* The confirmation travels in the request, like permanent deletion's does:
+     the server refuses automatic outbound writes nobody agreed to, and this
+     is the surface saying the owner agreed. */
+  setActionItemPolicy: (policy: ActionItemPolicy, confirmedExternalWrites = false) =>
+    request<ActionItemPolicySetting>("/api/action-item-policy", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ policy, confirmedExternalWrites }),
+    }),
   googleDestination: () => request<GoogleTasksDestination>("/api/tasks/google-destination"),
   googleLists: () => request<{ lists: { id: string; title: string }[] }>("/api/tasks/google-lists"),
   setGoogleDestination: (input: { enabled: boolean; taskListId?: string }) =>

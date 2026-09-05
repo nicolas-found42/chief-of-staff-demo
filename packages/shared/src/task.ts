@@ -248,3 +248,15 @@ export interface TaskIndex {
    */
   unavailableSources: string[];
 }
+
+/**
+ * What happens to a freshly materialized Action Item (ADR-0053, issue #181).
+ *
+ * `stage-all` is every Workspace's default: a model proposal waits for a
+ * person. `auto-create-mine` is the owner's deliberate exception, and it is
+ * deliberately narrow — only a first extraction's commitments that the
+ * Debrief confidently resolved to the confirmed owner, and only ones no open
+ * Task already duplicates, become Tasks without review.
+ */
+export const ACTION_ITEM_POLICIES = ["stage-all", "auto-create-mine"] as const;
+export type ActionItemPolicy = (typeof ACTION_ITEM_POLICIES)[number];

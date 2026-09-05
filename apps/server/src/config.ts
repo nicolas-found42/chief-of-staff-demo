@@ -53,6 +53,9 @@ function defaultConfig(): AppConfig {
     notion: { token: "", lastVerifiedAt: null },
     drive: { enabled: false, folderId: "", folderName: "", pollIntervalMinutes: 2 },
     tasks: {
+      /* Stage all Action Items (issue #181): a fresh Workspace never promotes
+         a model proposal on its own. */
+      actionItemPolicy: "stage-all",
       googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
       asana: {
         token: "",
@@ -216,6 +219,18 @@ export class ConfigStore {
   setGoogleTasksDestination(next: AppConfig["tasks"]["googleTasks"]): void {
     const current = this.get();
     this.config = { ...current, tasks: { ...current.tasks, googleTasks: next } };
+    this.persist();
+  }
+
+  /**
+   * The Action Item Policy (issue #181). Its own method rather than a
+   * `PUT /api/config` field, like the two destinations below: turning
+   * automatic promotion on is a decision the Tasks product takes after it has
+   * told the owner what an externally backed default would send outward.
+   */
+  setActionItemPolicy(next: AppConfig["tasks"]["actionItemPolicy"]): void {
+    const current = this.get();
+    this.config = { ...current, tasks: { ...current.tasks, actionItemPolicy: next } };
     this.persist();
   }
 

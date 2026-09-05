@@ -26,7 +26,8 @@ import { conversionStageFailure } from "../text/failure.js";
 import { OwnerOnboarding } from "../onboarding/owner.js";
 import { TaskStore } from "../tasks/store.js";
 import { WorkspaceTasks } from "../tasks/tasks.js";
-import { WorkspaceActionItems } from "../tasks/action-items.js";
+import { WorkspaceActionItems, type ActionItemMaterialization } from "../tasks/action-items.js";
+import { materializeUnderPolicy } from "../tasks/auto-promotion.js";
 import {
   TaskLinking,
   type AsanaDestination,
@@ -373,6 +374,24 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     store: taskStore,
     ownerProfileId: () => ownerOnboarding.confirmed()?.profileId ?? null,
   });
+  /* Automatic promotion (issue #181). The Debrief hands proposals over here
+     rather than straight to the queue, because the policy's eligibility
+     depends on what the queue held before this extraction. Delivery to a
+     configured provider happens after the local Task has committed, and its
+     failure lands on the External Task Link rather than on the work. */
+  const materializeActionItemsUnderPolicy = (handover: ActionItemMaterialization): void => {
+    materializeUnderPolicy(
+      {
+        tasks,
+        actionItems,
+        policy: () => configStore.get().tasks.actionItemPolicy,
+        deliver: (taskId) => taskLinking.link(taskId),
+        log: (message) => console.log(`[tasks] ${message}`),
+      },
+      handover,
+    );
+  };
+
   /* The public-web identity resolver, wired here for the first time: the seam
      and its source existed but nothing in production built them, so a Profile
      could only ever start from a name a Module already held. The typed
@@ -692,7 +711,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           workspaceDir,
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
           onActionItemsChanged: notifyBriefActionItemsChanged,
-          materializeActionItems: (handover) => actionItems.materialize(handover),
+          materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
       : null;
@@ -726,8 +745,10 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       },
       onActionItemsChanged: notifyBriefActionItemsChanged,
       /* Issue #177: a successful extraction's proposals become durable
-         Workspace Action Items. The Debrief produces them; Tasks owns them. */
-      materializeActionItems: (handover) => actionItems.materialize(handover),
+         Workspace Action Items. The Debrief produces them; Tasks owns them.
+         Issue #181: the Action Item Policy then decides whether any of them
+         are obvious enough to become Tasks without review. */
+      materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
       log: (message) => console.log(`[meeting-debrief] ${message}`),
     }).host;
 

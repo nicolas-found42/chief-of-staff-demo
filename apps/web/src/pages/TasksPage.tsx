@@ -20,6 +20,7 @@ import { errorMessage } from "../client";
 import {
   tasksApi,
   type AsanaCheckConnection,
+  type ActionItemPolicySetting,
   type AsanaDestination,
   type GoogleTasksDestination,
   type TasksClient,
@@ -662,6 +663,12 @@ export function TasksPage({
   const [dismissed, setDismissed] = useState<ActionItem[]>([]);
   const undoRef = useRef<HTMLButtonElement>(null);
   const [destination, setDestination] = useState<GoogleTasksDestination | null>(null);
+  /* The Action Item Policy (issue #181), and whether the owner has been shown
+     what turning it on would send outward. The warning is state rather than a
+     branch in the button: the server refuses the unconfirmed change, and the
+     card has to say why before asking again. */
+  const [policy, setPolicy] = useState<ActionItemPolicySetting | null>(null);
+  const [policyWarning, setPolicyWarning] = useState<string | null>(null);
   const [googleLists, setGoogleLists] = useState<{ id: string; title: string }[]>([]);
   /* The filters, held as one value so the load below is a function of them
      rather than of five pieces of state that can disagree. */
@@ -729,8 +736,14 @@ export function TasksPage({
 
   useEffect(() => {
     let live = true;
-    Promise.all([load(), people.people(), client.googleDestination(), client.asanaDestination()])
-      .then(([, directory, googleDestination, asanaDestination]) => {
+    Promise.all([
+      load(),
+      people.people(),
+      client.googleDestination(),
+      client.asanaDestination(),
+      client.actionItemPolicy(),
+    ])
+      .then(([, directory, googleDestination, asanaDestination, actionItemPolicy]) => {
         if (!live) return;
         /* The same test the Workspace applies: offering a Profile it would
            refuse turns a chooser into a way to earn a 400. */
@@ -741,6 +754,7 @@ export function TasksPage({
         );
         setDestination(googleDestination);
         setAsana(asanaDestination);
+        setPolicy(actionItemPolicy);
       })
       .catch((err) => {
         if (live) setError(errorMessage(err));
@@ -1217,6 +1231,63 @@ export function TasksPage({
       <h2>Completed</h2>
       {!loading && completed.length === 0 && <p className="muted">Nothing completed yet.</p>}
       <ul className="card-list">{completed.map(renderTask)}</ul>
+
+      <h2>Action Item Policy</h2>
+      <p className="muted">
+        A Meeting Debrief proposes commitments; this decides what happens to them next. Stage all
+        waits for you. Automatically create my Tasks accepts only a first extraction's commitments
+        that the Debrief confidently resolved to you, that no open Task already looks like — every
+        other proposal still waits.
+      </p>
+      {policy && (
+        <div className="card">
+          <p className="muted">
+            {policy.policy === "auto-create-mine"
+              ? "Automatically create my Tasks · my own commitments become Tasks without review"
+              : "Stage all Action Items · every proposal waits for your review"}
+          </p>
+          {policyWarning !== null && <p role="alert">{policyWarning}</p>}
+          <div className="toolbar">
+            <button
+              type="button"
+              className="action-button primary"
+              aria-disabled={busy}
+              onClick={() => {
+                const next =
+                  policy.policy === "auto-create-mine" ? "stage-all" : "auto-create-mine";
+                void act(
+                  next === "auto-create-mine"
+                    ? "My own commitments now become Tasks automatically."
+                    : "Every Action Item now waits for review.",
+                  async () => {
+                    try {
+                      setPolicy(await client.setActionItemPolicy(next, policyWarning !== null));
+                      setPolicyWarning(null);
+                    } catch (err) {
+                      /* The one refusal this card answers itself: the owner
+                         has not yet been told what the change would send
+                         outward, so tell them and let the same button ask
+                         again. */
+                      if (policy.externalDestination !== null && policyWarning === null) {
+                        setPolicyWarning(
+                          `Tasks created automatically would be written to ${policy.externalDestination} ` +
+                            "without review. Select this again to confirm.",
+                        );
+                        return;
+                      }
+                      throw err;
+                    }
+                  },
+                );
+              }}
+            >
+              {policy.policy === "auto-create-mine"
+                ? "Stage all Action Items"
+                : "Automatically create my Tasks"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <h2>Task Destination</h2>
       <p className="muted">

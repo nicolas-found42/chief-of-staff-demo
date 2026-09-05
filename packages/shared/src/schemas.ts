@@ -1,6 +1,7 @@
 import type { TranscriptCatalogStatus } from "./transcript.js";
 import { z } from "zod";
 import { YoutubeChannelSchema } from "./youtube.js";
+import { ACTION_ITEM_POLICIES } from "./task.js";
 
 // Meeting Brief Generator — Internal Domain normalization helper (issue://83)
 export function normalizeInternalDomains(domains: string[]): string[] {
@@ -68,6 +69,13 @@ export const ConfigSchema = z.strictObject({
    */
   tasks: z
     .strictObject({
+      /**
+       * What happens to a freshly materialized Action Item (issue #181).
+       * Stage all is the default in every Workspace: automation over the
+       * owner's own commitments is a choice they make, never one they
+       * inherit.
+       */
+      actionItemPolicy: z.enum(ACTION_ITEM_POLICIES).default("stage-all"),
       googleTasks: z
         .strictObject({
           enabled: z.boolean().default(false),
@@ -112,6 +120,7 @@ export const ConfigSchema = z.strictObject({
         }),
     })
     .default({
+      actionItemPolicy: "stage-all",
       googleTasks: { enabled: false, taskListId: "", taskListTitle: "" },
       asana: {
         token: "",
