@@ -1,7 +1,7 @@
 import type { CompleteJson } from "../../llm/providers.js";
 import type { Runs } from "../../runs.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
-import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
+import type { TranscriptIdentityService } from "../../transcript-catalog/identity.js";
 import type { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 import { MeetingDebriefHost, type MeetingDebriefHostDeps } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
@@ -16,6 +16,12 @@ export interface MeetingDebriefProductionRuntimeOptions {
   getLlmInfo: () => { provider: string; model: string };
   /** The Workspace Person Profiles interface the review binds identities through. */
   people: WorkspacePersonProfiles;
+  /**
+   * The Workspace's one identity service, which answers `reviewFor` directly.
+   * This runtime used to assemble that answer from three filtered store reads
+   * — the same three the hermetic runtime assembled, line for line.
+   */
+  identity: TranscriptIdentityService;
   /** The confirmed owner identity's email, as the Shell holds it (ADR-0036). */
   ownerEmail: () => string | null;
   /** What the Workspace calls the Meeting a Transcript belongs to. */
@@ -58,25 +64,12 @@ export function createMeetingDebriefProductionRuntime(
   options: MeetingDebriefProductionRuntimeOptions,
 ): MeetingDebriefProductionRuntime {
   const catalogStore = new TranscriptCatalogStore(options.workspaceDir);
-  const identityStore = new TranscriptIdentityStore(options.workspaceDir);
   const host = new MeetingDebriefHost({
     runs: options.runs,
     catalog: {
       getTranscript: (transcriptId) => catalogStore.readTranscript(transcriptId),
     },
-    identity: {
-      reviewFor: (transcriptId) => ({
-        mentions: identityStore
-          .readMentions()
-          .filter((mention) => mention.provenance.transcriptId === transcriptId),
-        decisions: identityStore
-          .readDecisions()
-          .filter((decision) => decision.transcriptId === transcriptId),
-        organizations: identityStore
-          .readOrganizations()
-          .filter((organization) => organization.provenance.transcriptId === transcriptId),
-      }),
-    },
+    identity: options.identity,
     profiles: workspaceProfileDirectory(options.people),
     ownerEmail: options.ownerEmail,
     ...(options.meetingTitle ? { meetingTitle: options.meetingTitle } : {}),

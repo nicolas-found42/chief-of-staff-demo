@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import type { Runs } from "../../runs.js";
 import { TranscriptCatalogStore } from "../../transcript-catalog/store.js";
 import { TranscriptIdentityStore } from "../../transcript-catalog/identity-store.js";
+import type { TranscriptIdentityService } from "../../transcript-catalog/identity.js";
 import { MEETING_DEBRIEF_MODULE_ID } from "@chief-of-staff-demo/shared";
 import { MeetingDebriefHost, type MeetingDebriefHostDeps } from "./host.js";
 import { workspaceProfileDirectory } from "./profiles.js";
@@ -18,6 +19,12 @@ import { WorkspacePersonProfiles } from "../../person-profile/profiles.js";
 export interface MeetingDebriefTestRuntimeOptions {
   runs: Runs;
   workspaceDir: string;
+  /**
+   * The Workspace's one identity service, read through for `reviewFor`. The
+   * seed below still writes fixture mentions and decisions straight to the
+   * store: seeding is durable state, and reading it back is a question.
+   */
+  identity: TranscriptIdentityService;
   /** The confirmed owner identity's email, as the Shell holds it. */
   ownerEmail?: () => string | null;
   /**
@@ -154,6 +161,8 @@ export function createMeetingDebriefTestRuntime(
   options: MeetingDebriefTestRuntimeOptions,
 ): MeetingDebriefTestRuntime {
   const catalogStore = new TranscriptCatalogStore(options.workspaceDir);
+  /* Seeding only: the fixture writes go straight to durable state, while
+     every read the host makes goes through options.identity. */
   const identityStore = new TranscriptIdentityStore(options.workspaceDir);
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(options.workspaceDir),
@@ -165,19 +174,7 @@ export function createMeetingDebriefTestRuntime(
     catalog: {
       getTranscript: (transcriptId) => catalogStore.readTranscript(transcriptId),
     },
-    identity: {
-      reviewFor: (transcriptId) => ({
-        mentions: identityStore
-          .readMentions()
-          .filter((mention) => mention.provenance.transcriptId === transcriptId),
-        decisions: identityStore
-          .readDecisions()
-          .filter((decision) => decision.transcriptId === transcriptId),
-        organizations: identityStore
-          .readOrganizations()
-          .filter((organization) => organization.provenance.transcriptId === transcriptId),
-      }),
-    },
+    identity: options.identity,
     extract: async ({ record, identity }) =>
       deterministicDebriefExtraction(record, { mentions: identity.mentions }),
     now: () => new Date(nowMs),

@@ -1648,3 +1648,142 @@ it("a standing not-a-person decision blocks automatic creation for later mention
     rmSync(h.workspaceDir, { recursive: true, force: true });
   }
 });
+
+/**
+ * The Confirmed Identity Decision queries (deepening the identity records).
+ *
+ * These two questions used to be reassembled by five call sites — three in the
+ * Shell's composition root, one in each of the Meeting Debrief's runtimes —
+ * each walking the mentions, resolving the latest decision per mention, and
+ * comparing the outcome against a `["linked", "created"]` literal. They are
+ * asked of the service now, so the vocabulary that writes an outcome is the
+ * one that reads it back.
+ */
+describe("confirmed Identity Decisions", () => {
+  function makeCorpus() {
+    const h = makeHarness();
+    return h;
+  }
+
+  it("answers with both confirmed outcomes, ordered by Transcript then mention", async () => {
+    const h = makeCorpus();
+    try {
+      await h.service.process(makeRecord(SYNC_TEXT));
+      await h.service.process(makeRecord("Reach grace@example.com for notes.", "drive_other_r1"));
+      const seed = h.service
+        .reviewQueue()
+        .items.find((item) => item.mention.emails.includes("grace@example.com"))!;
+
+      /* An explicit creation, and the rematch it triggers linking the same
+         stable email in the other Transcript: "created" and "linked" are the
+         two outcomes that make a Transcript evidence for the Profile. */
+      const decision = h.service.decide({ mentionId: seed.mention.id, action: "create-profile" });
+      const profileId = decision.profileId!;
+
+      const confirmed = h.service.confirmedMentions(profileId);
+
+      expect(confirmed.map((mention) => mention.transcriptId)).toEqual([
+        "drive_file1_r1",
+        "drive_other_r1",
+      ]);
+      /* The order is part of the answer, so a caller deriving a revision
+         string from it never has to sort. */
+      expect(confirmed.map((mention) => mention.transcriptId)).toEqual(
+        [...confirmed.map((mention) => mention.transcriptId)].sort(),
+      );
+      expect(confirmed.every((mention) => mention.quote.length > 0)).toBe(true);
+    } finally {
+      rmSync(h.workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes decisions that named another Profile, and unresolved mentions", async () => {
+    const h = makeCorpus();
+    try {
+      await h.service.process(makeRecord(SYNC_TEXT));
+      const seed = h.service
+        .reviewQueue()
+        .items.find((item) => item.mention.emails.includes("grace@example.com"))!;
+      const decision = h.service.decide({ mentionId: seed.mention.id, action: "create-profile" });
+      const other = h.people.create({ fullName: "Someone Else" });
+
+      expect(h.service.confirmedMentions(other.id)).toEqual([]);
+      /* Every remaining mention of the corpus is undecided, so nothing but
+         the created Profile's own mentions can be confirmed. */
+      expect(h.service.confirmedMentions(decision.profileId!).length).toBeGreaterThan(0);
+    } finally {
+      rmSync(h.workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("drops a mention whose latest decision withdrew the confirmation", async () => {
+    const h = makeCorpus();
+    try {
+      const profile = h.people.create({
+        fullName: "Grace Hopper",
+        primaryEmail: "grace@example.com",
+      });
+      await h.service.process(makeRecord(SYNC_TEXT));
+      const speaker = h.service
+        .reviewQueue()
+        .items.find(
+          (item) =>
+            item.mention.surfaceText === "Grace Hopper" &&
+            item.mention.attendeeStatus === "speaker",
+        )!;
+      h.service.decide({
+        mentionId: speaker.mention.id,
+        action: "confirm",
+        profileId: speaker.candidates[0].profileId,
+      });
+      expect(
+        h.service.confirmedMentions(profile.id).some((m) => m.mentionId === speaker.mention.id),
+      ).toBe(true);
+
+      /* Decisions are append-only, so withdrawing one appends rather than
+         rewrites: the query must read the latest, not the first. */
+      h.service.decide({ mentionId: speaker.mention.id, action: "not-a-person" });
+
+      expect(
+        h.service.confirmedMentions(profile.id).some((m) => m.mentionId === speaker.mention.id),
+      ).toBe(false);
+    } finally {
+      rmSync(h.workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reviewFor answers for one Transcript and nothing beside it", async () => {
+    const h = makeCorpus();
+    try {
+      await h.service.process(makeRecord(SYNC_TEXT));
+      await h.service.process(makeRecord("Reach grace@example.com for notes.", "drive_other_r1"));
+      const seed = h.service
+        .reviewQueue()
+        .items.find(
+          (item) =>
+            item.transcriptId === "drive_file1_r1" &&
+            item.mention.emails.includes("grace@example.com"),
+        )!;
+      h.service.decide({ mentionId: seed.mention.id, action: "create-profile" });
+
+      const review = h.service.reviewFor("drive_file1_r1");
+
+      expect(review.mentions.length).toBeGreaterThan(0);
+      expect(
+        review.mentions.every((mention) => mention.provenance.transcriptId === "drive_file1_r1"),
+      ).toBe(true);
+      expect(review.decisions.every((decision) => decision.transcriptId === "drive_file1_r1")).toBe(
+        true,
+      );
+      expect(
+        review.organizations.every(
+          (organization) => organization.provenance.transcriptId === "drive_file1_r1",
+        ),
+      ).toBe(true);
+      /* The other Transcript's own mining is untouched by the filter. */
+      expect(h.service.reviewFor("drive_other_r1").mentions.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(h.workspaceDir, { recursive: true, force: true });
+    }
+  });
+});

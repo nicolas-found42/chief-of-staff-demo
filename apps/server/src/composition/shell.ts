@@ -104,6 +104,7 @@ import { createGmailDraft } from "../google/gmail.js";
 import { TranscriptRelevanceService } from "../transcript-catalog/relevance.js";
 import { TranscriptRelevanceStore } from "../transcript-catalog/relevance-store.js";
 import { TranscriptIdentityStore } from "../transcript-catalog/identity-store.js";
+import { TranscriptIdentityService } from "../transcript-catalog/identity.js";
 import {
   TranscriptDeletionService,
   type TranscriptConsumerRegistry,
@@ -192,6 +193,8 @@ interface ShellWorkspace {
   weeklyWorkspace: WeeklyWorkspace;
   transcripts: TranscriptCatalogStore;
   transcriptIdentity: TranscriptIdentityStore;
+  /** The one identity service every consumer asks; see ADR-note in identity-store.ts. */
+  transcriptIdentityService: TranscriptIdentityService;
   transcriptRelevance: TranscriptRelevanceService;
   transcriptDeletion: TranscriptDeletionService;
   transcriptCatalog: TranscriptCatalogRuntime;
@@ -356,32 +359,34 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     people: peopleProfiles,
     search: publicSearch,
     complete: (request) => peopleCompleteJson()(request),
-    privateDocuments: (profile) =>
-      transcriptCatalogStore.listTranscripts().flatMap((transcript) => {
-        const confirmed = () =>
-          transcriptIdentityStore
-            .readMentions()
-            .some(
-              (mention) =>
-                mention.provenance.transcriptId === transcript.id &&
-                transcriptIdentityStore.latestDecision(mention.id)?.profileId === profile.id &&
-                ["linked", "created"].includes(
-                  transcriptIdentityStore.latestDecision(mention.id)?.outcome ?? "",
-                ),
-            );
-        return confirmed()
+    privateDocuments: (profile) => {
+      /* Which Transcripts this Profile is confirmed in, asked once. The walk
+         behind it used to run per Transcript, over a mentions file that is
+         megabytes in a real Workspace. */
+      const confirmedTranscripts = (): Set<string> =>
+        new Set(
+          transcriptIdentityService
+            .confirmedMentions(profile.id)
+            .map((mention) => mention.transcriptId),
+        );
+      const confirmed = confirmedTranscripts();
+      return transcriptCatalogStore.listTranscripts().flatMap((transcript) =>
+        confirmed.has(transcript.id)
           ? [
               {
                 transcriptId: transcript.id,
                 title: transcript.source.fileName,
                 text: transcript.normalizedText,
+                /* Asked again when the research actually runs: the bytes must
+                   still match and the decision must still stand. */
                 active: () =>
                   transcriptCatalogStore.readTranscript(transcript.id)?.source.checksum ===
-                    transcript.source.checksum && confirmed(),
+                    transcript.source.checksum && confirmedTranscripts().has(transcript.id),
               },
             ]
-          : [];
-      }),
+          : [],
+      );
+    },
     ...(process.env.ENABLE_TEST_SEED === "1" ? personDossierTestPorts : {}),
   });
   const personResearchQueue = new PersonResearchQueue({
@@ -390,22 +395,14 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     research: personResearch,
     enabled: () => !migrationGate.isActive(),
     evidenceRevision: (profileId) =>
+      /* One pair per confirmed mention, in the order the service promises —
+         so the revision is stable by construction rather than by a sort
+         applied here. */
       JSON.stringify(
-        transcriptIdentityStore
-          .readMentions()
-          .flatMap((mention) => {
-            const decision = transcriptIdentityStore.latestDecision(mention.id);
-            if (
-              decision?.profileId !== profileId ||
-              !["linked", "created"].includes(decision.outcome)
-            )
-              return [];
-            const transcript = transcriptCatalogStore.readTranscript(
-              mention.provenance.transcriptId,
-            );
-            return transcript ? [[transcript.id, transcript.source.checksum]] : [];
-          })
-          .sort(),
+        transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
+          const transcript = transcriptCatalogStore.readTranscript(mention.transcriptId);
+          return transcript ? [[transcript.id, transcript.source.checksum]] : [];
+        }),
       ),
     upcomingProfileIds: () => {
       const emails = new Set(
@@ -445,6 +442,18 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      local lexical index keeps every judgment in-process (ADR-0001). */
   const transcriptRelevanceStore = new TranscriptRelevanceStore(workspaceDir);
   const transcriptIdentityStore = new TranscriptIdentityStore(workspaceDir);
+  /* One identity service over that store, for every consumer that asks the
+     Catalog an identity question: the Person Profiles research lane, the
+     Meeting Debrief's two runtimes, and the Catalog's own mining pass. Built
+     here rather than inside each of them, because four services over one
+     directory is four places that could answer differently.
+     `automaticCreation` stays true: it is the Catalog's mining posture, and
+     it moved here with the construction rather than changing. */
+  const transcriptIdentityService = new TranscriptIdentityService({
+    store: transcriptIdentityStore,
+    people: peopleProfiles,
+    automaticCreation: true,
+  });
   const transcriptRelevance = new TranscriptRelevanceService({
     corpus: transcriptCatalogStore,
     store: transcriptRelevanceStore,
@@ -791,6 +800,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       ? createMeetingDebriefTestRuntime({
           runs,
           workspaceDir,
+          identity: transcriptIdentityService,
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
           materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
@@ -802,6 +812,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       runs,
       workspaceDir,
       people: peopleProfiles,
+      identity: transcriptIdentityService,
       ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
       /* Terminal approval's outward writes (issue #141): one Gmail draft to the
          confirmed recipients, then Tasks for the owner's own retained actions. */
@@ -842,6 +853,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     workspaceDir,
     port,
     google: googleConnection,
+    identity: transcriptIdentityService,
     people: peopleProfiles,
     getConfig: () => configStore.get(),
     getLlmInfo: () => {
@@ -935,21 +947,18 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           href: `/meetings/${encodeURIComponent(meeting.id)}`,
           detail: "Calendar participant with an exact matching email.",
         }));
-      for (const mention of transcriptIdentityStore.readMentions()) {
-        const decision = transcriptIdentityStore.latestDecision(mention.id);
-        if (decision?.profileId !== profileId || !["linked", "created"].includes(decision.outcome))
-          continue;
-        const transcript = transcriptCatalogStore.readTranscript(mention.provenance.transcriptId);
+      for (const mention of transcriptIdentityService.confirmedMentions(profileId)) {
+        const transcript = transcriptCatalogStore.readTranscript(mention.transcriptId);
         if (transcript)
           records.push({
             kind: "transcript",
-            id: mention.id,
+            id: mention.mentionId,
             title: transcript.source.fileName,
             date: transcript.meetingDate,
             href: transcript.meetingId
               ? `/meetings/${encodeURIComponent(transcript.meetingId)}`
               : "/people/review",
-            detail: mention.provenance.quote,
+            detail: mention.quote,
           });
       }
       for (const task of tasks.list())
@@ -1198,6 +1207,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       weeklyWorkspace,
       transcripts: transcriptCatalogStore,
       transcriptIdentity: transcriptIdentityStore,
+      transcriptIdentityService,
       transcriptRelevance,
       transcriptDeletion,
       transcriptCatalog: transcriptCatalogRuntime,

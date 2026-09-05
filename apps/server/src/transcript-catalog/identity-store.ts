@@ -29,6 +29,12 @@ interface TranscriptIdentityProcessingEntry {
  * decisions are an append-only audit record and mappings are owner state,
  * so both survive re-mining (spec #117, Implementation Decision 7: this is
  * outside Person Profiles, and the Catalog is the sole writer).
+ *
+ * This holds state and answers no domain question. Whether a Transcript is
+ * evidence for a Person Profile is a Confirmed Identity Decision, and
+ * `TranscriptIdentityService.confirmedMentions` is where that is decided —
+ * reassembling it here from `readMentions` and `latestDecision` is what five
+ * call sites used to do, and what the service exists to stop.
  */
 export class TranscriptIdentityStore {
   private readonly root: string;
