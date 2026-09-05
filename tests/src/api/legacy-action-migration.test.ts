@@ -1,0 +1,245 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { beforeEach, describe, expect, it } from "vitest";
+import type {
+  MeetingDebriefActionItem,
+  MeetingDebriefReviewState,
+  MeetingDebriefRunResult,
+} from "@chief-of-staff-demo/shared";
+import {
+  MEETING_DEBRIEF_INTAKE,
+  MEETING_DEBRIEF_MODULE_ID,
+  MEETING_DEBRIEF_MODULE_VERSION,
+} from "@chief-of-staff-demo/shared";
+import { openRuns, type RunHandle, type Runs } from "../../../apps/server/src/runs";
+import { TaskStore } from "../../../apps/server/src/tasks/store";
+import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
+import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
+import { migrateLegacyActionReview } from "../../../apps/server/src/tasks/legacy-migration";
+
+/**
+ * Legacy Debrief review carried into canonical records (issue #183). The
+ * decisions were arrays of positions in a Run file; the work they represent is
+ * real, and the Run files that recorded it are evidence the migration never
+ * rewrites.
+ */
+const NOW = new Date("2026-09-04T09:00:00.000Z");
+
+let workspaceDir: string;
+let runs: Runs;
+let tasks: WorkspaceTasks;
+let actionItems: WorkspaceActionItems;
+
+beforeEach(() => {
+  workspaceDir = mkdtempSync(join(tmpdir(), "cos-legacy-actions-"));
+  runs = openRuns(workspaceDir);
+  const store = new TaskStore(workspaceDir);
+  tasks = new WorkspaceTasks({ store, now: () => NOW });
+  actionItems = new WorkspaceActionItems({ store, now: () => NOW });
+});
+
+function proposal(overrides: Partial<MeetingDebriefActionItem> = {}): MeetingDebriefActionItem {
+  return {
+    title: "Follow up on the billing fix",
+    owner: "Alice",
+    ownerMentionId: "m_alice",
+    ownerProfileId: null,
+    dueDate: "2026-08-22",
+    ...overrides,
+  };
+}
+
+/** One legacy Debrief Run: its stored extraction, and the review it carried. */
+function legacyRun(options: {
+  actionItems: MeetingDebriefActionItem[];
+  dropped?: number[];
+  completed?: number[];
+  taskReceipts?: number[];
+  withReview?: boolean;
+}): RunHandle {
+  const run = runs.create({
+    module: MEETING_DEBRIEF_MODULE_ID,
+    moduleVersion: MEETING_DEBRIEF_MODULE_VERSION,
+    intake: MEETING_DEBRIEF_INTAKE,
+    sourceUrl: null,
+    externalId: "drive_fileA_r1",
+  });
+  const result: MeetingDebriefRunResult = {
+    version: 1,
+    transcriptId: "drive_fileA_r1",
+    extractedAt: NOW.toISOString(),
+    debrief: {
+      version: 1,
+      summary: "Review of the weekly sync",
+      decisions: [],
+      actionItems: options.actionItems,
+      openQuestions: [],
+      effectivenessEvidence: "",
+      coachingAdvice: "",
+      suggestedRecipients: [],
+    },
+  };
+  run.writeArtifact("result.json", `${JSON.stringify(result, null, 2)}\n`);
+  if (options.withReview !== false) {
+    const review: MeetingDebriefReviewState = {
+      version: 1,
+      runId: run.id,
+      roster: { status: "confirmed", confirmedAt: NOW.toISOString(), entries: [] },
+      recipients: { additional: [] },
+      review: {
+        droppedActionItems: options.dropped ?? [],
+        completedActionItems: options.completed ?? [],
+      },
+      request: null,
+      approval: null,
+    };
+    run.writeArtifact("review.json", `${JSON.stringify(review, null, 2)}\n`);
+  }
+  if (options.taskReceipts) {
+    run.writeArtifact(
+      "tasks.json",
+      `${JSON.stringify(
+        {
+          version: 1,
+          tasks: options.taskReceipts.map((index) => ({ index, taskId: `google_${index}` })),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
+  return run;
+}
+
+function migrate() {
+  return migrateLegacyActionReview({ runs, tasks, actionItems });
+}
+
+describe("migrating legacy Debrief review", () => {
+  it("materializes every undecided proposal as a pending Action Item", () => {
+    legacyRun({ actionItems: [proposal(), proposal({ title: "Book the follow-up" })] });
+
+    const result = migrate();
+
+    expect(result).toMatchObject({ runs: 1, actionItems: 2, dismissed: 0, completedTasks: 0 });
+    expect(actionItems.list().map((item) => item.state)).toEqual(["pending", "pending"]);
+    expect(tasks.list({})).toEqual([]);
+  });
+
+  it("carries a dismissed position across as dismissed history", () => {
+    legacyRun({
+      actionItems: [proposal(), proposal({ title: "Book the follow-up" })],
+      dropped: [1],
+    });
+
+    expect(migrate()).toMatchObject({ dismissed: 1 });
+
+    const items = actionItems.list();
+    expect(items[0]?.state).toBe("pending");
+    expect(items[1]).toMatchObject({ state: "dismissed", promotedTaskId: null });
+    /* Dismissal creates nothing: it is a decision not to accept work. */
+    expect(tasks.list({ trashed: false })).toEqual([]);
+  });
+
+  it("carries a locally done position across as a completed Task", () => {
+    legacyRun({ actionItems: [proposal()], completed: [0] });
+
+    expect(migrate()).toMatchObject({ completedTasks: 1 });
+
+    const [item] = actionItems.list();
+    expect(item.state).toBe("promoted");
+    const [task] = tasks.list({ status: "completed" });
+    expect(task).toMatchObject({
+      title: "Follow up on the billing fix",
+      status: "completed",
+      source: { actionItemId: item.id },
+    });
+    expect(task.completedAt).not.toBeNull();
+  });
+
+  it("leaves a Google-backed done decision for the provider migration", () => {
+    legacyRun({ actionItems: [proposal()], completed: [0], taskReceipts: [0] });
+
+    expect(migrate()).toMatchObject({ completedTasks: 0 });
+
+    /* Pending, not promoted: this one needs the External Task Link that
+       issue #188 creates, and a Task with no link would lose the connection
+       to the record Google still holds. */
+    expect(actionItems.list()[0]?.state).toBe("pending");
+    expect(tasks.list({})).toEqual([]);
+  });
+
+  it("migrates a Run that stored an extraction but never a review", () => {
+    legacyRun({ actionItems: [proposal()], withReview: false });
+
+    expect(migrate()).toMatchObject({ runs: 1, actionItems: 1 });
+    expect(actionItems.list()[0]?.state).toBe("pending");
+  });
+
+  it("carries nothing across from a Run that never extracted anything", () => {
+    runs.create({
+      module: MEETING_DEBRIEF_MODULE_ID,
+      moduleVersion: MEETING_DEBRIEF_MODULE_VERSION,
+      intake: MEETING_DEBRIEF_INTAKE,
+      sourceUrl: null,
+      externalId: "drive_fileB_r1",
+    });
+
+    expect(migrate()).toMatchObject({ runs: 0, actionItems: 0 });
+    expect(actionItems.list()).toEqual([]);
+  });
+
+  it("reaches the same state however many times it runs", () => {
+    legacyRun({
+      actionItems: [
+        proposal(),
+        proposal({ title: "Book the follow-up" }),
+        proposal({ title: "Send the note" }),
+      ],
+      dropped: [1],
+      completed: [2],
+    });
+
+    const first = migrate();
+    const before = { items: actionItems.list(), tasks: tasks.list({}) };
+
+    const second = migrate();
+
+    expect(first).toMatchObject({ actionItems: 3, dismissed: 1, completedTasks: 1 });
+    expect(second).toMatchObject({ actionItems: 0, dismissed: 0, completedTasks: 0 });
+    expect(actionItems.list()).toEqual(before.items);
+    expect(tasks.list({})).toEqual(before.tasks);
+  });
+
+  it("resumes a pass that stopped after part of one Run", () => {
+    legacyRun({ actionItems: [proposal(), proposal({ title: "Send the note" })], completed: [1] });
+    /* The interrupted state: the queue materialized, no decision applied. */
+    const partial = actionItems.materialize({
+      debriefRunId: runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id,
+      transcriptId: "drive_fileA_r1",
+      meetingId: null,
+      actionItems: [proposal(), proposal({ title: "Send the note" })],
+    });
+    expect(partial.every((item) => item.state === "pending")).toBe(true);
+
+    expect(migrate()).toMatchObject({ actionItems: 0, completedTasks: 1 });
+    expect(tasks.list({ status: "completed" }).map((task) => task.title)).toEqual([
+      "Send the note",
+    ]);
+  });
+
+  it("leaves the old Run files exactly as it found them", () => {
+    const run = legacyRun({ actionItems: [proposal()], dropped: [0] });
+    const dir = join(workspaceDir, "runs", run.id);
+    const before = ["result.json", "review.json"].map((name) =>
+      readFileSync(join(dir, name), "utf8"),
+    );
+
+    migrate();
+
+    expect(
+      ["result.json", "review.json"].map((name) => readFileSync(join(dir, name), "utf8")),
+    ).toEqual(before);
+  });
+});

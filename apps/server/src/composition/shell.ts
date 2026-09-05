@@ -28,6 +28,7 @@ import { TaskStore } from "../tasks/store.js";
 import { WorkspaceTasks } from "../tasks/tasks.js";
 import { WorkspaceActionItems, type ActionItemMaterialization } from "../tasks/action-items.js";
 import { materializeUnderPolicy } from "../tasks/auto-promotion.js";
+import { migrateLegacyActionReview } from "../tasks/legacy-migration.js";
 import {
   TaskLinking,
   type AsanaDestination,
@@ -391,6 +392,21 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       handover,
     );
   };
+
+  /* Legacy Debrief review, carried into canonical records (issue #183). One
+     pass at composition, before anything serves: the positional decisions in
+     old Run files are real work the owner did, and every surface below reads
+     the canonical records rather than those arrays. Idempotent by
+     construction, so this runs on every boot and does nothing on all but the
+     first. */
+  migrateLegacyActionReview({
+    runs,
+    tasks,
+    actionItems,
+    meetingIdFor: (transcriptId) =>
+      transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
+    log: (message) => console.log(`[tasks] ${message}`),
+  });
 
   /* The public-web identity resolver, wired here for the first time: the seam
      and its source existed but nothing in production built them, so a Profile
