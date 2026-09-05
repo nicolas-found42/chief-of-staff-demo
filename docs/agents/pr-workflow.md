@@ -48,15 +48,15 @@ The required list lives in the ruleset, which no file in the repo records. Read 
 gh api repos/nicolas-found42/chief-of-staff-demo/rules/branches/main
 ```
 
-A red PR refuses to merge, and `gh` names the escape hatch when it happens:
+A red PR refuses to merge:
 
 ```
 X ... is not mergeable: the base branch policy prohibits the merge.
 To use administrator privileges to immediately merge the pull request, add the `--admin` flag.
 ```
 
-`--admin` does work, because the ruleset bypasses the admin role. Fix the branch until it is green
-instead. `--admin` is Nicolas's call on a named PR.
+`gh` advertises `--admin` there, but the ruleset carries **no bypass actors**, so it fails too. The
+only way past a red check is a green one. Fix the branch.
 
 ## Agent authority
 
@@ -68,20 +68,19 @@ Pre-authorized, no prompt:
 
 Ask first, every time:
 
-- `gh pr merge --admin`, or any merge past a red or skipped check
 - Changing the ruleset: bypass actors, required checks, enforcement
 - `gh pr close` on a PR someone else opened
 - Deleting a remote branch other than the just-merged PR's own
 
-The ruleset bypasses the **admin role**, and the agent holds it: `gh auth status` reports
-`nicolas-found42`, Nicolas's own account, so GitHub cannot tell agent pushes from his. The platform
-therefore does not stop a red merge — this list does. Treat it as binding rather than advisory.
+Bypasses were tried and removed. An admin-role bypass looks like a safety valve for the human, but
+the agent authenticates as `nicolas-found42` — `gh auth status` confirms it — so GitHub cannot tell
+the two apart, and the valve opens for both. The empty bypass list is the whole point: the gate
+holds against everyone, so no one has to remember when it does not.
 
 ## Dependabot
 
 Dependabot PRs merge themselves. `.github/workflows/dependabot-automerge.yml` enables auto-merge
-for `dependabot[bot]`, and the ruleset bypasses the Dependabot app, so a green one lands
-unattended.
+for `dependabot[bot]`, so a green one lands unattended. It passes the same gate as everything else.
 
 A red one waits. Report it to Nicolas with the failing check named; merging it is his call, per PR.
 The config groups updates weekly on Monday and does not exclude majors, so a red Dependabot PR is

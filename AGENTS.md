@@ -22,8 +22,8 @@ workspaces are build units, not domains. See `docs/agents/domain.md`.
 
 ### Pull requests
 
-Every change to `main` goes `branch → PR → squash merge`; four CI checks gate the merge, and a red
-PR takes `--admin` plus Nicolas's say-so. See `docs/agents/pr-workflow.md`.
+Every change to `main` goes `branch → PR → squash merge`; four green CI checks are the only gate,
+with no bypass for anyone. See `docs/agents/pr-workflow.md`.
 
 ### Verification gates
 
