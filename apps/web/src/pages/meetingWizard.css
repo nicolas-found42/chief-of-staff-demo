@@ -103,3 +103,34 @@
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+/* The two internal tabs (issue #194). A rule under the strip and a heavier one
+   under the current tab: the state survives forced-colors mode, and
+   `aria-current` carries it for anyone not reading the rule at all. */
+.wizard-tabs {
+  display: flex;
+  gap: 1.1rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.1rem;
+}
+
+.wizard-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.15rem;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.wizard-tab:hover {
+  color: inherit;
+}
+
+.wizard-tab[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: inherit;
+  font-weight: 600;
+}

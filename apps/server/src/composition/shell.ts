@@ -37,6 +37,7 @@ import {
 } from "../tasks/external-link.js";
 import { AsanaLinking } from "../tasks/asana-link.js";
 import { buildDailyBriefingWork } from "../tasks/briefing-projection.js";
+import { WeeklyWorkspace } from "../meetings/weekly.js";
 import {
   getGoogleTask,
   deleteGoogleTask,
@@ -734,6 +735,31 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const associateTranscripts = async (): Promise<void> => {
     await meetingJoin.associateTranscripts();
   };
+  /* The canonical This week view (issue #194). Reads the Meetings store, the
+     Tasks product and the Runs index; owns none of them. The model seam is the
+     configured one, resolved per call so a provider change in Settings needs
+     no restart. */
+  const weeklyWorkspace = new WeeklyWorkspace({
+    workspaceDir,
+    meetings,
+    tasks,
+    actionItems,
+    runs,
+    now: () => new Date(),
+    timezone: () =>
+      configStore.getModuleConfig("content-research").timeZone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    model: () => {
+      const current = configStore.get();
+      return {
+        provider: current.provider,
+        model: current.model,
+        complete: meetingBriefCompleteJson(),
+      };
+    },
+    meetingIdForTranscript: (transcriptId) =>
+      transcriptCatalogStore.readTranscript(transcriptId)?.meetingId ?? null,
+  });
   const meetingBriefTest =
     process.env.ENABLE_TEST_SEED === "1"
       ? createMeetingBriefTestRuntime({
@@ -943,6 +969,12 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       meetingBrief.start();
     },
   });
+  /* Meeting Wizard — This week (issues #194, #195, #196). Its own runtime and
+     its own routes: the deterministic week is derived from the Meetings store
+     and the Tasks product, and the Weekly Summary is generated only from
+     bounded projections of the latest successful Briefs and Debriefs. */
+  weeklyWorkspace.registerRoutes(app);
+
   /* The Transcript Catalog's intake surface (issue #142): consent, the
      pre-consent inventory, remembered status, and one pass on demand. */
   registerTranscriptIntakeApi(app, {

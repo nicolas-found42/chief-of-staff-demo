@@ -295,3 +295,52 @@ test("meeting page — shows the Transcript matched to its Meeting (issue #153)"
   await expect(page.getByRole("heading", { name: "Transcripts" })).toBeVisible();
   await expect(page.getByRole("heading", { name: fileName })).toBeVisible();
 });
+
+test("meeting wizard tabs — Today and This week are routes, and survive refresh and Back", async ({
+  page,
+  request,
+}) => {
+  // One Meeting today, so both tabs have something to be about.
+  const startAt = atTodayLocal(11);
+  const event = fixtureEvent({ eventId: "evt_tabs_1", occurrenceId: startAt, startAt });
+  expect((await request.post("/api/test/meeting-brief/schedule", { data: { event } })).ok()).toBe(
+    true,
+  );
+  expect((await request.post("/api/meeting-brief/reconcile")).ok()).toBe(true);
+  // One overdue Task, which This week owns its own deterministic section for.
+  expect(
+    (
+      await request.post("/api/tasks", {
+        data: { title: "Overdue weekly work", dueDate: "2020-01-01" },
+      })
+    ).ok(),
+  ).toBe(true);
+
+  await page.goto("/meetings");
+  const tabs = page.getByRole("navigation", { name: "Meeting Wizard views" });
+  await expect(tabs.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
+
+  await tabs.getByRole("link", { name: "This week" }).click();
+  await expect(page).toHaveURL(/\/meetings\/weekly$/);
+  await expect(page.getByRole("heading", { level: 1, name: "This week" })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Meeting Wizard views" }).getByRole("link", {
+      name: "This week",
+    }),
+  ).toHaveAttribute("aria-current", "page");
+
+  // The deterministic sections stand on their own, whatever the Summary did.
+  await expect(page.locator('section[aria-labelledby="weekly-overdue-heading"]')).toContainText(
+    "Overdue weekly work",
+  );
+  await expect(page.locator('section[aria-labelledby="weekly-upcoming-heading"]')).toBeVisible();
+
+  // Refresh-safe: the tab is the URL, not component state.
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: "This week" })).toBeVisible();
+
+  // And Back returns to Today rather than to whatever came before the app.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/meetings$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
+});

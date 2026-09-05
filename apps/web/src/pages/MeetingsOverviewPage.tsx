@@ -5,11 +5,12 @@ import type {
   DailyBriefingState,
   MeetingIndex,
   TaskOverview,
-  WeeklyBriefingState,
+  WeeklyWorkspaceView,
 } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { tasksApi, type TasksClient } from "../clients/tasks";
+import { MeetingWizardTabs } from "../components/MeetingWizardTabs";
 import { MetricStrip, WorkGroups } from "../components/WorkSummary";
 import { formatMeetingDate, formatMeetingTime } from "../display";
 import { usePageFocus } from "../usePageFocus";
@@ -113,8 +114,7 @@ export function MeetingsOverviewPage({
   const [busy, setBusy] = useState(false);
   const [briefing, setBriefing] = useState<DailyBriefingState | null>(null);
   const [briefingBusy, setBriefingBusy] = useState(false);
-  const [weekly, setWeekly] = useState<WeeklyBriefingState | null>(null);
-  const [weeklyBusy, setWeeklyBusy] = useState(false);
+  const [weekly, setWeekly] = useState<WeeklyWorkspaceView | null>(null);
   const [work, setWork] = useState<TaskOverview | null>(null);
   const [workError, setWorkError] = useState<string | null>(null);
 
@@ -144,19 +144,16 @@ export function MeetingsOverviewPage({
     [client],
   );
 
-  const loadWeekly = useCallback(
-    async (retry: boolean) => {
-      setWeeklyBusy(true);
-      try {
-        setWeekly(await (retry ? client.retryWeeklyBriefing() : client.weeklyBriefing()));
-      } catch (err) {
-        setWeekly({ briefing: null, error: errorMessage(err), stale: false });
-      } finally {
-        setWeeklyBusy(false);
-      }
-    },
-    [client],
-  );
+  /* The week's own count, for the metric strip only. The deterministic read:
+     a figure on this tab must never spend a Weekly Summary generation, which
+     belongs to the tab that shows one (issue #196). */
+  const loadWeekly = useCallback(async () => {
+    try {
+      setWeekly(await client.weeklyWorkspaceDeterministic());
+    } catch {
+      /* Silent: This week has its own tab, with its own error state. */
+    }
+  }, [client]);
 
   /* Canonical work (issue #192). Read from the Tasks product, which owns the
      records; this page shows them and edits none of them. */
@@ -172,7 +169,7 @@ export function MeetingsOverviewPage({
   const reload = useCallback(() => {
     void refresh();
     void loadBriefing(false);
-    void loadWeekly(false);
+    void loadWeekly();
     void loadWork();
   }, [refresh, loadBriefing, loadWeekly, loadWork]);
 
@@ -181,7 +178,7 @@ export function MeetingsOverviewPage({
   }, [reload]);
 
   const todayCount = briefing?.briefing?.meetings.length ?? 0;
-  const weekCount = weekly?.briefing?.meetings.length ?? 0;
+  const weekCount = weekly?.meetings.length ?? 0;
 
   return (
     <div className="page">
@@ -189,6 +186,7 @@ export function MeetingsOverviewPage({
         <h1 ref={headingRef} tabIndex={-1}>
           Meeting Wizard
         </h1>
+        <MeetingWizardTabs />
         <p className="wizard-standfirst">
           Every meeting the workspace knows about — from your calendar, and from transcripts of
           meetings that were never on it. Each carries its brief beforehand and its debrief
@@ -211,7 +209,7 @@ export function MeetingsOverviewPage({
         <MetricStrip
           metrics={[
             { label: "Today", value: todayCount, to: "/meetings" },
-            { label: "This week", value: weekCount, to: "/meetings" },
+            { label: "This week", value: weekCount, to: "/meetings/weekly" },
             {
               label: "Pending",
               value: work?.counts.pendingActionItems ?? 0,
@@ -287,58 +285,12 @@ export function MeetingsOverviewPage({
         )}
       </section>
 
-      <section className="wizard-section" aria-labelledby="wizard-weekly-heading">
-        <SectionHead
-          ordinal="02"
-          id="wizard-weekly-heading"
-          heading="This week"
-          count={plural(weekCount, "meeting")}
-        />
-        {!weekly ? (
-          <p className="wizard-empty" role="status">
-            Loading weekly briefing…
-          </p>
-        ) : weekly.error ? (
-          <div>
-            <div className="banner banner-error" role="alert">
-              {weekly.error}
-            </div>
-            <div className="wizard-actions">
-              <button
-                type="button"
-                className="action-button"
-                onClick={() => void loadWeekly(true)}
-                aria-disabled={weeklyBusy}
-              >
-                {weeklyBusy ? "Retrying…" : "Retry weekly briefing"}
-              </button>
-            </div>
-          </div>
-        ) : weekly.briefing && weekly.briefing.meetings.length > 0 ? (
-          <>
-            <p className="wizard-note">{weekly.briefing.ranking}</p>
-            {weekly.stale ? (
-              <p className="wizard-note" role="status">
-                Being updated — showing the previous briefing.
-              </p>
-            ) : null}
-            <ul className="wizard-ledger">
-              {weekly.briefing.meetings.map((entry) => (
-                <MeetingLine key={entry.meetingId} {...entry} />
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p className="wizard-empty">No meetings this week.</p>
-        )}
-      </section>
-
       {/* Accepted work and the proposals still awaiting a decision, as two
           groups under one head. Both are capped at eight with their totals
           beside them, and both link back to the Tasks product (issue #192). */}
       <section className="wizard-section" aria-labelledby="wizard-work-heading">
         <SectionHead
-          ordinal="03"
+          ordinal="02"
           id="wizard-work-heading"
           heading="Your work"
           count={

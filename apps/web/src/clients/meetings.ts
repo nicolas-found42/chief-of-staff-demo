@@ -1,6 +1,6 @@
 import type {
   DailyBriefingState,
-  WeeklyBriefingState,
+  WeeklyWorkspaceView,
   HubSpotSetupCheck,
   HubSpotStatus,
   Meeting,
@@ -77,9 +77,23 @@ export const meetingsApi = {
   dailyBriefing: () => request<DailyBriefingState>("/api/meeting-brief/daily"),
   retryDailyBriefing: () =>
     request<DailyBriefingState>("/api/meeting-brief/daily/retry", { method: "POST" }),
-  weeklyBriefing: () => request<WeeklyBriefingState>("/api/meeting-brief/weekly"),
-  retryWeeklyBriefing: () =>
-    request<WeeklyBriefingState>("/api/meeting-brief/weekly/retry", { method: "POST" }),
+  /**
+   * Meeting Wizard — This week (issues #194, #195, #196). The deterministic
+   * read is the whole week without a Weekly Summary, so a figure on the Today
+   * tab never spends a model call; the full read generates when it must.
+   */
+  weeklyWorkspaceDeterministic: () =>
+    request<WeeklyWorkspaceView>("/api/meetings/weekly/deterministic"),
+  weeklyWorkspace: () => request<WeeklyWorkspaceView>("/api/meetings/weekly"),
+  regenerateWeeklySummary: () =>
+    request<WeeklyWorkspaceView>("/api/meetings/weekly/regenerate", { method: "POST" }),
+  /** Confirm the exact provider and model before private projections are sent. */
+  consentWeeklySummary: (provider: string, model: string) =>
+    request<{ consented: boolean }>("/api/meetings/weekly/consent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider, model }),
+    }),
   meetingBriefProfileConsumers: (runId: string) =>
     request<MeetingBriefPersonProfileReadModel>(
       `/api/meeting-brief/runs/${encodeURIComponent(runId)}/profile-consumers`,
