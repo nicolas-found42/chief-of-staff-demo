@@ -9,6 +9,9 @@
 dist/
 node_modules/
 workspace/
+workspace.backup-*/
+coverage/
+.claude/worktrees/
 .scratch/
 .archive/
 test-results/

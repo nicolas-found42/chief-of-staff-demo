@@ -9,9 +9,10 @@ supported way to run the app.
 | Granularity | Gate | What it proves |
 | --- | --- | --- |
 | One test file | `pnpm --filter @chief-of-staff-demo/tests exec vitest run tests/src/<path>.test.ts` | The behavior at the seam currently being changed |
-| TypeScript tree | `pnpm run typecheck` | Shared/server build references plus the web and test no-emit passes |
-| Staged files | `.git/hooks/pre-commit` via `lint-staged` | Prettier on staged source/config/docs and ESLint on staged TypeScript |
+| TypeScript tree | `pnpm run typecheck` | Shared/server/relay builds plus web, tests, and scripts no-emit passes |
+| Staged files | `.git/hooks/pre-commit` via `lint-staged` | Prettier on staged source/config/docs and ESLint on staged TypeScript and JavaScript |
 | Whole tree | `pnpm run check` | Typecheck, lint, formatting, knip, and all unit tests |
+| Unit coverage | `pnpm run test:coverage` | Server unit tests with the same coverage floors used by CI |
 | App behavior | `pnpm run check:all` | The whole-tree gate plus the Playwright suite |
 | Prompt eval | `pnpm exec tsx scripts/run-debrief-eval-all.mts --models upstage/solar-pro4 --score` | Solar-pro4 debrief extractions on all 20 real fixture transcripts score clean against hand-written goldens |
 | Production image | `docker compose build`, boot, then `GET /api/health` | The pruned runtime image contains a working server and web bundle |
@@ -29,6 +30,20 @@ The unit coverage gate measures `apps/server/src`, excluding the process bootstr
 test-only e2e seed seam. CI reports the result in its job summary and enforces the lines,
 statements, functions, and branches floors in `tests/vitest.config.ts`. A run that produces no
 coverage report fails the job rather than passing quietly.
+
+## Lint and audit evidence
+
+Full-tree typed lint runs one workspace per process to bound memory, followed by a pass over
+remaining files. It deliberately runs without ESLint's file cache: an imported type can change a
+caller's lint result without changing that caller's bytes. Keep the authoritative lint gate fresh;
+TypeScript incremental state and Prettier's formatting cache are separate mechanisms.
+
+The pre-commit hook covers staged TS/TSX/MTS/CTS and JS/MJS/CJS. Its narrow check does not replace
+full-tree lint before pushing. Markdown and YAML remain hand-formatted per the existing policy.
+
+When changing gate configuration, verify both a clean pass and an intentional failure at the
+changed seam. The [2026-09-05 audit](../research/verification-check-audit-2026-09-05.md) records
+runtime measurements, fault probes, and the scope of each gate.
 
 ## Prompt eval gate
 
@@ -88,7 +103,7 @@ The hook deliberately sees staged files only. Whole-tree typechecking, knip, uni
 Playwright do not belong in it. After a fresh clone, install the configured hook explicitly:
 
 ```sh
-npx simple-git-hooks
+pnpm exec simple-git-hooks
 ```
 
 If the hook changes formatting, review the re-staged result and commit again. If it reports a lint

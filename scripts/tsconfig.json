@@ -6,6 +6,7 @@
     "types": ["node"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "incremental": true,
     "declaration": false,
     "sourceMap": false,
     // Same reason the tests tsconfig aliases it: one copy of shared, its
@@ -14,13 +15,5 @@
       "@chief-of-staff-demo/shared": ["../packages/shared/src/index.ts"]
     }
   },
-  "include": [
-    "golden.mts",
-    "lint-golden.mts",
-    "person-dossier-canary.mts",
-    "task-cutover.mts",
-    "run-debrief-eval-all.mts",
-    "run-debrief-eval.mts",
-    "score-debrief-eval.mts"
-  ]
+  "include": ["**/*.mts", "**/*.cts", "**/*.ts"]
 }

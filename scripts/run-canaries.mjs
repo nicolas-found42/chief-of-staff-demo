@@ -14,12 +14,17 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
+const [mode, ...extra] = process.argv.slice(2);
+if (extra.length || (mode !== undefined && mode !== "--check")) {
+  throw new Error("Usage: node scripts/run-canaries.mjs [--check]");
+}
+
 const { ContentScoutCanaryRunner, ContentScoutCanaryStore } =
   await import("../apps/server/dist/modules/content-scout/canary.js");
 const { contentScoutProductionAdapters } =
   await import("../apps/server/dist/modules/content-scout/adapters/production.js");
 const { playwrightBrowserRenderer } =
-  await import("../apps/server/dist/modules/content-scout/adapters/browser.js");
+  await import("../apps/server/dist/source-adapters/browser.js");
 
 // Prefer the real workspace when available, otherwise use a temporary directory
 // so the script remains hermetic in CI containers that start without a workspace.
@@ -31,6 +36,14 @@ const adapters = contentScoutProductionAdapters({
   renderBrowser: playwrightBrowserRenderer(),
   getYouTubeAccess: () => ({ ok: false, state: "disconnected" }),
 });
+
+// Import and compose every adapter without querying external sites. The image
+// gate runs this against a clean build so stale local dist files cannot hide
+// a moved module or a missing production dependency.
+if (mode === "--check") {
+  console.log(`[canary] Composed ${adapters.length} production adapters; no external calls made.`);
+  process.exit(0);
+}
 
 const store = new ContentScoutCanaryStore(workspaceDir, () => new Date());
 const runner = new ContentScoutCanaryRunner({ adapters, store, now: () => new Date() });

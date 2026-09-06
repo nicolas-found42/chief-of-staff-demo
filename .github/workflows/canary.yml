@@ -19,17 +19,13 @@ jobs:
   canary:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # This job is intentionally non-blocking: canary breakage is visible in
-    # the workflow run and in persisted receipts, but must not fail CI.
-    continue-on-error: true
+    # This workflow is not a required merge check. Setup failures must still
+    # be visible; only external-source diagnostic failures are tolerated below.
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+      # Canaries exercise the same locked dependencies and native/browser tools
+      # as the shipped app. A host Node build cannot prove those adapters work.
+      - run: docker compose build app
       - name: Restore cumulative canary receipts
         id: restore-canary-receipts
         uses: actions/cache/restore@v6
@@ -38,9 +34,14 @@ jobs:
           key: canary-receipts-${{ github.ref }}-${{ github.run_id }}
           restore-keys: |
             canary-receipts-${{ github.ref }}-
-      - name: Run external canaries (normal diagnostic contract, never fails CI)
-        run: node ./scripts/run-canaries.mjs
-        continue-on-error: true
+      - name: Run external canaries and record diagnostic outcomes
+        run: |
+          mkdir -p workspace
+          docker compose run --rm --no-deps \
+            --user "$(id -u):$(id -g)" \
+            --workdir /app/workspace \
+            --volume "$PWD/scripts:/app/scripts:ro" \
+            app node /app/scripts/run-canaries.mjs
       - name: Save cumulative canary receipts
         if: always()
         uses: actions/cache/save@v6
@@ -54,5 +55,5 @@ jobs:
           name: canary-receipts
           path: |
             workspace/content-scout/canary-state.json
-            canary-receipts.json
+            workspace/canary-receipts.json
           if-no-files-found: warn

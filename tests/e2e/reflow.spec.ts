@@ -1,6 +1,11 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixture";
 
+// These scans only read the app. Each parallel worker gets its own hermetic
+// Workspace, and each test gets its own browser context and viewport.
+// Stateful journey files retain the suite's default serial ordering.
+test.describe.configure({ mode: "parallel" });
+
 /**
  * Reflow (WCAG 1.4.10): no route may scroll the page sideways, and no layout
  * may overlap or clip itself, at any window width.

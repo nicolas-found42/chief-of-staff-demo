@@ -1,5 +1,8 @@
 # pnpm migration and check-speedup — 2026-09-02
 
+Follow-up: the [2026-09-05 verification audit](verification-check-audit-2026-09-05.md) supersedes
+the lint-cache recommendation and records the current parallel browser setup.
+
 Question: switch the workspace from npm to pnpm, and speed up `check` (typecheck,
 lint, format:check, knip, test) — can any of it run multiple workers?
 
