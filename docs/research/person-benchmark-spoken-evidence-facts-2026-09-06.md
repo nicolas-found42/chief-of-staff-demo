@@ -1,6 +1,6 @@
 # Spoken-evidence reference facts for eight Benchmark People (issue #240)
 
-Date: 2026-09-06. Corpus version after these additions: `93272064f8572de9`
+Date: 2026-09-06. Corpus version after these additions (incl. review fixes): `a119e190db2bba7a`
 (`pnpm exec tsx scripts/person-research-benchmark.mts --corpus-coverage` prints
 zero REJECTED lines). All eight assigned people gained dated spoken-evidence
 facts; nobody was left honest because every one of the eight has a genuine,
@@ -53,10 +53,28 @@ verbatim public spoken record that could be fetched and inspected today.
 ## Verification
 
 - `pnpm exec tsx scripts/person-research-benchmark.mts --corpus-coverage`:
-  corpus `93272064f8572de9`, 30 people, zero REJECTED lines.
+  corpus `a119e190db2bba7a`, 30 people, zero REJECTED lines.
 - `pnpm --filter @chief-of-staff-demo/tests exec vitest run
   tests/src/modules/person-benchmark-collection.test.ts
   tests/src/modules/person-benchmark.test.ts`: 2 files, 17 tests, all pass.
   (Note: the issue text names `tests/src/unit/person-benchmark.test.ts`; the
   file actually lives under `tests/src/modules/`.)
 - `pnpm run check` green before the PR (see PR body).
+
+## Review fixes (post-review, same day)
+
+- `mia-mottley.json`: the `cop26-world-leaders-summit` document rights relabeled
+  `short-quotation` → `public-record`, because the retained excerpt is the full
+  body of the official 1 November 2021 head-of-government statement at the
+  COP26 World Leaders Summit opening (a UN proceeding) — a public governmental
+  record, consistent with how the corpus labels GPO hearing transcripts and
+  other official transcripts. Bounding was rejected as dishonest: the facts'
+  support quotes span the whole address, so a "quotation-style slice" would
+  still be the whole speech. Note text updated with the justification. Excerpt
+  and hashes unchanged.
+- `sally-kornbluth.json`: `corrections[]` prose fixed to the hyphenated fact id
+  `bench-scientist-roots` (was `bench-scientist roots`), matching the sibling
+  files' greppable form.
+- Corpus version after these fixes: `a119e190db2bba7a` (was `93272064f8572de9`
+  at PR creation). Re-validated: zero REJECTED lines, narrow gates green,
+  `pnpm run check` green (see PR body).
