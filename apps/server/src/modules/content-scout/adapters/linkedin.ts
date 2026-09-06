@@ -311,17 +311,6 @@ export class LinkedInComingLaterAdapter implements SourceAdapter {
         ["HTTP 429"],
       );
     }
-    if (response.status < 200 || response.status >= 300) {
-      return this.failure(
-        "internal_failure",
-        response.url,
-        startedAt,
-        response.status,
-        "browser_render",
-        hash,
-        [`HTTP ${response.status}`],
-      );
-    }
     if (
       /\/authwall|\/login|\/signup/i.test(new URL(response.url).pathname) ||
       /authwall|login-form|sign in to linkedin|join linkedin|log in or sign up|sign up to linkedin|linkedin login|challenge-page/i.test(
@@ -336,6 +325,17 @@ export class LinkedInComingLaterAdapter implements SourceAdapter {
         "browser_render",
         hash,
         ["LinkedIn returned a login wall instead of anonymous public evidence."],
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return this.failure(
+        "internal_failure",
+        response.url,
+        startedAt,
+        response.status,
+        "browser_render",
+        hash,
+        [`HTTP ${response.status}`],
       );
     }
     const document = new JSDOM(response.body, { url: response.url }).window.document;

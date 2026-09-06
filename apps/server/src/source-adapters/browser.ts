@@ -1,4 +1,4 @@
-import { chromium } from "playwright-core";
+import { chromium, type Page } from "playwright-core";
 import { assertPublicHttpUrl } from "./http.js";
 
 export interface BrowserRenderResult {
@@ -12,6 +12,34 @@ export type BrowserRenderer = (url: string) => Promise<BrowserRenderResult>;
 
 const BROWSER_NAVIGATION_TIMEOUT_MS = 15_000;
 const BROWSER_COLLECTION_LIMIT_BYTES = 5_000_000;
+
+function renderingTimeout(): Error {
+  return Object.assign(
+    new Error(`Browser rendering timed out after ${BROWSER_NAVIGATION_TIMEOUT_MS / 1000} seconds.`),
+    { name: "AbortError" },
+  );
+}
+
+async function readLandingDocument(page: Page, deadline: number): Promise<string> {
+  for (;;) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw renderingTimeout();
+    await page.waitForLoadState("domcontentloaded", { timeout: remaining });
+    try {
+      return await page.content();
+    } catch (error) {
+      // A client-side redirect can destroy the document after DOMContentLoaded.
+      // Retry that race only, without giving each redirect a fresh time budget.
+      if (
+        !(error instanceof Error) ||
+        !error.message.includes(
+          "Unable to retrieve content because the page is navigating and changing the content.",
+        )
+      )
+        throw error;
+    }
+  }
+}
 
 /**
  * The bounded public browser route behind the Website Source Adapter. It
@@ -27,28 +55,28 @@ export function playwrightBrowserRenderer(): BrowserRenderer {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
-      let status = 200;
+      const deadline = Date.now() + BROWSER_NAVIGATION_TIMEOUT_MS;
       try {
         const navigation = await page.goto(url.toString(), {
           waitUntil: "domcontentloaded",
           timeout: BROWSER_NAVIGATION_TIMEOUT_MS,
         });
-        status = navigation?.status() ?? 200;
+        const body = await readLandingDocument(page, deadline);
+        if (Buffer.byteLength(body, "utf8") > BROWSER_COLLECTION_LIMIT_BYTES) {
+          throw new Error("Rendered page exceeded the 5 MB collection limit.");
+        }
+        return {
+          url: page.url(),
+          contentType: "text/html",
+          status: navigation?.status() ?? 200,
+          body,
+        };
       } catch (error) {
         if (error instanceof Error && error.name === "TimeoutError") {
-          const timeout = new Error(
-            `Browser rendering timed out after ${BROWSER_NAVIGATION_TIMEOUT_MS / 1000} seconds.`,
-          );
-          timeout.name = "AbortError";
-          throw timeout;
+          throw renderingTimeout();
         }
         throw error;
       }
-      const body = await page.content();
-      if (Buffer.byteLength(body, "utf8") > BROWSER_COLLECTION_LIMIT_BYTES) {
-        throw new Error("Rendered page exceeded the 5 MB collection limit.");
-      }
-      return { url: page.url(), contentType: "text/html", status, body };
     } finally {
       await browser.close();
     }
