@@ -299,5 +299,12 @@
       "reason": "The retained Bluesky feed lacks per-post authorship and stable post identifiers; verify original post provenance before using its text as Gebru’s own statements."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:44:01Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added three dated public-social references (Gebru's 2026-09-05 peer-review post, Prescod-Weinstein's 2026-09-04 account, nonpareil's 2026-09-05 quote-post) with three facts and one wrong-person guard. Existing references remain unchanged.",
+      "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    }
+  ]
 }

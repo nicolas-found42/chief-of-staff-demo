@@ -260,5 +260,12 @@
       "reason": "The retained record does not define a complete population of work against which a capability intersection can be counted."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:44:01Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added two dated public-social references (Ressa's 2019-12-09 X post and the Nobel Prize's 2021-10-08 X post) with three facts and one unsupported-inference guard. Existing references remain unchanged.",
+      "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    }
+  ]
 }

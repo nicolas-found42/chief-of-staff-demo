@@ -249,5 +249,12 @@
       "reason": "The retained record does not define a complete population of work against which a capability intersection can be counted."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:44:01Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added two dated public-social references (Krishna's 2026-05-28 Project Lightwell post and Alain J.'s same-day reshare) with three facts and one wrong-person guard. Existing references remain unchanged.",
+      "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    }
+  ]
 }

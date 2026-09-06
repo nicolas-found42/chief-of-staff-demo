@@ -4,15 +4,17 @@ Authored 2026-09-06 for issue #241 (child of #228). Scope is the six-person
 partition for this issue: Timnit Gebru, Maria Ressa, Arvind Krishna, Michelle
 Gass, Cristiano Amon, Doug McMillon. Five gained dated public-social reference
 facts; Doug McMillon is left honest (see below). Corpus version after these
-additions: `01b3b02b41ab1663`. Each edited file bumped `2026-09-06.1` →
-`2026-09-06.2`; the diff is additive-only (the only removed lines are the five
-old version strings).
+additions plus the review fixes (corrections entries, Amilien doc rename):
+`c122ce22b340a5cf`. Each edited file bumped `2026-09-06.1` →
+`2026-09-06.2` with a corrections entry recording the change; the diff is
+additive-only (no pre-existing reference removed or weakened).
 
 ## Method and retention
 
 Every excerpt below was actually fetched on 2026-09-06; nothing was invented.
-X and LinkedIn block anonymous page fetches, so retention uses endpoints that
-really work, recorded honestly per document:
+X blocks anonymous page fetches, so retention uses endpoints that
+really work, recorded honestly per document (LinkedIn public post pages, by
+contrast, fetch fine for an anonymous reader):
 
 - LinkedIn public post pages ARE fetchable by an anonymous reader, and their
   embedded JSON-LD (`SocialMediaPosting.datePublished`) dates the post to the
@@ -83,10 +85,11 @@ failing any dossier that cites a self-report as independent verification
 ## Verification
 
 - `pnpm exec tsx scripts/person-research-benchmark.mts --corpus-coverage`:
-  zero REJECTED lines; corpus `01b3b02b41ab1663`; r20 now 18 people / 21 facts.
+  zero REJECTED lines; corpus `c122ce22b340a5cf` (after review fixes; was
+  `01b3b02b41ab1663` before); r20 now 18 people / 21 facts.
 - `pnpm --filter @chief-of-staff-demo/tests exec vitest run
   tests/src/modules/person-benchmark-collection.test.ts
-  tests/src/unit/person-benchmark.test.ts`: green.
+  tests/src/modules/person-benchmark.test.ts`: green.
 - `pnpm run check`: green (before PR).
 - Partition note: only the six files listed in the issue partition were
   touched, and of those only the five above; no other `people/*.json` file

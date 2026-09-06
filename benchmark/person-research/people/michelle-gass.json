@@ -347,5 +347,12 @@
       "reason": "No retained source follows the work she led at Kohl's after she left."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:44:01Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added two dated public-social references (Gass's 2023-09-22 #liveinlevis post and Phil W.'s 2026-04-09 performance assessment) with three facts and one unsupported-inference guard. Existing references remain unchanged.",
+      "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    }
+  ]
 }

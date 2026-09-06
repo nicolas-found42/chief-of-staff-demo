@@ -50,7 +50,7 @@
       "note": "Post text retained from the public post page."
     },
     {
-      "id": "linkedin-summit2025-camilien",
+      "id": "linkedin-summit2025-amilien",
       "url": "https://www.linkedin.com/posts/camilien_snapdragon-summit-2025-ceo-keynote-ai-activity-7376733519630258176-EVN7",
       "title": "Céline Amilien — LinkedIn post on Amon's Snapdragon Summit distributed-AI keynote",
       "publisher": "LinkedIn",
@@ -172,7 +172,7 @@
       "effectiveTo": null,
       "support": [
         {
-          "documentId": "linkedin-summit2025-camilien",
+          "documentId": "linkedin-summit2025-amilien",
           "quote": "Cristiano Amon revealed how distributed AI finally makes ambient computing practical: 1B parameters on glasses for instant response, 7-10B on phones for personal context, 70B in the cloud for complex reasoning."
         }
       ],
@@ -211,5 +211,12 @@
       "reason": "The retained record does not define a complete population of work against which a capability intersection can be counted."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:44:01Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added two dated public-social references (Amon's 2025-09-18 Summit announcement and Amilien's 2025-09-24 keynote account) with two facts and one unsupported-inference guard. Existing references remain unchanged.",
+      "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    }
+  ]
 }
