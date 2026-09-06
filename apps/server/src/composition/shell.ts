@@ -1,9 +1,5 @@
 import { weeklyMeetingSources } from "../meetings/weekly-sources.js";
 import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
-import { PersonDossierStore } from "../person-profile/dossier-store.js";
-import { PersonResearch } from "../person-profile/research.js";
-import { personDossierRegistry } from "../person-profile/lifecycle.js";
-import { PersonResearchQueue } from "../person-profile/research-queue.js";
 import { registerPersonDossierApi } from "../api/person-dossiers.js";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,10 +16,11 @@ import {
   personDossierTestPorts,
   registerTestSeed,
 } from "../api/testSeed.js";
-import { PersonProfileStore } from "../person-profile/store.js";
+import type { PersonProfileStore } from "../person-profile/store.js";
+import { composePersonProfiles } from "../person-profile/composition.js";
 import { WorkspaceMeetings } from "../meetings/store.js";
 import { WorkspaceMeetingJoin } from "../meetings/join.js";
-import { WorkspacePersonProfiles } from "../person-profile/profiles.js";
+import type { WorkspacePersonProfiles } from "../person-profile/profiles.js";
 import { WorkspacePersonProfileReferences } from "../person-profile/references.js";
 import { TranscriptCatalogStore } from "../transcript-catalog/store.js";
 import {
@@ -85,11 +82,7 @@ import { ContentResearchWatchRegistry } from "../modules/content-research/profil
 import { createHookExtractor, createPeopleDiscoverer } from "../modules/content-research/model.js";
 import { seedContentResearchV1 } from "../modules/content-research/seed.js";
 import { createPublicSearch, type PublicSearchDiagnostics } from "../source-adapters/search.js";
-import { createFeedDiscoverer } from "../source-adapters/feeds.js";
-import { createPublicWebPersonProfileSource } from "../person-profile/sources.js";
-import { PersonProfileResolver } from "../person-profile/resolver.js";
 import { parsePersonIdentifier } from "../person-profile/identifier.js";
-import { createPersonClaimExtractor } from "../person-profile/claims.js";
 import { WorkspaceBrandProfileStore } from "../brand-profile/store.js";
 import { buildGoogleAuth } from "../google/oauth.js";
 import {
@@ -109,7 +102,6 @@ import {
   TranscriptDeletionService,
   type TranscriptConsumerRegistry,
 } from "../transcript-catalog/deletion.js";
-import { WorkspacePersonProfileTranscriptEvidence } from "../person-profile/transcript-evidence.js";
 import { registerTranscriptRelevanceApi } from "../api/transcript-review.js";
 import { registerTranscriptDeletionApi } from "../api/transcript-delete.js";
 import {
@@ -234,7 +226,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     },
   };
   function stopModules(): void {
-    personResearchQueue.stop();
+    personProfilesProduct.stop();
     taskProduct.stop();
     weeklyWorkspace.stop();
     for (const module of modules) {
@@ -257,8 +249,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   /* One owner for the run directory: every Module and the API read and write the
      same Runs, not one object per Module over one directory. */
   const runs = openRuns(workspaceDir);
-  const peopleStore = new PersonProfileStore(workspaceDir);
-  const personDossiers = new PersonDossierStore(workspaceDir);
   /* Content Research owns its watches, so its Profile references are disclosed
      by a registry over the same store the Module runs on (spec #134, ADR-0042):
      archive and privacy deletion refuse while a watch is active, and privacy
@@ -270,9 +260,80 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      disclosure scans the catalogued transcripts and collected public source
      items that name the person. All reads are local. */
   const transcriptCatalogStore = new TranscriptCatalogStore(workspaceDir);
-  const peopleProfiles: WorkspacePersonProfiles = new WorkspacePersonProfiles({
-    store: peopleStore,
-    dossiers: personDossiers,
+  /* Resolve model settings per call so research and identity lookup pick up
+     Settings edits without restarting the app. */
+  const peopleCompleteJson = () => {
+    const current = configStore.get();
+    return makeCompleteJson(
+      {
+        provider: current.provider,
+        model: current.model,
+        apiKey: current.apiKey,
+        baseUrl: current.ollama.baseUrl,
+      },
+      layout.mockResultFile,
+    );
+  };
+  /* One shared PublicSearch instance for every consumer: one home IP shares
+     every provider's rate limits, so the query cache and the per-provider
+     cooldowns must be app-wide rather than per consumer — three separate
+     instances would fan the same query out three times and spend the very
+     limits the fan-out exists to pace. */
+  const searxngUrl = configStore.get().search.searxngUrl || process.env.SEARXNG_URL;
+  const publicSearchDiagnostics: PublicSearchDiagnostics = (event) => {
+    const detail = event.detail ? ` — ${event.detail}` : "";
+    console.log(
+      `[public-search] ${event.provider} ${event.outcome} (${event.results} results, ${event.ms}ms)${detail}`,
+    );
+  };
+  const publicSearch = createPublicSearch(undefined, undefined, {
+    diagnostics: publicSearchDiagnostics,
+    ...(searxngUrl !== undefined ? { searxngUrl } : {}),
+  });
+  /* Person Profiles (ADR-0042, ADR-0062): the Workspace's dossiers, their
+     automatic research, and the public-web identity resolver, composed as
+     their own product. The Shell hands over the Workspace directory, the
+     shared outward surfaces, and the four questions only it can answer —
+     including which Transcripts a Profile is confirmed in, which is the
+     Transcript Catalog's question and arrives already answered. The stores,
+     the research pipeline and the queue are the product's own. */
+  const personProfilesProduct = composePersonProfiles({
+    workspaceDir,
+    search: publicSearch,
+    complete: peopleCompleteJson,
+    confirmedTranscripts: (profileId) =>
+      transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
+        const transcript = transcriptCatalogStore.readTranscript(mention.transcriptId);
+        return transcript
+          ? [
+              {
+                transcriptId: transcript.id,
+                fileName: transcript.source.fileName,
+                text: transcript.normalizedText,
+                checksum: transcript.source.checksum,
+              },
+            ]
+          : [];
+      }),
+    /* One record read, not the corpus: research asks this per result. */
+    transcriptStillConfirmed: (profileId, transcriptId, checksum) =>
+      transcriptCatalogStore.readTranscript(transcriptId)?.source.checksum === checksum &&
+      transcriptIdentityService
+        .confirmedMentions(profileId)
+        .some((mention) => mention.transcriptId === transcriptId),
+    researchEnabled: () => !migrationGate.isActive(),
+    upcomingParticipantEmails: () =>
+      meetings
+        .list()
+        .filter(
+          (meeting) =>
+            !meeting.cancelled &&
+            Date.parse(meeting.startAt) >= Date.now() &&
+            Date.parse(meeting.startAt) <= Date.now() + 48 * 3600000,
+        )
+        .flatMap((meeting) =>
+          meeting.participants.map((participant) => participant.email.toLowerCase()),
+        ),
     lifecycle: [
       new WorkspacePersonProfileReferences(runs, {
         ownerReference: (): ConfirmedOwnerReference | null => ownerOnboarding.confirmed(),
@@ -280,9 +341,16 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
         publicItems: () => contentResearch.listSourceItems(),
       }),
       new ContentResearchWatchRegistry(contentResearchStore),
-      personDossierRegistry(personDossiers, (profileId) => personResearchQueue.remove(profileId)),
     ],
+    ...(process.env.ENABLE_TEST_SEED === "1" ? { researchTestPorts: personDossierTestPorts } : {}),
   });
+  const {
+    store: peopleStore,
+    profiles: peopleProfiles,
+    dossiers: personDossiers,
+    queue: personResearchQueue,
+    resolver: peopleResolver,
+  } = personProfilesProduct;
   const ownerOnboarding = new OwnerOnboarding({ people: peopleProfiles, workspaceDir });
   /* The Workspace's Meetings (ADR-0050). The Meeting Brief Generator's host
      builds its own reader over the same file; the store keeps no memory, so
@@ -322,119 +390,6 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     readRemote: (destination, remoteId) => taskProduct.googleConnector.read(destination, remoteId),
   });
 
-  /* The public-web identity resolver, wired here for the first time: the seam
-     and its source existed but nothing in production built them, so a Profile
-     could only ever start from a name a Module already held. The typed
-     identifier lookup is its caller. */
-  const peopleCompleteJson = () => {
-    const current = configStore.get();
-    return makeCompleteJson(
-      {
-        provider: current.provider,
-        model: current.model,
-        apiKey: current.apiKey,
-        baseUrl: current.ollama.baseUrl,
-      },
-      layout.mockResultFile,
-    );
-  };
-  /* One shared PublicSearch instance for every consumer: one home IP shares
-     every provider's rate limits, so the query cache and the per-provider
-     cooldowns must be app-wide rather than per consumer — three separate
-     instances would fan the same query out three times and spend the very
-     limits the fan-out exists to pace. */
-  const searxngUrl = configStore.get().search.searxngUrl || process.env.SEARXNG_URL;
-  const publicSearchDiagnostics: PublicSearchDiagnostics = (event) => {
-    const detail = event.detail ? ` — ${event.detail}` : "";
-    console.log(
-      `[public-search] ${event.provider} ${event.outcome} (${event.results} results, ${event.ms}ms)${detail}`,
-    );
-  };
-  const publicSearch = createPublicSearch(undefined, undefined, {
-    diagnostics: publicSearchDiagnostics,
-    ...(searxngUrl !== undefined ? { searxngUrl } : {}),
-  });
-  const personResearch = new PersonResearch({
-    dossiers: personDossiers,
-    people: peopleProfiles,
-    search: publicSearch,
-    complete: (request) => peopleCompleteJson()(request),
-    privateDocuments: (profile) => {
-      /* Which Transcripts this Profile is confirmed in, asked once. The walk
-         behind it used to run per Transcript, over a mentions file that is
-         megabytes in a real Workspace. */
-      const confirmedTranscripts = (): Set<string> =>
-        new Set(
-          transcriptIdentityService
-            .confirmedMentions(profile.id)
-            .map((mention) => mention.transcriptId),
-        );
-      const confirmed = confirmedTranscripts();
-      return transcriptCatalogStore.listTranscripts().flatMap((transcript) =>
-        confirmed.has(transcript.id)
-          ? [
-              {
-                transcriptId: transcript.id,
-                title: transcript.source.fileName,
-                text: transcript.normalizedText,
-                /* Asked again when the research actually runs: the bytes must
-                   still match and the decision must still stand. */
-                active: () =>
-                  transcriptCatalogStore.readTranscript(transcript.id)?.source.checksum ===
-                    transcript.source.checksum && confirmedTranscripts().has(transcript.id),
-              },
-            ]
-          : [],
-      );
-    },
-    ...(process.env.ENABLE_TEST_SEED === "1" ? personDossierTestPorts : {}),
-  });
-  const personResearchQueue = new PersonResearchQueue({
-    workspaceDir,
-    people: peopleProfiles,
-    research: personResearch,
-    enabled: () => !migrationGate.isActive(),
-    evidenceRevision: (profileId) =>
-      /* One pair per confirmed mention, in the order the service promises —
-         so the revision is stable by construction rather than by a sort
-         applied here. */
-      JSON.stringify(
-        transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
-          const transcript = transcriptCatalogStore.readTranscript(mention.transcriptId);
-          return transcript ? [[transcript.id, transcript.source.checksum]] : [];
-        }),
-      ),
-    upcomingProfileIds: () => {
-      const emails = new Set(
-        meetings
-          .list()
-          .filter(
-            (meeting) =>
-              !meeting.cancelled &&
-              Date.parse(meeting.startAt) >= Date.now() &&
-              Date.parse(meeting.startAt) <= Date.now() + 48 * 3600000,
-          )
-          .flatMap((meeting) =>
-            meeting.participants.map((participant) => participant.email.toLowerCase()),
-          ),
-      );
-      return peopleProfiles
-        .search()
-        .filter((person) => person.emails.some((email) => emails.has(email)))
-        .map((person) => person.id);
-    },
-  });
-  const peopleResolver = new PersonProfileResolver({
-    store: peopleStore,
-    sources: [
-      createPublicWebPersonProfileSource({
-        search: publicSearch,
-        discoverFeeds: createFeedDiscoverer(),
-        extractClaims: createPersonClaimExtractor(peopleCompleteJson),
-      }),
-    ],
-  });
-
   /* Semantic transcript relevance (issue #127): the reviewable discovery lane
      over the Transcript Catalog's retained corpus. Like the Catalog itself it
      is a Workspace resource behind a library seam; the Drive ingestion
@@ -460,46 +415,11 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   });
 
   /* Transcript deletion with local cascades and reingestion tombstones (issue
-     #128). Consumer modules register a cascade each: the Person Profiles
-     registry purges transcript-origin Person Evidence (including its copies
-     inside Profile revisions) while independently supported facts survive.
-     A consumer built on transcript-derived Runs registers here the same way. */
+     #128). Each consuming product registers its own cascades and this is the
+     list of them; Person Profiles contributes two, and a consumer built on
+     transcript-derived Runs would add its own here the same way. */
   const transcriptConsumerRegistries: TranscriptConsumerRegistry[] = [
-    new WorkspacePersonProfileTranscriptEvidence(peopleStore),
-    {
-      consumer: "person-dossiers",
-      label: "Dossier claims and interpretations",
-      inspect: (record) =>
-        peopleProfiles
-          .search({ includeArchived: true })
-          .reduce(
-            (count, profile) =>
-              count +
-              (personDossiers
-                .get(profile.id)
-                ?.claims.filter((c) =>
-                  c.citations.some(
-                    (p) =>
-                      personDossiers.source(profile.id, p.sourceId)?.transcriptId === record.id,
-                  ),
-                ).length ?? 0),
-            0,
-          ),
-      purge: (transcriptId) => {
-        /* The purge count is what the Transcript's removal actually cost the
-           dossiers, so it is the same census taken on both sides of the call. */
-        const claimCensus = () =>
-          peopleProfiles
-            .search({ includeArchived: true })
-            .reduce(
-              (count, profile) => count + (personDossiers.get(profile.id)?.claims.length ?? 0),
-              0,
-            );
-        const before = claimCensus();
-        personDossiers.removeTranscript(transcriptId);
-        return before - claimCensus();
-      },
-    },
+    ...personProfilesProduct.transcriptConsumers,
   ];
   const transcriptDeletion = new TranscriptDeletionService({
     catalog: transcriptCatalogStore,
@@ -897,7 +817,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      place. Mounted behind the migration gate's hold like every other route:
      a pre-cutover Workspace holds no generated data of this shape to clear. */
   const drainModules = async (): Promise<void> => {
-    await personResearchQueue.drain();
+    await personProfilesProduct.drain();
     await transcriptCatalogRuntime.drain();
     if (meetingBriefProduction) {
       await meetingBriefProduction.relayPoller.drain();
@@ -1182,7 +1102,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     }
     transcriptCatalogRuntime.start();
     meetingBriefProduction?.relayPoller.start();
-    personResearchQueue.start();
+    personProfilesProduct.start();
     taskProduct.start();
     weeklyWorkspace.start();
     modulesRunning = true;
