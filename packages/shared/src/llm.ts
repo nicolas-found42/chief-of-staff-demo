@@ -39,6 +39,20 @@ export const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000;
 export const MODEL_STREAM_SILENT_TIMEOUT_MS = 90_000;
 
 /**
+ * The most a single streaming model call may deliver before it is abandoned.
+ *
+ * The ceilings above bound a call that goes quiet or never answers. This one
+ * bounds the opposite: a call that never stops. Measured (#233), a runaway put
+ * 6.7 MB on the wire, and a model whose reasoning ran away produced 161,416
+ * characters of it while the ordinary answer to the same request is 18-20 KB
+ * and the largest observed was 31,819 characters. Two megabytes is far above
+ * every answer measured and far below every runaway, so this cannot end work
+ * that was going to finish — the mistake the idle ceiling made in #232 — while
+ * it stops one runaway from spending an operation's whole budget.
+ */
+export const MODEL_STREAM_MAX_BYTES = 2_000_000;
+
+/**
  * How a model is bound to the caller's Result Shape. Ordered most deterministic
  * first: `response_format` has the provider constrain decoding to the JSON
  * Schema, `forced_tool_call` constrains the arguments of a call the model is
@@ -65,6 +79,8 @@ export const MODEL_BOUNDARY_CLASSIFICATIONS = [
   "request_timeout",
   /** The streamed answer began repeating one short unit instead of finishing. */
   "repetition_loop",
+  /** The streamed answer ran past the most one call may deliver. */
+  "answer_overrun",
   /** The provider answered with a status outside 2xx. */
   "http_error",
   /** A 2xx answer with no body at all. */

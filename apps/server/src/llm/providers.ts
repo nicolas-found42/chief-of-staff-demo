@@ -9,6 +9,7 @@ import {
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
+  MODEL_STREAM_MAX_BYTES,
   MODEL_STREAM_SILENT_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
@@ -86,6 +87,17 @@ export const STREAM_SILENT_TIMEOUT_MS = MODEL_STREAM_SILENT_TIMEOUT_MS;
 
 /** The streaming idle ceiling. Exported so a test can drive it deterministically. */
 export const STREAM_IDLE_TIMEOUT_MS = MODEL_STREAM_IDLE_TIMEOUT_MS;
+
+/** The most one streamed call may deliver. Exported so a test can reach it cheaply. */
+export const STREAM_MAX_BYTES = MODEL_STREAM_MAX_BYTES;
+
+/**
+ * An answer that will not finish, however it shows itself: repeating one short
+ * unit, or running past the most one call may deliver. Both are the stream
+ * saying the same thing, and both step to the next binding rather than riding
+ * out the call's whole budget.
+ */
+const RUNAWAY_ANSWER = new Set<string>(["repetition_loop", "answer_overrun"]);
 
 interface RequestDeadline {
   signal: AbortSignal;
@@ -485,6 +497,19 @@ async function postSseStream(
       }
       if (read.chunk.done) break;
       observed.bodyBytes += read.chunk.value.byteLength;
+      /* A route that will not stop costs the operation as surely as one that
+         will not start. The repetition detector catches an answer that repeats
+         itself; this catches one that runs away without repeating, and hands
+         the rest of the budget to the next attempt (#233). */
+      if (observed.bodyBytes > STREAM_MAX_BYTES) {
+        throw modelBoundaryFailure({
+          call,
+          classification: "answer_overrun",
+          status: response.status,
+          bodyBytes: observed.bodyBytes,
+          ...(observed.upstreamServer ? { upstreamServer: observed.upstreamServer } : {}),
+        });
+      }
       /* Any byte answers the connection question, whatever it carries. It
          does not answer the progress question, so the second ceiling still
          bounds an upstream that stays connected and never produces one. */
@@ -1061,6 +1086,7 @@ function restFailedRoute(model: string, diagnostic: ModelBoundaryDiagnostic | nu
   if (!diagnostic || route === null || route === undefined || route === "") return;
   const routeFailed =
     diagnostic.classification === "repetition_loop" ||
+    diagnostic.classification === "answer_overrun" ||
     diagnostic.classification === "request_timeout" ||
     (diagnostic.classification === "http_error" && diagnostic.status === 429);
   if (!routeFailed) return;
@@ -1199,12 +1225,14 @@ async function openAiCompatibleComplete(
         throw error;
       }
       /* ADR-0064 permits recovery from sustained answer repetition even on a
-         declared binding. The next binding gets the call's remaining budget;
-         the final binding preserves the repetition failure. */
+         declared binding, and an answer that runs away without repeating is
+         the same fact observed a different way (ADR-0070). The next binding
+         gets the call's remaining budget; the final binding preserves the
+         failure it was given. */
       if (
         index < ladder.length - 1 &&
         !deadline.signal.aborted &&
-        modelBoundaryDiagnostic(error)?.classification === "repetition_loop"
+        RUNAWAY_ANSWER.has(modelBoundaryDiagnostic(error)?.classification ?? "")
       ) {
         deadline.reportAttempt({
           outcome: "retrying",

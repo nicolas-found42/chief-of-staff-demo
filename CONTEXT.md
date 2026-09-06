@@ -320,8 +320,9 @@ are: the provider constrains decoding to the shape, or it constrains the argumen
 model is required to make, or the shape is merely asked for in the prompt. A model gets the most
 deterministic binding it declares support for by default; a caller may prefer another explicitly
 supported binding for its request (ADR-0065). A weaker one is also eligible when support is unknown
-or an open answer exhibits sustained repetition (ADR-0064), and so is a stronger one the model
-declares, so that a preference does not skip a rung (ADR-0069).
+or an open answer runs away — repeating one short unit, or running past the most one call may
+deliver (ADR-0064, ADR-0070) — and so is a stronger one the model declares, so that a preference
+does not skip a rung (ADR-0069).
 _Avoid_: Structured output (names one binding, not the choice), response format, JSON mode
 
 **Model-boundary failure**:

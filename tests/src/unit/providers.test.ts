@@ -12,6 +12,7 @@ import {
   makeCompleteJson,
   REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
+  STREAM_MAX_BYTES,
   STREAM_SILENT_TIMEOUT_MS,
 } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
@@ -2396,6 +2397,72 @@ describe("openrouter route rests and the binding ladder", () => {
       }),
     ).resolves.toEqual(RESULT);
     expect(routing(1)).toEqual({ sort: "throughput" });
+  });
+
+  /** One stream that names its route and runs past the byte ceiling without repeating. */
+  function sseOverrunFrom(route: string): string[] {
+    /* Varied, so the repetition detector is not what ends this: its longest
+       period is 64 characters and nothing here repeats inside one. */
+    const varied = Array.from({ length: 8192 }, (_, index) => `p${index}`).join(",");
+    const lines = Math.ceil(STREAM_MAX_BYTES / varied.length) + 1;
+    return Array.from(
+      { length: lines },
+      () =>
+        `data: {"provider":${JSON.stringify(route)},"choices":[{"delta":{"content":${JSON.stringify(varied)}}}]}`,
+    );
+  }
+
+  /* A runaway that never repeats used to ride the whole request ceiling: 6.7 MB
+     on the wire in the measured case, and an operation's entire budget. */
+  it("abandons an answer that runs past the byte ceiling and rests its route", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseOverrunFrom("Fireworks") });
+    const failed = await openrouter("some/overrunning-route")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failed).toMatchObject({
+      classification: "answer_overrun",
+      binding: "prompt_only",
+      upstreamServer: "Fireworks",
+      status: 200,
+    });
+    /* Shape only: the answer that ran away is not carried into the diagnostic. */
+    expect(JSON.stringify(failed)).not.toContain("p8191");
+    expect((failed as ModelBoundaryDiagnostic).bodyBytes).toBeGreaterThan(STREAM_MAX_BYTES);
+
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      openrouter("some/overrunning-route")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Fireworks"] });
+  });
+
+  /* And with a rung left, the rest of the budget goes to it rather than to the
+     runaway — the same recovery repetition already earns (ADR-0064, ADR-0070). */
+  it("hands what is left of the call to the next binding after an overrun", async () => {
+    declarations.push(declaring("structured_outputs", "response_format"));
+    responses.push({ sse: sseOverrunFrom("CoreWeave") });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      openrouter("some/overrun-then-recover")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body.tool_choice).toEqual({
+      type: "function",
+      function: { name: "save_extraction" },
+    });
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["CoreWeave"] });
   });
 
   /* The measured cost of stepping only downwards: a request that prefers a

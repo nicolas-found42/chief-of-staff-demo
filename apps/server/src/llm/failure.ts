@@ -301,6 +301,7 @@ const CLAUSES: Record<ModelBoundaryClassification, string> = {
   transport_failure: "the request never reached the provider",
   request_timeout: "a model call was in flight when the request ceiling fired",
   repetition_loop: "the streamed answer degenerated into a repetition loop",
+  answer_overrun: "the streamed answer ran past the most one call may deliver",
   http_error: "the provider refused the call",
   empty_body: "the provider answered with no body",
   unparseable_body: "the provider's body is not JSON",
