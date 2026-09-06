@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "maria-ressa",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Maria Ressa",
   "industry": "media",
   "role": "Journalist; co-founder and Chief Executive Officer of Rappler",
@@ -61,6 +61,36 @@
       "hash": "1310987a67354dd0a5805f695478f6598816973b2caf1826a61386c726cde1fd",
       "excerpt": "numFound: 3\nstart: 0\nnumFoundExact: true\ndocs[0].alternate_names[0]: Maria Angelita Ressa\ndocs[0].birth_date: 1963-10-02\ndocs[0].key: OL2820448A\ndocs[0].name: Maria Ressa\ndocs[0].top_subjects[0]: Terrorism and mass media\ndocs[0].top_subjects[1]: Terrorism\ndocs[0].top_subjects[2]: Southeast asia, social conditions\ndocs[0].top_subjects[3]: Southeast Asia\ndocs[0].top_subjects[4]: Sociology\ndocs[0].top_subjects[5]: Social networks\ndocs[0].top_subjects[6]: Qaida (Organization)\ndocs[0].top_subjects[7]: Philippines\ndocs[0].top_subjects[8]: Asia, politics and government\ndocs[0].top_subjects[9]: Asia, foreign relations\ndocs[0].top_work: How to Stand up to a Dictator: The Fight for Our Future\ndocs[0].type: author\ndocs[0].work_count: 3\ndocs[0].ratings_average: 4\ndocs[0].ratings_sortable: 2.3286738\ndocs[0].ratings_count: 1\ndocs[0].ratings_count_1: 0\ndocs[0].ratings_count_2: 0\ndocs[0].ratings_count_3: 0\ndocs[0].ratings_count_4: 1\ndocs[0].ratings_count_5: 0\ndocs[0].want_to_read_count: 30\ndocs[0].already_read_count: 1\ndocs[0].currently_reading_count: 1\ndocs[0].stopped_reading_count: 0\ndocs[0].readinglog_count: 32\ndocs[0]._root_: /authors/OL2820448A\ndocs[0]._version_: 1867269031699939300\ndocs[1].key: OL12555960A\ndocs[1].name: Maria Ressa\ndocs[1].top_subjects[0]: Women, biography\ndocs[1].top_subjects[1]: Political corruption\ndocs[1].top_subjects[2]: Asia, politics and government\ndocs[1].top_work: Cómo luchar contra un dictador\ndocs[1].type: author\ndocs[1].work_count: 2\ndocs[1].ratings_average: 0\ndocs[1].ratings_sortable: 2.047372\ndocs[1].ratings_count: 0\ndocs[1].ratings_count_1: 0\ndocs[1].ratings_count_2: 0\ndocs[1].ratings_count_3: 0\ndocs[1].ratings_count_4: 0\ndocs[1].ratings_count_5: 0\ndocs[1].want_to_read_count: 4\ndocs[1].already_read_count: 0\ndocs[1].currently_reading_count: 0\ndocs[1].stopped_reading_count: 0\ndocs[1].readinglog_count: 4\ndocs[1]._root_: /authors/OL12555960A\ndocs[1]._version_: 1867216600325685200\ndocs[2].key: OL13103924A\ndocs[2].name: Maria A. Ressa\ndocs[2].top_subjects[0]: Terrorism\ndocs[2].top_subjects[1]: Social networks\ndocs[2].top_subjects[2]: Philippines, social conditions\ndocs[2].top_work: From Bin Laden to Facebook\ndocs[2].type: author\ndocs[2].work_count: 1\ndocs[2].ratings_average: 0\ndocs[2].ratings_sortable: 2.047372\ndocs[2].ratings_count: 0\ndocs[2].ratings_count_1: 0\ndocs[2].ratings_count_2: 0\ndocs[2].ratings_count_3: 0\ndocs[2].ratings_count_4: 0\ndocs[2].ratings_count_5: 0\ndocs[2].want_to_read_count: 0\ndocs[2].already_read_count: 0\ndocs[2].currently_reading_count: 0\ndocs[2].stopped_reading_count: 0\ndocs[2].readinglog_count: 0\ndocs[2]._root_: /authors/OL13103924A\ndocs[2]._version_: 1867221346702852000",
       "rights": "public-record"
+    },
+    {
+      "id": "x-lie-told-post",
+      "url": "https://x.com/mariaressa/status/1203839355250335744",
+      "title": "Maria Ressa — X post: 'A lie told a million times becomes a fact'",
+      "publisher": "X",
+      "publishedAt": "2019-12-09",
+      "retrievedAt": "2026-09-06T23:27:00Z",
+      "family": "public-social",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "27083089dee7375a62134b27834f9aea8904b5f5f13201ba771bf6de5fe5f308",
+      "excerpt": "Maria Ressa (@mariaressa) — public X post 1203839355250335744, dated 9 December 2019 by the platform. Verbatim post text:\n\nA lie told a million times becomes a fact. Without facts, we can’t have truth. Without truth, we can’t have trust. If we don’t do anything substantial now, democracy as we know it is dead. Good morning, Manila!",
+      "rights": "short-quotation",
+      "note": "Retained via the platform's public oEmbed endpoint; the trailing linked-media stub was omitted."
+    },
+    {
+      "id": "x-nobelprize-ressa",
+      "url": "https://x.com/NobelPrize/status/1446400807377776642",
+      "title": "The Nobel Prize — X post on Maria Ressa's freedom-of-expression work",
+      "publisher": "X",
+      "publishedAt": "2021-10-08",
+      "retrievedAt": "2026-09-06T23:27:00Z",
+      "family": "public-social",
+      "sourceClass": "independent-account",
+      "language": "en",
+      "hash": "322794b395b22be4e1fdabb68bac1aa4845b86ddc0c18feebc42a8cef0fcfb44",
+      "excerpt": "The Nobel Prize (@NobelPrize) — public X post 1446400807377776642, dated 8 October 2021 by the platform. Verbatim post text:\n\n#NobelPrize laureate Maria Ressa uses freedom of expression to expose abuse of power, use of violence and growing authoritarianism in her native country, the Philippines. In 2012, she co-founded Rappler, @rapplerdotcom, a digital media company for investigative journalism.",
+      "rights": "short-quotation",
+      "note": "Retained via the platform's public oEmbed endpoint; the trailing linked-photo stub was omitted."
     }
   ],
   "facts": [
@@ -143,6 +173,61 @@
       ],
       "importance": "core",
       "acquisition": "app-supported"
+    },
+    {
+      "id": "lie-told-credo",
+      "requirements": ["r7", "r8"],
+      "section": "ideas",
+      "statement": "In a December 2019 post, Ressa stated her signature credo: a lie told a million times becomes a fact, and without facts there is no truth, without truth no trust.",
+      "effectiveFrom": "2019-12-09",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "x-lie-told-post",
+          "quote": "A lie told a million times becomes a fact. Without facts, we can’t have truth. Without truth, we can’t have trust."
+        }
+      ],
+      "importance": "core",
+      "acquisition": "beyond-current-coverage",
+      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source."
+    },
+    {
+      "id": "nobel-account",
+      "requirements": ["r9", "r14"],
+      "section": "recognition",
+      "statement": "The Nobel Prize's October 2021 post credits Ressa with using freedom of expression to expose abuse of power, violence and growing authoritarianism in the Philippines, and notes her 2012 co-founding of Rappler.",
+      "effectiveFrom": "2021-10-08",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "x-nobelprize-ressa",
+          "quote": "laureate Maria Ressa uses freedom of expression to expose abuse of power, use of violence and growing authoritarianism in her native country, the Philippines."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "beyond-current-coverage",
+      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source."
+    },
+    {
+      "id": "ressa-self-vs-independent",
+      "requirements": ["r20", "r9"],
+      "section": "context",
+      "statement": "Ressa's 2019 post states her own credo about facts and trust (self-report); the Nobel Prize's 2021 post independently characterizes her press-freedom record. A dossier that cites her own post as independent verification of that record fails the source-composition check.",
+      "effectiveFrom": "2021-10-08",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "x-lie-told-post",
+          "quote": "If we don’t do anything substantial now, democracy as we know it is dead."
+        },
+        {
+          "documentId": "x-nobelprize-ressa",
+          "quote": "In 2012, she co-founded Rappler, @rapplerdotcom, a digital media company for investigative journalism."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "beyond-current-coverage",
+      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source."
     }
   ],
   "unjustified": [
@@ -157,6 +242,12 @@
       "statement": "Ressa personally authored every Rappler investigation.",
       "why": "The Nobel account credits Ressa and Rappler together.",
       "kind": "team-output-as-personal"
+    },
+    {
+      "id": "ressa-self-as-verification",
+      "statement": "Ressa's own posts about her journalism independently verify her press-freedom record.",
+      "why": "Her posts are self-reports; independent verification requires accounts such as the Nobel Prize's, not the subject's own statements.",
+      "kind": "unsupported-inference"
     }
   ],
   "unavailable": [
