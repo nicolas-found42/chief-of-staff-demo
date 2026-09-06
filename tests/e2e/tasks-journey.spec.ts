@@ -53,7 +53,9 @@ test("tasks journey — nav → quick add → complete → reopen → edit → l
   //    the Task into it without changing what the Task is.
   await page.getByLabel("New Task List").fill("Billing");
   await page.getByRole("button", { name: "Create list" }).click();
-  await expect(page.getByRole("heading", { level: 3, name: "Billing" })).toBeVisible();
+  /* Exact: the Task on this page is "Send the billing follow-up", and a
+     substring match on "Billing" reaches its heading as well as the list's. */
+  await expect(page.getByRole("heading", { level: 3, name: "Billing", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Edit details" }).click();
   await page.getByLabel("Notes").fill("Include the Q3 numbers.");
@@ -71,7 +73,7 @@ test("tasks journey — nav → quick add → complete → reopen → edit → l
   // 5. A list that still holds a Task is refused rather than emptied.
   await page
     .getByRole("listitem")
-    .filter({ has: page.getByRole("heading", { level: 3, name: "Billing" }) })
+    .filter({ has: page.getByRole("heading", { level: 3, name: "Billing", exact: true }) })
     .getByRole("button", { name: "Delete list" })
     .click();
   await expect(page.getByRole("alert")).toContainText("still holds 1 Task");

@@ -1,7 +1,18 @@
+import type {
+  PersonDossier,
+  PersonProfile,
+  PersonResearchAttempt,
+  PersonResearchCoverageArea,
+  PersonResearchOperationOutcome,
+  PersonSourceDocument,
+} from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
 import type { PublicSearch } from "../source-adapters/search.js";
 import { createFeedDiscoverer } from "../source-adapters/feeds.js";
+import { publicHttpFetchBytes, type PublicHttpBytesFetch } from "../source-adapters/http.js";
+import type { BrowserRenderer } from "../source-adapters/browser.js";
 import type { TranscriptConsumerRegistry } from "../transcript-catalog/deletion.js";
+import type { PersonProfileCreateInput } from "@chief-of-staff-demo/shared";
 import { createPersonClaimExtractor } from "./claims.js";
 import { PersonDossierStore } from "./dossier-store.js";
 import { personDossierRegistry } from "./lifecycle.js";
@@ -41,8 +52,37 @@ export interface ConfirmedTranscript {
  * drift apart.
  */
 type PersonResearchTestPorts = Partial<
-  Pick<ConstructorParameters<typeof PersonResearch>[0], "search" | "fetch" | "complete">
+  Pick<
+    ConstructorParameters<typeof PersonResearch>[0],
+    "search" | "fetch" | "fetchBytes" | "render" | "complete" | "plan" | "readSource" | "seeds"
+  >
 >;
+
+/**
+ * The operation-level research interface (issue #228).
+ *
+ * One handle for everything a consumer needs from a continuous research
+ * operation — start it, read what it has published so far, and read its final
+ * outcome, coverage and full attempt history — with the collectors, the
+ * scheduler and the dossier store behind it. The benchmark evaluator is a
+ * consumer of exactly this, which is what keeps it from growing a second
+ * discovery or extraction implementation of its own.
+ */
+interface PersonResearchOperations {
+  /** Create or reuse the canonical Person Profile and queue an operation. */
+  startFor(signals: PersonProfileCreateInput): PersonProfile;
+  /** Run the pending operation for this Profile through to its conclusion. */
+  runNow(profileId: string): Promise<PersonResearchOperationOutcome | null>;
+  /** The dossier as published so far. Readable while research continues. */
+  dossier(profileId: string, visibility?: "public" | "private"): PersonDossier | null;
+  /** Every retained source version this Profile's dossier names. */
+  sources(profileId: string): PersonSourceDocument[];
+  /** The last operation's durable record, or null before one has finished. */
+  outcome(profileId: string): PersonResearchOperationOutcome | null;
+  coverage(profileId: string): PersonResearchCoverageArea[];
+  /** The complete attempt history, never the display slice. */
+  attempts(profileId: string): PersonResearchAttempt[];
+}
 
 /**
  * What the Shell hands the Person Profiles product, and nothing more: a
@@ -62,6 +102,11 @@ export interface PersonProfilesCompositionDeps {
   search: PublicSearch;
   /** Model access, read per call so a Settings edit lands without a restart. */
   complete: () => CompleteJson;
+  /**
+   * The research planner's model access, on its own Settings purpose. Absent
+   * means the operation expands from collected evidence only.
+   */
+  plan?: () => CompleteJson;
   /**
    * The Transcripts this Person Profile is confirmed in. The Catalog owns
    * what "confirmed" means (`TranscriptIdentityService.confirmedMentions`);
@@ -83,6 +128,12 @@ export interface PersonProfilesCompositionDeps {
    * is this product's own and is added below.
    */
   lifecycle?: PersonProfileLifecycleRegistry[];
+  /**
+   * The bounded anonymous browser route, for pages that only render their
+   * content client-side. Absent means that recovery route is unavailable and
+   * a client-rendered page is recorded as a gap rather than silently skipped.
+   */
+  render?: BrowserRenderer;
   /** Whether research may dispatch at all; false while the migration gate holds. */
   researchEnabled: () => boolean;
   /** Lowercased participant emails of the Meetings close enough to prepare for. */
@@ -99,6 +150,8 @@ export interface PersonProfilesComposition {
   profiles: WorkspacePersonProfiles;
   dossiers: PersonDossierStore;
   queue: PersonResearchQueue;
+  /** The operation-level research interface every consumer holds (#228). */
+  research: PersonResearchOperations;
   resolver: PersonProfileResolver;
   /**
    * This product's two registrations into transcript deletion (issue #128):
@@ -140,11 +193,38 @@ export function composePersonProfiles(
     ],
   });
 
+  /* The document reader needs bytes, not a UTF-8 decode, and the hermetic
+     suites inject only the text transport. Deriving the byte transport from
+     an injected text one keeps those suites off the network while the real
+     byte transport stays the default for production. */
+  const injectedFetch = deps.researchTestPorts?.fetch;
+  const fetchBytes: PublicHttpBytesFetch =
+    deps.researchTestPorts?.fetchBytes ??
+    (injectedFetch
+      ? async (url, options) => {
+          const response = await injectedFetch(url, options);
+          return {
+            url: response.url,
+            status: response.status,
+            contentType: response.contentType,
+            retryAfter: response.retryAfter,
+            bytes: Buffer.from(response.body, "utf8"),
+          };
+        }
+      : publicHttpFetchBytes);
+
   const research = new PersonResearch({
     dossiers,
     people: profiles,
     search: deps.search,
     complete: (request) => deps.complete()(request),
+    /* The planner runs on its own configured purpose, so a Workspace can give
+       planning a different model from extraction without either becoming the
+       other's fallback. When no planner is configured the operation expands
+       from the collected evidence alone. */
+    ...(deps.plan ? { plan: (request) => deps.plan!()(request) } : {}),
+    ...(deps.render ? { render: deps.render } : {}),
+    fetchBytes,
     /**
      * The Transcripts research may read. One document per Transcript however
      * many decisions named it — the confirmed list is per decision, the
@@ -201,6 +281,28 @@ export function composePersonProfiles(
     },
   });
 
+  const operations: PersonResearchOperations = {
+    startFor: (signals) => {
+      const profile = profiles.create(signals);
+      queue.enqueue(profile.id, "explicit");
+      return profile;
+    },
+    runNow: async (profileId) => {
+      queue.enqueue(profileId, "explicit");
+      await queue.tick(profileId);
+      return queue.operation(profileId);
+    },
+    dossier: (profileId, visibility = "private") => dossiers.project(profileId, visibility),
+    sources: (profileId) =>
+      (dossiers.get(profileId)?.sourceIds ?? []).flatMap((id) => {
+        const source = dossiers.source(profileId, id);
+        return source ? [source] : [];
+      }),
+    outcome: (profileId) => queue.operation(profileId),
+    coverage: (profileId) => queue.operation(profileId)?.coverage ?? [],
+    attempts: (profileId) => queue.operation(profileId)?.attempts ?? [],
+  };
+
   const resolver = new PersonProfileResolver({
     store,
     sources: [
@@ -252,6 +354,7 @@ export function composePersonProfiles(
     profiles,
     dossiers,
     queue,
+    research: operations,
     resolver,
     transcriptConsumers,
     start: () => queue.start(),

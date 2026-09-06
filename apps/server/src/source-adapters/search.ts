@@ -46,8 +46,14 @@ export type PublicSearchDiagnostics = (event: PublicSearchDiagnosticEvent) => vo
 /** The composite's per-request deadline; slow sources (GDELT, Wayback) override it. */
 const IO_TIMEOUT_MS = 20_000;
 
-/** The merged result ceiling: a search that found more is not more evidence. */
-const MERGED_LIMIT = 24;
+/**
+ * The merged result ceiling.
+ *
+ * Raised with the source-family expansion (#228): with thirty-odd providers
+ * answering, a 24-result ceiling filled from the top of a registration-ordered
+ * list discarded whole families before anything could look at them.
+ */
+const MERGED_LIMIT = 60;
 
 /** How long a rate-limited provider rests when it sends no Retry-After. */
 const RATE_LIMIT_COOLDOWN_MS = 3_600_000;
@@ -62,7 +68,7 @@ const CACHE_TTL_MS = 600_000;
    the provider saying "this question is not mine" — neither an answer nor a
    refusal — so an all-refused pass stays all-refused even while these two
    sit the query out. */
-const DECLINES_WITHOUT_REQUEST = new Set(["wayback", "arctic-shift"]);
+const DECLINES_WITHOUT_REQUEST = new Set(["wayback", "arctic-shift", "nppes"]);
 
 export function createPublicSearch(
   fetchText: PublicHttpFetch = publicHttpFetch,
@@ -72,6 +78,15 @@ export function createPublicSearch(
     searxngUrl?: string;
     now?: () => number;
     cacheTtlMs?: number;
+    /**
+     * Which providers this instance may ask. The app-wide instance asks all of
+     * them; the benchmark's incumbent baseline uses this to reconstruct the
+     * bundle as it stood before the #228 source expansion, so a comparison can
+     * name the provider set as one of its recorded conditions.
+     */
+    providerFilter?: (name: string) => boolean;
+    /** Override the merged ceiling. Same reason as `providerFilter`. */
+    mergedLimit?: number;
   } = {},
 ): PublicSearch {
   const bundleOptions: {
@@ -82,7 +97,10 @@ export function createPublicSearch(
   if (fetchText !== publicHttpFetch) bundleOptions.fetch = fetchText;
   if (options.searxngUrl !== undefined) bundleOptions.searxngUrl = options.searxngUrl;
   if (endpoint !== undefined) bundleOptions.endpoint = endpoint;
-  const providers = defaultProviders(bundleOptions);
+  const providers = options.providerFilter
+    ? defaultProviders(bundleOptions).filter((provider) => options.providerFilter!(provider.name))
+    : defaultProviders(bundleOptions);
+  const mergedLimit = options.mergedLimit ?? MERGED_LIMIT;
   const now = options.now ?? (() => Date.now());
   const cacheTtlMs = options.cacheTtlMs ?? CACHE_TTL_MS;
   const diagnostics = options.diagnostics;
@@ -196,17 +214,24 @@ export function createPublicSearch(
         }
       }),
     );
+    /* Round-robin across providers rather than draining each in turn: the
+       merge is capped, and taking every result from the first provider before
+       looking at the last one is registration-order truncation wearing a
+       different hat (#228). Registration order still decides ties, so it still
+       decides which provider's duplicate survives dedupe (ADR-0049). */
     const seen = new Set<string>();
-    for (const found of perProvider) {
-      for (const result of found) {
-        if (seen.has(result.url)) continue;
+    const depth = Math.max(0, ...perProvider.map((found) => found.length));
+    for (let index = 0; index < depth; index += 1) {
+      for (const found of perProvider) {
+        const result = found[index];
+        if (!result || seen.has(result.url)) continue;
         seen.add(result.url);
         merged.push(result);
       }
     }
 
     return {
-      merged: merged.slice(0, MERGED_LIMIT),
+      merged: merged.slice(0, mergedLimit),
       answered,
       engaged,
       refused,
@@ -267,7 +292,7 @@ export function createPublicSearch(
           merged.push(result);
         }
       }
-      merged = merged.slice(0, MERGED_LIMIT);
+      merged = merged.slice(0, mergedLimit);
     }
 
     /* Only successes are cached — a refusal cached here would report "no

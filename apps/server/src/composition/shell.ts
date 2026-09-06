@@ -4,7 +4,7 @@ import { registerPersonDossierApi } from "../api/person-dossiers.js";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
-import type { AppConfig, ConfirmedOwnerReference } from "@chief-of-staff-demo/shared";
+import type { AppConfig, ConfirmedOwnerReference, ModelPurpose } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../config.js";
 import { registerApi } from "../api/router.js";
 import { registerStaticServing } from "../api/static.js";
@@ -262,8 +262,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
   const transcriptCatalogStore = new TranscriptCatalogStore(workspaceDir);
   /* Resolve model settings per call so research and identity lookup pick up
      Settings edits without restarting the app. */
-  const peopleCompleteJson = () => {
-    const current = configStore.get();
+  const completeForPurpose = (purpose: ModelPurpose) => {
+    const current = configStore.getForPurpose(purpose);
     return makeCompleteJson(
       {
         provider: current.provider,
@@ -274,6 +274,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       layout.mockResultFile,
     );
   };
+  const peopleCompleteJson = () => completeForPurpose("personResearch");
   /* One shared PublicSearch instance for every consumer: one home IP shares
      every provider's rate limits, so the query cache and the per-provider
      cooldowns must be app-wide rather than per consumer — three separate
@@ -301,6 +302,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     workspaceDir,
     search: publicSearch,
     complete: peopleCompleteJson,
+    plan: () => completeForPurpose("researchPlanning"),
     confirmedTranscripts: (profileId) =>
       transcriptIdentityService.confirmedMentions(profileId).flatMap((mention) => {
         const transcript = transcriptCatalogStore.readTranscript(mention.transcriptId);
@@ -342,7 +344,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       }),
       new ContentResearchWatchRegistry(contentResearchStore),
     ],
-    ...(process.env.ENABLE_TEST_SEED === "1" ? { researchTestPorts: personDossierTestPorts } : {}),
+    ...(process.env.ENABLE_TEST_SEED === "1"
+      ? { researchTestPorts: personDossierTestPorts }
+      : { render: playwrightBrowserRenderer() }),
   });
   const {
     store: peopleStore,
@@ -438,18 +442,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     log: (message) => console.log(`[youtube-trends] ${message}`),
   });
 
-  const contentScoutCompleteJson = () => {
-    const current = configStore.get();
-    return makeCompleteJson(
-      {
-        provider: current.provider,
-        model: current.model,
-        apiKey: current.apiKey,
-        baseUrl: current.ollama.baseUrl,
-      },
-      layout.mockResultFile,
-    );
-  };
+  const contentScoutCompleteJson = () => completeForPurpose("contentDiscovery");
+  const contentGenerationCompleteJson = () => completeForPurpose("contentGeneration");
   const testContentScout =
     process.env.ENABLE_TEST_SEED === "1" ? contentScoutTestPorts(() => new Date()) : null;
   /* The governed Content Engine path (#133): selecting a shortlisted Content
@@ -462,8 +456,8 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     ownerOnboarding,
     brandProfiles: new WorkspaceBrandProfileStore(workspaceDir, () => new Date()),
     researchProviders: [createPublicSearchResearchProvider(publicSearch, () => new Date())],
-    outlineGenerator: createModelOutlineGenerator(contentScoutCompleteJson),
-    draftGenerator: createModelDraftGenerator(contentScoutCompleteJson),
+    outlineGenerator: createModelOutlineGenerator(contentGenerationCompleteJson),
+    draftGenerator: createModelDraftGenerator(contentGenerationCompleteJson),
   });
   const contentScout = new ContentScoutHost({
     runs,
@@ -491,18 +485,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     isOwnerProfileConfirmed: () => ownerOnboarding.confirmed() !== null,
     log: (message) => console.log(`[content-scout] ${message}`),
   });
-  const contentResearchCompleteJson = () => {
-    const current = configStore.get();
-    return makeCompleteJson(
-      {
-        provider: current.provider,
-        model: current.model,
-        apiKey: current.apiKey,
-        baseUrl: current.ollama.baseUrl,
-      },
-      layout.mockResultFile,
-    );
-  };
+  const contentResearchCompleteJson = () => completeForPurpose("contentResearch");
   /* The Person Profiles product area's Workspace-owned interface. The store is
      the same one Meeting Brief's resolver writes through: both are synchronous,
      uncached writers of the one Workspace directory. */
@@ -584,18 +567,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     configStore,
     log: (message) => console.log(`[content-research] ${message}`),
   });
-  const meetingBriefCompleteJson = () => {
-    const current = configStore.get();
-    return makeCompleteJson(
-      {
-        provider: current.provider,
-        model: current.model,
-        apiKey: current.apiKey,
-        baseUrl: current.ollama.baseUrl,
-      },
-      layout.mockResultFile,
-    );
-  };
+  const meetingBriefCompleteJson = () => completeForPurpose("meetingBrief");
   const meetingBriefLog = (message: string) => console.log(`[meeting-brief] ${message}`);
   /* The Daily Briefing's canonical work (issue #192). The Tasks product hands
      the Meeting Wizard a bounded projection rather than its stores: the
@@ -682,7 +654,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       configStore.getModuleConfig("content-research").timeZone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone,
     model: () => {
-      const current = configStore.get();
+      const current = configStore.getForPurpose("meetingBrief");
       return {
         provider: current.provider,
         model: current.model,
@@ -739,20 +711,9 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
       google: googleConnection,
       /* A Debrief is named after its Meeting, not after the Drive file. */
       meetingTitle: (meetingId: string) => meetings.get(meetingId)?.title ?? null,
-      getCompleteJson: () => {
-        const current = configStore.get();
-        return makeCompleteJson(
-          {
-            provider: current.provider,
-            model: current.model,
-            apiKey: current.apiKey,
-            baseUrl: current.ollama.baseUrl,
-          },
-          layout.mockResultFile,
-        );
-      },
+      getCompleteJson: () => completeForPurpose("meetingDebrief"),
       getLlmInfo: () => {
-        const current = configStore.get();
+        const current = configStore.getForPurpose("meetingDebrief");
         return { provider: current.provider, model: current.model };
       },
       /* Issue #177: a successful extraction's proposals become durable
@@ -777,7 +738,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     people: peopleProfiles,
     getConfig: () => configStore.get(),
     getLlmInfo: () => {
-      const current = configStore.get();
+      const current = configStore.getForPurpose("meetingDebrief");
       return { provider: current.provider, model: current.model };
     },
     debrief: meetingDebrief,

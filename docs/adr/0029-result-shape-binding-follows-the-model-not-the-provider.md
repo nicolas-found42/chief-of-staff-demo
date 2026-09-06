@@ -1,5 +1,9 @@
 # Result Shape Binding follows the model, not the provider
 
+ADR-0064 adds a narrow recovery exception for sustained repetition in an open answer stream.
+ADR-0065 allows a caller to prefer a different binding that the model also declares supported.
+ADR-0066 permits one observed same-binding retry within the original request deadline.
+
 The Shell has one seam through which every Module asks a model for a Result Shape. Until now that
 seam sent `response_format: {type: "json_schema", strict: true}` to every OpenAI-shaped provider and
 read `choices[0].message.content`, stepping down to a prompt-only request only when a 4xx response

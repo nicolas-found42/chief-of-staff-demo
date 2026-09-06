@@ -26,6 +26,16 @@ it as a filename filter rather than a flag. A path works. A flag is swallowed in
 0, which is how the coverage floors sat unenforced in CI until 2026-09-05. Reach for
 `exec vitest run` whenever a real flag is involved.
 
+### Tests need the shared package built
+
+`test` and `test:coverage` build `@chief-of-staff-demo/shared` first, and that is not a
+convenience. `packages/shared` resolves through its `dist`, and the benchmark CLI tests spawn the
+real script as a subprocess, so an unbuilt `dist` fails them with `ERR_MODULE_NOT_FOUND` rather
+than with anything about the behaviour under test. It passed locally only because an earlier
+typecheck had left a `dist` behind; on a clean checkout CI failed 17 tests this way, and `check`
+was racing its own typecheck for the same file. Verified both directions: 17 failures with `dist`
+removed and no build step, 2,136 passing with it.
+
 The unit coverage gate measures `apps/server/src`, excluding the process bootstrap and the
 test-only e2e seed seam. CI reports the result in its job summary and enforces the lines,
 statements, functions, and branches floors in `tests/vitest.config.ts`. A run that produces no
@@ -85,9 +95,12 @@ turn up anyway, the scorer reads the error and ignores the debrief.
 
 - Only `upstage/solar-pro4` gates a commit; every other model in `--models`
   is a data point.
-- Calls stream: the first token must arrive within 30 seconds, and gaps
-  between tokens may not exceed 30 seconds either — either way the call ends
-  at the idle ceiling. A 120-second absolute ceiling bounds a slow trickle.
+- Calls stream, under three ceilings that answer different questions. A
+  connection that sends nothing at all for 30 seconds is dead and ends there.
+  One that stays connected but produces no answer for 90 seconds ends at the
+  silent ceiling — some upstreams buffer a whole tool call behind keepalives,
+  so traffic counts as alive even when no token has arrived. A call that is
+  actively generating is bounded at 300 seconds.
   A failed or timed-out run retries within a 60-second cumulative budget (max
   10 attempts) before printing the full model-boundary diagnostic. `HTTP 429`
   clusters mean back off with `--concurrency` (default 20).

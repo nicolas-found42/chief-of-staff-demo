@@ -44,6 +44,7 @@ interface ZodInternals {
   schema?: z.ZodTypeAny;
   type?: z.ZodTypeAny;
   valueType?: z.ZodTypeAny;
+  keyType?: z.ZodTypeAny;
   values?: readonly string[];
   checks?: readonly { kind: string; value?: number; inclusive?: boolean }[];
   shape?: () => Record<string, z.ZodTypeAny>;
@@ -90,8 +91,15 @@ function populate(schema: z.ZodTypeAny, path: string): unknown {
     }
     case "ZodArray":
       return [populate(def.type!, `${path}.0`)];
-    case "ZodRecord":
-      return { [RECORD_KEY]: populate(def.valueType!, `${path}.${RECORD_KEY}`) };
+    case "ZodRecord": {
+      const keys =
+        def.keyType && internals(def.keyType).typeName === "ZodEnum"
+          ? internals(def.keyType).values!
+          : [RECORD_KEY];
+      return Object.fromEntries(
+        keys.map((key) => [key, populate(def.valueType!, `${path}.${key}`)]),
+      );
+    }
     case "ZodEnum":
       return def.values![0];
     case "ZodString":

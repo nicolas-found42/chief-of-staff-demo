@@ -10,7 +10,7 @@ import { PersonResearch } from "../../../apps/server/src/person-profile/research
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 
-test("owner can inspect research states, change budgets, and enqueue without waiting for the web", async () => {
+test("owner can inspect research states, change research bounds, and enqueue without waiting for the web", async () => {
   const root = mkdtempSync(join(tmpdir(), "dossier-api-"));
   const app = Fastify();
   try {
@@ -38,9 +38,9 @@ test("owner can inspect research states, change budgets, and enqueue without wai
     const settings = await app.inject({
       method: "PATCH",
       url: "/api/people/research/settings",
-      payload: { dailyCalls: 12, paused: true },
+      payload: { profileCalls: 12, paused: true },
     });
-    expect(settings.json().settings.dailyCalls).toBe(12);
+    expect(settings.json().settings.profileCalls).toBe(12);
     expect(settings.json().settings.paused).toBe(true);
     /* A patch names only what the owner changed (#207): editing the refresh
        interval must not carry the rest of the form back as a fresh pause, and
@@ -51,7 +51,7 @@ test("owner can inspect research states, change budgets, and enqueue without wai
       payload: { refreshHours: 24 },
     });
     expect(narrowed.json().settings.refreshHours).toBe(24);
-    expect(narrowed.json().settings.dailyCalls).toBe(12);
+    expect(narrowed.json().settings.profileCalls).toBe(12);
     expect(narrowed.json().settings.paused).toBe(true);
     expect(
       (
@@ -67,7 +67,7 @@ test("owner can inspect research states, change budgets, and enqueue without wai
         await app.inject({
           method: "PATCH",
           url: "/api/people/research/settings",
-          payload: { dailyCalls: -1 },
+          payload: { profileCalls: -1 },
         })
       ).statusCode,
     ).toBe(400);

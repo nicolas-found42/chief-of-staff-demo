@@ -1,4 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
+import type { PersonResearchStatus } from "@chief-of-staff-demo/shared";
 import { expect, test } from "./fixture";
 
 test("automatic dossier journey — add, research, inspect source, and query demonstrated work", async ({
@@ -75,7 +76,7 @@ test("automatic dossier journey — add, research, inspect source, and query dem
     },
   });
   await page.request.patch("/api/people/research/settings", {
-    data: { paused: false, profileCalls: 4, dailyCalls: 100 },
+    data: { paused: false, profileCalls: 4 },
   });
   await page.goto("/people/new");
   await page.getByLabel("Email or profile URL").fill("maya@example.com");
@@ -121,7 +122,7 @@ test("sparse and unavailable dossiers keep unquoted sources accessible with queu
   page,
 }) => {
   await page.request.patch("/api/people/research/settings", {
-    data: { paused: true, profileCalls: 12, dailyCalls: 100 },
+    data: { paused: true, profileCalls: 12 },
   });
   const created = await (
     await page.request.post("/api/people", { data: { primaryEmail: "retained-only@example.com" } })
@@ -183,7 +184,7 @@ test("Calendar and repeated Transcript entry reach automatically populated dossi
       },
     });
   await page.request.patch("/api/people/research/settings", {
-    data: { paused: false, profileCalls: 4, dailyCalls: 100, concurrency: 2 },
+    data: { paused: false, profileCalls: 4, concurrency: 2 },
   });
   const event = {
     calendarId: "primary",
@@ -267,5 +268,151 @@ test("Calendar and repeated Transcript entry reach automatically populated dossi
     ).toBeVisible({ timeout: 30000 });
     await page.getByRole("button", { name: "Inspect retained source 1", exact: true }).click();
     await expect(page.getByRole("region", { name: "Retained source" })).toContainText(email);
+  }
+});
+
+test("completed research explains gaps and provider interruption keeps retained sources visible", async ({
+  page,
+}) => {
+  for (const interrupted of [false, true]) {
+    const email = interrupted ? "interrupted@scope-browser.example" : "gaps@scope-browser.example";
+    const url = `https://scope-browser.example/${interrupted ? "interrupted" : "gaps"}`;
+    await page.request.post("/api/test/person-dossier-source", {
+      data: {
+        url,
+        text: `${email} appears in this sparse public record.`,
+        extraction: {
+          fullName: null,
+          employer: null,
+          author: null,
+          publishedAt: null,
+          sourceClass: "primary-artifact",
+          claims: [],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        },
+        ...(interrupted ? { extractionError: "Fixture provider connection interrupted" } : {}),
+      },
+    });
+    await page.request.patch("/api/people/research/settings", {
+      data: { paused: false, profileCalls: 60 },
+    });
+    await page.goto("/people/new");
+    await page.getByLabel("Email or profile URL").fill(email);
+    await page.getByRole("button", { name: "Add and research" }).click();
+    await expect(page).toHaveURL(/\/people\/person_/);
+    await expect(
+      page.getByText(interrupted ? "Research interrupted" : "No matched evidence found", {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 30000 });
+    await page.getByText("What this research did not find", { exact: true }).click();
+    await expect(
+      page
+        .locator("details")
+        .filter({ has: page.getByText("What this research did not find", { exact: true }) }),
+    ).toContainText(/evidence|uninvestigated|coverage/i);
+    if (interrupted) {
+      await page.getByText("Source and identity diagnostics", { exact: true }).click();
+      await expect(page.getByText("model-boundary-failed", { exact: true })).toBeVisible();
+    }
+    await page.getByRole("tab", { name: "Sources", exact: true }).click();
+    await page.getByRole("button", { name: "Inspect retained source 1", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Retained source" })).toContainText(email);
+  }
+});
+
+test("published claims remain readable while the same operation awaits another extraction", async ({
+  page,
+}) => {
+  const email = "progressive@continuous-browser.example";
+  const heldUrl = "https://continuous-browser.example/second";
+  const firstQuote = "Morgan built the Atlas scheduler.";
+  const secondQuote = "Morgan deployed Atlas to coastal stations.";
+  for (const [url, quote, held] of [
+    ["https://continuous-browser.example/first", firstQuote, false],
+    [heldUrl, secondQuote, true],
+  ] as const) {
+    await page.request.post("/api/test/person-dossier-source", {
+      data: {
+        url,
+        text: `${email}. ${quote}`,
+        holdExtraction: held,
+        extraction: {
+          fullName: null,
+          employer: null,
+          author: null,
+          publishedAt: null,
+          sourceClass: "primary-artifact",
+          claims: [
+            {
+              id: held ? "deployment" : "scheduler",
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        },
+      },
+    });
+  }
+  try {
+    await page.request.patch("/api/people/research/settings", {
+      data: { paused: false, profileCalls: 60, readConcurrency: 2 },
+    });
+    await page.goto("/people/new");
+    await page.getByLabel("Email or profile URL").fill(email);
+    await page.getByRole("button", { name: "Add and research" }).click();
+    await expect(page).toHaveURL(/\/people\/person_/);
+    const profileId = new URL(page.url()).pathname.split("/").at(-1)!;
+    const job = async () => {
+      const status = (await (
+        await page.request.get("/api/people/research/status")
+      ).json()) as PersonResearchStatus;
+      return status.jobs.find((entry) => entry.profileId === profileId);
+    };
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(
+          `/api/test/person-dossier-extraction?url=${encodeURIComponent(heldUrl)}`,
+        );
+        return ((await response.json()) as { started: boolean }).started;
+      })
+      .toBe(true);
+    await page.getByRole("tab", { name: "Body of work", exact: true }).click();
+    await expect(page.getByRole("article").getByText(firstQuote, { exact: true })).toBeVisible();
+    await expect(page.getByText("Researching", { exact: true })).toBeVisible();
+    await expect(page.getByText(secondQuote, { exact: true })).toHaveCount(0);
+    const active = await job();
+    expect(active?.state).toBe("researching");
+    const operationId = active?.checkpoint?.operationId;
+    expect(operationId).toBeTruthy();
+    await page.getByRole("button", { name: "Evidence 1", exact: true }).first().click();
+    await expect(page.getByRole("region", { name: "Retained source" })).toContainText(firstQuote);
+    await page.getByRole("button", { name: "Close source" }).click();
+    await page.request.post("/api/test/person-dossier-extraction/release", {
+      data: { url: heldUrl },
+    });
+    await expect(page.getByRole("article").getByText(secondQuote, { exact: true })).toBeVisible();
+    await expect(page.getByText("Current within completed scope", { exact: true })).toBeVisible();
+    expect((await job())?.operation).toMatchObject({ operationId, conclusion: "completed" });
+  } finally {
+    await page.request.post("/api/test/person-dossier-extraction/release", {
+      data: { url: heldUrl },
+    });
   }
 });

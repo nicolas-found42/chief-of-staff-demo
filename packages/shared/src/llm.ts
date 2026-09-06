@@ -1,7 +1,19 @@
-import type { ProviderId } from "./schemas.js";
+import { z } from "zod";
+import { ProviderIdSchema, type ProviderId } from "./schemas.js";
 
-/** One model call's absolute ceiling — the backstop above the token idle ceiling. */
-export const MODEL_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * One model call's absolute ceiling — the backstop above the two stream
+ * ceilings below.
+ *
+ * Since #232 this bounds only a call that is actively generating: a connection
+ * that goes quiet is caught at 30 seconds and one that stays open without
+ * producing an answer at 90, both far below this. So the number's only job is
+ * to fit real work, and the measured work does not fit in two minutes — one
+ * person-extraction answer is around 4,000 output tokens, and the configured
+ * model was measured between 24 and 75 tokens per second depending on the
+ * route it landed on.
+ */
+export const MODEL_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
  * How long one streaming model call may go without a token — measured from the
@@ -11,6 +23,42 @@ export const MODEL_REQUEST_TIMEOUT_MS = 120_000;
  * thirty seconds instead of two minutes.
  */
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000;
+
+/**
+ * How long an upstream may stay connected without producing any answer.
+ *
+ * Distinct from the idle ceiling above, which asks whether the connection is
+ * alive at all. Some upstreams buffer a whole tool call and send nothing but
+ * SSE keepalives while they generate — measured at 57 to 73 seconds before an
+ * 18,797-character answer arrived in a single delta (#232). Treating that as a
+ * dead connection aborted work the model was completing, so silence with
+ * traffic gets its own, longer bound, still under the absolute ceiling so a
+ * provider that keeps the line warm and never answers is named as such rather
+ * than reported as a slow generation.
+ */
+export const MODEL_STREAM_SILENT_TIMEOUT_MS = 90_000;
+
+/**
+ * The most answer a single streaming model call may deliver before it is
+ * abandoned, counted in characters across every answer surface — content,
+ * tool-call arguments, and reasoning by length alone.
+ *
+ * The ceilings above bound a call that goes quiet or never answers. This one
+ * bounds the opposite: a call that never stops. Measured (#233), a runaway put
+ * 6.7 MB on the wire and a runaway reasoner produced 161,416 characters, while
+ * the ordinary answer to this contract is 18-20 KB and the largest ever
+ * observed was 31,819 characters.
+ *
+ * It counts answer characters and not bytes off the wire, and that distinction
+ * was learned the expensive way: a first version of this ceiling counted wire
+ * bytes, where a route that streams one token per event spends around 200 bytes
+ * of envelope per token. Two megabytes of wire is then some ten thousand tokens
+ * — squarely inside what a real answer to this contract costs — and live runs
+ * showed legitimate generations at 1.49 MB and 1.58 MB when their own time ran
+ * out. A byte ceiling measures how a route frames its answer; only a character
+ * ceiling measures the answer.
+ */
+export const MODEL_STREAM_MAX_ANSWER_CHARS = 250_000;
 
 /**
  * How a model is bound to the caller's Result Shape. Ordered most deterministic
@@ -37,6 +85,10 @@ export const MODEL_BOUNDARY_CLASSIFICATIONS = [
   "transport_failure",
   /** The seam's own request ceiling fired while the call was in flight. */
   "request_timeout",
+  /** The streamed answer began repeating one short unit instead of finishing. */
+  "repetition_loop",
+  /** The streamed answer ran past the most one call may deliver. */
+  "answer_overrun",
   /** The provider answered with a status outside 2xx. */
   "http_error",
   /** A 2xx answer with no body at all. */
@@ -87,6 +139,35 @@ export interface ModelBoundaryDiagnostic {
   /** The ceiling that fired, for `request_timeout`; `null` otherwise. */
   timeoutMs: number | null;
 }
+
+/** Bounded wire contract for durable, shape-only model failures. */
+export const ModelBoundaryDiagnosticSchema: z.ZodType<ModelBoundaryDiagnostic> = z.object({
+  classification: z.enum(MODEL_BOUNDARY_CLASSIFICATIONS),
+  provider: ProviderIdSchema,
+  model: z.string().max(200),
+  upstreamServer: z.string().max(200).nullable(),
+  upstreamCode: z.number().int().safe().nullable(),
+  binding: z.enum(RESULT_SHAPE_BINDINGS),
+  status: z.number().int().min(100).max(599).nullable(),
+  finishReason: z.string().max(200).nullable(),
+  bodyBytes: z.number().int().nonnegative().safe(),
+  topLevelKeys: z.array(z.string().max(200)).max(64),
+  populatedFields: z.array(z.string().max(200)).max(64),
+  emptyFields: z.array(z.string().max(200)).max(64),
+  timeoutMs: z.number().int().nonnegative().safe().nullable(),
+});
+
+/** Shape-only observation of one completion wire attempt, including recovered failures. */
+export const ModelAttemptEventSchema = z.object({
+  attempt: z.number().int().positive().safe(),
+  binding: z.enum(RESULT_SHAPE_BINDINGS),
+  outcome: z.enum(["retrying", "succeeded", "failed"]),
+  diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
+  /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */
+  delayMs: z.number().int().nonnegative().max(500),
+  stoppedReason: z.string().max(1000).nullable(),
+});
+export type ModelAttemptEvent = z.infer<typeof ModelAttemptEventSchema>;
 
 /** One field that did not conform to a Module's declared Result Shape. */
 export interface ResultShapeIssue {

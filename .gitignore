@@ -28,3 +28,33 @@ screenshots/
 # Debrief eval fixtures: real meeting transcripts with named participants, and
 # the hand-written goldens over them. Local-only — this repo is public.
 tests/fixtures/debrief-golden/
+
+# Person-research benchmark campaign output. Each dated run directory holds raw
+# model output — 1,424 files and 113MB across the 2026-09-06 campaign — and is
+# regenerable from `scripts/person-research-benchmark.mts`. What stays tracked is
+# what something else reads: the reports directly under `artifacts/person-benchmark/`
+# (including `fixed-documents-expanded-2d0a903133188b6a.json`, which three tests
+# in `tests/src/modules/person-benchmark-*.test.ts` load as a fixture), and the
+# diagnostics index, which `README.md` links and two research docs cite as the
+# evidence for #228.
+/artifacts/person-benchmark/*/
+!/artifacts/person-benchmark/diagnostics-2026-09-06/
+
+# Session handover notes. Local planning artifacts, same reasoning as `.scratch/`.
+previous-session.md
+
+# Per-checkout Claude Code settings: local paths and permission grants, which
+# belong to this machine rather than to the project. `launch.json` is shared.
+.claude/settings.local.json
+
+# Secrets. This repo is public; nothing carrying a key is ever committed.
+.env
+.env.*
+!.env.example
+
+# Editor state.
+.vscode/
+.idea/
+
+# pnpm's content-addressable store, when a `store-dir` puts it inside the repo.
+.pnpm-store/

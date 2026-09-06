@@ -1,0 +1,171 @@
+import { describe, expect, it } from "vitest";
+import type { PersonProfile, PersonResearchLead } from "@chief-of-staff-demo/shared";
+import {
+  PublicationGate,
+  ResearchBudget,
+  selectReadBatch,
+} from "../../../apps/server/src/person-profile/research-policy";
+import { researchAllowance } from "../../../apps/server/src/person-profile/research";
+
+/**
+ * The three policies one research operation runs under, asked directly.
+ *
+ * Each of these was a closure inside `PersonResearch.run`, so the only way to
+ * ask what the budget does at its ceiling, or which leads selection defers, was
+ * to drive a whole operation and infer the answer from its report (#231).
+ */
+
+const profile = (overrides: Partial<PersonProfile> = {}): PersonProfile =>
+  ({
+    id: "person-1",
+    fullName: "Maya Okafor",
+    emails: [],
+    profileUrls: [],
+    employerHints: [],
+    currentEmployer: null,
+    revision: 1,
+    ...overrides,
+  }) as PersonProfile;
+
+const lead = (target: string, overrides: Partial<PersonResearchLead> = {}): PersonResearchLead => ({
+  id: target,
+  kind: "url",
+  target,
+  origin: "discovery",
+  coverage: [],
+  disposition: "pending",
+  reason: "Awaiting investigation.",
+  yieldedEvidence: false,
+  ...overrides,
+});
+
+describe("the allowance policy", () => {
+  it("names the first bound it reached rather than the last one checked", () => {
+    const budget = new ResearchBudget(researchAllowance({ maxRequests: 1, maxModelCalls: 1 }), {
+      active: () => true,
+    });
+    expect(budget.takeRequest()).toBe(true);
+    expect(budget.takeRequest()).toBe(false);
+    expect(budget.reason).toMatch(/request ceiling/);
+    /* The model call is refused too, but the request ceiling is what actually
+       stopped the work, so that is what stays reported. */
+    expect(budget.takeModelCall()).toBe(false);
+    expect(budget.reason).toMatch(/request ceiling/);
+    expect(budget.spentRequests).toBe(1);
+    expect(budget.spentModelCalls).toBe(0);
+  });
+
+  it("records a Workspace refusal separately from its own ceilings", () => {
+    const budget = new ResearchBudget(researchAllowance({ reserveModelCall: () => false }), {
+      active: () => true,
+    });
+    expect(budget.takeModelCall()).toBe(false);
+    expect(budget.reason).toBe("The Workspace declined a further model call.");
+    expect(budget.spentModelCalls).toBe(0);
+  });
+
+  it("treats an interruption as no bound at all", () => {
+    const budget = new ResearchBudget(researchAllowance(), { active: () => false });
+    expect(budget.takeRequest()).toBe(false);
+    /* An interrupted operation is not a bounded one; nothing here may make it
+       look like research ran out of allowance. */
+    expect(budget.reason).toBeNull();
+  });
+
+  it("bounds on wall clock without spending a request to find out", () => {
+    let clock = 0;
+    const budget = new ResearchBudget(researchAllowance({ maxMilliseconds: 100 }), {
+      active: () => true,
+      now: () => clock,
+    });
+    expect(budget.within()).toBe(true);
+    clock = 100;
+    expect(budget.within()).toBe(false);
+    expect(budget.reason).toMatch(/wall-clock backstop/);
+  });
+});
+
+describe("the collection policy", () => {
+  it("reads the best of what was discovered and keeps the rest pending, in score order", () => {
+    const scores = new Map<string, number>();
+    const candidates = [
+      lead("https://elsewhere.example/unrelated"),
+      lead("https://news.example/maya-okafor-profile"),
+      lead("https://blog.example/maya-okafor-interview"),
+    ];
+    const { batch, deferred } = selectReadBatch({
+      profile: profile(),
+      candidates,
+      unsatisfied: new Set(),
+      context: (_leadId, target) => ({ title: target, snippet: "", rank: 0 }),
+      readHosts: new Map(),
+      readIndexes: new Map(),
+      readConcurrency: 1,
+      score: (leadId, selection) => {
+        scores.set(leadId, selection.score);
+        const found = candidates.find((candidate) => candidate.id === leadId);
+        if (found) found.selection = selection;
+      },
+    });
+    /* Concurrency one reads two: enough that a stalled read leaves no reader
+       idle, few enough that the next round re-scores against what it learned. */
+    expect(batch).toHaveLength(2);
+    expect(batch.map((entry) => entry.target)).not.toContain("https://elsewhere.example/unrelated");
+    /* Nothing is dropped, and the leftover keeps the score that deferred it. */
+    expect(deferred.map((entry) => entry.target)).toEqual(["https://elsewhere.example/unrelated"]);
+    expect(scores.get("https://elsewhere.example/unrelated")).toBeLessThan(
+      scores.get("https://news.example/maya-okafor-profile")!,
+    );
+  });
+
+  it("prefers an unread host over a third page from one already read", () => {
+    const candidates = [
+      lead("https://read.example/maya-okafor-again"),
+      lead("https://fresh.example/maya-okafor"),
+    ];
+    const { batch } = selectReadBatch({
+      profile: profile(),
+      candidates,
+      unsatisfied: new Set(),
+      context: (_leadId, target) => ({ title: target, snippet: "", rank: 0 }),
+      readHosts: new Map([["read.example", 3]]),
+      readIndexes: new Map(),
+      readConcurrency: 1,
+      score: (leadId, selection) => {
+        const found = candidates.find((candidate) => candidate.id === leadId);
+        if (found) found.selection = selection;
+      },
+    });
+    expect(batch[0]?.target).toBe("https://fresh.example/maya-okafor");
+  });
+});
+
+describe("the publication policy", () => {
+  it("admits one writer at a time even when reads finish together", async () => {
+    const gate = new PublicationGate();
+    const order: string[] = [];
+    let inFlight = 0;
+    let overlapped = false;
+    const write = (name: string, delay: number) =>
+      gate.publish(async () => {
+        inFlight += 1;
+        if (inFlight > 1) overlapped = true;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        order.push(name);
+        inFlight -= 1;
+      });
+    await Promise.all([write("first", 20), write("second", 0), write("third", 0)]);
+    expect(overlapped).toBe(false);
+    expect(order).toEqual(["first", "second", "third"]);
+  });
+
+  it("does not let a failed publication poison the writes queued behind it", async () => {
+    const gate = new PublicationGate();
+    const failed = gate.publish(() => {
+      throw new Error("Publication conflict");
+    });
+    const after = gate.publish(() => "published");
+    await expect(failed).rejects.toThrow("Publication conflict");
+    await expect(after).resolves.toBe("published");
+  });
+});

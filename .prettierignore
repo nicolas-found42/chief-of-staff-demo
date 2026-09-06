@@ -21,3 +21,8 @@ p/
 
 # Raw transcript exports from the meeting provider; not ours to reformat.
 tests/fixtures/debrief-golden/transcripts/
+
+# Generated benchmark reports and retained evidence have byte-identical hashes
+# for reassessment provenance. Validate their schemas; never rewrite their bytes.
+artifacts/person-benchmark/**/*.json
+**/*.evidence/**

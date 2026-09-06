@@ -90,16 +90,65 @@ afterEach(async () => {
 });
 
 describe("GET /api/config — the fresh customer recommendation", () => {
-  it("recommends OpenRouter and prefills exactly the Mercury model on a fresh Workspace", async () => {
+  it("recommends OpenRouter and prefills the GLM 5.3 Flash model on a fresh Workspace", async () => {
     const get = await app.inject({ method: "GET", url: "/api/config" });
     expect(get.statusCode).toBe(200);
     const body = get.json<{ config: { provider: string; model: string } }>();
     expect(body.config.provider).toBe("openrouter");
-    expect(body.config.model).toBe("inception/mercury-2.5-preview");
+    expect(body.config.model).toBe("z-ai/glm-5.3-flash");
   });
 });
 
 describe("the BYO key across the credential boundary", () => {
+  it("persists independent purpose models without duplicating or exposing the provider key", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        apiKey: "private-openrouter-key",
+        models: {
+          openrouter: {
+            personResearch: "research-model",
+            evaluationJudge: "judge-model",
+          },
+        },
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    const patch = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        models: { openrouter: { evaluationJudge: "independent-judge" } },
+      },
+    });
+    expect(patch.statusCode).toBe(200);
+    const get = await app.inject({ method: "GET", url: "/api/config" });
+    expect(get.json().config).toMatchObject({
+      models: {
+        openrouter: {
+          personResearch: "research-model",
+          evaluationJudge: "independent-judge",
+        },
+      },
+    });
+    expect(get.body).not.toContain("private-openrouter-key");
+    const restarted = new ConfigStore(join(workspaceDir, "config.json"));
+    expect(restarted.load()).toMatchObject({
+      models: {
+        openrouter: {
+          personResearch: "research-model",
+          evaluationJudge: "independent-judge",
+        },
+      },
+    });
+    expect(restarted.getForPurpose("personResearch").model).toBe("research-model");
+    expect(restarted.getForPurpose("evaluationJudge").model).toBe("independent-judge");
+    expect(restarted.getForPurpose("meetingBrief").model).toBe("z-ai/glm-5.3-flash");
+    restarted.update({ provider: "anthropic", model: "another-provider-model" });
+    expect(restarted.getForPurpose("evaluationJudge").model).toBe("another-provider-model");
+  });
+
   it("stores the key through the config store and never echoes it back", async () => {
     const put = await app.inject({
       method: "PUT",

@@ -71,6 +71,7 @@ const states = {
   paused: "Paused by limit",
   incomplete: "Incomplete scope",
   unavailable: "Sources unavailable",
+  interrupted: "Research interrupted",
   empty: "No matched evidence found",
   current: "Current within completed scope",
 };
@@ -266,9 +267,8 @@ export function PersonDossierPanel({
                 }{" "}
                 of {settings.jobs.length} Profiles attempted;{" "}
                 {settings.jobs.filter((job) => ["queued", "paused"].includes(job.state)).length}{" "}
-                waiting. {settings.usedCalls} / {settings.settings.dailyCalls} research operations
-                today. A search operation can contact several providers. This is an operation
-                allowance, not a monetary cap.
+                waiting. {settings.usedCalls} research requests today. Research continues while
+                useful leads remain; individual requests and retries are bounded.
               </p>
               <button
                 type="button"
@@ -278,23 +278,11 @@ export function PersonDossierPanel({
               >
                 {settings.settings.paused ? "Resume research" : "Pause research"}
               </button>
-              {(
-                [
-                  "dailyCalls",
-                  "profileCalls",
-                  "concurrency",
-                  "profileMilliseconds",
-                  "refreshHours",
-                  "historicalRefreshHours",
-                ] as const
-              ).map((key) => (
+              {(["concurrency", "refreshHours", "historicalRefreshHours"] as const).map((key) => (
                 <label key={key} style={{ display: "block", marginTop: 12 }}>
                   {
                     {
-                      dailyCalls: "Daily operations",
-                      profileCalls: "Operations per Profile",
                       concurrency: "Concurrent Profiles",
-                      profileMilliseconds: "Time per Profile (milliseconds)",
                       refreshHours: "Current facts refresh (hours)",
                       historicalRefreshHours: "Historical research refresh (hours)",
                     }[key]
@@ -317,21 +305,18 @@ export function PersonDossierPanel({
                 type="button"
                 onClick={() =>
                   void act(() =>
-                    /* Limits only: sending the whole settings object back would
+                    /* Scheduling only: sending the whole settings object back would
                        re-assert `paused` and cancel in-flight research that this
                        edit never touched (#207). */
                     client.configure({
-                      dailyCalls: settings.settings.dailyCalls,
-                      profileCalls: settings.settings.profileCalls,
                       concurrency: settings.settings.concurrency,
-                      profileMilliseconds: settings.settings.profileMilliseconds,
                       refreshHours: settings.settings.refreshHours,
                       historicalRefreshHours: settings.settings.historicalRefreshHours ?? 720,
                     }),
                   )
                 }
               >
-                Save research limits
+                Save research settings
               </button>
             </>
           )}
@@ -345,10 +330,29 @@ export function PersonDossierPanel({
       {!!view?.research?.diagnostics?.length && (
         <details className="card">
           <summary>Source and identity diagnostics</summary>
-          {view.research.diagnostics.map((diagnostic, index) => (
-            <p key={index}>
-              {diagnostic.url} · {diagnostic.stage}: {diagnostic.reason}
+          <p className="muted">
+            Showing {view.research.diagnostics.length} of{" "}
+            {view.research.operation?.attempts.length ?? view.research.diagnostics.length} recorded
+            attempts. The full history is kept with the research operation.
+          </p>
+          {view.research.diagnostics.map((attempt) => (
+            <p key={attempt.id}>
+              <strong>{attempt.code}</strong> · {attempt.stage} · attempt {attempt.attempt} ·{" "}
+              {attempt.target}
+              <br />
+              {attempt.reason}
+              {attempt.observed?.status ? ` (HTTP ${attempt.observed.status})` : ""}
+              {attempt.impact ? ` ${attempt.impact}` : ""}
+              {attempt.hypothesis ? ` Suspected, not established: ${attempt.hypothesis}` : ""}
             </p>
+          ))}
+        </details>
+      )}
+      {!!view?.research?.operation?.gaps.length && (
+        <details className="card">
+          <summary>What this research did not find</summary>
+          {view.research.operation.gaps.map((gap, index) => (
+            <p key={index}>{gap}</p>
           ))}
         </details>
       )}

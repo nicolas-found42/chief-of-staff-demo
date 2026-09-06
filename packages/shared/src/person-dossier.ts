@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  PersonResearchAttemptSchema,
+  PersonResearchOperationOutcomeSchema,
+} from "./person-research.js";
 
 const text = z.string().min(1).max(4000);
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/);
@@ -42,6 +46,35 @@ export const PersonSourceDocumentSchema = z.object({
   acquisition: text,
   transcriptId: id.optional(),
   outboundUrls: z.array(z.string().max(4000)).max(200).optional(),
+  /**
+   * The source family this evidence belongs to (issue #228). Distinct from
+   * `family`, which identifies duplicated *content*: two mirrors of one
+   * article share a content family, while a caption track and a filing are
+   * different evidence families even when nothing about them is duplicated.
+   */
+  evidenceFamily: z.string().max(120).optional(),
+  /**
+   * The index or publisher the content ultimately came from. Several wrappers
+   * over one index share it, so independent evidence can be counted rather
+   * than inferred from distinct hostnames.
+   */
+  upstreamIndex: z.string().max(200).optional(),
+  /** Citation anchors suited to the format: PDF pages, caption timestamps. */
+  anchors: z
+    .array(
+      z.object({
+        kind: z.enum(["page", "timestamp", "section"]),
+        value: z.string().max(80),
+        offset: z.number().int().nonnegative(),
+      }),
+    )
+    .max(500)
+    .optional(),
+  /**
+   * What a reader must not lose about how this text was produced: publisher
+   * captions versus speech recognition, a rendered page versus a raw response.
+   */
+  provenanceNote: z.string().max(1000).optional(),
 });
 const citation = z.object({ sourceId: id, quote: text });
 export const PersonClaimSchema = z.object({
@@ -178,12 +211,27 @@ export type PersonSourceDocument = z.infer<typeof PersonSourceDocumentSchema>;
 export type PersonClaim = z.infer<typeof PersonClaimSchema>;
 export type PersonDossierContent = z.infer<typeof PersonDossierContentSchema>;
 export type PersonDossier = z.infer<typeof PersonDossierSchema>;
+/**
+ * Research settings.
+ *
+ * The four ceilings are safety bounds on one continuous operation, not a
+ * definition of completion: reaching one concludes the operation as bounded
+ * with its pending leads retained, and the job reports `incomplete` (#228).
+ * Only the operation's own completion conditions can report success.
+ */
 export const PersonResearchSettingsSchema = z.object({
   paused: z.boolean(),
   concurrency: z.number().int().min(1).max(4),
-  profileCalls: z.number().int().min(1).max(100),
-  profileMilliseconds: z.number().int().min(1000).max(600000),
-  dailyCalls: z.number().int().min(1).max(10000),
+  /** Model calls one operation may spend before it is bounded. */
+  profileCalls: z.number().int().min(1).max(400).default(60),
+  /** Wall-clock backstop for one operation. */
+  profileMilliseconds: z.number().int().min(1000).max(3600000).default(900000),
+  /** Sources read at once inside one operation. */
+  readConcurrency: z.number().int().min(1).max(12).default(4),
+  /** Deadline for a single request; retries live inside the reader. */
+  requestTimeoutMilliseconds: z.number().int().min(1000).max(120000).default(20000),
+  /** Consecutive expansion rounds that must find nothing before completion. */
+  quietRounds: z.number().int().min(1).max(6).default(2),
   refreshHours: z.number().min(1).max(8760),
   historicalRefreshHours: z.number().min(24).max(8760).optional(),
 });
@@ -194,20 +242,31 @@ const researchResult = z.object({
   snippet: z.string().max(10000),
 });
 export const PersonResearchCheckpointSchema = z.object({
-  queries: z.array(z.string().max(4000)).max(4),
-  pass: z.number().int().min(0).max(4),
-  results: z.array(researchResult).max(8),
-  direct: z.array(researchResult).max(40),
-  visited: z.array(z.string().max(4000)).max(40),
-  linked: z.array(z.string().max(4000)).max(40),
+  /** Identity revision whose traversal may be reused. */
+  profileRevision: z.number().int().nonnegative().optional(),
+  /** The continuous operation this checkpoint belongs to. */
+  operationId: z.string().max(64).optional(),
+  /** Discovery queries still pending. */
+  queries: z.array(z.string().max(4000)),
+  pass: z.number().int().min(0),
+  results: z.array(researchResult),
+  direct: z.array(researchResult),
+  visited: z.array(z.string().max(4000)),
+  linked: z.array(z.string().max(4000)),
   pendingSourceId: id.optional(),
+  /** Distinct source versions already retained in this operation across restarts. */
+  retainedSourceIds: z.array(z.string().length(64)).max(10000).optional(),
 });
 export type PersonResearchCheckpoint = z.infer<typeof PersonResearchCheckpointSchema>;
 export const PersonResearchJobSchema = z.object({
-  diagnostics: z
-    .array(z.object({ url: z.string(), stage: z.string(), reason: z.string() }))
-    .max(100)
-    .optional(),
+  /**
+   * The compact slice a Profile reader sees. It is derived from `operation`,
+   * which keeps the whole attempt history: a display limit here must never be
+   * the reason a failure stopped being recoverable (issue #228).
+   */
+  diagnostics: z.array(PersonResearchAttemptSchema).max(80).optional(),
+  /** The durable record of the last operation: coverage, leads, attempts. */
+  operation: PersonResearchOperationOutcomeSchema.optional(),
   evidenceRevision: z.string().optional(),
   lastHistoricalAt: z.string().optional(),
   checkpoint: PersonResearchCheckpointSchema.optional(),
@@ -220,6 +279,7 @@ export const PersonResearchJobSchema = z.object({
     "paused",
     "incomplete",
     "unavailable",
+    "interrupted",
     "empty",
     "current",
   ]),

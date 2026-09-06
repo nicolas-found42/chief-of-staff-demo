@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
-import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
+import {
+  PersonResearch,
+  researchAllowance,
+} from "../../../apps/server/src/person-profile/research.js";
 import { PersonDossierQueries } from "../../../apps/server/src/person-profile/dossier-queries.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
@@ -27,23 +30,21 @@ test("the comprehensive corpus supplies dossier depth through research, persiste
     const research = new PersonResearch({
       dossiers,
       search: async () => [{ url: fixture.url, title: "Fictional source", snippet: "" }],
+      /* Only the fixture's own URL exists: research follows the work URLs a
+         matched source names, and a mock that served the same body at every
+         URL would extract this corpus several times over. */
       fetch: async (url) => ({
         url,
-        status: 200,
+        status: url === fixture.url ? 200 : 404,
         contentType: "text/plain",
         etag: null,
         lastModified: null,
         retryAfter: null,
-        body: fixture.text,
+        body: url === fixture.url ? fixture.text : "",
       }),
       complete: async () => fixture.extraction,
     });
-    await research.run(person, {
-      maxCalls: 3,
-      maxMilliseconds: 10000,
-      reserve: () => true,
-      active: () => true,
-    });
+    await research.run(person, researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }));
     const dossier = new PersonDossierStore(root).get(person.id)!;
     const atlas = dossier.works.find((work) => work.title === "Atlas")!;
     expect(atlas.contribution?.text).toBe("Designed the scheduler");

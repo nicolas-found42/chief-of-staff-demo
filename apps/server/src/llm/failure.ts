@@ -1,9 +1,10 @@
-import type {
-  ModelBoundaryClassification,
-  ModelBoundaryDiagnostic,
-  ProviderId,
-  ResultShapeDiagnostic,
-  ResultShapeBinding,
+import {
+  ModelBoundaryDiagnosticSchema,
+  type ModelBoundaryClassification,
+  type ModelBoundaryDiagnostic,
+  type ProviderId,
+  type ResultShapeDiagnostic,
+  type ResultShapeBinding,
 } from "@chief-of-staff-demo/shared";
 import type { ZodIssue, ZodType, ZodTypeDef } from "zod";
 
@@ -28,12 +29,24 @@ export interface ModelBoundaryFailureInput {
   status?: number;
   /** The response text, read for its byte length and structure and then dropped. */
   body?: string;
+  /** Observed wire bytes when a streaming response did not finish. No content is retained. */
+  bodyBytes?: number;
   /** The parsed body, where there was one to parse. */
   payload?: unknown;
   /** The container whose fields the diagnostic reports as populated or empty. */
   answer?: AnswerContainer;
   /** The ceiling that fired, for `request_timeout`. */
   timeoutMs?: number;
+  /**
+   * The upstream a streaming response named before it stalled.
+   *
+   * A refusal body names its own upstream, but a stream that times out has no
+   * body to read it from — and OpenRouter routes one model id across many
+   * upstreams, so "which one served this" is the difference between a model
+   * that cannot do the task and a route that was not answering (#232). Only
+   * used when no payload named one.
+   */
+  upstreamServer?: string;
 }
 
 /**
@@ -49,10 +62,31 @@ export class ModelBoundaryError extends Error {
   readonly diagnostic: ModelBoundaryDiagnostic;
 
   constructor(diagnostic: ModelBoundaryDiagnostic) {
-    super(failureMessage(diagnostic));
+    const sanitized = sanitizeModelBoundaryDiagnostic(diagnostic);
+    super(failureMessage(sanitized));
     this.name = "ModelBoundaryError";
-    this.diagnostic = diagnostic;
+    this.diagnostic = sanitized;
   }
+}
+
+/** Keep identifiers and measured shape only, including at durable recorder boundaries. */
+export function sanitizeModelBoundaryDiagnostic(
+  diagnostic: ModelBoundaryDiagnostic,
+): ModelBoundaryDiagnostic {
+  const identifier = (value: string) =>
+    /^[A-Za-z0-9_.:/[\]-]{1,200}$/.test(value) ? value : "[unnamed]";
+  const names = (values: string[]) => values.slice(0, 64).map(identifier);
+  return ModelBoundaryDiagnosticSchema.parse({
+    ...diagnostic,
+    model: identifier(diagnostic.model),
+    upstreamCode: Number.isSafeInteger(diagnostic.upstreamCode) ? diagnostic.upstreamCode : null,
+    upstreamServer:
+      diagnostic.upstreamServer === null ? null : routeName(diagnostic.upstreamServer),
+    finishReason: diagnostic.finishReason === null ? null : identifier(diagnostic.finishReason),
+    topLevelKeys: names(diagnostic.topLevelKeys),
+    populatedFields: names(diagnostic.populatedFields),
+    emptyFields: names(diagnostic.emptyFields),
+  });
 }
 
 /** A Module rejected a model reply without retaining the rejected values. */
@@ -152,12 +186,14 @@ export function modelBoundaryFailure(input: ModelBoundaryFailureInput): ModelBou
     classification: input.classification,
     provider: input.call.provider,
     model: input.call.model,
-    upstreamServer: upstreamServer(payload),
+    upstreamServer:
+      upstreamServer(payload) ?? (input.upstreamServer ? routeName(input.upstreamServer) : null),
     upstreamCode: upstreamCode(payload),
     binding: input.call.binding,
     status: input.status ?? null,
     finishReason: finishReason(payload),
-    bodyBytes: input.body === undefined ? 0 : Buffer.byteLength(input.body, "utf8"),
+    bodyBytes:
+      input.bodyBytes ?? (input.body === undefined ? 0 : Buffer.byteLength(input.body, "utf8")),
     topLevelKeys: payload === null ? [] : Object.keys(payload).map(safeName),
     populatedFields: fields.populated,
     emptyFields: fields.empty,
@@ -181,6 +217,24 @@ function asObject(value: unknown): JsonObject | null {
  */
 function safeName(value: string): string {
   return /^[A-Za-z0-9_.:/-]{1,64}$/.test(value) ? value : "[unnamed]";
+}
+
+/**
+ * The serving route's name, sanitized like any other identifier except that it
+ * may carry a space inside it.
+ *
+ * OpenRouter names a route the way it displays it — `Sail Research`, `Io Net`,
+ * `Thinking Machines` — and that name is exactly what `provider.ignore` takes
+ * back, so the general identifier rule, which rejects a space outright, was
+ * throwing away the only handle the seam has on the route that just failed
+ * (#233). Still bounded, still no control characters, still shape and not
+ * content: a route name is an identifier the provider chose, never an answer.
+ */
+function routeName(value: string): string {
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9_.:/-](?:[A-Za-z0-9_.:/ -]{0,62}[A-Za-z0-9_.:/-])?$/.test(trimmed)
+    ? trimmed
+    : "[unnamed]";
 }
 
 function valueAtPath(value: unknown, path: (string | number)[]): unknown {
@@ -223,16 +277,16 @@ function firstOf(value: unknown): unknown {
 function upstreamServer(payload: JsonObject | null): string | null {
   if (!payload) return null;
   if (typeof payload.provider === "string" && payload.provider !== "") {
-    return safeName(payload.provider);
+    return routeName(payload.provider);
   }
   const named = asObject(asObject(payload.error)?.metadata)?.provider_name;
-  return typeof named === "string" && named !== "" ? safeName(named) : null;
+  return typeof named === "string" && named !== "" ? routeName(named) : null;
 }
 
 /** The numeric code the provider or its upstream gave, where it gave one. */
 function upstreamCode(payload: JsonObject | null): number | null {
   const code = asObject(payload?.error)?.code;
-  if (typeof code === "number" && Number.isInteger(code)) return code;
+  if (typeof code === "number" && Number.isSafeInteger(code)) return code;
   if (typeof code === "string" && /^\d{1,5}$/.test(code)) return Number(code);
   return null;
 }
@@ -264,6 +318,8 @@ function isPopulated(value: unknown): boolean {
 const CLAUSES: Record<ModelBoundaryClassification, string> = {
   transport_failure: "the request never reached the provider",
   request_timeout: "a model call was in flight when the request ceiling fired",
+  repetition_loop: "the streamed answer degenerated into a repetition loop",
+  answer_overrun: "the streamed answer ran past the most one call may deliver",
   http_error: "the provider refused the call",
   empty_body: "the provider answered with no body",
   unparseable_body: "the provider's body is not JSON",

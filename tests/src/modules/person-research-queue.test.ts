@@ -11,7 +11,7 @@ const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-test("queue coalesces creation requests, resumes after restart, and reserves failed calls against daily limits", async () => {
+test("queue coalesces creation requests and counts failed calls without deferring them to another day", async () => {
   const root = mkdtempSync(join(tmpdir(), "research-queue-"));
   roots.push(root);
   const people = new WorkspacePersonProfiles({
@@ -29,7 +29,7 @@ test("queue coalesces creation requests, resumes after restart, and reserves fai
   let now = new Date("2026-09-05T12:00:00Z");
   const deps = { workspaceDir: root, people, research, now: () => now, enabled: () => true };
   const first = new PersonResearchQueue(deps);
-  first.configure({ dailyCalls: 1, paused: false });
+  first.configure({ paused: false });
   first.enqueue(person.id, "created");
   first.enqueue(person.id, "meeting");
   const queue = new PersonResearchQueue(deps);
@@ -39,7 +39,8 @@ test("queue coalesces creation requests, resumes after restart, and reserves fai
   expect(queue.status().jobs[0]?.state).toBe("unavailable");
   queue.enqueue(person.id, "explicit");
   await queue.tick();
-  expect(queue.status().jobs[0]?.state).toBe("paused");
+  expect(queue.status().jobs[0]?.state).toBe("unavailable");
+  expect(queue.status().usedCalls).toBe(2);
   now = new Date("2026-09-06T12:00:00Z");
   await queue.tick();
   expect(queue.status().usedCalls).toBe(1);
@@ -215,11 +216,13 @@ test("resumes the retained document after interruption during extraction without
   expect(searches).toBe(1);
   expect(retrievals).toBe(2);
   expect(extractions).toBe(2);
-  expect(restarted.status().jobs[0].calls).toBe(5);
+  /* `calls` counts model calls now that requests are bounded separately:
+     one extraction before the interruption and one after it. */
+  expect(restarted.status().jobs[0].calls).toBe(2);
   expect(restarted.status().jobs[0].elapsedMilliseconds).toBeGreaterThanOrEqual(0);
 });
 
-test("daily rollover resumes the pending extraction without resetting the profile allowance", async () => {
+test("continuous research finishes pending extraction before daily rollover", async () => {
   const root = mkdtempSync(join(tmpdir(), "research-daily-resume-"));
   roots.push(root);
   const people = new WorkspacePersonProfiles({
@@ -269,20 +272,22 @@ test("daily rollover resumes the pending extraction without resetting the profil
   });
   const deps = { workspaceDir: root, people, research, now: () => now, enabled: () => true };
   const queue = new PersonResearchQueue(deps);
-  queue.configure({ dailyCalls: 2, profileCalls: 3 });
+  queue.configure({ profileCalls: 3 });
   queue.enqueue(person.id, "created");
   await queue.tick();
-  const paused = queue.status().jobs[0];
-  expect(paused.state).toBe("paused");
-  expect(paused.checkpoint?.pendingSourceId).toBeTruthy();
-  expect(paused.calls).toBe(2);
+  const completed = queue.status().jobs[0];
+  expect(completed.state).toBe("empty");
+  /* A completed operation leaves no traversal behind: the next run is a
+     refresh of changed evidence, not the second half of this one. */
+  expect(completed.checkpoint).toBeUndefined();
+  expect(completed.calls).toBe(1);
   now = new Date("2026-09-06T12:00:00Z");
   const restarted = new PersonResearchQueue(deps);
   await restarted.tick();
   expect(scope).toContain("Full historical");
   expect([searches, retrievals, extractions]).toEqual([1, 1, 1]);
-  expect(restarted.status().jobs[0].calls).toBe(3);
-  expect(restarted.status().usedCalls).toBe(1);
+  expect(restarted.status().jobs[0].calls).toBe(1);
+  expect(restarted.status().usedCalls).toBe(0);
 });
 
 test("SIGKILL during extraction resumes durable evidence and remaining calls in a new process owner", async () => {
@@ -334,18 +339,20 @@ test("SIGKILL during extraction resumes durable evidence and remaining calls in 
       research,
       enabled: () => true,
     });
-    expect(queue.status().jobs[0].calls).toBe(3);
+    /* One model call was reserved before the process died; the retained
+       document and that reservation both survive into the new owner. */
+    expect(queue.status().jobs[0].calls).toBe(1);
     expect(queue.status().jobs[0].checkpoint?.pendingSourceId).toBeTruthy();
     await queue.tick();
     expect(extractions).toBe(1);
-    expect(queue.status().jobs[0].calls).toBe(4);
+    expect(queue.status().jobs[0].calls).toBe(2);
     expect(queue.status().jobs[0].elapsedMilliseconds).toBeGreaterThan(0);
   } finally {
     child.kill("SIGKILL");
   }
 });
 
-test("aged backfill wins fairly while concurrent ticks enforce one shared daily allowance", async () => {
+test("aged backfill wins fairly while concurrent ticks enforce configured concurrency", async () => {
   const root = mkdtempSync(join(tmpdir(), "research-fairness-"));
   roots.push(root);
   const people = new WorkspacePersonProfiles({
@@ -375,7 +382,7 @@ test("aged backfill wins fairly while concurrent ticks enforce one shared daily 
     now: () => now,
     enabled: () => true,
   });
-  queue.configure({ dailyCalls: 1, concurrency: 2 });
+  queue.configure({ concurrency: 1 });
   queue.enqueue(older.id, "backfill");
   now = new Date("2026-09-05T12:00:00Z");
   const meeting = people.create({ primaryEmail: "meeting@example.com" });

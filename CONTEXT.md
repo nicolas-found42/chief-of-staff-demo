@@ -318,18 +318,37 @@ _Avoid_: Schema (alone), extraction shape, output format
 How a model is made to answer in a Result Shape. Three of them, ordered by how deterministic they
 are: the provider constrains decoding to the shape, or it constrains the arguments of a call the
 model is required to make, or the shape is merely asked for in the prompt. A model gets the most
-deterministic binding it declares support for, and a weaker one only where support is unknown.
+deterministic binding it declares support for by default; a caller may prefer another explicitly
+supported binding for its request (ADR-0065). A weaker one is also eligible when support is unknown
+or an open answer runs away — repeating one short unit, or running past the most one call may
+deliver (ADR-0064, ADR-0070) — and so is a stronger one the model declares, so that a preference
+does not skip a rung (ADR-0069).
 _Avoid_: Structured output (names one binding, not the choice), response format, JSON mode
 
 **Model-boundary failure**:
 What a failed call to a model is, at the Shell's one LLM seam. It carries classified facts rather
 than a sentence — which provider and model were called, which upstream answered, why the model
 stopped, the body's byte length, which fields of the answer arrived populated or empty, and the
-top-level keys that came back — under one of eight stable classifications. Callers decide
+top-level keys that came back — under a stable classification. Callers decide
 retryability and wording from those facts, never by matching the message. It records shape only:
 transcripts are private and Source Items are untrusted evidence, so no field of it holds payload
 text.
 _Avoid_: LLM error, provider error, extraction error (that is the Run event, not the failure)
+
+**Upstream Route**:
+The server that actually answered one model call, behind the provider the Shell called. One model
+is served by many of them and the provider picks per call, so they are the reason two identical
+calls to one model behave nothing alike. A route is observation, never configuration: it is
+recorded from what the answer says served it.
+_Avoid_: Provider (that is the seam the Shell calls), endpoint, upstream provider
+
+**Route Rest**:
+A period during which a route that failed is not asked again. Earned only by a failure that
+belongs to the route — a stalled stream, a repetition loop, a capacity refusal — never by an
+answer that would be wrong on every route (ADR-0068). A rest is per model and route, because a
+route can serve one model well and another badly, and it is carried on the next call as a request
+to route around it rather than enforced by picking a route.
+_Avoid_: Ban, blocklist, allowlist (a rest names what just failed, never what will work)
 
 **Prompt Eval Gate**:
 The check that a prompt still earns its result. The Gate Model answers every fixture transcript,
@@ -418,6 +437,38 @@ A durable, Workspace-owned dossier of one person, composed of sourced Person Evi
 identity, work, expertise, ideas, and connections. Its readable account and detailed records share
 the same evidence, independently of the workflow that first encountered the person.
 _Avoid_: Guest Profile, guest dossier, contact profile (the person need not be a contact)
+
+**Person Research Operation**:
+One continuous investigation of a Person Profile's public evidence, with findings published as
+research proceeds and an explicit conclusion that distinguishes completion from interruption or
+unfinished work stopped by a safety bound. A later refresh investigates changed evidence; it does
+not imply that an unfinished investigation was completed.
+_Avoid_: Enrichment pass, daily research allowance, research refresh (for unfinished work)
+
+**Person Research Benchmark**:
+A curated reference collection for evaluating person research, with independently checked, dated
+evidence and expectations that may exceed the application's current source coverage. It assesses
+factual reliability, completeness, meeting-preparation usefulness, and operational reliability
+separately; honest uncertainty does not establish successful research.
+_Avoid_: Prompt Eval Gate (that evaluates transcript extraction), profile score
+
+**Benchmark Person**:
+One public person represented in the Person Research Benchmark by sourced reference facts and
+conclusions the evidence does not justify. The reference describes what research should recover,
+including evidence the application cannot yet collect.
+_Avoid_: Golden (reserved for transcript expectations), generated example Profile
+
+**Benchmark Assessment**:
+An evaluation of retained Person Research evidence against fixed references and judge configuration.
+A complete assessment covers reference recovery, support and usefulness; reference verdicts are
+not credited until support/usefulness assessment completes and evidence guards pass.
+_Avoid_: Research completion, overall person score
+
+**Person Research Failure**:
+A recorded inability to complete a particular part of researching a person, identifying the failed
+stage, observed cause, attempted recovery and evidence left unavailable. It distinguishes an
+inaccessible source or failed method from an absence of information about the person.
+_Avoid_: No public footprint, empty result (unless the search actually succeeded with no matches)
 
 **Identity Signal**:
 An email address, full name, social handle, profile URL, employer clue, or other observed identifier

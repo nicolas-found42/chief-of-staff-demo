@@ -1,0 +1,745 @@
+import {
+  BenchmarkComparisonSchema,
+  type BenchmarkComparison,
+  type BenchmarkGroupSummary,
+  type BenchmarkPerson,
+  type BenchmarkPersonResult,
+  type BenchmarkReport,
+} from "@chief-of-staff-demo/shared";
+import { requirementLabel } from "./evaluate.js";
+
+/**
+ * Grouped results, always with their denominators.
+ *
+ * A group without its denominator is how an aggregate improvement hides a
+ * regression: "eight recovered" says nothing until it is eight of how many,
+ * over how many people.
+ */
+export function summarizeGroups(
+  people: BenchmarkPerson[],
+  results: BenchmarkPersonResult[],
+): BenchmarkGroupSummary[] {
+  const byPerson = new Map(people.map((person) => [person.slug, person]));
+  const dimensions: {
+    dimension: BenchmarkGroupSummary["dimension"];
+    key: (person: BenchmarkPerson) => string[];
+  }[] = [
+    { dimension: "industry", key: (person) => [person.industry] },
+    { dimension: "role", key: (person) => [person.role] },
+    { dimension: "footprint", key: (person) => [person.footprint] },
+    { dimension: "language", key: (person) => [person.language] },
+    { dimension: "region", key: (person) => [person.region] },
+    {
+      dimension: "reference-source-family",
+      key: (person) => [...new Set(person.documents.map((document) => document.family))],
+    },
+  ];
+  const summaries: BenchmarkGroupSummary[] = [];
+  for (const { dimension, key } of dimensions) {
+    const buckets = new Map<string, BenchmarkPersonResult[]>();
+    for (const result of results) {
+      const person = byPerson.get(result.slug);
+      if (!person) continue;
+      for (const value of key(person)) {
+        const bucket = buckets.get(value) ?? [];
+        bucket.push(result);
+        buckets.set(value, bucket);
+      }
+    }
+    for (const [value, bucket] of [...buckets].sort(([a], [b]) => a.localeCompare(b)))
+      summaries.push({
+        dimension,
+        key: value,
+        people: bucket.length,
+        referenceFacts: bucket.reduce((sum, entry) => sum + entry.completeness.referenceFacts, 0),
+        recovered: bucket.reduce((sum, entry) => sum + entry.completeness.recovered, 0),
+        ambiguous: bucket.reduce((sum, entry) => sum + entry.completeness.ambiguous, 0),
+        criticalFindings: bucket.reduce(
+          (sum, entry) => sum + entry.factualReliability.criticalFindings,
+          0,
+        ),
+        overclaims: bucket.reduce(
+          (sum, entry) => sum + entry.factualReliability.overclaims.length,
+          0,
+        ),
+      });
+  }
+  return summaries;
+}
+
+/** Every reference fact nobody recovered: the concrete follow-up target list. */
+export function remainingMisses(
+  people: BenchmarkPerson[],
+  results: BenchmarkPersonResult[],
+): BenchmarkReport["remainingMisses"] {
+  const byPerson = new Map(people.map((person) => [person.slug, person]));
+  const misses: BenchmarkReport["remainingMisses"] = [];
+  for (const result of results) {
+    const person = byPerson.get(result.slug);
+    if (!person) continue;
+    for (const judgement of result.completeness.judgements) {
+      if (judgement.verdict === "recovered") continue;
+      const fact = person.facts.find((entry) => entry.id === judgement.factId);
+      if (!fact) continue;
+      misses.push({
+        slug: person.slug,
+        factId: fact.id,
+        statement: fact.statement,
+        acquisition: fact.acquisition,
+        requirements: fact.requirements,
+        explanation:
+          fact.acquisition === "beyond-current-coverage"
+            ? `${judgement.verdict}: ${fact.note ?? "the reference records evidence the application cannot currently acquire."}`
+            : `${judgement.verdict}: ${judgement.rationale}`,
+      });
+    }
+  }
+  return misses;
+}
+
+/**
+ * Compare two runs.
+ *
+ * The comparison refuses to be a headline number. It reports recovery on both
+ * sides against the same denominator, the critical findings and overclaims each
+ * side produced, and — first — whether the two runs were comparable at all. A
+ * different corpus version, judge or model makes the answer `not-comparable`
+ * rather than a delta with a footnote nobody reads.
+ */
+function assessmentComplete(person: BenchmarkPersonResult): boolean {
+  return (
+    !!person.assessment?.operationId &&
+    person.assessment.integrity === "completed" &&
+    person.assessment.judge === "completed"
+  );
+}
+
+function criticalKeys(person: BenchmarkPersonResult): string[] {
+  return (
+    person.factualReliability.criticalFindingKeys ??
+    person.factualReliability.integrityFindings
+      .filter((finding) => finding.severity === "critical")
+      .map(
+        (finding) =>
+          finding.fingerprint ?? `${finding.check}:${finding.detail.replace(/\s+/g, " ").trim()}`,
+      )
+  );
+}
+
+function completeCriticalEvidence(person: BenchmarkPersonResult): boolean {
+  const reliability = person.factualReliability;
+  if (reliability.criticalFindingKeys)
+    return reliability.criticalFindingKeys.length === reliability.criticalFindings;
+  const findings = reliability.integrityFindings.filter(
+    (finding) => finding.severity === "critical",
+  );
+  return (
+    findings.length === reliability.criticalFindings &&
+    findings.every((finding) => !!finding.fingerprint)
+  );
+}
+
+function overclaimKeys(person: BenchmarkPersonResult, wrongPersonOnly = false): string[] {
+  return person.factualReliability.overclaims
+    .filter((finding) => !wrongPersonOnly || finding.kind === "wrong-person")
+    .map((finding) =>
+      JSON.stringify(
+        [finding.kind, finding.statement, finding.citedQuote, finding.matchedUnjustifiedId].map(
+          (value) => value?.replace(/\s+/g, " ").trim() ?? null,
+        ),
+      ),
+    );
+}
+
+/** Compare evidence identities as a multiset, so replacement failures cannot cancel each other. */
+function introduced(before: string[], after: string[]): number {
+  const remaining = new Map<string, number>();
+  for (const key of before) remaining.set(key, (remaining.get(key) ?? 0) + 1);
+  let added = 0;
+  for (const key of after) {
+    const count = remaining.get(key) ?? 0;
+    if (count) remaining.set(key, count - 1);
+    else added += 1;
+  }
+  return added;
+}
+
+/** Never infer successful assessment from legacy status or synthesized fallback judgements. */
+function completeEvaluation(report: BenchmarkReport): boolean {
+  const execution = report.execution;
+  if (!execution || execution.status !== "completed" || report.status === "interrupted")
+    return false;
+  const sameMembers = (expected: string[], actual: string[]) =>
+    new Set(expected).size === expected.length &&
+    new Set(actual).size === actual.length &&
+    JSON.stringify([...expected].sort()) === JSON.stringify([...actual].sort());
+  return (
+    execution.selected.length > 0 &&
+    sameMembers(
+      execution.selected,
+      report.people.map((person) => person.slug),
+    ) &&
+    sameMembers(execution.selected, report.selection.evaluated) &&
+    sameMembers(execution.selected, Object.keys(report.provenance.referenceVersions)) &&
+    execution.evaluated === report.people.length &&
+    execution.assessed === report.people.length &&
+    report.people.every(
+      (person) =>
+        assessmentComplete(person) &&
+        completeCriticalEvidence(person) &&
+        overclaimKeys(person, true).length === person.factualReliability.wrongPersonAttributions &&
+        person.mode === report.mode &&
+        person.referenceVersion === report.provenance.referenceVersions[person.slug],
+    ) &&
+    sameMembers(
+      execution.scenarioIds,
+      (report.collection ?? []).map((result) => result.scenarioId),
+    ) &&
+    (report.collection ?? []).every((result) => result.assessmentStatus === "completed")
+  );
+}
+
+export function compareReports(
+  baseline: BenchmarkReport,
+  candidate: BenchmarkReport,
+): BenchmarkComparison {
+  const conditionChanges: string[] = [];
+  if (!completeEvaluation(baseline))
+    conditionChanges.push(
+      "Baseline evaluation is incomplete or lacks explicit assessment evidence.",
+    );
+  if (!completeEvaluation(candidate))
+    conditionChanges.push(
+      "Candidate evaluation is incomplete or lacks explicit assessment evidence.",
+    );
+  const note = (label: string, before: string, after: string) => {
+    if (before !== after) conditionChanges.push(`${label}: ${before} → ${after}`);
+  };
+  note("corpus version", baseline.provenance.corpusVersion, candidate.provenance.corpusVersion);
+  note("judge provider", baseline.provenance.judgeProvider, candidate.provenance.judgeProvider);
+  note(
+    "evaluated people",
+    JSON.stringify([...baseline.selection.evaluated].sort()),
+    JSON.stringify([...candidate.selection.evaluated].sort()),
+  );
+  note("judge model", baseline.provenance.judgeModel, candidate.provenance.judgeModel);
+  note("judge version", baseline.provenance.judgeVersion, candidate.provenance.judgeVersion);
+  note("research model", baseline.provenance.researchModel, candidate.provenance.researchModel);
+  note("mode", baseline.mode, candidate.mode);
+  note("network", baseline.provenance.network, candidate.provenance.network);
+  for (const [key, value] of Object.entries(baseline.provenance.researchSettings))
+    note(
+      `research setting ${key}`,
+      String(value),
+      String(candidate.provenance.researchSettings[key] ?? "absent"),
+    );
+
+  /* A changed reference version invalidates the comparison outright: the two
+     runs were not answering the same questions. */
+  const referenceChanges = [
+    ...new Set([
+      ...Object.keys(baseline.provenance.referenceVersions),
+      ...Object.keys(candidate.provenance.referenceVersions),
+    ]),
+  ]
+    .filter(
+      (slug) =>
+        baseline.provenance.referenceVersions[slug] !==
+        candidate.provenance.referenceVersions[slug],
+    )
+    .map((slug) => [slug, baseline.provenance.referenceVersions[slug] ?? "absent"] as const);
+  for (const [slug, version] of referenceChanges)
+    conditionChanges.push(
+      `reference ${slug}: ${version} → ${candidate.provenance.referenceVersions[slug] ?? "absent"}`,
+    );
+
+  const comparable =
+    referenceChanges.length === 0 &&
+    JSON.stringify([...baseline.selection.evaluated].sort()) ===
+      JSON.stringify([...candidate.selection.evaluated].sort()) &&
+    baseline.provenance.judgeProvider === candidate.provenance.judgeProvider &&
+    baseline.provenance.corpusVersion === candidate.provenance.corpusVersion &&
+    baseline.provenance.judgeModel === candidate.provenance.judgeModel &&
+    baseline.provenance.judgeVersion === candidate.provenance.judgeVersion &&
+    baseline.mode === candidate.mode &&
+    completeEvaluation(baseline) &&
+    completeEvaluation(candidate);
+
+  const baselineBySlug = new Map(baseline.people.map((entry) => [entry.slug, entry]));
+  const perPerson: BenchmarkComparison["perPerson"] = [];
+  for (const entry of candidate.people) {
+    const before = baselineBySlug.get(entry.slug);
+    if (!before) continue;
+    perPerson.push({
+      slug: entry.slug,
+      referenceFacts: entry.completeness.referenceFacts,
+      baselineRecovered: before.completeness.recovered,
+      candidateRecovered: entry.completeness.recovered,
+      baselineConclusion: before.operational.conclusion,
+      candidateConclusion: entry.operational.conclusion,
+      newCriticalFindings: introduced(criticalKeys(before), criticalKeys(entry)),
+      newWrongPersonAttributions: introduced(
+        overclaimKeys(before, true),
+        overclaimKeys(entry, true),
+      ),
+      newOverclaims: introduced(overclaimKeys(before), overclaimKeys(entry)),
+    });
+  }
+
+  const totals = {
+    referenceFacts: perPerson.reduce((sum, entry) => sum + entry.referenceFacts, 0),
+    baselineRecovered: perPerson.reduce((sum, entry) => sum + entry.baselineRecovered, 0),
+    candidateRecovered: perPerson.reduce((sum, entry) => sum + entry.candidateRecovered, 0),
+    baselineCriticalFindings: baseline.people.reduce(
+      (sum, entry) => sum + entry.factualReliability.criticalFindings,
+      0,
+    ),
+    candidateCriticalFindings: candidate.people.reduce(
+      (sum, entry) => sum + entry.factualReliability.criticalFindings,
+      0,
+    ),
+    baselineOverclaims: baseline.people.reduce(
+      (sum, entry) => sum + entry.factualReliability.overclaims.length,
+      0,
+    ),
+    candidateOverclaims: candidate.people.reduce(
+      (sum, entry) => sum + entry.factualReliability.overclaims.length,
+      0,
+    ),
+  };
+
+  const newCritical = perPerson.reduce((sum, entry) => sum + entry.newCriticalFindings, 0);
+  const outcomes = (report: BenchmarkReport) => {
+    const counts = { completed: 0, bounded: 0, interrupted: 0 };
+    for (const person of report.people) counts[person.operational.conclusion] += 1;
+    return counts;
+  };
+  const operational = {
+    baselineStatus: baseline.status,
+    candidateStatus: candidate.status,
+    baseline: outcomes(baseline),
+    candidate: outcomes(candidate),
+    regressedPeople: perPerson
+      .filter(
+        (person) =>
+          person.baselineConclusion === "completed" && person.candidateConclusion !== "completed",
+      )
+      .map((person) => person.slug),
+  };
+  const newIdentityFailures = perPerson.reduce(
+    (sum, entry) => sum + (entry.newWrongPersonAttributions ?? 0),
+    0,
+  );
+  const gained = totals.candidateRecovered - totals.baselineRecovered;
+  const verdict = !comparable
+    ? "not-comparable"
+    : gained > 0 && newCritical === 0 && newIdentityFailures === 0
+      ? "improved"
+      : gained < 0 || newCritical > 0 || newIdentityFailures > 0
+        ? "regressed"
+        : "unchanged";
+
+  return BenchmarkComparisonSchema.parse({
+    schemaVersion: 1,
+    baselineRunId: baseline.runId,
+    candidateRunId: candidate.runId,
+    conditionChanges,
+    comparable,
+    sourceContributions: [
+      ...new Set(
+        [...baseline.people, ...candidate.people].flatMap((person) =>
+          (person.sourceContributions ?? []).map((entry) => entry.family),
+        ),
+      ),
+    ]
+      .sort()
+      .map((family) => ({
+        family,
+        baseline: contributionTotals(baseline.people, family),
+        candidate: contributionTotals(candidate.people, family),
+      })),
+    totals,
+    perPerson,
+    operational,
+    verdict,
+    verdictDetail: !comparable
+      ? `Not comparable: ${conditionChanges.join("; ") || "one of the runs did not complete"}.`
+      : `Reference coverage: ${gained >= 0 ? "+" : ""}${String(gained)} reference facts recovered out of ${String(totals.referenceFacts)}; ${String(newCritical)} newly introduced critical integrity findings; ${String(newIdentityFailures)} newly introduced wrong-person attributions. Research outcomes are separate: ${String(operational.regressedPeople.length)} people regressed from completed research to bounded or interrupted. Failed run statuses remain unchanged.`,
+  });
+}
+
+function contributionTotals(
+  people: BenchmarkPersonResult[],
+  family: NonNullable<BenchmarkPersonResult["sourceContributions"]>[number]["family"],
+) {
+  if (people.some((person) => person.sourceContributions === undefined)) return null;
+  const entries = people.flatMap((person) =>
+    (person.sourceContributions ?? []).filter((entry) => entry.family === family),
+  );
+  return {
+    people: entries.length,
+    retainedSources: entries.reduce((sum, entry) => sum + entry.sources.length, 0),
+    citedSources: entries.reduce(
+      (sum, entry) => sum + entry.sources.filter((source) => source.cited).length,
+      0,
+    ),
+    recoveredFacts: entries.reduce((sum, entry) => sum + entry.recoveredFactIds.length, 0),
+    exclusiveRecoveredFacts: entries.reduce(
+      (sum, entry) => sum + entry.exclusiveRecoveredFactIds.length,
+      0,
+    ),
+  };
+}
+
+/** The readable report. Deliberately plain: it is read in a terminal and in a diff. */
+export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[]): string {
+  const byPerson = new Map(people.map((person) => [person.slug, person]));
+  const lines: string[] = [];
+  lines.push(`# Person Research Benchmark — ${report.mode}`);
+  lines.push("");
+  lines.push(`Run \`${report.runId}\` · **${report.status}** · ${report.statusDetail}`);
+  if (report.reassessment) {
+    lines.push(
+      `Reassessment of run \`${report.reassessment.originalRunId}\`; no research was repeated. Original research conditions and operational outcomes are retained.`,
+    );
+    lines.push(
+      `Assessment: ${report.reassessment.startedAt} to ${report.reassessment.finishedAt}; judge ${report.provenance.judgeVersion}; ${String(report.reassessment.inputCharacters)} input / ${String(report.reassessment.outputCharacters)} output characters. Tokens and cost unavailable.`,
+    );
+  }
+  if (report.execution)
+    lines.push(
+      `Evaluation execution: ${report.execution.status}; ${String(report.execution.assessed)} / ${String(report.execution.selected.length)} selected people fully assessed. Research failures remain reported separately.`,
+    );
+  lines.push("");
+  lines.push("## Conditions");
+  lines.push("");
+  lines.push("| Field | Value |");
+  lines.push("| --- | --- |");
+  const provenance: [string, string][] = [
+    ["Corpus version", report.provenance.corpusVersion],
+    ["Pipeline", report.provenance.pipeline],
+    [
+      "Research provider/model",
+      `${report.provenance.researchProvider} · ${report.provenance.researchModel}`,
+    ],
+    [
+      "Judge provider/model",
+      `${report.provenance.judgeProvider} · ${report.provenance.judgeModel}`,
+    ],
+    ["Judge version", report.provenance.judgeVersion],
+    ["Prompt version", report.provenance.promptVersion],
+    ["Network", report.provenance.network],
+    ["Started", report.provenance.startedAt],
+    ["Finished", report.provenance.finishedAt],
+    [
+      "Research settings",
+      Object.entries(report.provenance.researchSettings)
+        .map(([key, value]) => `${key}=${String(value)}`)
+        .join(", "),
+    ],
+    [
+      "Measured usage",
+      report.provenance.usage
+        ? `${String(report.provenance.usage.inputCharacters)} input characters, ${String(report.provenance.usage.outputCharacters)} output characters; tokens and cost unavailable from the model boundary`
+        : "unavailable from the model boundary",
+    ],
+  ];
+  for (const [field, value] of provenance) lines.push(`| ${field} | ${value} |`);
+  lines.push("");
+
+  if (report.selection.skipped.length) {
+    lines.push("## Not evaluated");
+    lines.push("");
+    for (const skipped of report.selection.skipped)
+      lines.push(`- \`${skipped.slug}\`: ${skipped.reason}`);
+    lines.push("");
+  }
+
+  lines.push("## Per person");
+  lines.push("");
+  lines.push(
+    "| Person | Industry | Footprint | Recovered / facts | Ambiguous | Critical | Overclaims | Claims | Sources | Families | Conclusion |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+  for (const result of report.people) {
+    const person = byPerson.get(result.slug);
+    lines.push(
+      `| ${result.slug} | ${person?.industry ?? "?"} | ${person?.footprint ?? "?"} | ${String(result.completeness.recovered)} / ${String(result.completeness.referenceFacts)} | ${String(result.completeness.ambiguous)} | ${String(result.factualReliability.criticalFindings)} | ${String(result.factualReliability.overclaims.length)} | ${String(result.richness.claims)} | ${String(result.richness.sources)} | ${String(result.richness.distinctFamilies)} | ${result.operational.conclusion} |`,
+    );
+  }
+  lines.push("");
+
+  if (report.collection?.length) {
+    lines.push("## Capability intersections (r18)");
+    lines.push("");
+    lines.push(
+      "| Scenario | Expected recovered | Active / researched Profiles | Demonstrated / claimed only | Missing expected people | Additional matches for review |",
+    );
+    lines.push("| --- | --- | --- | --- | --- | --- |");
+    for (const result of report.collection) {
+      lines.push(
+        `| ${result.scenarioId} | ${String(result.recoveredMatches.length)} / ${String(result.expectedMatches.length)} | ${String(result.coverage.activeProfiles)} / ${String(result.coverage.researchedProfiles)} | ${String(result.coverage.demonstrated)} / ${String(result.coverage.claimedOnly)} | ${result.missingMatches.join(", ") || "none"} | ${result.additionalMatchesForReview.join(", ") || "none"} |`,
+      );
+      lines.push("");
+      lines.push(`Query categories: ${result.categories.join(" + ")}. ${result.scope}`);
+      lines.push("");
+    }
+    lines.push(
+      "The JSON report retains matched claim/work IDs and citation URLs, hashes and quotations. Collection recovery is separate from individual reference-fact counts.",
+    );
+    lines.push("");
+  }
+
+  lines.push("## The four measures, kept separate");
+  lines.push("");
+  const totals = report.people.reduce(
+    (sum, entry) => ({
+      facts: sum.facts + entry.completeness.referenceFacts,
+      recovered: sum.recovered + entry.completeness.recovered,
+      partial: sum.partial + entry.completeness.partial,
+      ambiguous: sum.ambiguous + entry.completeness.ambiguous,
+      critical: sum.critical + entry.factualReliability.criticalFindings,
+      overclaims: sum.overclaims + entry.factualReliability.overclaims.length,
+      wrongPerson: sum.wrongPerson + entry.factualReliability.wrongPersonAttributions,
+      verified: sum.verified + entry.factualReliability.verifiedCitations,
+      citations: sum.citations + entry.factualReliability.totalCitations,
+      claims: sum.claims + entry.richness.claims,
+      sources: sum.sources + entry.richness.sources,
+      understanding: sum.understanding + entry.usefulness.understanding,
+      completedOperations:
+        sum.completedOperations + (entry.operational.conclusion === "completed" ? 1 : 0),
+    }),
+    {
+      facts: 0,
+      recovered: 0,
+      partial: 0,
+      ambiguous: 0,
+      critical: 0,
+      overclaims: 0,
+      wrongPerson: 0,
+      verified: 0,
+      citations: 0,
+      claims: 0,
+      sources: 0,
+      understanding: 0,
+      completedOperations: 0,
+    },
+  );
+  const people_ = Math.max(1, report.people.length);
+  lines.push(
+    `- **Factual reliability** — ${String(totals.verified)} of ${String(totals.citations)} citations verify against their retained source version; ${String(totals.critical)} critical integrity findings; ${String(totals.overclaims)} judged overclaims, of which ${String(totals.wrongPerson)} are wrong-person attributions.`,
+  );
+  lines.push(
+    `- **Completeness** — ${String(totals.recovered)} of ${String(totals.facts)} reference facts recovered, ${String(totals.partial)} partially, ${String(totals.ambiguous)} left ambiguous for review.`,
+  );
+  lines.push(
+    `- **Absolute richness** — ${String(totals.claims)} published claims over ${String(totals.sources)} retained sources; reported beside completeness, never folded into it.`,
+  );
+  lines.push(
+    `- **Meeting-preparation usefulness** — mean understanding ${(totals.understanding / people_).toFixed(2)} of 3, judged with cited evidence.`,
+  );
+  lines.push(
+    `- **Operational reliability** — ${String(totals.completedOperations)} of ${String(report.people.length)} operations reached their own completion conditions.`,
+  );
+  lines.push("");
+
+  lines.push("## By group (with denominators)");
+  lines.push("");
+  lines.push(
+    "Reference-source-family groups are cohorts of people whose reference documents include that family; their whole-person recovery is not a production source contribution.",
+  );
+  lines.push("");
+  lines.push(
+    "| Dimension | Group | People | Recovered / facts | Ambiguous | Critical | Overclaims |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+  for (const group of report.groups)
+    lines.push(
+      `| ${group.dimension} | ${group.key} | ${String(group.people)} | ${String(group.recovered)} / ${String(group.referenceFacts)} | ${String(group.ambiguous)} | ${String(group.criticalFindings)} | ${String(group.overclaims)} |`,
+    );
+  lines.push("");
+
+  lines.push("## Actual source-family contributions");
+  lines.push("");
+  lines.push(
+    "These counts follow actual retained source versions and cited claims; multiple retained versions of one URL are not independent sources. Recovered facts exclude critical-invalid citations and judged overclaims; a faithfully recovered self-report remains a self-report. Exclusive recovery means the matched claim cites only that family, not that the family was causally necessary or independent of every other source. A fact may appear in multiple families; do not add family recovery totals.",
+  );
+  lines.push("");
+  lines.push(
+    "| Person | Actual family | Retained / cited versions | Cited claims | Recovered / person's facts | Exclusive recovered |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- |");
+  for (const person of report.people) {
+    if (person.sourceContributions === undefined) {
+      lines.push(`| ${person.slug} | unmeasured in this report | — | — | — | — |`);
+      continue;
+    }
+    if (person.sourceContributions.length === 0)
+      lines.push(
+        `| ${person.slug} | no retained sources | 0 / 0 | 0 | 0 / ${String(person.completeness.referenceFacts)} | 0 |`,
+      );
+    for (const entry of person.sourceContributions)
+      lines.push(
+        `| ${person.slug} | ${entry.family} | ${String(entry.sources.length)} / ${String(entry.sources.filter((source) => source.cited).length)} | ${String(entry.claimIds.length)} | ${String(entry.recoveredFactIds.length)} / ${String(person.completeness.referenceFacts)} | ${String(entry.exclusiveRecoveredFactIds.length)} |`,
+      );
+  }
+  lines.push("");
+  lines.push(
+    "The JSON report retains each contributing source URL, hash, upstream index, cited claim IDs and recovered reference-fact IDs, including retained sources that contributed no claims.",
+  );
+  lines.push("");
+
+  const judgeAttempts = report.people.flatMap((person) => person.assessment?.modelAttempts ?? []);
+  const collectionAttempts =
+    report.collection?.flatMap((result) => result.modelAttempts ?? []) ?? [];
+  if (judgeAttempts.length || collectionAttempts.length) {
+    lines.push("## Observed judge wire attempts");
+    lines.push("");
+    lines.push(
+      "| Assessment | Wire attempts observed | Recovery attempts initiated | Final failed attempts |",
+    );
+    lines.push("| --- | --- | --- | --- |");
+    for (const [label, attempts] of [
+      ["Individual people", judgeAttempts],
+      ["Collection scenarios", collectionAttempts],
+    ] as const) {
+      lines.push(
+        `| ${label} | ${String(attempts.length)} | ${String(attempts.filter((entry) => entry.observation.outcome === "retrying").length)} | ${String(attempts.filter((entry) => entry.observation.outcome === "failed").length)} |`,
+      );
+    }
+    lines.push("");
+    lines.push(
+      "The JSON retains correlated, sanitized attempt diagnostics even when a later attempt succeeds. These are observed wire attempts, separate from logical model invocations; uninstrumented boundaries do not supply wire counts. Character usage measures logical request text and returned answers, excluding retried wire payloads.",
+    );
+    lines.push("");
+  }
+
+  const partialJudges = report.people.filter(
+    (person) => person.assessment?.phases && person.assessment.judge !== "completed",
+  );
+  if (partialJudges.length) {
+    lines.push(
+      "## Incomplete judge phases",
+      "",
+      "| Person | Reference phase | Support/usefulness phase | Failure |",
+      "| --- | --- | --- | --- |",
+    );
+    for (const person of partialJudges) {
+      const phases = person.assessment!.phases!;
+      lines.push(
+        `| ${person.slug} | ${phases.reference.status} | ${phases.support.status} | ${escapeCell(phases.support.failure ?? phases.reference.failure ?? "Incomplete assessment")} |`,
+      );
+    }
+    lines.push(
+      "",
+      "Completed reference-stage verdicts and matched evidence remain in assessment.phases.reference.judgements in the JSON/person artifacts. They are provisional; incomplete support assessment receives no positive recovery credit.",
+      "",
+    );
+  }
+  const failureTotals: Record<string, number> = {};
+  for (const result of report.people)
+    for (const [code, count] of Object.entries(result.operational.failuresByCode))
+      failureTotals[code] = (failureTotals[code] ?? 0) + count;
+  if (Object.keys(failureTotals).length) {
+    lines.push("## Failures by reason code");
+    lines.push("");
+    lines.push("| Code | Attempts |");
+    lines.push("| --- | --- |");
+    for (const [code, count] of Object.entries(failureTotals).sort((a, b) => b[1] - a[1]))
+      lines.push(`| ${code} | ${String(count)} |`);
+    lines.push("");
+  }
+
+  lines.push("## Remaining misses");
+  lines.push("");
+  lines.push(
+    "These are the acceptance targets for follow-up source and extraction work. A miss marked `beyond-current-coverage` was authored knowing the application cannot reach it today; it stays in the reference.",
+  );
+  lines.push("");
+  lines.push("| Person | Fact | Requirements | Acquisition | Why it is still missing |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  for (const miss of report.remainingMisses.slice(0, 400))
+    lines.push(
+      `| ${miss.slug} | ${escapeCell(miss.statement)} | ${miss.requirements.map(requirementLabel).join("; ")} | ${miss.acquisition} | ${escapeCell(miss.explanation)} |`,
+    );
+  lines.push("");
+  return lines.join("\n");
+}
+
+export function renderComparison(comparison: BenchmarkComparison): string {
+  const lines: string[] = [];
+  lines.push("# Person Research Benchmark — incumbent versus expanded");
+  lines.push("");
+  lines.push(
+    `Baseline \`${comparison.baselineRunId}\` versus candidate \`${comparison.candidateRunId}\`: **${comparison.verdict}**.`,
+  );
+  lines.push("");
+  lines.push(comparison.verdictDetail);
+  lines.push("");
+  lines.push("## Research outcomes");
+  lines.push("");
+  lines.push("| Run | Status | Completed | Bounded | Interrupted |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  for (const side of ["baseline", "candidate"] as const) {
+    const counts = comparison.operational[side];
+    const status =
+      side === "baseline"
+        ? comparison.operational.baselineStatus
+        : comparison.operational.candidateStatus;
+    lines.push(
+      `| ${side} | ${status} | ${String(counts.completed)} | ${String(counts.bounded)} | ${String(counts.interrupted)} |`,
+    );
+  }
+  lines.push("");
+  lines.push(
+    `Previously completed research now bounded or interrupted: ${comparison.operational.regressedPeople.join(", ") || "none"}.`,
+  );
+  lines.push("");
+  if (comparison.conditionChanges.length) {
+    lines.push("## Conditions that differed");
+    lines.push("");
+    for (const change of comparison.conditionChanges) lines.push(`- ${change}`);
+    lines.push("");
+  } else {
+    lines.push("Both runs held the reference version, judge configuration and mode fixed.");
+    lines.push("");
+  }
+  lines.push("## Per person");
+  lines.push("");
+  lines.push(
+    "| Person | Facts | Baseline recovered | Candidate recovered | Baseline research | Candidate research | New critical | New wrong-person | New overclaims |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+  for (const entry of comparison.perPerson)
+    lines.push(
+      `| ${entry.slug} | ${String(entry.referenceFacts)} | ${String(entry.baselineRecovered)} | ${String(entry.candidateRecovered)} | ${entry.baselineConclusion} | ${entry.candidateConclusion} | ${String(entry.newCriticalFindings)} | ${String(entry.newWrongPersonAttributions ?? 0)} | ${String(entry.newOverclaims)} |`,
+    );
+  lines.push("");
+  lines.push("## Actual source-family contribution changes");
+  lines.push("");
+  lines.push(
+    "Recovery follows actual cited sources; families overlap. Exclusive means the matched claim cites one family, not proven causal necessity. Unmeasured legacy contributions stay unknown.",
+  );
+  lines.push("");
+  lines.push(
+    "| Family | Baseline retained / cited | Candidate retained / cited | Baseline recovered / exclusive | Candidate recovered / exclusive |",
+  );
+  lines.push("| --- | --- | --- | --- | --- |");
+  for (const entry of comparison.sourceContributions ?? []) {
+    const sources = (side: typeof entry.baseline) =>
+      side ? `${String(side.retainedSources)} / ${String(side.citedSources)}` : "unmeasured";
+    const recovered = (side: typeof entry.baseline) =>
+      side
+        ? `${String(side.recoveredFacts)} / ${String(side.exclusiveRecoveredFacts)}`
+        : "unmeasured";
+    lines.push(
+      `| ${entry.family} | ${sources(entry.baseline)} | ${sources(entry.candidate)} | ${recovered(entry.baseline)} | ${recovered(entry.candidate)} |`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 300);
+}

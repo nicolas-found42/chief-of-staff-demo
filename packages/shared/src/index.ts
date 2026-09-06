@@ -18,6 +18,8 @@ export * from "./workspace.js";
 export * from "./llm.js";
 export * from "./weekly-workspace.js";
 export * from "./person-dossier.js";
+export * from "./person-research.js";
+export * from "./person-benchmark.js";
 
 export type { TaskCutoverPreview, TaskCutoverReceipt } from "./task-cutover.js";
 
