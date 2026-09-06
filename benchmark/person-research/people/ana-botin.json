@@ -288,7 +288,7 @@
       "section": "connections",
       "statement": "On 18 February 2021 the European Banking Federation appointed Ana Botín-Sanz de Sautuola y O'Shea as its next President for a two-year term succeeding Jean Pierre Mustier; the announcement recaps her as Santander Executive Chairman since 2014 after leading Santander UK (2010-2014) and Banesto (2002-2010).",
       "effectiveFrom": "2021-02-18",
-      "effectiveTo": null,
+      "effectiveTo": "2023-02-18",
       "support": [
         {
           "documentId": "ebf-president-2021",
@@ -300,7 +300,8 @@
         }
       ],
       "importance": "core",
-      "acquisition": "app-supported"
+      "acquisition": "app-supported",
+      "note": "Term end derived from the stated two-year appointment term beginning 18 February 2021."
     },
     {
       "id": "iif-chair-first-woman",
@@ -345,6 +346,12 @@
       "kind": "unsupported-inference",
       "statement": "She was given the chairmanship because of her family.",
       "why": "The sources record that she is the fourth generation of her family in the role and that her father removed her from a post in 1999. Neither establishes how the 2014 appointment was decided."
+    },
+    {
+      "id": "ebf-president-current",
+      "statement": "Ana Botín is currently president of the European Banking Federation.",
+      "why": "The EBF release appointed her for a two-year term from February 2021, so that appointed term concluded in February 2023; presenting the presidency as current on the strength of the 2021 appointment is stale.",
+      "kind": "stale-as-current"
     }
   ],
   "unavailable": [

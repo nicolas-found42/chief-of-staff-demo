@@ -179,7 +179,7 @@
       "section": "career",
       "statement": "The WTO's appointment record states that Okonjo-Iweala takes office on 1 March as the first woman and the first African chosen as Director-General, welcomed by General Council Chair David Walker after a nine-month selection process.",
       "effectiveFrom": "2021-03-01",
-      "effectiveTo": null,
+      "effectiveTo": "2025-08-31",
       "support": [
         {
           "documentId": "wto-dg-appointment-2021",
@@ -191,7 +191,8 @@
         }
       ],
       "importance": "core",
-      "acquisition": "app-supported"
+      "acquisition": "app-supported",
+      "note": "Stated term expiry from the appointment record; the record notes the term is renewable."
     },
     {
       "id": "paris-club-2005-record",

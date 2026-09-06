@@ -69,7 +69,7 @@
       "url": "http://web.archive.org/web/20240523200341/https://www.bankofengland.co.uk/about/people/past/minouche-shafik/biography",
       "title": "Nemat (Minouche) Shafik — Bank of England past people biography",
       "publisher": "Bank of England",
-      "publishedAt": "2024-05-23",
+      "publishedAt": null,
       "retrievedAt": "2026-09-06T23:22:32Z",
       "family": "historical-evidence",
       "sourceClass": "self-report",
@@ -77,7 +77,7 @@
       "hash": "9ba434099c15ed125cb46ed20a5d59250efea6ea785710d03fcd2d8221536c34",
       "excerpt": "Nemat (Minouche) Shafik\nNemat (Minouche) Shafik\nNemat (Minouche) Shafik was Deputy Governor, Markets and Banking between 1 August 2014 and 28 February 2017\nBiography\nShe was responsible for reshaping the Bank's operations and balance sheet, including ensuring robust risk management practices and leading the design and execution of quantitative easing by the MPC.\nDr Shafik also oversaw the implementation of reforms to the Bank's Sterling Monetary Framework; led the Bank's work to build fair, efficient and effective financial markets; and reviewed and strengthened the Bank's Markets and Banking areas, including market intelligence and reform of the high value payments system.\nDr Shafik was jointly responsible for the Bank's international surveillance, analysis and engagement. She represented the Bank in international groups and institutions, including as G20 Deputy and in the Bank's engagement with the IMF, overseas central banks and the Bank for International Settlements (BIS). Dr Shafik sat on the Monetary Policy Committee, the Financial Policy Committee, the Bank’s Court of Directors and the Board of the Prudential Regulation Authority.\nPrior to joining the Bank, she was Deputy Managing Director of the International Monetary Fund from 2011-2014 where she was responsible for the IMF’s work in Europe and the Middle East, the IMF’s $1 billion administrative budget, human resources policies for its 3,000 staff and the IMF’s training and technical assistance on a variety of macroeconomic and financial stability issues. She regularly chaired the Board of the IMF and represented the organization in a variety of global fora.\nNemat Shafik was Permanent Secretary of the Department for International Development from March 2008 to March 2011 where she was chief executive of the department responsible for all UK development efforts. Prior to joining DFID in 2004, Nemat Shafik was Vice President at the World Bank where she improved the performance of a private sector and infrastructure portfolio of investments worth about $50 billion and managed global groups to provide both policy advice, debt and equity investments jointly with the International Finance Corporation in the areas of oil, gas and mining, telecommunications, small and medium enterprises, project finance and guarantees.",
       "rights": "public-record",
-      "note": "Dated web-archive capture (23 May 2024) of the Bank's past-people biography; the live page states no publication date, so the capture date is retained as the reference date."
+      "note": "Retained from a web-archive capture (23 May 2024) of the Bank's past-people biography; the live page states no publication date, so the capture date in this note is the reference's capture date."
     }
   ],
   "facts": [
@@ -296,7 +296,7 @@
       "section": "career",
       "statement": "The same Bank of England archive records her immediately prior posts: Deputy Managing Director of the IMF from 2011 to 2014, and Permanent Secretary of the Department for International Development from March 2008 to March 2011.",
       "effectiveFrom": "2008-03",
-      "effectiveTo": "2014-08-01",
+      "effectiveTo": "2014",
       "support": [
         {
           "documentId": "boe-past-biography",

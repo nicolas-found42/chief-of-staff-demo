@@ -53,7 +53,7 @@
       "url": "http://web.archive.org/web/20250115014203/https://www.bfi.org.uk/film/08462aec-21ae-5910-98e5-6e79f4dbbc4e/parasite",
       "title": "Parasite (2019) | BFI",
       "publisher": "British Film Institute",
-      "publishedAt": "2025-01-15",
+      "publishedAt": null,
       "retrievedAt": "2026-09-06T23:22:32Z",
       "family": "creative-records",
       "sourceClass": "primary-artifact",
@@ -61,7 +61,7 @@
       "hash": "7591d1295634b831f1e5775b2086affd3403e35d6c1db5c4e2b22468312973c0",
       "excerpt": "Parasite (2019)\nLike Get Out, Bong Joon Ho’s endlessly twisty, blackly sincere class-war thriller is a pop provocation for our unequal times.\nRent on BFI Player £ 3.50\nWatch and discover\nSight and Sound\nThe Greatest Films of All Time\nParasite\n< The Greatest Films of All Time\n“Chameleonic in its genres, shapeshifting from social realism to comedy, thriller to dystopia, Bong Joon Ho’s multilayered masterpiece at once pithily sums up the stark evils of class division (which speaks so universally) while also, prism-like, rewarding endless rewatches and reinterpretations.” Miriam Balanescu\n“Parasite has a Shakespearean sense of fate with humour, irony, horror and tragedy.” Esther Leslie\n2019 Republic of Korea Directed by Bong Joon-ho Produced by Kwak Sin-ae, Moon Yang-kwon Featuring Song Kang-ho, Lee Sunkyun, Cho Yeo-jeong Running time 132 minutes Ranked in The Greatest Films of All Time poll",
       "rights": "short-quotation",
-      "note": "Dated web-archive capture (15 January 2025) of the BFI film catalogue page; the live page states no publication date, so the capture date is retained as the reference date."
+      "note": "Retained from a web-archive capture (15 January 2025) of the BFI film catalogue page; the live page states no publication date, so the capture date in this note is the reference's capture date."
     },
     {
       "id": "yonhap-palme-or-2019",
@@ -161,7 +161,7 @@
       "note": "Korean-language evidence is retained; live discovery and language coverage remain unproven."
     },
     {
-      "id": "bfi-parasite-catalogue",
+      "id": "parasite-bfi-catalogue-entry",
       "requirements": ["r16"],
       "section": "work",
       "statement": "The BFI film catalogue lists Parasite as a 2019 Republic of Korea film directed by Bong Joon-ho with a 132-minute running time, featuring Song Kang-ho, Lee Sun-kyun and Cho Yeo-jeong; its capsule review calls it an endlessly twisty class-war thriller.",
