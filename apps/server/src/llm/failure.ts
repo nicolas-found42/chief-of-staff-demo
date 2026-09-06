@@ -81,7 +81,7 @@ export function sanitizeModelBoundaryDiagnostic(
     model: identifier(diagnostic.model),
     upstreamCode: Number.isSafeInteger(diagnostic.upstreamCode) ? diagnostic.upstreamCode : null,
     upstreamServer:
-      diagnostic.upstreamServer === null ? null : identifier(diagnostic.upstreamServer),
+      diagnostic.upstreamServer === null ? null : routeName(diagnostic.upstreamServer),
     finishReason: diagnostic.finishReason === null ? null : identifier(diagnostic.finishReason),
     topLevelKeys: names(diagnostic.topLevelKeys),
     populatedFields: names(diagnostic.populatedFields),
@@ -187,7 +187,7 @@ export function modelBoundaryFailure(input: ModelBoundaryFailureInput): ModelBou
     provider: input.call.provider,
     model: input.call.model,
     upstreamServer:
-      upstreamServer(payload) ?? (input.upstreamServer ? safeName(input.upstreamServer) : null),
+      upstreamServer(payload) ?? (input.upstreamServer ? routeName(input.upstreamServer) : null),
     upstreamCode: upstreamCode(payload),
     binding: input.call.binding,
     status: input.status ?? null,
@@ -217,6 +217,24 @@ function asObject(value: unknown): JsonObject | null {
  */
 function safeName(value: string): string {
   return /^[A-Za-z0-9_.:/-]{1,64}$/.test(value) ? value : "[unnamed]";
+}
+
+/**
+ * The serving route's name, sanitized like any other identifier except that it
+ * may carry a space inside it.
+ *
+ * OpenRouter names a route the way it displays it — `Sail Research`, `Io Net`,
+ * `Thinking Machines` — and that name is exactly what `provider.ignore` takes
+ * back, so the general identifier rule, which rejects a space outright, was
+ * throwing away the only handle the seam has on the route that just failed
+ * (#233). Still bounded, still no control characters, still shape and not
+ * content: a route name is an identifier the provider chose, never an answer.
+ */
+function routeName(value: string): string {
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9_.:/-](?:[A-Za-z0-9_.:/ -]{0,62}[A-Za-z0-9_.:/-])?$/.test(trimmed)
+    ? trimmed
+    : "[unnamed]";
 }
 
 function valueAtPath(value: unknown, path: (string | number)[]): unknown {
@@ -259,10 +277,10 @@ function firstOf(value: unknown): unknown {
 function upstreamServer(payload: JsonObject | null): string | null {
   if (!payload) return null;
   if (typeof payload.provider === "string" && payload.provider !== "") {
-    return safeName(payload.provider);
+    return routeName(payload.provider);
   }
   const named = asObject(asObject(payload.error)?.metadata)?.provider_name;
-  return typeof named === "string" && named !== "" ? safeName(named) : null;
+  return typeof named === "string" && named !== "" ? routeName(named) : null;
 }
 
 /** The numeric code the provider or its upstream gave, where it gave one. */

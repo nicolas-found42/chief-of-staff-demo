@@ -926,3 +926,67 @@ The union of `supported_parameters` across all 23 endpoints is
 that prefers `forced_tool_call` and fails had a declared `response_format` rung available and
 stepped past it to prompt-only. That is the step-down order defect, confirmed against the
 declaration rather than inferred from the run.
+
+## End-to-end verification of the route controls, six serial runs (issue #233)
+
+`--people achim-steiner`, fixed-documents, expanded pipeline, run one at a time so that a timeout
+means the route rather than contention. Every attempt's `observed.modelBoundary` names the route
+that served it.
+
+| Run | Attempts, in order | Claims | Elapsed |
+| --- | --- | --- | --- |
+| 1 | DeepInfra timeout 90 s (10 KB) → CoreWeave timeout 300 s (1.49 MB) | 0 | 316 s |
+| 2 | DeepInfra timeout 90 s (9 KB) → Wafer timeout 90 s (11 KB) | 0 | 211 s |
+| 3 | overrun 2.0 MB → response_format timeout 300 s (0 B) | 0 | 321 s |
+| 4 | DeepInfra timeout 90 s → Together overrun → Parasail overrun → Z.AI overrun | 0 | 320 s |
+| 5 | Together overrun → Parasail overrun → Morph timeout 300 s (810 KB) | 0 | 336 s |
+| 6 | Together overrun → Parasail timeout 300 s (1.58 MB) | 0 | 336 s |
+
+**Zero of six produced a claim**, against three of four the day before. The three controls work
+mechanically and none of them was enough.
+
+### What the runs establish
+
+**Rests reach the wire and re-route.** No route was asked twice in one run. DeepInfra failed first
+in runs 1, 2 and 4 and never served the retry. Together, Parasail and Z.AI were each rested in turn
+in run 4, and each subsequent attempt landed somewhere new.
+
+**The ladder steps where it could not before.** Run 4 walked `forced_tool_call` →
+`response_format` → `prompt_only`. Before the change the first failure went straight to
+`prompt_only` and the run had two attempts where it now has four.
+
+**The overrun ceiling frees budget.** Runs 4 and 5 fitted three and four attempts into one
+300-second operation, where a runaway previously consumed it whole.
+
+### What they falsify
+
+**The ceiling's first threshold was wrong, and it was measuring the wrong thing.** It counted
+bytes off the wire at two megabytes, justified as sixty times the largest answer ever measured
+(31,819 characters). That comparison is invalid: a route streaming one token per SSE event spends
+roughly 200 bytes of envelope per token, so two megabytes of wire is about ten thousand tokens,
+inside what a real answer to this contract costs. Runs 1 and 6 show legitimate generations at
+1.49 MB and 1.58 MB when their own time ran out, and runs 3 through 6 show three different routes
+stopping at exactly 2,000,xxx bytes. The ceiling now counts answer characters — content, tool-call
+arguments, and reasoning by length — at 250,000, and ADR-0070 records why. **The threshold is not
+yet verified against live data.**
+
+**A route name with a space could never be rested.** `safeName` and the durable diagnostic
+sanitizer both rejected any name containing a space, so `Sail Research` and `Io Net` arrived as
+`[unnamed]` — visible in run 3, which rested nothing usable. Route names now permit interior
+spaces, which is what `provider.ignore` takes back.
+
+### What is still unexplained
+
+The operation's 300-second budget is the binding constraint, and on these routes this model does
+not fit inside it once anything is wasted. Two of the six runs spent 90 seconds on a buffering
+route before the first token; the configured model then needs roughly 200 seconds of generation at
+its measured 24-28 tokens/second. Resting a bad route helps the next attempt, but the attempts
+share one deadline (ADR-0066), so the rest arrives with less budget than the work needs.
+
+Rests are also per process, and the benchmark starts a fresh process per run with one extraction in
+it — so nothing a run learns can help the next one. The app is a long-running process and does
+accumulate them; the instrument used to measure the fix is the one place the fix cannot show.
+
+The untried lever is routing on measured speed rather than only away from failure:
+`provider.preferred_min_throughput` is an OpenRouter routing field, and the measured spread on this
+model is 24-28 tokens/second on the routes that lose the operation against 66-75 on others.

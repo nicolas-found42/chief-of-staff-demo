@@ -12,7 +12,7 @@ import {
   makeCompleteJson,
   REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
-  STREAM_MAX_BYTES,
+  STREAM_MAX_ANSWER_CHARS,
   STREAM_SILENT_TIMEOUT_MS,
 } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
@@ -2404,7 +2404,7 @@ describe("openrouter route rests and the binding ladder", () => {
     /* Varied, so the repetition detector is not what ends this: its longest
        period is 64 characters and nothing here repeats inside one. */
     const varied = Array.from({ length: 8192 }, (_, index) => `p${index}`).join(",");
-    const lines = Math.ceil(STREAM_MAX_BYTES / varied.length) + 1;
+    const lines = Math.ceil(STREAM_MAX_ANSWER_CHARS / varied.length) + 1;
     return Array.from(
       { length: lines },
       () =>
@@ -2430,7 +2430,7 @@ describe("openrouter route rests and the binding ladder", () => {
     });
     /* Shape only: the answer that ran away is not carried into the diagnostic. */
     expect(JSON.stringify(failed)).not.toContain("p8191");
-    expect((failed as ModelBoundaryDiagnostic).bodyBytes).toBeGreaterThan(STREAM_MAX_BYTES);
+    expect((failed as ModelBoundaryDiagnostic).bodyBytes).toBeGreaterThan(0);
 
     declarations.push(declaring("temperature"));
     responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
@@ -2442,6 +2442,31 @@ describe("openrouter route rests and the binding ladder", () => {
       }),
     ).resolves.toEqual(RESULT);
     expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Fireworks"] });
+  });
+
+  /* OpenRouter names routes the way it displays them, and several of this
+     model's carry a space. The general identifier rule rejected those outright,
+     which threw away the only handle the seam has on the route that failed. */
+  it("rests a route whose name carries a space", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseOverrunFrom("Sail Research") });
+    const failed = await openrouter("some/spaced-route-name")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failed).toMatchObject({ upstreamServer: "Sail Research" });
+
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      openrouter("some/spaced-route-name")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Sail Research"] });
   });
 
   /* And with a rung left, the rest of the budget goes to it rather than to the

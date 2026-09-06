@@ -39,18 +39,26 @@ export const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000;
 export const MODEL_STREAM_SILENT_TIMEOUT_MS = 90_000;
 
 /**
- * The most a single streaming model call may deliver before it is abandoned.
+ * The most answer a single streaming model call may deliver before it is
+ * abandoned, counted in characters across every answer surface — content,
+ * tool-call arguments, and reasoning by length alone.
  *
  * The ceilings above bound a call that goes quiet or never answers. This one
  * bounds the opposite: a call that never stops. Measured (#233), a runaway put
- * 6.7 MB on the wire, and a model whose reasoning ran away produced 161,416
- * characters of it while the ordinary answer to the same request is 18-20 KB
- * and the largest observed was 31,819 characters. Two megabytes is far above
- * every answer measured and far below every runaway, so this cannot end work
- * that was going to finish — the mistake the idle ceiling made in #232 — while
- * it stops one runaway from spending an operation's whole budget.
+ * 6.7 MB on the wire and a runaway reasoner produced 161,416 characters, while
+ * the ordinary answer to this contract is 18-20 KB and the largest ever
+ * observed was 31,819 characters.
+ *
+ * It counts answer characters and not bytes off the wire, and that distinction
+ * was learned the expensive way: a first version of this ceiling counted wire
+ * bytes, where a route that streams one token per event spends around 200 bytes
+ * of envelope per token. Two megabytes of wire is then some ten thousand tokens
+ * — squarely inside what a real answer to this contract costs — and live runs
+ * showed legitimate generations at 1.49 MB and 1.58 MB when their own time ran
+ * out. A byte ceiling measures how a route frames its answer; only a character
+ * ceiling measures the answer.
  */
-export const MODEL_STREAM_MAX_BYTES = 2_000_000;
+export const MODEL_STREAM_MAX_ANSWER_CHARS = 250_000;
 
 /**
  * How a model is bound to the caller's Result Shape. Ordered most deterministic

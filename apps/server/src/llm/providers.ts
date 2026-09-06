@@ -9,7 +9,7 @@ import {
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
-  MODEL_STREAM_MAX_BYTES,
+  MODEL_STREAM_MAX_ANSWER_CHARS,
   MODEL_STREAM_SILENT_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
@@ -88,8 +88,8 @@ export const STREAM_SILENT_TIMEOUT_MS = MODEL_STREAM_SILENT_TIMEOUT_MS;
 /** The streaming idle ceiling. Exported so a test can drive it deterministically. */
 export const STREAM_IDLE_TIMEOUT_MS = MODEL_STREAM_IDLE_TIMEOUT_MS;
 
-/** The most one streamed call may deliver. Exported so a test can reach it cheaply. */
-export const STREAM_MAX_BYTES = MODEL_STREAM_MAX_BYTES;
+/** The most answer one streamed call may deliver. Exported so a test can reach it cheaply. */
+export const STREAM_MAX_ANSWER_CHARS = MODEL_STREAM_MAX_ANSWER_CHARS;
 
 /**
  * An answer that will not finish, however it shows itself: repeating one short
@@ -388,6 +388,9 @@ async function postSseStream(
       }
     >();
     let finishReason: string | null = null;
+    /* Reasoning never enters the answer or a diagnostic, but its size is
+       shape, and an answer's size is what the overrun ceiling measures. */
+    let reasoningChars = 0;
     /* The answer surfaces are re-tested for degenerate repetition only after
        this much new text, so a trickle of one-character deltas does not
        rescan the whole answer per token. */
@@ -448,7 +451,10 @@ async function postSseStream(
         }
         /* Reasoning tokens establish activity but their contents never enter
            the answer or diagnostics. Transport comments establish neither. */
-        if (carriesReasoningActivity(delta)) armIdle();
+        if (carriesReasoningActivity(delta)) {
+          reasoningChars += reasoningLength(delta);
+          armIdle();
+        }
         if ("tool_calls" in delta && isUnknownArray(delta.tool_calls)) {
           for (const [position, toolCall] of delta.tool_calls.entries()) {
             if (typeof toolCall !== "object" || toolCall === null) continue;
@@ -497,19 +503,6 @@ async function postSseStream(
       }
       if (read.chunk.done) break;
       observed.bodyBytes += read.chunk.value.byteLength;
-      /* A route that will not stop costs the operation as surely as one that
-         will not start. The repetition detector catches an answer that repeats
-         itself; this catches one that runs away without repeating, and hands
-         the rest of the budget to the next attempt (#233). */
-      if (observed.bodyBytes > STREAM_MAX_BYTES) {
-        throw modelBoundaryFailure({
-          call,
-          classification: "answer_overrun",
-          status: response.status,
-          bodyBytes: observed.bodyBytes,
-          ...(observed.upstreamServer ? { upstreamServer: observed.upstreamServer } : {}),
-        });
-      }
       /* Any byte answers the connection question, whatever it carries. It
          does not answer the progress question, so the second ceiling still
          bounds an upstream that stays connected and never produces one. */
@@ -540,6 +533,24 @@ async function postSseStream(
       contentChecked = checkDegenerate(content, contentChecked);
       for (const toolCall of toolCalls.values())
         toolCall.checked = checkDegenerate(toolCall.arguments, toolCall.checked);
+      /* A route that will not stop costs the operation as surely as one that
+         will not start. The repetition detector above catches an answer that
+         repeats itself; this catches one that runs away without repeating, and
+         hands what is left of the budget to the next attempt (ADR-0070). It
+         counts the answer, not the wire: a route that streams one token per
+         event spends far more envelope than answer, and a byte ceiling would
+         end its legitimate answers first (#233). */
+      let answerChars = content.length + reasoningChars;
+      for (const toolCall of toolCalls.values()) answerChars += toolCall.arguments.length;
+      if (answerChars > STREAM_MAX_ANSWER_CHARS) {
+        throw modelBoundaryFailure({
+          call,
+          classification: "answer_overrun",
+          status: response.status,
+          bodyBytes: observed.bodyBytes,
+          ...(observed.upstreamServer ? { upstreamServer: observed.upstreamServer } : {}),
+        });
+      }
     }
     let message: JsonObject = { role: "assistant", content };
     if (call.binding === "forced_tool_call") {
@@ -606,6 +617,26 @@ function carriesReasoningActivity(delta: object): boolean {
       (detail.type === "reasoning.encrypted" && "data" in detail && nonblank(detail.data))
     );
   });
+}
+
+/**
+ * How much reasoning text one delta carried, by length alone. The text itself is
+ * never retained: a count is shape, the words are not.
+ */
+function reasoningLength(delta: object): number {
+  const length = (value: unknown) => (typeof value === "string" ? value.length : 0);
+  let total = 0;
+  if ("reasoning" in delta) total += length(delta.reasoning);
+  if ("reasoning_content" in delta) total += length(delta.reasoning_content);
+  if ("reasoning_details" in delta && isUnknownArray(delta.reasoning_details)) {
+    for (const detail of delta.reasoning_details) {
+      if (typeof detail !== "object" || detail === null) continue;
+      if ("text" in detail) total += length(detail.text);
+      if ("summary" in detail) total += length(detail.summary);
+      if ("data" in detail) total += length(detail.data);
+    }
+  }
+  return total;
 }
 
 /** The timeout whose ceiling fired, or a transport fault when neither did. */
