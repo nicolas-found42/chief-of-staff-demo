@@ -5,6 +5,7 @@ import {
   type ProviderId,
   type ResultShapeBinding,
   type ModelAttemptEvent,
+  type ModelBoundaryDiagnostic,
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
@@ -91,7 +92,7 @@ interface RequestDeadline {
   timeRemaining(): number;
   reportAttempt(event: Omit<ModelAttemptEvent, "attempt" | "binding">): void;
   calling(call: ModelCall): void;
-  observed(response: { status: number; bodyBytes: number }): void;
+  observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
 }
 
 /** One provider answer, kept only as long as it takes to classify or read it. */
@@ -488,7 +489,13 @@ async function postSseStream(
          does not answer the progress question, so the second ceiling still
          bounds an upstream that stays connected and never produces one. */
       armConnection();
-      deadline.observed({ status: response.status, bodyBytes: observed.bodyBytes });
+      deadline.observed({
+        status: response.status,
+        bodyBytes: observed.bodyBytes,
+        /* Carried outwards so the absolute ceiling, which fires from outside
+           this stream, can still name the route that spent the whole call. */
+        ...(observed.upstreamServer ? { upstreamServer: observed.upstreamServer } : {}),
+      });
       buffer += decoder.decode(read.chunk.value, { stream: true });
       for (;;) {
         const lineEnd = buffer.indexOf("\n");
@@ -990,6 +997,97 @@ function chatCompletionBody(
 }
 
 /**
+ * Which routes cost a call, and when each may be asked again.
+ *
+ * OpenRouter serves one model from many upstream routes, and `sort: "throughput"`
+ * lets each call land on a different one. They do not fail alike: on the
+ * configured model one route answered a degenerate repetition loop of 6.7 MB,
+ * five answered HTTP 429, and one buffered its whole answer past every ceiling,
+ * while others completed the same request in 84 seconds (#233). Routing back
+ * into a route that just burned a 300-second operation spends the operation
+ * again, so a route that fails that way rests and the next call asks OpenRouter
+ * to skip it.
+ *
+ * The precedent is `createPublicSearch`, which rests a refusing search provider
+ * rather than retrying it. State is process-wide for the reason the search
+ * cooldowns are app-wide: one account meets every route's capacity, so a rest
+ * one Stage learns is a rest every Stage owes. `makeCompleteJson` is rebuilt per
+ * attempt, so this cannot live in its closure either.
+ */
+const routeRest = new Map<string, number>();
+
+/** How long a route that burned a call rests before it is asked again. */
+const ROUTE_COOLDOWN_MS = 900_000;
+
+/**
+ * The most routes that may rest at once, newest first. `provider.ignore`
+ * narrows routing, and a model served by few endpoints could be narrowed to
+ * none; a bounded list keeps a bad stretch from leaving nowhere to route.
+ */
+const MAX_RESTING_ROUTES = 8;
+
+/** Rests are per model and route: a route can serve one model well and another badly. */
+function routeRestKey(model: string, route: string): string {
+  return `${model}\u0000${route}`;
+}
+
+/** The routes resting for this model, most recently rested first, bounded. */
+function restingRoutes(model: string): string[] {
+  const now = Date.now();
+  const prefix = `${model}\u0000`;
+  const resting: { route: string; until: number }[] = [];
+  for (const [key, until] of routeRest) {
+    if (until <= now) {
+      routeRest.delete(key);
+      continue;
+    }
+    if (key.startsWith(prefix)) resting.push({ route: key.slice(prefix.length), until });
+  }
+  return resting
+    .sort((left, right) => right.until - left.until)
+    .slice(0, MAX_RESTING_ROUTES)
+    .map((entry) => entry.route);
+}
+
+/**
+ * Rest the route that served a failed call, where the failure belongs to the
+ * route rather than to the request. A stalled stream, a repetition loop and a
+ * capacity refusal all say this route cannot serve this call now; a refused
+ * binding or an unusable answer shape says the request is wrong, and it would
+ * be wrong on every route, so it rests nothing.
+ */
+function restFailedRoute(model: string, diagnostic: ModelBoundaryDiagnostic | null): void {
+  const route = diagnostic?.upstreamServer;
+  if (!diagnostic || route === null || route === undefined || route === "") return;
+  const routeFailed =
+    diagnostic.classification === "repetition_loop" ||
+    diagnostic.classification === "request_timeout" ||
+    (diagnostic.classification === "http_error" && diagnostic.status === 429);
+  if (!routeFailed) return;
+  routeRest.set(routeRestKey(model, route), Date.now() + ROUTE_COOLDOWN_MS);
+}
+
+/**
+ * The bindings one call may use, in the order it will try them.
+ *
+ * `chosen` is what the model declared support for, or `null` when there is no
+ * declaration to read — which is not the same as declaring no support, and is
+ * the only case that permits the ordinary refusal step-down.
+ */
+interface DeclaredBindings {
+  chosen: ResultShapeBinding | null;
+  ladder: readonly ResultShapeBinding[];
+}
+
+/** Whether a declaration covers one binding. Prompt-only asks nothing of the provider. */
+function declares(declared: Set<string>, binding: ResultShapeBinding): boolean {
+  if (binding === "response_format")
+    return declared.has("structured_outputs") || declared.has("response_format");
+  if (binding === "forced_tool_call") return declared.has("tools") && declared.has("tool_choice");
+  return true;
+}
+
+/**
  * OpenAI-shaped chat completion, shared by OpenRouter and Ollama: both front
  * many models, and those models differ in which Result Shape Bindings they
  * support. The binding is chosen by the caller from what the model declares.
@@ -1000,14 +1098,22 @@ async function openAiCompatibleComplete(
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject,
-  declared: ResultShapeBinding | null,
+  declared: DeclaredBindings,
   deadline: RequestDeadline,
   stream: boolean,
 ): Promise<unknown> {
-  /* A declared binding is sent first. An unknown one
-     starts at the most deterministic binding and gives up one step at a time,
-     because a model that refuses a JSON Schema may still honour a tool call. */
-  let index = declared === null ? 0 : RESULT_SHAPE_BINDINGS.indexOf(declared);
+  /* A declared binding is sent first, then the other bindings the same
+     declaration covers, then prompt-only. An unknown declaration walks the
+     whole ladder from the most deterministic binding down, because a model
+     that refuses a JSON Schema may still honour a tool call.
+
+     The walk is over candidates, not over the ladder's own indices: a declared
+     `forced_tool_call` used to step to whatever followed it, which skipped
+     `response_format` entirely — and `response_format` is the binding measured
+     to stream incrementally on the very routes that buffer a tool call past
+     the ceilings (#233). */
+  const ladder = declared.ladder;
+  let index = 0;
   let retried = false;
   let recoveryFailure: { error: unknown } | null = null;
   for (;;) {
@@ -1022,7 +1128,7 @@ async function openAiCompatibleComplete(
       });
       throw recoveryFailure.error;
     }
-    const call = modelCall(cfg, RESULT_SHAPE_BINDINGS[index] ?? "prompt_only");
+    const call = modelCall(cfg, ladder[index] ?? "prompt_only");
     const body = chatCompletionBody(call.binding, cfg, request, schema);
     if (stream) body.stream = true;
     /* OpenRouter unions endpoint declarations across a model's routes, so a
@@ -1036,7 +1142,14 @@ async function openAiCompatibleComplete(
        66-75 on another. Sorting is OpenRouter's own continuous measurement;
        naming a route here would be a catalogue label that goes stale. */
     if (cfg.provider === "openrouter") {
-      body.provider = { sort: "throughput" };
+      /* Sorting alone chooses among routes by throughput; it does not know
+         which of them just cost this model an operation. The rests do, and
+         they ride along as `ignore` — verified to accept the very name the
+         stream reports as its serving `provider`, so no catalogue lookup and
+         no name mapping stands between the observation and the control. */
+      const resting = restingRoutes(cfg.model);
+      body.provider =
+        resting.length > 0 ? { sort: "throughput", ignore: resting } : { sort: "throughput" };
     }
     let response: HttpResponse;
     try {
@@ -1045,6 +1158,7 @@ async function openAiCompatibleComplete(
         : postJson(call, url, headers, body, deadline));
     } catch (error) {
       const diagnostic = modelBoundaryDiagnostic(error) ?? null;
+      if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic);
       const retryable =
         diagnostic?.classification === "transport_failure" ||
         (diagnostic?.classification === "request_timeout" &&
@@ -1088,7 +1202,7 @@ async function openAiCompatibleComplete(
          declared binding. The next binding gets the call's remaining budget;
          the final binding preserves the repetition failure. */
       if (
-        index < RESULT_SHAPE_BINDINGS.length - 1 &&
+        index < ladder.length - 1 &&
         !deadline.signal.aborted &&
         modelBoundaryDiagnostic(error)?.classification === "repetition_loop"
       ) {
@@ -1110,8 +1224,9 @@ async function openAiCompatibleComplete(
        OpenRouter's union of endpoint declarations promised a binding no single
        route honours — so it steps down whatever the declaration said (#232). */
     if (
-      index < RESULT_SHAPE_BINDINGS.length - 1 &&
-      (routingRefusal(response) || (declared === null && refusesBinding(call.binding, response)))
+      index < ladder.length - 1 &&
+      (routingRefusal(response) ||
+        (declared.chosen === null && refusesBinding(call.binding, response)))
     ) {
       const failure = modelBoundaryFailure({
         call,
@@ -1138,8 +1253,9 @@ async function openAiCompatibleComplete(
          this binding and ordinary at the next one, so it steps down rather
          than ending the call. */
       const diagnostic = modelBoundaryDiagnostic(error);
+      if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic ?? null);
       if (
-        index < RESULT_SHAPE_BINDINGS.length - 1 &&
+        index < ladder.length - 1 &&
         !deadline.signal.aborted &&
         diagnostic?.classification === "unusable_shape" &&
         /* The measured signature: the task was done, in `content`, while the
@@ -1293,22 +1409,46 @@ function readDeclaredParameters(payload: unknown): Set<string> | null {
 }
 
 /**
- * A supported request preference, otherwise the strongest declared binding.
- * `null` means there is no declaration to read, not that no binding is supported;
- * only unknown support permits the ordinary refusal step-down ladder.
+ * A supported request preference, otherwise the strongest declared binding —
+ * and behind it the rungs that binding may step to, so a failure has somewhere
+ * to go. The chosen binding leads; the rest keep the ladder's own order.
+ *
+ * Two kinds of rung follow it. Everything below it on the ladder, as before —
+ * a model that refuses a JSON Schema may still honour a tool call, and
+ * prompt-only asks nothing of the provider at all. And anything *above* it the
+ * declaration covers, which is new: a request preference for `forced_tool_call`
+ * starts the walk halfway down, and stepping only downwards from there skipped
+ * `response_format` on a model that declares it. That was not a saving. On the
+ * routes that buffer a whole tool call past the ceilings, `response_format` is
+ * the binding measured to stream incrementally (#233).
+ *
+ * A binding the declaration does not cover is never stepped back up to:
+ * `readDeclaredParameters` unions every endpoint, so an absence there is an
+ * absence everywhere, and a call spent on it is a call spent for nothing.
  */
-function declaredBinding(
+function declaredBindings(
   declared: Set<string> | null,
   preferred?: CompletionRequest["preferredBinding"],
-): ResultShapeBinding | null {
-  if (!declared) return null;
-  if (preferred === "forced_tool_call" && declared.has("tools") && declared.has("tool_choice"))
-    return "forced_tool_call";
-  if (declared.has("structured_outputs") || declared.has("response_format")) {
-    return "response_format";
-  }
-  if (declared.has("tools") && declared.has("tool_choice")) return "forced_tool_call";
-  return "prompt_only";
+): DeclaredBindings {
+  if (!declared) return { chosen: null, ladder: RESULT_SHAPE_BINDINGS };
+  const chosen: ResultShapeBinding =
+    preferred === "forced_tool_call" && declares(declared, "forced_tool_call")
+      ? "forced_tool_call"
+      : declares(declared, "response_format")
+        ? "response_format"
+        : declares(declared, "forced_tool_call")
+          ? "forced_tool_call"
+          : "prompt_only";
+  const from = RESULT_SHAPE_BINDINGS.indexOf(chosen);
+  return {
+    chosen,
+    ladder: [
+      chosen,
+      ...RESULT_SHAPE_BINDINGS.filter(
+        (binding, index) => binding !== chosen && (index > from || declares(declared, binding)),
+      ),
+    ],
+  };
 }
 
 async function openrouterComplete(
@@ -1323,7 +1463,7 @@ async function openrouterComplete(
     cfg,
     request,
     schema,
-    declaredBinding(await openrouterDeclaredParameters(cfg, deadline), request.preferredBinding),
+    declaredBindings(await openrouterDeclaredParameters(cfg, deadline), request.preferredBinding),
     deadline,
     true,
   );
@@ -1347,7 +1487,7 @@ function ollamaComplete(
     cfg,
     request,
     schema,
-    null,
+    { chosen: null, ladder: RESULT_SHAPE_BINDINGS },
     deadline,
     false,
   );
@@ -1391,7 +1531,9 @@ async function withinRequestCeiling<T>(
     if (event.outcome !== "retrying") terminalReported = true;
     retry?.onAttempt({ ...event, attempt, binding: call.binding });
   };
-  let observed: { status?: number; bodyBytes: number } = { bodyBytes: 0 };
+  let observed: { status?: number; bodyBytes: number; upstreamServer?: string } = {
+    bodyBytes: 0,
+  };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -1402,6 +1544,11 @@ async function withinRequestCeiling<T>(
         classification: "request_timeout",
         timeoutMs: REQUEST_TIMEOUT_MS,
       });
+      /* A route that held the whole call and never finished is exactly the
+         route the next call should not be given, and this ceiling is the one
+         path out of a model call that the binding ladder never sees. */
+      if (cfg.provider === "openrouter")
+        restFailedRoute(cfg.model, modelBoundaryDiagnostic(failure) ?? null);
       try {
         reportAttempt({
           outcome: "failed",

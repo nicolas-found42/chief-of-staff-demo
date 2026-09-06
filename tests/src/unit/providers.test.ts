@@ -2237,3 +2237,218 @@ describe("model-boundary failures", () => {
     expect(gemini.emptyFields).toContain("candidates[0].content.parts");
   });
 });
+
+/**
+ * OpenRouter serves one model from many upstream routes and picks per call, so
+ * the same model fails in unrelated ways from one call to the next: a
+ * repetition loop, a stalled buffer, a capacity refusal. These assert the two
+ * controls that keep one bad route from costing a whole operation — the route
+ * rests, and the binding ladder has somewhere to step.
+ */
+describe("openrouter route rests and the binding ladder", () => {
+  function openrouter(model: string): ReturnType<typeof makeCompleteJson> {
+    return makeCompleteJson(
+      { provider: "openrouter", model, apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+  }
+
+  /** The routing block one call sent, as OpenRouter received it. */
+  function routing(index: number): Record<string, unknown> {
+    return calls[index].body.provider as Record<string, unknown>;
+  }
+
+  /** A stream that names its route and then repeats one unit until something stops it. */
+  function sseLoopFrom(route: string, lines = 48): { lines: string[]; intervalMs: number } {
+    const fragment = "x".repeat(1024);
+    return {
+      lines: Array.from(
+        { length: lines },
+        () =>
+          `data: {"provider":${JSON.stringify(route)},"choices":[{"delta":{"content":${JSON.stringify(fragment)}}}]}`,
+      ),
+      intervalMs: 1000,
+    };
+  }
+
+  it("skips the route that looped on the next call of the same run", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("structured_outputs", "response_format"));
+      responses.push({ sseDrip: sseLoopFrom("Wafer") });
+      responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+      const pending = openrouter("some/looping-route-model")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      });
+      await vi.advanceTimersByTimeAsync(90_000);
+      await expect(pending).resolves.toEqual(RESULT);
+      expect(calls).toHaveLength(2);
+      /* Sorting alone would be free to hand the next call straight back to the
+         route that just burned this one. */
+      expect(routing(0)).toEqual({ sort: "throughput" });
+      expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Wafer"] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a rest across separate calls, and keeps it to the model that earned it", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("temperature"));
+      responses.push({ sseDrip: sseLoopFrom("Together") });
+      const failed = openrouter("some/rest-outlives-the-call")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(await failed).toMatchObject({ classification: "repetition_loop" });
+
+      /* A different `completeJson` object: `makeCompleteJson` is rebuilt per
+         attempt, so a rest kept in its closure would be forgotten here. */
+      declarations.push(declaring("temperature"));
+      responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+      await expect(
+        openrouter("some/rest-outlives-the-call")({
+          system: "S",
+          user: "U",
+          schema: ExtractionWireSchema,
+        }),
+      ).resolves.toEqual(RESULT);
+      expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Together"] });
+
+      /* The same route can serve one model well and another badly, so a rest
+         is per model and route, never per route alone. */
+      declarations.push(declaring("temperature"));
+      responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+      await expect(
+        openrouter("some/other-model-same-route")({
+          system: "S",
+          user: "U",
+          schema: ExtractionWireSchema,
+        }),
+      ).resolves.toEqual(RESULT);
+      expect(routing(2)).toEqual({ sort: "throughput" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rests a route that refused for capacity", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 429,
+      body: {
+        error: {
+          message: "Provider returned error",
+          code: 429,
+          metadata: { provider_name: "DeepInfra" },
+        },
+      },
+    });
+    const failed = await openrouter("some/rate-limited-route")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failed).toMatchObject({ classification: "http_error", upstreamServer: "DeepInfra" });
+
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      openrouter("some/rate-limited-route")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["DeepInfra"] });
+  });
+
+  /* A route that names a fault of its own is not a route that cannot serve the
+     call: the upstream answered, said what went wrong, and may well answer the
+     next one. Resting on every failure alike would empty the routing pool. */
+  it("rests nothing when the upstream named its own fault", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      sse: [
+        'data: {"error":{"message":"Upstream error","code":502,"metadata":{"provider_name":"Novita"}}}',
+        "data: [DONE]",
+      ],
+    });
+    const failed = await openrouter("some/named-upstream-fault")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failed).toMatchObject({ classification: "upstream_error" });
+
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      openrouter("some/named-upstream-fault")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(routing(1)).toEqual({ sort: "throughput" });
+  });
+
+  /* The measured cost of stepping only downwards: a request that prefers a
+     forced tool call starts halfway down the ladder, and the rung it skipped
+     is the one that streams incrementally on routes that buffer a tool call. */
+  it("steps a preferred forced tool call back up to a declared response_format", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("structured_outputs", "response_format", "tools", "tool_choice"));
+      responses.push({ sseDrip: sseLoopFrom("NextBit") });
+      responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+      const pending = openrouter("some/preferred-tool-call-model")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+      });
+      await vi.advanceTimersByTimeAsync(90_000);
+      await expect(pending).resolves.toEqual(RESULT);
+      expect(calls).toHaveLength(2);
+      expect(calls[0].body.tool_choice).toEqual({
+        type: "function",
+        function: { name: "save_extraction" },
+      });
+      expect((calls[1].body.response_format as Record<string, unknown>).type).toBe("json_schema");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /* And the bound on that: an absence in the declaration is an absence across
+     every endpoint, so the ladder steps down past it rather than spending a
+     call proving it. */
+  it("does not step up to a binding the model never declared", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("tools", "tool_choice"));
+      responses.push({ sseDrip: sseLoopFrom("Makora") });
+      responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+      const pending = openrouter("some/tool-only-model")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+      });
+      await vi.advanceTimersByTimeAsync(90_000);
+      await expect(pending).resolves.toEqual(RESULT);
+      expect(calls).toHaveLength(2);
+      expect(calls[1].body.response_format).toBeUndefined();
+      expect(calls[1].body.tool_choice).toBeUndefined();
+      expect(calls[1].body.messages).toMatchObject([{ role: "system" }, { role: "user" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

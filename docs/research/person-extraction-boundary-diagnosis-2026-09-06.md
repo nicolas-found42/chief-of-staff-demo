@@ -866,3 +866,63 @@ existing step-down ladder to `response_format` or `prompt_only` would recover bo
    current price.
 5. **Strip unsupported schema keywords for Gemini-family models routed through OpenRouter.**
 6. **Step the binding down when an upstream ignores forced tool choice** rather than failing.
+
+## Route control: what OpenRouter accepts, measured (issue #233)
+
+The remaining failure mode after the boundary repairs is route variance: one run in four still lost
+a whole operation to the route it happened to land on. Resting a route that just failed needs a way
+to name it on the next call, so this section measures what the API accepts. Read-only listings plus
+four-token completions; no extraction, no answer text retained.
+
+### The stream names a route by its display name
+
+`GET /api/v1/models/z-ai/glm-5.3-flash/endpoints` returns 23 endpoints carrying both a
+`provider_name` and a `tag`, and the two differ: `Sail Research` / `sail-research/fp8`,
+`Z.AI` / `z-ai/fp8`, `NextBit` / `nextbit/fp8`, `DeepInfra` / `deepinfra/fp4`. The `provider` field
+that every streamed chunk carries — the one recorded as `ModelBoundaryDiagnostic.upstreamServer` —
+is the **display name**: a minimal completion reported `"provider": "Parasail"`, whose tag is
+`parasail/fp8`.
+
+### `provider.only` and `provider.ignore` accept that display name verbatim
+
+The question this settles is whether a route observed in a diagnostic can be named back to the
+router without a mapping. It can. Pinning with `only`, all three forms resolve to the same route:
+
+| Sent | Served by |
+| --- | --- |
+| `Parasail` | Parasail |
+| `parasail` | Parasail |
+| `parasail/fp8` | Parasail |
+| `Sail Research` | Sail Research |
+| `sail-research` | Sail Research |
+| `Z.AI` | Z.AI |
+| `Io Net` | Io Net |
+
+Names with spaces and dots resolve, so the router normalises them itself. And `ignore` honours the
+same names: ignoring 21 of the model's 23 routes by display name, alongside `sort: "throughput"`,
+left `Parasail`, `Parasail` and `Modal` serving three consecutive calls. An unrecognised name
+(`not-a-real-provider`) is accepted and has no effect rather than being refused, so a rest can fail
+only by doing nothing.
+
+Normalising display names to slugs was therefore not needed — which is fortunate, because it does
+not work: applying `lowercase, non-alphanumeric runs to hyphens` across all 106 providers in
+`GET /api/v1/providers` disagrees with the real slug for 13 of them (`Moonshot AI` / `moonshotai`,
+`AtlasCloud` / `atlas-cloud`, `Google` / `google-vertex`, `Thinking Machines` / `thinkingmachines`
+among them). Naming a route the way the stream named it avoids the question entirely.
+
+### Correction: those endpoint tags were valid all along
+
+The read-only upstream route inventory above recorded that `gmicloud`, `novita`, `z-ai`,
+`streamlake` and `siliconflow` were "not valid `provider.order` tags" because pinning them answered
+`No endpoints found`. That is wrong and is retracted. They are the exact base slugs of five of this
+model's endpoints, and each serves the model when pinned today. The refusal was capacity or the
+`require_parameters` interaction diagnosed later in this document, both of which are answered by
+`No endpoints found` too — not a naming fault.
+
+### The skipped rung was real
+
+The union of `supported_parameters` across all 23 endpoints is
+`response_format, structured_outputs, tools, tool_choice, …`. So on the configured model, a request
+that prefers `forced_tool_call` and fails had a declared `response_format` rung available and
+stepped past it to prompt-only. That is the step-down order defect, confirmed against the
+declaration rather than inferred from the run.
