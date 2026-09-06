@@ -1065,6 +1065,17 @@ const RECORD_ROUTES: { match: RegExp; build: (url: URL) => string | null; index:
   },
 ];
 
+/**
+ * Every upstream index a page can be escalated to.
+ *
+ * #230's eligibility check walks these beside the search providers: reading a
+ * record is data acquisition too, so a route added above has to declare what
+ * it costs before it can be reached from production.
+ */
+export const RECORD_ROUTE_INDEXES: readonly string[] = [
+  ...new Set(RECORD_ROUTES.map((route) => route.index)),
+];
+
 function recordRoute(url: string): { endpoint: string; index: string } | null {
   try {
     const parsed = new URL(url);

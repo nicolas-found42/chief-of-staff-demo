@@ -14,7 +14,18 @@ import { createHttpFetch, publicHttpFetch, type PublicHttpFetch } from "./http.j
  * it would turn "we cannot read this" into "there was nothing to read", which
  * is the confusion the whole benchmark exists to remove.
  */
-interface SourceEligibility {
+/**
+ * What acquiring data from a route costs.
+ *
+ * Anything but `anonymous` is excluded from production by #228, free key tiers
+ * included. This is deliberately a closed set rather than prose: the check that
+ * walks the collection has to be able to fail, and a sentence saying "free"
+ * cannot fail.
+ */
+export type SourceAccessCost =
+  "anonymous" | "api-key" | "payment" | "sign-in" | "imported-session" | "paid-proxy";
+
+export interface SourceEligibility {
   /** The route's name, matching the search provider or reader that uses it. */
   route: string;
   family: string;
@@ -22,10 +33,24 @@ interface SourceEligibility {
   terms: string;
   /** Where that was read. */
   documentation: string;
+  /** What that documentation costs the operator, as a value a check can test. */
+  cost: SourceAccessCost;
   /** Whether the route is used in production today, and why not when it is not. */
   status: "in-production" | "excluded" | "unavailable";
   /** Why an excluded or unavailable route is not used. */
   exclusion?: string;
+  /**
+   * What a request to this route was actually seen to do, when no probe runs
+   * for it. Documentation and observation are separate fields on purpose: a
+   * catalogue label saying "free, no key" is a claim about the source, and
+   * only a probe or a recorded live observation is evidence about the route.
+   */
+  observed?: string;
+  /**
+   * Upstream indexes this route covers, when a reader can escalate a page
+   * straight to them rather than reaching them through a search provider.
+   */
+  indexes?: string[];
   /** A probe URL that needs no key and returns a small anonymous response. */
   probe?: string;
   /**
@@ -41,6 +66,14 @@ interface SourceEligibility {
 /** The transport the JSON-only routes are actually reached with. */
 const jsonFetch = createHttpFetch({ headers: { accept: "application/json" } });
 
+/**
+ * The observation standing behind an incumbent route that this command does
+ * not probe. The bundle was live-verified when it was built; saying so is not
+ * the same as saying it was rechecked today, and the two must not blur.
+ */
+const LIVE =
+  "Live-verified during the ADR-0049 provider research (docs/research/public-search-providers.md); not re-probed by this command.";
+
 const json = (body: string) => {
   try {
     JSON.parse(body);
@@ -50,12 +83,270 @@ const json = (body: string) => {
   }
 };
 
-const SOURCE_ELIGIBILITY: SourceEligibility[] = [
+/**
+ * The incumbent provider bundle (ADR-0049) and the expansion families #228
+ * added, in one table.
+ *
+ * The bundle predates this record and was audited into it rather than assumed
+ * eligible: #228 requires existing routes to be checked, not only additions.
+ * Entries without a `probe` carry the observation that stands in for one, so
+ * that no route is marked eligible on its own catalogue label.
+ */
+export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
+  {
+    route: "searxng",
+    family: "general-discovery",
+    terms:
+      "A self-hosted SearXNG instance the operator runs; the configured base URL is infrastructure, not a source credential.",
+    documentation: "https://docs.searxng.org/admin/settings/settings_search.html",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Optional: absent SEARXNG_URL the provider is never registered. The instance must enable the json format or it answers 403, which the provider classifies as an error rather than a wall.",
+  },
+  {
+    route: "duckduckgo",
+    family: "general-discovery",
+    terms: "The anonymous HTML endpoint; no key, no account, no cookie import.",
+    documentation: "https://html.duckduckgo.com/html/",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "A documented single-user scrape exception (docs/research/anti-bot-keyless-search.md). The 202 challenge is classified as a captcha refusal and rested for a day; no UA rotation and no retry.",
+  },
+  {
+    route: "mojeek",
+    family: "general-discovery",
+    terms: "An independent index answered by a plain keyless GET; no tokens.",
+    documentation: "https://www.mojeek.com/search",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Live 2026-09-02: the anti-bot gate is volume-based rather than UA-fingerprinted; a challenge page becomes a captcha cooldown.",
+  },
+  {
+    route: "marginalia",
+    family: "general-discovery",
+    terms:
+      "The documented anonymous path sends the literal shared header `API-Key: public`. That constant is published as the keyless route; it is not issued to an operator, and no account, payment or sign-in obtains it.",
+    documentation: "https://about.marginalia-search.com/article/api/",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "The shared constant is contended across every caller, so an HTTP 503 'QPM Limit Exceeded' is normal operation and refuses as rate-limited. No keyed tier is requested when it does.",
+  },
+  {
+    route: "wiby",
+    family: "general-discovery",
+    terms: "wiby.me/json/ answers a plain keyless GET.",
+    documentation: "https://wiby.me/",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "wikipedia",
+    family: "identity-affiliation",
+    terms: "The MediaWiki opensearch API is public and unauthenticated.",
+    documentation: "https://www.mediawiki.org/wiki/API:Opensearch",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "wikidata",
+    family: "identity-affiliation",
+    terms: "The Wikidata action API's entity search is public and unauthenticated.",
+    documentation: "https://www.wikidata.org/w/api.php",
+    cost: "anonymous",
+    indexes: ["wikidata.org"],
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "bing-news",
+    family: "general-discovery",
+    terms:
+      "The undocumented `format=RSS` route on Bing News; no key. The feed carries a personal, non-commercial rendering restriction, which the research record flags rather than hides.",
+    documentation: "https://www.bing.com/news/search",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "google-news",
+    family: "general-discovery",
+    terms:
+      "The undocumented Atom route on news.google.com; no key. The same personal, non-commercial rendering restriction applies.",
+    documentation: "https://news.google.com/rss",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "gdelt",
+    family: "general-discovery",
+    terms: "GDELT DOC 2.0 artlist is public and unauthenticated.",
+    documentation: "https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Probes answered in 15-75 s, so the provider overrides the composite deadline; the observed pace is about one request per five seconds and is honoured by refusing fast.",
+  },
+  {
+    route: "stackexchange",
+    family: "general-discovery",
+    terms: "Keyless full-text search, throttled to 300 requests/day/IP anonymously.",
+    documentation: "https://api.stackexchange.com/docs",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "The throttle answers either HTTP 429 or a 200 body carrying a `backoff` value; both refuse as rate-limited. Quota exhaustion is explicit and no keyed tier is requested.",
+  },
+  {
+    route: "arctic-shift",
+    family: "public-social",
+    terms: "A keyless public Reddit archive API.",
+    documentation: "https://arctic-shift.photon-reddit.com/api",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Keyword search needs an r/ or u/ scope; an unscoped question is declined without a request rather than asked badly.",
+  },
+  {
+    route: "reddit-rss",
+    family: "public-social",
+    terms: "Reddit's public search RSS; no key and no login.",
+    documentation: "https://www.reddit.com/search.rss",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "About 2-3 requests/minute per IP; the wall answers 403 as often as 429 and both carry Retry-After. No session is imported when it does.",
+  },
+  {
+    route: "openverse",
+    family: "documents-publisher",
+    terms: "Keyless CC-media search; anonymous access is bounded at roughly 200 requests/day.",
+    documentation: "https://api.openverse.org/v1/",
+    cost: "anonymous",
+    status: "in-production",
+    observed: "A 429 refuses as rate-limited; the keyed tier is never requested as a fallback.",
+  },
+  {
+    route: "europepmc",
+    family: "published-work",
+    terms: "The Europe PMC REST search is public and needs no key.",
+    documentation: "https://europepmc.org/RestfulWebService",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "openalex",
+    family: "published-work",
+    terms: "The OpenAlex API is free and keyless; a mailto contact joins the polite pool.",
+    documentation: "https://docs.openalex.org/how-to-use-the-api/api-overview",
+    cost: "anonymous",
+    indexes: ["openalex.org"],
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "orcid",
+    family: "published-work",
+    terms: "pub.orcid.org serves the public record without a token.",
+    documentation: "https://info.orcid.org/documentation/api-tutorials/",
+    cost: "anonymous",
+    indexes: ["orcid.org"],
+    status: "in-production",
+    observed:
+      "Served only to an explicit JSON accept header; the curated transport asks the way the documentation does.",
+  },
+  {
+    route: "dblp",
+    family: "published-work",
+    terms: "The dblp publication search API is public and keyless.",
+    documentation: "https://dblp.org/faq/How+to+use+the+dblp+search+API.html",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "github-users",
+    family: "professional-records",
+    terms:
+      "The GitHub user search API answers unauthenticated requests at a lower rate limit; no token is sent.",
+    documentation: "https://docs.github.com/en/rest/search/search",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Anonymous requests are limited to about 10 searches/minute per IP. Exhaustion is an explicit rate-limit refusal, not a prompt for a token.",
+  },
+  {
+    route: "ror",
+    family: "identity-affiliation",
+    terms: "The Research Organization Registry API is public and keyless.",
+    documentation: "https://ror.readme.io/docs/rest-api",
+    cost: "anonymous",
+    indexes: ["ror.org"],
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "gleif",
+    family: "identity-affiliation",
+    terms: "The GLEIF LEI record API is public and keyless.",
+    documentation: "https://www.gleif.org/en/lei-data/gleif-api",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "edgar",
+    family: "professional-records",
+    terms:
+      "SEC full-text search is public and keyless; the SEC requires a declared contact in the User-Agent, which identifies the caller rather than authenticating it.",
+    documentation: "https://www.sec.gov/os/webmaster-faq#developers",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "The curated transport sends the declared-contact UA. That string is not a credential and grants no access another caller cannot obtain by declaring its own.",
+  },
+  {
+    route: "internet-archive",
+    family: "historical-evidence",
+    terms: "archive.org's advancedsearch.php is public and keyless.",
+    documentation: "https://archive.org/advancedsearch.php",
+    cost: "anonymous",
+    status: "in-production",
+    observed: LIVE,
+  },
+  {
+    route: "ia-tvnews",
+    family: "spoken-evidence",
+    terms: "The same keyless advancedsearch.php endpoint, scoped to the tvarchive collection.",
+    documentation: "https://archive.org/details/tv",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "About one request per second on caption files; the pace is honoured by refusing fast rather than by any paid escalation.",
+  },
+  {
+    route: "wayback",
+    family: "historical-evidence",
+    terms: "The Wayback availability API is public and keyless.",
+    documentation: "https://archive.org/help/wayback_api.php",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Probes took 25-75 s, so the provider overrides the composite deadline rather than timing out on a healthy answer.",
+  },
   {
     route: "mwmbl",
     family: "general-discovery",
     terms: "Open, non-commercial web index; public API needs no account or key.",
     documentation: "https://api.mwmbl.org/",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://api.mwmbl.org/api/v1/search/?s=climate",
     expect: json,
@@ -65,6 +356,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "spoken-evidence",
     terms: "Sepia Search indexes public PeerTube instances; the REST API is unauthenticated.",
     documentation: "https://docs.joinpeertube.org/api-rest-reference.html",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://sepiasearch.org/api/v1/search/videos?search=climate&count=2",
     expect: json,
@@ -74,6 +366,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "spoken-evidence",
     terms: "Apple's public search endpoint; no key, rate limited by IP.",
     documentation: "https://performance-partners.apple.com/search-api",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://itunes.apple.com/search?media=podcast&term=agriculture&limit=2",
     expect: json,
@@ -84,6 +377,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     terms:
       "The watch page lists caption tracks anonymously, but the timed-text endpoint now answers an empty body without a proof-of-origin token.",
     documentation: "https://www.youtube.com/watch",
+    cost: "anonymous",
     status: "unavailable",
     exclusion:
       "Observed 2026-09-06: every listed track returned HTTP 200 with a zero-byte body in every format (srv1, srv3, json3, vtt, ttml). Research falls back to the publisher's video description and records the gap. Local transcription would be the next route and is not installed on this host.",
@@ -93,6 +387,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "spoken-evidence",
     terms: "Requires an API key and a signed request.",
     documentation: "https://podcastindex-org.github.io/docs-api/",
+    cost: "api-key",
     status: "excluded",
     exclusion: "A key is required, which #228 excludes even where the tier is free.",
   },
@@ -101,6 +396,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "public-social",
     terms: "public.api.bsky.app serves the app view for public data with no authentication.",
     documentation: "https://docs.bsky.app/docs/advanced-guides/atproto",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=climate&limit=2",
     expect: json,
@@ -111,6 +407,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     terms:
       "Public account lookup and public statuses are readable without a token on instances that have not disabled anonymous reads.",
     documentation: "https://docs.joinmastodon.org/methods/accounts/",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://mastodon.social/api/v1/accounts/lookup?acct=Gargron",
     expect: json,
@@ -120,6 +417,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "public-social",
     terms: "Anonymous requests are met with an authentication wall.",
     documentation: "https://www.linkedin.com/robots.txt",
+    cost: "sign-in",
     status: "excluded",
     exclusion:
       "No keyless anonymous read exists. Research records a login-required failure for a LinkedIn URL rather than importing a session or using a paid proxy.",
@@ -129,6 +427,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "published-work",
     terms: "Free REST API; a mailto contact joins the polite pool. No key.",
     documentation: "https://api.crossref.org/swagger-ui/index.html",
+    cost: "anonymous",
+    indexes: ["crossref.org"],
     status: "in-production",
     probe:
       "https://api.crossref.org/works?query.bibliographic=Doudna&rows=2&mailto=owner@found42.local",
@@ -140,6 +440,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "published-work",
     terms: "Public REST API over DOI metadata; no key for search.",
     documentation: "https://support.datacite.org/docs/api",
+    cost: "anonymous",
+    indexes: ["datacite.org"],
     status: "in-production",
     probe: "https://api.datacite.org/dois?query=Doudna&page%5Bsize%5D=2",
     probeAccept: "json",
@@ -150,6 +452,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "published-work",
     terms: "Open API over the Internet Archive's book catalogue; no key.",
     documentation: "https://openlibrary.org/developers/api",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://openlibrary.org/search/authors.json?q=chimamanda",
     expect: json,
@@ -159,6 +462,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "professional-records",
     terms: "US federal provider registry; the API is public and needs no key.",
     documentation: "https://npiregistry.cms.hhs.gov/api-page",
+    cost: "anonymous",
+    indexes: ["npiregistry.cms.hhs.gov"],
     status: "in-production",
     probe: "https://npiregistry.cms.hhs.gov/api/?version=2.1&last_name=Smith&state=CA&limit=2",
     expect: json,
@@ -168,6 +473,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "professional-records",
     terms: "ClinicalTrials.gov API v2 is public and unauthenticated.",
     documentation: "https://clinicaltrials.gov/data-api/api",
+    cost: "anonymous",
+    indexes: ["clinicaltrials.gov"],
     status: "in-production",
     probe: "https://clinicaltrials.gov/api/v2/studies?query.term=oncology&pageSize=2",
     expect: json,
@@ -177,6 +484,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "professional-records",
     terms: "ProPublica's Nonprofit Explorer API is free and needs no key.",
     documentation: "https://projects.propublica.org/nonprofits/api",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://projects.propublica.org/nonprofits/api/v2/search.json?q=food+bank",
     expect: json,
@@ -186,6 +494,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "creative-records",
     terms: "Public API; commercial use of the free tier is rate limited, not keyed.",
     documentation: "https://www.tvmaze.com/api",
+    cost: "anonymous",
+    indexes: ["tvmaze.com"],
     status: "in-production",
     probe: "https://api.tvmaze.com/search/people?q=lena",
     expect: json,
@@ -195,6 +505,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "creative-records",
     terms: "loc.gov serves JSON for any search with `fo=json`; no key.",
     documentation: "https://www.loc.gov/apis/json-and-yaml/",
+    cost: "anonymous",
+    indexes: ["loc.gov"],
     status: "in-production",
     probe: "https://www.loc.gov/search/?q=Ansel+Adams&fo=json&c=2",
     expect: json,
@@ -204,6 +516,8 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "creative-records",
     terms: "Art Institute of Chicago public API; no key for search.",
     documentation: "https://api.artic.edu/docs/",
+    cost: "anonymous",
+    indexes: ["artic.edu"],
     status: "in-production",
     probe: "https://api.artic.edu/api/v1/artworks/search?q=Hopper&limit=2",
     expect: json,
@@ -213,6 +527,7 @@ const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     family: "historical-evidence",
     terms: "The CDX index is public and unauthenticated.",
     documentation: "https://index.commoncrawl.org/",
+    cost: "anonymous",
     status: "in-production",
     probe: "https://index.commoncrawl.org/collinfo.json",
     expect: json,

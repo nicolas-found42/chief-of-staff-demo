@@ -4,6 +4,29 @@ Recorded 2026-09-06 for issue #228. The executable registry is
 `apps/server/src/source-adapters/eligibility.ts`; reproduce its anonymous smoke probes with
 `pnpm exec tsx scripts/person-research-benchmark.mts --probe-sources`.
 
+## The standing check (#230)
+
+The registry now covers the whole configured collection — the incumbent ADR-0049 provider bundle
+audited into it as well as the #228 expansion families — and every entry carries a structured
+`cost`, not prose. `tests/src/unit/source-eligibility.test.ts` walks the routes production can
+actually reach and fails when any of them costs a key, a payment, a sign-in, an imported session
+or a paid proxy. A free tier that requires a key counts as keyed. The restriction is data
+acquisition only; the application's configurable LLM inference providers are unaffected.
+
+Two of its assertions are behavioural rather than declarative: it drives the real search composite
+with the global `fetch` stubbed, so curated per-provider transports are visible, and fails on any
+credential header or non-omitted credentials mode. It then walls every route with an HTTP 401 and
+fails if a single new host is reached — a keyed or paid escalation from a failed anonymous route
+would show up as that host.
+
+Two entries are worth naming because they look like exceptions and are not. Marginalia's documented
+anonymous path sends the literal published constant `API-Key: public`, which is contended across
+every caller and issued to nobody; the check pins that literal, so a key that ever becomes *obtained*
+stops passing. SEC EDGAR requires a declared contact in the User-Agent, which identifies the caller
+rather than authenticating it, and grants no access another caller cannot get by declaring its own.
+
+A route that fails its probe stays in the record as an explicit gap rather than being deleted.
+
 The latest run received HTTP 200 and parseable JSON from all 15 probed routes. Three other
 entries record exclusions or prior unavailability and were **not probed** by this command.
 The CLI's “18/18 answered as documented” includes those three entries; it does not mean 18
