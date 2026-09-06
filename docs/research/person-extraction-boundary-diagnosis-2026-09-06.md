@@ -747,3 +747,122 @@ Why this upstream buffers tool-call arguments rather than streaming them, and wh
 property of the upstream, of tool-call decoding, or of OpenRouter's normalisation, cannot be
 determined from the client. It does not need to be: the client's job is to tell a buffering
 upstream from a dead one, and the observations above give it the means.
+
+## Performance and endpoint diagnosis (issues #232, #233)
+
+Measured by calling the API directly with the exact captured production body, so no client ceiling
+truncates the measurement. Shape only: token counts, character counts, timings, delta cadence.
+
+### Why generation takes so long
+
+Two factors multiply.
+
+**The answer is large.** One document extraction asks for 4,700–5,400 output tokens — 18–20 KB of
+JSON.
+
+**The configured model is slow.** `z-ai/glm-5.3-flash` generates at **24–28 tokens/second** on the
+routes that serve it. Five thousand tokens at that rate is roughly **200 seconds**, which is past
+the 120-second absolute ceiling before anything goes wrong. Measured totals were 166,908 ms and
+227,426 ms.
+
+Models at or below the same price are an order of magnitude faster on the identical request:
+
+| Model | tokens/s | Total | Claims | Deltas | Max gap |
+| --- | --- | --- | --- | --- | --- |
+| `inception/mercury-2.5-preview` | 317.8 | 20,554 ms | 10 | 13 | 5,917 ms |
+| `inclusionai/ling-3.0-flash-fin:free` | 281.1 | 42,905 ms | 32 | 2,310 | 4,114 ms |
+| `z-ai/glm-5.3-flash` (configured) | 24–28 | 166,908 ms | 19 | 39 | 139,794 ms |
+
+**A quarter to a third of every answer is field names.** Parsing completed answers and counting
+characters by role:
+
+| | `ling-3.0-flash-fin` (32 claims, 31,819 chars) | `mercury-2.5-preview` (10 claims, 8,576 chars) |
+| --- | --- | --- |
+| Field names | 8,316 (26%) | 3,001 (35%) |
+| Null and empty scaffolding | 580 (2%) | 212 (2%) |
+| Punctuation | 2,672 (8%) | 963 (11%) |
+| Substance | 20,251 (64%) | 4,400 (51%) |
+
+The dossier contract does not require its wire field names to be its domain names. Shortening them
+and mapping back is a contract-preserving change worth roughly a quarter of every extraction's
+output tokens.
+
+### Why calls stall
+
+Delta cadence, not model behaviour. Same model, same request, different routes:
+
+| Route | Deltas | Time to first token | Max gap | Answer |
+| --- | --- | --- | --- | --- |
+| NextBit | **1** | 56,694 ms | 56,694 ms | 18,797 chars |
+| Wafer | 39 | 1,048 ms | 139,794 ms | 18,124 chars |
+| `ling` / Novita | 2,310 | 4,114 ms | 4,114 ms | 31,819 chars |
+| `solar-pro4` / Upstage | 6,821 | 2,309 ms | 2,309 ms | 28,257 chars |
+
+NextBit delivers the entire answer in **one delta** after 57 seconds of silence. Our idle ceiling
+measures the gap between deltas, so it kills exactly these routes. Deltas per answer is a clean
+signal for whether a route streams incrementally.
+
+### Why model endpoints do not work
+
+**Our own routing block causes most of it.** `provider: { require_parameters: true }` produces
+`HTTP 404 — No endpoints found that support the provided 'tool_choice' value`. Removing only that
+block, the same models answer HTTP 200 in under a second:
+
+| Model | With `require_parameters` | Without |
+| --- | --- | --- |
+| `minimax/minimax-m3:free` | 404 in 26 ms | 200 in 888 ms |
+| `qwen/qwen3.7-flash` | 404 in 29 ms | 200 in 1,681 ms, `finish: tool_calls` |
+
+Their endpoint metadata declares both `tools` and `tool_choice`, so the router is rejecting the
+specific `tool_choice` *value* — a named function — which `require_parameters` cannot express. Two
+things compound it: `readDeclaredParameters` unions `supported_parameters` across every endpoint,
+so `forced_tool_call` is declared when no single endpoint supports the whole body; and a routing
+404 is terminal, because the binding step-down ladder recognises a refusal only by the binding's
+name and a no-endpoints failure names none.
+
+**A Gemini-family model reached through OpenRouter gets a schema it cannot accept.** Google AI
+Studio answers `INVALID_ARGUMENT` to the full 7,897-byte schema and 200 to a trivial one. The
+codebase already has `geminiWireSchema` with `stripUnsupportedKeys`, but applies it only to the
+`gemini` provider, not to Gemini-family models routed via OpenRouter.
+
+**The rest are ordinary capacity facts**: HTTP 429 from DeepInfra, Makora, CoreWeave, Fireworks and
+DigitalOcean; and several endpoint tags are not valid `provider.order` values, answering
+`No endpoints found` when pinned.
+
+### Why tool calls do not work
+
+Two unrelated causes that the old pass/fail survey merged.
+
+Most were the `require_parameters` 404 above — the tool call was never attempted.
+
+Genuinely, `openai/gpt-oss-20b` and `cohere/north-mini-code:free` answer `finish_reason: stop` with
+zero tool calls even when `tool_choice` names a function, and they do it with a trivial one-property
+schema too, so it is not schema-related. They complete the task in content instead — 5,917 and
+14,378 characters with `[DONE]` — and the boundary classifies that `unusable_shape` and stops. The
+existing step-down ladder to `response_format` or `prompt_only` would recover both.
+
+### Other things now known
+
+- **Prompt caching already works.** A repeat call reported `prompt_tokens 4932, cached_tokens 4928`
+  — 99.9% cached. There is no lever here, but it is not broken either.
+- **Reasoning is not the configured model's cost**: 11–15 reasoning tokens per extraction. It is
+  overwhelmingly the cost for others — `~deepseek/deepseek-v4-flash-latest` 161,416 reasoning
+  characters, `nex-agi/nex-n2-mini` 125,418, `nvidia/nemotron-3-nano-30b-a3b` 109,202 — all of which
+  hit the absolute ceiling while actively generating.
+- `inception/mercury-2.5-preview` spends 4,840 of 4,938 tokens on reasoning and still finishes in
+  20 seconds.
+- `qwen/qwen3.7-flash` returns **two** tool calls for one forced function; the reader takes the
+  first, which is correct but worth knowing.
+
+### Ranked performance work, by measured payoff
+
+1. **Stop aborting working generations.** Distinguish a buffering upstream from a dead one instead
+   of timing out on inter-delta gaps. Recovers seven models including the configured one.
+2. **Stop sending `require_parameters: true` blind, and step down on a routing 404.** Recovers seven
+   models at the cost of one retry.
+3. **Shorten wire field names and map them back.** Same contract, roughly 25–30% fewer output
+   tokens on every extraction.
+4. **Select model and route on measured throughput.** A tenfold speedup is available at or below the
+   current price.
+5. **Strip unsupported schema keywords for Gemini-family models routed through OpenRouter.**
+6. **Step the binding down when an upstream ignores forced tool choice** rather than failing.
