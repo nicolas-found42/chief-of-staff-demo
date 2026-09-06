@@ -573,10 +573,11 @@ describe("Content Scout external canaries and release receipts", () => {
 
   it("records LinkedIn login walls and empty shells as failed proof, never empty success", async () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "cos-linkedin-failed-proof-"));
+    let status = 200;
     let body = '<html><body class="authwall">Sign in to LinkedIn</body></html>';
     const adapter = new LinkedInComingLaterAdapter(async (url) => ({
       url,
-      status: 200,
+      status,
       contentType: "text/html",
       body,
     }));
@@ -587,6 +588,13 @@ describe("Content Scout external canaries and release receipts", () => {
     expect(blocked).toHaveLength(3);
     expect(blocked.every((receipt) => receipt.outcome === "blocked_access")).toBe(true);
     expect(blocked.every((receipt) => receipt.outcome !== "legitimate_empty")).toBe(true);
+
+    status = 999;
+    const nonstandardLoginWall = await runner.runOnce();
+    expect(nonstandardLoginWall.every((receipt) => receipt.outcome === "blocked_access")).toBe(
+      true,
+    );
+    status = 200;
 
     body =
       '<html><head><meta property="og:title" content="LinkedIn Login"><meta property="og:description" content="Log In or Sign Up to view this useful-looking public company update on LinkedIn."></head></html>';
