@@ -172,6 +172,19 @@ describe("the configured research source collection", () => {
     expect(
       SOURCE_ELIGIBILITY.filter((entry) => entry.status !== "in-production").length,
     ).toBeGreaterThan(0);
+    /* The known gaps are pinned by name, not just counted: deleting one of
+       them would still leave a non-zero count while turning "we cannot read
+       this" into "there was nothing to read" (fault-proved for #230).
+       Additions stay free; only silent removal fails. */
+    const gaps: Record<string, string> = Object.fromEntries(
+      SOURCE_ELIGIBILITY.filter((entry) => entry.status !== "in-production").map((entry) => [
+        entry.route,
+        entry.status,
+      ]),
+    );
+    expect(gaps["podcastindex"]).toBe("excluded");
+    expect(gaps["linkedin"]).toBe("excluded");
+    expect(gaps["youtube-captions"]).toBe("unavailable");
   });
 
   it("does not let a catalogue label alone mark a route eligible", () => {
