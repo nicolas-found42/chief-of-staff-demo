@@ -664,6 +664,12 @@ export class PersonResearch {
                 },
               },
               temperature: 0,
+              /* A dossier repeats its field names once per claim, and they were
+                 a quarter to a third of every answer. Abbreviating them on the
+                 wire cut output tokens 21% and wall time 15% without touching
+                 this schema, which is still what the answer is validated
+                 against (#232). */
+              compactWireNames: true,
               system: EXTRACTION_SYSTEM,
               user: JSON.stringify({
                 researchScope:

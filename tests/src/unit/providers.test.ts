@@ -12,6 +12,7 @@ import {
   makeCompleteJson,
   REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
+  STREAM_SILENT_TIMEOUT_MS,
 } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
 
@@ -128,9 +129,12 @@ async function queuedResponse(queued: Reply, signal?: AbortSignal | null): Promi
   });
 }
 
-it("keeps the absolute request ceiling above the token idle ceiling", () => {
-  expect(REQUEST_TIMEOUT_MS).toBe(120_000);
-  expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(STREAM_IDLE_TIMEOUT_MS);
+it("keeps the absolute request ceiling above both stream ceilings", () => {
+  expect(REQUEST_TIMEOUT_MS).toBe(300_000);
+  /* Ordered, and each one answers a different question: is the connection
+     alive, is an answer being produced, and has the whole call run too long. */
+  expect(STREAM_SILENT_TIMEOUT_MS).toBeGreaterThan(STREAM_IDLE_TIMEOUT_MS);
+  expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(STREAM_SILENT_TIMEOUT_MS);
 });
 
 beforeEach(() => {
@@ -274,7 +278,7 @@ describe("providers", () => {
           sseDrip: {
             intervalMs: 10_000,
             lines: Array.from(
-              { length: 20 },
+              { length: 40 },
               () => 'data: {"choices":[{"delta":{"reasoning":"synthetic activity"}}]}',
             ),
           },
@@ -413,10 +417,11 @@ describe("providers", () => {
           failure === "transport"
             ? { fail: new Error("SECRET provider text") }
             : {
-                sseDrip: {
-                  intervalMs: 1000,
-                  lines: [partial, ...Array.from({ length: 50 }, () => ": waiting")],
-                },
+                /* A partial answer and then nothing at all. Keepalives used to
+                   stand in for idleness here; since #232 they say the upstream
+                   is alive and buffering, which is a different fixture and its
+                   own test. This one is the connection going quiet. */
+                sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
         responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
@@ -495,7 +500,7 @@ describe("providers", () => {
   it("openrouter: insufficient original deadline leaves no room for a retry", async () => {
     vi.useFakeTimers();
     try {
-      declarations.push({ ...declaring("tools", "tool_choice"), delayMs: 70_000 });
+      declarations.push({ ...declaring("tools", "tool_choice"), delayMs: 255_000 });
       responses.push({ hang: true });
       const events: ModelAttemptEvent[] = [];
       const complete = makeCompleteJson(
@@ -508,7 +513,7 @@ describe("providers", () => {
         schema: ExtractionWireSchema,
         retry: { onAttempt: (event) => events.push(event) },
       }).catch((error: unknown) => modelBoundaryDiagnostic(error));
-      await vi.advanceTimersByTimeAsync(100_001);
+      await vi.advanceTimersByTimeAsync(300_001);
       expect(await pending).toMatchObject({ classification: "request_timeout" });
       expect(calls).toHaveLength(1);
       expect(events).toMatchObject([
@@ -637,41 +642,42 @@ describe("providers", () => {
         reasoning_content: " ",
       },
     },
-  ])(
-    "openrouter: $label reasoning metadata cannot keep an idle stream alive",
-    async ({ label, delta }) => {
-      vi.useFakeTimers();
-      try {
-        declarations.push(declaring("response_format"));
-        const activity = `data: ${JSON.stringify({ choices: [{ delta }] })}`;
-        responses.push({
-          sseDrip: { intervalMs: 10_000, lines: Array.from({ length: 10 }, () => activity) },
-        });
-        const complete = makeCompleteJson(
-          {
-            provider: "openrouter",
-            model: `some/empty-reasoning-heartbeat-${label}`,
-            apiKey: "ork",
-          },
-          "/nonexistent/mock-result.json",
-        );
-        const result = complete({
-          system: "S",
-          user: "U",
-          schema: z.object({ answer: z.string() }),
-        }).catch((error: unknown) => modelBoundaryDiagnostic(error));
-        await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
-        const diagnostic = await result;
-        expect(diagnostic).toMatchObject({
-          classification: "request_timeout",
-          timeoutMs: STREAM_IDLE_TIMEOUT_MS,
-        });
-        expect(JSON.stringify(diagnostic)).not.toContain("synthetic-private");
-      } finally {
-        vi.useRealTimers();
-      }
-    },
-  );
+  ])("openrouter: $label reasoning metadata never becomes an answer", async ({ label, delta }) => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("response_format"));
+      const activity = `data: ${JSON.stringify({ choices: [{ delta }] })}`;
+      responses.push({
+        sseDrip: { intervalMs: 10_000, lines: Array.from({ length: 20 }, () => activity) },
+      });
+      const complete = makeCompleteJson(
+        {
+          provider: "openrouter",
+          model: `some/empty-reasoning-heartbeat-${label}`,
+          apiKey: "ork",
+        },
+        "/nonexistent/mock-result.json",
+      );
+      const result = complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ answer: z.string() }),
+      }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+      /* These carry no answer, so the call still fails. Since #232 they are
+           traffic, so the connection counts as alive and the absolute ceiling
+           is what ends it rather than the idle one — the same reason a
+           buffering upstream is no longer aborted mid-generation. */
+      await vi.advanceTimersByTimeAsync(STREAM_SILENT_TIMEOUT_MS + 1);
+      const diagnostic = await result;
+      expect(diagnostic).toMatchObject({
+        classification: "request_timeout",
+        timeoutMs: STREAM_SILENT_TIMEOUT_MS,
+      });
+      expect(JSON.stringify(diagnostic)).not.toContain("synthetic-private");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("openrouter: a stalled stream still names the upstream that was serving it", async () => {
     vi.useFakeTimers();
@@ -686,7 +692,7 @@ describe("providers", () => {
         choices: [{ delta: { reasoning: " " } }],
       })}`;
       responses.push({
-        sseDrip: { intervalMs: 10_000, lines: Array.from({ length: 10 }, () => activity) },
+        sseDrip: { intervalMs: 10_000, lines: Array.from({ length: 20 }, () => activity) },
       });
       const complete = makeCompleteJson(
         { provider: "openrouter", model: "some/stalling-model", apiKey: "ork" },
@@ -697,15 +703,227 @@ describe("providers", () => {
         user: "U",
         schema: z.object({ answer: z.string() }),
       }).catch((error: unknown) => modelBoundaryDiagnostic(error));
-      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(STREAM_SILENT_TIMEOUT_MS + 1);
       expect(await result).toMatchObject({
         classification: "request_timeout",
-        timeoutMs: STREAM_IDLE_TIMEOUT_MS,
+        timeoutMs: STREAM_SILENT_TIMEOUT_MS,
         upstreamServer: "Z.AI",
       });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("openrouter: a buffering upstream that sends only keepalives is not aborted", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("tools", "tool_choice"));
+      /* Measured behaviour: NextBit delivers an 18,797-character answer in a
+         single delta after 57 seconds of nothing but SSE comments. The idle
+         ceiling measures gaps between answer tokens, so it killed exactly the
+         routes that buffer — while the connection was demonstrably alive. */
+      const keepalives = Array.from({ length: 12 }, () => ": OPENROUTER PROCESSING");
+      responses.push({
+        sseDrip: {
+          intervalMs: 5_000,
+          lines: [...keepalives, ...sseToolCallCompletion(JSON.stringify(RESULT))],
+        },
+      });
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/buffering-upstream", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const answered = complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ isTranscript: z.boolean(), summary: z.string() }).passthrough(),
+        preferredBinding: "forced_tool_call",
+      });
+      await vi.advanceTimersByTimeAsync(80_000);
+      expect(await answered).toMatchObject({ summary: "ok" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("openrouter: a stream with no traffic at all still hits the idle ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("tools", "tool_choice"));
+      /* The ceiling's real job: a connection that has gone silent entirely.
+         Keepalives are the upstream saying it is alive; nothing is nothing. */
+      responses.push({ bodyHang: true });
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/dead-stream", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const result = complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ answer: z.string() }),
+        preferredBinding: "forced_tool_call",
+      }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
+      expect(await result).toMatchObject({
+        classification: "request_timeout",
+        timeoutMs: STREAM_IDLE_TIMEOUT_MS,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("openrouter: asks for the fastest route rather than pinning one", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/routed", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: z.object({ isTranscript: z.boolean() }).passthrough(),
+      preferredBinding: "forced_tool_call",
+    });
+    /* Measured: the same model runs at 28 tok/s on one route and 66-75 tok/s
+       on another. Sorting is OpenRouter's own continuous measurement; naming a
+       vendor here would be a catalogue label that goes stale. */
+    expect(calls[0]?.body.provider).toEqual({ sort: "throughput" });
+  });
+
+  it("openrouter: a routing refusal steps the binding down instead of failing", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    /* Observed live: "No endpoints found that support the provided
+       'tool_choice' value" — a 404 for a model whose metadata declares
+       tool_choice, because the union across endpoints is not a promise that
+       any single endpoint honours the whole body. */
+    responses.push({
+      status: 404,
+      body: {
+        error: {
+          code: 404,
+          message: "No endpoints found that support the provided 'tool_choice' value.",
+        },
+      },
+    });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/no-tool-choice-endpoint", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    expect(
+      await complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ isTranscript: z.boolean(), summary: z.string() }).passthrough(),
+        preferredBinding: "forced_tool_call",
+      }),
+    ).toMatchObject({ summary: "ok" });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body.tool_choice).toBeUndefined();
+  });
+
+  it("openrouter: an upstream that ignores forced tool choice steps down", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    /* Measured: gpt-oss-20b and north-mini-code answer finish_reason stop with
+       zero tool calls under a forced named function, and do the task in
+       content instead. That answer is unusable at this binding and perfectly
+       usable at the next one. */
+    responses.push({
+      sse: [
+        `data: {"choices":[{"delta":{"content":${JSON.stringify(JSON.stringify(RESULT))}}}]}`,
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{}}',
+        "data: [DONE]",
+      ],
+    });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/ignores-tool-choice", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    expect(
+      await complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ isTranscript: z.boolean(), summary: z.string() }).passthrough(),
+        preferredBinding: "forced_tool_call",
+      }),
+    ).toMatchObject({ summary: "ok" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("openrouter: a Gemini-family model gets a schema its upstream accepts", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "google/gemma-4-31b-it", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: z.object({ isTranscript: z.boolean() }).passthrough(),
+      preferredBinding: "forced_tool_call",
+    });
+    /* Live: Google AI Studio answers INVALID_ARGUMENT to the full JSON Schema
+       and 200 to a stripped one. The stripping already existed for the direct
+       gemini provider; routing through OpenRouter did not reach it. */
+    const sent = JSON.stringify(
+      (calls[0]?.body.tools as { function?: { parameters?: unknown } }[] | undefined)?.[0]?.function
+        ?.parameters,
+    );
+    expect(sent).not.toContain("additionalProperties");
+    expect(sent).not.toContain("$schema");
+  });
+
+  it("openrouter: abbreviates wire field names and hands back the caller's own", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    /* Measured on the person-extraction request: a quarter to a third of every
+       answer's characters were field names, repeated once per claim, and
+       abbreviating them cut output tokens 21% and wall time 15% (#232). */
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify({ it: true, su: "ok" })) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/compact", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const answer = await complete({
+      system: "S",
+      user: "U",
+      schema: z.object({ isTranscript: z.boolean(), summary: z.string() }),
+      preferredBinding: "forced_tool_call",
+      compactWireNames: true,
+    });
+    /* The caller gets its own contract back, whatever went over the wire. */
+    expect(answer).toEqual({ isTranscript: true, summary: "ok" });
+    const parameters = (
+      calls[0]?.body.tools as { function?: { parameters?: { properties?: object } } }[] | undefined
+    )?.[0]?.function?.parameters;
+    expect(Object.keys(parameters?.properties ?? {})).toEqual(["it", "su"]);
+    /* And the model is told what the abbreviations mean, or it cannot comply. */
+    const messages = calls[0]?.body.messages as { role: string; content: string }[];
+    expect(messages[0]?.content).toContain("it=isTranscript");
+    expect(messages[0]?.content).toContain("su=summary");
+  });
+
+  it("openrouter: leaves the wire names alone unless the caller opts in", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/uncompacted", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await complete({
+      system: "S",
+      user: "U",
+      schema: z.object({ isTranscript: z.boolean(), summary: z.string() }).passthrough(),
+      preferredBinding: "forced_tool_call",
+    });
+    const parameters = (
+      calls[0]?.body.tools as { function?: { parameters?: { properties?: object } } }[] | undefined
+    )?.[0]?.function?.parameters;
+    expect(Object.keys(parameters?.properties ?? {})).toContain("isTranscript");
+    expect((calls[0]?.body.messages as { content: string }[])[0]?.content).toBe("S");
   });
 
   it("openrouter: reconstructs interleaved tool streams by index and selects the first call", async () => {
@@ -932,7 +1150,7 @@ describe("providers", () => {
     expect(JSON.stringify(schema)).not.toContain("$ref");
   });
 
-  it("openrouter: posts the openai body shape and routes with require_parameters", async () => {
+  it("openrouter: posts the openai body shape and asks for the fastest route", async () => {
     declarations.push(declaring("structured_outputs", "response_format"));
     responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
     const complete = makeCompleteJson(
@@ -945,7 +1163,7 @@ describe("providers", () => {
     expect(calls[0].url).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(calls[0].headers.authorization).toBe("Bearer ork");
     expect((calls[0].body.response_format as Record<string, unknown>).type).toBe("json_schema");
-    expect(calls[0].body.provider).toEqual({ require_parameters: true });
+    expect(calls[0].body.provider).toEqual({ sort: "throughput" });
   });
 
   /* An unreadable declaration is the only case that steps down, and it steps to
@@ -967,8 +1185,8 @@ describe("providers", () => {
       type: "function",
       function: { name: "save_extraction" },
     });
-    expect(calls[0].body.provider).toBeUndefined();
-    expect(calls[1].body.provider).toBeUndefined();
+    expect(calls[0].body.provider).toEqual({ sort: "throughput" });
+    expect(calls[1].body.provider).toEqual({ sort: "throughput" });
   });
 
   it("openrouter: reaches the prompt only after a tool call is refused too", async () => {
@@ -1267,7 +1485,7 @@ describe("providers", () => {
       type: "function",
       function: { name: "save_extraction" },
     });
-    expect(calls[0].body.provider).toEqual({ require_parameters: true });
+    expect(calls[0].body.provider).toEqual({ sort: "throughput" });
     const tools = calls[0].body.tools as { function: { parameters: Record<string, unknown> } }[];
     expect(tools[0].function.parameters.properties).toHaveProperty("tasks");
     expect(await complete({ system: "S", user: "U", schema: ExtractionWireSchema })).toEqual(
@@ -1321,7 +1539,7 @@ describe("providers", () => {
     ).toEqual(RESULT);
     expect(calls[0].body.response_format).toBeDefined();
     expect(calls[0].body.tools).toBeUndefined();
-    expect(calls[0].body.provider).toBeUndefined();
+    expect(calls[0].body.provider).toEqual({ sort: "throughput" });
   });
 
   it("openai: a tool preference does not change its fixed binding", async () => {
@@ -1402,7 +1620,7 @@ describe("providers", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].body.response_format).toBeUndefined();
     expect(calls[0].body.tools).toBeUndefined();
-    expect(calls[0].body.provider).toEqual({ require_parameters: true });
+    expect(calls[0].body.provider).toEqual({ sort: "throughput" });
     const messages = calls[0].body.messages as { role: string; content: string }[];
     expect(messages[0].content).toMatch(
       /^S\n\nReturn exactly one JSON object matching this schema/,
@@ -1671,10 +1889,15 @@ describe("model-boundary failures", () => {
       void pending.then(() => {
         settled = true;
       });
-      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
+      /* Keepalives answer "is the connection alive", never "is there an
+         answer". Since #232 they hold the connection ceiling open, so the
+         silent ceiling is what ends this — still short of the absolute one, so
+         a line kept warm without an answer stays distinguishable from a slow
+         generation. */
+      await vi.advanceTimersByTimeAsync(STREAM_SILENT_TIMEOUT_MS + 1);
       expect(settled).toBe(true);
       const failure = await pending;
-      expect(failure.timeoutMs).toBe(STREAM_IDLE_TIMEOUT_MS);
+      expect(failure.timeoutMs).toBe(STREAM_SILENT_TIMEOUT_MS);
       expect(failure.status).toBe(200);
       expect(failure.bodyBytes).toBeGreaterThan(0);
       expect(JSON.stringify(failure)).not.toContain("OPENROUTER PROCESSING");

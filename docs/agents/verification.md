@@ -85,9 +85,12 @@ turn up anyway, the scorer reads the error and ignores the debrief.
 
 - Only `upstage/solar-pro4` gates a commit; every other model in `--models`
   is a data point.
-- Calls stream: the first token must arrive within 30 seconds, and gaps
-  between tokens may not exceed 30 seconds either — either way the call ends
-  at the idle ceiling. A 120-second absolute ceiling bounds a slow trickle.
+- Calls stream, under three ceilings that answer different questions. A
+  connection that sends nothing at all for 30 seconds is dead and ends there.
+  One that stays connected but produces no answer for 90 seconds ends at the
+  silent ceiling — some upstreams buffer a whole tool call behind keepalives,
+  so traffic counts as alive even when no token has arrived. A call that is
+  actively generating is bounded at 300 seconds.
   A failed or timed-out run retries within a 60-second cumulative budget (max
   10 attempts) before printing the full model-boundary diagnostic. `HTTP 429`
   clusters mean back off with `--concurrency` (default 20).

@@ -1,8 +1,19 @@
 import { z } from "zod";
 import { ProviderIdSchema, type ProviderId } from "./schemas.js";
 
-/** One model call's absolute ceiling — the backstop above the token idle ceiling. */
-export const MODEL_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * One model call's absolute ceiling — the backstop above the two stream
+ * ceilings below.
+ *
+ * Since #232 this bounds only a call that is actively generating: a connection
+ * that goes quiet is caught at 30 seconds and one that stays open without
+ * producing an answer at 90, both far below this. So the number's only job is
+ * to fit real work, and the measured work does not fit in two minutes — one
+ * person-extraction answer is around 4,000 output tokens, and the configured
+ * model was measured between 24 and 75 tokens per second depending on the
+ * route it landed on.
+ */
+export const MODEL_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
  * How long one streaming model call may go without a token — measured from the
@@ -12,6 +23,20 @@ export const MODEL_REQUEST_TIMEOUT_MS = 120_000;
  * thirty seconds instead of two minutes.
  */
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000;
+
+/**
+ * How long an upstream may stay connected without producing any answer.
+ *
+ * Distinct from the idle ceiling above, which asks whether the connection is
+ * alive at all. Some upstreams buffer a whole tool call and send nothing but
+ * SSE keepalives while they generate — measured at 57 to 73 seconds before an
+ * 18,797-character answer arrived in a single delta (#232). Treating that as a
+ * dead connection aborted work the model was completing, so silence with
+ * traffic gets its own, longer bound, still under the absolute ceiling so a
+ * provider that keeps the line warm and never answers is named as such rather
+ * than reported as a slow generation.
+ */
+export const MODEL_STREAM_SILENT_TIMEOUT_MS = 90_000;
 
 /**
  * How a model is bound to the caller's Result Shape. Ordered most deterministic

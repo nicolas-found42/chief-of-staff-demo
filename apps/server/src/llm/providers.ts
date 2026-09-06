@@ -8,6 +8,7 @@ import {
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
+  MODEL_STREAM_SILENT_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -61,11 +62,26 @@ interface CompletionRequest {
    * shape without saying so. Every caller names its own.
    */
   schema: WireSchema;
+  /**
+   * Send the schema with abbreviated property names and restore the caller's
+   * own names before validating.
+   *
+   * Measured on the person-extraction request: 21% fewer output tokens and 15%
+   * less wall time, because a quarter to a third of every answer's characters
+   * were field names repeated once per claim (#232). The caller's schema — the
+   * contract — is untouched; only the wire representation shrinks, and the
+   * boundary tells the model what the abbreviations mean. Opt-in, so a caller
+   * whose prompt names its fields is not silently rewritten under it.
+   */
+  compactWireNames?: boolean;
 }
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
 /** The ceiling on one model call. Exported so a test can drive it deterministically. */
 export const REQUEST_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS;
+
+/** The silent-but-connected ceiling. Exported for the same reason. */
+export const STREAM_SILENT_TIMEOUT_MS = MODEL_STREAM_SILENT_TIMEOUT_MS;
 
 /** The streaming idle ceiling. Exported so a test can drive it deterministically. */
 export const STREAM_IDLE_TIMEOUT_MS = MODEL_STREAM_IDLE_TIMEOUT_MS;
@@ -112,6 +128,11 @@ function isUnknownArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
 
+/** The same narrowing for objects: every member still has to be checked. */
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * JSON Schema handed to OpenAI / OpenRouter / Anthropic. The Zod source is the
  * caller's (all fields required, nullable optionals) because OpenAI strict
@@ -124,6 +145,85 @@ function wireJsonSchema(source: WireSchema): JsonObject {
   /* OpenAI strict json_schema rejects the $schema key zod-to-json-schema adds. */
   delete converted.$schema;
   return converted;
+}
+
+/**
+ * Whether a model id names a Google model, whichever provider fronts it.
+ * Their upstream rejects JSON Schema keywords the OpenAI shape carries.
+ */
+function geminiFamily(model: string): boolean {
+  return /(^|\/)(google\/)?(gemini|gemma)/i.test(model);
+}
+
+/**
+ * Abbreviate every property name in a JSON Schema, and say how to undo it.
+ *
+ * One alias per distinct property name across the whole schema, so a name that
+ * appears at several depths abbreviates the same way and the answer can be
+ * restored without tracking position. Initials of the name's words, extended
+ * on collision.
+ */
+function compactWireSchema(source: JsonObject): { schema: JsonObject; names: Map<string, string> } {
+  const names = new Map<string, string>();
+  const taken = new Set<string>();
+  const aliasFor = (name: string): string => {
+    const existing = names.get(name);
+    if (existing) return existing;
+    const initials = name
+      .split(/(?=[A-Z])|_/)
+      .filter(Boolean)
+      .map((word) => word[0]!.toLowerCase())
+      .join("");
+    const base = initials.length >= 2 ? initials : name.slice(0, 2).toLowerCase();
+    let candidate = base;
+    let suffix = 1;
+    while (taken.has(candidate)) candidate = `${base}${String(++suffix)}`;
+    taken.add(candidate);
+    names.set(name, candidate);
+    return candidate;
+  };
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (typeof node !== "object" || node === null) return node;
+    const out: JsonObject = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "properties" && isUnknownRecord(value)) {
+        const renamed: JsonObject = {};
+        for (const [property, sub] of Object.entries(value))
+          renamed[aliasFor(property)] = walk(sub);
+        out[key] = renamed;
+        continue;
+      }
+      if (key === "required" && isUnknownArray(value)) {
+        out[key] = value.map((name) => (typeof name === "string" ? aliasFor(name) : name));
+        continue;
+      }
+      out[key] = walk(value);
+    }
+    return out;
+  };
+  const schema = walk(source) as JsonObject;
+  return { schema, names };
+}
+
+/** Put the caller's own property names back on an answer sent with aliases. */
+function expandWireNames(answer: unknown, names: Map<string, string>): unknown {
+  const back = new Map([...names].map(([long, short]) => [short, long]));
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (typeof node !== "object" || node === null) return node;
+    const out: JsonObject = {};
+    for (const [key, value] of Object.entries(node)) out[back.get(key) ?? key] = walk(value);
+    return out;
+  };
+  return walk(answer);
+}
+
+/** The legend the model needs to answer in the abbreviated shape. */
+function wireNameLegend(names: Map<string, string>): string {
+  return ` The result's field names are abbreviated: ${[...names]
+    .map(([long, short]) => `${short}=${long}`)
+    .join(", ")}. Use the abbreviated names exactly.`;
 }
 
 function geminiWireSchema(source: WireSchema): JsonObject {
@@ -207,10 +307,28 @@ async function postSseStream(
   const idle = new AbortController();
   const onOuterAbort = (): void => idle.abort();
   deadline.signal.addEventListener("abort", onOuterAbort, { once: true });
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  /* Two questions, two ceilings. `connection` asks whether the upstream is
+     still there at all and is reset by any byte; `progress` asks whether it is
+     producing an answer and is reset only by answer tokens. A buffering
+     upstream keeps the first alive with keepalives while it generates, which
+     is why the first alone used to abort work that was succeeding (#232). */
+  let connectionTimer: ReturnType<typeof setTimeout> | undefined;
+  let progressTimer: ReturnType<typeof setTimeout> | undefined;
+  let firedCeiling: number | null = null;
+  const armConnection = (): void => {
+    clearTimeout(connectionTimer);
+    connectionTimer = setTimeout(() => {
+      firedCeiling ??= STREAM_IDLE_TIMEOUT_MS;
+      idle.abort();
+    }, STREAM_IDLE_TIMEOUT_MS);
+  };
   const armIdle = (): void => {
-    clearTimeout(timer);
-    timer = setTimeout(() => idle.abort(), STREAM_IDLE_TIMEOUT_MS);
+    armConnection();
+    clearTimeout(progressTimer);
+    progressTimer = setTimeout(() => {
+      firedCeiling ??= STREAM_SILENT_TIMEOUT_MS;
+      idle.abort();
+    }, STREAM_SILENT_TIMEOUT_MS);
   };
   armIdle();
   /* `upstreamServer` is observation, not control: OpenRouter names the route
@@ -231,7 +349,7 @@ async function postSseStream(
       observed.status = response.status;
       deadline.observed({ status: response.status, bodyBytes: 0 });
     } catch (error) {
-      throw requestTimeoutOrTransport(call, deadline.signal, error);
+      throw requestTimeoutOrTransport(call, deadline.signal, error, observed, firedCeiling);
     }
     if (response.status < 200 || response.status >= 300) {
       /* Classify exactly like postJson: the refusal body carries the facts. */
@@ -362,10 +480,14 @@ async function postSseStream(
       if (!read.ok) {
         /* The abort's origin names the timeout: the seam's ceiling or the idle
            timer — which, before the first token, is also the first-token cap. */
-        throw requestTimeoutOrTransport(call, deadline.signal, read.error, observed);
+        throw requestTimeoutOrTransport(call, deadline.signal, read.error, observed, firedCeiling);
       }
       if (read.chunk.done) break;
       observed.bodyBytes += read.chunk.value.byteLength;
+      /* Any byte answers the connection question, whatever it carries. It
+         does not answer the progress question, so the second ceiling still
+         bounds an upstream that stays connected and never produces one. */
+      armConnection();
       deadline.observed({ status: response.status, bodyBytes: observed.bodyBytes });
       buffer += decoder.decode(read.chunk.value, { stream: true });
       for (;;) {
@@ -392,9 +514,13 @@ async function postSseStream(
       /* Reconstruct the provider's array in index order. The existing reader
          selects its first call, exactly as for nonstreamed replies; malformed
          first arguments never borrow from a later call or select its answer. */
+      /* Content is kept rather than nulled. An upstream that ignores a forced
+         tool call and answers in `content` has still answered, and discarding
+         it left the diagnostic saying every field was empty when one was not
+         (#232). The reader still looks only in the binding's own field. */
       message = {
         role: "assistant",
-        content: null,
+        content: content || null,
         tool_calls: [...toolCalls]
           .sort(([a], [b]) => a - b)
           .map(([, toolCall]) => ({
@@ -422,7 +548,8 @@ async function postSseStream(
       }),
     };
   } finally {
-    clearTimeout(timer);
+    clearTimeout(connectionTimer);
+    clearTimeout(progressTimer);
     idle.abort();
     deadline.signal.removeEventListener("abort", onOuterAbort);
   }
@@ -455,6 +582,7 @@ function requestTimeoutOrTransport(
   ceilingSignal: AbortSignal,
   error: unknown,
   observed: { status?: number; bodyBytes: number; upstreamServer?: string } = { bodyBytes: 0 },
+  firedCeiling: number | null = null,
 ): ModelBoundaryError {
   if (ceilingSignal.aborted) {
     return modelBoundaryFailure({
@@ -469,7 +597,9 @@ function requestTimeoutOrTransport(
       ...observed,
       call,
       classification: "request_timeout",
-      timeoutMs: STREAM_IDLE_TIMEOUT_MS,
+      /* Which of the stream's two ceilings fired: a connection that went
+         silent, or one that stayed open without producing an answer. */
+      timeoutMs: firedCeiling ?? STREAM_IDLE_TIMEOUT_MS,
     });
   }
   if (isRequestTimeout(error)) {
@@ -895,14 +1025,18 @@ async function openAiCompatibleComplete(
     const call = modelCall(cfg, RESULT_SHAPE_BINDINGS[index] ?? "prompt_only");
     const body = chatCompletionBody(call.binding, cfg, request, schema);
     if (stream) body.stream = true;
-    /* OpenRouter unions endpoint declarations, so a declared binding can still
-       land on an endpoint that refuses it; require_parameters holds routing to
-       endpoints that declare everything the body sends. Withheld when the
-       declaration is unreadable: the step-down ladder recognizes a refusal by
-       the binding's name in the upstream error, and a no-endpoints routing
-       failure names none. */
-    if (cfg.provider === "openrouter" && declared !== null) {
-      body.provider = { require_parameters: true };
+    /* OpenRouter unions endpoint declarations across a model's routes, so a
+       declared binding is not a promise that any single route honours the
+       whole body. `require_parameters` used to hold routing to routes that
+       declare everything — but it answers HTTP 404 naming the very parameter
+       the metadata declares, and a model that answers in under a second
+       without it never got asked at all (#232). The step-down ladder handles
+       a route that refuses the binding, so routing asks for throughput
+       instead: the same model measured 28 tokens/second on one route and
+       66-75 on another. Sorting is OpenRouter's own continuous measurement;
+       naming a route here would be a catalogue label that goes stale. */
+    if (cfg.provider === "openrouter") {
+      body.provider = { sort: "throughput" };
     }
     let response: HttpResponse;
     try {
@@ -914,7 +1048,8 @@ async function openAiCompatibleComplete(
       const retryable =
         diagnostic?.classification === "transport_failure" ||
         (diagnostic?.classification === "request_timeout" &&
-          diagnostic.timeoutMs === STREAM_IDLE_TIMEOUT_MS);
+          (diagnostic.timeoutMs === STREAM_IDLE_TIMEOUT_MS ||
+            diagnostic.timeoutMs === STREAM_SILENT_TIMEOUT_MS));
       if (request.retry && retryable) {
         let stoppedReason = deadline.signal.aborted
           ? "The original request deadline expired."
@@ -969,10 +1104,14 @@ async function openAiCompatibleComplete(
       }
       throw error;
     }
+    /* A declaration keeps its meaning: a model that declares a binding and then
+       refuses it surfaces that refusal rather than silently degrading. A
+       routing refusal is different in kind — no model saw the request, because
+       OpenRouter's union of endpoint declarations promised a binding no single
+       route honours — so it steps down whatever the declaration said (#232). */
     if (
-      declared === null &&
       index < RESULT_SHAPE_BINDINGS.length - 1 &&
-      refusesBinding(call.binding, response)
+      (routingRefusal(response) || (declared === null && refusesBinding(call.binding, response)))
     ) {
       const failure = modelBoundaryFailure({
         call,
@@ -990,7 +1129,36 @@ async function openAiCompatibleComplete(
       index += 1;
       continue;
     }
-    return readChatResultShape(modelReply(call, response));
+    try {
+      return readChatResultShape(modelReply(call, response));
+    } catch (error) {
+      /* Some upstreams answer `finish_reason: stop` with no tool call at all
+         under a forced named function, doing the task in content instead
+         (measured: gpt-oss-20b, north-mini-code). That answer is unusable at
+         this binding and ordinary at the next one, so it steps down rather
+         than ending the call. */
+      const diagnostic = modelBoundaryDiagnostic(error);
+      if (
+        index < RESULT_SHAPE_BINDINGS.length - 1 &&
+        !deadline.signal.aborted &&
+        diagnostic?.classification === "unusable_shape" &&
+        /* The measured signature: the task was done, in `content`, while the
+           binding's own field is empty. An answer that is empty everywhere is
+           not going to be better at the next binding, and keeps its report. */
+        diagnostic.populatedFields.some((field) => field.endsWith(".content"))
+      ) {
+        deadline.reportAttempt({
+          outcome: "retrying",
+          diagnostic,
+          delayMs: 0,
+          stoppedReason: null,
+        });
+        recoveryFailure = { error };
+        index += 1;
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
@@ -1040,6 +1208,19 @@ function degenerateRepeat(value: string): boolean {
 }
 
 /** Whether a 4xx says the model will not honour the binding that was sent. */
+/**
+ * Whether the router found nowhere to send this body.
+ *
+ * Observed live: `HTTP 404 — No endpoints found that support the provided
+ * 'tool_choice' value`, for models whose own metadata declares `tool_choice`.
+ * No model refused anything; the request never arrived. Treating it as
+ * terminal left seven surveyed models unreachable, when the same models answer
+ * in under a second at a weaker binding (#232).
+ */
+function routingRefusal(response: HttpResponse): boolean {
+  return response.status === 404 && /no endpoints found/i.test(response.text);
+}
+
 function refusesBinding(binding: ResultShapeBinding, response: HttpResponse): boolean {
   if (response.status < 400 || response.status >= 500) return false;
   if (binding === "response_format") {
@@ -1287,16 +1468,35 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
   return async (request) => {
     /* Per request, not per provider call: the shape belongs to the calling
        Module, not to this seam. */
-    const schema = wireJsonSchema(request.schema);
+    const full = wireJsonSchema(request.schema);
     if (cfg.provider === "mock") return mockComplete(mockResultPath);
-    return withinRequestCeiling(cfg, request.retry, async (deadline) => {
+    /* Compaction is a property of the wire, so it is applied and undone here
+       rather than by any Module: the caller hands over its own schema and gets
+       its own names back. */
+    const compacted = request.compactWireNames ? compactWireSchema(full) : null;
+    const schema = compacted?.schema ?? full;
+    if (compacted)
+      request = {
+        ...request,
+        system: request.system + wireNameLegend(compacted.names),
+      };
+    const answered = withinRequestCeiling(cfg, request.retry, async (deadline) => {
       switch (cfg.provider) {
         case "openai":
           return openaiComplete(cfg, request, schema, deadline);
         case "anthropic":
           return anthropicComplete(cfg, request, schema, deadline);
         case "openrouter":
-          return openrouterComplete(cfg, request, schema, deadline);
+          /* Google AI Studio answers INVALID_ARGUMENT to the full JSON Schema
+             and 200 to a stripped one. The stripping already existed for the
+             direct `gemini` provider; a Gemini-family model reached through
+             OpenRouter never got it (#232). */
+          return openrouterComplete(
+            cfg,
+            request,
+            geminiFamily(cfg.model) ? geminiWireSchema(request.schema) : schema,
+            deadline,
+          );
         case "gemini":
           return geminiComplete(cfg, request, geminiWireSchema(request.schema), deadline);
         case "ollama":
@@ -1305,5 +1505,6 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
           return mockComplete(mockResultPath);
       }
     });
+    return compacted ? answered.then((value) => expandWireNames(value, compacted.names)) : answered;
   };
 }

@@ -14,7 +14,7 @@ not additional logical model calls. Existing binding recovery attempts are also 
 observer is enabled.
 
 Only a classified transport failure or the thirty-second streaming idle timeout qualifies. Before
-retrying, the failed stream is aborted and at least 30,500 ms must remain in the original 120-second
+retrying, the failed stream is aborted and at least 30,500 ms must remain in the original
 request deadline. Backoff is fixed at 500 ms; the deadline and an optional caller lifecycle gate
 are checked again afterward. Retry reuses the same model, binding, routing parameters, prompts,
 sampling parameters, and full Result Shape. Partial answers from separate attempts never combine.
