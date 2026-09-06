@@ -75,7 +75,7 @@ test("automatic dossier journey — add, research, inspect source, and query dem
     },
   });
   await page.request.patch("/api/people/research/settings", {
-    data: { paused: false, profileCalls: 4, dailyCalls: 100 },
+    data: { paused: false, profileCalls: 4 },
   });
   await page.goto("/people/new");
   await page.getByLabel("Email or profile URL").fill("maya@example.com");
@@ -121,7 +121,7 @@ test("sparse and unavailable dossiers keep unquoted sources accessible with queu
   page,
 }) => {
   await page.request.patch("/api/people/research/settings", {
-    data: { paused: true, profileCalls: 12, dailyCalls: 100 },
+    data: { paused: true, profileCalls: 12 },
   });
   const created = await (
     await page.request.post("/api/people", { data: { primaryEmail: "retained-only@example.com" } })
@@ -183,7 +183,7 @@ test("Calendar and repeated Transcript entry reach automatically populated dossi
       },
     });
   await page.request.patch("/api/people/research/settings", {
-    data: { paused: false, profileCalls: 4, dailyCalls: 100, concurrency: 2 },
+    data: { paused: false, profileCalls: 4, concurrency: 2 },
   });
   const event = {
     calendarId: "primary",

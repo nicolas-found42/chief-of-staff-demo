@@ -33,6 +33,20 @@ const EMPTY_RSS =
 
 /** One empty-but-parseable 200 body per provider endpoint host in the bundle. */
 const EMPTY_BODIES: Record<string, string> = {
+  "api.crossref.org": '{"message":{"items":[]}}',
+  "api.datacite.org": '{"data":[]}',
+  "openlibrary.org": '{"docs":[]}',
+  "npiregistry.cms.hhs.gov": '{"results":[]}',
+  "clinicaltrials.gov": '{"studies":[]}',
+  "projects.propublica.org": '{"organizations":[]}',
+  "api.tvmaze.com": "[]",
+  "www.loc.gov": '{"results":[]}',
+  "api.artic.edu": '{"data":[]}',
+  "api.mwmbl.org": "[]",
+  "sepiasearch.org": '{"data":[]}',
+  "itunes.apple.com": '{"results":[]}',
+  "public.api.bsky.app": '{"actors":[]}',
+
   "html.duckduckgo.com": "<html><body></body></html>",
   "www.mojeek.com": '<html><body><ul class="results"></ul></body></html>',
   "api2.marginalia-search.com": "[]",
@@ -452,9 +466,9 @@ describe("the PublicSearch composite", () => {
       expect(typeof event.results).toBe("number");
       expect(typeof event.ms).toBe("number");
     }
-    // The default bundle registers 24 providers; each emits exactly one event.
-    expect(events).toHaveLength(24);
-    expect(new Set(events.map((event) => event.provider)).size).toBe(24);
+    // The default bundle registers 37 providers; each emits exactly one event.
+    expect(events).toHaveLength(37);
+    expect(new Set(events.map((event) => event.provider)).size).toBe(37);
     expect(
       events.some(
         (event) => event.provider === "wikipedia" && event.outcome === "ok" && event.results === 1,
@@ -474,7 +488,7 @@ describe("the PublicSearch composite", () => {
     );
   });
 
-  it("merges in registration order and dedupes by exact URL keeping the first copy", async () => {
+  it("interleaves providers and dedupes by exact URL keeping the first copy", async () => {
     const sharedUrl = "https://example.com/ddg-first";
     const { fetch } = makeFetch([
       {
@@ -518,18 +532,18 @@ describe("the PublicSearch composite", () => {
     // gdelt; both later duplicates of the ddg URL lose to the first copy.
     await expect(search("merge")).resolves.toEqual([
       { title: "From ddg", url: sharedUrl, snippet: "ddg snippet" },
+      { title: "Merge page", url: "https://en.wikipedia.org/wiki/Merge", snippet: "" },
+      { title: "Bing item", url: "https://example.com/bing", snippet: "bing snippet" },
+      { title: "Gdelt item", url: "https://example.com/gdelt", snippet: "" },
       {
         title: "From marginalia",
         url: "https://example.com/marginalia",
         snippet: "marginalia snippet",
       },
-      { title: "Merge page", url: "https://en.wikipedia.org/wiki/Merge", snippet: "" },
-      { title: "Bing item", url: "https://example.com/bing", snippet: "bing snippet" },
-      { title: "Gdelt item", url: "https://example.com/gdelt", snippet: "" },
     ]);
   });
 
-  it("caps the merged results at 24", async () => {
+  it("retains all 32 results beyond the former 24-result cap", async () => {
     const { fetch } = makeFetch([
       {
         match: (url) => hostOf(url) === "html.duckduckgo.com",
@@ -574,15 +588,15 @@ describe("the PublicSearch composite", () => {
     const search = createPublicSearch(fetch);
 
     const merged = await search("cap");
-    expect(merged).toHaveLength(24);
-    expect(merged.slice(0, 8).map((result) => result.url)).toEqual(
-      range(8).map((index) => `https://example.com/ddg-${String(index)}`),
-    );
-    expect(merged.slice(8, 16).map((result) => result.url)).toEqual(
-      range(8).map((index) => `https://example.com/marginalia-${String(index)}`),
-    );
-    expect(merged.slice(16, 24).map((result) => result.url)).toEqual(
-      range(8).map((index) => `https://en.wikipedia.org/wiki/Page_${String(index)}`),
+    expect(merged).toHaveLength(32);
+    expect(merged.slice(0, 4).map((result) => result.url)).toEqual([
+      "https://example.com/ddg-0",
+      "https://example.com/marginalia-0",
+      "https://en.wikipedia.org/wiki/Page_0",
+      "https://www.wikidata.org/wiki/Q100",
+    ]);
+    expect(merged).toContainEqual(
+      expect.objectContaining({ url: "https://www.wikidata.org/wiki/Q107" }),
     );
   });
 

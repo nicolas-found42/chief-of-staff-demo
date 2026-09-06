@@ -6,6 +6,8 @@
       "entry": [
         "scripts/orchestrator-loop-gate.mjs",
         "scripts/person-dossier-canary.mts",
+        "scripts/person-research-benchmark.mts",
+        "scripts/person-benchmark-snapshot.mts",
         "scripts/run-debrief-eval-all.mts",
         "scripts/run-search-canaries.mjs",
         "scripts/run-canaries.mjs",

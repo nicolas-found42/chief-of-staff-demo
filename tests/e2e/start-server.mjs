@@ -73,7 +73,6 @@ if (!process.env.MIGRATION_TEST_WORKSPACE_DIR) {
         concurrency: 1,
         profileCalls: 8,
         profileMilliseconds: 120000,
-        dailyCalls: 100,
         refreshHours: 168,
       },
       day: new Date().toISOString().slice(0, 10),

@@ -19,6 +19,12 @@ export type PublicHttpFetch = (
     timeoutMs?: number;
     method?: "POST";
     body?: string;
+    /**
+     * Override the accept header for one request. Several public record APIs
+     * serve JSON only when asked for it and answer XML, 406 or 500 to the
+     * default HTML-first list.
+     */
+    accept?: string;
   },
 ) => Promise<PublicHttpResponse>;
 /** A stable browser-like UA for the documented HTML-scrape exceptions
@@ -93,6 +99,7 @@ export function createHttpFetch(
         "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
         ...options.headers,
       };
+      if (perCall.accept) headers.accept = perCall.accept;
       if (perCall.etag) headers["if-none-match"] = perCall.etag;
       if (perCall.lastModified) headers["if-modified-since"] = perCall.lastModified;
       const response = await fetch(url, {
@@ -125,6 +132,64 @@ export function createHttpFetch(
 }
 
 export const publicHttpFetch: PublicHttpFetch = createHttpFetch();
+
+interface PublicHttpBytesResponse {
+  url: string;
+  status: number;
+  contentType: string | null;
+  retryAfter: string | null;
+  bytes: Buffer;
+}
+
+export type PublicHttpBytesFetch = (
+  url: string,
+  options?: { timeoutMs?: number; accept?: string },
+) => Promise<PublicHttpBytesResponse>;
+
+/**
+ * The same guarded anonymous transport, kept as bytes.
+ *
+ * Person research reads PDFs, scans and slide decks, and `PublicHttpFetch`
+ * decodes every body as UTF-8 — which silently destroys exactly those. This is
+ * the byte-preserving twin rather than a second transport policy: same public
+ * URL guard, same anonymous credentials-omitted request, same 5 MB ceiling.
+ */
+function createHttpBytesFetch(
+  options: { timeoutMs?: number; headers?: Record<string, string> } = {},
+): PublicHttpBytesFetch {
+  const defaultTimeoutMs = options.timeoutMs ?? 20_000;
+  return async (value, perCall = {}) => {
+    const url = assertPublicHttpUrl(value);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), perCall.timeoutMs ?? defaultTimeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: perCall.accept ?? "application/pdf, application/octet-stream, */*;q=0.8",
+          "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
+          ...options.headers,
+        },
+        redirect: "follow",
+        signal: controller.signal,
+        credentials: "omit",
+      });
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.byteLength > 5_000_000)
+        throw new Error("Source response exceeded the 5 MB collection limit.");
+      return {
+        url: response.url || url.toString(),
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+        retryAfter: response.headers.get("retry-after"),
+        bytes,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+export const publicHttpFetchBytes: PublicHttpBytesFetch = createHttpBytesFetch();
 
 export function retryAfterMilliseconds(value: string | null, now: Date): number | undefined {
   if (!value) return undefined;

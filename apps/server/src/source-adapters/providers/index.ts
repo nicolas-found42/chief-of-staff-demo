@@ -1,6 +1,23 @@
 import type { PublicHttpFetch } from "../http.js";
 import type { SearchProvider } from "./types.js";
 import { createArcticShiftProvider } from "./arctic-shift.js";
+import {
+  createArticProvider,
+  createClinicalTrialsProvider,
+  createCrossrefProvider,
+  createDataCiteProvider,
+  createLibraryOfCongressProvider,
+  createNonprofitExplorerProvider,
+  createNppesProvider,
+  createOpenLibraryProvider,
+  createTvMazeProvider,
+} from "./person-records.js";
+import {
+  createBlueskyProvider,
+  createMwmblProvider,
+  createPeerTubeProvider,
+  createPodcastDirectoryProvider,
+} from "./person-media.js";
 import { createBingNewsProvider } from "./bing-news-rss.js";
 import { createDblpProvider } from "./dblp.js";
 import { createDuckDuckGoProvider } from "./duckduckgo.js";
@@ -77,6 +94,24 @@ export function defaultProviders(
     createRorProvider(injected),
     createGleifProvider(injected),
     createEdgarProvider(injected),
+    /* Issue #228's source-family expansion, appended rather than interleaved:
+       registration order is still the dedupe survivor rule, and the families
+       below are additional coverage rather than a re-ranking of the web layer.
+       Person research selects what to read by relevance and coverage gap, so
+       being last in this list no longer means being read last. */
+    createMwmblProvider(injected),
+    createPeerTubeProvider(injected),
+    createPodcastDirectoryProvider(injected),
+    createBlueskyProvider(injected),
+    createCrossrefProvider(injected),
+    createDataCiteProvider(injected),
+    createOpenLibraryProvider(injected),
+    createNppesProvider(injected),
+    createClinicalTrialsProvider(injected),
+    createNonprofitExplorerProvider(injected),
+    createTvMazeProvider(injected),
+    createLibraryOfCongressProvider(injected),
+    createArticProvider(injected),
   );
   return providers;
 }

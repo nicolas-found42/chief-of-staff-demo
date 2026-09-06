@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
-import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
+import {
+  PersonResearch,
+  researchAllowance,
+} from "../../../apps/server/src/person-profile/research.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 const roots: string[] = [];
@@ -24,14 +27,20 @@ test("automatic research retains a full page and publishes exact grounded work b
     search: async () => [
       { url: "https://example.com/maya", title: "Maya", snippet: "Short biography" },
     ],
+    /* Only the discovered page exists. Continuous research also follows the
+       work URL this extraction names, and a mock answering every URL with the
+       same body would read the same document twice. */
     fetch: async (url) => ({
       url,
-      status: 200,
+      status: url === "https://example.com/maya" ? 200 : 404,
       contentType: "text/plain",
       etag: null,
       lastModified: null,
       retryAfter: null,
-      body: "Contact maya@example.com. Maya designed the Atlas scheduler.",
+      body:
+        url === "https://example.com/maya"
+          ? "Contact maya@example.com. Maya designed the Atlas scheduler."
+          : "",
     }),
     complete: async () => ({
       fullName: "Maya Chen",
@@ -78,13 +87,15 @@ test("automatic research retains a full page and publishes exact grounded work b
       sections: [],
     }),
   });
-  const outcome = await research.run(person, {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
-  expect(outcome.state).toBe("incomplete");
+  const outcome = await research.run(
+    person,
+    researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }),
+  );
+  /* One operation runs to its own completion rather than stopping on a pass
+     boundary, and says so alongside its remaining gaps. */
+  expect(outcome.state).toBe("current");
+  expect(outcome.operation.conclusion).toBe("completed");
+  expect(outcome.operation.gaps.join(" ")).toContain("does not mean every public fact");
   const dossier = dossiers.get(person.id)!;
   expect(dossier.works[0]?.contribution?.text).toBe("Designed the scheduler");
   const passage = dossier.claims[0].citations[0];
@@ -152,12 +163,7 @@ test("competing current role statements remain contested and do not silently rep
       };
     },
   });
-  await research.run(person, {
-    maxCalls: 6,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
+  await research.run(person, researchAllowance({ maxModelCalls: 6, maxMilliseconds: 10000 }));
   expect(dossiers.get(person.id)?.claims.map((c) => c.status)).toEqual(["contested", "contested"]);
   expect(people.get(person.id)?.role).toBe("Engineer");
 });
@@ -212,12 +218,7 @@ test("confirmed Transcript evidence populates the owner's dossier without leakin
       sections: [],
     }),
   });
-  await research.run(person, {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
+  await research.run(person, researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }));
   expect(dossiers.get(person.id)?.claims[0]?.statement).toContain("confidential deployment");
   expect(dossiers.project(person.id, "public")?.claims).toEqual([]);
   dossiers.removeTranscript("meeting-private");
@@ -276,12 +277,7 @@ test("research does not re-crawl a source the owner detached", async () => {
     }),
     complete,
   });
-  await research.run(person, {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
+  await research.run(person, researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }));
   const sourceId = dossiers.get(person.id)!.sourceIds[0];
   dossiers.detach(person.id, sourceId);
   people.forgetResearchSource(person.id, sourceId);
@@ -304,16 +300,25 @@ test("research does not re-crawl a source the owner detached", async () => {
     },
     complete,
   });
-  const outcome = await next.run(person, {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
+  const outcome = await next.run(
+    person,
+    researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }),
+  );
   expect(fetched).toEqual([]);
-  expect(outcome.diagnostics).toEqual([
-    { url: "https://example.com/maya", stage: "attribution", reason: expect.any(String) },
-  ]);
+  expect(outcome.operation.leads).toContainEqual(
+    expect.objectContaining({
+      target: "https://example.com/maya",
+      disposition: "rejected",
+      reason: expect.stringContaining("rejected"),
+    }),
+  );
+  expect(outcome.diagnostics).toContainEqual(
+    expect.objectContaining({
+      stage: "identity",
+      code: "lead-rejected",
+      target: "https://example.com/maya",
+    }),
+  );
   expect(outcome.state).not.toBe("unavailable");
 });
 
@@ -370,12 +375,7 @@ test("a source rejected during a run is an attribution diagnostic rather than a 
     fetch: async (url) => fetchResponse(url),
     complete,
   });
-  await research.run(person, {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
+  await research.run(person, researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }));
   const sourceId = dossiers.get(person.id)!.sourceIds[0];
 
   const midrun = new PersonResearch({
@@ -388,18 +388,15 @@ test("a source rejected during a run is an attribution diagnostic rather than a 
     },
     complete,
   });
-  const outcome = await midrun.run(person, {
-    maxCalls: 6,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
-  expect(outcome.diagnostics).toContainEqual({
-    url: "https://example.com/maya",
-    stage: "attribution",
-    reason: expect.any(String),
-  });
-  expect(outcome.state).toBe("empty");
+  const outcome = await midrun.run(
+    person,
+    researchAllowance({ maxModelCalls: 6, maxMilliseconds: 10000 }),
+  );
+  /* The owner's decision landing mid-run stops attribution: that is an
+     interruption of this operation, not a completed empty one. */
+  expect(outcome.state).toBe("interrupted");
+  expect(outcome.operation.interruption?.code).toBe("lifecycle-invalidated");
+  expect(outcome.operation.detail).toContain("rejected a source");
 });
 
 test("retains an anchored retrieved source when extraction fails", async () => {
@@ -427,12 +424,7 @@ test("retains an anchored retrieved source when extraction fails", async () => {
       throw new Error("model unavailable");
     },
   });
-  await research.run(person, {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  });
+  await research.run(person, researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }));
   const dossier = dossiers.get(person.id);
   expect(dossier?.sourceIds).toHaveLength(1);
   expect(dossier?.claims).toHaveLength(0);
@@ -458,12 +450,12 @@ test("source revisions keep one work identity and dated current facts supersede 
     search: async () => [{ url: "https://example.com/maya", title: "Maya", snippet: "" }],
     fetch: async (url) => ({
       url,
-      status: 200,
+      status: url === "https://example.com/maya" ? 200 : 404,
       contentType: "text/plain",
       etag: null,
       lastModified: null,
       retryAfter: null,
-      body: quote(),
+      body: url === "https://example.com/maya" ? quote() : "",
     }),
     complete: async () => ({
       fullName: null,
@@ -510,12 +502,7 @@ test("source revisions keep one work identity and dated current facts supersede 
       sections: [],
     }),
   });
-  const allowance = {
-    maxCalls: 3,
-    maxMilliseconds: 10000,
-    reserve: () => true,
-    active: () => true,
-  };
+  const allowance = researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 });
   await research.run(person, allowance);
   const first = dossiers.get(person.id)!;
   year = "2025";

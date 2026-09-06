@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   composePersonProfiles,
   type ConfirmedTranscript,
@@ -22,6 +22,7 @@ import {
 
 const roots: string[] = [];
 afterEach(() => {
+  vi.useRealTimers();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -57,6 +58,334 @@ function compose(overrides: Partial<PersonProfilesCompositionDeps> = {}): Harnes
 }
 
 describe("the Person Profiles composition", () => {
+  it("reports model-provider failure as interrupted while preserving the retrieved evidence", async () => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: "Maya built Atlas.",
+        }),
+      },
+      complete: () => async () => {
+        throw new Error("Provider unavailable");
+      },
+    });
+    const profile = h.people.profiles.create({ profileUrls: ["https://example.com/maya"] });
+    await h.people.queue.tick();
+    expect(h.people.queue.status().jobs[0]?.state).toBe("interrupted");
+    const dossier = h.people.dossiers.get(profile.id)!;
+    expect(h.people.dossiers.source(profile.id, dossier.sourceIds[0])?.text).toBe(
+      "Maya built Atlas.",
+    );
+    expect(dossier.claims).toEqual([]);
+  });
+
+  it("recovers a temporary retrieval failure in the same operation and retains its observed cause", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const url = "https://example.com/";
+    const h = compose({
+      researchTestPorts: {
+        fetch: async () => {
+          attempts += 1;
+          if (attempts === 2) throw new Error("Connection reset");
+          return {
+            url,
+            status: attempts === 1 ? 503 : 200,
+            contentType: "text/plain",
+            etag: null,
+            lastModified: null,
+            retryAfter: "21",
+            body: attempts === 1 ? "Temporarily unavailable" : "Maya built Atlas.",
+          };
+        },
+      },
+      complete: () => async () => ({
+        fullName: null,
+        employer: null,
+        sourceClass: "primary-artifact",
+        author: null,
+        publishedAt: null,
+        claims: [],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      }),
+    });
+    const profile = h.people.profiles.create({ profileUrls: [url] });
+    const pending = h.people.queue.tick();
+    /* The source asked for 21 seconds; the wait is honoured rather than
+       rejected, so nothing is retained while it is still running. */
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(h.people.dossiers.get(profile.id)).toBeNull();
+    await vi.advanceTimersByTimeAsync(1000);
+    /* The second attempt throws, and its own backoff runs before the third. */
+    await vi.advanceTimersByTimeAsync(10000);
+    await pending;
+    const dossier = h.people.dossiers.get(profile.id)!;
+    expect(
+      dossier.sourceIds.some(
+        (id) => h.people.dossiers.source(profile.id, id)?.text === "Maya built Atlas.",
+      ),
+    ).toBe(true);
+    expect(h.people.queue.status().jobs[0]?.diagnostics).toContainEqual(
+      expect.objectContaining({
+        stage: "transport",
+        code: "http-error",
+        attempt: 1,
+        recovery: "retry",
+        target: url,
+        observed: expect.objectContaining({ status: 503, retryAfterMilliseconds: 21000 }),
+      }),
+    );
+    /* The compact view is a slice; the operation record keeps the whole
+       history, so the recovery can still be traced back to what failed. */
+    const history = h.people.queue.status().jobs[0].operation!.attempts;
+    const failed = history.find((entry) => entry.observed?.status === 503)!;
+    expect(failed.attemptOf).toBeTruthy();
+    expect(history).toContainEqual(
+      expect.objectContaining({
+        attemptOf: failed.attemptOf,
+        attempt: 3,
+        code: "retrieval-recovered",
+        recovery: "recovered",
+      }),
+    );
+    expect(history).toContainEqual(
+      expect.objectContaining({
+        attemptOf: failed.attemptOf,
+        attempt: 2,
+        code: "transport-failed",
+        recovery: "retry",
+        cause: "unknown",
+      }),
+    );
+  });
+
+  it("follows attributed work beyond old batch and allowance limits in one operation", async () => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => {
+          const index = Number(new URL(url).pathname.slice(1));
+          return {
+            url,
+            status: 200,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: `<article><p>Maya built project ${index}.</p>${index < 6 ? `<a href="https://example.com/${index + 1}">Next project</a>` : ""}</article>`,
+          };
+        },
+      },
+      complete: () => async (request) => {
+        const { document } = JSON.parse(request.user) as { document: { url: string } };
+        const index = Number(new URL(document.url).pathname.slice(1));
+        const quote = `Maya built project ${index}.`;
+        return {
+          fullName: null,
+          employer: null,
+          sourceClass: "primary-artifact",
+          author: null,
+          publishedAt: null,
+          claims: [
+            {
+              id: "work",
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works:
+            index < 6
+              ? [
+                  {
+                    id: "next",
+                    title: "Next project",
+                    url: `https://example.com/${index + 1}`,
+                    kind: "system",
+                    startedAt: null,
+                    endedAt: null,
+                    claimIds: ["work"],
+                    contribution: { text: quote, claimIds: ["work"] },
+                    teamContribution: null,
+                    authority: [],
+                    scale: [],
+                    constraints: [],
+                    outcomes: [],
+                  },
+                ]
+              : [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        };
+      },
+    });
+    const profile = h.people.profiles.create({ profileUrls: ["https://example.com/1"] });
+    await h.people.queue.tick();
+    expect(h.people.dossiers.get(profile.id)?.claims.map((claim) => claim.statement)).toContain(
+      "Maya built project 6.",
+    );
+    const job = h.people.queue.status().jobs[0];
+    expect(job.state).toBe("current");
+    expect(job.operation?.conclusion).toBe("completed");
+  });
+
+  it("reports a reached safety bound as incomplete with its unread lead retained", async () => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => {
+          const index = Number(new URL(url).pathname.slice(1));
+          return {
+            url,
+            status: 200,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: `<article><p>Maya built project ${index}.</p><a href="https://example.com/${index + 1}">Next project</a></article>`,
+          };
+        },
+      },
+      complete: () => async (request) => {
+        const { document } = JSON.parse(request.user) as { document: { url: string } };
+        const index = Number(new URL(document.url).pathname.slice(1));
+        const quote = `Maya built project ${index}.`;
+        return {
+          fullName: null,
+          employer: null,
+          sourceClass: "primary-artifact",
+          author: null,
+          publishedAt: null,
+          claims: [
+            {
+              id: "work",
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works: [
+            {
+              id: "next",
+              title: "Next project",
+              url: `https://example.com/${index + 1}`,
+              kind: "system",
+              startedAt: null,
+              endedAt: null,
+              claimIds: ["work"],
+              contribution: { text: quote, claimIds: ["work"] },
+              teamContribution: null,
+              authority: [],
+              scale: [],
+              constraints: [],
+              outcomes: [],
+            },
+          ],
+          expertise: [],
+          connections: [],
+          sections: [],
+        };
+      },
+    });
+    /* One model call is a safety bound, not a definition of completion: the
+       operation stops, says so, and keeps the lead it never got to. */
+    h.people.queue.configure({ profileCalls: 1 });
+    h.people.profiles.create({ profileUrls: ["https://example.com/1"] });
+    await h.people.queue.tick();
+
+    const job = h.people.queue.status().jobs[0];
+    expect(job.state).toBe("incomplete");
+    expect(job.operation?.conclusion).toBe("bounded");
+    expect(job.detail).toContain("ceiling");
+    expect(
+      job.operation?.leads.filter((lead) => lead.disposition === "interrupted").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("retains useful evidence beyond the former eight-result reading cutoff", async () => {
+    const quote = "maya@example.com designed the Atlas scheduler.";
+    const h = compose({
+      search: async () =>
+        Array.from({ length: 9 }, (_, index) => ({
+          url: `https://example.com/record-${index + 1}`,
+          title: "Public record",
+          snippet: "",
+        })),
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: url.endsWith("record-9") ? quote : "A different person's record.",
+        }),
+      },
+      complete: () => async () => ({
+        fullName: null,
+        employer: null,
+        sourceClass: "primary-artifact",
+        author: null,
+        publishedAt: null,
+        claims: [
+          {
+            id: "atlas",
+            section: "work",
+            statement: quote,
+            status: "supported",
+            nature: "statement",
+            matchConfidence: "high",
+            effectiveFrom: null,
+            effectiveTo: null,
+            citations: [{ sourceId: "source", quote }],
+            supports: [],
+            supersedes: [],
+            changeReason: null,
+          },
+        ],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      }),
+    });
+    h.people.queue.configure({ profileCalls: 100 });
+    const profile = h.people.profiles.create({ primaryEmail: "maya@example.com" });
+    await h.people.queue.tick();
+    const dossier = h.people.dossiers.get(profile.id);
+    expect(dossier?.claims.map((claim) => claim.statement)).toContain(quote);
+    const sourceId = dossier!.claims[0].citations[0].sourceId;
+    expect(h.people.dossiers.source(profile.id, sourceId)).toMatchObject({
+      url: "https://example.com/record-9",
+      text: quote,
+    });
+  });
+
   it("gives every handle one Workspace, so a Profile created through one is seen by the rest", () => {
     const h = compose();
     const created = h.people.profiles.create({
@@ -326,4 +655,714 @@ describe("the Person Profiles composition", () => {
       "person-dossiers",
     ]);
   });
+});
+
+it("preserves a repost's actual author and post identity in retained social evidence", async () => {
+  const url = "https://bsky.app/profile/maya.example";
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (target) => ({
+        url: target,
+        status: 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: JSON.stringify({
+          feed: [
+            {
+              reason: { $type: "app.bsky.feed.defs#reasonRepost" },
+              post: {
+                uri: "at://did:plc:other/app.bsky.feed.post/abc",
+                author: { did: "did:plc:other", handle: "other.example" },
+                record: { text: "I built the ocean sensor.", createdAt: "2026-09-01T00:00:00Z" },
+              },
+            },
+          ],
+        }),
+      }),
+    },
+    complete: () => async () => ({ fullName: null, claims: [] }),
+  });
+  const profile = h.people.research.startFor({ fullName: "Maya", profileUrls: [url] });
+  await h.people.research.runNow(profile.id);
+  const text = h.people.research
+    .sources(profile.id)
+    .map((source) => source.text)
+    .join("\n");
+  expect(text).toContain("other.example");
+  expect(text).toContain("at://did:plc:other/app.bsky.feed.post/abc");
+  expect(text).toContain("repost");
+  expect(text).not.toContain("Public Bluesky posts by maya.example");
+});
+
+it("broadens empty discovery and retains useful evidence beyond the first reading batch", async () => {
+  const h = compose({
+    search: async (query) =>
+      query.includes("registry filing licence")
+        ? Array.from({ length: 60 }, (_, index) => ({
+            url: `https://registry.example/maya/${index}`,
+            title: "Maya public record",
+            snippet: "Maya research record",
+          }))
+        : [],
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/plain",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: `Maya research record ${url.endsWith("/59") ? "including the ocean sensor contribution" : "listing"}.`,
+      }),
+    },
+    complete: () => async () => ({ fullName: "Maya", employer: null, claims: [] }),
+  });
+  const profile = h.people.research.startFor({ fullName: "Maya" });
+  const outcome = await h.people.research.runNow(profile.id);
+  expect(
+    h.people.research
+      .sources(profile.id)
+      .some((source) => source.text.includes("ocean sensor contribution")),
+  ).toBe(true);
+  expect(outcome?.attempts).toContainEqual(expect.objectContaining({ code: "selection-deferred" }));
+  expect(outcome?.leads.find((lead) => lead.target.endsWith("/59"))?.disposition).toBe(
+    "investigated",
+  );
+});
+
+it.each([
+  ["Forbidden", "http-error"],
+  ["<html><body>Please sign in to continue</body></html>", "login-required"],
+])("classifies denied social access from response evidence: %s", async (body, code) => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 403,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body,
+      }),
+    },
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya",
+    profileUrls: ["https://linkedin.com/in/maya"],
+  });
+  const outcome = await h.people.research.runNow(profile.id);
+  expect(outcome?.attempts).toContainEqual(expect.objectContaining({ stage: "access", code }));
+  if (code === "http-error")
+    expect(outcome?.attempts.some((attempt) => attempt.code === "login-required")).toBe(false);
+});
+
+it("retains a podcast feed and investigates its publisher transcript link", async () => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: url.endsWith(".rss") ? "application/rss+xml" : "text/plain",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: url.endsWith(".rss")
+          ? '<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>Maya interviews</title><item><title>Maya on ocean sensors</title><description>Maya explains the work.</description><podcast:transcript url="https://example.com/maya-transcript"/></item></channel></rss>'
+          : "Maya at Ocean Lab: We built an ocean sensor using recycled materials.",
+      }),
+    },
+    complete: () => async () => ({
+      fullName: "Maya",
+      employer: null,
+      author: null,
+      publishedAt: null,
+      sourceClass: "self-report",
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya",
+    currentEmployer: "Ocean Lab",
+    profileUrls: ["https://example.com/maya.rss"],
+  });
+  await h.people.research.runNow(profile.id);
+  expect(h.people.research.sources(profile.id)).toContainEqual(
+    expect.objectContaining({
+      url: "https://example.com/maya-transcript",
+      text: "Maya at Ocean Lab: We built an ocean sensor using recycled materials.",
+    }),
+  );
+});
+
+it("reports absent captions without presenting a video description as spoken evidence", async () => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: '<html><head><meta name="description" content="Maya discusses ocean sensors"></head><body>No caption tracks</body></html>',
+      }),
+    },
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya",
+    profileUrls: ["https://www.youtube.com/watch?v=abcdefghijk"],
+  });
+  const outcome = await h.people.research.runNow(profile.id);
+  expect(outcome?.attempts).toContainEqual(
+    expect.objectContaining({ stage: "caption-acquisition", code: "captions-missing" }),
+  );
+  expect(
+    h.people.research
+      .sources(profile.id)
+      .every((source) => source.anchors?.every((anchor) => anchor.kind !== "timestamp") ?? true),
+  ).toBe(true);
+});
+
+it("preserves a planner outage as an interruption even when discovery is empty", async () => {
+  const h = compose({
+    plan: () => async () => {
+      throw new Error("Planner provider unavailable");
+    },
+  });
+  const profile = h.people.research.startFor({ fullName: "Maya" });
+  const outcome = await h.people.research.runNow(profile.id);
+  expect(outcome?.conclusion).toBe("interrupted");
+  expect(outcome?.attempts).toContainEqual(
+    expect.objectContaining({ stage: "planning", code: "model-boundary-failed" }),
+  );
+});
+
+it.each([
+  [
+    "https://www.wikidata.org/wiki/Q123",
+    "https://www.wikidata.org/wiki/Special:EntityData/Q123.json",
+    "wikidata.org",
+  ],
+  ["https://doi.org/10.1234/maya", "https://api.crossref.org/works/10.1234%2Fmaya", "crossref.org"],
+  [
+    "https://api.crossref.org/works/10.1234/maya",
+    "https://api.crossref.org/works/10.1234/maya",
+    "crossref.org",
+  ],
+  [
+    "https://api.datacite.org/dois/10.1234/maya",
+    "https://api.datacite.org/dois/10.1234/maya",
+    "datacite.org",
+  ],
+  ["https://openalex.org/A123", "https://api.openalex.org/A123", "openalex.org"],
+  [
+    "https://orcid.org/0000-0001-0002-0003",
+    "https://pub.orcid.org/v3.0/0000-0001-0002-0003/record",
+    "orcid.org",
+  ],
+  ["https://ror.org/012345678", "https://api.ror.org/organizations/012345678", "ror.org"],
+  [
+    "https://clinicaltrials.gov/study/NCT01234567",
+    "https://clinicaltrials.gov/api/v2/studies/NCT01234567",
+    "clinicaltrials.gov",
+  ],
+  [
+    "https://npiregistry.cms.hhs.gov/provider-view/1234567890",
+    "https://npiregistry.cms.hhs.gov/api/?version=2.1&number=1234567890",
+    "npiregistry.cms.hhs.gov",
+  ],
+  ["https://www.tvmaze.com/people/12", "https://api.tvmaze.com/people/12", "tvmaze.com"],
+  ["https://www.artic.edu/artworks/12", "https://api.artic.edu/api/v1/artworks/12", "artic.edu"],
+  ["https://www.loc.gov/item/12/", "https://www.loc.gov/item/12/?fo=json", "loc.gov"],
+])(
+  "retains quotable public record text and its upstream provenance: %s",
+  async (url, endpoint, index) => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (target) => ({
+          url: target,
+          status: target === endpoint ? 200 : 404,
+          contentType: "application/json",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: JSON.stringify({
+            name: "Maya Chen",
+            work: [
+              {
+                title: "Ocean sensor",
+                year: 2024,
+                active: true,
+                link: "https://example.com/sensor",
+              },
+            ],
+          }),
+        }),
+      },
+    });
+    const profile = h.people.research.startFor({ fullName: "Maya Chen", profileUrls: [url] });
+    await h.people.research.runNow(profile.id);
+    expect(h.people.research.sources(profile.id)).toContainEqual(
+      expect.objectContaining({
+        upstreamIndex: index,
+        text: expect.stringContaining("work[0].title: Ocean sensor"),
+        outboundUrls: ["https://example.com/sensor"],
+      }),
+    );
+  },
+);
+
+it("retains browser-recovered text with the failed challenge attempt", async () => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 403,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: "Please complete the following challenge",
+      }),
+    },
+    render: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/html",
+      body: "<html><body><article><p>Maya Chen designed an ocean sensor for coastal monitoring.</p></article></body></html>",
+    }),
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    profileUrls: ["https://example.com/maya"],
+  });
+  const outcome = await h.people.research.runNow(profile.id);
+  expect(h.people.research.sources(profile.id)).toContainEqual(
+    expect.objectContaining({
+      text: expect.stringContaining("coastal monitoring"),
+      acquisition: "browser-renderer",
+    }),
+  );
+  const recovered = outcome?.attempts.find(
+    (attempt) => attempt.stage === "rendering" && attempt.code === "retrieval-recovered",
+  );
+  expect(recovered?.attemptOf).toBeTruthy();
+  expect(outcome?.attempts).toContainEqual(
+    expect.objectContaining({
+      attemptOf: recovered?.attemptOf,
+      outcome: "failed",
+      stage: "access",
+    }),
+  );
+});
+
+it("reads a real PDF text layer through the composition's byte transport", async () => {
+  const stream = "BT /F1 12 Tf 72 720 Td (Maya Chen designed the coastal sensor.) Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${String(stream.length)} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(pdf.length);
+    pdf += `${String(index + 1)} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = pdf.length;
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF`;
+  const h = compose({
+    researchTestPorts: {
+      fetch: async () => {
+        throw new Error("PDF bytes must not pass through the text transport");
+      },
+      fetchBytes: async (url) => ({
+        url,
+        status: 200,
+        contentType: "application/pdf",
+        retryAfter: null,
+        bytes: Buffer.from(pdf),
+      }),
+    },
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    profileUrls: ["https://example.com/maya.pdf"],
+  });
+  await h.people.research.runNow(profile.id);
+  expect(h.people.research.sources(profile.id)).toContainEqual(
+    expect.objectContaining({
+      acquisition: "document-reader",
+      text: expect.stringContaining("Maya Chen designed the coastal sensor."),
+    }),
+  );
+});
+
+it("retains publisher caption timestamps without inventing speaker identity", async () => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: url.includes("timedtext") ? "text/xml" : "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: url.includes("timedtext")
+          ? '<transcript><text start="65.5">Maya Chen built coastal sensors &amp; monitors.</text></transcript>'
+          : '<script>{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=abcdefghijk"}]}</script>',
+      }),
+    },
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    profileUrls: ["https://www.youtube.com/watch?v=abcdefghijk"],
+  });
+  await h.people.research.runNow(profile.id);
+  expect(h.people.research.sources(profile.id)).toContainEqual(
+    expect.objectContaining({
+      acquisition: "caption-reader",
+      text: "Maya Chen built coastal sensors & monitors.",
+      author: null,
+      anchors: [{ kind: "timestamp", value: "01:05", offset: 0 }],
+    }),
+  );
+});
+
+it("reads an anonymous Mastodon account's dated public statuses", async () => {
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: url.includes("/lookup?")
+          ? '{"id":"123"}'
+          : JSON.stringify([
+              {
+                created_at: "2026-09-01",
+                content: "<p>Maya Chen released the coastal sensor report.</p>",
+              },
+            ]),
+      }),
+    },
+  });
+  const profile = h.people.research.startFor({
+    fullName: "Maya Chen",
+    profileUrls: ["https://mastodon.social/@maya"],
+  });
+  await h.people.research.runNow(profile.id);
+  expect(h.people.research.sources(profile.id)).toContainEqual(
+    expect.objectContaining({
+      acquisition: "mastodon",
+      text: expect.stringContaining("2026-09-01 — Maya Chen released the coastal sensor report."),
+      upstreamIndex: "mastodon.social",
+    }),
+  );
+});
+
+it.each([
+  [
+    "nppes",
+    {
+      results: [
+        {
+          number: 1234567890,
+          basic: { first_name: "Maya", last_name: "Chen", credential: "MD", status: "A" },
+          taxonomies: [{ desc: "Medicine" }],
+        },
+      ],
+    },
+    "https://npiregistry.cms.hhs.gov/provider-view/1234567890",
+  ],
+  [
+    "crossref",
+    {
+      message: {
+        items: [
+          {
+            DOI: "10.1234/maya",
+            title: ["Maya Chen study"],
+            author: [{ given: "Maya", family: "Chen" }],
+          },
+        ],
+      },
+    },
+    "https://doi.org/10.1234/maya",
+  ],
+  [
+    "datacite",
+    {
+      data: [
+        {
+          attributes: {
+            doi: "10.1234/maya",
+            titles: [{ title: "Maya Chen dataset" }],
+            creators: [{ name: "Maya Chen" }],
+          },
+        },
+      ],
+    },
+    "https://doi.org/10.1234/maya",
+  ],
+  [
+    "clinicaltrials",
+    {
+      studies: [
+        {
+          protocolSection: {
+            identificationModule: {
+              nctId: "NCT01234567",
+              briefTitle: "Maya Chen trial",
+              officialTitle: "Clinical trial",
+            },
+          },
+        },
+      ],
+    },
+    "https://clinicaltrials.gov/study/NCT01234567",
+  ],
+  [
+    "nonprofit-explorer",
+    {
+      organizations: [
+        {
+          ein: 123456789,
+          name: "Maya Chen Foundation",
+          city: "Boston",
+          state: "MA",
+          ntee_classification: "Research",
+        },
+      ],
+    },
+    "https://projects.propublica.org/nonprofits/organizations/123456789",
+  ],
+  [
+    "tvmaze",
+    [
+      {
+        person: {
+          url: "https://www.tvmaze.com/people/12",
+          name: "Maya Chen",
+          country: { name: "Canada" },
+          birthday: "1980-01-01",
+        },
+      },
+    ],
+    "https://www.tvmaze.com/people/12",
+  ],
+  [
+    "library-of-congress",
+    {
+      results: [
+        {
+          id: "https://www.loc.gov/item/12/",
+          title: ["Maya Chen lecture"],
+          description: ["Interview"],
+        },
+      ],
+    },
+    "https://www.loc.gov/item/12/",
+  ],
+  [
+    "artic",
+    {
+      data: [
+        { id: 12, title: "Maya Chen landscape", artist_display: "Maya Chen", date_display: "2024" },
+      ],
+    },
+    "https://www.artic.edu/artworks/12",
+  ],
+  [
+    "open-library",
+    {
+      docs: [
+        {
+          key: "OL123A",
+          name: "Maya Chen",
+          top_work: "Ocean sensors",
+          work_count: 2,
+          birth_date: "1980",
+        },
+      ],
+    },
+    "https://openlibrary.org/authors/OL123A",
+  ],
+  [
+    "mwmbl",
+    [
+      {
+        url: "https://example.com/maya",
+        title: [{ value: "Maya Chen", bold: true }],
+        extract: [{ value: "Ocean sensors" }],
+      },
+    ],
+    "https://example.com/maya",
+  ],
+  [
+    "peertube",
+    {
+      data: [
+        {
+          url: "https://tube.example/videos/watch/maya",
+          name: "Maya Chen",
+          description: "Ocean sensors",
+          publishedAt: "2024-01-01",
+        },
+      ],
+    },
+    "https://tube.example/videos/watch/maya",
+  ],
+  [
+    "podcast-directory",
+    {
+      results: [
+        {
+          feedUrl: "https://example.com/maya.rss",
+          collectionName: "Maya Chen",
+          artistName: "Maya Chen",
+          primaryGenreName: "Science",
+        },
+      ],
+    },
+    "https://example.com/maya.rss",
+  ],
+  [
+    "bluesky",
+    {
+      actors: [{ handle: "maya.example", displayName: "Maya Chen", description: "Ocean sensors" }],
+    },
+    "https://bsky.app/profile/maya.example",
+  ],
+] as const)(
+  "production discovery keeps substantive %s records as research leads",
+  async (provider, body, expectedUrl) => {
+    const { createPublicSearch } = await import("../../../apps/server/src/source-adapters/search");
+    const search = createPublicSearch(
+      async (url) => ({
+        url,
+        status: 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: JSON.stringify(body),
+      }),
+      undefined,
+      { providerFilter: (name) => name === provider },
+    );
+    const h = compose({
+      search,
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 404,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: "Not found",
+        }),
+      },
+    });
+    const profile = h.people.research.startFor({ fullName: "Maya Chen" });
+    const outcome = await h.people.research.runNow(profile.id);
+    expect(outcome?.leads).toContainEqual(
+      expect.objectContaining({ target: expectedUrl, disposition: "inaccessible" }),
+    );
+  },
+);
+
+it("reads revised Transcript evidence when a bounded operation was already queued", async () => {
+  const h = compose({
+    complete: () => async () => ({
+      fullName: "Grace Hopper",
+      employer: null,
+      author: null,
+      publishedAt: null,
+      sourceClass: "self-report",
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  h.people.queue.configure({ profileCalls: 1 });
+  const profile = h.people.research.startFor({ fullName: "Grace Hopper" });
+  const transcript = {
+    transcriptId: "drive_a_r1",
+    fileName: "Sync.md",
+    text: "Grace shipped Atlas.",
+    checksum: "c1",
+  };
+  h.evidence.set(profile.id, [transcript]);
+  const first = await h.people.research.runNow(profile.id);
+  expect(first?.conclusion).toBe("bounded");
+  h.people.queue.configure({ profileCalls: 10 });
+  h.people.queue.enqueue(profile.id, "explicit");
+  h.evidence.set(profile.id, [{ ...transcript, text: "Grace shipped Beacon.", checksum: "c2" }]);
+  await h.people.queue.tick();
+  const dossier = h.people.dossiers.get(profile.id)!;
+  expect(dossier.sourceIds.map((id) => h.people.dossiers.source(profile.id, id)?.text)).toContain(
+    "Grace shipped Beacon.",
+  );
+});
+
+it("keeps unfinished traversal when a bounded operation is explicitly requeued", async () => {
+  const h = compose({
+    search: async () =>
+      [1, 2].map((index) => ({
+        url: `https://example.com/maya-${String(index)}`,
+        title: "Maya Chen",
+        snippet: "Maya Chen",
+      })),
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/plain",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: `Maya Chen evidence from ${url}`,
+      }),
+    },
+    complete: () => async () => ({
+      fullName: "Maya Chen",
+      employer: null,
+      author: null,
+      publishedAt: null,
+      sourceClass: "self-report",
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  h.people.queue.configure({ profileCalls: 1, readConcurrency: 1 });
+  const profile = h.people.research.startFor({ fullName: "Maya Chen" });
+  const first = await h.people.research.runNow(profile.id);
+  expect(first?.conclusion).toBe("bounded");
+  h.people.queue.configure({ profileCalls: 10 });
+  const second = await h.people.research.runNow(profile.id);
+  expect(second?.operationId).toBe(first?.operationId);
+  expect(second?.attempts).toEqual(expect.arrayContaining(first?.attempts ?? []));
+  expect(second?.conclusion).toBe("completed");
 });

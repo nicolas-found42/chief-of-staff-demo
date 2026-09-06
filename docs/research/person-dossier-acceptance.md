@@ -105,8 +105,14 @@ research loop does with it:
   characters), together with their outbound links, which is how the loop follows a person's own
   work without recursively researching every collaborator.
 - **`text/*` responses** are retained verbatim.
-- **Everything else** — PDFs, documents, media, JSON APIs — is recorded as
-  `access: "unsupported"` and falls back to the search snippet, marked `completeness: "snippet"`.
+- **PDF and DOCX documents** use byte retrieval and the existing local text converter.
+  Parser failures remain explicit; this does not establish OCR support for scanned pages.
+- **Feeds and public records** are rendered as quotable text; podcast transcript links become
+  leads. Public Bluesky and Mastodon routes and a bounded anonymous browser fallback are
+  implemented. Live endpoint access is recorded separately from grounded dossier quality in
+  [person-source-eligibility.md](person-source-eligibility.md).
+- **Video captions** are attempted when a public track is listed. Missing tracks and empty
+  caption responses remain explicit gaps; descriptions do not count as spoken evidence.
 - **Workspace Transcripts** enter as `visibility: "private"` sources only for identities the owner
   confirmed, and never reach a public projection.
 
@@ -126,13 +132,17 @@ Recorded from the canary run in [`person-dossier-canary.json`](person-dossier-ca
 | GDELT | Answered once in 16.9 s, refused on the second pass | canary `diagnostics` |
 | Arctic Shift, Wayback, IA TV News, EDGAR, GLEIF | Answered but empty for person queries | canary `diagnostics` |
 | Bing News | Answered the first pass, empty on the second | canary `diagnostics` |
-| PDFs and non-text documents | Retrieved as `unsupported`; snippet only | `PersonResearch.read` |
-| JavaScript-rendered and paywalled pages | Retained as `blocked` or `failed` with no text | `PersonResearch.read` |
+| Scanned PDFs and unsupported document formats | Text conversion is implemented for PDF/DOCX; OCR and additional formats remain unproven | `research-readers.ts` |
+| JavaScript-rendered and paywalled pages | Optional bounded anonymous rendering can recover some pages; authentication/paywalls remain gaps | `research-readers.ts` |
 
 Wikipedia, Wikidata, ORCID, OpenAlex, ROR, EuropePMC, GitHub users, Stack Exchange, Google News,
 Reddit RSS, Wiby and Internet Archive answered on both canary passes.
 
-## Budget decisions
+## Historical budget decisions (2026-09-05)
+
+Issue #228 replaces the daily-rollover model below with continuous research, parallel reading,
+explicit completion conditions and separately reported safety bounds. The table is historical
+canary context, not the current settings contract.
 
 Measured, not assumed. Both canary profiles exhausted an 8-operation allowance before finishing:
 72.4 s and 61.8 s wall clock, i.e. **7.7–9.1 s per research operation**, dominated by the search

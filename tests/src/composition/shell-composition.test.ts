@@ -429,7 +429,6 @@ describe("the five product areas and the Task runtimes compose in production (#2
       await call("PATCH", "/api/people/research/settings", {
         concurrency: 3,
         profileCalls: 4,
-        dailyCalls: 100,
       });
       await shell.start();
       await expect

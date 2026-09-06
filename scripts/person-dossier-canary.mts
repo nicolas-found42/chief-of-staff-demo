@@ -1,19 +1,21 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PersonDossierStore } from "../apps/server/src/person-profile/dossier-store.js";
 import { PersonProfileStore } from "../apps/server/src/person-profile/store.js";
 import { WorkspacePersonProfiles } from "../apps/server/src/person-profile/profiles.js";
-import { PersonResearch } from "../apps/server/src/person-profile/research.js";
+import { PersonResearch, researchAllowance } from "../apps/server/src/person-profile/research.js";
 import { createPublicSearch } from "../apps/server/src/source-adapters/search.js";
 import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
-import type { AppConfig } from "@chief-of-staff-demo/shared";
+import { ConfigStore } from "../apps/server/src/config.js";
 const configPath = process.argv[2];
 if (!configPath)
   throw new Error(
     "Pass an existing configuration path; credentials are read without printing them.",
   );
-const config = JSON.parse(readFileSync(configPath, "utf8")) as AppConfig;
+const settings = new ConfigStore(configPath, false);
+settings.load();
+const config = settings.getForPurpose("personResearch");
 const workspaceDir = mkdtempSync(join(tmpdir(), "person-dossier-canary-"));
 const dossiers = new PersonDossierStore(workspaceDir);
 const people = new WorkspacePersonProfiles({
@@ -47,7 +49,6 @@ const research = new PersonResearch({
   dossiers,
   people,
   search,
-  diagnostic: (event) => process.stdout.write(JSON.stringify(event) + "\n"),
   complete: async (request) => {
     modelCalls += 1;
     inputCharacters += request.user.length + request.system.length;
@@ -65,12 +66,10 @@ for (const [name, url] of [
   const profile = people.create({ fullName: name!, profileUrls: [url!] });
   const before = modelCalls;
   const started = Date.now();
-  const result = await research.run(profile, {
-    maxCalls: 8,
-    maxMilliseconds: 120000,
-    reserve: () => true,
-    active: () => true,
-  });
+  const result = await research.run(
+    profile,
+    researchAllowance({ maxModelCalls: 8, maxMilliseconds: 120000 }),
+  );
   const dossier = dossiers.get(profile.id);
   results.push({
     name,

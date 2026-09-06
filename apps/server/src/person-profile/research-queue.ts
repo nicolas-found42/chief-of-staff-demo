@@ -15,7 +15,15 @@ export type PersonResearchSettingsPatch = {
   [K in keyof PersonResearchSettings]?: PersonResearchSettings[K] | undefined;
 };
 
-/** One Workspace runtime owns dispatch; every allowance is persisted before use. */
+/**
+ * One Workspace runtime owns dispatch of continuous research operations.
+ *
+ * The queue schedules *which* Profile gets an operation and when it may be
+ * refreshed. It no longer splits one Profile's enrichment into budget-limited
+ * passes waiting for a later resumption: an operation runs until its own
+ * completion conditions hold, or until it is interrupted or hits a safety
+ * bound — and those two say so rather than reading as success (#228).
+ */
 export class PersonResearchQueue {
   private readonly file: string;
   private state: PersonResearchStatus;
@@ -39,29 +47,27 @@ export class PersonResearchQueue {
       ? PersonResearchStatusSchema.parse(JSON.parse(readFileSync(this.file, "utf8")))
       : {
           schemaVersion: 1,
-          settings: {
+          settings: PersonResearchSettingsSchema.parse({
             paused: false,
             concurrency: 1,
-            profileCalls: 12,
-            profileMilliseconds: 120000,
-            dailyCalls: 96,
             refreshHours: 168,
-          },
+          }),
           day: this.now().slice(0, 10),
           usedCalls: 0,
           jobs: [],
         };
-    // A process cannot carry its old in-flight lease through restart.
+    /* A process cannot carry its in-flight operation through a restart, and a
+       shutdown is an interruption rather than a completion: the job says so,
+       keeps its completed evidence, and is re-dispatched automatically. */
     for (const job of this.state.jobs)
       if (job.state === "researching") {
-        job.elapsedMilliseconds = Math.min(
-          this.state.settings.profileMilliseconds,
+        job.elapsedMilliseconds =
           (job.elapsedMilliseconds ?? 0) +
-            (job.startedAt ? Math.max(0, Date.parse(this.now()) - Date.parse(job.startedAt)) : 0),
-        );
+          (job.startedAt ? Math.max(0, Date.parse(this.now()) - Date.parse(job.startedAt)) : 0);
         delete job.startedAt;
         job.state = "queued";
-        job.detail = "Resuming interrupted research with the saved traversal and time allowance.";
+        job.detail =
+          "Application shutdown interrupted the previous research operation; retained evidence and pending leads are preserved.";
       }
   }
   private now(): string {
@@ -97,6 +103,8 @@ export class PersonResearchQueue {
     const now = this.now();
     if (old) {
       if (!old.reasons.includes(reason)) old.reasons.push(reason);
+      if (reason === "evidence" || old.checkpoint?.profileRevision !== profile.revision)
+        delete old.checkpoint;
       if (old.state === "researching" || old.state === "queued" || old.state === "paused") {
         this.save();
         return;
@@ -114,7 +122,7 @@ export class PersonResearchQueue {
       old.state = "queued";
       old.calls = 0;
       old.elapsedMilliseconds = 0;
-      delete old.checkpoint;
+      if (old.operation?.conclusion !== "bounded") delete old.checkpoint;
       delete old.startedAt;
       old.sources = 0;
       old.queuedAt = now;
@@ -215,12 +223,6 @@ export class PersonResearchQueue {
       this.remove(job.profileId);
       return;
     }
-    if (this.state.usedCalls >= this.state.settings.dailyCalls) {
-      job.state = "paused";
-      job.detail = "Daily research allowance reached.";
-      this.save();
-      return;
-    }
     const generation = this.generation;
     const fingerprint = JSON.stringify(profile);
     const evidenceRevision = this.deps.evidenceRevision?.(profile.id);
@@ -243,13 +245,18 @@ export class PersonResearchQueue {
     this.running.add(job.profileId);
     this.save();
     try {
+      const settings = this.state.settings;
       const result = await this.deps.research.run(profile, {
         scope: historical ? "full" : "current",
-        maxCalls: Math.max(0, this.state.settings.profileCalls - job.calls),
+        maxModelCalls: Math.max(1, settings.profileCalls - job.calls),
+        maxRequests: Math.max(1, settings.profileCalls * 8),
         maxMilliseconds: Math.max(
-          0,
-          this.state.settings.profileMilliseconds - (job.elapsedMilliseconds ?? 0),
+          1000,
+          settings.profileMilliseconds - (job.elapsedMilliseconds ?? 0),
         ),
+        readConcurrency: settings.readConcurrency,
+        requestTimeoutMilliseconds: settings.requestTimeoutMilliseconds,
+        quietRounds: settings.quietRounds,
         ...(job.checkpoint ? { checkpoint: job.checkpoint } : {}),
         saveCheckpoint: (checkpoint) => {
           if (!active()) return;
@@ -257,10 +264,15 @@ export class PersonResearchQueue {
           this.save();
         },
         active,
-        reserve: () => {
+        reserveRequest: () => {
           this.rollDay();
-          if (!active() || this.state.usedCalls >= this.state.settings.dailyCalls) return false;
+          if (!active()) return false;
           this.state.usedCalls += 1;
+          return true;
+        },
+        reserveModelCall: () => {
+          this.rollDay();
+          if (!active()) return false;
           job.calls += 1;
           this.save();
           return true;
@@ -284,18 +296,35 @@ export class PersonResearchQueue {
           job.detail = "Profile or research policy changed; stale results were stopped.";
         }
       } else {
-        job.state =
-          this.state.usedCalls >= this.state.settings.dailyCalls && result.state === "incomplete"
-            ? "paused"
-            : result.state;
+        if (ownUpdate && job.checkpoint && result.publishedProfileRevision !== undefined)
+          job.checkpoint.profileRevision = result.publishedProfileRevision;
+        job.state = result.state;
         if (historical && ["current", "empty"].includes(result.state))
           job.lastHistoricalAt = this.now();
         job.sources += result.sources;
         job.diagnostics = result.diagnostics;
+        const previous = job.operation;
+        if (previous?.operationId === result.operation.operationId) {
+          result.operation.startedAt = previous.startedAt;
+          result.operation.modelCalls += previous.modelCalls;
+          result.operation.requests += previous.requests;
+          result.operation.sourcesRetained += previous.sourcesRetained;
+          result.operation.claimsPublished += previous.claimsPublished;
+          result.operation.attempts = [...previous.attempts, ...result.operation.attempts];
+          const leads = new Map(previous.leads.map((lead) => [lead.id, lead]));
+          for (const lead of result.operation.leads)
+            if (lead.disposition !== "deduplicated" || !leads.has(lead.id))
+              leads.set(lead.id, lead);
+          result.operation.leads = [...leads.values()];
+        }
+        job.operation = result.operation;
         job.detail = result.detail;
+        /* A completed operation clears its traversal: the next run is a
+           refresh of changed evidence, not the second half of this one. */
+        if (result.operation.conclusion === "completed") delete job.checkpoint;
         job.nextAt = new Date(
           Date.parse(this.now()) +
-            (result.state === "unavailable"
+            (result.state === "unavailable" || result.state === "interrupted"
               ? Math.min(24, 2 ** Math.min(job.attempts, 5))
               : this.state.settings.refreshHours) *
               3600000,

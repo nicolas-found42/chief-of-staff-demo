@@ -8,7 +8,10 @@ import type {
   PersonDossierAnalysis,
 } from "@chief-of-staff-demo/shared";
 import { PersonDossierStore } from "../../../apps/server/src/person-profile/dossier-store.js";
-import { PersonResearch } from "../../../apps/server/src/person-profile/research.js";
+import {
+  PersonResearch,
+  researchAllowance,
+} from "../../../apps/server/src/person-profile/research.js";
 import { PersonDossierQueries } from "../../../apps/server/src/person-profile/dossier-queries.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
@@ -59,17 +62,20 @@ async function research(name: string, person: { fullName: string; primaryEmail: 
   await new PersonResearch({
     dossiers,
     search: async () => [{ url: fixture.url, title: "Fictional source", snippet: "" }],
+    /* Only the fixture's own URL exists. Continuous research follows the work
+       URLs a matched source names, so a mock that answered every URL with the
+       same body would extract the corpus several times over. */
     fetch: async (url) => ({
       url,
-      status: 200,
+      status: url === fixture.url ? 200 : 404,
       contentType: "text/plain",
       etag: null,
       lastModified: null,
       retryAfter: null,
-      body: fixture.text,
+      body: url === fixture.url ? fixture.text : "",
     }),
     complete: async () => fixture.extraction,
-  }).run(profile, { maxCalls: 3, maxMilliseconds: 10000, reserve: () => true, active: () => true });
+  }).run(profile, researchAllowance({ maxModelCalls: 3, maxMilliseconds: 10000 }));
   const queries = new PersonDossierQueries({ people, dossiers });
   return {
     dossier: dossiers.get(profile.id)!,
@@ -375,7 +381,12 @@ test("a contradicted fact stays contested, keeps both accounts, and never overwr
   });
   const person = people.create({ primaryEmail: "priya@example.com", role: "Chief Architect" });
   const value = (url: string) => (url.endsWith("registry") ? "Chief Architect" : "Advisor");
-  const text = (url: string) => `priya@example.com is recorded as ${value(url)} at Larkspur.`;
+  /* Two registries and nothing else: any other URL is absent, so following a
+     lead cannot silently re-read one of these two under a different name. */
+  const text = (url: string) =>
+    /\/(registry|directory)$/.test(url)
+      ? `priya@example.com is recorded as ${value(url)} at Larkspur.`
+      : "";
   await new PersonResearch({
     people,
     dossiers,
@@ -387,7 +398,7 @@ test("a contradicted fact stays contested, keeps both accounts, and never overwr
       })),
     fetch: async (url) => ({
       url,
-      status: 200,
+      status: text(url) ? 200 : 404,
       contentType: "text/plain",
       etag: null,
       lastModified: null,
@@ -425,7 +436,7 @@ test("a contradicted fact stays contested, keeps both accounts, and never overwr
         sections: [],
       };
     },
-  }).run(person, { maxCalls: 6, maxMilliseconds: 10000, reserve: () => true, active: () => true });
+  }).run(person, researchAllowance({ maxModelCalls: 6, maxMilliseconds: 10000 }));
   const dossier = dossiers.get(person.id)!;
   expect(dossier.claims.map((claim) => claim.status)).toEqual(["contested", "contested"]);
   // Both accounts survive with their own passage; neither is resolved away.

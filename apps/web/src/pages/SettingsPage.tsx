@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { DriveIntakeStatus, ProviderId, SetupCheck } from "@chief-of-staff-demo/shared";
+import {
+  MODEL_PURPOSES,
+  type AppConfig,
+  type DriveIntakeStatus,
+  type ProviderId,
+  type SetupCheck,
+} from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import {
   configApi,
@@ -61,6 +67,7 @@ const PROVIDER_KEY_URLS: Partial<Record<ProviderId, string>> = {
 interface FormState {
   provider: ProviderId;
   model: string;
+  models: NonNullable<AppConfig["models"]>;
   apiKey: string;
   tasklistName: string;
   googleClientId: string;
@@ -118,6 +125,7 @@ export function SettingsPage() {
         setForm({
           provider: fetched.config.provider,
           model: fetched.config.model,
+          models: fetched.config.models ?? {},
           apiKey: "",
           tasklistName: fetched.config.tasklistName,
           googleClientId: fetched.config.google.clientId,
@@ -217,6 +225,7 @@ export function SettingsPage() {
       const update: Record<string, unknown> = {
         provider: form.provider,
         model: form.model,
+        models: form.models,
         tasklistName: form.tasklistName,
         google: { clientId: form.googleClientId },
         drive: {
@@ -244,6 +253,7 @@ export function SettingsPage() {
               ...current,
               provider: savedPayload.config.provider,
               model: savedPayload.config.model,
+              models: savedPayload.config.models ?? {},
               tasklistName: savedPayload.config.tasklistName,
               googleClientId: savedPayload.config.google.clientId,
               driveEnabled: savedPayload.config.drive.enabled,
@@ -476,6 +486,43 @@ export function SettingsPage() {
             {modelNotice}
           </p>
         </div>
+        <fieldset>
+          <legend>Models by purpose</legend>
+          <p className="muted">
+            These models use the selected provider and API key. Leave a field blank to use the
+            default model above.{" "}
+          </p>
+          {Object.entries(MODEL_PURPOSES).map(([purpose, label]) => (
+            <div className="field" key={purpose}>
+              <label htmlFor={`model-${purpose}`}>{label}</label>
+              <input
+                id={`model-${purpose}`}
+                value={form.models[form.provider]?.[purpose as keyof typeof MODEL_PURPOSES] ?? ""}
+                placeholder={form.model || payload.defaults[form.provider]}
+                onChange={(event) =>
+                  setField("models", {
+                    ...form.models,
+                    [form.provider]: {
+                      ...form.models[form.provider],
+                      [purpose]: event.target.value,
+                    },
+                  })
+                }
+              />
+              {purpose === "researchPlanning" && (
+                <p className="muted field-hint">
+                  Plans each further batch of person research from the evidence collected so far.
+                </p>
+              )}
+              {purpose === "evaluationJudge" && (
+                <p className="muted field-hint">
+                  Judges the developer Person Research Benchmark. Keep it independent of the
+                  research model so the judge is not marking its own work.
+                </p>
+              )}
+            </div>
+          ))}
+        </fieldset>
         <div className="field">
           <label htmlFor="api-key">Provider API key</label>
           <input

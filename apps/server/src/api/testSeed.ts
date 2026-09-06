@@ -586,13 +586,24 @@ export const personDossierTestPorts: {
   search: import("../source-adapters/search.js").PublicSearch;
   fetch: import("../source-adapters/http.js").PublicHttpFetch;
   complete: import("../llm/providers.js").CompleteJson;
+  plan: import("../llm/providers.js").CompleteJson;
 } = {
-  search: async (query) =>
-    [...dossierSources]
-      .filter(([, source]) =>
-        source.text.toLowerCase().includes(query.replace(/"/g, "").toLowerCase()),
-      )
-      .map(([url, source]) => ({ url, title: "Fixture source", snippet: source.text })),
+  /* Continuous research asks several differently phrased questions per round,
+     so the fixture matches on the query's own words rather than on the whole
+     query string being a substring of the document. */
+  search: async (query) => {
+    const words = query
+      .replace(/["']/g, " ")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((word) => word.length > 2);
+    return [...dossierSources]
+      .filter(([, source]) => {
+        const text = source.text.toLowerCase();
+        return words.length > 0 && words.some((word) => text.includes(word));
+      })
+      .map(([url, source]) => ({ url, title: "Fixture source", snippet: source.text }));
+  },
   fetch: async (url) => ({
     url,
     status: dossierSources.has(url) ? 200 : 404,
@@ -603,7 +614,10 @@ export const personDossierTestPorts: {
     body: dossierSources.get(url)?.text ?? "",
   }),
   complete: async (request) => {
-    const input = JSON.parse(request.user) as { document: { url: string } };
-    return dossierSources.get(input.document.url)?.extraction ?? {};
+    const input = JSON.parse(request.user) as { document?: { url: string } };
+    return input.document ? (dossierSources.get(input.document.url)?.extraction ?? {}) : {};
   },
+  /* The fixture planner proposes nothing: the browser journey exercises the
+     production loop, not a model's imagination. */
+  plan: async () => ({ queries: [], urls: [], targetCoverage: [], remainingQuestions: [] }),
 };

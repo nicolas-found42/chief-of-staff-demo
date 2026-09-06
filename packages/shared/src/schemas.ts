@@ -21,7 +21,7 @@ export const ProviderIdSchema = z.enum(PROVIDERS);
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.2",
   anthropic: "claude-sonnet-5",
-  openrouter: "inception/mercury-2.5-preview",
+  openrouter: "z-ai/glm-5.3-flash",
   gemini: "gemini-3.7-flash",
   ollama: "nemotron",
   mock: "",
@@ -30,9 +30,33 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
 /** Ollama's default listen address. `host.docker.internal` inside a container. */
 export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 
+export const MODEL_PURPOSES = {
+  personResearch: "Person evidence extraction and identity",
+  researchPlanning: "Person research planning",
+  evaluationJudge: "Research evaluation judge",
+  contentGeneration: "Content outlines and drafts",
+  contentDiscovery: "Content selection and Brand Voice",
+  contentResearch: "Content Research",
+  meetingBrief: "Meeting preparation and summaries",
+  meetingDebrief: "Meeting Debrief extraction",
+} as const;
+export type ModelPurpose = keyof typeof MODEL_PURPOSES;
+const PurposeModelsSchema = z.strictObject({
+  personResearch: z.string().max(200).optional(),
+  researchPlanning: z.string().max(200).optional(),
+  evaluationJudge: z.string().max(200).optional(),
+  contentGeneration: z.string().max(200).optional(),
+  contentDiscovery: z.string().max(200).optional(),
+  contentResearch: z.string().max(200).optional(),
+  meetingBrief: z.string().max(200).optional(),
+  meetingDebrief: z.string().max(200).optional(),
+});
+const ModelsSchema = z.record(ProviderIdSchema, PurposeModelsSchema);
+
 export const ConfigSchema = z.strictObject({
   provider: ProviderIdSchema,
   model: z.string(),
+  models: ModelsSchema.optional(),
   apiKey: z.string(),
   tasklistName: z.string().default("Meeting Followups"),
   google: z.strictObject({
@@ -274,6 +298,7 @@ export type ModuleConfigs = AppConfig["modules"];
 export const ConfigUpdateSchema = z.strictObject({
   provider: ProviderIdSchema.optional(),
   model: z.string().optional(),
+  models: ModelsSchema.optional(),
   apiKey: z.string().optional(),
   tasklistName: z.string().optional(),
   google: z
@@ -314,6 +339,7 @@ export interface SecretHint {
 export interface RedactedConfig {
   provider: ProviderId;
   model: string;
+  models?: z.infer<typeof ModelsSchema>;
   tasklistName: string;
   apiKey: SecretHint;
   google: {

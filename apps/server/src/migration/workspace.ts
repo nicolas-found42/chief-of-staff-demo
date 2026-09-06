@@ -294,9 +294,33 @@ const composite = (
   shape: CompositeShape,
 ): CompositeEntry => ({ category, shape });
 
+const PURPOSE_MODELS: CompositeShape = {
+  kind: "object",
+  keys: {
+    personResearch: SCALAR,
+    researchPlanning: SCALAR,
+    evaluationJudge: SCALAR,
+    contentGeneration: SCALAR,
+    contentDiscovery: SCALAR,
+    contentResearch: SCALAR,
+    meetingBrief: SCALAR,
+    meetingDebrief: SCALAR,
+  },
+};
 const CONFIG_KEYS: Record<string, TableEntry> = {
   provider: "non-auth-workflow-configuration",
   model: "non-auth-workflow-configuration",
+  models: composite("non-auth-workflow-configuration", {
+    kind: "object",
+    keys: {
+      openai: PURPOSE_MODELS,
+      anthropic: PURPOSE_MODELS,
+      openrouter: PURPOSE_MODELS,
+      gemini: PURPOSE_MODELS,
+      ollama: PURPOSE_MODELS,
+      mock: PURPOSE_MODELS,
+    },
+  }),
   apiKey: "provider-api-keys",
   tasklistName: "google-tasklists",
   "google.clientId": "oauth-client-registrations",

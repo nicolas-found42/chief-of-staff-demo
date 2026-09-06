@@ -419,6 +419,32 @@ identity, work, expertise, ideas, and connections. Its readable account and deta
 the same evidence, independently of the workflow that first encountered the person.
 _Avoid_: Guest Profile, guest dossier, contact profile (the person need not be a contact)
 
+**Person Research Operation**:
+One continuous investigation of a Person Profile's public evidence, with findings published as
+research proceeds and an explicit conclusion that distinguishes completion from interruption or
+unfinished work stopped by a safety bound. A later refresh investigates changed evidence; it does
+not imply that an unfinished investigation was completed.
+_Avoid_: Enrichment pass, daily research allowance, research refresh (for unfinished work)
+
+**Person Research Benchmark**:
+A curated reference collection for evaluating person research, with independently checked, dated
+evidence and expectations that may exceed the application's current source coverage. It assesses
+factual reliability, completeness, meeting-preparation usefulness, and operational reliability
+separately; honest uncertainty does not establish successful research.
+_Avoid_: Prompt Eval Gate (that evaluates transcript extraction), profile score
+
+**Benchmark Person**:
+One public person represented in the Person Research Benchmark by sourced reference facts and
+conclusions the evidence does not justify. The reference describes what research should recover,
+including evidence the application cannot yet collect.
+_Avoid_: Golden (reserved for transcript expectations), generated example Profile
+
+**Person Research Failure**:
+A recorded inability to complete a particular part of researching a person, identifying the failed
+stage, observed cause, attempted recovery and evidence left unavailable. It distinguishes an
+inaccessible source or failed method from an absence of information about the person.
+_Avoid_: No public footprint, empty result (unless the search actually succeeded with no matches)
+
 **Identity Signal**:
 An email address, full name, social handle, profile URL, employer clue, or other observed identifier
 used to resolve evidence to one Person Profile. A signal is an input to matching, not proof that two

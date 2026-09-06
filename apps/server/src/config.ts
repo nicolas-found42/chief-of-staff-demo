@@ -6,6 +6,7 @@ import {
   type ModuleConfigs,
   type RedactedConfig,
   type SecretHint,
+  type ModelPurpose,
   ConfigSchema,
   DEFAULT_MODELS,
   DEFAULT_OLLAMA_BASE_URL,
@@ -171,6 +172,15 @@ export class ConfigStore {
     return this.get().modules[key];
   }
 
+  /** Purpose overrides belong to their provider and share its credential. */
+  getForPurpose(purpose: ModelPurpose): AppConfig {
+    const current = this.get();
+    return {
+      ...current,
+      model: current.models?.[current.provider]?.[purpose]?.trim() || current.model,
+    };
+  }
+
   /** Merge a partial update. Absent secret fields keep their stored values. */
   update(patch: ConfigUpdate): AppConfig {
     const merged = deepMerge(this.get(), patch);
@@ -275,6 +285,7 @@ export function redactConfig(config: AppConfig): RedactedConfig {
   return {
     provider: config.provider,
     model: config.model,
+    models: config.models ?? {},
     tasklistName: config.tasklistName,
     apiKey: secretHint(config.apiKey),
     google: {

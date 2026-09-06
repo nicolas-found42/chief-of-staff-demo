@@ -30,9 +30,22 @@ test("settings round-trips with redacted secrets", async ({ page }) => {
   expect(secretValues.length).toBeGreaterThan(0);
   expect(secretValues.every((value) => value === "")).toBe(true);
 
+  const manage = page.getByText("Manage provider", { exact: true });
+  if (await manage.isVisible()) await manage.click();
+  await page.getByLabel("Research evaluation judge", { exact: true }).fill("independent-judge");
+  await page
+    .getByLabel("Person evidence extraction and identity", { exact: true })
+    .fill("research-extractor");
   await page.getByLabel("Task list name").fill("E2E Followups");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.locator(".banner-ok")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Research evaluation judge", { exact: true })).toHaveValue(
+    "independent-judge",
+  );
+  await expect(
+    page.getByLabel("Person evidence extraction and identity", { exact: true }),
+  ).toHaveValue("research-extractor");
 
   await page.reload();
   await expect(page.getByLabel("Task list name")).toHaveValue("E2E Followups");
