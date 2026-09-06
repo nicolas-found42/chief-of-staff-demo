@@ -213,7 +213,12 @@ async function postSseStream(
     timer = setTimeout(() => idle.abort(), STREAM_IDLE_TIMEOUT_MS);
   };
   armIdle();
-  const observed: { status?: number; bodyBytes: number } = { bodyBytes: 0 };
+  /* `upstreamServer` is observation, not control: OpenRouter names the route
+     serving this call on every chunk, and a stalled stream otherwise leaves no
+     trace of which of a model's many upstreams was answering (#232). */
+  const observed: { status?: number; bodyBytes: number; upstreamServer?: string } = {
+    bodyBytes: 0,
+  };
   try {
     let response: Response;
     try {
@@ -266,6 +271,7 @@ async function postSseStream(
           classification: "repetition_loop",
           status: response.status,
           bodyBytes: observed.bodyBytes,
+          ...(observed.upstreamServer ? { upstreamServer: observed.upstreamServer } : {}),
         });
       }
       return answer.length;
@@ -288,7 +294,17 @@ async function postSseStream(
           payload: chunk,
         });
       }
-      if (typeof chunk !== "object" || chunk === null || !("choices" in chunk)) return false;
+      if (typeof chunk !== "object" || chunk === null) return false;
+      /* Every chunk names the route serving this call; the first one to do so
+         is enough, and the name is a route identifier, never content. */
+      if (
+        observed.upstreamServer === undefined &&
+        "provider" in chunk &&
+        typeof chunk.provider === "string" &&
+        chunk.provider !== ""
+      )
+        observed.upstreamServer = chunk.provider;
+      if (!("choices" in chunk)) return false;
       const choices = chunk.choices;
       if (!isUnknownArray(choices) || choices.length === 0) return false;
       const choice = choices[0];
@@ -400,7 +416,10 @@ async function postSseStream(
     if (!seen.data) return { status: response.status, text: "" };
     return {
       status: 200,
-      text: JSON.stringify({ choices: [{ index: 0, message, finish_reason: finishReason }] }),
+      text: JSON.stringify({
+        ...(observed.upstreamServer ? { provider: observed.upstreamServer } : {}),
+        choices: [{ index: 0, message, finish_reason: finishReason }],
+      }),
     };
   } finally {
     clearTimeout(timer);
@@ -435,7 +454,7 @@ function requestTimeoutOrTransport(
   call: ModelCall,
   ceilingSignal: AbortSignal,
   error: unknown,
-  observed: { status?: number; bodyBytes: number } = { bodyBytes: 0 },
+  observed: { status?: number; bodyBytes: number; upstreamServer?: string } = { bodyBytes: 0 },
 ): ModelBoundaryError {
   if (ceilingSignal.aborted) {
     return modelBoundaryFailure({

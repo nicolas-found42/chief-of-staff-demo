@@ -37,6 +37,16 @@ export interface ModelBoundaryFailureInput {
   answer?: AnswerContainer;
   /** The ceiling that fired, for `request_timeout`. */
   timeoutMs?: number;
+  /**
+   * The upstream a streaming response named before it stalled.
+   *
+   * A refusal body names its own upstream, but a stream that times out has no
+   * body to read it from — and OpenRouter routes one model id across many
+   * upstreams, so "which one served this" is the difference between a model
+   * that cannot do the task and a route that was not answering (#232). Only
+   * used when no payload named one.
+   */
+  upstreamServer?: string;
 }
 
 /**
@@ -176,7 +186,8 @@ export function modelBoundaryFailure(input: ModelBoundaryFailureInput): ModelBou
     classification: input.classification,
     provider: input.call.provider,
     model: input.call.model,
-    upstreamServer: upstreamServer(payload),
+    upstreamServer:
+      upstreamServer(payload) ?? (input.upstreamServer ? safeName(input.upstreamServer) : null),
     upstreamCode: upstreamCode(payload),
     binding: input.call.binding,
     status: input.status ?? null,

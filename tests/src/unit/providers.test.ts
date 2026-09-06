@@ -673,6 +673,41 @@ describe("providers", () => {
     },
   );
 
+  it("openrouter: a stalled stream still names the upstream that was serving it", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("response_format"));
+      /* One model id routes across many upstreams. A refusal body names its
+         own; a stream that times out has no body to read it from, so without
+         this the difference between "this model cannot do the task" and "that
+         route was not answering" is unobservable (#232). */
+      const activity = `data: ${JSON.stringify({
+        provider: "Z.AI",
+        choices: [{ delta: { reasoning: " " } }],
+      })}`;
+      responses.push({
+        sseDrip: { intervalMs: 10_000, lines: Array.from({ length: 10 }, () => activity) },
+      });
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/stalling-model", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const result = complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ answer: z.string() }),
+      }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+      await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1);
+      expect(await result).toMatchObject({
+        classification: "request_timeout",
+        timeoutMs: STREAM_IDLE_TIMEOUT_MS,
+        upstreamServer: "Z.AI",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("openrouter: reconstructs interleaved tool streams by index and selects the first call", async () => {
     declarations.push(declaring("tools", "tool_choice"));
     const delta = (toolCalls: unknown[]) =>

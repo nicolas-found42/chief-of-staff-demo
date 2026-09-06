@@ -568,3 +568,101 @@ The current endpoint metadata is retained alongside them. Logical provider
 diagnostics still name the adapter's original binding; these explicitly labeled
 wire-override controls and their observer records identify automatic selection.
 They are diagnostics, not acceptance runs.
+
+## Named cause, 2026-09-06 (issue #232)
+
+**The configured model stops a few tokens into the tool call's argument JSON whenever the
+extraction has substantive content to produce, and then holds the stream open with keepalive
+comments until the client's 30-second idle ceiling fires.**
+
+Nothing about this is a client defect: there is no completed answer being discarded, no route
+that would have answered, and no reasoning phase in progress. The model emits `role`, a few dozen
+reasoning characters and exactly **11 characters of tool-argument JSON** inside the first two
+seconds, and then produces no further token for thirty seconds while the upstream sends SSE
+comments.
+
+The only production change this diagnosis made is an observation: the streaming boundary now
+records the serving upstream on a stalled call, which a refusal body already carried and a
+timeout did not. No request parameter, model, provider or deadline was changed, and no override
+was left in place.
+
+### Observations
+
+All counts are shape-only. No request text, answer text or reasoning text was written anywhere.
+
+Twelve consecutive production extraction attempts for `achim-steiner` stalled across six CLI runs;
+eight of eight harness attempts with the same reference document stalled. Every one: HTTP 200, the
+30,000 ms idle ceiling, no `finish_reason`, no `[DONE]`.
+
+| Attempt | Route | Data events | Comments | content chars | reasoning chars | tool-argument chars | Last counted activity | Longest silence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | Wafer | 10 | 73 | 0 | 36 | 11 | 1,891 ms | 29,796 ms |
+| 2 | Wafer | 14 | 72 | 0 | 56 | 11 | 1,520 ms | 29,908 ms |
+| 3 | Wafer | 17 | 74 | 0 | 71 | 11 | 2,054 ms | 29,900 ms |
+
+The eleven characters are the same eleven the first diagnostic session recorded. They are the
+opening of the argument object and never grow.
+
+### What this falsifies
+
+- **The serving upstream.** OpenRouter routes this model id across 23 upstreams and the boundary
+  now names the one that served each call. The stall reproduces on `Wafer` and on `NextBit`, and
+  both of those answer the same request shape when the answer is an empty result set. A route is
+  not the variable.
+- **Request size.** Requests padded to 16,000, 32,000 and 60,000 characters answered ten times out
+  of ten. The unpadded 6,373-character request carrying the real reference document failed eight
+  times out of eight. Larger requests succeed; this smaller one does not.
+- **The system prompt.** The production extraction prompt and a one-sentence replacement both
+  answer on filler and both stall on the real document. The prompt is not the variable.
+- **A long reasoning phase.** These calls carry 36–71 reasoning characters in total, all of them
+  inside the first two seconds. The separately recorded usefulness-judge failure with 44,944
+  reasoning characters is a genuinely different failure and stays recorded as its own thing.
+- **Terminal-signal loss in stream completion.** There is no valid completed response to lose:
+  zero content characters, eleven tool-argument characters, and no terminator of any kind. No
+  change to timeout policy is justified by this evidence either.
+
+The one variable that separates a stalling request from an answering one is whether the extraction
+has substantive content to produce. Filler yields an empty result set and completes; the real
+biography does not.
+
+### Same-request model comparison
+
+Diagnostic only. Nothing here was adopted, and no configuration changed. Identical document,
+schema, binding, temperature and system prompt; two attempts each.
+
+| Model | Outcome | Elapsed | Evidence |
+| --- | --- | --- | --- |
+| `z-ai/glm-5.3-flash` (configured) | idle-ceiling stall | 32 s | 11 tool-argument characters, 0 content, no terminator |
+| `upstage/solar-pro4` | absolute-deadline stall | 120 s | 15,340–22,129 tool-argument characters, still generating at the ceiling |
+| `openai/gpt-oss-20b` | `unusable_shape` | 8–14 s | 6,529–11,705 content characters, `finish:stop` and `[DONE]`; answered in content instead of the forced tool call |
+
+Two other candidates answered HTTP errors before generating and establish nothing:
+`qwen/qwen3.7-flash` and `minimax/minimax-m2.7:free`.
+
+This is what separates the configured model from every other hypothesis. A different model
+produced a complete, terminated answer for the same document and schema in under fifteen seconds.
+
+### Explicitly unknown
+
+**Why** the model stops cannot be determined from client-side observation. Constrained decoding
+failing inside the tool-argument grammar, an upstream generation fault, and a model defect all
+produce these bytes. The earlier prompt-only run, which carried no structured binding and also
+failed, weighs against structured decoding being the whole story — but its symptom (44,944
+reasoning characters against the 120-second absolute deadline) is not this symptom, so it is not
+evidence about this failure. This stays unknown rather than receiving an invented explanation.
+
+### Reproduction pointers for the repair (#233)
+
+```sh
+pnpm exec tsx scripts/person-research-benchmark.mts \
+  --mode fixed-documents --pipeline expanded --people achim-steiner --out <dir>
+```
+
+Reproduced on every one of six consecutive runs. The per-person `*.operation.json` under `<dir>`
+carries the extraction attempts, and each `observed.modelBoundary` now names its `upstreamServer`.
+
+A second, independent cause of the same emptiness is visible in the same runs and is not this
+one: for `cary-fowler` and `timnit-gebru` the reference documents are rejected at
+`identity-unmatched` before any extraction, so those operations retain zero sources and make zero
+model calls. That is a failure to use evidence already in hand, and belongs to #233 and #237
+rather than to this boundary diagnosis.
