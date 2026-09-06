@@ -51,6 +51,20 @@ const Extraction = PersonDossierContentSchema.extend({
 });
 
 /**
+ * How many extraction calls may fail at the model boundary in a row before the
+ * operation stops calling it.
+ *
+ * One document that stalls the configured model is an observation about that
+ * request, not proof the provider is down: the spec asks for temporary
+ * failures to be retried and other work to continue, while a genuine
+ * model-provider failure stays an interruption rather than a completion. Each
+ * of these is already a logical call that exhausted the boundary's own
+ * same-binding retry, so a run of them is the provider failing, not one
+ * awkward page. A success anywhere in between resets the count.
+ */
+const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
+
+/**
  * The bounds one continuous research operation runs inside.
  *
  * Every one of them is a safety bound on requests and time, never a definition
@@ -200,6 +214,11 @@ export class PersonResearch {
       reason: string;
     } | null = null;
     let pendingSourceId = allowance.checkpoint?.pendingSourceId;
+    /* Extraction calls that failed at the model boundary since the last one
+       that succeeded, and whether any succeeded at all in this operation.
+       Together they separate a stalled request from a failing provider. */
+    let consecutiveExtractionFailures = 0;
+    let extractionSucceeded = false;
     /* The document a previous operation retained but never finished
        extracting. Reusing it is what makes a restart resume rather than
        re-crawl (#212). */
@@ -751,27 +770,39 @@ export class PersonResearch {
                 ? "Inspect the retained source and the extraction schema together."
                 : "Check the configured provider and model for the person-research purpose.",
             });
+          /* A schema-breaking answer is an investigation: the model replied
+             and re-reading the page cannot improve it. A boundary failure is
+             not — the document was retrieved and retained, and only the model
+             call is missing, so the lead stays retryable rather than joining
+             the targets this Profile never fetches again. */
           leads.resolve(
             pending.leadId,
-            "investigated",
-            "Retrieved and retained; extraction failed.",
+            zod ? "investigated" : "interrupted",
+            zod
+              ? "Retrieved and retained; extraction failed."
+              : "Retrieved and retained; the model boundary failed before extraction.",
             false,
           );
           if (!zod) {
-            /* A provider outage is an interruption of the operation, not a
-               property of this one source. */
-            interruption = {
-              code: {
-                code: "model-boundary-failed",
-                reason: "The configured model provider failed during extraction.",
-              },
-              reason:
-                "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
-            };
-            break;
+            consecutiveExtractionFailures += 1;
+            /* A provider that keeps failing is an interruption of the
+               operation; one that failed on this document is a gap in it. */
+            if (consecutiveExtractionFailures >= EXTRACTION_BOUNDARY_FAILURE_TOLERANCE) {
+              interruption = {
+                code: {
+                  code: "model-boundary-failed",
+                  reason: "The configured model provider failed during extraction.",
+                },
+                reason:
+                  "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
+              };
+              break;
+            }
           }
           continue;
         }
+        consecutiveExtractionFailures = 0;
+        extractionSucceeded = true;
         if (!active()) break;
         if (privateDocument && !privateDocument.active()) {
           leads.resolve(
@@ -1005,6 +1036,19 @@ export class PersonResearch {
             ),
           )
         : null;
+
+    /* Tolerating a stalled request must not let an operation that never got a
+       single extraction through report anything but an interruption: with no
+       success to reset against, every failure it saw was the provider's. */
+    if (!interruption && consecutiveExtractionFailures > 0 && !extractionSucceeded)
+      interruption = {
+        code: {
+          code: "model-boundary-failed",
+          reason: "The configured model provider failed during extraction.",
+        },
+        reason:
+          "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
+      };
 
     this.updateCoverage(coverage, profile, readIndexes);
     const conclusion = interruption ? "interrupted" : bound.reason ? "bounded" : "completed";

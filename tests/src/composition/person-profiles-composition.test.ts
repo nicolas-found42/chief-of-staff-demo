@@ -188,6 +188,236 @@ describe("the Person Profiles composition", () => {
     expect(dossier.claims).toEqual([]);
   });
 
+  /**
+   * One document that stalls the configured model is not the same observation
+   * as a provider that is down. The operation kept a sixty-call budget and
+   * spent one of it before #228's live runs stopped twenty of thirty people at
+   * their first extraction; the spec asks for temporary failures to be retried
+   * and other work to continue.
+   */
+  it("continues with the remaining sources after a transient extraction failure", async () => {
+    const failed: string[] = [];
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `Maya built project ${new URL(url).pathname.slice(1)}.`,
+        }),
+      },
+      complete: () => async (request) => {
+        const { document } = JSON.parse(request.user) as { document: { url: string } };
+        const index = new URL(document.url).pathname.slice(1);
+        if (index === "1") {
+          failed.push(index);
+          throw new Error("Provider stalled mid-stream");
+        }
+        const quote = `Maya built project ${index}.`;
+        return {
+          fullName: null,
+          employer: null,
+          sourceClass: "primary-artifact",
+          author: null,
+          publishedAt: null,
+          claims: [
+            {
+              id: `work-${index}`,
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        };
+      },
+    });
+    const profile = h.people.profiles.create({
+      profileUrls: ["https://example.com/1", "https://example.com/2", "https://example.com/3"],
+    });
+    await h.people.queue.tick();
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(failed).toEqual(["1"]);
+    expect(outcome.conclusion).toBe("completed");
+    expect(
+      h.people.dossiers
+        .get(profile.id)!
+        .claims.map((claim) => claim.statement)
+        .sort(),
+    ).toEqual(["Maya built project 2.", "Maya built project 3."]);
+    /* The failure stays observable: continuing is not the same as hiding it. */
+    expect(outcome.attempts).toContainEqual(
+      expect.objectContaining({
+        stage: "extraction",
+        code: "model-boundary-failed",
+        target: "https://example.com/1",
+      }),
+    );
+    /* And the document stays retryable: the model failed, the page did not. */
+    expect(outcome.leads.find((lead) => lead.target === "https://example.com/1")?.disposition).toBe(
+      "interrupted",
+    );
+  });
+
+  /**
+   * A provider that keeps failing is still an interruption, and the operation
+   * stops paying for it rather than spending its whole budget on a dead seam.
+   */
+  it("interrupts research once the model provider fails persistently during extraction", async () => {
+    let calls = 0;
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `Maya built project ${new URL(url).pathname.slice(1)}.`,
+        }),
+      },
+      complete: () => async () => {
+        calls += 1;
+        throw new Error("Provider unavailable");
+      },
+    });
+    const profile = h.people.profiles.create({
+      profileUrls: [
+        "https://example.com/1",
+        "https://example.com/2",
+        "https://example.com/3",
+        "https://example.com/4",
+        "https://example.com/5",
+      ],
+    });
+    await h.people.queue.tick();
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("interrupted");
+    expect(outcome.interruption?.code).toBe("model-boundary-failed");
+    /* Tolerance is bounded: five readable documents did not buy five failures. */
+    expect(calls).toBeLessThan(5);
+  });
+
+  /**
+   * Tolerance counts a run of failures, not a lifetime total. A provider that
+   * stalls on one awkward document, answers the next, and stalls again is
+   * still working; spending the operation's leads on it is the point.
+   */
+  it("resets the boundary-failure tolerance after an extraction succeeds", async () => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `Maya built project ${new URL(url).pathname.slice(1)}.`,
+        }),
+      },
+      complete: () => async (request) => {
+        const { document } = JSON.parse(request.user) as { document: { url: string } };
+        const index = new URL(document.url).pathname.slice(1);
+        /* Fail, succeed, fail, succeed, fail: never three in a row. */
+        if (Number(index) % 2 === 1) throw new Error("Provider stalled mid-stream");
+        const quote = `Maya built project ${index}.`;
+        return {
+          fullName: null,
+          employer: null,
+          sourceClass: "primary-artifact",
+          author: null,
+          publishedAt: null,
+          claims: [
+            {
+              id: `work-${index}`,
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        };
+      },
+    });
+    const profile = h.people.profiles.create({
+      profileUrls: [1, 2, 3, 4, 5].map((index) => `https://example.com/${index}`),
+    });
+    await h.people.queue.tick();
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("completed");
+    expect(
+      h.people.dossiers
+        .get(profile.id)!
+        .claims.map((claim) => claim.statement)
+        .sort(),
+    ).toEqual(["Maya built project 2.", "Maya built project 4."]);
+    /* Three failures happened; none of them followed another one. */
+    expect(
+      outcome.attempts.filter(
+        (attempt) => attempt.stage === "extraction" && attempt.code === "model-boundary-failed",
+      ),
+    ).toHaveLength(3);
+  });
+
+  /**
+   * With no success to reset against, every failure the operation saw was the
+   * provider's. Reporting that as a completed operation with no evidence would
+   * claim the person has no public record.
+   */
+  it("interrupts an operation that never completed one extraction, short of the tolerance", async () => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: "Maya built the thing.",
+        }),
+      },
+      complete: () => async () => {
+        throw new Error("Provider unavailable");
+      },
+    });
+    const profile = h.people.profiles.create({
+      profileUrls: ["https://example.com/1", "https://example.com/2"],
+    });
+    await h.people.queue.tick();
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("interrupted");
+    expect(outcome.interruption?.code).toBe("model-boundary-failed");
+    expect(h.people.dossiers.get(profile.id)!.claims).toEqual([]);
+  });
+
   it("recovers a temporary retrieval failure in the same operation and retains its observed cause", async () => {
     vi.useFakeTimers();
     let attempts = 0;
