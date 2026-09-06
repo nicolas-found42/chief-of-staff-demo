@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "devi-shetty",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Devi Prasad Shetty",
   "industry": "healthcare",
   "role": "Cardiac surgeon; founder and Chairman of Narayana Health",
@@ -63,6 +63,21 @@
       "hash": "882a942f7539371a4022f1ee44dcdbe2c2431e8f30067d9f6b85d4699bde4c6c",
       "excerpt": "numFound: 1\nstart: 0\nnumFoundExact: true\ndocs[0].key: OL15664725A\ndocs[0].name: Devi Shetty\ndocs[0].top_subjects[0]: South Asia\ndocs[0].top_subjects[1]: Narayana Hrudayalaya Limited\ndocs[0].top_subjects[2]: Medical care\ndocs[0].top_subjects[3]: Interviews\ndocs[0].top_subjects[4]: India\ndocs[0].top_subjects[5]: History\ndocs[0].top_subjects[6]: Devi Shetty\ndocs[0].top_subjects[7]: Cost of Medical care\ndocs[0].top_subjects[8]: Commerce\ndocs[0].top_subjects[9]: Cardiology\ndocs[0].top_work: Interview with Devi Shetty, interviewed by Tarun Khanna, Boston, MA\ndocs[0].type: author\ndocs[0].work_count: 1\ndocs[0].ratings_average: 0\ndocs[0].ratings_sortable: 2.047372\ndocs[0].ratings_count: 0\ndocs[0].ratings_count_1: 0\ndocs[0].ratings_count_2: 0\ndocs[0].ratings_count_3: 0\ndocs[0].ratings_count_4: 0\ndocs[0].ratings_count_5: 0\ndocs[0].want_to_read_count: 0\ndocs[0].already_read_count: 0\ndocs[0].currently_reading_count: 0\ndocs[0].stopped_reading_count: 0\ndocs[0].readinglog_count: 0\ndocs[0]._root_: /authors/OL15664725A\ndocs[0]._version_: 1867247630891876400",
       "rights": "public-record"
+    },
+    {
+      "id": "fixing-healthcare-ep7",
+      "url": "https://fixinghealthcarepodcast.blubrry.net/wp-content/uploads/2020/05/FHC_Episode_7_Shetty_Transcript.pdf",
+      "title": "Fixing Healthcare Episode 7 Transcript: Interview with Dr. Devi Shetty",
+      "publisher": "Fixing Healthcare podcast",
+      "publishedAt": "2019-02-11",
+      "retrievedAt": "2026-09-06T23:16:28Z",
+      "family": "spoken-evidence",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "a943e7b15d63c8683e1d3d0012d1ad86464c638bd4d2d604488437688fa11676",
+      "excerpt": "the behavior called the keystone habit. We tried hard to \nbring down the cost of heart surgery and, in the future, you see how to reduce \nthe cost of healthcare. We should not talk about cost reduction. We should talk \nabout making healthcare simple for the patients. Then automatically your costs \nwill go down. I'll give an example, everyone thinks hospitals are safer for the \npatients. It is not. If 200 patients get admitted to American hospitals, which are \nperhaps some of the safest hospitals on the planet. If 200 patients spend one \nnight in an American hospital, one in 200 dies due to medical error, not medical \nnegligence. Getting admitted to an American hospital is 10 times riskier than \nskydiving. \nDevi Shetty:     The British Medical Journal one of their articles recently said that, “Medical \nerror is third commonest cause of death in the United States.” If that is the case, \nyou can just imagine, what is the situation of medical error outside U.S.? It must \nbe horrendous. Now, if we all try to digitize healthcare, if we insist on using \nvery, very user friendly, very, very intuitive and responsive electronic medical \nrecords, which are available on a mobile phone, not on a desktop, which is \navailable to all the doctors, mortality and morbidity in the hospital can come \ndown by at least 50%. The Joint Commission of the U.S., in the one of the recent \nreports, mentioned that 65% of the sentinel events happening in the hospital, \nwhich generally leads to death, is due to communication failure. \nDevi Shetty:     What is communication failure? Communication failure is a patient comes back \nfrom the operating room, gets a chest X-ray done and the chest X-ray remains in \nthe desktop, and the doctors don't see it on time because patient is stable. But \nafter three hours when the patient is unstable because of the internal bleed, \nthey see the X-ray and they notice there was half a liter of blood in the chest. \nAnd they reassure the patient stopped bleeding. Yes, they have done what was \nrequired but they did it three hours late. And the 80-year-old man if he loses to \none liter of blood, believe me, he will die due to some of the complications. \nDevi Shetty:     In healthcare, in the hospital, problem is not because doctors ignore the \npatients. They do everything that is required, but they do either half an hour or \nfour hours later. We have to get the electronic medical records designed for the \nmobile phone. Of course, this can be watched on the desktop. Today all the \nbillion-dollar electronic medical records you are using in the United States, \nthey're all designed for the desktop. Of course you can view it in a mobile \nphone, but if you say, it is a very Herculean task to make sense out of it because \nit's not mobile friendly. What you have to realize that doctors look at the \ndesktop only five to 10 times in a day. But doctors look at their mobile phone \n200 times in a day. \nDevi Shetty:     We have designed our electronic ICU software based on a platform created by \nMicrosoft called Kaizala. So, every patient in ICU following heart operation, \nabout 25 doctors are taking care of the patient. We all come in the group, like a \nWhatsApp, which is a very popular tool, but the difference between WhatsApp \nand Kaizala of Microsoft is that Kaizala is secure. It is HIPAA compliant. The data \nstays in our cloud. It doesn't belong to Microsoft. All of these 20 of the doctors \ncan interact with each other around the clock.  \nDevi Shetty:  We have 70 million diabetics in India, we're the diabetic capital of the world. \nAnd we have only 600 trained diabetologists. So now with the Kaizala diabetic \napp, we tell the diabetic patients that this is your app in your phone, you have \nall your data and we also have your medical data. Anytime that sugar goes up \nand down, you send us the photo of your glucometer, that's all. \nDevi Shetty:     And our diabetic counselor looks at the reports, she then looks at what \nmedications the patient is taking and she consult the diabetologist and calls the \npatient or send a message about changing the medication. So now we tell our \ndiabetic patients that, \"You need to come to the hospital just once a year. Rest \nof the time, any time the blood sugar goes up and down, you just let us know.\" \nWe are as one group in one hospital, we're managing about 40,000 patients' \ndiabetes, and over 10,000 of them are now getting treated online and this \nproject is only a few months old. \nDevi Shetty:     So, essentially, by using technology healthcare will become accessible, it'll \nbecome affordable and it'll become safer. It's going to be a huge technological \ntransformation and this technological transformation we believe will happen in \ncountries like India or China or one of the developing countries, mainly because \nI give you a comparison: Amazon started five years before Alibaba, and Amazon \nships everyday, if I'm not mistaken, about 3 million boxes they ship. And Alibaba \ntoday ships about 12 million products. \nDevi Shetty:     Alibaba is not smarter than Amazon. Amazon is serving a population, which is \nwell served with the retail networks whereas Alibaba is serving China. If \nsomebody wants to buy Nike shoes in China in a small town, only he can access \nis Alibaba. So, in a country like India, where there is a huge shortage of medical \nspecialists, online healthcare will grow like crazy once we create a good \nconnectivity with a very reliable roust network to protect the patient data. This \nwill be an easy transformation, and we're very excited to be part of the entire \nrevolution. \nRobert Pearl:     Devi, you described a classical disruptive approach. How do you provide care at \na much lower price and ultimately with far higher quality. For the listeners, for \nwhom your ideas are so revolutionary, I thought I would tell them a little bit \nabout my experience watching you in action. I think your approach includes the \nideas that volume and specialization are two powerful forces along with modern \ntechnology. The day I visited your facility in India, your teams did 37 heart \nsurgeries, including a heart transplant with results that are better than 95% of \nthe hospitals in the United States. \nRobert Pearl:     When I saw your facility in the Grand Cayman Islands, there was a video monitor \nat the entrance way in the administrative area that had as you described the \ntime for a physician to make a change in a patient's order, not when they're \nhaving a cardiac arrest. That's always immediate. When they have a potentially \nthreatening problem, and it was eight minutes and you told me you wanted to \nget that down to six. \nRobert Pearl:     I've seen your computer systems, the one in the Grand Cayman Islands, not a \nbig computer but a iPad equivalent that physicians can carry from bed to bed \nwith a patient's data appearing immediately in forms that allow the best clinical \ncare to be provided, and if the computer is taken out of the hospital, all the data \ndisappears. I don't know any electronic health record in the United States that is \nanywhere close to what you are providing. And as you described, the diabetes \napplication that you've developed not only allows care to be provided to vast \nnumbers of additional people, inexpensively, but it provides better convenience \nat higher quality for patients with diabetes than what is done in the United \nStates today because it is continuous, it is not episodic. \nRobert Pearl:     For the listeners on the air, this is not about less good care, this is about better \ncare. And I'll be speaking to the major purchasers a little later this year and \nencouraging them to consider the possibility of offering to their employees the \nopportunity to go to the Grand Cayman Islands for their surgery, not because \nit's less expensive, which it is, but because the quality and the outcomes will be \nmore consistent and better. But with that as a background Devi, let me ask you \na couple of questions, more foundational. I've heard you say that one of your \njobs is to set a price for human life. Can you explain to the listeners what you \nmean by that? \nDevi Shetty:     I see about 60 to 80 to 100 patients every day in my clinic, and I do at least one \nor two major heart surgeries. And most of my patients are little kids sitting on a \nmother's lap. I examine that kid then I tell the mother that they know her baby \nhas a hole in the heart and needs to go for an open-heart surgery. And she has \nonly one question, “How much it is going to cost?” \nDevi Shetty:     And if I tell her that the heart surgery on her kid cost $800, which she doesn't \nhave, that is a price tag on that kid's life. She comes up with $800, I can save her \nkid. If she doesn't have $800, she's going to lose the child. This is what I do from \nmorning 'til evening, putting price tag on human life. This is totally \nunacceptable. This can't go on. Something has to be done.",
+      "rights": "short-quotation",
+      "note": "Transcript PDF of the audio podcast interview (Season Two, Episode 7); the episode page dates it 11 February 2019, matching the file metadata."
     }
   ],
   "facts": [
@@ -238,6 +253,48 @@
       "importance": "supporting",
       "acquisition": "beyond-current-coverage",
       "note": "The retained excerpt truncates his stated mechanism. Strong research would recover the full argument from the source page or an interview, which the current pipeline does not read past its excerpt limit."
+    },
+    {
+      "id": "price-tag-on-life",
+      "requirements": ["r2", "r5"],
+      "section": "work",
+      "statement": "Asked what confronts a mother whose child needs open-heart surgery, Shetty said telling her the operation costs $800 she does not have puts a price tag on the child’s life — if she finds $800 he can save the child, otherwise the child is lost — calling a working life spent pricing human life totally unacceptable.",
+      "effectiveFrom": "2019-02-11",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "fixing-healthcare-ep7",
+          "quote": "And if I tell her that the heart surgery on her kid cost $800, which she doesn't \nhave, that is a price tag on that kid's life."
+        },
+        {
+          "documentId": "fixing-healthcare-ep7",
+          "quote": "This is what I do from \nmorning 'til evening, putting price tag on human life. This is totally \nunacceptable."
+        }
+      ],
+      "importance": "core",
+      "acquisition": "beyond-current-coverage",
+      "note": "Retained from a podcast transcript PDF; audio and PDF-transcript ingestion is beyond what the application’s anonymous text-HTML collectors cover today."
+    },
+    {
+      "id": "simplicity-before-cost",
+      "requirements": ["r3", "r7"],
+      "section": "ideas",
+      "statement": "Citing Paul O’Neill’s \"keystone habit\", he argued against talking about cost reduction and for making healthcare simple for patients, so costs fall automatically — illustrating with the claim that even in top American hospitals one patient in 200 dies from medical error.",
+      "effectiveFrom": "2019-02-11",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "fixing-healthcare-ep7",
+          "quote": "We should not talk about cost reduction. We should talk \nabout making healthcare simple for the patients. Then automatically your costs \nwill go down."
+        },
+        {
+          "documentId": "fixing-healthcare-ep7",
+          "quote": "If 200 patients spend one \nnight in an American hospital, one in 200 dies due to medical error"
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "beyond-current-coverage",
+      "note": "Retained from a podcast transcript PDF; audio and PDF-transcript ingestion is beyond what the application’s anonymous text-HTML collectors cover today."
     }
   ],
   "unjustified": [
@@ -274,5 +331,12 @@
       "reason": "No retained source documents the constraint environment the hospital model operates under."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:16:28Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added the February 2019 Fixing Healthcare podcast interview transcript as a spoken-evidence document with two dated facts (price-tag-on-life; simplicity-before-cost). Existing references unchanged.",
+      "evidence": "Dated spoken-evidence transcripts fetched and inspected 2026-09-06; see docs/research/person-benchmark-spoken-evidence-facts-2026-09-06.md."
+    }
+  ]
 }
