@@ -290,7 +290,7 @@ export function composePersonProfiles(
     runNow: async (profileId) => {
       queue.enqueue(profileId, "explicit");
       await queue.tick(profileId);
-      return queue.status().jobs.find((job) => job.profileId === profileId)?.operation ?? null;
+      return queue.operation(profileId);
     },
     dossier: (profileId, visibility = "private") => dossiers.project(profileId, visibility),
     sources: (profileId) =>
@@ -298,12 +298,9 @@ export function composePersonProfiles(
         const source = dossiers.source(profileId, id);
         return source ? [source] : [];
       }),
-    outcome: (profileId) =>
-      queue.status().jobs.find((job) => job.profileId === profileId)?.operation ?? null,
-    coverage: (profileId) =>
-      queue.status().jobs.find((job) => job.profileId === profileId)?.operation?.coverage ?? [],
-    attempts: (profileId) =>
-      queue.status().jobs.find((job) => job.profileId === profileId)?.operation?.attempts ?? [],
+    outcome: (profileId) => queue.operation(profileId),
+    coverage: (profileId) => queue.operation(profileId)?.coverage ?? [],
+    attempts: (profileId) => queue.operation(profileId)?.attempts ?? [],
   };
 
   const resolver = new PersonProfileResolver({

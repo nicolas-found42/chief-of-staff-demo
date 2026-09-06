@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SOURCE_ELIGIBILITY,
+  type SourceAccessCost,
   type SourceEligibility,
 } from "../../../apps/server/src/source-adapters/eligibility";
 import { defaultProviders } from "../../../apps/server/src/source-adapters/providers/index";
@@ -27,7 +28,7 @@ const byRoute = new Map<string, SourceEligibility>(
 );
 
 /** Whatever a route costs beyond an anonymous request disqualifies it. */
-const KEYED_OR_PAID: SourceEligibility["cost"][] = [
+const KEYED_OR_PAID: SourceAccessCost[] = [
   "api-key",
   "payment",
   "sign-in",

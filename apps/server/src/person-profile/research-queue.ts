@@ -78,6 +78,18 @@ export class PersonResearchQueue {
     this.rollDay();
     return structuredClone(this.state);
   }
+  /**
+   * The operation record for one Profile.
+   *
+   * Four consumers used to reach through `status().jobs` to find this, and
+   * `status()` deep-clones every job in the queue — so reading one Profile's
+   * coverage cloned all of them. The lookup is named here instead (#231).
+   */
+  operation(profileId: string): PersonResearchOperationOutcome | null {
+    this.rollDay();
+    const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
+    return job?.operation ? structuredClone(job.operation) : null;
+  }
   configure(input: PersonResearchSettingsPatch): PersonResearchStatus {
     /* A patch names only the settings the owner changed: an absent key leaves
        the live value alone, so an unrelated edit cannot re-assert `paused` and

@@ -36,11 +36,10 @@ import {
   buildCoveragePlan,
   deriveLeads,
   planNextLeads,
-  scoreLead,
   seedQueries,
-  type SelectionContext,
 } from "./research-plan.js";
 import { readPersonSource, type SourceReadResult } from "./research-readers.js";
+import { PublicationGate, ResearchBudget, selectReadBatch } from "./research-policy.js";
 
 const Extraction = PersonDossierContentSchema.extend({
   fullName: z.string().max(200).nullable(),
@@ -203,12 +202,9 @@ export class PersonResearch {
     const readIndexes = new Map<string, number>();
     const leadContext = new Map<string, { title: string; snippet: string; rank: number }>();
 
-    let modelCalls = 0;
-    let requests = 0;
     let rounds = allowance.checkpoint?.pass ?? 0;
     const retainedSourceIds = new Set(allowance.checkpoint?.retainedSourceIds ?? []);
     let claimsPublished = 0;
-    const bound: { reason: string | null } = { reason: null };
     let interruption: {
       code: PersonResearchOperationOutcome["interruption"];
       reason: string;
@@ -253,52 +249,11 @@ export class PersonResearch {
       }
       return true;
     };
-    const withinBounds = () => {
-      if (Date.now() - started >= allowance.maxMilliseconds) {
-        bound.reason ??= "The operation's wall-clock backstop was reached with work still pending.";
-        return false;
-      }
-      if (requests >= allowance.maxRequests) {
-        bound.reason ??= "The operation's request ceiling was reached with work still pending.";
-        return false;
-      }
-      if (modelCalls >= allowance.maxModelCalls) {
-        bound.reason ??= "The operation's model-call ceiling was reached with work still pending.";
-        return false;
-      }
-      return true;
-    };
-    const takeRequest = () => {
-      if (!withinBounds() || !active()) return false;
-      if (!allowance.reserveRequest()) {
-        bound.reason ??= "The Workspace declined a further research request.";
-        return false;
-      }
-      requests += 1;
-      return true;
-    };
-    const takeModelCall = () => {
-      if (!withinBounds() || !active()) return false;
-      if (!allowance.reserveModelCall()) {
-        bound.reason ??= "The Workspace declined a further model call.";
-        return false;
-      }
-      modelCalls += 1;
-      return true;
-    };
-
-    /* Publication is serialized while reading is parallel: the dossier store
-       publishes against an expected revision, so two batch members finishing
-       together would otherwise race each other into a conflict. */
-    let publishing: Promise<void> = Promise.resolve();
-    const serialize = <T>(work: () => Promise<T> | T): Promise<T> => {
-      const result = publishing.then(work);
-      publishing = result.then(
-        () => undefined,
-        () => undefined,
-      );
-      return result;
-    };
+    /* Allowance and publication policy (#231). Both used to be closures
+       here; they answer the same questions from `research-policy.ts` now, where
+       each can be asked without driving a whole operation. */
+    const budget = new ResearchBudget(allowance, { active });
+    const gate = new PublicationGate();
 
     const privateDocuments = this.deps.privateDocuments?.(profile) ?? [];
     const privateByUrl = new Map(
@@ -357,7 +312,7 @@ export class PersonResearch {
     checkpoint();
 
     let quiet = 0;
-    while (active() && withinBounds()) {
+    while (active() && budget.within()) {
       rounds += 1;
       let producedEvidence = false;
 
@@ -369,7 +324,7 @@ export class PersonResearch {
         .slice(0, 4);
       await Promise.all(
         queryLeads.map(async (lead) => {
-          if (!takeRequest()) {
+          if (!budget.takeRequest()) {
             return;
           }
           const attemptOf = recorder.correlate(lead.target);
@@ -450,24 +405,20 @@ export class PersonResearch {
       const unsatisfied = new Set(
         coverage.filter((area) => area.state !== "satisfied").map((area) => area.key),
       );
-      const candidates = leads.pending().filter((lead) => lead.kind !== "query");
-      for (const lead of candidates) {
-        const context = leadContext.get(lead.id) ?? { title: lead.target, snippet: "", rank: 20 };
-        const selection: SelectionContext = {
-          profile,
-          readHosts,
-          readIndexes,
-          unsatisfied,
-          rank: context.rank,
-          title: context.title,
-          snippet: context.snippet,
-        };
-        leads.score(lead.id, scoreLead(lead, selection));
-      }
-      const batch = candidates
-        .sort((a, b) => (b.selection?.score ?? 0) - (a.selection?.score ?? 0))
-        .slice(0, Math.max(1, allowance.readConcurrency * 2));
-      for (const deferred of candidates.slice(batch.length))
+      const { batch, deferred: notRead } = selectReadBatch({
+        profile,
+        candidates: leads.pending().filter((lead) => lead.kind !== "query"),
+        unsatisfied,
+        context: (leadId, target) =>
+          leadContext.get(leadId) ?? { title: target, snippet: "", rank: 20 },
+        readHosts,
+        readIndexes,
+        readConcurrency: allowance.readConcurrency,
+        score: (leadId, selection) => {
+          leads.score(leadId, selection);
+        },
+      });
+      for (const deferred of notRead)
         recorder.record({
           stage: "selection",
           code: "selection-deferred",
@@ -567,7 +518,7 @@ export class PersonResearch {
             finalUrl: resumable.url,
           };
         } else {
-          if (!takeRequest()) return null;
+          if (!budget.takeRequest()) return null;
           read = await (this.deps.readSource ?? readPersonSource)(pending.url, pending.snippet, {
             fetch: this.deps.fetch ?? publicHttpFetch,
             fetchBytes: this.deps.fetchBytes ?? publicHttpFetchBytes,
@@ -645,7 +596,7 @@ export class PersonResearch {
 
         /* Retain and attribute before spending an extraction call: a later
            model failure or a restart must not discard a retrieved document. */
-        const retained = await serialize(() => {
+        const retained = await gate.publish(() => {
           if (!active() || (privateDocument && !privateDocument.active())) return null;
           return this.retain(profile, pending, read, privateDocument?.transcriptId, "unattempted");
         });
@@ -654,7 +605,7 @@ export class PersonResearch {
         pendingSourceId = retained.id;
         checkpoint();
 
-        if (!takeModelCall()) break;
+        if (!budget.takeModelCall()) break;
         let extracted;
         const extractionAttemptOf = randomUUID();
         const boundaryObservation = { failureRecorded: false };
@@ -813,7 +764,7 @@ export class PersonResearch {
           continue;
         }
 
-        const published = await serialize(async () => {
+        const published = await gate.publish(async () => {
           if (!active() || (privateDocument && !privateDocument.active())) return null;
           const source = this.retain(
             profile,
@@ -938,7 +889,7 @@ export class PersonResearch {
       }
 
       this.updateCoverage(coverage, profile, readIndexes);
-      if (!active() || !withinBounds()) break;
+      if (!active() || !budget.within()) break;
 
       /* 4. Expansion. New leads come from the evidence itself and from the
             planner; a quiet round is one that neither found new evidence nor
@@ -953,7 +904,7 @@ export class PersonResearch {
         const added = leads.add({ kind: "url", target: url, origin: "expansion" });
         if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 3 });
       }
-      if (this.deps.plan && unsatisfiedAreas.length > 0 && takeModelCall()) {
+      if (this.deps.plan && unsatisfiedAreas.length > 0 && budget.takeModelCall()) {
         try {
           const plan = await planNextLeads(this.deps.plan, {
             profile,
@@ -1051,7 +1002,7 @@ export class PersonResearch {
       };
 
     this.updateCoverage(coverage, profile, readIndexes);
-    const conclusion = interruption ? "interrupted" : bound.reason ? "bounded" : "completed";
+    const conclusion = interruption ? "interrupted" : budget.reason ? "bounded" : "completed";
     if (conclusion !== "completed")
       leads.interruptPending(
         interruption
@@ -1062,8 +1013,8 @@ export class PersonResearch {
     const dossier = this.deps.dossiers.get(profile.id);
     const detail = interruption
       ? interruption.reason
-      : bound.reason
-        ? `${bound.reason} Completed evidence is available and pending leads are retained.`
+      : budget.reason
+        ? `${budget.reason} Completed evidence is available and pending leads are retained.`
         : claimsPublished
           ? `Investigated the planned coverage and every actionable lead; ${String(gaps.length)} gaps remain and are listed.`
           : "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed.";
@@ -1076,8 +1027,8 @@ export class PersonResearch {
       startedAt: startedAt.toISOString(),
       finishedAt: now().toISOString(),
       rounds,
-      modelCalls,
-      requests,
+      modelCalls: budget.spentModelCalls,
+      requests: budget.spentRequests,
       sourcesRetained: retainedSourceIds.size,
       retainedSourceIds: [...retainedSourceIds],
       claimsPublished,
@@ -1105,7 +1056,7 @@ export class PersonResearch {
               : retainedSourceIds.size === 0 && recorder.failures().length > 0
                 ? "unavailable"
                 : "empty",
-      calls: modelCalls,
+      calls: budget.spentModelCalls,
       sources: retainedSourceIds.size,
       detail,
     };
