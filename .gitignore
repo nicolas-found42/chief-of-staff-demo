@@ -39,6 +39,8 @@ tests/fixtures/debrief-golden/
 # evidence for #228.
 /artifacts/person-benchmark/*/
 !/artifacts/person-benchmark/diagnostics-2026-09-06/
+!/artifacts/person-benchmark/ambiguity-classification-2026-09-06/
+!/artifacts/person-benchmark/ambiguity-classification-2026-09-06/*
 
 # Session handover notes. Local planning artifacts, same reasoning as `.scratch/`.
 previous-session.md
