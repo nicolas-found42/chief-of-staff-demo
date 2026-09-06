@@ -90,7 +90,7 @@ const regexCache = new Map<string, RegExp>();
  * Word boundaries do not separate digits inside an ISO date, so a bare "10"
  * still matches "2026-10-06" — never write a bare one- or two-digit number.
  */
-export function toRegex(word: string): RegExp {
+function toRegex(word: string): RegExp {
   const cached = regexCache.get(word);
   if (cached) return cached;
   const body = word

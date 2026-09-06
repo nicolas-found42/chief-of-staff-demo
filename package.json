@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc -b packages/shared apps/server && tsc -p apps/web --noEmit && pnpm --filter @chief-of-staff-demo/web build",
-    "typecheck": "run-p --print-label typecheck:build typecheck:web typecheck:tests",
-    "typecheck:build": "tsc -b packages/shared apps/server",
+    "typecheck": "run-p --print-label typecheck:build typecheck:web typecheck:tests typecheck:scripts",
+    "typecheck:build": "tsc -b packages/shared apps/server relay",
     "typecheck:web": "tsc -p apps/web --noEmit",
     "typecheck:tests": "tsc -p tests --noEmit",
     "lint": "node scripts/lint-scopes.mjs",
@@ -28,17 +28,19 @@
     "test:e2e": "pnpm run build && pnpm --filter @chief-of-staff-demo/tests test:e2e",
     "eval:lint": "tsx scripts/lint-golden.mts",
     "eval:score": "tsx scripts/score-debrief-eval.mts --all",
-    "eval:debrief": "tsx scripts/run-debrief-eval.mts upstage/solar-pro4 /tmp/debrief-gate/solar tests/fixtures/debrief-golden/transcripts/*.md && pnpm run eval:score"
+    "eval:debrief": "tsx scripts/run-debrief-eval.mts upstage/solar-pro4 /tmp/debrief-gate/solar tests/fixtures/debrief-golden/transcripts/*.md && pnpm run eval:score",
+    "typecheck:scripts": "tsc -p scripts --noEmit",
+    "test:coverage": "pnpm --filter @chief-of-staff-demo/tests exec vitest run --coverage"
   },
   "simple-git-hooks": {
-    "pre-commit": "npx lint-staged"
+    "pre-commit": "pnpm exec lint-staged"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
+    "*.{ts,tsx,mts,cts,js,mjs,cjs}": [
       "prettier --write",
       "eslint --fix --max-warnings 0"
     ],
-    "*.{json,md,mjs,css}": [
+    "*.{json,jsonc,md,css}": [
       "prettier --write"
     ]
   },

@@ -21,6 +21,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/node_modules/**",
       "workspace/**",
+      "workspace.backup-*/**",
       ".claude/worktrees/**",
       ".scratch/**",
       ".archive/**",
@@ -140,7 +141,7 @@ export default tseslint.config(
 
   // --- plain JS/MJS: no type information to lint with ----------------------
   {
-    files: ["**/*.{js,mjs}"],
+    files: ["**/*.{js,mjs,cjs}"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: { globals: globals.node },
   },
