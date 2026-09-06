@@ -1,0 +1,351 @@
+{
+  "schemaVersion": 1,
+  "runId": "bbc8e62af386b229",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:17:24.705Z",
+  "reassessmentOf": "b2838e9176d9058b",
+  "result": {
+    "slug": "cary-fowler",
+    "referenceVersion": "2026-09-06.2",
+    "mode": "fixed-documents",
+    "failure": null,
+    "assessment": {
+      "operationId": "14a25b2c-05d0-4c58-bad6-cd677123fcaa",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "special-envoy",
+              "verdict": "ambiguous",
+              "referenceQuote": "United States Special Envoy for Global Food SecurityIn officeMay 5, 2022 – January 20, 2025",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "crop-trust",
+              "verdict": "ambiguous",
+              "referenceQuote": "He was previously executive director of the Crop Trust",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "world-food-prize",
+              "verdict": "ambiguous",
+              "referenceQuote": "Fowler received the 2024 World Food Prize",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "seed-vault-talk",
+              "verdict": "ambiguous",
+              "referenceQuote": "931,788 plays|Cary Fowler| TEDGlobal 2009  • July 2009",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "talk-argument",
+              "verdict": "ambiguous",
+              "referenceQuote": "The wheat, corn and rice we grow today may not thrive in a future threatened by climate change",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "books",
+              "verdict": "ambiguous",
+              "referenceQuote": "docs[0].top_work: Seeds on ice",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "academic-posts",
+              "verdict": "ambiguous",
+              "referenceQuote": "In the 1970s-80s Fowler was Program Director for the National Sharecroppers Fund/Rural Advancement Fund",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "education",
+              "verdict": "ambiguous",
+              "referenceQuote": "He graduated from White Station High School in Memphis, Tennessee, in 1967, and attended Rhodes College in Memphis, but transferred in his junior year to Simon Fraser University in Canada, earning his B.A. Honors degree in 1971",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "civil-rights",
+              "verdict": "ambiguous",
+              "referenceQuote": "He was present at the Mason Temple on April 3, 1968, when Martin Luther King Jr. made his last speech",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "feed-the-future-diplomacy",
+              "verdict": "ambiguous",
+              "referenceQuote": "As the Deputy Coordinator for Diplomacy for the global Feed the Future initiative, I lead the diplomatic agenda for our global food security development efforts.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "cary-fowler",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "cary-fowler",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 10,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 10,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 10,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 5,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "special-envoy",
+          "verdict": "ambiguous",
+          "referenceQuote": "United States Special Envoy for Global Food SecurityIn officeMay 5, 2022 – January 20, 2025",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "crop-trust",
+          "verdict": "ambiguous",
+          "referenceQuote": "He was previously executive director of the Crop Trust",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "world-food-prize",
+          "verdict": "ambiguous",
+          "referenceQuote": "Fowler received the 2024 World Food Prize",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "seed-vault-talk",
+          "verdict": "ambiguous",
+          "referenceQuote": "931,788 plays|Cary Fowler| TEDGlobal 2009  • July 2009",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "talk-argument",
+          "verdict": "ambiguous",
+          "referenceQuote": "The wheat, corn and rice we grow today may not thrive in a future threatened by climate change",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "books",
+          "verdict": "ambiguous",
+          "referenceQuote": "docs[0].top_work: Seeds on ice",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "academic-posts",
+          "verdict": "ambiguous",
+          "referenceQuote": "In the 1970s-80s Fowler was Program Director for the National Sharecroppers Fund/Rural Advancement Fund",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "education",
+          "verdict": "ambiguous",
+          "referenceQuote": "He graduated from White Station High School in Memphis, Tennessee, in 1967, and attended Rhodes College in Memphis, but transferred in his junior year to Simon Fraser University in Canada, earning his B.A. Honors degree in 1971",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "civil-rights",
+          "verdict": "ambiguous",
+          "referenceQuote": "He was present at the Mason Temple on April 3, 1968, when Martin Luther King Jr. made his last speech",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "feed-the-future-diplomacy",
+          "verdict": "ambiguous",
+          "referenceQuote": "As the Deputy Coordinator for Diplomacy for the global Feed the Future initiative, I lead the diplomatic agenda for our global food security development efforts.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements exist to support this fact. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 0,
+      "distinctFamilies": 0,
+      "distinctUpstreamIndexes": 0,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 2,
+      "conversationReadiness": 1,
+      "rationale": "The dossier contains no content — only identity anchors are provided. A reader learns only the barest facts: name, birth year/place, the Special Envoy role with dates, association with the Svalbard Global Seed Vault and Crop Trust, and 2024 World Food Prize. There is no narrative of what he actually did, no career history, and no retained sources to verify anything. Understanding is minimal but non-zero thanks to the anchors. Remaining questions: the dossier says nothing at all, so it doesn't imply completeness, but it also never acknowledges gaps explicitly. Conversation readiness is poor — a reader could confirm his current/former title and laureate status but could not prepare substantively for a meeting. The three pre-flagged unjustified conclusions (vault-builder, agronomist-training, play-count-as-influence) cannot be matched to any dossier statement because no dossier statements exist; no overclaims can be located without cited text.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "completed",
+      "rounds": 4,
+      "requests": 17,
+      "modelCalls": 0,
+      "sourcesRetained": 0,
+      "leadsInvestigated": 13,
+      "leadsUnresolved": 0,
+      "failuresByCode": {
+        "identity-unmatched": 4
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 16
+    }
+  }
+}

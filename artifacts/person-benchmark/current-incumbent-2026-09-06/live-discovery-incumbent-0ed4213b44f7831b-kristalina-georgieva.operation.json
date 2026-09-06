@@ -1,0 +1,1200 @@
+{
+  "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+  "profileId": "person_97714adc17e5",
+  "conclusion": "interrupted",
+  "interruption": {
+    "code": "model-boundary-failed",
+    "reason": "The configured model provider failed during extraction."
+  },
+  "startedAt": "2026-09-06T11:24:20.740Z",
+  "finishedAt": "2026-09-06T11:26:25.258Z",
+  "rounds": 1,
+  "modelCalls": 1,
+  "requests": 3,
+  "sourcesRetained": 1,
+  "retainedSourceIds": [
+    "dd00a94dd24bb82efce62ee6a8afd4feac05813f012457a1666f74d4d964ecf8"
+  ],
+  "claimsPublished": 0,
+  "publishedDossierRevision": 1,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 0,
+      "gaps": []
+    }
+  ],
+  "leads": [
+    {
+      "id": "17c5df95f52bf84b4213429af83cc815",
+      "kind": "query",
+      "target": "Kristalina Georgieva International Monetary Fund",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 24 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e578372b337acf57e6763aaae01f6e6a",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fnews%2fother%2fimfs-georgieva-says-rising-bond-yields-threaten-progress-on-developing-country-debt%2far-AA2bsbMx&c=17910022849305381860&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.5,
+        "relevance": 1,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9b9b6e16ddd2bbc5d219630455ecbb84",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMiY0FVX3lxTE9XOHpOaTU1NkdPYS1td0RUdjhBWk13akprckt6eGxPbjBULVZQenByblczZDNlUEtYeFRScG1CekFnYmpwcnNnTzZYbVFKUzBIeFRjRl9YQTQ2UzhvS1N0NXpPWQ?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.45,
+        "relevance": 2.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5c5d3359b955e8973542a6bcec262630",
+      "kind": "url",
+      "target": "https://doi.org/10.2139/ssrn.3968055",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.4,
+        "relevance": 0.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "14d3ebc1f057b026c685ca57faedcf57",
+      "kind": "url",
+      "target": "https://archive.org/details/TELESUR_20260417_170000",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.35,
+        "relevance": 0.925,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "7c5ad33354d0e79f89259f9074689d57",
+      "kind": "url",
+      "target": "https://usecash.ca/",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.3,
+        "relevance": 0.9,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "1c24da901b502ab44cff277ab4ced354",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0002-4468-5940",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.25,
+        "relevance": 0.875,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "816993bcf56be93816669f658a659d0e",
+      "kind": "url",
+      "target": "https://ror.org/05m4rmw09",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.2,
+        "relevance": 0.85,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "99e26ac3405142702bd14245521ac539",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fnews%2fother%2fimf-s-georgieva-says-global-economy-weathering-energy-shock-sees-fiscal-concerns%2far-AA2aUurj&c=16894060757264708481&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "inaccessible",
+      "reason": "Reading produced no usable text (failed).",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.15,
+        "relevance": 3.825,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "6218d052767e86c2d0e0a6a402367917",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMixwFBVV95cUxOaEZ5T0FvMmdwMjQ3ZGc3elJOaGk0RVJnYzVlTVMtb1JDT3FMT0toODlmLXEtZkNpdHE4Z1dYV2dReVR1WVJqNU5vN2ZCV2FlLXR4Zk1fTEtLc2dfZHNkR1VMTFR5ZDRhMEFjU2JhQ0lMNFlSLVZPSXl0MTF2M2lLN05rQjA0X3NsdERUVjJlbEsxUE9Qb1ExZEpZcHVSSlZfZ2didk1lb3Vja1hGXzV4VUxxWVdoQXBKbkpCQThGVG51aS0tSjVr?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.1,
+        "relevance": 0.8,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9d50f171d5160044d57b70af2ad6b82a",
+      "kind": "url",
+      "target": "https://doi.org/10.1136/bmjgh-2022-011620",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.05,
+        "relevance": 0.775,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "1b1c18b4f2cc8e11c32143a52e1b7621",
+      "kind": "url",
+      "target": "https://archive.org/details/CSPAN2_20191224_124300_IMF_Managing_Director_at_Wall_Street_Journal_CEO_Council_Meeting",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retrieved and retained; extraction failed.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12,
+        "relevance": 3.75,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e4c64f9db417ad8433e59ba1cf6c50bb",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0002-8031-6405",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.95,
+        "relevance": 0.725,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5902915992e89862409a3287b8659723",
+      "kind": "url",
+      "target": "https://ror.org/02fhkne84",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.9,
+        "relevance": 0.7,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "89a37685613293e2afb6571baa54b2ae",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fmoney%2fmarkets%2fimf-chief-warns-that-iran-war-will-slow-global-economic-growth%2far-AA20wlHn&c=10700629177201095644&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.85,
+        "relevance": 1.675,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "d42c743cb41efdc549d20ff770862791",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMivgFBVV95cUxPZkQtTmR5cGVuV2dBeVdqTzVtcEVXSmRXcmoyWTNVNUtZZEJCUHc2M0V6a0NDTkFjR0VNZzlzWFB5UTYtUlpLZXUyM001X2c2eUJLcVdrUU5zSEZKS0FTUWZ6SDAwVGVrbDlBMGVrODJrWEdVRVA2dG5wVHpBTjJfZm0wcFpVRWpTS2owb0xOWkg4NG03aG0zb1cwSTN6YjlKbEoyZmRyTlVMMXM0Z1JZeVp0dlh4SjdTWEJKdnBn?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 9.8,
+        "relevance": 2.65,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "c3e66ccbea900c18b2446f6c402e841b",
+      "kind": "url",
+      "target": "https://doi.org/10.1016/s0140-6736(21)01284-8",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.75,
+        "relevance": 0.625,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "f53d4af63063343bb3b8d51b7c94f5cd",
+      "kind": "url",
+      "target": "https://archive.org/details/CSPAN_20250428_163400_IMF_Managing_Director_Holds_Press_Conference",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.7,
+        "relevance": 3.6,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "02adf97df33a3770dab0cfd2c5526373",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0002-7415-3304",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.65,
+        "relevance": 0.575,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a98849c71b1c2c05df0c9a3cf2952d3d",
+      "kind": "url",
+      "target": "https://ror.org/039r7y922",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.6,
+        "relevance": 0.55,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "eaaf5489bdf0fe328c4dc4d73aa3cba8",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.yahoo.com%2fnews%2farticles%2fexclusive-imf-chief-georgieva-arrives-045417171.html&c=17170558845359256158&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.55,
+        "relevance": 3.525,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "1f2de287bd45ee7c8c4d28f82ec4aa5b",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMirAFBVV95cUxQNjNIQzlDUkIySFpBZVZSRW5mamplVGxwdFlpbnVLMUlvcnowVTY3X1RYS1piQ0RIWGN6UkE1V3JSRE1yMnkwVjlzRVFuVDloQWdLR1cyY0dpaGFtOFZzeWdjUkgtbU9sWjhocWd3bXFzeUM1cDFDOW5ueXBWNE9QU1NZN0hHQWQ0WnlKdlF6QV8wczl2Y0Fod3hTeDlsclNMaE9HdXZJWU9id2cy?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.5,
+        "relevance": 0.5,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5f510bb7bda1cb350f5244eb8637bec8",
+      "kind": "url",
+      "target": "https://doi.org/10.2139/ssrn.3700135",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.45,
+        "relevance": 0.475,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "7ab52d86cf80aa291fb7e1e2e9fcfaa2",
+      "kind": "url",
+      "target": "https://archive.org/details/CSPAN_20250418_213700_IMF_Managing_Director_Delivers_Remarks_on_Global_Economic_Outlook",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.4,
+        "relevance": 3.45,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e72a6719e5cb6a66e559e51cd1dd81a9",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0007-8430-2987",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.35,
+        "relevance": 0.42500000000000004,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "9e10dd1d-f89b-4a4b-b04f-f487265b407b",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "cc4600c6-ca83-45e1-bd78-635ccbc307f9",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "Kristalina Georgieva International Monetary Fund",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 24 results.",
+      "occurredAt": "2026-09-06T11:25:20.752Z",
+      "observed": {
+        "elapsedMilliseconds": 60004
+      }
+    },
+    {
+      "id": "8ef2af07-1405-4669-a095-ddf0ec7f6c7b",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "4fe901fd-ab1e-434c-86af-a907908342ee",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/CSPAN_20250428_163400_IMF_Managing_Director_Holds_Press_Conference",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.70 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.753Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "70355739-436c-408a-813f-95bc90130636",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "fc09900c-6d98-4190-8439-328ec38c75b7",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.yahoo.com%2fnews%2farticles%2fexclusive-imf-chief-georgieva-arrives-045417171.html&c=17170558845359256158&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.55 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.753Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "9385841b-a149-4620-b0ca-19ba809a6225",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "e50b0779-3f70-496f-8874-274019464fea",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/CSPAN_20250418_213700_IMF_Managing_Director_Delivers_Remarks_on_Global_Economic_Outlook",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.40 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.753Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "4a0e8185-8ab6-47bf-ab42-7cbd33f8c233",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "e96733e1-dd40-44eb-8b1e-de599022bb06",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMiY0FVX3lxTE9XOHpOaTU1NkdPYS1td0RUdjhBWk13akprckt6eGxPbjBULVZQenByblczZDNlUEtYeFRScG1CekFnYmpwcnNnTzZYbVFKUzBIeFRjRl9YQTQ2UzhvS1N0NXpPWQ?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 10.45 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.753Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "2eb66814-df5f-43e4-9a1b-eb926169bf87",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "061b99e8-5cc5-4f80-b67f-36768d940c4d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMivgFBVV95cUxPZkQtTmR5cGVuV2dBeVdqTzVtcEVXSmRXcmoyWTNVNUtZZEJCUHc2M0V6a0NDTkFjR0VNZzlzWFB5UTYtUlpLZXUyM001X2c2eUJLcVdrUU5zSEZKS0FTUWZ6SDAwVGVrbDlBMGVrODJrWEdVRVA2dG5wVHpBTjJfZm0wcFpVRWpTS2owb0xOWkg4NG03aG0zb1cwSTN6YjlKbEoyZmRyTlVMMXM0Z1JZeVp0dlh4SjdTWEJKdnBn?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 9.80 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "604a5569-d3fb-4d63-9dcc-a7108d667183",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "6cc13f4b-22d5-4265-86c7-0be971565310",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fmoney%2fmarkets%2fimf-chief-warns-that-iran-war-will-slow-global-economic-growth%2far-AA20wlHn&c=10700629177201095644&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.85 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "9fd454c4-0c40-47bd-b48e-c4c4401a2c8c",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "17ec07f7-0b73-40a2-a7fa-1bf94f840cd0",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fnews%2fother%2fimfs-georgieva-says-rising-bond-yields-threaten-progress-on-developing-country-debt%2far-AA2bsbMx&c=17910022849305381860&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.50 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "b946bbed-8aae-474a-ac66-adf6eb93c06a",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "9a23d159-e806-42a5-bc3f-dfa417147f07",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.2139/ssrn.3968055",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.40 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "3e83cefd-9e10-4a4d-a78b-4860d6406a66",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "f04c3274-1a7d-4dae-b994-7d8cb40e84ec",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/TELESUR_20260417_170000",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.35 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "d64b27f4-2323-4ce6-99b7-deb9e3a8341a",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "93d3fcda-6070-4c09-a452-aedf4eabb192",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://usecash.ca/",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.30 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "854dc984-6a74-42da-bf9c-4ee67ef8eec0",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "6cc212ab-fa6c-4d03-9178-2a3c4c421fd8",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0002-4468-5940",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.25 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "8932a511-89ea-4915-b7b6-5412bac0cac0",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "57c2f0d1-5a45-4fc1-a245-0c0bc8f018e7",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/05m4rmw09",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.20 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "33a94318-2617-4ad1-9f41-1a82ea548ed9",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "ccf0c748-a7f3-4f1b-abca-b37aa7ae473c",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMixwFBVV95cUxOaEZ5T0FvMmdwMjQ3ZGc3elJOaGk0RVJnYzVlTVMtb1JDT3FMT0toODlmLXEtZkNpdHE4Z1dYV2dReVR1WVJqNU5vN2ZCV2FlLXR4Zk1fTEtLc2dfZHNkR1VMTFR5ZDRhMEFjU2JhQ0lMNFlSLVZPSXl0MTF2M2lLN05rQjA0X3NsdERUVjJlbEsxUE9Qb1ExZEpZcHVSSlZfZ2didk1lb3Vja1hGXzV4VUxxWVdoQXBKbkpCQThGVG51aS0tSjVr?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.10 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "6c8e2c40-49e5-4430-b08b-8804c082367a",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "ad60f1a5-5dda-40e0-8746-ea7c999b6a6c",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1136/bmjgh-2022-011620",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.05 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "51a5b6a6-6ec1-47c4-8390-c881673cf111",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "7362b0c2-50e8-432c-8466-c53169ff14d6",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0002-8031-6405",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.95 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "07609154-a01b-4aac-befa-1be40eb43ed1",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "091bc602-4aa1-4a35-bcfb-fc2ad0d0e9f5",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/02fhkne84",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.90 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "3bca396e-2711-4c04-8a8e-ba7317c99fd1",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "d6d5c552-42c0-4e8d-94c5-4b7284703b6d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1016/s0140-6736(21)01284-8",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.75 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "3d4a683d-2d4a-43a6-9a4f-d3c6a37f96c2",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "c78fccba-c8cc-4f22-a2d3-46a0302ecf3e",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0002-7415-3304",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.65 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "29047f7e-17a2-43e0-b19a-b6b4affd5f94",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "c8e0c494-907a-49e5-8e99-73c946af55dd",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/039r7y922",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.60 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "8732be78-cbad-4396-b6a6-eedb3b6dd484",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "0691d08b-6eef-4a78-8f29-d4db7ec12697",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMirAFBVV95cUxQNjNIQzlDUkIySFpBZVZSRW5mamplVGxwdFlpbnVLMUlvcnowVTY3X1RYS1piQ0RIWGN6UkE1V3JSRE1yMnkwVjlzRVFuVDloQWdLR1cyY0dpaGFtOFZzeWdjUkgtbU9sWjhocWd3bXFzeUM1cDFDOW5ueXBWNE9QU1NZN0hHQWQ0WnlKdlF6QV8wczl2Y0Fod3hTeDlsclNMaE9HdXZJWU9id2cy?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.50 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "9c4200c2-f354-4dab-903b-ef23c55b9b69",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "fc56abb9-5530-4b66-a87a-3cfde63e1f7d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.2139/ssrn.3700135",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.45 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "04c32d54-8ace-45f0-97a7-20c6a0f79817",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "30079817-260a-4952-9d47-a69ef406f89b",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0007-8430-2987",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.35 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:25:20.754Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "8f3f121b-bf6b-4cda-9c56-6381bc3a2c5b",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "de2667c3-d3ea-405e-9b72-4000617f7d7d",
+      "attempt": 1,
+      "stage": "rendering",
+      "code": "document-empty",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fnews%2fother%2fimf-s-georgieva-says-global-economy-weathering-energy-shock-sees-fiscal-concerns%2far-AA2aUurj&c=16894060757264708481&mkt=en-us",
+      "targetKind": "url",
+      "collector": "html-reader",
+      "collectorVersion": "2026-09-06",
+      "reason": "The page parsed but carried no article text.",
+      "occurredAt": "2026-09-06T11:25:20.994Z",
+      "observed": {
+        "status": 200,
+        "finalUrl": "https://www.msn.com/en-us/news/other/imf-s-georgieva-says-global-economy-weathering-energy-shock-sees-fiscal-concerns/ar-AA2aUurj",
+        "contentType": "text/html",
+        "bytes": 42800,
+        "bodyHash": "af20f8e606ae91575a9fcae78451dca43b02c48f89a5169d1aa87bb2caa20788"
+      },
+      "impact": "No readable text reached extraction from this page.",
+      "remediation": "Check whether the article is client-rendered and needs the browser route."
+    },
+    {
+      "id": "8a3faaa1-2d21-420f-b1c6-94c8881c3cf1",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "6be18cbb-f9e6-40f2-8a6d-1bb2c958ef05",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "https://archive.org/details/CSPAN2_20191224_124300_IMF_Managing_Director_at_Wall_Street_Journal_CEO_Council_Meeting",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "occurredAt": "2026-09-06T11:25:52.734Z",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "6be18cbb-f9e6-40f2-8a6d-1bb2c958ef05",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 2871,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts."
+    },
+    {
+      "id": "fe984144-ae2e-417e-9d8e-bf605cbfc161",
+      "operationId": "a17ab5b0-18ef-49e0-b13f-412c59f22d84",
+      "attemptOf": "6be18cbb-f9e6-40f2-8a6d-1bb2c958ef05",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://archive.org/details/CSPAN2_20191224_124300_IMF_Managing_Director_at_Wall_Street_Journal_CEO_Council_Meeting",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "request_timeout; Retry cancelled by caller..",
+      "occurredAt": "2026-09-06T11:26:25.256Z",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "6be18cbb-f9e6-40f2-8a6d-1bb2c958ef05",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 15423,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "recoveryStopped": "Retry cancelled by caller."
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Documents, publisher sites and structured records.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d64c02f4bac85feb468ce2c4a9f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fnews%2fother%2fimf-s-georgieva-says-global-economy-weathering-energy-shock-sees-fiscal-concerns%2far-AA2aUurj&c=16894060757264708481&mkt=en-us: Reading produced no usable text (failed).",
+    "22 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Model-provider failure interrupted research; retrieved evidence and pending work are retained."
+}

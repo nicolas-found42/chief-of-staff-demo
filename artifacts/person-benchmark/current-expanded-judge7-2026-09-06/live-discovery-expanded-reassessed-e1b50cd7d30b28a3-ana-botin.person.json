@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:22:44.568Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "ana-botin",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "aec9e5bf-342b-4880-815a-dc47d6f42a02",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "santander-chair",
+              "verdict": "recovered",
+              "referenceQuote": "is a Spanish banker who has been the executive chairman of Santander Group since 2014",
+              "evidenceQuote": "Ana Botín is Chair of the Board of Grupo Financiero Santander.",
+              "claimId": "ab1fc7493656359bbaa35ceb8a952d56",
+              "rationale": "The dossier states she chairs Grupo Financiero Santander but does not mention the September 2014 start date or that she is the fourth generation of her family in the role.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "santander-uk-ceo",
+              "verdict": "ambiguous",
+              "referenceQuote": "In November 2010, Botín succeeded António Horta Osório as chief executive of Santander UK",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of her role as CEO of Santander UK or of succeeding António Horta Osório. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "banesto",
+              "verdict": "ambiguous",
+              "referenceQuote": "In 2002, she became the executive chairman of the Spanish bank, Banesto",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of her executive chairmanship of Banesto. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "jpmorgan",
+              "verdict": "ambiguous",
+              "referenceQuote": "Botín worked at JP Morgan in the US from 1981 to 1988",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of her work at JP Morgan from 1981 to 1988. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "banco-osorno",
+              "verdict": "ambiguous",
+              "referenceQuote": "she was involved in the bank's 1997 acquisition of a 51 percent stake in Banco Osorno y La Union, the largest bank in Chile, for $495 million",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of the 1997 Banco Osorno acquisition. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "suala-capital",
+              "verdict": "ambiguous",
+              "referenceQuote": "En 2000, fundó el fondo de capital de riesgo Suala Capital",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of Suala Capital. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "ebf-president",
+              "verdict": "ambiguous",
+              "referenceQuote": "Desde el año 2021 es la presidenta de la Federación Bancaria Europea, sucediendo a Jean Pierre Mustier, convirtiéndose en la primera mujer en ostentar el cargo",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of the European Banking Federation presidency. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "coca-cola-board",
+              "verdict": "ambiguous",
+              "referenceQuote": "In 2013, Botín was appointed a director of the Coca-Cola Company",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of a Coca-Cola Company directorship. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "removed-1999",
+              "verdict": "ambiguous",
+              "referenceQuote": "pero en 1999 fue apartada del cargo por su padre, Emilio Botín",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of her 1999 removal from Grupo Santander. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "education",
+              "verdict": "ambiguous",
+              "referenceQuote": "She received her high school education at St Mary's School Ascot",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of St Mary's School Ascot or Bryn Mawr College. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "dbe",
+              "verdict": "ambiguous",
+              "referenceQuote": "Honorary Dame Commander of the Order of the British Empire (2015)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of an honorary DBE. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "ana-botin",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "ana-botin",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "6ef95e57d98af64a09a9a5fc2d341f79327e7c8c85495b3e13056daf0f5893ab",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d486c4dc341fc8fe9e657144fe2a0&url=https%3a%2f%2fwww.sdpnoticias.com%2finternacional%2fana-botin-anuncia-apertura-del-faro-santander-con-la-coleccion-gelman-el-8-de-septiembre%2f&c=4122457379952059862&mkt=en-us",
+            "hash": "37825d3b0f765a2beaabf3d0bf7ea506148f5f7104f47d698e78796fc535f5cc",
+            "upstreamIndex": "sdpnoticias.com",
+            "cited": false
+          },
+          {
+            "id": "10cd0837d0424b0c1cfeab6467f991676b0991990cd649e7164e5366ea144e4e",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d486c4dc341fc8fe9e657144fe2a0&url=https%3a%2f%2fwww.sdpnoticias.com%2finternacional%2fana-botin-anuncia-apertura-del-faro-santander-con-la-coleccion-gelman-el-8-de-septiembre%2f&c=4122457379952059862&mkt=en-us",
+            "hash": "37825d3b0f765a2beaabf3d0bf7ea506148f5f7104f47d698e78796fc535f5cc",
+            "upstreamIndex": "sdpnoticias.com",
+            "cited": true
+          },
+          {
+            "id": "581ff7a3db17cea52a3984d167a0d135705b4c3b8c83f80d23da93d1be28bbf1",
+            "url": "https://fortune.com/most-powerful-women-international/2021/ana-botin/",
+            "hash": "e0de4ff546c1ea611b630fe9e0d3915ee406891969189b7c985eabb78b71c56c",
+            "upstreamIndex": "fortune.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [
+          "ab1fc7493656359bbaa35ceb8a952d56",
+          "4bcdf3f9072cc707853056d53d2b1329",
+          "5d221db1dd3cd6300c7aa03b87789b3d",
+          "ec6dcbada5f831b31d05f6429fd12d40"
+        ],
+        "recoveredFactIds": [
+          "santander-chair"
+        ],
+        "exclusiveRecoveredFactIds": [
+          "santander-chair"
+        ]
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 4,
+      "totalCitations": 4,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [
+        {
+          "claimId": "ec6dcbada5f831b31d05f6429fd12d40",
+          "statement": "comprises 160 works of painting and photography from 1941 to 1998 and will be exhibited at Faro Santander from 8 September 2026 to 10 January 2027",
+          "kind": "invented-evidence",
+          "citedQuote": "La colección Gelman Santander es gestionada desde enero de 2026 por la fundación Banco Santander",
+          "citationIndex": 0,
+          "citedSourceId": "10cd0837d0424b0c1cfeab6467f991676b0991990cd649e7164e5366ea144e4e",
+          "rationale": "The cited excerpt supports only that the collection is managed by the Banco Santander foundation since January 2026. The specifics — 160 works, the 1941–1998 date range, and the exhibition dates — appear nowhere in the quoted passage, so the statement asserts evidence beyond its own citation. The claim is also flagged 'contested' and relies on a single source.",
+          "matchedUnjustifiedId": null,
+          "reviewRequired": false
+        }
+      ],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 11,
+      "recovered": 1,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 10,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 9,
+          "recovered": 1
+        },
+        "beyond-current-coverage": {
+          "total": 2,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 1
+        },
+        "r11": {
+          "total": 4,
+          "recovered": 1
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "santander-chair",
+          "verdict": "recovered",
+          "referenceQuote": "is a Spanish banker who has been the executive chairman of Santander Group since 2014",
+          "evidenceQuote": "Ana Botín is Chair of the Board of Grupo Financiero Santander.",
+          "claimId": "ab1fc7493656359bbaa35ceb8a952d56",
+          "rationale": "The dossier states she chairs Grupo Financiero Santander but does not mention the September 2014 start date or that she is the fourth generation of her family in the role.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "santander-uk-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "In November 2010, Botín succeeded António Horta Osório as chief executive of Santander UK",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of her role as CEO of Santander UK or of succeeding António Horta Osório. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "banesto",
+          "verdict": "ambiguous",
+          "referenceQuote": "In 2002, she became the executive chairman of the Spanish bank, Banesto",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of her executive chairmanship of Banesto. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "jpmorgan",
+          "verdict": "ambiguous",
+          "referenceQuote": "Botín worked at JP Morgan in the US from 1981 to 1988",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of her work at JP Morgan from 1981 to 1988. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "banco-osorno",
+          "verdict": "ambiguous",
+          "referenceQuote": "she was involved in the bank's 1997 acquisition of a 51 percent stake in Banco Osorno y La Union, the largest bank in Chile, for $495 million",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of the 1997 Banco Osorno acquisition. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "suala-capital",
+          "verdict": "ambiguous",
+          "referenceQuote": "En 2000, fundó el fondo de capital de riesgo Suala Capital",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of Suala Capital. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "ebf-president",
+          "verdict": "ambiguous",
+          "referenceQuote": "Desde el año 2021 es la presidenta de la Federación Bancaria Europea, sucediendo a Jean Pierre Mustier, convirtiéndose en la primera mujer en ostentar el cargo",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of the European Banking Federation presidency. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "coca-cola-board",
+          "verdict": "ambiguous",
+          "referenceQuote": "In 2013, Botín was appointed a director of the Coca-Cola Company",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of a Coca-Cola Company directorship. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "removed-1999",
+          "verdict": "ambiguous",
+          "referenceQuote": "pero en 1999 fue apartada del cargo por su padre, Emilio Botín",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of her 1999 removal from Grupo Santander. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "education",
+          "verdict": "ambiguous",
+          "referenceQuote": "She received her high school education at St Mary's School Ascot",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of St Mary's School Ascot or Bryn Mawr College. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "dbe",
+          "verdict": "ambiguous",
+          "referenceQuote": "Honorary Dame Commander of the Order of the British Empire (2015)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of an honorary DBE. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 4,
+      "works": 1,
+      "expertise": 0,
+      "connections": 1,
+      "sources": 3,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 3
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 1,
+      "conversationReadiness": 1,
+      "rationale": "The dossier's substantive content rests on a single news article (sdpnoticias.com, via Bing News redirect) about the Faro Santander opening. The identity anchors give the reader only a sketch — name, birth details, role as chair since 2014, family lineage — without the article text to support career details. A reader learns who she is (Santander chair, fourth-generation family chair) and one recent activity (announcing a cultural venue), but nothing about her business career, the 2014 appointment, leadership at the bank, or the acquisitions, rankings, and 1999 episode referenced in the unjustified-conclusions list. All four dossier claims carry 'contested' or single-citation status; three claims share the same sole citation and source, so there is no corroboration. The gaps are visible (one-source dependency is apparent from citations), but the dossier never explicitly states what it does not know. A reader could not meaningfully prepare for a meeting beyond knowing her title and one announcement.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 2,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 184,
+      "failuresByCode": {
+        "challenge-page": 1,
+        "http-error": 1,
+        "document-empty": 1,
+        "resource-unavailable": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://en.wikipedia.org/wiki/Banco_Santander: Reading produced no usable text (blocked).",
+        "184 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 206343
+    }
+  }
+}

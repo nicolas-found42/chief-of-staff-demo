@@ -1,0 +1,379 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:40:28.924Z",
+  "result": {
+    "slug": "anders-danielsson",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "450961a9-cfa9-4556-aa02-83143aa047c9",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "skanska-ceo",
+              "verdict": "partial",
+              "referenceQuote": "Danielsson tillträdde som verkställande direktör och koncernchef för Skanska den 1 januari 2018",
+              "evidenceQuote": "Anders Danielsson is Skanska's President and CEO.",
+              "claimId": "6d3e42d3b7c9b94fb7c58f50975e2e47",
+              "rationale": "Dossier states he is President and CEO but gives no 1 January 2018 start date.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "prior-role",
+              "verdict": "missing",
+              "referenceQuote": "Dessförinnan var han vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim mentions a prior deputy CEO role or its responsibilities.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "joined-1991",
+              "verdict": "missing",
+              "referenceQuote": "Han anställdes på Skanska 1991 efter examen från Kungliga Tekniska högskolan",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim covers 1991 employment or KTH education.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "sweden-head",
+              "verdict": "missing",
+              "referenceQuote": "År 2008 blev han Sverigechef och kom från år 2013 att ingå i koncernledningen, med ansvar för Norden, Storbritannien och USA",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim about 2008 Swedish business head role or 2013 group management.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "subsidiary-ceo",
+              "verdict": "missing",
+              "referenceQuote": "Han har varit VD för Skanska Norge och Skanska Sverige, samt vice VD för Skanska AB",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim about Skanska Norge/Sverige CEO roles or deputy CEO of Skanska AB.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "profitability-focus",
+              "verdict": "missing",
+              "referenceQuote": "”Han tar över Skanska: ”Har starkt lönsamhetsfokus”",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim about Svenska Dagbladet 2017 coverage.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "company-scale",
+              "verdict": "missing",
+              "referenceQuote": "179 bnRevenue 2025 (in SEK)27,000 Number of employees7.2 bnOperating income 2025 (in SEK)-65%CO2 emissions reduction",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim gives 2025 revenue, operating income, employees, or emissions data.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "company-founded",
+              "verdict": "missing",
+              "referenceQuote": "We were founded in 1887, dedicated to creating infrastructure and buildings that are good for people and good for society",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim about Skanska's 1887 founding.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "anders-danielsson",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 50653,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "anders-danielsson",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "anders-danielsson",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "adee93f31d61c22f1e8293b9d59db6a1c43fe4c55c383f33c67d4310d3bc7642",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5e2b56044f339b55a0ce5d8b113d&url=https%3a%2f%2ffinance.yahoo.com%2fnews%2finvitation-presentation-skanskas-end-report-111400384.html&c=6638974560758048808&mkt=en-us",
+            "hash": "84dc2817af656e62c28b28d1472615a05df516daee8d881e5cbc6e63d8205924",
+            "upstreamIndex": "finance.yahoo.com",
+            "cited": false
+          },
+          {
+            "id": "38e1443cb5aa914c7c6222adde1466321b380771707098eac2c4f64592708e7d",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5e2b56044f339b55a0ce5d8b113d&url=https%3a%2f%2ffinance.yahoo.com%2fnews%2finvitation-presentation-skanskas-end-report-111400384.html&c=6638974560758048808&mkt=en-us",
+            "hash": "84dc2817af656e62c28b28d1472615a05df516daee8d881e5cbc6e63d8205924",
+            "upstreamIndex": "finance.yahoo.com",
+            "cited": true
+          },
+          {
+            "id": "dd10736da5eec0e9346d66a305a1f558405f4c0299eed61d8eeda83d5160024f",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5e2b56044f339b55a0ce5d8b113d&url=https%3a%2f%2fwww.enr.com%2farticles%2f43938-skanska-ab-announces-3000-layoffs-warns-of-profit-falloff&c=452904814065599243&mkt=en-us",
+            "hash": "463b8ac4e1d9a90965e1d84c8e6a70483195d3cc8abec538916ae2800adcf0ae",
+            "upstreamIndex": "enr.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [
+          "6d3e42d3b7c9b94fb7c58f50975e2e47",
+          "532b98fe9c9f193954c6b9d411cb389e"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 3,
+      "totalCitations": 3,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 8,
+      "recovered": 0,
+      "partial": 1,
+      "missing": 7,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "beyond-current-coverage": {
+          "total": 6,
+          "recovered": 0
+        },
+        "app-supported": {
+          "total": 2,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r5": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "skanska-ceo",
+          "verdict": "partial",
+          "referenceQuote": "Danielsson tillträdde som verkställande direktör och koncernchef för Skanska den 1 januari 2018",
+          "evidenceQuote": "Anders Danielsson is Skanska's President and CEO.",
+          "claimId": "6d3e42d3b7c9b94fb7c58f50975e2e47",
+          "rationale": "Dossier states he is President and CEO but gives no 1 January 2018 start date.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "prior-role",
+          "verdict": "missing",
+          "referenceQuote": "Dessförinnan var han vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim mentions a prior deputy CEO role or its responsibilities.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "joined-1991",
+          "verdict": "missing",
+          "referenceQuote": "Han anställdes på Skanska 1991 efter examen från Kungliga Tekniska högskolan",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim covers 1991 employment or KTH education.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "sweden-head",
+          "verdict": "missing",
+          "referenceQuote": "År 2008 blev han Sverigechef och kom från år 2013 att ingå i koncernledningen, med ansvar för Norden, Storbritannien och USA",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim about 2008 Swedish business head role or 2013 group management.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "subsidiary-ceo",
+          "verdict": "missing",
+          "referenceQuote": "Han har varit VD för Skanska Norge och Skanska Sverige, samt vice VD för Skanska AB",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim about Skanska Norge/Sverige CEO roles or deputy CEO of Skanska AB.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "profitability-focus",
+          "verdict": "missing",
+          "referenceQuote": "”Han tar över Skanska: ”Har starkt lönsamhetsfokus”",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim about Svenska Dagbladet 2017 coverage.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "company-scale",
+          "verdict": "missing",
+          "referenceQuote": "179 bnRevenue 2025 (in SEK)27,000 Number of employees7.2 bnOperating income 2025 (in SEK)-65%CO2 emissions reduction",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim gives 2025 revenue, operating income, employees, or emissions data.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "company-founded",
+          "verdict": "missing",
+          "referenceQuote": "We were founded in 1887, dedicated to creating infrastructure and buildings that are good for people and good for society",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim about Skanska's 1887 founding.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 2,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 3,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 3
+    },
+    "usefulness": {
+      "understanding": 2,
+      "remainingQuestions": 2,
+      "conversationReadiness": 1,
+      "rationale": "The dossier correctly identifies Anders Danielsson as Skanska's President and CEO with a primary-source press invitation supporting both his role and his scheduled Feb 6, 2026 year-end report presentation. However, coverage is thin: only two claims from a single press release, no detail on career history, tenure, strategy, or personal background (the identity anchors are asserted but not themselves cited in the dossier). A reader learns who he is and one thing he does, but not enough for substantive meeting prep beyond the presentation logistics. The dossier does not explicitly flag what it lacks.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 2,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 147,
+      "failuresByCode": {
+        "document-empty": 3,
+        "http-error": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://news.google.com/rss/articles/CBMijgFBVV95cUxQTnRNSmcxUndJMkVIVTBzd0xsbzZMQndzN1M1elpzY0pZNnQ4bmVXUUhPbldvSWx1UGZkLVBEVXRTYjFrR3JQLWdacFdSb1FlR29RTkJHSFFTck0zSngxTFNIR05odnhCWGNCWjhkb1VERFZ3MDJKSDBlYk5saERBelk3UXdhR0hwUG5fZjJ3?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMiggFBVV95cUxNQXhNU2dIc25uTU5zNElDYWNZRWVNWEw4QkpTS0FOeTA5WWpDQjFRcTVkd2gxVzdraTZmdkFlMHB5NTduVXBmX0ZVY0p5X3ZmZXdncnZyOTNPaDlQdXlTMVlDb2QtbGw4MEJZYmk4WWc3WnJQd2R2bnFtNnJKbGliVlJ3?oc=5: Reading produced no usable text (failed).",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5e2b56044f339b55a0ce5d8b113d&url=https%3a%2f%2fseekingalpha.com%2farticle%2f4239584-skanska-abbs-sksbf-ceo-anders-danielsson-on-q4-2018-results-earnings-call-transcript&c=12364343653234335450&mkt=en-us: Reading produced no usable text (blocked).",
+        "147 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 190490
+    }
+  }
+}

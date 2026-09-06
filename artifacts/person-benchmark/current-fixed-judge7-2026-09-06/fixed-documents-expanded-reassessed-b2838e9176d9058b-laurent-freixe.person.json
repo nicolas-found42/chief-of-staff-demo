@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "runId": "b2838e9176d9058b",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:07:43.153Z",
+  "reassessmentOf": "b54435b1c60e9dbf",
+  "result": {
+    "slug": "laurent-freixe",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "fixed-documents",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "3b3913f2-fc4a-49be-8bb4-ea1b92d16b4f",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "nestle-ceo",
+              "verdict": "ambiguous",
+              "referenceQuote": "he became its chief executive in 2024, until losing the position about a year later, in September 2025",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no claim about Freixe becoming Nestlé CEO in 2024, being replaced in September 2025, or his successor/predecessor is present. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "tenure",
+              "verdict": "ambiguous",
+              "referenceQuote": "Freixe began at Nestlé in 1986",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about joining Nestlé in 1986 or activity through 2025 exists. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "croustibat",
+              "verdict": "ambiguous",
+              "referenceQuote": "He helped Nestlé beat competitor Captain Iglo in the fish sticks market with a new fish sticks brand he launched called Croustibat",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no mention of the Croustibat fish-sticks brand or Captain Iglo competition. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "snacks-cuts",
+              "verdict": "ambiguous",
+              "referenceQuote": "He also helped the struggling French snacks division rebound by making large cuts to the overstaffed division",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about the French snacks division or staffing cuts. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "early-roles",
+              "verdict": "ambiguous",
+              "referenceQuote": "his early responsibilities included negotiating contracts with grocery stores",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about negotiating grocery contracts, market research, or Dairy and Nutrition brand management. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "division-head",
+              "verdict": "ambiguous",
+              "referenceQuote": "At age 37, Freixe became the head of the Dairy and Nutrition Division for Nestlé France for three years, before moving to Hungary where he was the head of the Spanish and Portuguese markets for two years",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about heading the Dairy and Nutrition Division, Hungary, Spanish/Portuguese markets, or the 2008 Europe role. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "education",
+              "verdict": "ambiguous",
+              "referenceQuote": "Freixe earned a Master in Management in 1985 from the EDHEC Business School, graduating from its Grande Ecole programme",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about an EDHEC Master in Management in 1985. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "handball",
+              "verdict": "ambiguous",
+              "referenceQuote": "As a youth, Freixe was a competitive handball player, winning a French championship when he was sixteen years old",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about competitive handball or a French championship at sixteen. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "citation-quality",
+              "verdict": "ambiguous",
+              "referenceQuote": "(born 21 April 1962[not verified in body])",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about unsourced or citation-needed content in the account. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "laurent-freixe",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 8377,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "laurent-freixe",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "laurent-freixe",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "72ca69a88f23f71ec72650b6d1de46d2e017c3e92f84253eaa326f4cd47cd2da",
+            "url": "https://en.wikipedia.org/wiki/Laurent_Freixe",
+            "hash": "c3044ecce32f0a8df231cf7e014481d3058922e2d9bf3c8517ddb96c9aeee19e",
+            "upstreamIndex": "Wikipedia",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 9,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 9,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 9,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "nestle-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "he became its chief executive in 2024, until losing the position about a year later, in September 2025",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no claim about Freixe becoming Nestlé CEO in 2024, being replaced in September 2025, or his successor/predecessor is present. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "tenure",
+          "verdict": "ambiguous",
+          "referenceQuote": "Freixe began at Nestlé in 1986",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about joining Nestlé in 1986 or activity through 2025 exists. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "croustibat",
+          "verdict": "ambiguous",
+          "referenceQuote": "He helped Nestlé beat competitor Captain Iglo in the fish sticks market with a new fish sticks brand he launched called Croustibat",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no mention of the Croustibat fish-sticks brand or Captain Iglo competition. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "snacks-cuts",
+          "verdict": "ambiguous",
+          "referenceQuote": "He also helped the struggling French snacks division rebound by making large cuts to the overstaffed division",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about the French snacks division or staffing cuts. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "early-roles",
+          "verdict": "ambiguous",
+          "referenceQuote": "his early responsibilities included negotiating contracts with grocery stores",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about negotiating grocery contracts, market research, or Dairy and Nutrition brand management. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "division-head",
+          "verdict": "ambiguous",
+          "referenceQuote": "At age 37, Freixe became the head of the Dairy and Nutrition Division for Nestlé France for three years, before moving to Hungary where he was the head of the Spanish and Portuguese markets for two years",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about heading the Dairy and Nutrition Division, Hungary, Spanish/Portuguese markets, or the 2008 Europe role. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "education",
+          "verdict": "ambiguous",
+          "referenceQuote": "Freixe earned a Master in Management in 1985 from the EDHEC Business School, graduating from its Grande Ecole programme",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about an EDHEC Master in Management in 1985. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "handball",
+          "verdict": "ambiguous",
+          "referenceQuote": "As a youth, Freixe was a competitive handball player, winning a French championship when he was sixteen years old",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about competitive handball or a French championship at sixteen. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "citation-quality",
+          "verdict": "ambiguous",
+          "referenceQuote": "(born 21 April 1962[not verified in body])",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about unsourced or citation-needed content in the account. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty; the only person content is three identity anchors (birth date/place, Nestlé CEO 2024–Sept 2025, EDHEC 1985) plus a single retained Wikipedia reference excerpt with no extracted claims or citations. A reader learns the barest outline — who he is and the tenure window — but nothing about his actual actions, career arc before the CEO role, or the circumstances of his departure. No gaps, unknowns, or caveats are stated anywhere, so the dossier implies a completeness it cannot have. With no prepared context beyond a one-line identity, a reader could not meaningfully prepare for a meeting. Since the dossier contains no cited claims at all, there is nothing to assess for overclaims; the listed unjustified conclusions concern potential statements, none of which appear in the dossier.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 5,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 1,
+      "failuresByCode": {
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "1 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 66678
+    }
+  }
+}

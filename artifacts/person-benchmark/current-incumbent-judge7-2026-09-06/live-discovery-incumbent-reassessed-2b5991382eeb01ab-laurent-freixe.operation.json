@@ -1,0 +1,1200 @@
+{
+  "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+  "profileId": "person_2711ec9980c2",
+  "conclusion": "interrupted",
+  "interruption": {
+    "code": "model-boundary-failed",
+    "reason": "The configured model provider failed during extraction."
+  },
+  "startedAt": "2026-09-06T11:24:51.451Z",
+  "finishedAt": "2026-09-06T11:26:54.384Z",
+  "rounds": 1,
+  "modelCalls": 1,
+  "requests": 3,
+  "sourcesRetained": 1,
+  "retainedSourceIds": [
+    "2ff5e9564b380b06d9bce06a6dc431e27ba68ad4223fd7426b8a361b12b08e6b"
+  ],
+  "claimsPublished": 0,
+  "publishedDossierRevision": 1,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 0,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "f930621b77ef403227b4b9060e7da626",
+      "kind": "query",
+      "target": "Laurent Freixe Nestlé",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 24 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "868d35af24f60cf38a5cd83839bfdd88",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.msn.com%2fen-in%2fnews%2findia%2fwho-is-laurent-freixe-everything-to-know-about-the-ex-nestl%25C3%25A9-ceo-why-he-was-removed-his-career-highlights-total-net-worth%2far-AA1LFswX&c=131030028771885762&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "inaccessible",
+      "reason": "Reading produced no usable text (failed).",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "524d05d5277b464ad77fe1995deb145c",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxQYXFFSWNwbkROUXRzRXhEY2NIcTBVazgtRTQ5Z0xzSTE4bDVlLWowcm96Qk1feW52MkpWVFhwTTg1SmNpMXlPY1QxMWhFRUFXcEFfREV1VnVOZjJ6WE1ZSjlqbXczQVF5TVBpYzdYVGFOb1MtZzFTUE1MMFlVeFZVQ3VJZHFrVm5LOGxjQjRSNDBIY0FGZXBZcGM5Rk92ZGJIbkRTcVZadnk3bTF2bjhRQkxHaTZ2dkhVdnBabF9YcVMwR0I2SDVNZlRSQWE5YWdD?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.45,
+        "relevance": 1.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "2d256f1fdc6175572ab4ee85f4e72170",
+      "kind": "url",
+      "target": "https://doi.org/10.3389/fpsyg.2022.1039875",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.4,
+        "relevance": 0.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "4e0821559a1fc04ac110fdef5823c270",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0005-6361-2922",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.35,
+        "relevance": 1.925,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "b348b49cbfcf2f371c35c150a00293bf",
+      "kind": "url",
+      "target": "https://ror.org/021k07d19",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.3,
+        "relevance": 0.9,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "3461a760ef6148aee57e3c2a394c515c",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.newsweek.com%2fnestle-fires-ceo-who-laurent-freixe-romantic-relationship-2122997&c=18309574936177031785&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.25,
+        "relevance": 2.875,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "98ea9ae7284c76a4592921efc33509f1",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPNkRGLW1Lb255Z3ZHTTNvZWRDcngwcWloVUNaN1BjSm1sWFFzNkh3UjBZSkdNN2QzWGZGN2liQjBzYmdqclI4OXZNd0prSkZGTE1RTFRZa2FYeUE2SXJRS1hIbEM4eGYxSFcwQm9KdFJIOTdGc1JQX2hiZktZUHNzdUduNktzLWQ3cFh0T0ZjT0R6QTY3NGRHcGdYRncxODFOTFkxRTdnczRDdmE4S01SV0JNQQ?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.2,
+        "relevance": 1.85,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "155e2f100e0df62d3d6c5340a7b8c114",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0001-5157-5216",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.15,
+        "relevance": 0.825,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a44e3e289fa4a7299f6e16919aa96d61",
+      "kind": "url",
+      "target": "https://ror.org/05m1qxf57",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.1,
+        "relevance": 0.8,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e34c1423d14baa005294d66ccd0619e0",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fnypost.com%2f2025%2f09%2f01%2fbusiness%2fnestle-fires-boss-laurent-freixe-for-failing-to-disclose-romantic-relationship-with-underling%2f&c=3464912938496905911&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retrieved and retained; extraction failed.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.05,
+        "relevance": 3.775,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8be0ebf63a5f562c0272811dcc55ca71",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMikgFBVV95cUxObnVEdC1vWEpUUzBKbkh1QVRDYVBPeVlLTzdLRzIxZVFGdGpjbFl6cWRRVWtnQ0JkZTByZjQ0b0NaU2duUG52bklUQ3RiTVlOcnd4cGJ2OXlTOTZtcFMtM1JVQjFLZ2tEbTJUZlNlN2pXbEVhN19CWGRhVXJpb2JuRDJTNTVaaVd6SzRueVJVODdvZw?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8,
+        "relevance": 1.75,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "093f33439a2825d4de7db68ce8d99e8d",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0003-2981-7375",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.95,
+        "relevance": 1.725,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "44bd7fb0946ecca4ae076b327ffcd45f",
+      "kind": "url",
+      "target": "https://ror.org/04s5pra58",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.9,
+        "relevance": 0.7,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5f419458700affc2baabaaf91db3c01e",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.thedailybeast.com%2fnestle-ceo-laurent-freixe-axed-after-secret-affair-with-colleague%2f&c=14957147398438707395&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.85,
+        "relevance": 3.675,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "b63b210d9086abb1f5cde85f54d804da",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMitAFBVV95cUxNOEdPWW9fcTYyLWNRWjNEUWtxR2Z2eXJFZlp0MVV0MFFaV0tENVNjbDhwTWZOcmZxQTdwM29tdi1uemtNcFZPNk1TZFBHc3hENVRMTzY2d3JkSUpfLWoyVFFLc28tZHFfT2JtSjNWeWxUOG90YjV6d3RQRlE5bXhUNUVUNjJTQXJYclA5WUFTM2FxWUlzWUtILUl0a2dZV2h2dHVscFNKOXdHRGZKakxSWE5ycXQ?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.8,
+        "relevance": 0.65,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "505bca42bcbfa10380d177110b4d9b40",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0007-3788-3651",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.75,
+        "relevance": 1.625,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a1d5fe6e9076b2664cd6672bb633a92b",
+      "kind": "url",
+      "target": "https://ror.org/02drjk215",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.7,
+        "relevance": 0.6,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "f798533d9e1c6c173d7d1b95bda1eb38",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.msn.com%2fen-us%2fmoney%2fcompanies%2ffired-nestl%25C3%25A9-ceo-laurent-freixe-s-mistress-caught-him-cheating-with-another-subordinate-in-swiss-hotel-report%2far-AA1LYY82&c=15138050960997605042&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.65,
+        "relevance": 3.575,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a2e4bf0cd28142f35d90aa570fa41436",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMikwFBVV95cUxOUzM2SUQzV1FUTW91VHRDRVpqLUQ2UDRiRTR2V284NmNDZ2psQkpza25FeE9yNVdvNm56RUVIbF9Bck1lVE1sRUhPSVJvUjVXNWNVOW9OU2pFaXJWVjRsWVlYOGIxOWVFeHNBZkZFeGNSaU81V1padGVacUxaVzhaLTlfdW5pX0JzMDRkTEhZeXcwaWs?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.6,
+        "relevance": 1.55,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9b84241a9344f66c48ea4eb79aa95af7",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0007-0393-3577",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.55,
+        "relevance": 0.525,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "12f9a4a7c75c8768f0cd5ac1d052881d",
+      "kind": "url",
+      "target": "https://ror.org/00nc2d154",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.5,
+        "relevance": 0.5,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "eb3818482bf18b7481a0a98e00a5a574",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.morningstar.com%2fnews%2fmarketwatch%2f2025090211%2fnestl-fires-ceo-laurent-freixe-after-less-than-a-year-over-workplace-affair&c=14920838758963775097&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.45,
+        "relevance": 3.475,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "64c8ace694cae822e89763f1b29cf11f",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMikwFBVV95cUxNVkRlbEJMZGdyNUNtdmZxeXhlT1FSTFdYTHM3U3hHall6aFR6MHFOY09hNTgzeHBZbWlPaFNyLURnY3RYYkNEcGdPSDloSVJEcjdReXZtMFhmbHBOWmdkdmxXN01MUHZwM3dsOTNMSXVXd3A5dGlGc0Y3VW5oNUlGZWJFd3IyWG5vdUptZDFyNFRDamfSAaMBQVVfeXFMTWhwU2U2MldNdXY0TFNMTVZfcG5JNGJVQkRJa3FZSDVVSmh3UjBEek0weExRMzUwX24tOFR5aGNILVc0RExFblBTSHkyLU9fd1A4OXVweWdmNmhNUEhtRU8tSzdaVkktcU1hbml6bXVZNmJFWGp0SXA2MXhpai03dHBKUUxVMlhUZ0NoZXlZTlJYT3pmbVBBd2czbFp1b0pyVTVaaw?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.4,
+        "relevance": 0.44999999999999996,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "72c2ad805f08634187def96e4e4b4ca0",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0005-6088-7656",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.35,
+        "relevance": 1.425,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "e115ecf7-15bf-4f7f-8891-cc3e9ad4a6a4",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "cfc9172d-059b-4dba-8230-1c7a42cbfff2",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "Laurent Freixe Nestlé",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 59993
+      },
+      "reason": "Discovery returned 24 results.",
+      "occurredAt": "2026-09-06T11:25:51.451Z"
+    },
+    {
+      "id": "fbe20136-a87b-4c2f-8bd1-0a0407063a77",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "6cca0563-ef2f-4330-aa44-dfac66001f88",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.thedailybeast.com%2fnestle-ceo-laurent-freixe-axed-after-secret-affair-with-colleague%2f&c=14957147398438707395&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.85 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "641adb34-3e37-46c9-8bb3-4e2a11e5de15",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "d0882b3a-08fb-4aba-9b7d-5ea709315774",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.msn.com%2fen-us%2fmoney%2fcompanies%2ffired-nestl%25C3%25A9-ceo-laurent-freixe-s-mistress-caught-him-cheating-with-another-subordinate-in-swiss-hotel-report%2far-AA1LYY82&c=15138050960997605042&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.65 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "1ff76338-34ed-4b08-823c-e5bcf2f3c0b5",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "4a359f8f-9d2a-4615-94a5-c3492aa8d6cd",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.morningstar.com%2fnews%2fmarketwatch%2f2025090211%2fnestl-fires-ceo-laurent-freixe-after-less-than-a-year-over-workplace-affair&c=14920838758963775097&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.45 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "1e45608e-aac4-41d3-80d2-54f19c565537",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "56827d16-b7f1-46d4-80d7-dd7cb8a789a2",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.newsweek.com%2fnestle-fires-ceo-who-laurent-freixe-romantic-relationship-2122997&c=18309574936177031785&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 10.25 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "1e2dc3e3-e2f8-4f10-a03a-784669a8a2ad",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "c49e1968-b7d0-4876-b37b-4686ed58fd09",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxQYXFFSWNwbkROUXRzRXhEY2NIcTBVazgtRTQ5Z0xzSTE4bDVlLWowcm96Qk1feW52MkpWVFhwTTg1SmNpMXlPY1QxMWhFRUFXcEFfREV1VnVOZjJ6WE1ZSjlqbXczQVF5TVBpYzdYVGFOb1MtZzFTUE1MMFlVeFZVQ3VJZHFrVm5LOGxjQjRSNDBIY0FGZXBZcGM5Rk92ZGJIbkRTcVZadnk3bTF2bjhRQkxHaTZ2dkhVdnBabF9YcVMwR0I2SDVNZlRSQWE5YWdD?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.45 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "b51733ba-c925-4e8c-b188-eec1c8afd3c2",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "42aa7a4a-786a-4026-8f98-391f005f4d10",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0005-6361-2922",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.35 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "5e2fa16d-a08c-4f65-9b7f-b5d17f58d31c",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "33ab2e0c-e044-4903-afe9-59cc153cef71",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPNkRGLW1Lb255Z3ZHTTNvZWRDcngwcWloVUNaN1BjSm1sWFFzNkh3UjBZSkdNN2QzWGZGN2liQjBzYmdqclI4OXZNd0prSkZGTE1RTFRZa2FYeUE2SXJRS1hIbEM4eGYxSFcwQm9KdFJIOTdGc1JQX2hiZktZUHNzdUduNktzLWQ3cFh0T0ZjT0R6QTY3NGRHcGdYRncxODFOTFkxRTdnczRDdmE4S01SV0JNQQ?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.20 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "49ccf5ff-a839-4229-bf88-8c9c7df0e283",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "837d8ea8-bf87-4204-8c1f-87dc38446293",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMikgFBVV95cUxObnVEdC1vWEpUUzBKbkh1QVRDYVBPeVlLTzdLRzIxZVFGdGpjbFl6cWRRVWtnQ0JkZTByZjQ0b0NaU2duUG52bklUQ3RiTVlOcnd4cGJ2OXlTOTZtcFMtM1JVQjFLZ2tEbTJUZlNlN2pXbEVhN19CWGRhVXJpb2JuRDJTNTVaaVd6SzRueVJVODdvZw?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.00 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "75b98c30-031e-403c-8658-6772deda4b39",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "2aa02589-ce4b-46c9-bc2c-ef430eef75d7",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0003-2981-7375",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.95 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "37b107d5-835c-456d-ad79-5d5d2707c65c",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "b04937a3-6642-467b-9c3d-836d496ab494",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0007-3788-3651",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.75 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "90df0754-904d-480a-8bed-f3b2251b05ac",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "d13414d5-6722-4dba-a9bb-2699337d8db1",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMikwFBVV95cUxOUzM2SUQzV1FUTW91VHRDRVpqLUQ2UDRiRTR2V284NmNDZ2psQkpza25FeE9yNVdvNm56RUVIbF9Bck1lVE1sRUhPSVJvUjVXNWNVOW9OU2pFaXJWVjRsWVlYOGIxOWVFeHNBZkZFeGNSaU81V1padGVacUxaVzhaLTlfdW5pX0JzMDRkTEhZeXcwaWs?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.60 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "785145a5-a6a0-418e-aafd-9e0c0e11b135",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "1e51d757-6915-492d-9f0e-f8648c7b1399",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0005-6088-7656",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.35 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "780287bc-aa3b-4b16-8eb9-275e3944f6d6",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "8cd81018-6a4d-42e7-ba10-d4ee4b598569",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.3389/fpsyg.2022.1039875",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.40 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "444ae6c5-9746-4a9e-9d50-c33799d409e4",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "6d75debc-fca7-43dd-940e-729c8cfbdb26",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/021k07d19",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.30 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "8ae28a7f-c34a-4118-aae4-f9e4f0a96171",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "93573adf-0578-4fda-a21f-ca31ee50ce61",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0001-5157-5216",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.15 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "331d78be-3812-4b14-ae11-b11d40299411",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "1b872a1c-19a1-4627-a273-0b6f4bb627a4",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/05m1qxf57",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.10 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "838c03e7-eaf4-4860-9c45-dbdf9dbfcce6",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "ebd4352d-cdec-4dc5-ac1c-c09e8d579fe2",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/04s5pra58",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.90 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "4b0666ed-50c7-4174-aaa5-79e47c6c60ab",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "71c2a5af-0ee2-41c4-bb84-99e86994c68e",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMitAFBVV95cUxNOEdPWW9fcTYyLWNRWjNEUWtxR2Z2eXJFZlp0MVV0MFFaV0tENVNjbDhwTWZOcmZxQTdwM29tdi1uemtNcFZPNk1TZFBHc3hENVRMTzY2d3JkSUpfLWoyVFFLc28tZHFfT2JtSjNWeWxUOG90YjV6d3RQRlE5bXhUNUVUNjJTQXJYclA5WUFTM2FxWUlzWUtILUl0a2dZV2h2dHVscFNKOXdHRGZKakxSWE5ycXQ?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.80 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "96eeae03-ecbe-4d38-9a68-80ba32972209",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "5f52d1bc-bf41-4e93-a03a-b054117f690b",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/02drjk215",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.70 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "2f7956dd-b719-46a9-be39-d706b0c99dd1",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "9c85aeb2-2d02-4827-a769-43116e663392",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0007-0393-3577",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.55 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "97599d28-d077-4208-a6c5-1ca547b4172b",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "4e76a0d8-23b1-4319-bd54-fd417a46a4cb",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/00nc2d154",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.50 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "4de7b535-c3af-431b-b8e8-b68f653f5861",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "a857f534-2bab-4461-b9a5-f9439bde21a4",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMikwFBVV95cUxNVkRlbEJMZGdyNUNtdmZxeXhlT1FSTFdYTHM3U3hHall6aFR6MHFOY09hNTgzeHBZbWlPaFNyLURnY3RYYkNEcGdPSDloSVJEcjdReXZtMFhmbHBOWmdkdmxXN01MUHZwM3dsOTNMSXVXd3A5dGlGc0Y3VW5oNUlGZWJFd3IyWG5vdUptZDFyNFRDamfSAaMBQVVfeXFMTWhwU2U2MldNdXY0TFNMTVZfcG5JNGJVQkRJa3FZSDVVSmh3UjBEek0weExRMzUwX24tOFR5aGNILVc0RExFblBTSHkyLU9fd1A4OXVweWdmNmhNUEhtRU8tSzdaVkktcU1hbml6bXVZNmJFWGp0SXA2MXhpai03dHBKUUxVMlhUZ0NoZXlZTlJYT3pmbVBBd2czbFp1b0pyVTVaaw?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.40 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:25:51.452Z"
+    },
+    {
+      "id": "62cfebde-8f86-48a4-b053-761deecbc518",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "fb59e865-b169-4ad0-9e1f-e7f5e4e6ee23",
+      "attempt": 1,
+      "stage": "rendering",
+      "code": "document-empty",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.msn.com%2fen-in%2fnews%2findia%2fwho-is-laurent-freixe-everything-to-know-about-the-ex-nestl%25C3%25A9-ceo-why-he-was-removed-his-career-highlights-total-net-worth%2far-AA1LFswX&c=131030028771885762&mkt=en-us",
+      "targetKind": "url",
+      "collector": "html-reader",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "status": 200,
+        "finalUrl": "https://www.msn.com/en-in/news/india/who-is-laurent-freixe-everything-to-know-about-the-ex-nestl%C3%A9-ceo-why-he-was-removed-his-career-highlights-total-net-worth/ar-AA1LFswX",
+        "contentType": "text/html",
+        "bytes": 42871,
+        "bodyHash": "d549ba970e2da32c12711d1c9da7a6a6c91e11961c00a57af5f2974939647069"
+      },
+      "reason": "The page parsed but carried no article text.",
+      "impact": "No readable text reached extraction from this page.",
+      "remediation": "Check whether the article is client-rendered and needs the browser route.",
+      "occurredAt": "2026-09-06T11:25:51.643Z"
+    },
+    {
+      "id": "97fb5f38-010b-4a5d-a4b1-ead6560755ad",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "55ab1024-ae7b-4703-834d-da39a5d4f754",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fnypost.com%2f2025%2f09%2f01%2fbusiness%2fnestle-fires-boss-laurent-freixe-for-failing-to-disclose-romantic-relationship-with-underling%2f&c=3464912938496905911&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "55ab1024-ae7b-4703-834d-da39a5d4f754",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 2871,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:26:22.712Z"
+    },
+    {
+      "id": "db66f7fa-416d-49ee-ba8a-eab804b6450f",
+      "operationId": "16fb77ea-f1dc-4812-adb3-5bf449243802",
+      "attemptOf": "55ab1024-ae7b-4703-834d-da39a5d4f754",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "recoveryStopped": "Retry cancelled by caller.",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fnypost.com%2f2025%2f09%2f01%2fbusiness%2fnestle-fires-boss-laurent-freixe-for-failing-to-disclose-romantic-relationship-with-underling%2f&c=3464912938496905911&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "55ab1024-ae7b-4703-834d-da39a5d4f754",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 2896,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; Retry cancelled by caller..",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:26:54.382Z"
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d8352234de9aff58b789c138acb&url=https%3a%2f%2fwww.msn.com%2fen-in%2fnews%2findia%2fwho-is-laurent-freixe-everything-to-know-about-the-ex-nestl%25C3%25A9-ceo-why-he-was-removed-his-career-highlights-total-net-worth%2far-AA1LFswX&c=131030028771885762&mkt=en-us: Reading produced no usable text (failed).",
+    "22 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Model-provider failure interrupted research; retrieved evidence and pending work are retained."
+}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ModelBoundaryDiagnosticSchema } from "./llm.js";
 
 /**
  * The Person Research Failure contract (issue #228).
@@ -76,6 +77,7 @@ export const PersonResearchFailureCodeSchema = z.enum([
   "identity-unmatched",
   "invalid-result-shape",
   "model-boundary-failed",
+  "model-response-received",
   "unsupported-citation",
   "stale-result-rejected",
   "lifecycle-invalidated",
@@ -110,8 +112,10 @@ export const PersonResearchObservationSchema = z.object({
   /** Where a parser gave up — a page number, an XPath-ish hint, a field path. */
   parserLocation: z.string().max(400).optional(),
   subprocessExitStatus: z.number().int().optional(),
-  /** The model boundary's own structured diagnostic, verbatim and bounded. */
+  /** Readable model failure summary; never a response payload. */
   modelDiagnostic: z.string().max(2000).optional(),
+  /** Classified, bounded shape observations supplied by the production model seam. */
+  modelBoundary: ModelBoundaryDiagnosticSchema.optional(),
   retryAfterMilliseconds: z.number().nonnegative().optional(),
   /** A bounded, sanitized excerpt of what was actually received. */
   excerpt: z.string().max(2000).optional(),
@@ -253,9 +257,13 @@ export const PersonResearchOperationOutcomeSchema = z.object({
   finishedAt: z.string().max(40),
   /** Discovery passes, reading batches, and expansion rounds actually run. */
   rounds: z.number().int().nonnegative(),
+  /** Logical model invocations; opted-in wire attempts are recorded in attempts. */
   modelCalls: z.number().int().nonnegative(),
   requests: z.number().int().nonnegative(),
+  /** Distinct source versions retained or reused by this operation, including unattempted versions. */
   sourcesRetained: z.number().int().nonnegative(),
+  /** Absent on legacy outcomes whose exact retained-version identities were not recorded. */
+  retainedSourceIds: z.array(z.string().length(64)).max(10000).optional(),
   claimsPublished: z.number().int().nonnegative(),
   /** The last dossier revision this operation published. */
   publishedDossierRevision: z.number().int().nonnegative().optional(),

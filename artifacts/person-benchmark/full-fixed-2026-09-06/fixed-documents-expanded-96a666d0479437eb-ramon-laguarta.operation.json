@@ -1,0 +1,446 @@
+{
+  "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+  "profileId": "person_dc83a71e65ad",
+  "conclusion": "interrupted",
+  "interruption": {
+    "code": "model-boundary-failed",
+    "reason": "The configured model provider failed during extraction."
+  },
+  "startedAt": "2026-09-06T10:36:31.443Z",
+  "finishedAt": "2026-09-06T10:37:42.109Z",
+  "rounds": 1,
+  "modelCalls": 1,
+  "requests": 6,
+  "sourcesRetained": 0,
+  "claimsPublished": 0,
+  "publishedDossierRevision": 1,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 0,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    }
+  ],
+  "leads": [
+    {
+      "id": "0da179be8ac1800454165aac47ec1fd3",
+      "kind": "query",
+      "target": "\"Ramon Laguarta\" PepsiCo",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "c6e8739ffcdc23592353eefeb55f428a",
+      "kind": "query",
+      "target": "\"Ramon Laguarta\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "6e477b25c2710f313899f9eccfd1af5f",
+      "kind": "query",
+      "target": "\"Ramon Laguarta\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "ebc020a339ad92966896907d4c12ad06",
+      "kind": "query",
+      "target": "\"Ramon Laguarta\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "ffc856194a7bf4a04b35a15507fe862b",
+      "kind": "query",
+      "target": "\"Ramon Laguarta\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false
+    },
+    {
+      "id": "ddb3c54184499918c2599c31c44593ec",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Ramon_Laguarta",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retrieved and retained; extraction failed.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9b5c24f88081533381a25545eb89db04",
+      "kind": "url",
+      "target": "https://www.pepsico.com/who-we-are/leadership",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.45,
+        "relevance": 3.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "77a7b42e-83c4-494d-baf6-f8f4aa4f6e64",
+      "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+      "attemptOf": "9f193128-7010-4898-8e34-391a1bf25f32",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Ramon Laguarta\" PepsiCo",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:36:31.445Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "0272e5a3-37d1-4c86-8369-893b3efbead6",
+      "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+      "attemptOf": "8c4f8d58-5217-4cf1-a29b-24df736b67c9",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Ramon Laguarta\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:36:31.445Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "04bb83a7-b974-46ae-8547-fe77fa596cfd",
+      "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+      "attemptOf": "cf625d61-f76c-43dc-add3-499361b14cfd",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Ramon Laguarta\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:36:31.445Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "87127d7d-747a-47ac-825f-b56da3ae6bf6",
+      "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+      "attemptOf": "f79b0566-200f-4675-b365-434e3c04e9ed",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Ramon Laguarta\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:36:31.445Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "a082dfc9-6e79-4d5d-a7b6-a8d4e2f58341",
+      "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+      "attemptOf": "b4a8927f-ed4e-48f5-ae93-48c718a8ba86",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Ramon_Laguarta",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "occurredAt": "2026-09-06T10:37:06.381Z",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "b4a8927f-ed4e-48f5-ae93-48c718a8ba86",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 3199,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts."
+    },
+    {
+      "id": "b90ec73a-af17-4579-84b4-0dea64cff2de",
+      "operationId": "d3cd260e-6159-458d-9819-9928674700d8",
+      "attemptOf": "b4a8927f-ed4e-48f5-ae93-48c718a8ba86",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Ramon_Laguarta",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "request_timeout; The one additional same-binding retry was exhausted..",
+      "occurredAt": "2026-09-06T10:37:42.108Z",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "b4a8927f-ed4e-48f5-ae93-48c718a8ba86",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 4756,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "recoveryStopped": "The one additional same-binding retry was exhausted."
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "2 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Model-provider failure interrupted research; retrieved evidence and pending work are retained."
+}

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "bong-joon-ho",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Bong Joon-ho",
   "industry": "media",
   "role": "Film director and screenwriter",
@@ -11,7 +11,7 @@
   "fictional": false,
   "lookup": {
     "fullName": "Bong Joon-ho",
-    "employerHint": "Independent filmmaker",
+    "employerHint": null,
     "profileUrls": [],
     "emails": []
   },

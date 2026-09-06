@@ -1,0 +1,671 @@
+{
+  "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+  "profileId": "person_af8c6391f6ca",
+  "conclusion": "completed",
+  "startedAt": "2026-09-06T11:25:10.629Z",
+  "finishedAt": "2026-09-06T11:26:21.389Z",
+  "rounds": 3,
+  "modelCalls": 1,
+  "requests": 13,
+  "sourcesRetained": 2,
+  "retainedSourceIds": [
+    "4711c67305d5d8af219477de36e8b9c6c222dccee28430af86a35a7096d17a29",
+    "085af752457f3863da5a6fad23aebec96834069fb9a9d805bb1c4102f4c1d5f0"
+  ],
+  "claimsPublished": 1,
+  "publishedDossierRevision": 3,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 1,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 1,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "93170c585a9eccc5827ed07d8aa03b7b",
+      "kind": "query",
+      "target": "\"Jane Fraser\" Citigroup",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "4efe55d0fdfcbce5694e9310ab9d2f23",
+      "kind": "query",
+      "target": "\"Jane Fraser\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "afb49d024c8961541c54139acb0a72ea",
+      "kind": "query",
+      "target": "\"Jane Fraser\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "79461bd85fbbdc21fce35902dbc575bc",
+      "kind": "query",
+      "target": "\"Jane Fraser\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "a6ceda7258dd4ee0ae80cabd21cc249c",
+      "kind": "query",
+      "target": "\"Jane Fraser\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "79350865c98e47596eba0a044891e2f0",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Jane_Fraser_(executive)",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retained and extracted 1 grounded claims.",
+      "yieldedEvidence": true,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5d599de402f1531f490dc9aae4dfebc6",
+      "kind": "query",
+      "target": "\"Jane Fraser\" interview transcript video podcast",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "1013dfe7c96120db1fb0b74554401ec1",
+      "kind": "query",
+      "target": "\"Jane Fraser\" posts profile account",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "1ca40905103d7ce14e90886e5ee57430",
+      "kind": "query",
+      "target": "\"Jane Fraser\" paper publication doi",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "31adefe92e3314c7cadb71d8d891cfde",
+      "kind": "query",
+      "target": "\"Jane Fraser\" Citigroup registry filing licence",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "2ce1371fbb9c319f2f9db86e49aacfc5",
+      "kind": "query",
+      "target": "\"Jane Fraser\" credits catalogue collection",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "959c54441b7743d98b487cbd83448edb",
+      "kind": "query",
+      "target": "\"Jane Fraser\" Citigroup affiliation identifier",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "2aa062a9a7b5a6b87a6411b5cf4ef784",
+      "kind": "query",
+      "target": "\"Jane Fraser\" Citigroup archive former",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 1 candidates.",
+      "yieldedEvidence": true
+    }
+  ],
+  "attempts": [
+    {
+      "id": "edd49047-0e3b-447d-92f1-ff1bffd1b34c",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "11393726-abd2-41a0-8b71-d77bd34eb7da",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" Citigroup",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:25:10.630Z"
+    },
+    {
+      "id": "b9518e20-9ee1-4e71-a73a-bce8d2e24512",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "84b793a8-8921-43f7-acff-811a38637711",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:25:10.630Z"
+    },
+    {
+      "id": "4198995f-e223-48d3-839e-06833d33f097",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "192719a2-4094-48cc-a8c0-a39c71de1136",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:25:10.630Z"
+    },
+    {
+      "id": "5e3f6857-df9e-4ede-9724-d26971e95a47",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "3c632f32-44f0-4a5d-b188-305360113240",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:25:10.630Z"
+    },
+    {
+      "id": "1ef4d560-0541-4c51-b561-119d7b399acf",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "fc46d844-e42e-4565-bf7c-f81d74832646",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Jane_Fraser_(executive)",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "fc46d844-e42e-4565-bf7c-f81d74832646",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 43170,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:25:43.949Z"
+    },
+    {
+      "id": "3412496e-1918-42c5-8855-f80a31d08fba",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "fc46d844-e42e-4565-bf7c-f81d74832646",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-response-received",
+      "outcome": "recovered",
+      "recovery": "recovered",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Jane_Fraser_(executive)",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "fc46d844-e42e-4565-bf7c-f81d74832646",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "reason": "The model boundary returned JSON; dossier validation and publication follow.",
+      "impact": "A model response is available for evidence validation.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:26:21.370Z"
+    },
+    {
+      "id": "0f4b4d8c-b64a-49d4-bd7d-eec4b274ea62",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "e1ec8628-4c9c-4fb3-bcae-3d7414e5f63d",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" publication OR filing OR registry OR award",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.382Z"
+    },
+    {
+      "id": "ff12c9c0-47f2-46b2-a981-fcb68dc2b277",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "1d0dad00-739a-42ed-bf2e-498633bbe378",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" interview transcript video podcast",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.382Z"
+    },
+    {
+      "id": "ea538d0e-eb48-40e4-817a-12ceff79aea0",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "54d0df4c-32ac-4b86-9058-0225d999ea6c",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" posts profile account",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.382Z"
+    },
+    {
+      "id": "96c39a80-6279-48b2-ba3a-d700ed3ac9d0",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "7379b480-7ab9-4665-a56b-cb0c416831d4",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" paper publication doi",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.382Z"
+    },
+    {
+      "id": "b8101c2e-c390-424e-8300-7ef64c7ecd26",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "b08b9b79-b465-4188-8b8a-5b8de88859a1",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" Citigroup registry filing licence",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.385Z"
+    },
+    {
+      "id": "e9fb13bf-6ba3-4561-b2dc-cadf9b09c45b",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "b7211f8d-bac7-4856-8249-776f34b1be16",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" credits catalogue collection",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.385Z"
+    },
+    {
+      "id": "ed304efe-e3bf-45d7-acdb-d78562a96a29",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "bf2a8fda-4428-4e71-97a8-3b2157e3f002",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" Citigroup affiliation identifier",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.385Z"
+    },
+    {
+      "id": "4bb7f3cd-3335-4661-90b0-4e7da5bc8323",
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "attemptOf": "bfc02d3a-bbb2-469d-97c3-01002720fb68",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Jane Fraser\" Citigroup archive former",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 1 results.",
+      "occurredAt": "2026-09-06T11:26:21.385Z"
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Investigated the planned coverage and every actionable lead; 16 gaps remain and are listed."
+}

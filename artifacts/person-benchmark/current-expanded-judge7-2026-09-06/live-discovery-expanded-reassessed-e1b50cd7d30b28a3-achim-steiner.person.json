@@ -1,0 +1,264 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:21:58.215Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "achim-steiner",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "9a582a20-e73b-4d8c-97eb-aa9c79969231",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "undp-tenure",
+              "verdict": "missing",
+              "referenceQuote": "he completed his two terms as UN under-secretary general and administrator of the United Nations Development Programme (2017–2025) and vice-chair of United Nations Sustainable Development Group in June 2025.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so nothing supports the UNDP tenure fact.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "unep-succession",
+              "verdict": "missing",
+              "referenceQuote": "On 3 May 2016, Ban Ki-moon announced that the post of executive director of UNEP would be taken over by Erik Solheim in June 2016.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about Erik Solheim succeeding Steiner at UNEP.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "digital-finance",
+              "verdict": "missing",
+              "referenceQuote": "In November 2018, Guterres also appointed Steiner to co-chair (alongside Maria Ramos) the United Nations Task Force on Digital Financing of Sustainable Development Goals.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about the Task Force on Digital Financing appointment.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "security-lab",
+              "verdict": "missing",
+              "referenceQuote": "Following his departure from UNDP in 2025, Steiner returned to the Oxford Martin School, University of Oxford as a senior fellow.[16] He subsequently established the Security Futures Lab, a research and policy platform with its hub at the Oxford Martin School, designed to treat climate change, health security, societal resilience, algorithmic security and geopolitical fragmentation as interconnected dimensions of a single risk system rather than separate policy domains.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about the Security Futures Lab at Oxford.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "achim-steiner",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "achim-steiner",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "149449db24eb8ef6800263f18fcfafba84adc3686aadca3d6f4fe5f719dc8be1",
+            "url": "https://skoll.org/attendee/achim-steiner/",
+            "hash": "f712715e3118e01657a320dfec13765fee43566b5c993171fc0ddd0f40ffacca",
+            "upstreamIndex": "skoll.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 4,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 4,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 4,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r6": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "undp-tenure",
+          "verdict": "missing",
+          "referenceQuote": "he completed his two terms as UN under-secretary general and administrator of the United Nations Development Programme (2017–2025) and vice-chair of United Nations Sustainable Development Group in June 2025.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so nothing supports the UNDP tenure fact.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "unep-succession",
+          "verdict": "missing",
+          "referenceQuote": "On 3 May 2016, Ban Ki-moon announced that the post of executive director of UNEP would be taken over by Erik Solheim in June 2016.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about Erik Solheim succeeding Steiner at UNEP.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "digital-finance",
+          "verdict": "missing",
+          "referenceQuote": "In November 2018, Guterres also appointed Steiner to co-chair (alongside Maria Ramos) the United Nations Task Force on Digital Financing of Sustainable Development Goals.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about the Task Force on Digital Financing appointment.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "security-lab",
+          "verdict": "missing",
+          "referenceQuote": "Following his departure from UNDP in 2025, Steiner returned to the Oxford Martin School, University of Oxford as a senior fellow.[16] He subsequently established the Security Futures Lab, a research and policy platform with its hub at the Oxford Martin School, designed to treat climate change, health security, societal resilience, algorithmic security and geopolitical fragmentation as interconnected dimensions of a single risk system rather than separate policy domains.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about the Security Futures Lab at Oxford.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty; the only substance is identity anchors and a single unprocessed Skoll.org source. A reader learns only a one-line identity label and cannot verify any of it, since no extracted claims or citations exist. Because there are no dossier statements, the stale 'currently UNDP administrator' risk and the SDG attribution issue cannot be flagged as dossier overclaims — they remain latent risks in the metadata only. The dossier neither says what it does not know nor provides meeting-preparable content.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 160,
+      "failuresByCode": {
+        "challenge-page": 2,
+        "document-empty": 5,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://news.google.com/rss/articles/CBMifEFVX3lxTFA2eHp5dmlhQUhFcVY5LXk0aTBIcnJCYWtxZmVvYWRaaVVHUnFBUE1kNlpKdExaMnB0OWxKOEhYRFhlMF81NXZFazdsRGMxSjdsN0pBOVZFNURXSlZ2UDRoVkZkNFl0aXNyc0ltUE9fOFlMUXdKMU04N2xZWVQ?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://diler.tube/videos/watch/84dcc3e0-9b35-41a2-a457-28a7ca74fd8a: Reading produced no usable text (failed).",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d486c8a78400ab325fa00af0847cb&url=https%3a%2f%2fwww.npr.org%2f2023%2f11%2f10%2f1212068867%2fisrael-hamas-war-could-set-palestinian-economies-back-decades-in-gaza-west-bank&c=8454747479234004054&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d486c8a78400ab325fa00af0847cb&url=https%3a%2f%2fwww.devex.com%2fnews%2fundp-s-achim-steiner-on-the-chronic-erosion-of-development-110062&c=7295871844538123315&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMilwFBVV95cUxNbFVIdVRmdkoyV05Wd1k2ck9zbmJNREV6NkhNTzVFcWNrRFVXdktiNHVUQXJFVmVNZ19NbDNuMTV2YnA4OE1PYjloLTZyTDNkeDdqMFYyQ3AwZllWSVFQS3RYdDZvVWRWSjVqS05kMWFCemlhbjEzWjNHSTBvdnRFQmxpLXdqMjNaS0JxNl82Vm1qbDdmOEJJ?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMiVkFVX3lxTE5ndFB4bkVueFlta1UxRnZWQ0pEV1ZjeUxkSmpyWkI2N2E5N2xDenFaX1o1LU8ta0N6U3k3SlN3Q0MzOHowYS1CaTlBckx4V2VxTUhYTjFn?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMiswFBVV95cUxNZndJUG1ZTWhkc3Y2aDdJOHBiV25wX1RFMDhUX29QZklYQU5JQ09NOTVqVGVUZ0w3d3hnTHVfMjlTVEp4MmRwU283cGFZdTdnSWZKYkh1WlNsWklQXy1Nb0NaRGsxSklDTFVodHgxZnRqQjNTSDJVQjNUcDQ3NEFUMDRlWDMtX25qTmdwZUhVNVE4SUpSdkZJYW5Cdk4yYVFtVUNTM0k3bWRHYzNNT1YtelJXWQ?oc=5: Reading produced no usable text (failed).",
+        "160 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 152014
+    }
+  }
+}

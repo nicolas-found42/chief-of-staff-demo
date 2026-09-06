@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,33 @@ import { evaluatePerson } from "../../../apps/server/src/person-benchmark/evalua
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+it("retains omitted reference verdicts as misses without claiming complete judge assessment", async () => {
+  const person = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  ).people[0];
+  const workspaceDir = mkdtempSync(join(tmpdir(), "benchmark-omitted-verdicts-"));
+  roots.push(workspaceDir);
+  const { result } = await evaluatePerson(person, "live-discovery", {
+    workspaceDir,
+    search: async () => [],
+    complete: () => async () => ({}),
+    judge: async ({ user }) =>
+      user.includes('"references":')
+        ? { judgements: [] }
+        : {
+            understanding: 0,
+            remainingQuestions: 0,
+            conversationReadiness: 0,
+            rationale: "Empty dossier",
+            uncertain: false,
+            overclaims: [],
+          },
+  });
+  expect(result.assessment?.judge).toBe("failed");
+  expect(result.failure).toContain("Judge assessment was incomplete");
+  expect(result.completeness.missing).toBe(person.facts.length);
 });
 
 it("does not count a judge's unsupported recovery of an empty dossier", async () => {
@@ -65,7 +92,15 @@ it("reports an interrupted production operation as an evaluation failure", async
     },
     judge: async ({ user }) =>
       user.includes('"references":')
-        ? { judgements: [] }
+        ? {
+            judgements: person.facts.map((fact) => ({
+              factId: fact.id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "No published claims.",
+            })),
+          }
         : {
             understanding: 0,
             remainingQuestions: 0,
@@ -74,6 +109,11 @@ it("reports an interrupted production operation as an evaluation failure", async
             uncertain: false,
             overclaims: [],
           },
+  });
+  expect(result.assessment).toMatchObject({
+    integrity: "completed",
+    judge: "completed",
+    operationId: expect.any(String),
   });
   expect(result.operational.conclusion).toBe("interrupted");
   expect(result.failure).toMatch(/interrupt/i);
@@ -234,7 +274,16 @@ it.each([
     },
     complete: () => async () => structuredClone(fixture.extraction),
     judge: async ({ user }) => {
-      if (user.includes('"references":')) return { judgements: [] };
+      if (user.includes('"references":'))
+        return {
+          judgements: person.facts.map((fact) => ({
+            factId: fact.id,
+            verdict: "missing",
+            evidence: null,
+            claimId: null,
+            rationale: "No matching reference claim.",
+          })),
+        };
       const input = JSON.parse(user) as { dossier: { id: string; statement: string }[] };
       const claim = input.dossier.find((entry) => entry.statement === statement)!;
       return {
@@ -246,6 +295,7 @@ it.each([
         overclaims: [
           {
             claimId: claim.id,
+            citationIndex: 0,
             statement,
             kind,
             rationale: "The source credits Maya with the scheduler and the team with the UI.",
@@ -291,6 +341,13 @@ it.each([
       finishedAt: "2026-09-06",
       host: "fixture",
     },
+    execution: {
+      status: "completed",
+      selected: [person.slug],
+      evaluated: 1,
+      assessed: 1,
+      scenarioIds: [],
+    },
     people: [result],
     groups: summarizeGroups([person], [result]),
     remainingMisses: remainingMisses([person], [result]),
@@ -308,4 +365,289 @@ it.each([
     candidate.people[0].completeness.recovered = 1;
     expect(compareReports(baseline, candidate).verdict).toBe("regressed");
   }
+});
+
+it("finishes fixed-document evaluation without planning internet targets outside its supplied documents", async () => {
+  const person = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  ).people.find((entry) => entry.slug === "achim-steiner")!;
+  const workspaceDir = mkdtempSync(join(tmpdir(), "benchmark-fixed-scope-"));
+  roots.push(workspaceDir);
+  const { operation, result } = await evaluatePerson(person, "fixed-documents", {
+    workspaceDir,
+    search: async () => {
+      throw new Error("No live discovery in fixed mode");
+    },
+    complete: () => async () => ({
+      fullName: "Achim Steiner",
+      employer: null,
+      sourceClass: "independent-account",
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+    plan: () => async () => {
+      throw new Error("Fixed documents must not plan inaccessible internet targets");
+    },
+    judge: async () => {
+      throw new Error("Controlled unassessed judge");
+    },
+  });
+  expect(result.assessment?.judge).toBe("failed");
+  expect(operation?.conclusion).toBe("completed");
+  expect(
+    operation?.attempts.some(
+      (attempt) => attempt.stage === "planning" && attempt.outcome === "failed",
+    ),
+  ).toBe(false);
+});
+
+it.each([false, true])("preserves judge wire attempts when assessment fails=%s", async (fails) => {
+  const person = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  ).people[0];
+  const workspaceDir = mkdtempSync(join(tmpdir(), "benchmark-judge-attempts-"));
+  roots.push(workspaceDir);
+  const { result } = await evaluatePerson(person, "live-discovery", {
+    workspaceDir,
+    search: async () => [],
+    complete: () => async () => ({}),
+    judge: async (request) => {
+      const { modelBoundaryFailure } = await import("../../../apps/server/src/llm/failure.js");
+      const error = modelBoundaryFailure({
+        call: { provider: "openrouter", model: "model", binding: "response_format" },
+        classification: "request_timeout",
+        status: 200,
+        bodyBytes: 11,
+        timeoutMs: 30000,
+      });
+      request.retry?.onAttempt({
+        attempt: 1,
+        binding: "response_format",
+        outcome: "retrying",
+        diagnostic: error.diagnostic,
+        delayMs: 500,
+        stoppedReason: null,
+      });
+      request.retry?.onAttempt({
+        attempt: 2,
+        binding: "response_format",
+        outcome: fails ? "failed" : "succeeded",
+        diagnostic: fails ? error.diagnostic : null,
+        delayMs: 0,
+        stoppedReason: fails ? "Retry exhausted" : null,
+      });
+      if (fails) throw error;
+      return request.user.includes('"references":')
+        ? {
+            judgements: person.facts.map((fact) => ({
+              factId: fact.id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "No dossier claims.",
+            })),
+          }
+        : {
+            understanding: 0,
+            remainingQuestions: 0,
+            conversationReadiness: 0,
+            rationale: "No dossier claims.",
+            uncertain: false,
+            overclaims: [],
+          };
+    },
+  });
+  expect(result.assessment?.judge).toBe(fails ? "failed" : "completed");
+  expect(result.assessment?.modelAttempts?.[0]).toMatchObject({
+    call: 1,
+    subject: person.slug,
+    observation: {
+      outcome: "retrying",
+      diagnostic: { classification: "request_timeout", bodyBytes: 11 },
+    },
+  });
+  expect(result.assessment?.modelAttempts?.[1]?.observation.outcome).toBe(
+    fails ? "failed" : "succeeded",
+  );
+  expect(result.assessment?.modelAttempts?.length).toBe(fails ? 2 : 4);
+  expect(result.completeness.recovered).toBe(0);
+});
+
+it.each(["recovered", "partial"] as const)(
+  "does not count %s semantic recovery when the matched claim fails retained citation integrity",
+  async (verdict) => {
+    const person = loadCorpus(
+      fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+    ).people.find((entry) => entry.slug === "achim-steiner")!;
+    const url = "https://example.com/achim-steiner";
+    const statements = [
+      "Achim Steiner led the test programme.",
+      "Achim Steiner wrote the test report.",
+    ];
+    person.lookup.profileUrls = [url];
+    person.facts = statements.map((statement, index) => ({
+      ...person.facts[0],
+      id: `fact-${index}`,
+      statement,
+    }));
+    const workspaceDir = mkdtempSync(join(tmpdir(), "benchmark-critical-recovery-"));
+    roots.push(workspaceDir);
+    let corrupted = 0;
+    const { result } = await evaluatePerson(person, "live-discovery", {
+      workspaceDir,
+      search: async () => [],
+      seeds: () => [url],
+      readSource: async () => ({
+        text: statements.join(" "),
+        completeness: "full",
+        access: "retrieved",
+        outboundUrls: [],
+        family: "documents-publishers",
+        route: "controlled-fixture",
+        upstreamIndex: null,
+        publishedAt: null,
+        author: null,
+        anchors: [],
+        provenanceNote: "Controlled evaluator fixture",
+        finalUrl: url,
+      }),
+      complete: () => async () => ({
+        fullName: null,
+        employer: null,
+        sourceClass: "primary-artifact",
+        author: null,
+        publishedAt: null,
+        claims: statements.map((statement, index) => ({
+          id: `claim-${index}`,
+          section: "career",
+          statement,
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [{ sourceId: "source", quote: statement }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        })),
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      }),
+      plan: () => async () => {
+        // Simulate retained evidence corruption after production publication,
+        // before the evaluator reads the final dossier and runs integrity checks.
+        const directory = join(workspaceDir, "person-source-documents");
+        for (const file of readdirSync(directory)) {
+          const path = join(directory, file);
+          const source = JSON.parse(readFileSync(path, "utf8")) as { text: string };
+          if (source.text.includes(statements[0])) {
+            source.text = source.text.replace(
+              statements[0],
+              "The first passage is no longer retained.",
+            );
+            writeFileSync(path, JSON.stringify(source));
+            corrupted += 1;
+          }
+        }
+        throw new Error("Controlled stop after evidence corruption");
+      },
+      judge: async ({ user }) => {
+        const request = JSON.parse(user) as { dossier: { id: string; statement: string }[] };
+        if (user.includes('"references":'))
+          return {
+            judgements: person.facts.map((fact, index) => {
+              const claim = request.dossier.find((entry) => entry.statement === statements[index])!;
+              return {
+                factId: fact.id,
+                verdict: index === 0 ? verdict : "recovered",
+                evidence: claim.statement,
+                claimId: claim.id,
+                rationale: "The dossier states the reference fact.",
+              };
+            }),
+          };
+        return {
+          understanding: 1,
+          remainingQuestions: 1,
+          conversationReadiness: 1,
+          rationale: "Controlled assessment",
+          uncertain: false,
+          overclaims: [],
+        };
+      },
+    });
+    expect(corrupted).toBeGreaterThan(0);
+    expect(result.assessment?.judge).toBe("completed");
+    expect(result.factualReliability.integrityFindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ check: "citation-quote-present", severity: "critical" }),
+      ]),
+    );
+    expect(result.completeness).toMatchObject({ recovered: 1, partial: 0, ambiguous: 1 });
+    expect(result.completeness.judgements[0]).toMatchObject({
+      verdict: "ambiguous",
+      reviewRequired: true,
+      rationale: expect.stringContaining(`Original semantic verdict: ${verdict}`),
+    });
+    expect(result.completeness.judgements[0].rationale).toContain("citation-quote-present");
+    expect(result.completeness.byAcquisition[person.facts[0].acquisition]).toEqual({
+      total: 2,
+      recovered: 1,
+    });
+    for (const requirement of person.facts[0].requirements)
+      expect(result.completeness.byRequirement[requirement]).toEqual({ total: 2, recovered: 1 });
+  },
+);
+
+it("reports a saturated semantic assessment as failed instead of fully assessed", async () => {
+  const person = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  ).people[0];
+  const workspaceDir = mkdtempSync(join(tmpdir(), "benchmark-judge-limit-"));
+  roots.push(workspaceDir);
+  const { result } = await evaluatePerson(person, "live-discovery", {
+    workspaceDir,
+    search: async () => [],
+    complete: () => async () => ({}),
+    judge: async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: person.facts.map((fact) => ({
+              factId: fact.id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "Empty dossier.",
+            })),
+          }
+        : {
+            understanding: 0,
+            remainingQuestions: 0,
+            conversationReadiness: 0,
+            uncertain: false,
+            rationale: "Saturated response; identifiers must still be checked.",
+            overclaims: Array.from({ length: 40 }, (_, index) => ({
+              claimId: `unknown-${index}`,
+              citationIndex: null,
+              statement: "Unrecognized claim",
+              kind: "unsupported-inference",
+              rationale: "Unverified",
+              matchedUnjustifiedId: null,
+              uncertain: false,
+            })),
+          },
+  });
+  expect(result.assessment?.judge).toBe("failed");
+  expect(result.failure).toContain("overclaim response limit of 40");
+  expect(result.usefulness).toMatchObject({
+    reviewRequired: true,
+    rationale: expect.stringContaining("overclaim response limit of 40"),
+  });
+  expect(result.factualReliability.overclaims).toEqual([]);
 });

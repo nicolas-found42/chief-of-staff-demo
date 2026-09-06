@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 1,
+  "runId": "f93fe67376b87cec",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "incumbent",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:21:13.682Z",
+  "reassessmentOf": "2b5991382eeb01ab",
+  "result": {
+    "slug": "sebastien-bazin",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research bounded before the operation completed.",
+    "assessment": {
+      "operationId": "89f97b7e-2040-4d96-a589-3de96a81409a",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "accor-pdg",
+              "verdict": "partial",
+              "referenceQuote": "Since August 2013, he has been chairman of the board and chief executive officer of Accor, a global hotel corporation",
+              "evidenceQuote": "Sébastien Bazin was PDG (CEO) of Accor as of the Accor general assembly in Paris on 28 April 2015.",
+              "claimId": "c590908cc54d3748f3f5970ea633b369",
+              "rationale": "The dossier confirms Bazin was PDG of Accor in 2015 but does not state he has been chairman and CEO since 27 August 2013.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "colony-capital",
+              "verdict": "missing",
+              "referenceQuote": "En 1997, Sébastien Bazin rejoint Colony Capital",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about Colony Capital.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "psg",
+              "verdict": "missing",
+              "referenceQuote": "Président du conseil de surveillanceParis Saint-Germain FC9 septembre 2009 - 30 juin 2011",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about Paris Saint-Germain.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "early-finance",
+              "verdict": "missing",
+              "referenceQuote": "Bazin began his career in finance in the United States, Clore then Paine Webber  groups in New York City, San Francisco, then went to London",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about his early finance career.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "immobiliere",
+              "verdict": "missing",
+              "referenceQuote": "He continued his career by becoming Managing Director of the company Immobilière Hôtelière in 1992.[5] He held this position for five years",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about Immobilière Hôtelière.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "heforshe",
+              "verdict": "missing",
+              "referenceQuote": "As CEO of Accor, he has committed to the UN's HeForShe campaign that seeks to promote women's and men's rights by pledging to reach parity in pay and equality between genders by 2020",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about the HeForShe campaign.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "boards",
+              "verdict": "missing",
+              "referenceQuote": "He also served on the board of Edenred from 2010 to 2013",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about his board memberships.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "holds a degree in economics obtained in 1984 and a master's degree in management, finance option, obtained at the Pantheon-Sorbonne University in 1985",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about his education.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "legion",
+              "verdict": "missing",
+              "referenceQuote": "Distinction Chevalier de la Légion d'honneur",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no information about the Légion d'honneur.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "sebastien-bazin",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "sebastien-bazin",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "739b8c9a821c30cdc0aad2d8be84a1e4b5e621f64fed40172b55459541896d60",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d51046751421aa2de68f50fd68e78&url=https%3a%2f%2fskift.com%2f2024%2f04%2f15%2faccors-sebastien-bazin-bets-big-on-indias-middle-class%2f&c=16439608795851231035&mkt=en-us",
+            "hash": "84dc561d5885591b019c645216ad4aa3d9b24520150b2ce41f17ac6cd1459e19",
+            "upstreamIndex": "skift.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "2884199d68d368268eff5cb031267816e46b4472bc40198a0f4393971f29324c",
+            "url": "https://archive.org/details/youtube-QtNdmjD7O7E",
+            "hash": "804a0fdf0b92b0542dc57b96c3926cb0ad7f87b4dfc0b7e2d1203bf69b246735",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "e66d0e128976cdb507166dded63d98ac2914f840f6ec51670dcf605213adc752",
+            "url": "https://archive.org/details/youtube-QtNdmjD7O7E",
+            "hash": "804a0fdf0b92b0542dc57b96c3926cb0ad7f87b4dfc0b7e2d1203bf69b246735",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "c590908cc54d3748f3f5970ea633b369",
+          "3e3447f114bde97633a9185d10eac2b0"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 2,
+      "totalCitations": 2,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 9,
+      "recovered": 0,
+      "partial": 1,
+      "missing": 8,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 8,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 5,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "accor-pdg",
+          "verdict": "partial",
+          "referenceQuote": "Since August 2013, he has been chairman of the board and chief executive officer of Accor, a global hotel corporation",
+          "evidenceQuote": "Sébastien Bazin was PDG (CEO) of Accor as of the Accor general assembly in Paris on 28 April 2015.",
+          "claimId": "c590908cc54d3748f3f5970ea633b369",
+          "rationale": "The dossier confirms Bazin was PDG of Accor in 2015 but does not state he has been chairman and CEO since 27 August 2013.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "colony-capital",
+          "verdict": "missing",
+          "referenceQuote": "En 1997, Sébastien Bazin rejoint Colony Capital",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about Colony Capital.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "psg",
+          "verdict": "missing",
+          "referenceQuote": "Président du conseil de surveillanceParis Saint-Germain FC9 septembre 2009 - 30 juin 2011",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about Paris Saint-Germain.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "early-finance",
+          "verdict": "missing",
+          "referenceQuote": "Bazin began his career in finance in the United States, Clore then Paine Webber  groups in New York City, San Francisco, then went to London",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about his early finance career.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "immobiliere",
+          "verdict": "missing",
+          "referenceQuote": "He continued his career by becoming Managing Director of the company Immobilière Hôtelière in 1992.[5] He held this position for five years",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about Immobilière Hôtelière.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "heforshe",
+          "verdict": "missing",
+          "referenceQuote": "As CEO of Accor, he has committed to the UN's HeForShe campaign that seeks to promote women's and men's rights by pledging to reach parity in pay and equality between genders by 2020",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about the HeForShe campaign.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "boards",
+          "verdict": "missing",
+          "referenceQuote": "He also served on the board of Edenred from 2010 to 2013",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about his board memberships.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "holds a degree in economics obtained in 1984 and a master's degree in management, finance option, obtained at the Pantheon-Sorbonne University in 1985",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about his education.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "legion",
+          "verdict": "missing",
+          "referenceQuote": "Distinction Chevalier de la Légion d'honneur",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no information about the Légion d'honneur.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 2,
+      "works": 1,
+      "expertise": 0,
+      "connections": 1,
+      "sources": 3,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 3
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 1,
+      "conversationReadiness": 1,
+      "rationale": "The dossier itself contains only two narrow, well-cited claims from a single 2015 archive.org video: that Bazin was PDG of Accor at the 28 April 2015 general assembly, and that a shareholder asked him about US-minimum-wage-level compensation. Both are directly supported by the quoted passage. No dossier statement overreaches its citation, so no overclaims are found; the three listed unjustified conclusions (PSG sale, HeForShe pay parity, Accor ownership) do not appear as dossier claims and thus cannot be matched. Understanding is low: a reader learns only his 2015 role and one anecdote, not his Colony Capital history, PSG presidency, or current status (the 2015 role is historical, though the dossier correctly dates it rather than asserting it as current). RemainingQuestions is low because the dossier never states what it does not know — it implies coverage of his career from two sentences. ConversationReadiness is minimal: one dated anecdote and a role confirmation give little to prepare a meeting with.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "bounded",
+      "rounds": 2,
+      "requests": 9,
+      "modelCalls": 1,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 92,
+      "failuresByCode": {
+        "challenge-page": 1,
+        "document-empty": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d51046751421aa2de68f50fd68e78&url=https%3a%2f%2fwww.businesstravelnews.com%2fMost-Influential%2f2025%2fSbastien-Bazin&c=16274908534777287905&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMi0AFBVV95cUxPN0Rvbm1HMnB5M1A0YXVhVTdxRTE3R1NmYWRvZE52OU1kMldTSEIxQVpNN0JLejJxbEltakRLQTZ6NmhyOHpnaXVrc0QtNXhtSTZBbGtsUGtPajlWTWtFN1FTa2V2UTAyTkgycU9LVURZWjV4WXFrb3ZsX2VUTXU2LW5qMjF2V3ZXRzRlVXZkRmJzbFZBTkZ4MlRMaUM5blRfWG8tN0dnZlk5S3lpNmg2cmh6X2FmbnM4c2gtOTUtNEd1LTduNEp6ZURZZ3IwNHBX?oc=5: Reading produced no usable text (failed).",
+        "92 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 149453
+    }
+  }
+}

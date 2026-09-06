@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T13:03:02.044Z",
+  "result": {
+    "slug": "mary-barra",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "f2b90e94-4133-4332-a57f-1d18500b147c",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "gm-ceo",
+              "verdict": "missing",
+              "referenceQuote": "has been the chair[1] and chief executive officer (CEO) of General Motors since January 15, 2014",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "first-female-ceo",
+              "verdict": "missing",
+              "referenceQuote": "She is the first female CEO of a 'Big Three' automaker",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "prior-role",
+              "verdict": "missing",
+              "referenceQuote": "Prior to being named CEO, Barra was executive vice president of global product development, purchasing, and supply chain",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "co-op-start",
+              "verdict": "missing",
+              "referenceQuote": "Barra started working for General Motors in 1980 as a co-op student when she was 18 years old",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "Barra graduated from the General Motors Institute (now Kettering University) in 1985, where she obtained a Bachelor of Science in Electrical Engineering",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "honor-societies",
+              "verdict": "missing",
+              "referenceQuote": "Barra was inducted into the engineering honor society Tau Beta Pi[10] (MI Zeta class of 1985) and the honor society IEEE-Eta Kappa Nu (Theta Epsilon chapter 1983) while at Kettering University",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "family-origin",
+              "verdict": "missing",
+              "referenceQuote": "Barra was born in 1961 in Royal Oak, Michigan, to parents of Finnish descent",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "gm-leadership-page",
+              "verdict": "missing",
+              "referenceQuote": "Mary Teresa Barra (née Makela; born December 24, 1961) is an American businesswoman",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so this fact is not recovered.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "mary-barra",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "mary-barra",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "d089dfbb3940a7e384de07cb1fd5041878dcc1d1ac487a8413a68e90d89b63c5",
+            "url": "https://archive.org/details/roadtopowerhowgm0000colb",
+            "hash": "ef516d59541bc8598301073b2b3f9bb1e0fa5c789b2b9b1d93bde22555f04501",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 8,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 8,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 7,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "gm-ceo",
+          "verdict": "missing",
+          "referenceQuote": "has been the chair[1] and chief executive officer (CEO) of General Motors since January 15, 2014",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "first-female-ceo",
+          "verdict": "missing",
+          "referenceQuote": "She is the first female CEO of a 'Big Three' automaker",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "prior-role",
+          "verdict": "missing",
+          "referenceQuote": "Prior to being named CEO, Barra was executive vice president of global product development, purchasing, and supply chain",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "co-op-start",
+          "verdict": "missing",
+          "referenceQuote": "Barra started working for General Motors in 1980 as a co-op student when she was 18 years old",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "Barra graduated from the General Motors Institute (now Kettering University) in 1985, where she obtained a Bachelor of Science in Electrical Engineering",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "honor-societies",
+          "verdict": "missing",
+          "referenceQuote": "Barra was inducted into the engineering honor society Tau Beta Pi[10] (MI Zeta class of 1985) and the honor society IEEE-Eta Kappa Nu (Theta Epsilon chapter 1983) while at Kettering University",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "family-origin",
+          "verdict": "missing",
+          "referenceQuote": "Barra was born in 1961 in Royal Oak, Michigan, to parents of Finnish descent",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "gm-leadership-page",
+          "verdict": "missing",
+          "referenceQuote": "Mary Teresa Barra (née Makela; born December 24, 1961) is an American businesswoman",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so this fact is not recovered.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier contains no claims at all. Identity anchors give only the most basic facts (name, birth date, CEO/chair roles, degrees). One retained source exists but is unclassified, unattributed, and unattempted for extraction, so nothing substantive can be verified — no career history, achievements, leadership record, or current status. The reader learns only who Mary Barra is in a one-line sense, not what she has done; nothing here could prepare someone for a meeting. The two unjustified conclusions (personal responsibility for the ignition switch recall; personal design of GM vehicles) are flagged but appear nowhere in a dossier, so no overclaim can be matched to a cited dossier statement.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 169,
+      "failuresByCode": {
+        "login-required": 1,
+        "document-empty": 1,
+        "http-error": 1,
+        "request-timeout": 6,
+        "transport-failed": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d6393111540afaea2d484bd3584a6&url=https%3a%2f%2fwww.wsj.com%2ftopics%2fperson%2fmary-barra%3fpage%3d4&c=6654874121512481154&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMimwFBVV95cUxOSy04NmYyLVlMajhNMFZaUEc4aEZlTVJ2Y3Fnd0NibDhWN0NtUXgtcVJmdWZNbXRva1RtU08tNDlROUxqM2dMVktOYnl2cVhHZ3ltR0ZsQk82ak1GWkxMMlotcjJyTGlpczQ3M3lPU184MW9GQkhQZndJOVVwenZIcndLTVlzSEl0RjhkdmlseHlrQ3RSWUFfUEluMA?oc=5: Reading produced no usable text (failed).",
+        "169 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 198625
+    }
+  }
+}

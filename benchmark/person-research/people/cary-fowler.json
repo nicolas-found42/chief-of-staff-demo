@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "cary-fowler",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Cary Fowler",
   "industry": "agriculture",
   "role": "Agriculturalist; co-founder of the Svalbard Global Seed Vault",
@@ -63,6 +63,20 @@
       "hash": "519b64f8ed2352bb6fc53f8298cc6e9c41aef967a22f8c65ce313089a7904211",
       "excerpt": "931,788 plays|Cary Fowler| TEDGlobal 2009  • July 2009The wheat, corn and rice we grow today may not thrive in a future threatened by climate change. Cary Fowler takes us inside the Svalbard Global Seed Vault, a vast treasury buried within a frozen mountain in Norway, that stores a diverse group of food-crop seeds ... for whatever tomorrow may bring.TED is supported by ads and partners",
       "rights": "short-quotation"
+    },
+    {
+      "id": "senate-testimony-2024",
+      "url": "https://www.foreign.senate.gov/download/10/02/2024/030624_fowler_testimony1",
+      "title": "Cary Fowler testimony on Global Food Security — Senate Foreign Relations Committee, page 1",
+      "publisher": "United States Senate Foreign Relations Committee",
+      "publishedAt": "2024-03-06",
+      "retrievedAt": "2026-09-06T09:11:15.838495Z",
+      "family": "professional-records",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "5570517d094d012f07a2f3f01ca48802a37227b82c0440e0a53eb1282a0d3039",
+      "excerpt": "Special Envoy for Global Food Security Dr. Cary Fowler’s\nTestimony for Senate Foreign Relations Committee Hearing\non Global Food Security\nMarch 6, 2024\n\nAs the Deputy Coordinator for Diplomacy for the global Feed the Future initiative, I lead the diplomatic agenda for our global food security development efforts.",
+      "rights": "public-record"
     }
   ],
   "facts": [
@@ -233,6 +247,23 @@
       ],
       "importance": "core",
       "acquisition": "app-supported"
+    },
+    {
+      "id": "feed-the-future-diplomacy",
+      "requirements": ["r7", "r11"],
+      "section": "career",
+      "statement": "In his March 6, 2024 Senate testimony, Fowler identified himself as Deputy Coordinator for Diplomacy for the global Feed the Future initiative and described leading its diplomatic agenda.",
+      "effectiveFrom": "2024-03-06",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "senate-testimony-2024",
+          "quote": "As the Deputy Coordinator for Diplomacy for the global Feed the Future initiative, I lead the diplomatic agenda for our global food security development efforts."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "app-supported",
+      "note": "Submitted written testimony, not proof of words spoken. This is a dated self-report of responsibility, not a current-role or whole-programme achievement claim."
     }
   ],
   "unjustified": [
@@ -269,5 +300,12 @@
       "reason": "No retained source documents a constraint environment he worked under."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T09:11:15.838495Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added a dated institutional source and independently inspected responsibility statement. Existing references remain unchanged.",
+      "evidence": "Senate Foreign Relations Committee, March 6, 2024, Fowler submitted testimony page 1; anonymous PDF SHA-256 5e9cc0f6f0ad866176f1708be8a7d6107a6f35714b5dde904269ceac93607b6e. See docs/research/person-benchmark-primary-credit-validation-2026-09-06.md."
+    }
+  ]
 }

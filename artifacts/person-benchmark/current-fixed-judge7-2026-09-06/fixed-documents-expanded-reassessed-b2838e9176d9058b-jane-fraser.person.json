@@ -1,0 +1,425 @@
+{
+  "schemaVersion": 1,
+  "runId": "b2838e9176d9058b",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:05:54.839Z",
+  "reassessmentOf": "b54435b1c60e9dbf",
+  "result": {
+    "slug": "jane-fraser",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "fixed-documents",
+    "failure": null,
+    "assessment": {
+      "operationId": "7d19ec54-ee72-43e1-a131-005155efb3c5",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "citi-ceo",
+              "verdict": "recovered",
+              "referenceQuote": "has been chief executive officer (CEO) of Citi since March 2021 and chair since October 2025",
+              "evidenceQuote": "Jane Fraser has been CEO of Citi since March 2021 and chair since October 2025",
+              "claimId": "3dfddf8497aff5f076c8e8ea6f9dfbd6",
+              "rationale": "The dossier claim states exactly this, including both effective dates.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "first-woman",
+              "verdict": "recovered",
+              "referenceQuote": "She is the first woman to head a major U.S. bank",
+              "evidenceQuote": "she is the first woman to head a major U.S. bank",
+              "claimId": "3dfddf8497aff5f076c8e8ea6f9dfbd6",
+              "rationale": "Paraphrase-equivalent to the reference fact.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "citi-president",
+              "verdict": "missing",
+              "referenceQuote": "In 2019, she was named president of Citigroup and CEO of its consumer banking division",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions her 2019 roles as president of Citigroup or CEO of consumer banking.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "mckinsey",
+              "verdict": "missing",
+              "referenceQuote": "In 1994, Fraser joined McKinsey & Company, working in financial services and global strategy, eventually rising to partner",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement covers her McKinsey career details.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "early-career",
+              "verdict": "missing",
+              "referenceQuote": "she worked as a mergers and acquisitions analyst at Goldman Sachs, London, from July 1988 to July 1990, then as a brokerage associate for Asesores Bursátiles, a Madrid-based securities broker, from August 1990 to June 1992",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement covers Goldman Sachs or Asesores Bursátiles.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "She attended Girton College, Cambridge, from 1985 to 1988, graduating with a BA (promoted to an MA per tradition) in economics",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement covers Girton College or Harvard MBA.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "own-account",
+              "verdict": "missing",
+              "referenceQuote": "It was the making of me because I became much more 80-20 – focusing on what was really important – got good at saying no, and also became more human to the clients who also face many of these issues too",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement covers her own words on combining children and career.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "recognition",
+              "verdict": "missing",
+              "referenceQuote": "has been called the \"Number 1 Woman to Watch\" for two consecutive years by American Banker",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement covers Fortune, American Banker, or Forbes recognitions.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "export-council",
+              "verdict": "missing",
+              "referenceQuote": "She is a member of the President's Export Council",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions the President's Export Council.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "part-time",
+              "verdict": "missing",
+              "referenceQuote": "Fraser worked part-time while raising her young children",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions part-time work at McKinsey.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "writing",
+              "verdict": "missing",
+              "referenceQuote": "Fraser wrote articles on globalization and was a co-author, with thre",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement covers her writing on globalization or co-authorship.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "jane-fraser",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "jane-fraser",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "4711c67305d5d8af219477de36e8b9c6c222dccee28430af86a35a7096d17a29",
+            "url": "https://en.wikipedia.org/wiki/Jane_Fraser_(executive)",
+            "hash": "6f1e118f4c721dacb253ded69f41c62f0d6a2f19ee110bc1dff123c1bf239cb4",
+            "upstreamIndex": "Wikipedia",
+            "cited": false
+          },
+          {
+            "id": "085af752457f3863da5a6fad23aebec96834069fb9a9d805bb1c4102f4c1d5f0",
+            "url": "https://en.wikipedia.org/wiki/Jane_Fraser_(executive)",
+            "hash": "6f1e118f4c721dacb253ded69f41c62f0d6a2f19ee110bc1dff123c1bf239cb4",
+            "upstreamIndex": "Wikipedia",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "3dfddf8497aff5f076c8e8ea6f9dfbd6"
+        ],
+        "recoveredFactIds": [
+          "citi-ceo",
+          "first-woman"
+        ],
+        "exclusiveRecoveredFactIds": [
+          "citi-ceo",
+          "first-woman"
+        ]
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 1,
+      "totalCitations": 1,
+      "integrityFindings": [
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "3dfddf8497aff5f076c8e8ea6f9dfbd6",
+          "detail": "Supported by a partially retained version of https://en.wikipedia.org/wiki/Jane_Fraser_(executive); the passage verified, the surrounding context may not be complete."
+        }
+      ],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 11,
+      "recovered": 2,
+      "partial": 0,
+      "missing": 9,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 10,
+          "recovered": 2
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 1
+        },
+        "r11": {
+          "total": 2,
+          "recovered": 1
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 1
+        },
+        "r17": {
+          "total": 3,
+          "recovered": 1
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r5": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "citi-ceo",
+          "verdict": "recovered",
+          "referenceQuote": "has been chief executive officer (CEO) of Citi since March 2021 and chair since October 2025",
+          "evidenceQuote": "Jane Fraser has been CEO of Citi since March 2021 and chair since October 2025",
+          "claimId": "3dfddf8497aff5f076c8e8ea6f9dfbd6",
+          "rationale": "The dossier claim states exactly this, including both effective dates.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "first-woman",
+          "verdict": "recovered",
+          "referenceQuote": "She is the first woman to head a major U.S. bank",
+          "evidenceQuote": "she is the first woman to head a major U.S. bank",
+          "claimId": "3dfddf8497aff5f076c8e8ea6f9dfbd6",
+          "rationale": "Paraphrase-equivalent to the reference fact.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "citi-president",
+          "verdict": "missing",
+          "referenceQuote": "In 2019, she was named president of Citigroup and CEO of its consumer banking division",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions her 2019 roles as president of Citigroup or CEO of consumer banking.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "mckinsey",
+          "verdict": "missing",
+          "referenceQuote": "In 1994, Fraser joined McKinsey & Company, working in financial services and global strategy, eventually rising to partner",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement covers her McKinsey career details.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "early-career",
+          "verdict": "missing",
+          "referenceQuote": "she worked as a mergers and acquisitions analyst at Goldman Sachs, London, from July 1988 to July 1990, then as a brokerage associate for Asesores Bursátiles, a Madrid-based securities broker, from August 1990 to June 1992",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement covers Goldman Sachs or Asesores Bursátiles.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "She attended Girton College, Cambridge, from 1985 to 1988, graduating with a BA (promoted to an MA per tradition) in economics",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement covers Girton College or Harvard MBA.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "own-account",
+          "verdict": "missing",
+          "referenceQuote": "It was the making of me because I became much more 80-20 – focusing on what was really important – got good at saying no, and also became more human to the clients who also face many of these issues too",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement covers her own words on combining children and career.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "recognition",
+          "verdict": "missing",
+          "referenceQuote": "has been called the \"Number 1 Woman to Watch\" for two consecutive years by American Banker",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement covers Fortune, American Banker, or Forbes recognitions.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "export-council",
+          "verdict": "missing",
+          "referenceQuote": "She is a member of the President's Export Council",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions the President's Export Council.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "part-time",
+          "verdict": "missing",
+          "referenceQuote": "Fraser worked part-time while raising her young children",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions part-time work at McKinsey.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "writing",
+          "verdict": "missing",
+          "referenceQuote": "Fraser wrote articles on globalization and was a co-author, with thre",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement covers her writing on globalization or co-authorship.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 1,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 2,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 1
+    },
+    "usefulness": {
+      "understanding": 2,
+      "remainingQuestions": 1,
+      "conversationReadiness": 1,
+      "rationale": "The dossier clearly identifies the Citi executive and her roles (CEO since March 2021, chair since October 2025, first woman to head a major U.S. bank), anchored to a Wikipedia citation. However, coverage is minimal: no detail on her career history, tenure results, or priorities, and no explicit statement of gaps. A reader knows who she is but could not prepare substantively for a meeting beyond role and title. The confusables (namesake educator, Pilcher pen name) are flagged but do not appear as dossier claims.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "completed",
+      "rounds": 3,
+      "requests": 13,
+      "modelCalls": 1,
+      "sourcesRetained": 2,
+      "leadsInvestigated": 13,
+      "leadsUnresolved": 0,
+      "failuresByCode": {
+        "model-boundary-failed": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 70772
+    }
+  }
+}

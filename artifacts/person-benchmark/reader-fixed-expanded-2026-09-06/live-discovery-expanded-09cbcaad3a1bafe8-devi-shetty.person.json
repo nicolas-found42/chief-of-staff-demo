@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:49:05.744Z",
+  "result": {
+    "slug": "devi-shetty",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "9d7e27e3-f172-4828-8254-4323fdfb0256",
+      "integrity": "completed",
+      "judge": "failed",
+      "phases": {
+        "reference": {
+          "status": "failed",
+          "judgements": [],
+          "failure": "Judge reference assessment failed: openrouter: a model call was in flight when the request ceiling fired (model z-ai/glm-5.3-flash, binding forced_tool_call, HTTP 200, 5161 bytes, ceiling 30000ms)"
+        },
+        "support": {
+          "status": "not-attempted",
+          "failure": null
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "devi-shetty",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 5211,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "devi-shetty",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "failed",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 5161,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 0,
+            "stoppedReason": "The one additional same-binding retry was exhausted."
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "884df4bb812a830656d9cde8457500837b599285e2dc394f1fe42723dcad2aca",
+            "url": "https://en.wikipedia.org/wiki/Narayana_Health",
+            "hash": "1c6befdac40bd607dc2bb7328921f695a841e3db266e352e7ae00330ba40d84c",
+            "upstreamIndex": "en.wikipedia.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 10,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 10,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 9,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r13": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 2,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "founder-chairman",
+          "verdict": "ambiguous",
+          "referenceQuote": "is an Indian cardiac surgeon who is the chairman and founder of Narayana Health, a chain of 24 medical centers in India",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "operations-count",
+          "verdict": "ambiguous",
+          "referenceQuote": "He has performed more than 15,000 heart operations",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "founded-nh",
+          "verdict": "ambiguous",
+          "referenceQuote": "In 2001, Shetty founded Narayana Hrudayalaya (NH), a multi-specialty hospital in Bommasandra on the outskirts of Bangalore",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "neonatal-first",
+          "verdict": "ambiguous",
+          "referenceQuote": "He successfully performed the first neonatal heart surgery in the country in 1992, on a 21-day-old baby Ronnie",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "mother-teresa",
+          "verdict": "ambiguous",
+          "referenceQuote": "In Kolkata he operated on Mother Teresa after she had a heart attack, and subsequently served as her personal physician",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "padma-awards",
+          "verdict": "ambiguous",
+          "referenceQuote": "In 2004 he was awarded the Padma Shri, the fourth highest civilian award, followed by the Padma Bhushan in 2012, the third highest civilian award by the Government of India for his contribution to the field of affordable healthcare",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "training",
+          "verdict": "ambiguous",
+          "referenceQuote": "he completed his MBBS in 1979",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "publication-record",
+          "verdict": "ambiguous",
+          "referenceQuote": "results[0].display_name: Devi Prasad Shetty",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "interview-record",
+          "verdict": "ambiguous",
+          "referenceQuote": "docs[0].top_work: Interview with Devi Shetty, interviewed by Tarun Khanna, Boston, MA",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "affordable-care-thesis",
+          "verdict": "ambiguous",
+          "referenceQuote": "He believes that the cost of healthcare can be reduced by",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "Not assessed: the judge failed for this person.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 146,
+      "failuresByCode": {
+        "document-empty": 4,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "146 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 132566
+    }
+  }
+}

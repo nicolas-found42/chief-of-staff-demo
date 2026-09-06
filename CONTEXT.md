@@ -318,14 +318,16 @@ _Avoid_: Schema (alone), extraction shape, output format
 How a model is made to answer in a Result Shape. Three of them, ordered by how deterministic they
 are: the provider constrains decoding to the shape, or it constrains the arguments of a call the
 model is required to make, or the shape is merely asked for in the prompt. A model gets the most
-deterministic binding it declares support for, and a weaker one only where support is unknown.
+deterministic binding it declares support for by default; a caller may prefer another explicitly
+supported binding for its request (ADR-0065). A weaker one is also eligible when support is unknown
+or an open answer exhibits sustained repetition (ADR-0064).
 _Avoid_: Structured output (names one binding, not the choice), response format, JSON mode
 
 **Model-boundary failure**:
 What a failed call to a model is, at the Shell's one LLM seam. It carries classified facts rather
 than a sentence — which provider and model were called, which upstream answered, why the model
 stopped, the body's byte length, which fields of the answer arrived populated or empty, and the
-top-level keys that came back — under one of eight stable classifications. Callers decide
+top-level keys that came back — under a stable classification. Callers decide
 retryability and wording from those facts, never by matching the message. It records shape only:
 transcripts are private and Source Items are untrusted evidence, so no field of it holds payload
 text.
@@ -438,6 +440,12 @@ One public person represented in the Person Research Benchmark by sourced refere
 conclusions the evidence does not justify. The reference describes what research should recover,
 including evidence the application cannot yet collect.
 _Avoid_: Golden (reserved for transcript expectations), generated example Profile
+
+**Benchmark Assessment**:
+An evaluation of retained Person Research evidence against fixed references and judge configuration.
+A complete assessment covers reference recovery, support and usefulness; reference verdicts are
+not credited until support/usefulness assessment completes and evidence guards pass.
+_Avoid_: Research completion, overall person score
 
 **Person Research Failure**:
 A recorded inability to complete a particular part of researching a person, identifying the failed

@@ -1,0 +1,379 @@
+{
+  "schemaVersion": 1,
+  "runId": "2b5991382eeb01ab",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "incumbent",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:09:42.575Z",
+  "reassessmentOf": "0ed4213b44f7831b",
+  "result": {
+    "slug": "minouche-shafik",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research bounded before the operation completed.",
+    "assessment": {
+      "operationId": "6d08927d-2c89-4248-9bd9-e593f7689e1a",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "columbia-president",
+              "verdict": "ambiguous",
+              "referenceQuote": "20th President of Columbia UniversityIn office1 July 2023 – 14 August 2024",
+              "evidenceQuote": "Nemat Shafik stepping down as President of Columbia University",
+              "claimId": "e43d27f4cdabe820746f1b1e45870c34",
+              "rationale": "Dossier only reports via a third-party tweet that she stepped down as Columbia president in August 2024; it does not state she was the 20th president or the 1 July 2023 start date. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "lse-president",
+              "verdict": "missing",
+              "referenceQuote": "President and Vice Chancellor of the London School of EconomicsIn office1 September 2017 – 1 July 2023",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about her LSE presidency.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "boe-deputy",
+              "verdict": "missing",
+              "referenceQuote": "Deputy Governor of the Bank of England for Markets and BankingIn office1 August 2014 – 28 February 2017",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about her Bank of England deputy governorship.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "dfid-imf-worldbank",
+              "verdict": "missing",
+              "referenceQuote": "previously as permanent secretary of the United Kingdom's Department for International Development from 2008 to 2011",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about DFID, World Bank, or IMF roles.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "chief-economic-advisor",
+              "verdict": "missing",
+              "referenceQuote": "She was appointed as the Chief Economic Advisor to Prime Minister Keir Starmer on 1 September 2025",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about a Chief Economic Advisor appointment.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "peerage",
+              "verdict": "missing",
+              "referenceQuote": "Life peerage 30 September 2020",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about her House of Lords peerage.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "columbia-testimony",
+              "verdict": "missing",
+              "referenceQuote": "On 17 April 2024, Shafik testified before the United States House Committee on Education and the Workforce regarding antisemitism on the Columbia University campus",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about her congressional testimony or resignation pressure.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "va-chair",
+              "verdict": "missing",
+              "referenceQuote": "In January 2025, she was appointed chair of the Victoria and Albert Museum",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about the Victoria and Albert Museum chairmanship.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "book",
+              "verdict": "missing",
+              "referenceQuote": "docs[0].top_work: What We Owe Each Other",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about her authored works.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "American University in Cairo University of Massachusetts, Amherst (BA) London School of Economics (MSc) St Antony's College, Oxford (DPhil)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no statement about her education.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "minouche-shafik",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "minouche-shafik",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "b35c112a9e7b32f83bca868b4cdf419a83fa2c74dd35ae1289884e8e225198c6",
+            "url": "https://archive.org/details/twitter-1823988854853955868",
+            "hash": "fc2a15cca52285d152a8771de7f7273bcdab5de63a44e4249a59c76dcd73de9c",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "689d4957fbacd8f569ec1a75080fec0b5b44b5f961319babfb087d325e2136db",
+            "url": "https://archive.org/details/twitter-1823988854853955868",
+            "hash": "fc2a15cca52285d152a8771de7f7273bcdab5de63a44e4249a59c76dcd73de9c",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "e43d27f4cdabe820746f1b1e45870c34"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 1,
+      "totalCitations": 1,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 10,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 9,
+      "ambiguous": 1,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 10,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 5,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "columbia-president",
+          "verdict": "ambiguous",
+          "referenceQuote": "20th President of Columbia UniversityIn office1 July 2023 – 14 August 2024",
+          "evidenceQuote": "Nemat Shafik stepping down as President of Columbia University",
+          "claimId": "e43d27f4cdabe820746f1b1e45870c34",
+          "rationale": "Dossier only reports via a third-party tweet that she stepped down as Columbia president in August 2024; it does not state she was the 20th president or the 1 July 2023 start date. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "lse-president",
+          "verdict": "missing",
+          "referenceQuote": "President and Vice Chancellor of the London School of EconomicsIn office1 September 2017 – 1 July 2023",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about her LSE presidency.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "boe-deputy",
+          "verdict": "missing",
+          "referenceQuote": "Deputy Governor of the Bank of England for Markets and BankingIn office1 August 2014 – 28 February 2017",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about her Bank of England deputy governorship.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "dfid-imf-worldbank",
+          "verdict": "missing",
+          "referenceQuote": "previously as permanent secretary of the United Kingdom's Department for International Development from 2008 to 2011",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about DFID, World Bank, or IMF roles.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "chief-economic-advisor",
+          "verdict": "missing",
+          "referenceQuote": "She was appointed as the Chief Economic Advisor to Prime Minister Keir Starmer on 1 September 2025",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about a Chief Economic Advisor appointment.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "peerage",
+          "verdict": "missing",
+          "referenceQuote": "Life peerage 30 September 2020",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about her House of Lords peerage.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "columbia-testimony",
+          "verdict": "missing",
+          "referenceQuote": "On 17 April 2024, Shafik testified before the United States House Committee on Education and the Workforce regarding antisemitism on the Columbia University campus",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about her congressional testimony or resignation pressure.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "va-chair",
+          "verdict": "missing",
+          "referenceQuote": "In January 2025, she was appointed chair of the Victoria and Albert Museum",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about the Victoria and Albert Museum chairmanship.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "book",
+          "verdict": "missing",
+          "referenceQuote": "docs[0].top_work: What We Owe Each Other",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about her authored works.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "American University in Cairo University of Massachusetts, Amherst (BA) London School of Economics (MSc) St Antony's College, Oxford (DPhil)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no statement about her education.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 1,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 2,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 2
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 1,
+      "conversationReadiness": 1,
+      "rationale": "The dossier conveys only the bare fact that Shafik stepped down as Columbia president in August 2024, sourced to a single partisan third-party tweet (@HamasAtrocities via an archive). The dossier's own statement is carefully hedged (\"per a third-party tweet\"), so it does not itself overclaim — the listed unjustified conclusions (resignation cause, current-role staleness, BoE policy authorship) are not asserted anywhere in the dossier, so nothing matches them. But understanding is minimal: nothing on her LSE presidency, Bank of England role, or peerage beyond identity anchors, and the sole citation is low-reliability. Remaining questions are low because the dossier does signal thinness via 'claimed' status and hedging, though it never explicitly states what it does not know. Conversation readiness is poor: a reader could mention her resignation timing but little else with confidence.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "bounded",
+      "rounds": 2,
+      "requests": 7,
+      "modelCalls": 1,
+      "sourcesRetained": 2,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 90,
+      "failuresByCode": {
+        "challenge-page": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4f623c264255b5416b2b423ed008&url=https%3a%2f%2fwww.forbes.com%2fsites%2fjamesfarrell%2f2024%2f05%2f16%2fcolumbia-professors-accuse-president-of-unprecedented-assault-on-students-rights-in-no-confidence-vote%2f&c=4358456154132236101&mkt=en-us: Reading produced no usable text (blocked).",
+        "90 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 179966
+    }
+  }
+}

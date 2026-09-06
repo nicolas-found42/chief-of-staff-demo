@@ -1,0 +1,1199 @@
+{
+  "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+  "profileId": "person_5a1d825f612c",
+  "conclusion": "interrupted",
+  "interruption": {
+    "code": "model-boundary-failed",
+    "reason": "The configured model provider failed during extraction."
+  },
+  "startedAt": "2026-09-06T11:27:12.977Z",
+  "finishedAt": "2026-09-06T11:29:24.562Z",
+  "rounds": 1,
+  "modelCalls": 1,
+  "requests": 3,
+  "sourcesRetained": 1,
+  "retainedSourceIds": [
+    "ea41aefb4ea153b47bc836e9155d55645c3bbd0a4ba24bfa84d6fae1fea192d3"
+  ],
+  "claimsPublished": 0,
+  "publishedDossierRevision": 1,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 0,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "57c07df72c213e25fc44bc3004c480f8",
+      "kind": "query",
+      "target": "Maria Ressa Rappler",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 24 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "70f52d062dd36526e6fd116d0cfc9dcf",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.rappler.com%2ftechnology%2fmaria-ressa-journalists-protect-information-integrity-nobel-peace-conference-2026%2f&c=17784057799643982011&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retrieved and retained; extraction failed.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "2a93a8a19c50ec7963d3f497480b8069",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxNelBicEJjaTJBakx1ZERDSzVTeGt4VzJRS3g3c1MzOW02alRzN3dMcEtYTTdqeHBmcmo5QXRkVEliOHZybFgydHJRRE1salNDZks5ZllKV3A1NHBfektvMnQ5RGU2Z1RRMThfaXdwNEF5MmZtdUNnZ1F5ZFloVXRXMzRBVkVyb1NaZEp1aW8xS2FycWFXX3hIcTZacDlfT3JxLWx3YUxxSTcwME5BMjdPel9yOXBFRzk5?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.45,
+        "relevance": 3.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "d6ceb0a5c319b3d174bd2bb459321f71",
+      "kind": "url",
+      "target": "https://doi.org/10.1126/science.adz1697",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.4,
+        "relevance": 0.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "3815dae355fe6d5e43778ab56ac02243",
+      "kind": "url",
+      "target": "https://archive.org/details/KQED_20231202_073000_Firing_Line_With_Margaret_Hoover",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.35,
+        "relevance": 2.925,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "4418171c047a8b448a59a58202da1634",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0007-9086-4628",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.3,
+        "relevance": 0.9,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "35402757bb387a5e8d9278385707ed20",
+      "kind": "url",
+      "target": "https://ror.org/008zh9d08",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.25,
+        "relevance": 0.875,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e381ac9912e23bde1da443c128049d43",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.asahi.com%2fajw%2farticles%2f14457714&c=10851921469924928733&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.2,
+        "relevance": 2.85,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e20656bad3aa2137523db31f59b7ebfb",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMi2wFBVV95cUxNZm54X3VBel9Tb2g0LTlYbkNYVFd2cm1zV2htWTZCY2FmT1YzbEVGTWtUVTlsOVRoNV8tUUF1b3NoYVFpRk1NaEMwM1c4OGRMZkgxSlFrQWYySWZkNFVydGV6MGNJM3JDWXlCbnV0VlVORl9oVmc5VGJvVTg5dnJQeXh1VVpXTjlPWWtSb0RrdkRVUFBWeGF4YnNjZkU1azZCclViYkFpTU14LXdDUjhJOFN1QzFyMTh2Y2lBdkhqREY3TU1rR2RBTnh0TTFZRzEwYWhRbm5FT18yNUk?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.15,
+        "relevance": 2.825,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9f07862932e4eba59ff0648f46eaf0cf",
+      "kind": "url",
+      "target": "https://doi.org/10.1080/21645698.2023.2290752",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.1,
+        "relevance": 0.8,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "b74ea0f33a77d7394cf2b6b7da7a2102",
+      "kind": "url",
+      "target": "https://archive.org/details/KQED_20231202_133000_Firing_Line_With_Margaret_Hoover",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.05,
+        "relevance": 2.775,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "ce3524b69190d03d7fbdc2bce8552a75",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0003-4599-921X",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6,
+        "relevance": 0.75,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "6eabdca6e375ef02c6dcc5b483ff2373",
+      "kind": "url",
+      "target": "https://ror.org/048xgyx59",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.95,
+        "relevance": 0.725,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "82e5e2e43a6a443585b7ef447f713615",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.yahoo.com%2fnews%2fmaria-ressa-philippine-journalist-nobel-040034600.html&c=11201549449827385771&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.9,
+        "relevance": 3.7,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "1cd85571f66bc3c5a21620fe69c201df",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMizwFBVV95cUxOeGtGdThPdGFfV0VqQ082Q0tjeFhUMXVSWVpQQlAzN3ZmTXNzYnlXMTZrVHA2clZSX3NfenhnMEE5bTBQNlZqcloxTHp0Q3k1SWRjUkgyTEJhRjEzV3dDUmlySnBzaFBqY3FwbndpLXlrU1Rndnk2SkVOU1lJVmE1bFBFOXBadldRUG9xNGNpNzZYTDFYVlB3ZVFyeGYtemZ4VFFXMnBRX1RpYUZKLXA4QWhxY3RzQ2psdG1xb1pWa0U4aC02UmZLVWhCY0JCZkk?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.85,
+        "relevance": 0.675,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8492699c69d2c7c0686052143b45fbbf",
+      "kind": "url",
+      "target": "https://europepmc.org/article/PMC/PMC8263364",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.8,
+        "relevance": 0.65,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "f529564d2f093963778925a31fcd07de",
+      "kind": "url",
+      "target": "https://archive.org/details/BBCNEWS_20190214_010000_Newsday",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.75,
+        "relevance": 0.625,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a128881ceb85878281a1b6b7cb69d84c",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0009-2960-0505",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.7,
+        "relevance": 0.6,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "ee76521d1bb255d935c3d66580a69f48",
+      "kind": "url",
+      "target": "https://ror.org/01mtb8v69",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.65,
+        "relevance": 0.575,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a3c7bf9f71f1eec06b43af186942ce29",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.yahoo.com%2fnews%2fnobel-winner-maria-ressa-acquitted-071530282.html&c=4424175569597933032&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.6,
+        "relevance": 3.55,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "517d87d05e5a7655042a82258776a284",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMi6wFBVV95cUxPUDZIWTRuZGhOSlA3YjAwZGl2ajRqWXotZ3JOVWtHSnVwZTAwLW5xN1dyRFFVRkR0bGxmZlFSNU5EcFk5Zld1X3hGaG1tUmFtMWQzRTZhcjc3U3BzWFFYRDZfOE5XeUZSOEVRQmU4TkE3R2IwSGhvaDZWdUFrc19JTWIxUXE2cmJSU2FPdURNWTNleno3eTVNMVBCdzcxZEZYUnlraXQ0RlV3S3hhR3pseWN2dHFMSlpEbEFGWTV6V1FpeW0tZzMxSHJ2OTc3YTJLMGZ5VTBjZGtuajg2My15MERkeHZlNHF4TFBv?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 9.55,
+        "relevance": 2.525,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "ef6342c280ac65b5f716f239a3f264ad",
+      "kind": "url",
+      "target": "https://doi.org/10.2139/ssrn.4406895",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.5,
+        "relevance": 0.5,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "6b7b729a494274a291e2fe770076b61e",
+      "kind": "url",
+      "target": "https://archive.org/details/pdgldfiquveii13o4rs3e0n4d8rd2sr8dmiyzhpm",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.45,
+        "relevance": 3.475,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "20ae654f3f69bf8ed82928908d73d964",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0003-1480-6753",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.4,
+        "relevance": 0.44999999999999996,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "2ab8414afb1953006b6df18244673edd",
+      "kind": "url",
+      "target": "https://ror.org/01wvejv85",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.35,
+        "relevance": 0.42500000000000004,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "6ba63a4c-ab34-4399-95d3-707d9110d626",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "11a39eb8-d810-4c90-ab9f-c184c4736d89",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "Maria Ressa Rappler",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 24 results.",
+      "occurredAt": "2026-09-06T11:28:12.988Z",
+      "observed": {
+        "elapsedMilliseconds": 60003
+      }
+    },
+    {
+      "id": "27d8c3ce-026a-494d-b044-6f4363d0006c",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "ff5e85de-5b16-48e9-93eb-e62938760652",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.yahoo.com%2fnews%2fmaria-ressa-philippine-journalist-nobel-040034600.html&c=11201549449827385771&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.90 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "772ba14c-6232-47da-99d9-39bbf76da58b",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "287afe32-3195-4c63-9253-a1d36ae10615",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.yahoo.com%2fnews%2fnobel-winner-maria-ressa-acquitted-071530282.html&c=4424175569597933032&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.60 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "5378dfe0-171c-4d2c-aca5-7251686665a1",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "cf6eecd0-1d5d-44a8-9714-0835f4280670",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/pdgldfiquveii13o4rs3e0n4d8rd2sr8dmiyzhpm",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.45 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "c984bef6-c151-433b-a7dd-e00b92a7f630",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "7210eed2-fe76-4676-9a8d-c7a671647968",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/KQED_20231202_073000_Firing_Line_With_Margaret_Hoover",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 10.35 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "bfc1ca49-15d2-4ce5-8fbe-2592f0d7a834",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "714ae55c-c842-41b7-820d-366bd8c466c6",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.asahi.com%2fajw%2farticles%2f14457714&c=10851921469924928733&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 10.20 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "b8bdeef0-592b-4728-96e6-4bb62d4ecab5",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "60c9cebe-3fc5-42f5-b5c9-c943a46bed98",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMi2wFBVV95cUxNZm54X3VBel9Tb2g0LTlYbkNYVFd2cm1zV2htWTZCY2FmT1YzbEVGTWtUVTlsOVRoNV8tUUF1b3NoYVFpRk1NaEMwM1c4OGRMZkgxSlFrQWYySWZkNFVydGV6MGNJM3JDWXlCbnV0VlVORl9oVmc5VGJvVTg5dnJQeXh1VVpXTjlPWWtSb0RrdkRVUFBWeGF4YnNjZkU1azZCclViYkFpTU14LXdDUjhJOFN1QzFyMTh2Y2lBdkhqREY3TU1rR2RBTnh0TTFZRzEwYWhRbm5FT18yNUk?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 10.15 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "84de4560-ae86-4379-94cb-f6066f277f1e",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "69a9c643-9eb4-49bd-aa78-998742972f7f",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/KQED_20231202_133000_Firing_Line_With_Margaret_Hoover",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 10.05 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "18da7d49-9370-4f53-830b-4366b7eef6d8",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "8020329c-e21c-4313-8d76-2e49f62283a2",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMi6wFBVV95cUxPUDZIWTRuZGhOSlA3YjAwZGl2ajRqWXotZ3JOVWtHSnVwZTAwLW5xN1dyRFFVRkR0bGxmZlFSNU5EcFk5Zld1X3hGaG1tUmFtMWQzRTZhcjc3U3BzWFFYRDZfOE5XeUZSOEVRQmU4TkE3R2IwSGhvaDZWdUFrc19JTWIxUXE2cmJSU2FPdURNWTNleno3eTVNMVBCdzcxZEZYUnlraXQ0RlV3S3hhR3pseWN2dHFMSlpEbEFGWTV6V1FpeW0tZzMxSHJ2OTc3YTJLMGZ5VTBjZGtuajg2My15MERkeHZlNHF4TFBv?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 9.55 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "4d41f72f-917f-4014-97f9-02921879f842",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "cb9864cb-8b2e-46e7-8d03-74c33a109027",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1126/science.adz1697",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.40 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "e007a132-f951-45ea-ad0f-9f3ad29ba11c",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "27580302-49fb-42df-9ede-a58e83d3bdeb",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0007-9086-4628",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.30 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "01344dea-b519-414f-918c-fb2f7f56651a",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "87ef08fa-8f89-4bb4-aee8-4f2c521fbd73",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/008zh9d08",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.25 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "45157d87-5678-40ea-b738-5b0d2d18ae68",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "56703185-d4af-498c-9e5e-2392bd5b1d55",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1080/21645698.2023.2290752",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.10 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "a6c34708-6bc5-43b1-9148-9d7658179d4e",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "f9ee411b-6249-47ac-b087-408f2f17e182",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0003-4599-921X",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.00 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "4559f3ed-e303-43ea-b195-1874b14c4c39",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "54924897-7c4d-4b5d-aa5e-0c137cce3877",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/048xgyx59",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.95 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "cc3074e7-c53c-49c5-8c51-33f021947561",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "d65a131a-e824-4311-b211-d1e4fa49538f",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMizwFBVV95cUxOeGtGdThPdGFfV0VqQ082Q0tjeFhUMXVSWVpQQlAzN3ZmTXNzYnlXMTZrVHA2clZSX3NfenhnMEE5bTBQNlZqcloxTHp0Q3k1SWRjUkgyTEJhRjEzV3dDUmlySnBzaFBqY3FwbndpLXlrU1Rndnk2SkVOU1lJVmE1bFBFOXBadldRUG9xNGNpNzZYTDFYVlB3ZVFyeGYtemZ4VFFXMnBRX1RpYUZKLXA4QWhxY3RzQ2psdG1xb1pWa0U4aC02UmZLVWhCY0JCZkk?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.85 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "164eeb52-0185-4455-a9bd-67723a7d83d1",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "3f90e575-75db-42f3-acf1-f161f0d1269d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://europepmc.org/article/PMC/PMC8263364",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.80 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "6060dd3f-d39c-4858-81f7-e822002e3206",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "77536194-c796-49a3-bd0c-995daa595a5c",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/BBCNEWS_20190214_010000_Newsday",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.75 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "29c0c316-51b1-4a00-9aa8-fdffb432e5da",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "035ff8b5-9b9a-400d-a730-b6be2a3eae2d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0009-2960-0505",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.70 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "a5a6e8ee-e420-4afb-8dc9-eb0dfefe1bd0",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "4e484a94-1e0a-4f6b-90a8-704b4dec57fe",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/01mtb8v69",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.65 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "0661a41d-191f-489c-93c4-9efcdceba731",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "ee975cec-e79f-4e75-9589-666e83d4dc41",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.2139/ssrn.4406895",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.50 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "4d2d4e8f-9a87-4399-afc7-72a2faeb4b34",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "a640c261-8c6a-4f7a-9700-d5b6cb57234a",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0003-1480-6753",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.40 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "cd33af19-cd0f-45f1-8049-f243cc7eb25e",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "2e8c9667-c824-4de0-8736-8a4d873ae8d9",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/01wvejv85",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.35 ranked below the batch.",
+      "occurredAt": "2026-09-06T11:28:12.990Z",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow."
+    },
+    {
+      "id": "8a6d3126-727a-4077-894d-db1693902839",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "cf1ae3a2-2096-4c13-a261-627374a1f1eb",
+      "attempt": 1,
+      "stage": "rendering",
+      "code": "document-empty",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxNelBicEJjaTJBakx1ZERDSzVTeGt4VzJRS3g3c1MzOW02alRzN3dMcEtYTTdqeHBmcmo5QXRkVEliOHZybFgydHJRRE1salNDZks5ZllKV3A1NHBfektvMnQ5RGU2Z1RRMThfaXdwNEF5MmZtdUNnZ1F5ZFloVXRXMzRBVkVyb1NaZEp1aW8xS2FycWFXX3hIcTZacDlfT3JxLWx3YUxxSTcwME5BMjdPel9yOXBFRzk5?oc=5",
+      "targetKind": "url",
+      "collector": "html-reader",
+      "collectorVersion": "2026-09-06",
+      "reason": "The page parsed but carried no article text.",
+      "occurredAt": "2026-09-06T11:28:14.311Z",
+      "observed": {
+        "status": 200,
+        "finalUrl": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxNelBicEJjaTJBakx1ZERDSzVTeGt4VzJRS3g3c1MzOW02alRzN3dMcEtYTTdqeHBmcmo5QXRkVEliOHZybFgydHJRRE1salNDZks5ZllKV3A1NHBfektvMnQ5RGU2Z1RRMThfaXdwNEF5MmZtdUNnZ1F5ZFloVXRXMzRBVkVyb1NaZEp1aW8xS2FycWFXX3hIcTZacDlfT3JxLWx3YUxxSTcwME5BMjdPel9yOXBFRzk5?oc=5&hl=en-US&gl=US&ceid=US:en",
+        "contentType": "text/html",
+        "bytes": 582238,
+        "bodyHash": "4377303a081f1d42365838239cb91dad9da344d794b02373cb450b598c884f0a"
+      },
+      "impact": "No readable text reached extraction from this page.",
+      "remediation": "Check whether the article is client-rendered and needs the browser route."
+    },
+    {
+      "id": "dc92269e-a559-48f6-969f-c45a7e061298",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "f39f7f35-b43d-44b8-8b9b-983e8bc8858e",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.rappler.com%2ftechnology%2fmaria-ressa-journalists-protect-information-integrity-nobel-peace-conference-2026%2f&c=17784057799643982011&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "occurredAt": "2026-09-06T11:28:51.812Z",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "f39f7f35-b43d-44b8-8b9b-983e8bc8858e",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 61241,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts."
+    },
+    {
+      "id": "97390be1-8463-491b-86a7-a8f8e0c4532d",
+      "operationId": "2cca7837-abdc-4fee-8bc8-fdb020f63131",
+      "attemptOf": "f39f7f35-b43d-44b8-8b9b-983e8bc8858e",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4e1136014904ab7acf6b12a4f510&url=https%3a%2f%2fwww.rappler.com%2ftechnology%2fmaria-ressa-journalists-protect-information-integrity-nobel-peace-conference-2026%2f&c=17784057799643982011&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "request_timeout; Retry cancelled by caller..",
+      "occurredAt": "2026-09-06T11:29:24.561Z",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "f39f7f35-b43d-44b8-8b9b-983e8bc8858e",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 2971,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "recoveryStopped": "Retry cancelled by caller."
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "23 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Model-provider failure interrupted research; retrieved evidence and pending work are retained."
+}

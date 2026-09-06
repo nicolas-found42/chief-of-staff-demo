@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:39:40.683Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "ngozi-okonjo-iweala",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "4741354d-8df5-498d-a0d4-f97b9bd5c673",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "wto",
+              "verdict": "ambiguous",
+              "referenceQuote": "is a Nigerian economist who has been serving as the director-general of the World Trade Organization since March 2021. She is the first ever woman and also the first African to lead the World Trade Organization as director-general.",
+              "evidenceQuote": "Ngozi Okonjo-Iweala, the former Nigerian finance minister who is now head of the World Trade Organization",
+              "claimId": "c8bfec1d4941abb955400282e6ca7f82",
+              "rationale": "Dossier confirms she heads the WTO but never states she is the first woman and first African director-general nor the March 2021 date. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "twitter-departure",
+              "verdict": "missing",
+              "referenceQuote": "She also previously sat on the Twitter Board of Directors, and stepped down in February 2021 in connection with her appointment as director-general of the World Trade Organization.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions Twitter's board or her departure from it.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "portfolio",
+              "verdict": "missing",
+              "referenceQuote": "As Managing Director, she had oversight responsibility for the World Bank’s $81 billion operational portfolio in Africa, South Asia, Europe, and Central Asia.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions her World Bank Managing Director role or the $81 billion portfolio.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "ida",
+              "verdict": "missing",
+              "referenceQuote": "In 2010, she chaired the IDA replenishment, the World Bank’s successful drive to raise $49.3 billion in grants and low-interest credit for the world's poorest country.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions the 2010 IDA replenishment or $49.3 billion figure.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "debt",
+              "verdict": "missing",
+              "referenceQuote": "During her first tenure as Finance Minister in the administration of President Olusegun Obasanjo, she spearheaded negotiations with the Paris Club that led to the elimination of US$30 billion of Nigeria's debt, including the outright cancellation of US$18 billion.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions Paris Club negotiations or the $30 billion debt elimination.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "ngozi-okonjo-iweala",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "ngozi-okonjo-iweala",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "3fe98ee181f8cf16103db138d7bc478228e9ba79fbb05b2a7b18cde57ed82961",
+            "url": "https://www.pbs.org/newshour/tag/world-trade-organization",
+            "hash": "8b762147b4e281c131aebf1d07ab5400fadc93b89d3004ee2b3437698484d617",
+            "upstreamIndex": "pbs.org",
+            "cited": false
+          },
+          {
+            "id": "9e60215b583a07e79fcbd1f55e7f8d674e70abe7bef4da0cd441588ff8c93977",
+            "url": "https://www.pbs.org/newshour/tag/world-trade-organization",
+            "hash": "8b762147b4e281c131aebf1d07ab5400fadc93b89d3004ee2b3437698484d617",
+            "upstreamIndex": "pbs.org",
+            "cited": true
+          },
+          {
+            "id": "6addb686f2bef89f1952cff5b6d78517bf08acdf25a88aba46a2fd85eb493755",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d52beed474e908fda7633d1b2453d&url=https%3a%2f%2fwww.digitaljournal.com%2farticle%2fngozi-okonjo-iweala-the-wtos-trailblazing-motivator%2f&c=14420299840945401260&mkt=en-us",
+            "hash": "65cb3035654885203ece3dc8801609798dafa56bd0fb4a94660c04e4b0bc21f7",
+            "upstreamIndex": "digitaljournal.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [
+          "1d7b39fc7a09565d681d39f717eed34c",
+          "c4adf854c9352ef10b0efd45261190fb",
+          "5f9d9caada408ac3d2c98d10ab8c3f6b"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "15c62aad880eb7f07035718033c2e44317d0325540b470751930d8cae17e01e1",
+            "url": "https://archive.org/details/63ewjagszd55sror7yoxnsq4pf4ny0ck4c71rh1j",
+            "hash": "e92d9c26f67f8c62e1b612479b0a5aa05f2a3fa50705071e70aa5cc44f2f5b97",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "bd58ceb0a9e8b39ed628736454440ace06ee07e2dd8db27358f9a9f90ffe1bb6",
+            "url": "https://archive.org/details/63ewjagszd55sror7yoxnsq4pf4ny0ck4c71rh1j",
+            "hash": "e92d9c26f67f8c62e1b612479b0a5aa05f2a3fa50705071e70aa5cc44f2f5b97",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "c8bfec1d4941abb955400282e6ca7f82",
+          "ae611eb8866221ac3f6eb2a35c6db3fb",
+          "026262d834c9021be2d95401e50f4cdd"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 6,
+      "totalCitations": 6,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 4,
+      "ambiguous": 1,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "wto",
+          "verdict": "ambiguous",
+          "referenceQuote": "is a Nigerian economist who has been serving as the director-general of the World Trade Organization since March 2021. She is the first ever woman and also the first African to lead the World Trade Organization as director-general.",
+          "evidenceQuote": "Ngozi Okonjo-Iweala, the former Nigerian finance minister who is now head of the World Trade Organization",
+          "claimId": "c8bfec1d4941abb955400282e6ca7f82",
+          "rationale": "Dossier confirms she heads the WTO but never states she is the first woman and first African director-general nor the March 2021 date. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "twitter-departure",
+          "verdict": "missing",
+          "referenceQuote": "She also previously sat on the Twitter Board of Directors, and stepped down in February 2021 in connection with her appointment as director-general of the World Trade Organization.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions Twitter's board or her departure from it.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "portfolio",
+          "verdict": "missing",
+          "referenceQuote": "As Managing Director, she had oversight responsibility for the World Bank’s $81 billion operational portfolio in Africa, South Asia, Europe, and Central Asia.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions her World Bank Managing Director role or the $81 billion portfolio.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "ida",
+          "verdict": "missing",
+          "referenceQuote": "In 2010, she chaired the IDA replenishment, the World Bank’s successful drive to raise $49.3 billion in grants and low-interest credit for the world's poorest country.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions the 2010 IDA replenishment or $49.3 billion figure.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "debt",
+          "verdict": "missing",
+          "referenceQuote": "During her first tenure as Finance Minister in the administration of President Olusegun Obasanjo, she spearheaded negotiations with the Paris Club that led to the elimination of US$30 billion of Nigeria's debt, including the outright cancellation of US$18 billion.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions Paris Club negotiations or the $30 billion debt elimination.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 6,
+      "works": 1,
+      "expertise": 0,
+      "connections": 3,
+      "sources": 5,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 3,
+      "sectionsWithGroundedSummary": 3
+    },
+    "usefulness": {
+      "understanding": 2,
+      "remainingQuestions": 2,
+      "conversationReadiness": 2,
+      "rationale": "The dossier clearly establishes who Ngozi Okonjo-Iweala is (Nigerian economist, former Nigerian finance minister, current WTO Director-General) with every claim directly supported by its cited quote, including her book co-authorship and appointment context. Understanding is good but not maximal: the dossier is thin on her actual record and accomplishments beyond titles (no details on her finance ministry tenure, World Bank career, or WTO initiatives). Remaining questions is moderate: the dossier never states what it does not know, and several retained sources were never extracted, implying more completeness than was verified. Conversation readiness is adequate for a basic meeting (correct current role, background, one recent work), but lacks detail on her positions, priorities, or recent statements beyond a single 'said Thursday' snippet. No overclaims were found in the dossier itself; the flagged unjustified conclusions (Twitter board seat, $49.3B IDA donation) do not appear in any dossier claim, so nothing to match.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 3,
+      "sourcesRetained": 5,
+      "leadsInvestigated": 7,
+      "leadsUnresolved": 143,
+      "failuresByCode": {
+        "challenge-page": 1,
+        "document-empty": 3,
+        "identity-unmatched": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d52beed474e908fda7633d1b2453d&url=https%3a%2f%2fwww.agri-pulse.com%2farticles%2f21985-wto-reappoints-ngozi-okonjo-iweala-for-a-second-term&c=12364822223445331636&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMiYkFVX3lxTFBEdGRENHZfY1JyOHJtNlBuRm9tWi1MS0JFVURiWVdFNDdlT21nMmF1dEF2VVA4UVNWWEd1NHR4QlE0Nk9USXNlVnpJbWo0VXlQenRyeHJRVXA1SWtQUHluUVFB?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMib0FVX3lxTE9oX2tNOEhUblk2TEtSX3JtbVdKQkpVV216Q0RVN3R0bUZHRzE2OWNKSHA2aXI0X0p6ckNYQnFqbEpMX0sycjRXZmxQT2NHWHR6Y1N4VVJzUlBHbC1qenNjMW9BaWREcU15NmE5dDJQaw?oc=5: Reading produced no usable text (failed).",
+        "143 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 195922
+    }
+  }
+}

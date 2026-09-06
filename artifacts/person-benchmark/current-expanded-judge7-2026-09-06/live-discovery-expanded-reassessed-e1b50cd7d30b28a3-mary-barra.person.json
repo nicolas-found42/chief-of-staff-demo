@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:36:28.724Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "mary-barra",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "3c13d458-1ea5-4fd2-a011-dfcdbbed7e6f",
+      "integrity": "completed",
+      "judge": "failed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "gm-ceo",
+              "verdict": "partial",
+              "referenceQuote": "has been the chair[1] and chief executive officer (CEO) of General Motors since January 15, 2014",
+              "evidenceQuote": "Mary Barra was named CEO of General Motors in 2013, at age 52.",
+              "claimId": "2aa64bc24adf45a7f9c71df2de5664f6",
+              "rationale": "Dossier says named CEO in 2013; no start date of 15 Jan 2014 or chair since 6 Jan 2016.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "first-female-ceo",
+              "verdict": "ambiguous",
+              "referenceQuote": "She is the first female CEO of a 'Big Three' automaker",
+              "evidenceQuote": "spent more than thirty years building her career before becoming the first woman to ever lead a global automaker.",
+              "claimId": "f0de9d4e31d65078d868a58cc29c8861",
+              "rationale": "Dossier states first woman to lead a global automaker, not specifically first female CEO of a Big Three automaker. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "prior-role",
+              "verdict": "missing",
+              "referenceQuote": "Prior to being named CEO, Barra was executive vice president of global product development, purchasing, and supply chain",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier never mentions executive VP of global product development, purchasing and supply chain, or succession of Daniel Akerson.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "co-op-start",
+              "verdict": "missing",
+              "referenceQuote": "Barra started working for General Motors in 1980 as a co-op student when she was 18 years old",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier has no mention of 1980 co-op student start, checking fender panels or hoods, or tuition.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "Barra graduated from the General Motors Institute (now Kettering University) in 1985, where she obtained a Bachelor of Science in Electrical Engineering",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier mentions she was an electrical engineer but gives no degrees, years, or institutions.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "honor-societies",
+              "verdict": "missing",
+              "referenceQuote": "Barra was inducted into the engineering honor society Tau Beta Pi[10] (MI Zeta class of 1985) and the honor society IEEE-Eta Kappa Nu (Theta Epsilon chapter 1983) while at Kettering University",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of Tau Beta Pi or IEEE-Eta Kappa Nu.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "family-origin",
+              "verdict": "ambiguous",
+              "referenceQuote": "Barra was born in 1961 in Royal Oak, Michigan, to parents of Finnish descent",
+              "evidenceQuote": "Beginning as a rare female electrical engineer and daughter of a General Motors die maker",
+              "claimId": "f0de9d4e31d65078d868a58cc29c8861",
+              "rationale": "Father worked at GM as a die maker, but no birth year/place or Finnish descent stated. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "gm-leadership-page",
+              "verdict": "missing",
+              "referenceQuote": "Mary Teresa Barra (née Makela; born December 24, 1961) is an American businesswoman",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Nothing in the dossier about GM leadership pages rendering client-side.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "failed",
+          "failure": "Judge support/usefulness assessment failed: openrouter: a model call was in flight when the request ceiling fired (model z-ai/glm-5.3-flash, binding forced_tool_call, HTTP 200, 41262 bytes, ceiling 30000ms)"
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "mary-barra",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "mary-barra",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 1775,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "mary-barra",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "failed",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 41262,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 0,
+            "stoppedReason": "The one additional same-binding retry was exhausted."
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "2c18ad286b847981215918f1c1b71f7e476c3388d1641220d21c05a90a0bbf67",
+            "url": "http://www.greencarreports.com/news/mary-barra",
+            "hash": "06f4c58b1657fcb7e579b68c70600e071aa7b3dc9162f562cc42f3662e8c29f6",
+            "upstreamIndex": "greencarreports.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "d089dfbb3940a7e384de07cb1fd5041878dcc1d1ac487a8413a68e90d89b63c5",
+            "url": "https://archive.org/details/roadtopowerhowgm0000colb",
+            "hash": "ef516d59541bc8598301073b2b3f9bb1e0fa5c789b2b9b1d93bde22555f04501",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "18f88bc72a753b0fd0168bd87e13e8fa72681f8687289068b9b034cf72a1e114",
+            "url": "https://archive.org/details/roadtopowerhowgm0000colb",
+            "hash": "ef516d59541bc8598301073b2b3f9bb1e0fa5c789b2b9b1d93bde22555f04501",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "2aa64bc24adf45a7f9c71df2de5664f6",
+          "f0de9d4e31d65078d868a58cc29c8861",
+          "4764384d70043bd140fa4f574d714df6",
+          "d42b0fb8f9cd5cf709608963936a116c",
+          "97574dafa8cbc1b9370f77c641253976",
+          "4221095dfe341b1489cb4b520047751c"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 6,
+      "totalCitations": 6,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 8,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 3,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 7,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "gm-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "has been the chair[1] and chief executive officer (CEO) of General Motors since January 15, 2014",
+          "evidenceQuote": "Mary Barra was named CEO of General Motors in 2013, at age 52.",
+          "claimId": "2aa64bc24adf45a7f9c71df2de5664f6",
+          "rationale": "Original semantic verdict: partial; downgraded to ambiguous because support/usefulness assessment did not complete; positive recovery credit is withheld. Dossier says named CEO in 2013; no start date of 15 Jan 2014 or chair since 6 Jan 2016.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "first-female-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "She is the first female CEO of a 'Big Three' automaker",
+          "evidenceQuote": "spent more than thirty years building her career before becoming the first woman to ever lead a global automaker.",
+          "claimId": "f0de9d4e31d65078d868a58cc29c8861",
+          "rationale": "Dossier states first woman to lead a global automaker, not specifically first female CEO of a Big Three automaker. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "prior-role",
+          "verdict": "missing",
+          "referenceQuote": "Prior to being named CEO, Barra was executive vice president of global product development, purchasing, and supply chain",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier never mentions executive VP of global product development, purchasing and supply chain, or succession of Daniel Akerson.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "co-op-start",
+          "verdict": "missing",
+          "referenceQuote": "Barra started working for General Motors in 1980 as a co-op student when she was 18 years old",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier has no mention of 1980 co-op student start, checking fender panels or hoods, or tuition.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "Barra graduated from the General Motors Institute (now Kettering University) in 1985, where she obtained a Bachelor of Science in Electrical Engineering",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier mentions she was an electrical engineer but gives no degrees, years, or institutions.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "honor-societies",
+          "verdict": "missing",
+          "referenceQuote": "Barra was inducted into the engineering honor society Tau Beta Pi[10] (MI Zeta class of 1985) and the honor society IEEE-Eta Kappa Nu (Theta Epsilon chapter 1983) while at Kettering University",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of Tau Beta Pi or IEEE-Eta Kappa Nu.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "family-origin",
+          "verdict": "ambiguous",
+          "referenceQuote": "Barra was born in 1961 in Royal Oak, Michigan, to parents of Finnish descent",
+          "evidenceQuote": "Beginning as a rare female electrical engineer and daughter of a General Motors die maker",
+          "claimId": "f0de9d4e31d65078d868a58cc29c8861",
+          "rationale": "Father worked at GM as a die maker, but no birth year/place or Finnish descent stated. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "gm-leadership-page",
+          "verdict": "missing",
+          "referenceQuote": "Mary Teresa Barra (née Makela; born December 24, 1961) is an American businesswoman",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Nothing in the dossier about GM leadership pages rendering client-side.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 6,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 3,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 5
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "Not assessed. Judge support/usefulness assessment failed: openrouter: a model call was in flight when the request ceiling fired (model z-ai/glm-5.3-flash, binding forced_tool_call, HTTP 200, 41262 bytes, ceiling 30000ms)",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 2,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 166,
+      "failuresByCode": {
+        "challenge-page": 2,
+        "document-empty": 1,
+        "request-timeout": 6,
+        "transport-failed": 1,
+        "model-boundary-failed": 3
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50d7b7a94763a797415452b0ded0&url=https%3a%2f%2fwww.wsj.com%2ftopics%2fperson%2fmary-barra%3fpage%3d4&c=6654874121512481154&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMimwFBVV95cUxOSy04NmYyLVlMajhNMFZaUEc4aEZlTVJ2Y3Fnd0NibDhWN0NtUXgtcVJmdWZNbXRva1RtU08tNDlROUxqM2dMVktOYnl2cVhHZ3ltR0ZsQk82ak1GWkxMMlotcjJyTGlpczQ3M3lPU184MW9GQkhQZndJOVVwenZIcndLTVlzSEl0RjhkdmlseHlrQ3RSWUFfUEluMA?oc=5: Reading produced no usable text (failed).",
+        "166 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 275082
+    }
+  }
+}

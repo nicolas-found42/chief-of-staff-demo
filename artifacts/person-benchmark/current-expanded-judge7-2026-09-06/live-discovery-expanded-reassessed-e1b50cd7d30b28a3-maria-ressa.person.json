@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:34:45.393Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "maria-ressa",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "a03ba4e9-2aa7-416f-81b5-6ac064584798",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "rappler",
+              "verdict": "missing",
+              "referenceQuote": "In 2012, she was one of the co-founders of the Rappler online news site.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty, so no statement identifies Ressa as a Rappler co-founder in 2012.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "nobel",
+              "verdict": "missing",
+              "referenceQuote": "Prize share: 1/2",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty, so no statement about Ressa receiving one-half of the 2021 Nobel Peace Prize is present.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "joint-nobel",
+              "verdict": "missing",
+              "referenceQuote": "She was awarded the 2021 Nobel Peace Prize jointly with Dmitry Muratov",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty, so no statement about sharing the 2021 Nobel Peace Prize with Dmitry Muratov is present.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "social-investigations",
+              "verdict": "missing",
+              "referenceQuote": "She and Rappler have also documented how social media are being used to spread fake news, harass opponents and manipulate public discourse.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty, so no statement credits Ressa and Rappler with documenting social media disinformation, harassment and manipulation.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "cnn",
+              "verdict": "missing",
+              "referenceQuote": "She then ran CNN's Jakarta bureau from 1995 to 2005.[30] As CNN's lead investigative reporter in Asia for nearly 20 years, she specialized in investigating terrorist networks.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty, so no statement about running CNN's Jakarta bureau 1995–2005 or investigating terrorist networks is present.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "maria-ressa",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "maria-ressa",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "b934861232fa69f0943bde71384ce0b8b1d08d0624d1a471849868fbd081ec82",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d504070f84c39ac4b3b82f018d06e&url=https%3a%2f%2fwww.rappler.com%2ftechnology%2fmaria-ressa-journalists-protect-information-integrity-nobel-peace-conference-2026%2f&c=17784057799643982011&mkt=en-us",
+            "hash": "1e3a6a9120a3cf9273a81dee3a5b788612bdeb5e8fe4abb953fa73cb531cd5f7",
+            "upstreamIndex": "rappler.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 2,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "rappler",
+          "verdict": "missing",
+          "referenceQuote": "In 2012, she was one of the co-founders of the Rappler online news site.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty, so no statement identifies Ressa as a Rappler co-founder in 2012.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "nobel",
+          "verdict": "missing",
+          "referenceQuote": "Prize share: 1/2",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty, so no statement about Ressa receiving one-half of the 2021 Nobel Peace Prize is present.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "joint-nobel",
+          "verdict": "missing",
+          "referenceQuote": "She was awarded the 2021 Nobel Peace Prize jointly with Dmitry Muratov",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty, so no statement about sharing the 2021 Nobel Peace Prize with Dmitry Muratov is present.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "social-investigations",
+          "verdict": "missing",
+          "referenceQuote": "She and Rappler have also documented how social media are being used to spread fake news, harass opponents and manipulate public discourse.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty, so no statement credits Ressa and Rappler with documenting social media disinformation, harassment and manipulation.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "cnn",
+          "verdict": "missing",
+          "referenceQuote": "She then ran CNN's Jakarta bureau from 1995 to 2005.[30] As CNN's lead investigative reporter in Asia for nearly 20 years, she specialized in investigating terrorist networks.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty, so no statement about running CNN's Jakarta bureau 1995–2005 or investigating terrorist networks is present.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 1,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty, so the reader learns nothing beyond three identity anchors (Filipino-American journalist, Rappler co-founder, 2021 Nobel Peace laureate). One raw news source (a 2026 Rappler conference article) is retained but unattempted for extraction, so nothing from it informs the dossier. No claims exist, so no overclaims can be assessed. remainingQuestions scores 1 only because the empty dossier cannot falsely imply completeness — it makes no assertions at all, so a reader is not misled, but nothing is stated about what is known versus unknown. A meeting prep reader would have only a name-recognition level of readiness.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 167,
+      "failuresByCode": {
+        "document-empty": 2,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "167 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 134200
+    }
+  }
+}

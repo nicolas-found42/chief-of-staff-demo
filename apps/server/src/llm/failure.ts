@@ -1,9 +1,10 @@
-import type {
-  ModelBoundaryClassification,
-  ModelBoundaryDiagnostic,
-  ProviderId,
-  ResultShapeDiagnostic,
-  ResultShapeBinding,
+import {
+  ModelBoundaryDiagnosticSchema,
+  type ModelBoundaryClassification,
+  type ModelBoundaryDiagnostic,
+  type ProviderId,
+  type ResultShapeDiagnostic,
+  type ResultShapeBinding,
 } from "@chief-of-staff-demo/shared";
 import type { ZodIssue, ZodType, ZodTypeDef } from "zod";
 
@@ -28,6 +29,8 @@ export interface ModelBoundaryFailureInput {
   status?: number;
   /** The response text, read for its byte length and structure and then dropped. */
   body?: string;
+  /** Observed wire bytes when a streaming response did not finish. No content is retained. */
+  bodyBytes?: number;
   /** The parsed body, where there was one to parse. */
   payload?: unknown;
   /** The container whose fields the diagnostic reports as populated or empty. */
@@ -49,10 +52,31 @@ export class ModelBoundaryError extends Error {
   readonly diagnostic: ModelBoundaryDiagnostic;
 
   constructor(diagnostic: ModelBoundaryDiagnostic) {
-    super(failureMessage(diagnostic));
+    const sanitized = sanitizeModelBoundaryDiagnostic(diagnostic);
+    super(failureMessage(sanitized));
     this.name = "ModelBoundaryError";
-    this.diagnostic = diagnostic;
+    this.diagnostic = sanitized;
   }
+}
+
+/** Keep identifiers and measured shape only, including at durable recorder boundaries. */
+export function sanitizeModelBoundaryDiagnostic(
+  diagnostic: ModelBoundaryDiagnostic,
+): ModelBoundaryDiagnostic {
+  const identifier = (value: string) =>
+    /^[A-Za-z0-9_.:/[\]-]{1,200}$/.test(value) ? value : "[unnamed]";
+  const names = (values: string[]) => values.slice(0, 64).map(identifier);
+  return ModelBoundaryDiagnosticSchema.parse({
+    ...diagnostic,
+    model: identifier(diagnostic.model),
+    upstreamCode: Number.isSafeInteger(diagnostic.upstreamCode) ? diagnostic.upstreamCode : null,
+    upstreamServer:
+      diagnostic.upstreamServer === null ? null : identifier(diagnostic.upstreamServer),
+    finishReason: diagnostic.finishReason === null ? null : identifier(diagnostic.finishReason),
+    topLevelKeys: names(diagnostic.topLevelKeys),
+    populatedFields: names(diagnostic.populatedFields),
+    emptyFields: names(diagnostic.emptyFields),
+  });
 }
 
 /** A Module rejected a model reply without retaining the rejected values. */
@@ -157,7 +181,8 @@ export function modelBoundaryFailure(input: ModelBoundaryFailureInput): ModelBou
     binding: input.call.binding,
     status: input.status ?? null,
     finishReason: finishReason(payload),
-    bodyBytes: input.body === undefined ? 0 : Buffer.byteLength(input.body, "utf8"),
+    bodyBytes:
+      input.bodyBytes ?? (input.body === undefined ? 0 : Buffer.byteLength(input.body, "utf8")),
     topLevelKeys: payload === null ? [] : Object.keys(payload).map(safeName),
     populatedFields: fields.populated,
     emptyFields: fields.empty,
@@ -232,7 +257,7 @@ function upstreamServer(payload: JsonObject | null): string | null {
 /** The numeric code the provider or its upstream gave, where it gave one. */
 function upstreamCode(payload: JsonObject | null): number | null {
   const code = asObject(payload?.error)?.code;
-  if (typeof code === "number" && Number.isInteger(code)) return code;
+  if (typeof code === "number" && Number.isSafeInteger(code)) return code;
   if (typeof code === "string" && /^\d{1,5}$/.test(code)) return Number(code);
   return null;
 }
@@ -264,6 +289,7 @@ function isPopulated(value: unknown): boolean {
 const CLAUSES: Record<ModelBoundaryClassification, string> = {
   transport_failure: "the request never reached the provider",
   request_timeout: "a model call was in flight when the request ceiling fired",
+  repetition_loop: "the streamed answer degenerated into a repetition loop",
   http_error: "the provider refused the call",
   empty_body: "the provider answered with no body",
   unparseable_body: "the provider's body is not JSON",

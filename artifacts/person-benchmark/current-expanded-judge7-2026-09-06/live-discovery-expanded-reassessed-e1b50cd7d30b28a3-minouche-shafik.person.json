@@ -1,0 +1,396 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:38:53.749Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "minouche-shafik",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "a8da5c3d-231a-4a6f-a184-ea4435847804",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "columbia-president",
+              "verdict": "missing",
+              "referenceQuote": "20th President of Columbia UniversityIn office1 July 2023 – 14 August 2024",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "lse-president",
+              "verdict": "missing",
+              "referenceQuote": "President and Vice Chancellor of the London School of EconomicsIn office1 September 2017 – 1 July 2023",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "boe-deputy",
+              "verdict": "missing",
+              "referenceQuote": "Deputy Governor of the Bank of England for Markets and BankingIn office1 August 2014 – 28 February 2017",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "dfid-imf-worldbank",
+              "verdict": "missing",
+              "referenceQuote": "previously as permanent secretary of the United Kingdom's Department for International Development from 2008 to 2011",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "chief-economic-advisor",
+              "verdict": "missing",
+              "referenceQuote": "She was appointed as the Chief Economic Advisor to Prime Minister Keir Starmer on 1 September 2025",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "peerage",
+              "verdict": "missing",
+              "referenceQuote": "Life peerage 30 September 2020",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "columbia-testimony",
+              "verdict": "missing",
+              "referenceQuote": "On 17 April 2024, Shafik testified before the United States House Committee on Education and the Workforce regarding antisemitism on the Columbia University campus",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "va-chair",
+              "verdict": "missing",
+              "referenceQuote": "In January 2025, she was appointed chair of the Victoria and Albert Museum",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "book",
+              "verdict": "missing",
+              "referenceQuote": "docs[0].top_work: What We Owe Each Other",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "American University in Cairo University of Massachusetts, Amherst (BA) London School of Economics (MSc) St Antony's College, Oxford (DPhil)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so the fact is not recovered.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "minouche-shafik",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "minouche-shafik",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "70cc07ebbfe9e5d13d10ab8a4253d04a1994b941e51fafadd7f3a60ee4e12c0f",
+            "url": "https://www.newarab.com/news/columbia-names-egyptian-first-woman-head-university",
+            "hash": "4d19d1c935c0b65abcc2a62f6764a3d415f40baa835df5ec145a1426dec96f04",
+            "upstreamIndex": "newarab.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "b35c112a9e7b32f83bca868b4cdf419a83fa2c74dd35ae1289884e8e225198c6",
+            "url": "https://archive.org/details/twitter-1823988854853955868",
+            "hash": "fc2a15cca52285d152a8771de7f7273bcdab5de63a44e4249a59c76dcd73de9c",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "689d4957fbacd8f569ec1a75080fec0b5b44b5f961319babfb087d325e2136db",
+            "url": "https://archive.org/details/twitter-1823988854853955868",
+            "hash": "fc2a15cca52285d152a8771de7f7273bcdab5de63a44e4249a59c76dcd73de9c",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 10,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 10,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 10,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 5,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "columbia-president",
+          "verdict": "missing",
+          "referenceQuote": "20th President of Columbia UniversityIn office1 July 2023 – 14 August 2024",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "lse-president",
+          "verdict": "missing",
+          "referenceQuote": "President and Vice Chancellor of the London School of EconomicsIn office1 September 2017 – 1 July 2023",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "boe-deputy",
+          "verdict": "missing",
+          "referenceQuote": "Deputy Governor of the Bank of England for Markets and BankingIn office1 August 2014 – 28 February 2017",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "dfid-imf-worldbank",
+          "verdict": "missing",
+          "referenceQuote": "previously as permanent secretary of the United Kingdom's Department for International Development from 2008 to 2011",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "chief-economic-advisor",
+          "verdict": "missing",
+          "referenceQuote": "She was appointed as the Chief Economic Advisor to Prime Minister Keir Starmer on 1 September 2025",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "peerage",
+          "verdict": "missing",
+          "referenceQuote": "Life peerage 30 September 2020",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "columbia-testimony",
+          "verdict": "missing",
+          "referenceQuote": "On 17 April 2024, Shafik testified before the United States House Committee on Education and the Workforce regarding antisemitism on the Columbia University campus",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "va-chair",
+          "verdict": "missing",
+          "referenceQuote": "In January 2025, she was appointed chair of the Victoria and Albert Museum",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "book",
+          "verdict": "missing",
+          "referenceQuote": "docs[0].top_work: What We Owe Each Other",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "American University in Cairo University of Massachusetts, Amherst (BA) London School of Economics (MSc) St Antony's College, Oxford (DPhil)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so the fact is not recovered.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 3,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 1,
+      "conversationReadiness": 1,
+      "rationale": "The dossier body is empty; a reader only gets the identity anchors (names, birth date/place, LSE 2017–2023, Columbia 2023–2024, peerage) and three retained sources. Understanding is minimal but not zero: the anchors do establish who she is and her actual roles. Since the dossier asserts nothing, there are no overclaims and it does not falsely imply completeness, but it also never states what it does not know, so remaining-questions is low. A meeting could not be prepared from this beyond basic identification, so conversation-readiness is low. The three unjustified conclusions listed are candidate checks, not dossier claims, so nothing matches them.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 2,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 141,
+      "failuresByCode": {
+        "challenge-page": 1,
+        "document-empty": 3,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d528daae34d24873f9574408cd38d&url=https%3a%2f%2fwww.forbes.com%2fsites%2fjamesfarrell%2f2024%2f05%2f16%2fcolumbia-professors-accuse-president-of-unprecedented-assault-on-students-rights-in-no-confidence-vote%2f&c=4358456154132236101&mkt=en-us: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMimwFBVV95cUxQVXUwSTAxalFLM3E0UGpOLXZfR296a094eWJsdDNOTUlDRXFobnpYdW5xLWZzb24tT29GQ3lxaEpEdTJtX0t5VkFJc0RSUUM1WTZ5bjlHTHVDMk1kNnlpVkpMUlY1VWZWTWFDM0puNzJUSkkwTlFzR0xiLW41U0RVVkZzb2xQZ21aTHFnSFNwX2l3eDhxSDlsYjNsdw?oc=5: Reading produced no usable text (failed).",
+        "141 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 166105
+    }
+  }
+}

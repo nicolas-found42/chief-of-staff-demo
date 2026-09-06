@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T13:15:25.911Z",
+  "result": {
+    "slug": "ramon-laguarta",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "01af9573-5f28-4717-a80b-efe9c4e07481",
+      "integrity": "completed",
+      "judge": "failed",
+      "phases": {
+        "reference": {
+          "status": "failed",
+          "judgements": [],
+          "failure": "Judge reference assessment failed: openrouter: a model call was in flight when the request ceiling fired (model z-ai/glm-5.3-flash, binding forced_tool_call, HTTP 200, 5507 bytes, ceiling 30000ms)"
+        },
+        "support": {
+          "status": "not-attempted",
+          "failure": null
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "ramon-laguarta",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 5136,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "ramon-laguarta",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "failed",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 5507,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 0,
+            "stoppedReason": "The one additional same-binding retry was exhausted."
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "28a06f11658d53f86ed6124d5ef13585fdf7619f67c041043d85260baaf20aae",
+            "url": "https://www.businessroundtable.org/about-us/members/ramon-laguarta-chief-executive-officer-pepsico",
+            "hash": "f3e79063b6f275f0ca3d1404ff9a03f767e9b1932942e0cede3ee909e1c03130",
+            "upstreamIndex": "businessroundtable.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 9,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 9,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 9,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 5,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "pepsico-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "He became CEO on 3 October 2018",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "sixth-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "He is the sixth CEO in the company's history and the first Spanish CEO of a large American multinational company",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "wimm-bill-dann",
+          "verdict": "ambiguous",
+          "referenceQuote": "Laguarta helped lead the acquisition in 2010 of Russian dairy and juice company Wimm-Bill-Dann, a deal valued at $5.4 billion, the company's second largest acquisition after its purchase of Quaker Oats in 2001",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "essa-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "Laguarta joined PepsiCo in January 1996",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "president-scope",
+          "verdict": "ambiguous",
+          "referenceQuote": "Laguarta was named president of PepsiCo in September 2017. He oversaw PepsiCo's Global Category Groups, its Global Operations, Corporate Strategy and Public Policy & Government Affairs functions",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "appointment-vote",
+          "verdict": "ambiguous",
+          "referenceQuote": "Laguarta was unanimously voted in as PepsiCo's next CEO on 6 August 2018, the same day Indra Nooyi announced she was stepping down",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "pre-pepsico",
+          "verdict": "ambiguous",
+          "referenceQuote": "Before joining PepsiCo he worked at Chupa Chups, a candy company based in Spain known for its lollipops",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "education",
+          "verdict": "ambiguous",
+          "referenceQuote": "Laguarta graduated with bachelor's and master's degrees in business administration from ESADE Business School in Barcelona in 1985. In 1986 he received a master's degree in international management from the Thunderbird School of Global Management",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "leadership-page",
+          "verdict": "ambiguous",
+          "referenceQuote": "Chairman and Chief Executive OfficerChief Executive Officer, Asia Pacific Foods",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "Not assessed: the judge failed for this person.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 149,
+      "failuresByCode": {
+        "document-empty": 6,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://news.google.com/rss/articles/CBMickFVX3lxTE9DN2xkbk5xTzVPbWFsdHdTTkpUbWRDN0JIME1HYVk1UXl0aVFJT1Z4cE1qc2dJTlhhZ2txOVljcnM2NkY3QmJvazFhWV9MMlh0MzFVWmRPZk9XV3hfZlVsQWFqbU1FMjBKNkdHNTYyMnlpd9IBd0FVX3lxTE53ejNSSnY5QlRsdHJ1M2lib2NNWThhTDF4QXJodU1uMWljUFBaZmk2VmNScUxhZWVJWjI5SFEyUlJnTUVCSGJkMnpUcXpaZHlFR1A5b1V5eGtiQVNQSWdzeFF4bUI2VDF5Ti1qV29OWXg0clJyTGJB?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMirAFBVV95cUxONHF5d3RqRllXOWtqaGRvTzZOeHZlTUFVSU1Qa2diTUhEWHVVdzQzU1VYb09qZjNPb0d0el9oYksxT200SGMwdzNzNDF2Qm5ZVGdadmNQc281ekxLRG9Rb0tWNDQ4OWVZVnYwNDFGSzQtYUNrYkVTTlJzVHRsb2pxQkNFdHVLYjZOdktTVWFFVU9yaDQ1dTBuck5iUnVRczhOVTRIWlUtcmxLX28y?oc=5: Reading produced no usable text (failed).",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d66aaabcd446c90f504fb4ae96be7&url=https%3a%2f%2fwww.msn.com%2fen-in%2fmoney%2ftopstories%2fpepsico-global-ceo-in-india-ramon-laguarta-meets-pm-modi-india-set-to-drive-85-of-firms-future-growth%2far-AA1MKYBl&c=17018641362584787356&mkt=en-us: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMinAFBVV95cUxOWDRGeTNLZ2o5TTlzWXpoNW95d0pabm9GdzlHQkttbzN5RVlFYzgwanNQMTFVb0o0R1NOVFpILTlCckRURkU3dnFZX1lEd0ZjSnUyM1pGX3VBSFIyTFR2T2tacy1ZTHhkU25wZ1ZkVlpSdEZQU0ZRSldoRC1VcG40QXRNb3pMUWRKQzNON2ZuZmh4VUZhaTBCTTZEaEM?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMisAFBVV95cUxPTDVmd2dCdmU2bGFhX1lQYmNzQUpFMWp2X0FyXzVzeTVNWGNGS3NRVkxNV1FLdlN4NE9IOTRacXdadnZaekNUdElzMEVkUV9ON0NGOUFMQWtEczJ3dk4zSzJNTXZrR183WjE1VlpVeEVyWnUxd19CMFFpeFFzemNZVmxiQllkNkZPVjNGcEFVbFMzNFZlQUQ1eHNyWlloaE16andvTkg5ZjVFNjRkT1VZbA?oc=5: Reading produced no usable text (failed).",
+        "149 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 133735
+    }
+  }
+}

@@ -1,5 +1,81 @@
 import { z } from "zod";
+import { ModelAttemptEventSchema } from "./llm.js";
 import { PERSON_SOURCE_FAMILIES, type PersonSourceFamily } from "./person-research.js";
+
+/** Wire attempts observed while assessing one public benchmark subject. */
+export const BenchmarkModelAttemptSchema = z.object({
+  call: z.number().int().positive(),
+  subject: z.string().max(80),
+  observation: ModelAttemptEventSchema,
+});
+export type BenchmarkModelAttempt = z.infer<typeof BenchmarkModelAttemptSchema>;
+
+/** Independently authored positive expectations, never a census of absent capabilities. */
+export const BenchmarkCollectionScenarioSchema = z.object({
+  id: z.string().min(1).max(80),
+  categories: z.array(z.string().min(1).max(200)).min(2).max(10),
+  expected: z
+    .array(
+      z.object({
+        slug: z.string().min(1).max(80),
+        factIds: z.array(z.string().min(1).max(80)).min(1).max(20),
+      }),
+    )
+    .min(1)
+    .max(200),
+  rationale: z.string().min(1).max(2000),
+});
+export type BenchmarkCollectionScenario = z.infer<typeof BenchmarkCollectionScenarioSchema>;
+
+export const BenchmarkCollectionAssessmentSchema = z.object({
+  slug: z.string().max(80),
+  verdict: z.enum(["supported", "unsupported", "ambiguous"]),
+  rationale: z.string().max(2000),
+  evidence: z
+    .array(
+      z.object({
+        category: z.string().max(200),
+        claimId: z.string().max(200),
+        quote: z.string().max(2000),
+        referenceFactId: z.string().max(80),
+        referenceQuote: z.string().max(2000),
+      }),
+    )
+    .max(20),
+});
+
+const CollectionMatchSchema = z.object({
+  slug: z.string(),
+  claimIds: z.array(z.string()),
+  workIds: z.array(z.string()),
+  citations: z.array(
+    z.object({ sourceId: z.string(), quote: z.string(), url: z.string(), hash: z.string() }),
+  ),
+  gaps: z.array(z.string()),
+});
+export const BenchmarkCollectionResultSchema = z.object({
+  /** Absent on historical reports, which cannot establish complete assessment. */
+  assessmentStatus: z.enum(["completed", "failed"]).optional(),
+  modelAttempts: z.array(BenchmarkModelAttemptSchema).max(1000).optional(),
+  scenarioId: z.string(),
+  requirement: z.literal("r18"),
+  categories: z.array(z.string()),
+  expectedMatches: z.array(z.string()),
+  recoveredMatches: z.array(z.string()),
+  missingMatches: z.array(z.string()),
+  additionalMatchesForReview: z.array(z.string()),
+  assessments: z.array(BenchmarkCollectionAssessmentSchema),
+  demonstrated: z.array(CollectionMatchSchema),
+  claimed: z.array(CollectionMatchSchema),
+  coverage: z.object({
+    activeProfiles: z.number().int().nonnegative(),
+    researchedProfiles: z.number().int().nonnegative(),
+    demonstrated: z.number().int().nonnegative(),
+    claimedOnly: z.number().int().nonnegative(),
+  }),
+  scope: z.string(),
+});
+export type BenchmarkCollectionResult = z.infer<typeof BenchmarkCollectionResultSchema>;
 
 /**
  * The Person Research Benchmark (issue #228).
@@ -247,6 +323,11 @@ export type BenchmarkMode = z.infer<typeof BenchmarkModeSchema>;
  * record whatever a model thinks of the sentence it supports.
  */
 export const BenchmarkIntegrityFindingSchema = z.object({
+  /** Stable evidence identity, excluding generated claim/source IDs. */
+  fingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   check: z.enum([
     "citation-quote-present",
     "citation-source-retained",
@@ -295,6 +376,9 @@ export const BenchmarkOverclaimSchema = z.object({
     "invented-evidence",
   ]),
   citedQuote: z.string().max(4000).nullable(),
+  /** Absent in legacy reports. For validated findings, null means the claim has no citations. */
+  citationIndex: z.number().int().min(0).max(29).nullable().optional(),
+  citedSourceId: z.string().max(200).nullable().optional(),
   rationale: z.string().max(2000),
   /** Set when this matches a reference's recorded unjustified conclusion. */
   matchedUnjustifiedId: z.string().max(80).nullable(),
@@ -302,22 +386,84 @@ export const BenchmarkOverclaimSchema = z.object({
 });
 export type BenchmarkOverclaim = z.infer<typeof BenchmarkOverclaimSchema>;
 
+/** Observed production sources and supported recovery, not reference-person demographics. */
+export const BenchmarkSourceContributionSchema = z.object({
+  family: z.enum([
+    "unclassified",
+    ...(Object.keys(PERSON_SOURCE_FAMILIES) as PersonSourceFamily[]),
+  ]),
+  sources: z
+    .array(
+      z.object({
+        id: z.string().max(200),
+        url: z.string().max(4000),
+        hash: z.string().max(100),
+        upstreamIndex: z.string().max(500).nullable(),
+        cited: z.boolean(),
+      }),
+    )
+    .max(10000),
+  claimIds: z.array(z.string().max(200)).max(10000),
+  recoveredFactIds: z.array(z.string().max(80)).max(200),
+  /** All citations of the matched claim are from this family; not proof of causal necessity. */
+  exclusiveRecoveredFactIds: z.array(z.string().max(80)).max(200),
+});
+export type BenchmarkSourceContribution = z.infer<typeof BenchmarkSourceContributionSchema>;
+
+const SourceContributionTotalsSchema = z.object({
+  people: z.number().int().nonnegative(),
+  retainedSources: z.number().int().nonnegative(),
+  citedSources: z.number().int().nonnegative(),
+  recoveredFacts: z.number().int().nonnegative(),
+  exclusiveRecoveredFacts: z.number().int().nonnegative(),
+});
+
 /**
  * The four measured families, kept separate on purpose: there is no overall
  * score, so a large but unreliable dossier cannot average its way to a pass.
  */
+export const BenchmarkJudgePhasesSchema = z.object({
+  reference: z.object({
+    status: z.enum(["completed", "failed"]),
+    /** Validated semantic verdicts before final support/integrity credit gates. */
+    judgements: z.array(BenchmarkJudgementSchema).max(200),
+    failure: z.string().max(2000).nullable(),
+  }),
+  support: z.object({
+    status: z.enum(["completed", "failed", "not-attempted"]),
+    failure: z.string().max(2000).nullable(),
+    /** Structured findings whose claim identity or verbatim statement could not be verified. */
+    unresolvedFindings: z.array(BenchmarkOverclaimSchema).max(40).optional(),
+  }),
+});
+export type BenchmarkJudgePhases = z.infer<typeof BenchmarkJudgePhasesSchema>;
+
 export const BenchmarkPersonResultSchema = z.object({
   slug: z.string().max(80),
   referenceVersion: z.string().max(40),
   mode: BenchmarkModeSchema,
-  /** Set when this person's evaluation could not be completed. */
+  /** Research or assessment failure; retained even when assessment itself completed. */
   failure: z.string().max(2000).nullable(),
+  /** Explicit evidence that observed research output received both assessments. */
+  assessment: z
+    .object({
+      operationId: z.string().min(1).max(200).nullable(),
+      integrity: z.enum(["completed", "failed"]),
+      judge: z.enum(["completed", "failed"]),
+      phases: BenchmarkJudgePhasesSchema.optional(),
+      modelAttempts: z.array(BenchmarkModelAttemptSchema).max(100).optional(),
+    })
+    .optional(),
+  /** Absent in older reports means unmeasured, not zero contribution. */
+  sourceContributions: z.array(BenchmarkSourceContributionSchema).max(20).optional(),
   factualReliability: z.object({
     /** Claims whose citations verify against their retained source version. */
     verifiedCitations: z.number().int().nonnegative(),
     totalCitations: z.number().int().nonnegative(),
     integrityFindings: z.array(BenchmarkIntegrityFindingSchema).max(200),
     criticalFindings: z.number().int().nonnegative(),
+    /** Complete identity list even when the readable finding detail is sliced. */
+    criticalFindingKeys: z.array(z.string().max(2000)).max(100000).optional(),
     overclaims: z.array(BenchmarkOverclaimSchema).max(100),
     wrongPersonAttributions: z.number().int().nonnegative(),
     contradictedFacts: z.number().int().nonnegative(),
@@ -380,6 +526,21 @@ export const BenchmarkPersonResultSchema = z.object({
 });
 export type BenchmarkPersonResult = z.infer<typeof BenchmarkPersonResultSchema>;
 
+/** Independently inspectable assessment saved as soon as one person finishes. */
+export const BenchmarkPersonArtifactSchema = z.object({
+  schemaVersion: z.literal(1),
+  runId: z.string().max(80),
+  corpusVersion: z.string().max(80),
+  pipeline: z.enum(["incumbent", "expanded"]),
+  judgeProvider: z.string().max(80),
+  judgeModel: z.string().max(200),
+  judgeVersion: z.string().max(40),
+  assessedAt: z.string().max(40),
+  reassessmentOf: z.string().max(80).optional(),
+  result: BenchmarkPersonResultSchema,
+});
+export type BenchmarkPersonArtifact = z.infer<typeof BenchmarkPersonArtifactSchema>;
+
 /**
  * Everything needed to attribute a change to the research change under test.
  * Absent measurements stay absent — an invented token count would defeat the
@@ -415,7 +576,15 @@ export type BenchmarkProvenance = z.infer<typeof BenchmarkProvenanceSchema>;
 
 /** Aggregation over a labelled slice of the collection, with denominators. */
 export const BenchmarkGroupSummarySchema = z.object({
-  dimension: z.enum(["industry", "role", "footprint", "language", "region", "source-family"]),
+  dimension: z.enum([
+    "industry",
+    "role",
+    "footprint",
+    "language",
+    "region",
+    "source-family",
+    "reference-source-family",
+  ]),
   key: z.string().max(120),
   people: z.number().int().nonnegative(),
   referenceFacts: z.number().int().nonnegative(),
@@ -432,6 +601,16 @@ export const BenchmarkReportSchema = z.object({
   /** A run that failed or was interrupted says so; it never reports stale output. */
   status: z.enum(["completed", "failed", "interrupted"]),
   statusDetail: z.string().max(2000),
+  /** Evaluation execution is independent of whether research succeeded. */
+  execution: z
+    .object({
+      status: z.enum(["completed", "interrupted"]),
+      selected: z.array(z.string().min(1).max(80)).max(200),
+      evaluated: z.number().int().nonnegative(),
+      assessed: z.number().int().nonnegative(),
+      scenarioIds: z.array(z.string().min(1).max(80)).max(100),
+    })
+    .optional(),
   mode: BenchmarkModeSchema,
   selection: z.object({
     requested: z.array(z.string().max(80)).max(200),
@@ -439,7 +618,39 @@ export const BenchmarkReportSchema = z.object({
     skipped: z.array(z.object({ slug: z.string().max(80), reason: z.string().max(500) })).max(200),
   }),
   provenance: BenchmarkProvenanceSchema,
+  evidenceBundleHash: z.string().length(64).optional(),
+  /** A new assessment of immutable research evidence; research is not rerun. */
+  reassessment: z
+    .object({
+      originalRunId: z.string().max(80),
+      originalReportHash: z.string().length(64),
+      originalProvenance: BenchmarkProvenanceSchema,
+      evidenceManifestHash: z.string().length(64),
+      lineage: z
+        .object({
+          root: z.string().min(1).max(4000),
+          parent: z.string().min(1).max(1000),
+          parentHash: z.string().length(64),
+        })
+        .optional(),
+      resume: z
+        .object({
+          carriedPeople: z.array(z.string().max(80)).max(200),
+          retriedPeople: z.array(z.string().max(80)).max(200),
+          carriedScenarios: z.array(z.string().max(80)).max(100),
+          retriedScenarios: z.array(z.string().max(80)).max(100),
+        })
+        .optional(),
+      startedAt: z.string().max(40),
+      finishedAt: z.string().max(40),
+      inputCharacters: z.number().int().nonnegative(),
+      outputCharacters: z.number().int().nonnegative(),
+      tokens: z.literal("unavailable"),
+      cost: z.literal("unavailable"),
+    })
+    .optional(),
   people: z.array(BenchmarkPersonResultSchema).max(200),
+  collection: z.array(BenchmarkCollectionResultSchema).max(100).optional(),
   groups: z.array(BenchmarkGroupSummarySchema).max(400),
   /** Reference facts nobody recovered: the concrete follow-up target list. */
   remainingMisses: z
@@ -462,9 +673,38 @@ export const BenchmarkComparisonSchema = z.object({
   schemaVersion: z.literal(1),
   baselineRunId: z.string().max(80),
   candidateRunId: z.string().max(80),
-  /** Conditions that differed between the runs; empty means comparable. */
+  /** Conditions that differed; disclosed research allowances can remain comparable. */
   conditionChanges: z.array(z.string().max(1000)).max(40),
   comparable: z.boolean(),
+  /** Per-side absence remains explicit when an older report did not measure this. */
+  sourceContributions: z
+    .array(
+      z.object({
+        family: z.enum([
+          "unclassified",
+          ...(Object.keys(PERSON_SOURCE_FAMILIES) as PersonSourceFamily[]),
+        ]),
+        baseline: SourceContributionTotalsSchema.nullable(),
+        candidate: SourceContributionTotalsSchema.nullable(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  operational: z.object({
+    baselineStatus: z.enum(["completed", "failed", "interrupted"]),
+    candidateStatus: z.enum(["completed", "failed", "interrupted"]),
+    baseline: z.object({
+      completed: z.number().int().nonnegative(),
+      bounded: z.number().int().nonnegative(),
+      interrupted: z.number().int().nonnegative(),
+    }),
+    candidate: z.object({
+      completed: z.number().int().nonnegative(),
+      bounded: z.number().int().nonnegative(),
+      interrupted: z.number().int().nonnegative(),
+    }),
+    regressedPeople: z.array(z.string().max(80)).max(200),
+  }),
   totals: z.object({
     referenceFacts: z.number().int().nonnegative(),
     baselineRecovered: z.number().int().nonnegative(),
@@ -481,7 +721,10 @@ export const BenchmarkComparisonSchema = z.object({
         referenceFacts: z.number().int().nonnegative(),
         baselineRecovered: z.number().int().nonnegative(),
         candidateRecovered: z.number().int().nonnegative(),
+        baselineConclusion: z.enum(["completed", "bounded", "interrupted"]),
+        candidateConclusion: z.enum(["completed", "bounded", "interrupted"]),
         newCriticalFindings: z.number().int().nonnegative(),
+        newWrongPersonAttributions: z.number().int().nonnegative().optional(),
         newOverclaims: z.number().int().nonnegative(),
       }),
     )

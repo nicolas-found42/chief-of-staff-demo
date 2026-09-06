@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "runId": "2b5991382eeb01ab",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "incumbent",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T11:59:08.821Z",
+  "reassessmentOf": "0ed4213b44f7831b",
+  "result": {
+    "slug": "chimamanda-ngozi-adichie",
+    "referenceVersion": "2026-09-06.2",
+    "mode": "live-discovery",
+    "failure": "Research bounded before the operation completed.",
+    "assessment": {
+      "operationId": "d925e69d-2b84-401c-a760-49ac3607fef9",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "early-writing",
+              "verdict": "missing",
+              "referenceQuote": "She first wrote Decisions (1997), a poetry collection, followed by a play, For Love of Biafra (1998).",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no claims.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "talks",
+              "verdict": "missing",
+              "referenceQuote": "She has also delivered Ted Talks, among them, \"The Danger of a Single Story\" (2009) and \"We Should All Be Feminists\" (2012).",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no claims.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "influences",
+              "verdict": "missing",
+              "referenceQuote": "Adichie has written many works and has cited Chinua Achebe and Buchi Emecheta as inspirations.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no claims.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "honours",
+              "verdict": "missing",
+              "referenceQuote": "such as a MacArthur Fellowship in 2008 and induction into the American Academy of Arts and Sciences in 2017.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no claims.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "catalogue",
+              "verdict": "missing",
+              "referenceQuote": "docs[0].top_work: Americanah",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains no claims.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "chimamanda-ngozi-adichie",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "chimamanda-ngozi-adichie",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "early-writing",
+          "verdict": "missing",
+          "referenceQuote": "She first wrote Decisions (1997), a poetry collection, followed by a play, For Love of Biafra (1998).",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no claims.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "talks",
+          "verdict": "missing",
+          "referenceQuote": "She has also delivered Ted Talks, among them, \"The Danger of a Single Story\" (2009) and \"We Should All Be Feminists\" (2012).",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no claims.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "influences",
+          "verdict": "missing",
+          "referenceQuote": "Adichie has written many works and has cited Chinua Achebe and Buchi Emecheta as inspirations.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no claims.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "honours",
+          "verdict": "missing",
+          "referenceQuote": "such as a MacArthur Fellowship in 2008 and induction into the American Academy of Arts and Sciences in 2017.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no claims.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "catalogue",
+          "verdict": "missing",
+          "referenceQuote": "docs[0].top_work: Americanah",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains no claims.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 0,
+      "distinctFamilies": 0,
+      "distinctUpstreamIndexes": 0,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier is empty — no claims, citations, or passages about Adichie were provided. A reader learns nothing beyond the bare identity anchor line. Since the dossier makes no statements at all, it neither implies completeness nor flags unknowns, so remainingQuestions is 0 and no overclaims can be identified.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "bounded",
+      "rounds": 2,
+      "requests": 7,
+      "modelCalls": 0,
+      "sourcesRetained": 0,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 85,
+      "failuresByCode": {
+        "challenge-page": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://en.wikipedia.org/wiki/Chimamanda_Ngozi_Adichie: Reading produced no usable text (blocked).",
+        "Could not read http://www.wikidata.org/entity/Q230141: Reading produced no usable text (unsupported).",
+        "85 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 120739
+    }
+  }
+}

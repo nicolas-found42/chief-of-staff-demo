@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 1,
+  "runId": "b2838e9176d9058b",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:10:04.029Z",
+  "reassessmentOf": "b54435b1c60e9dbf",
+  "result": {
+    "slug": "michelle-gass",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "fixed-documents",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "97428597-7a07-4ecd-888f-4fa06838a46a",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "levi-ceo",
+              "verdict": "missing",
+              "referenceQuote": "Michelle Gass joined Levi Strauss & Co. in 2023 as president",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "levi-president-scope",
+              "verdict": "missing",
+              "referenceQuote": "where she was responsible for leading the Levi’s® brand and LS&Co.’s global digital and commercial operations",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "kohls",
+              "verdict": "missing",
+              "referenceQuote": "In 2013, Gass joined department store Kohl's as chief customer officer, and in 2015 became the company's chief merchandising and customer officer",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "frappuccino",
+              "verdict": "missing",
+              "referenceQuote": "At Starbucks, she was credited with turning Frappuccino into a $2 billion business, and her other company work included growing the company's Seattle's Best brand, now owned by Nestlé, and later led the retailer's expansion in Europe as Starbucks' EMEA president",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "early-career",
+              "verdict": "missing",
+              "referenceQuote": "She joined consumer goods company Procter and Gamble in 1990, where she worked in product development, before moving to Starbucks in 1996 as manager of its Frappuccino blended iced coffee brand",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education",
+              "verdict": "missing",
+              "referenceQuote": "Gass earned a bachelor's degree in chemical engineering from Worcester Polytechnic Institute in 1990",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "visionary-award",
+              "verdict": "missing",
+              "referenceQuote": "In 2019, the National Retail Federation named Gass as the recipient of its Visionary 2020 award, awarded to the nation's top retail executive",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "boards",
+              "verdict": "missing",
+              "referenceQuote": "In 2019, Gass was elected to the board of directors of PepsiCo",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "commencement",
+              "verdict": "missing",
+              "referenceQuote": "In May 2025, Gass delivered the undergraduate Commencement address",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statements supplied.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "michelle-gass",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "michelle-gass",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "861375b12bd2390530b5aa15bd16fe6bca70963a74e0015e8bcb45d4c27e902a",
+            "url": "https://en.wikipedia.org/wiki/Michelle_Gass",
+            "hash": "18674174124ab3698902a32cfeb9c7168dfc1f361c7ec5e08651dc8491be4599",
+            "upstreamIndex": "Wikipedia",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 9,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 9,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 8,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "levi-ceo",
+          "verdict": "missing",
+          "referenceQuote": "Michelle Gass joined Levi Strauss & Co. in 2023 as president",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "levi-president-scope",
+          "verdict": "missing",
+          "referenceQuote": "where she was responsible for leading the Levi’s® brand and LS&Co.’s global digital and commercial operations",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "kohls",
+          "verdict": "missing",
+          "referenceQuote": "In 2013, Gass joined department store Kohl's as chief customer officer, and in 2015 became the company's chief merchandising and customer officer",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "frappuccino",
+          "verdict": "missing",
+          "referenceQuote": "At Starbucks, she was credited with turning Frappuccino into a $2 billion business, and her other company work included growing the company's Seattle's Best brand, now owned by Nestlé, and later led the retailer's expansion in Europe as Starbucks' EMEA president",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "early-career",
+          "verdict": "missing",
+          "referenceQuote": "She joined consumer goods company Procter and Gamble in 1990, where she worked in product development, before moving to Starbucks in 1996 as manager of its Frappuccino blended iced coffee brand",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education",
+          "verdict": "missing",
+          "referenceQuote": "Gass earned a bachelor's degree in chemical engineering from Worcester Polytechnic Institute in 1990",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "visionary-award",
+          "verdict": "missing",
+          "referenceQuote": "In 2019, the National Retail Federation named Gass as the recipient of its Visionary 2020 award, awarded to the nation's top retail executive",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "boards",
+          "verdict": "missing",
+          "referenceQuote": "In 2019, Gass was elected to the board of directors of PepsiCo",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "commencement",
+          "verdict": "missing",
+          "referenceQuote": "In May 2025, Gass delivered the undergraduate Commencement address",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statements supplied.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 3,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty; the only retained item is source metadata (Wikipedia URL, retrieval timestamp) with no extracted content. The identity anchors give a bare sketch (Levi Strauss CEO since 2024, formerly Kohl's CEO, Starbucks leadership), but nothing substantive about actions, dates, or accomplishments is supported by any cited passage. No statements exist to overreach, so no overclaims can be identified — the failure mode here is absence of evidence, not overstatement. A reader could not prepare for a meeting from this.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 6,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 2,
+      "failuresByCode": {
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "2 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 71939
+    }
+  }
+}

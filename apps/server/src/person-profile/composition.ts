@@ -289,7 +289,7 @@ export function composePersonProfiles(
     },
     runNow: async (profileId) => {
       queue.enqueue(profileId, "explicit");
-      await queue.tick();
+      await queue.tick(profileId);
       return queue.status().jobs.find((job) => job.profileId === profileId)?.operation ?? null;
     },
     dossier: (profileId, visibility = "private") => dossiers.project(profileId, visibility),

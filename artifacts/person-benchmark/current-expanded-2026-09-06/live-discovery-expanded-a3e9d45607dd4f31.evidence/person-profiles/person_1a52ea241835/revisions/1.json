@@ -1,0 +1,23 @@
+{
+  "id": "person_1a52ea241835",
+  "revision": 1,
+  "createdAt": "2026-09-06T11:03:08.128Z",
+  "updatedAt": "2026-09-06T11:03:08.128Z",
+  "fullName": "Anders Danielsson",
+  "primaryEmail": null,
+  "emails": [],
+  "handles": {},
+  "profileUrls": [],
+  "employerHints": [],
+  "role": null,
+  "background": null,
+  "currentEmployer": "Skanska",
+  "socialProfiles": [],
+  "websites": [],
+  "feeds": [],
+  "publications": [],
+  "mentions": [],
+  "evidence": [],
+  "sourceDiagnostics": [],
+  "archivedAt": null
+}

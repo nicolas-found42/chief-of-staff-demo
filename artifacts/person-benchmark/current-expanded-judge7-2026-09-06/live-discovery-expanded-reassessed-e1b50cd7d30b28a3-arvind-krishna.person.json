@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:24:42.719Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "arvind-krishna",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "0f63bd97-e8b4-4fc3-86f0-dcd8a5f8e7a9",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "ceo-date",
+              "verdict": "ambiguous",
+              "referenceQuote": "He has been CEO of IBM since April 2020 and chairman since January 2021.",
+              "evidenceQuote": "Arvind Krishna is Chairman and CEO, IBM",
+              "claimId": "c91e94b4c9b3ee11ace5c1a614a82914",
+              "rationale": "Dossier confirms Krishna is Chairman and CEO of IBM, but nowhere states he became CEO in April 2020 or chairman in January 2021; the dates are absent. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "red-hat",
+              "verdict": "missing",
+              "referenceQuote": "He was a driving force behind IBM's $34 billion acquisition of Red Hat, which closed in July 2019.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no mention of the Red Hat acquisition, its $34 billion value, or its July 2019 close.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "research-career",
+              "verdict": "ambiguous",
+              "referenceQuote": "Krishna joined IBM's Thomas J. Watson Research Center in 1990, and continued in Watson Research for 18 years until 2009. Thereafter, he held a General Manager role in Information management software and systems and technology group of IBM. In 2015, he was promoted to senior vice president of IBM Research.",
+              "evidenceQuote": "Arvind Krishna is senior vice president and director, IBM Research. In this role, he helps guide the company’s overall technical strategy, leading a global organization of approximately 3,000 scientists and technologists located at 12 labs on six continents.",
+              "claimId": "eee961468990279fc0e74c23c3ef405a",
+              "rationale": "The dossier states senior research leadership and earlier general management roles (IBM Systems and Technology Group, IBM Information Management), but never mentions Watson Research or the 1990–2009 period. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "patents",
+              "verdict": "missing",
+              "referenceQuote": "Krishna has co-authored 15 patents, has been the editor of IEEE and ACM journals, and has published extensively in technical journals.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No statement in the dossier credits Krishna with 15 co-authored patents or editing IEEE and ACM journals.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "boards",
+              "verdict": "ambiguous",
+              "referenceQuote": "Arvind is a member of the Board of Directors of the New York Federal Reserve Bank, and he serves on the Board of Directors of Northrop Grumman and the US-India Strategic Partnership Forum.",
+              "evidenceQuote": "he sits on the boards of Northrop Grumman and the New York Federal Reserve",
+              "claimId": "8eccd1f6b772992869122d91c2e09077",
+              "rationale": "Two of the three board memberships (Northrop Grumman, New York Federal Reserve) are stated, but the US-India Strategic Partnership Forum is not mentioned. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "arvind-krishna",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "arvind-krishna",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "aaa115e0614720c90fad40180602a9d07c54964409610031bdec997eb3312028",
+            "url": "https://itif.org/person/arvind-krishna/",
+            "hash": "7ea074f02cec0c8ddf8d0741edde005378e64f968dac6813619b4cb05f7a70bc",
+            "upstreamIndex": "itif.org",
+            "cited": false
+          },
+          {
+            "id": "761bd867c694dab02ca8ea1b91557dfc6e88d354fa04fce056ff809a4728fe00",
+            "url": "https://itif.org/person/arvind-krishna/",
+            "hash": "7ea074f02cec0c8ddf8d0741edde005378e64f968dac6813619b4cb05f7a70bc",
+            "upstreamIndex": "itif.org",
+            "cited": true
+          },
+          {
+            "id": "ff0b8123bec83a9f2b9c3c8d616b79c9a95bc218664160f29ec465ebc278ceb4",
+            "url": "https://www.weforum.org/people/arvind-krishna/",
+            "hash": "12bcc3453e9222298eb4e8ae9c8ce51ae112486898a8c0abb8a3691af69f65ae",
+            "upstreamIndex": "weforum.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [
+          "eee961468990279fc0e74c23c3ef405a",
+          "67df2680456c38a4b14b53fa170bb4eb",
+          "4ab15e1ca54211b9389729f204610634",
+          "13246553a9347332e9d90885e2bfffc7",
+          "80ebe5277ef4eb498c733eb9703ff16d",
+          "d12c33c0d151e9a67b90cdb7cf2ead81",
+          "88bdda1a909ed44261aa8d75efa7a800"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "4791465aa953c717ebd747ae8f32448780e940b83add0506d76e438cba9f1198",
+            "url": "https://archive.org/details/youtube-N3h9h5TK-U8",
+            "hash": "9b638492cd134002f2dcaf7547f36a0a96d4ea98b1aa66805b1f43a88e083ddf",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "1849f808284f2b656e57cda0fae097715f758f08785157bef4a1c628bb7e00cd",
+            "url": "https://archive.org/details/youtube-N3h9h5TK-U8",
+            "hash": "9b638492cd134002f2dcaf7547f36a0a96d4ea98b1aa66805b1f43a88e083ddf",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          },
+          {
+            "id": "846b6f9aa91d94fa37c72580c3f6a101e08dacf3ce64544a049a1983bf1a2b4d",
+            "url": "https://archive.org/details/youtube-If-adSzfoP4",
+            "hash": "2bf55dbed4630bddba8736d206a31ba56a487b32dc9cabcc56651ccceea47a97",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "1feaac85072a31a503b1af19fa2350a0d98e828ddd9f5ac9e84dbac1668b8458",
+            "url": "https://archive.org/details/youtube-If-adSzfoP4",
+            "hash": "2bf55dbed4630bddba8736d206a31ba56a487b32dc9cabcc56651ccceea47a97",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "cff21a442e5df1441e767c795c0b730b",
+          "8eccd1f6b772992869122d91c2e09077",
+          "0dfc2299cf43d3333b84cf4ffe285782",
+          "7967c44639179885cd04e39fd3f5a284",
+          "bd0451439ba3b1cee0f3c5f60f04748c",
+          "c91e94b4c9b3ee11ace5c1a614a82914",
+          "d00d039dda1f769f02250efe1fa14312"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 14,
+      "totalCitations": 14,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [
+        {
+          "claimId": "eee961468990279fc0e74c23c3ef405a",
+          "statement": "Arvind Krishna is senior vice president and director of IBM Research, guiding the company's overall technical strategy and leading a global organization of approximately 3,000 scientists and technologists at 12 labs on six continents.",
+          "kind": "stale-as-current",
+          "citedQuote": "Arvind Krishna is senior vice president and director, IBM Research. In this role, he helps guide the company’s overall technical strategy, leading a global organization of approximately 3,000 scientists and technologists located at 12 labs on six continents.",
+          "citationIndex": 0,
+          "citedSourceId": "761bd867c694dab02ca8ea1b91557dfc6e88d354fa04fce056ff809a4728fe00",
+          "rationale": "The ITIF bio presents this as present tense ('is senior vice president and director'), but the dossier's own supported claims and the 2022 WGS source show Krishna has been IBM Chairman/CEO since 2020. The ITIF page predates his promotion; asserting it as current role contradicts the dossier's other claims.",
+          "matchedUnjustifiedId": null,
+          "reviewRequired": false
+        },
+        {
+          "claimId": "88bdda1a909ed44261aa8d75efa7a800",
+          "statement": "Krishna's current role is senior vice president and director of IBM Research at IBM.",
+          "kind": "stale-as-current",
+          "citedQuote": "Arvind Krishna is senior vice president and director, IBM Research.",
+          "citationIndex": 0,
+          "citedSourceId": "761bd867c694dab02ca8ea1b91557dfc6e88d354fa04fce056ff809a4728fe00",
+          "rationale": "Same stale ITIF bio quote asserting a pre-2020 role as current ('current role is senior vice president and director of IBM Research'), contradicting the supported claim that he is IBM's CEO.",
+          "matchedUnjustifiedId": null,
+          "reviewRequired": false
+        }
+      ],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 2,
+      "ambiguous": 3,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "ceo-date",
+          "verdict": "ambiguous",
+          "referenceQuote": "He has been CEO of IBM since April 2020 and chairman since January 2021.",
+          "evidenceQuote": "Arvind Krishna is Chairman and CEO, IBM",
+          "claimId": "c91e94b4c9b3ee11ace5c1a614a82914",
+          "rationale": "Dossier confirms Krishna is Chairman and CEO of IBM, but nowhere states he became CEO in April 2020 or chairman in January 2021; the dates are absent. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "red-hat",
+          "verdict": "missing",
+          "referenceQuote": "He was a driving force behind IBM's $34 billion acquisition of Red Hat, which closed in July 2019.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no mention of the Red Hat acquisition, its $34 billion value, or its July 2019 close.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "research-career",
+          "verdict": "ambiguous",
+          "referenceQuote": "Krishna joined IBM's Thomas J. Watson Research Center in 1990, and continued in Watson Research for 18 years until 2009. Thereafter, he held a General Manager role in Information management software and systems and technology group of IBM. In 2015, he was promoted to senior vice president of IBM Research.",
+          "evidenceQuote": "Arvind Krishna is senior vice president and director, IBM Research. In this role, he helps guide the company’s overall technical strategy, leading a global organization of approximately 3,000 scientists and technologists located at 12 labs on six continents.",
+          "claimId": "eee961468990279fc0e74c23c3ef405a",
+          "rationale": "The dossier states senior research leadership and earlier general management roles (IBM Systems and Technology Group, IBM Information Management), but never mentions Watson Research or the 1990–2009 period. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "patents",
+          "verdict": "missing",
+          "referenceQuote": "Krishna has co-authored 15 patents, has been the editor of IEEE and ACM journals, and has published extensively in technical journals.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No statement in the dossier credits Krishna with 15 co-authored patents or editing IEEE and ACM journals.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "boards",
+          "verdict": "ambiguous",
+          "referenceQuote": "Arvind is a member of the Board of Directors of the New York Federal Reserve Bank, and he serves on the Board of Directors of Northrop Grumman and the US-India Strategic Partnership Forum.",
+          "evidenceQuote": "he sits on the boards of Northrop Grumman and the New York Federal Reserve",
+          "claimId": "8eccd1f6b772992869122d91c2e09077",
+          "rationale": "Two of the three board memberships (Northrop Grumman, New York Federal Reserve) are stated, but the US-India Strategic Partnership Forum is not mentioned. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 14,
+      "works": 1,
+      "expertise": 4,
+      "connections": 2,
+      "sources": 7,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 3,
+      "sectionsWithGroundedSummary": 6
+    },
+    "usefulness": {
+      "understanding": 2,
+      "remainingQuestions": 1,
+      "conversationReadiness": 2,
+      "rationale": "The dossier establishes who Arvind Krishna is (IBM Chairman/CEO) and his career trajectory (IBM Research head, Systems/Technology GM, security software pioneering), supported by a 2022 summit recording and a journalist's encounter. However, it lacks dates for his career progression, conflates an outdated ITIF bio (SVP IBM Research) with his current CEO role without flagging the timeline, and relies heavily on a single interview-encounter source. Board seats and education are covered. Adequate but not deep; timeline ambiguity is a real gap.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 2,
+      "requests": 24,
+      "modelCalls": 5,
+      "sourcesRetained": 7,
+      "leadsInvestigated": 12,
+      "leadsUnresolved": 262,
+      "failuresByCode": {
+        "challenge-page": 2,
+        "document-empty": 4,
+        "identity-unmatched": 5,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read https://news.google.com/rss/articles/CBMingFBVV95cUxPdHpKU25YblpRLTdpVUowcUMwQWU2M2k2ZEd5ekIzeEJGMXcwNGd3bHB0RjVscG9yaGd0NkZmajlyRmt6TmR3d01DYmpQT3ByVjhhT05QZlRzazkxNGVEc0FHc0liNlFmeXpaNEtPQmFqdV9QMURPdzUyb21zeXFMRnNNUUt3cXEyV0ZkTmJvUk5IemVtbjZ5R0pKOXBUUQ?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://en.wikipedia.org/wiki/Arvind_Krishna_(IBM): Reading produced no usable text (blocked).",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d496df6a84cfb879416da627fa94f&url=https%3a%2f%2fwww.msn.com%2fen-us%2fmoney%2ftop-stocks%2fibm-ceo-arvind-krishna-admits-the-company-faltered-as-shares-crater-24-is-this-their-worst-day-since-black-monday%2far-AA2bEX8W&c=11548224065115653555&mkt=en-us: Reading produced no usable text (failed).",
+        "Could not read https://patents.justia.com/search?q=arvind+krishna+ibm: Reading produced no usable text (blocked).",
+        "Could not read https://archive.org/search?query=arvind+krishna+ibm&and[]=mediatype%3A%22movies%22: Reading produced no usable text (failed).",
+        "262 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 294848
+    }
+  }
+}

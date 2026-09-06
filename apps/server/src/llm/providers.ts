@@ -4,12 +4,14 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   type ProviderId,
   type ResultShapeBinding,
+  type ModelAttemptEvent,
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
 import {
+  modelBoundaryDiagnostic,
   modelBoundaryFailure,
   type AnswerContainer,
   type ModelBoundaryError,
@@ -34,6 +36,19 @@ interface CompletionRequest {
   system: string;
   user: string;
   /**
+   * Request-local preference among bindings the OpenRouter model declares.
+   * Honored only when both tools and tool_choice are declared; unknown or
+   * unsupported preferences leave the strongest supported default intact.
+   * Other providers retain their existing binding policy (ADR-0065).
+   */
+  preferredBinding?: "forced_tool_call";
+  /** One bounded same-binding retry; recovered failures must remain observable. */
+  retry?: {
+    onAttempt: (event: ModelAttemptEvent) => void;
+    /** Optional lifecycle fence, rechecked after backoff before another request. */
+    canRetry?: () => boolean;
+  };
+  /**
    * Sampling temperature. Omitted → the upstream's own default, exactly as
    * before; extraction Modules set 0 so a transcript yields one extraction,
    * not a fresh sample per run.
@@ -49,7 +64,6 @@ interface CompletionRequest {
 }
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
-
 /** The ceiling on one model call. Exported so a test can drive it deterministically. */
 export const REQUEST_TIMEOUT_MS = MODEL_REQUEST_TIMEOUT_MS;
 
@@ -58,7 +72,10 @@ export const STREAM_IDLE_TIMEOUT_MS = MODEL_STREAM_IDLE_TIMEOUT_MS;
 
 interface RequestDeadline {
   signal: AbortSignal;
+  timeRemaining(): number;
+  reportAttempt(event: Omit<ModelAttemptEvent, "attempt" | "binding">): void;
   calling(call: ModelCall): void;
+  observed(response: { status: number; bodyBytes: number }): void;
 }
 
 /** One provider answer, kept only as long as it takes to classify or read it. */
@@ -196,6 +213,7 @@ async function postSseStream(
     timer = setTimeout(() => idle.abort(), STREAM_IDLE_TIMEOUT_MS);
   };
   armIdle();
+  const observed: { status?: number; bodyBytes: number } = { bodyBytes: 0 };
   try {
     let response: Response;
     try {
@@ -205,6 +223,8 @@ async function postSseStream(
         body: JSON.stringify(body),
         signal: idle.signal,
       });
+      observed.status = response.status;
+      deadline.observed({ status: response.status, bodyBytes: 0 });
     } catch (error) {
       throw requestTimeoutOrTransport(call, deadline.signal, error);
     }
@@ -219,9 +239,37 @@ async function postSseStream(
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
-    let toolArguments = "";
+    const toolCalls = new Map<
+      number,
+      {
+        id: string;
+        type: string;
+        name: string;
+        arguments: string;
+        hasFunction: boolean;
+        hasArguments: boolean;
+        checked: number;
+      }
+    >();
     let finishReason: string | null = null;
+    /* The answer surfaces are re-tested for degenerate repetition only after
+       this much new text, so a trickle of one-character deltas does not
+       rescan the whole answer per token. */
+    let contentChecked = 0;
     const seen = { data: false };
+    /** Fail the attempt once an answer surface repeats itself without finishing. */
+    const checkDegenerate = (answer: string, checked: number): number => {
+      if (answer.length - checked < REPEAT_CHECK_STEP) return checked;
+      if (degenerateRepeat(answer)) {
+        throw modelBoundaryFailure({
+          call,
+          classification: "repetition_loop",
+          status: response.status,
+          bodyBytes: observed.bodyBytes,
+        });
+      }
+      return answer.length;
+    };
     const consume = (line: string): boolean => {
       const trimmed = line.trim();
       if (trimmed === "" || trimmed.startsWith(":")) return false;
@@ -247,19 +295,42 @@ async function postSseStream(
       if (typeof choice !== "object" || choice === null) return false;
       if ("delta" in choice && typeof choice.delta === "object" && choice.delta !== null) {
         const delta = choice.delta;
-        if ("content" in delta && typeof delta.content === "string") content += delta.content;
+        if ("content" in delta && typeof delta.content === "string" && delta.content.length) {
+          content += delta.content;
+          armIdle();
+        }
+        /* Reasoning tokens establish activity but their contents never enter
+           the answer or diagnostics. Transport comments establish neither. */
+        if (carriesReasoningActivity(delta)) armIdle();
         if ("tool_calls" in delta && isUnknownArray(delta.tool_calls)) {
-          for (const toolCall of delta.tool_calls) {
+          for (const [position, toolCall] of delta.tool_calls.entries()) {
             if (typeof toolCall !== "object" || toolCall === null) continue;
+            /* Indices identify streams, not arrival order. Older compatible
+               responses omit them; their array position supplies the index. */
+            const index = "index" in toolCall ? toolCall.index : position;
+            if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0) continue;
+            const accumulated = toolCalls.get(index) ?? {
+              id: "",
+              type: "",
+              name: "",
+              arguments: "",
+              hasFunction: false,
+              hasArguments: false,
+              checked: 0,
+            };
+            toolCalls.set(index, accumulated);
+            if ("id" in toolCall && typeof toolCall.id === "string") accumulated.id += toolCall.id;
+            if ("type" in toolCall && typeof toolCall.type === "string")
+              accumulated.type = toolCall.type;
             if (!("function" in toolCall)) continue;
             const fn = toolCall.function;
-            if (
-              typeof fn === "object" &&
-              fn !== null &&
-              "arguments" in fn &&
-              typeof fn.arguments === "string"
-            ) {
-              toolArguments += fn.arguments;
+            if (typeof fn !== "object" || fn === null) continue;
+            accumulated.hasFunction = true;
+            if ("name" in fn && typeof fn.name === "string") accumulated.name += fn.name;
+            if ("arguments" in fn && typeof fn.arguments === "string") {
+              accumulated.hasArguments = true;
+              accumulated.arguments += fn.arguments;
+              if (fn.arguments.length) armIdle();
             }
           }
         }
@@ -275,10 +346,11 @@ async function postSseStream(
       if (!read.ok) {
         /* The abort's origin names the timeout: the seam's ceiling or the idle
            timer — which, before the first token, is also the first-token cap. */
-        throw requestTimeoutOrTransport(call, deadline.signal, read.error);
+        throw requestTimeoutOrTransport(call, deadline.signal, read.error, observed);
       }
       if (read.chunk.done) break;
-      armIdle();
+      observed.bodyBytes += read.chunk.value.byteLength;
+      deadline.observed({ status: response.status, bodyBytes: observed.bodyBytes });
       buffer += decoder.decode(read.chunk.value, { stream: true });
       for (;;) {
         const lineEnd = buffer.indexOf("\n");
@@ -290,24 +362,38 @@ async function postSseStream(
           break;
         }
       }
+      /* A finished stream is never scanned: a close the provider sent is the
+         answer, and garbage in it is the schema's and judge's to catch. An
+         open stream gets its answer surfaces scanned for degenerate
+         repetition. */
       if (done) break;
+      contentChecked = checkDegenerate(content, contentChecked);
+      for (const toolCall of toolCalls.values())
+        toolCall.checked = checkDegenerate(toolCall.arguments, toolCall.checked);
     }
     let message: JsonObject = { role: "assistant", content };
     if (call.binding === "forced_tool_call") {
-      if (toolArguments === "") {
-        message = { role: "assistant", content: "", tool_calls: [] };
-      } else {
-        message = {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            {
-              type: "function",
-              function: { name: "save_extraction", arguments: toolArguments },
-            },
-          ],
-        };
-      }
+      /* Reconstruct the provider's array in index order. The existing reader
+         selects its first call, exactly as for nonstreamed replies; malformed
+         first arguments never borrow from a later call or select its answer. */
+      message = {
+        role: "assistant",
+        content: null,
+        tool_calls: [...toolCalls]
+          .sort(([a], [b]) => a - b)
+          .map(([, toolCall]) => ({
+            ...(toolCall.id ? { id: toolCall.id } : {}),
+            ...(toolCall.type ? { type: toolCall.type } : {}),
+            ...(toolCall.hasFunction
+              ? {
+                  function: {
+                    ...(toolCall.name ? { name: toolCall.name } : {}),
+                    ...(toolCall.hasArguments ? { arguments: toolCall.arguments } : {}),
+                  },
+                }
+              : {}),
+          })),
+      };
     }
     /* A stream that ended without a single token is an empty body, and is
        classified as one — not as an answer that said nothing. */
@@ -318,8 +404,30 @@ async function postSseStream(
     };
   } finally {
     clearTimeout(timer);
+    idle.abort();
     deadline.signal.removeEventListener("abort", onOuterAbort);
   }
+}
+
+/**
+ * OpenRouter streams reasoning as text, an alias, or typed detail deltas.
+ * Only actual nonblank payload establishes activity; signatures and indices
+ * alone do not. This predicate never assembles or retains reasoning.
+ * https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+ */
+function carriesReasoningActivity(delta: object): boolean {
+  const nonblank = (value: unknown) => typeof value === "string" && value.trim().length > 0;
+  if ("reasoning" in delta && nonblank(delta.reasoning)) return true;
+  if ("reasoning_content" in delta && nonblank(delta.reasoning_content)) return true;
+  if (!("reasoning_details" in delta) || !isUnknownArray(delta.reasoning_details)) return false;
+  return delta.reasoning_details.some((detail) => {
+    if (typeof detail !== "object" || detail === null || !("type" in detail)) return false;
+    return (
+      (detail.type === "reasoning.text" && "text" in detail && nonblank(detail.text)) ||
+      (detail.type === "reasoning.summary" && "summary" in detail && nonblank(detail.summary)) ||
+      (detail.type === "reasoning.encrypted" && "data" in detail && nonblank(detail.data))
+    );
+  });
 }
 
 /** The timeout whose ceiling fired, or a transport fault when neither did. */
@@ -327,9 +435,11 @@ function requestTimeoutOrTransport(
   call: ModelCall,
   ceilingSignal: AbortSignal,
   error: unknown,
+  observed: { status?: number; bodyBytes: number } = { bodyBytes: 0 },
 ): ModelBoundaryError {
   if (ceilingSignal.aborted) {
     return modelBoundaryFailure({
+      ...observed,
       call,
       classification: "request_timeout",
       timeoutMs: REQUEST_TIMEOUT_MS,
@@ -337,6 +447,7 @@ function requestTimeoutOrTransport(
   }
   if (error instanceof Error && error.name === "AbortError") {
     return modelBoundaryFailure({
+      ...observed,
       call,
       classification: "request_timeout",
       timeoutMs: STREAM_IDLE_TIMEOUT_MS,
@@ -344,12 +455,13 @@ function requestTimeoutOrTransport(
   }
   if (isRequestTimeout(error)) {
     return modelBoundaryFailure({
+      ...observed,
       call,
       classification: "request_timeout",
       timeoutMs: REQUEST_TIMEOUT_MS,
     });
   }
-  return modelBoundaryFailure({ call, classification: "transport_failure" });
+  return modelBoundaryFailure({ ...observed, call, classification: "transport_failure" });
 }
 
 /** One stream read, with its failure carried instead of thrown. */
@@ -743,11 +855,24 @@ async function openAiCompatibleComplete(
   deadline: RequestDeadline,
   stream: boolean,
 ): Promise<unknown> {
-  /* A declared binding is sent and its answer taken as final. An unknown one
+  /* A declared binding is sent first. An unknown one
      starts at the most deterministic binding and gives up one step at a time,
      because a model that refuses a JSON Schema may still honour a tool call. */
   let index = declared === null ? 0 : RESULT_SHAPE_BINDINGS.indexOf(declared);
+  let retried = false;
+  let recoveryFailure: { error: unknown } | null = null;
   for (;;) {
+    /* Every recovery route crosses this fence, including binding changes and
+       cancellation triggered by the observer of the previous attempt. */
+    if (recoveryFailure && request.retry?.canRetry?.() === false) {
+      deadline.reportAttempt({
+        outcome: "failed",
+        diagnostic: modelBoundaryDiagnostic(recoveryFailure.error) ?? null,
+        delayMs: 0,
+        stoppedReason: "Retry cancelled by caller.",
+      });
+      throw recoveryFailure.error;
+    }
     const call = modelCall(cfg, RESULT_SHAPE_BINDINGS[index] ?? "prompt_only");
     const body = chatCompletionBody(call.binding, cfg, request, schema);
     if (stream) body.stream = true;
@@ -756,24 +881,143 @@ async function openAiCompatibleComplete(
        endpoints that declare everything the body sends. Withheld when the
        declaration is unreadable: the step-down ladder recognizes a refusal by
        the binding's name in the upstream error, and a no-endpoints routing
-       failure names none. Declared bindings are final, so declared models lose
-       nothing. */
+       failure names none. */
     if (cfg.provider === "openrouter" && declared !== null) {
       body.provider = { require_parameters: true };
     }
-    const response = await (stream
-      ? postSseStream(call, url, headers, body, deadline)
-      : postJson(call, url, headers, body, deadline));
+    let response: HttpResponse;
+    try {
+      response = await (stream
+        ? postSseStream(call, url, headers, body, deadline)
+        : postJson(call, url, headers, body, deadline));
+    } catch (error) {
+      const diagnostic = modelBoundaryDiagnostic(error) ?? null;
+      const retryable =
+        diagnostic?.classification === "transport_failure" ||
+        (diagnostic?.classification === "request_timeout" &&
+          diagnostic.timeoutMs === STREAM_IDLE_TIMEOUT_MS);
+      if (request.retry && retryable) {
+        let stoppedReason = deadline.signal.aborted
+          ? "The original request deadline expired."
+          : request.retry.canRetry?.() === false
+            ? "Retry cancelled by caller."
+            : retried
+              ? "The one additional same-binding retry was exhausted."
+              : deadline.timeRemaining() < STREAM_IDLE_TIMEOUT_MS + 500
+                ? "Insufficient original deadline for backoff and another idle window."
+                : null;
+        if (!stoppedReason) {
+          retried = true;
+          deadline.reportAttempt({
+            outcome: "retrying",
+            diagnostic,
+            delayMs: 500,
+            stoppedReason: null,
+          });
+          await retryBackoff(deadline.signal);
+          stoppedReason = deadline.signal.aborted
+            ? "The original request deadline expired."
+            : request.retry.canRetry?.() === false
+              ? "Retry cancelled by caller."
+              : deadline.timeRemaining() < STREAM_IDLE_TIMEOUT_MS
+                ? "Insufficient original deadline for another idle window."
+                : null;
+          if (!stoppedReason) {
+            recoveryFailure = { error };
+            continue;
+          }
+        }
+        deadline.reportAttempt({ outcome: "failed", diagnostic, delayMs: 0, stoppedReason });
+        throw error;
+      }
+      /* ADR-0064 permits recovery from sustained answer repetition even on a
+         declared binding. The next binding gets the call's remaining budget;
+         the final binding preserves the repetition failure. */
+      if (
+        index < RESULT_SHAPE_BINDINGS.length - 1 &&
+        !deadline.signal.aborted &&
+        modelBoundaryDiagnostic(error)?.classification === "repetition_loop"
+      ) {
+        deadline.reportAttempt({
+          outcome: "retrying",
+          diagnostic,
+          delayMs: 0,
+          stoppedReason: null,
+        });
+        recoveryFailure = { error };
+        index += 1;
+        continue;
+      }
+      throw error;
+    }
     if (
       declared === null &&
       index < RESULT_SHAPE_BINDINGS.length - 1 &&
       refusesBinding(call.binding, response)
     ) {
+      const failure = modelBoundaryFailure({
+        call,
+        classification: "http_error",
+        status: response.status,
+        body: response.text,
+      });
+      deadline.reportAttempt({
+        outcome: "retrying",
+        diagnostic: modelBoundaryDiagnostic(failure) ?? null,
+        delayMs: 0,
+        stoppedReason: null,
+      });
+      recoveryFailure = { error: failure };
       index += 1;
       continue;
     }
     return readChatResultShape(modelReply(call, response));
   }
+}
+
+/** Backoff shares the request's deadline and cannot keep an aborted call alive. */
+async function retryBackoff(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 500);
+    signal.addEventListener("abort", finish, { once: true });
+  });
+}
+
+/**
+ * The shortest repeated stretch that proves a degenerate answer. The live
+ * extraction loop repeated a ~24-character JSON fragment indefinitely, so
+ * units up to 64 characters are checked; the shortest test needs 256
+ * characters and the proportional minimum of sixteen repeats together keep
+ * ordinary varied answers out while any real loop trips within a few hundred
+ * characters of the stream.
+ */
+const REPEAT_MAX_PERIOD = 64;
+const REPEAT_MIN_STRETCH = 256;
+const REPEAT_MIN_REPEATS = 16;
+/** Repetition is re-tested only after this much new answer text has arrived. */
+const REPEAT_CHECK_STEP = 64;
+
+function degenerateRepeat(value: string): boolean {
+  for (let period = 1; period <= REPEAT_MAX_PERIOD; period++) {
+    const stretch = Math.max(REPEAT_MIN_STRETCH, period * REPEAT_MIN_REPEATS);
+    if (value.length < stretch) continue;
+    const tail = value.slice(-stretch);
+    let periodic = true;
+    for (let i = period; i < tail.length; i++) {
+      if (tail[i] !== tail[i - period]) {
+        periodic = false;
+        break;
+      }
+    }
+    if (periodic) return true;
+  }
+  return false;
 }
 
 /** Whether a 4xx says the model will not honour the binding that was sent. */
@@ -849,12 +1093,17 @@ function readDeclaredParameters(payload: unknown): Set<string> | null {
 }
 
 /**
- * The most deterministic Result Shape Binding a model declares support for, or
- * `null` when there is no declaration to read — which is not the same as
- * declaring no support, and is the only case allowed to step down.
+ * A supported request preference, otherwise the strongest declared binding.
+ * `null` means there is no declaration to read, not that no binding is supported;
+ * only unknown support permits the ordinary refusal step-down ladder.
  */
-function declaredBinding(declared: Set<string> | null): ResultShapeBinding | null {
+function declaredBinding(
+  declared: Set<string> | null,
+  preferred?: CompletionRequest["preferredBinding"],
+): ResultShapeBinding | null {
   if (!declared) return null;
+  if (preferred === "forced_tool_call" && declared.has("tools") && declared.has("tool_choice"))
+    return "forced_tool_call";
   if (declared.has("structured_outputs") || declared.has("response_format")) {
     return "response_format";
   }
@@ -874,7 +1123,7 @@ async function openrouterComplete(
     cfg,
     request,
     schema,
-    declaredBinding(await openrouterDeclaredParameters(cfg, deadline)),
+    declaredBinding(await openrouterDeclaredParameters(cfg, deadline), request.preferredBinding),
     deadline,
     true,
   );
@@ -929,31 +1178,84 @@ function initialCall(cfg: LlmConfig): ModelCall {
 
 async function withinRequestCeiling<T>(
   cfg: LlmConfig,
+  retry: CompletionRequest["retry"],
   work: (deadline: RequestDeadline) => Promise<T>,
 ): Promise<T> {
   const controller = new AbortController();
+  const expiresAt = Date.now() + REQUEST_TIMEOUT_MS;
   let call = initialCall(cfg);
+  let attempt = 0;
+  let terminalReported = false;
+  const reportAttempt: RequestDeadline["reportAttempt"] = (event) => {
+    if (!attempt || terminalReported) return;
+    if (event.outcome !== "retrying") terminalReported = true;
+    retry?.onAttempt({ ...event, attempt, binding: call.binding });
+  };
+  let observed: { status?: number; bodyBytes: number } = { bodyBytes: 0 };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(
-        modelBoundaryFailure({
-          call,
-          classification: "request_timeout",
-          timeoutMs: REQUEST_TIMEOUT_MS,
-        }),
-      );
+      const failure = modelBoundaryFailure({
+        ...observed,
+        call,
+        classification: "request_timeout",
+        timeoutMs: REQUEST_TIMEOUT_MS,
+      });
+      try {
+        reportAttempt({
+          outcome: "failed",
+          diagnostic: modelBoundaryDiagnostic(failure) ?? null,
+          delayMs: 0,
+          stoppedReason: "The original request deadline expired.",
+        });
+        reject(failure);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error("Model attempt observer failed."));
+      }
     }, REQUEST_TIMEOUT_MS);
   });
   try {
     return await Promise.race([
       work({
         signal: controller.signal,
+        timeRemaining: () => Math.max(0, expiresAt - Date.now()),
+        reportAttempt,
         calling(next) {
+          if (controller.signal.aborted)
+            throw modelBoundaryFailure({
+              call: next,
+              classification: "request_timeout",
+              timeoutMs: REQUEST_TIMEOUT_MS,
+            });
+          attempt += 1;
+          terminalReported = false;
           call = next;
+          observed = { bodyBytes: 0 };
         },
-      }),
+        observed(response) {
+          observed = response;
+        },
+      }).then(
+        (value) => {
+          reportAttempt({
+            outcome: "succeeded",
+            diagnostic: null,
+            delayMs: 0,
+            stoppedReason: null,
+          });
+          return value;
+        },
+        (error: unknown) => {
+          reportAttempt({
+            outcome: "failed",
+            diagnostic: modelBoundaryDiagnostic(error) ?? null,
+            delayMs: 0,
+            stoppedReason: "The attempt failed without further recovery.",
+          });
+          throw error;
+        },
+      ),
       timeout,
     ]);
   } finally {
@@ -968,7 +1270,7 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
        Module, not to this seam. */
     const schema = wireJsonSchema(request.schema);
     if (cfg.provider === "mock") return mockComplete(mockResultPath);
-    return withinRequestCeiling(cfg, async (deadline) => {
+    return withinRequestCeiling(cfg, request.retry, async (deadline) => {
       switch (cfg.provider) {
         case "openai":
           return openaiComplete(cfg, request, schema, deadline);

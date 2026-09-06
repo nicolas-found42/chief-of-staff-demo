@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:38:57.322Z",
+  "result": {
+    "slug": "arvind-krishna",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "7fcd93de-b7c5-47c2-834e-1bcb588816a0",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "ceo-date",
+              "verdict": "missing",
+              "referenceQuote": "He has been CEO of IBM since April 2020 and chairman since January 2021.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no statement about Krishna becoming CEO in April 2020 or chairman in January 2021.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "red-hat",
+              "verdict": "missing",
+              "referenceQuote": "He was a driving force behind IBM's $34 billion acquisition of Red Hat, which closed in July 2019.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about the Red Hat acquisition.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "research-career",
+              "verdict": "missing",
+              "referenceQuote": "Krishna joined IBM's Thomas J. Watson Research Center in 1990, and continued in Watson Research for 18 years until 2009. Thereafter, he held a General Manager role in Information management software and systems and technology group of IBM. In 2015, he was promoted to senior vice president of IBM Research.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about Krishna's Watson Research career from 1990 to 2009.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "patents",
+              "verdict": "missing",
+              "referenceQuote": "Krishna has co-authored 15 patents, has been the editor of IEEE and ACM journals, and has published extensively in technical journals.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about 15 patents or editing IEEE and ACM journals.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "boards",
+              "verdict": "missing",
+              "referenceQuote": "Arvind is a member of the Board of Directors of the New York Federal Reserve Bank, and he serves on the Board of Directors of Northrop Grumman and the US-India Strategic Partnership Forum.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims about board memberships.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "arvind-krishna",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "arvind-krishna",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "c6c10347e8081b3930763b72ebbcf433e1d95f4ff8ae2946a0a27793cbfb1f65",
+            "url": "https://en.wikipedia.org/wiki/Arvind_Krishna_(IBM)",
+            "hash": "6858c5e4f12c43bbcc0e0f6a12466eea3801b2760c8df9a75c99c8cd1412ceb1",
+            "upstreamIndex": "en.wikipedia.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "ceo-date",
+          "verdict": "missing",
+          "referenceQuote": "He has been CEO of IBM since April 2020 and chairman since January 2021.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no statement about Krishna becoming CEO in April 2020 or chairman in January 2021.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "red-hat",
+          "verdict": "missing",
+          "referenceQuote": "He was a driving force behind IBM's $34 billion acquisition of Red Hat, which closed in July 2019.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about the Red Hat acquisition.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "research-career",
+          "verdict": "missing",
+          "referenceQuote": "Krishna joined IBM's Thomas J. Watson Research Center in 1990, and continued in Watson Research for 18 years until 2009. Thereafter, he held a General Manager role in Information management software and systems and technology group of IBM. In 2015, he was promoted to senior vice president of IBM Research.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about Krishna's Watson Research career from 1990 to 2009.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "patents",
+          "verdict": "missing",
+          "referenceQuote": "Krishna has co-authored 15 patents, has been the editor of IEEE and ACM journals, and has published extensively in technical journals.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about 15 patents or editing IEEE and ACM journals.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "boards",
+          "verdict": "missing",
+          "referenceQuote": "Arvind is a member of the Board of Directors of the New York Federal Reserve Bank, and he serves on the Board of Directors of Northrop Grumman and the US-India Strategic Partnership Forum.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims about board memberships.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 1,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is completely empty — no claims, statements, or citations are provided. Only identity anchors (\"IBM chairman and CEO; IIT Kanpur and University of Illinois electrical engineering graduate\") and a single retained Wikipedia source exist. A reader learns essentially nothing verifiable beyond the one-line identity anchor. Since there are no dossier statements, no overclaims can be identified or matched to the listed unjustified conclusions (sole-inventor, personal-acquisition), even though those suggest risks a full dossier might have contained.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 159,
+      "failuresByCode": {
+        "document-empty": 3,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://news.google.com/rss/articles/CBMingFBVV95cUxPdHpKU25YblpRLTdpVUowcUMwQWU2M2k2ZEd5ekIzeEJGMXcwNGd3bHB0RjVscG9yaGd0NkZmajlyRmt6TmR3d01DYmpQT3ByVjhhT05QZlRzazkxNGVEc0FHc0liNlFmeXpaNEtPQmFqdV9QMURPdzUyb21zeXFMRnNNUUt3cXEyV0ZkTmJvUk5IemVtbjZ5R0pKOXBUUQ?oc=5: Reading produced no usable text (failed).",
+        "159 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 144694
+    }
+  }
+}

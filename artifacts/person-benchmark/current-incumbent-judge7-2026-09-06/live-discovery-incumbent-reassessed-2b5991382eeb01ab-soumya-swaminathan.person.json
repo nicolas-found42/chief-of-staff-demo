@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 1,
+  "runId": "2b5991382eeb01ab",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "incumbent",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:14:21.649Z",
+  "reassessmentOf": "0ed4213b44f7831b",
+  "result": {
+    "slug": "soumya-swaminathan",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research bounded before the operation completed.",
+    "assessment": {
+      "operationId": "db50e0b9-ef23-4480-8439-c26405095249",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "who-chief-scientist",
+              "verdict": "missing",
+              "referenceQuote": "Subsequently till 2022, she served as the chief scientist at the World Health Organization under the leadership of Director General Tedros Adhanom Ghebreyesus",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "who-ddg",
+              "verdict": "missing",
+              "referenceQuote": "From October 2017 to March 2019, she was the deputy director general of programmes (DDP) at the World Health Organization",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "icmr",
+              "verdict": "missing",
+              "referenceQuote": "Soumya served as Secretary to the Government of India for Health Research and Director General of the Indian Council of Medical Research (2015–2017)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "icmr-priorities",
+              "verdict": "missing",
+              "referenceQuote": "where she prioritized evidence-based health policy, research capacity building in medical schools, and strengthening south-south partnerships in health sciences",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "research-field",
+              "verdict": "missing",
+              "referenceQuote": "is an Indian paediatrician and clinical scientist known for her research on tuberculosis and HIV",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "training",
+              "verdict": "missing",
+              "referenceQuote": "Soumya received an M.B.B.S. from the Armed Forces Medical College in Pune. She has an M.D. in pediatrics from All India Institute of Medical Sciences in New Delhi",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "leicester",
+              "verdict": "missing",
+              "referenceQuote": "From 1989 to 1990, Soumya was a research fellow (registrar) in the Department of Pediatric Respiratory Diseases at the University of Leicester in the United Kingdom",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "family",
+              "verdict": "missing",
+              "referenceQuote": "Soumya is the daughter of \"Father of Green Revolution of India\", M. S. Swaminathan and Indian educationalist Mina Swaminathan",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "publication-record",
+              "verdict": "missing",
+              "referenceQuote": "results[0].display_name: Soumya Swaminathan",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "soumya-swaminathan",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "soumya-swaminathan",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 9,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 9,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 8,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 5,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r13": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "who-chief-scientist",
+          "verdict": "missing",
+          "referenceQuote": "Subsequently till 2022, she served as the chief scientist at the World Health Organization under the leadership of Director General Tedros Adhanom Ghebreyesus",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "who-ddg",
+          "verdict": "missing",
+          "referenceQuote": "From October 2017 to March 2019, she was the deputy director general of programmes (DDP) at the World Health Organization",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "icmr",
+          "verdict": "missing",
+          "referenceQuote": "Soumya served as Secretary to the Government of India for Health Research and Director General of the Indian Council of Medical Research (2015–2017)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "icmr-priorities",
+          "verdict": "missing",
+          "referenceQuote": "where she prioritized evidence-based health policy, research capacity building in medical schools, and strengthening south-south partnerships in health sciences",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "research-field",
+          "verdict": "missing",
+          "referenceQuote": "is an Indian paediatrician and clinical scientist known for her research on tuberculosis and HIV",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "training",
+          "verdict": "missing",
+          "referenceQuote": "Soumya received an M.B.B.S. from the Armed Forces Medical College in Pune. She has an M.D. in pediatrics from All India Institute of Medical Sciences in New Delhi",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "leicester",
+          "verdict": "missing",
+          "referenceQuote": "From 1989 to 1990, Soumya was a research fellow (registrar) in the Department of Pediatric Respiratory Diseases at the University of Leicester in the United Kingdom",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "family",
+          "verdict": "missing",
+          "referenceQuote": "Soumya is the daughter of \"Father of Green Revolution of India\", M. S. Swaminathan and Indian educationalist Mina Swaminathan",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "publication-record",
+          "verdict": "missing",
+          "referenceQuote": "results[0].display_name: Soumya Swaminathan",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 0,
+      "distinctFamilies": 0,
+      "distinctUpstreamIndexes": 0,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty; only identity anchors and known confusables are present. A reader learns only the minimum identifying facts (name, birth date/place, WHO Chief Scientist and ICMR DG roles) with no substantive account of what she actually did. There are no claims to assess for overclaims, but the empty dossier cannot warn the reader about its own gaps, so remainingQuestions fails despite the useful confusableWith warnings (chess grandmaster, OpenAlex affiliation merge). With no content, no meeting preparation is possible beyond the identity anchors.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "bounded",
+      "rounds": 2,
+      "requests": 7,
+      "modelCalls": 0,
+      "sourcesRetained": 0,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 101,
+      "failuresByCode": {
+        "document-empty": 1,
+        "identity-unmatched": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d51bbbc574d62baa7ad12914eda25&url=https%3a%2f%2fwww.msn.com%2fen-in%2fhealth%2fnutrition%2fdr-soumya-swaminathan-calls-for-pds-reform-to-tackle-india-s-nutrition-and-health-crisis%2far-AA2bEkwO&c=3712068502042196906&mkt=en-us: Reading produced no usable text (failed).",
+        "101 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 121413
+    }
+  }
+}

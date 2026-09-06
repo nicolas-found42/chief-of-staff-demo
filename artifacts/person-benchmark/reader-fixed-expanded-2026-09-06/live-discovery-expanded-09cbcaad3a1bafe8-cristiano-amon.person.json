@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:47:46.850Z",
+  "result": {
+    "slug": "cristiano-amon",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "9624224f-affe-4519-8466-2ac066e5113a",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "ceo",
+              "verdict": "missing",
+              "referenceQuote": "In June 2021, he was promoted to the top position as CEO of the entire company.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement covers Amon becoming Qualcomm CEO in June 2021.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "vesper",
+              "verdict": "missing",
+              "referenceQuote": "Amon worked for the Brazilian telecom company as its chief technology officer and chief operating officer until it was profitable.[4] Then, Vésper was sold to competitor Embratel in 2003.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no mention of Amon's Vésper CTO/COO role or the 2003 Embratel sale.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "nuvia",
+              "verdict": "missing",
+              "referenceQuote": "He led a $1.4 billion acquisition of a company founded by former Apple executives called Nuvia and re-focused it on CPUs for consumer products, instead of data centers.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement on the $1.4B Nuvia acquisition or its consumer-CPU redirection.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "shortage",
+              "verdict": "missing",
+              "referenceQuote": "Amon secured a competitive advantage for Qualcomm by successfully negotiating for more processors than competitors were able to get from suppliers.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; nothing on negotiating processor supply during pandemic shortages.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "pay",
+              "verdict": "missing",
+              "referenceQuote": "In 2023, Amon's total compensation from Qualcomm was $23.5 million, representing a CEO-to-median worker pay ratio of 223-to-1.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no 2023 compensation of $23.5M or 223:1 CEO-to-median ratio is reported.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "cristiano-amon",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "cristiano-amon",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "451cbf078da6e5716d4255e990b9a7efa38f21807e1b39487ae8d7e73e5e2af5",
+            "url": "https://archive.org/details/rpwcjijgothw5c6or3zyrk46xqwojrzj238jf1fv",
+            "hash": "83515ee32dd7586ff4764e25cb1f79e2c0714e24eb9c5c6b7480f451505312ef",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r5": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r6": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "ceo",
+          "verdict": "missing",
+          "referenceQuote": "In June 2021, he was promoted to the top position as CEO of the entire company.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement covers Amon becoming Qualcomm CEO in June 2021.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "vesper",
+          "verdict": "missing",
+          "referenceQuote": "Amon worked for the Brazilian telecom company as its chief technology officer and chief operating officer until it was profitable.[4] Then, Vésper was sold to competitor Embratel in 2003.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no mention of Amon's Vésper CTO/COO role or the 2003 Embratel sale.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "nuvia",
+          "verdict": "missing",
+          "referenceQuote": "He led a $1.4 billion acquisition of a company founded by former Apple executives called Nuvia and re-focused it on CPUs for consumer products, instead of data centers.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement on the $1.4B Nuvia acquisition or its consumer-CPU redirection.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "shortage",
+          "verdict": "missing",
+          "referenceQuote": "Amon secured a competitive advantage for Qualcomm by successfully negotiating for more processors than competitors were able to get from suppliers.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; nothing on negotiating processor supply during pandemic shortages.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "pay",
+          "verdict": "missing",
+          "referenceQuote": "In 2023, Amon's total compensation from Qualcomm was $23.5 million, representing a CEO-to-median worker pay ratio of 223-to-1.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no 2023 compensation of $23.5M or 223:1 CEO-to-median ratio is reported.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 0,
+      "conversationReadiness": 1,
+      "rationale": "The dossier body is empty; the only information is three identity anchors (Brazilian engineer, Qualcomm CEO since June 2021, UNICAMP graduate) plus a retained but unextracted podcast source. A reader learns only basic identity, nothing about what Amon actually did. The dossier makes no statements at all, so it does not claim completeness, but it also never says what is unknown or unverified — no explicit gap disclosure — so remainingQuestions scores low. Meeting preparation is essentially impossible beyond knowing his title and background; the single retained source (a podcast, unclassified, unattributed, extraction unattempted) provides no usable content. No overclaims can be identified because there are no dossier statements with citations to assess; the listed unjustified conclusions (invented-5g, current-pay) correspond to no dossier text.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 149,
+      "failuresByCode": {
+        "document-empty": 4,
+        "resource-unavailable": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read https://news.google.com/rss/articles/CBMivwFBVV95cUxOcW4ySlh4cElBbDBsdVhoT1FiQ0tLclNUV1ZKaTYxaUZIdDFuZm8yTHZkZ3k1QzBRMG51MzZnZ2I0eUFfQ3hwLVpYVnNrOURwYWNObEVqNlRHakJXc1pSMzdXX3BaR3NCaHcwMzF3N1BFalkyeEdfRmljQ0NhSTlzRFRaaW5mVUtMT3JKRi1MczlpQlZsM283OFllWHlfcTJzVHdyczQ4X3RqRVFTY2xGcmdjU2VKV19QNXR6NVZXWQ?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMifEFVX3lxTE9LdWRNVkVJMXJxLWotOHpsbHI4V1piQ0Nyc1p4MDZVSDUyQWM3eFdqR3EyMUg4M01JclJqOFpWVW1iM1Y1S0ZBajdjNmJ5OFowRHpscjh3YXl4SXdiZ0N2elVwNFNXWE94XzFHaTNUOVkxNDFOX1AwNjJKLUE?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMilAFBVV95cUxQR0JkNDc5V09JZFJHLWxqT3k5SmtzUHVQVm5WQ2YwbEdsT1gwRFNHQms5eDIxRXk5dHBzb1dMXzRZckY4cWFSdk1hU2p1dU1xVXN1bW9CWjJNX0FYTW9DdFBrSndrRVA2ZXJZaWJpSE54VUx6d1VVMDVPelE0dkptSDh0TU53b3FycERTSTZkYWd2cVJ3?oc=5: Reading produced no usable text (failed).",
+        "149 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 181151
+    }
+  }
+}

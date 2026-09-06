@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   BenchmarkIntegrityFinding,
   PersonDossier,
@@ -32,6 +33,7 @@ export function checkIntegrity(
   for (const claim of dossier.claims) {
     if (claim.status !== "unknown" && claim.citations.length === 0)
       findings.push({
+        fingerprint: findingKey("claim-status-supported", claim.statement),
         check: "claim-status-supported",
         severity: "critical",
         subject: claim.id,
@@ -42,6 +44,7 @@ export function checkIntegrity(
       const source = byId.get(citation.sourceId);
       if (!source) {
         findings.push({
+          fingerprint: findingKey("citation-source-retained", claim.statement, citation.quote),
           check: "citation-source-retained",
           severity: "critical",
           subject: claim.id,
@@ -51,6 +54,13 @@ export function checkIntegrity(
       }
       if (!source.text.includes(citation.quote)) {
         findings.push({
+          fingerprint: findingKey(
+            "citation-quote-present",
+            claim.statement,
+            source.url,
+            source.hash,
+            citation.quote,
+          ),
           check: "citation-quote-present",
           severity: "critical",
           subject: claim.id,
@@ -90,6 +100,13 @@ export function checkIntegrity(
       for (const citation of claim.citations)
         if (privateIds.has(citation.sourceId))
           findings.push({
+            fingerprint: findingKey(
+              "private-evidence-isolation",
+              claim.statement,
+              byId.get(citation.sourceId)?.url ?? "",
+              byId.get(citation.sourceId)?.hash ?? "",
+              citation.quote,
+            ),
             check: "private-evidence-isolation",
             severity: "critical",
             subject: claim.id,
@@ -98,6 +115,12 @@ export function checkIntegrity(
   }
 
   return { findings, verifiedCitations: verified, totalCitations: total };
+}
+
+function findingKey(...evidence: string[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(evidence.map((value) => value.replace(/\s+/g, " ").trim())))
+    .digest("hex");
 }
 
 /** How many findings would block acceptance on their own. */

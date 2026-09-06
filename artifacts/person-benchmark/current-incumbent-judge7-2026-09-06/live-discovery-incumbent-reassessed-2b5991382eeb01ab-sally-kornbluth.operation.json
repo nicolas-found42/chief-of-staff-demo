@@ -1,0 +1,1132 @@
+{
+  "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+  "profileId": "person_1b0b3bd61c34",
+  "conclusion": "bounded",
+  "startedAt": "2026-09-06T11:39:36.463Z",
+  "finishedAt": "2026-09-06T11:41:46.519Z",
+  "rounds": 1,
+  "modelCalls": 2,
+  "requests": 3,
+  "sourcesRetained": 4,
+  "retainedSourceIds": [
+    "b4cc070b8d7a0e89da97b5213412538bd301eb150159aa163647cd4d8bb22182",
+    "604d0afc566852d5b3aa7a2752f0da1f7a9965aa84178e934c769927f08d2f0f",
+    "f78f26c18f435dbdc391fb8fb024f3fcf98d99d938d52ca32194010715766cf6",
+    "bc72c98ad8fd6e989fc0f9f43dbea690962245287ecc1fe3b69985d49450c9cd"
+  ],
+  "claimsPublished": 10,
+  "publishedDossierRevision": 6,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 10,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 1,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 1,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 4,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 1,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 4,
+      "claims": 10,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "12d2ae8a5c978409ca8da42fd6a097c3",
+      "kind": "query",
+      "target": "Sally Kornbluth Massachusetts Institute of Technology",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 24 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e59a1d941031c804f02e43e8986d6be2",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.yahoo.com%2fnews%2farticles%2fmit-becomes-first-college-reject-135149119.html&c=10091071822921399371&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retained and extracted 4 grounded claims.",
+      "yieldedEvidence": true,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "192e7707b3630fd50e44d6feec75d1ab",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMiiwFBVV95cUxPY1pVNWlxTTg1b2s5TDdXdHZIMG5uQ2tpQWlNSmVXN0c1UExqU0FrdnNKNGxnTUQtOXdrdy1fSlhXNWFGVzY2OVVhWjNhLWpBRmRpUHE1Q3FjaTQ0a0xmZGxuSmh5MW41STQwTmxicnR2bkRaS2JOaUNkMDhhVGhwbElmYXZvU1N0R0E4?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.45,
+        "relevance": 0.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8c12269a6b90896165aad758b3c04ead",
+      "kind": "url",
+      "target": "https://doi.org/10.1371/journal.pgen.1006438",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.4,
+        "relevance": 0.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "570b2ab5afd959fdf5d6b409f3194907",
+      "kind": "url",
+      "target": "https://archive.org/details/ERIC_ED663730",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.35,
+        "relevance": 0.925,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "94618fa3cfc1172a80d5f2c268f59fcc",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0002-6907-277X",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.3,
+        "relevance": 1.9,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "73ace323b3ba7efcf9cd6e9172f8ddb7",
+      "kind": "url",
+      "target": "https://ror.org/042nb2s44",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.25,
+        "relevance": 0.875,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e74ed85f672f47acffe9e9745a5dde40",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.bostonglobe.com%2f2024%2f08%2f28%2fmetro%2fmit-president-warns-students-over-antisemitism-project%2f&c=11313536803360415992&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retained and extracted 6 grounded claims.",
+      "yieldedEvidence": true,
+      "selection": {
+        "score": 12.2,
+        "relevance": 3.85,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "7dba47923cba0850588ef948125cb3d0",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMieEFVX3lxTE9Bekk5Q1dlNXRHMG1FRzlMNTl4SzJYZXJNZm9lZk1sVnVQUm55cE9ObjBMM0lvaXRrWmFmOWJBRmRBUFFwdTlfWHVWTTgxNU0xSzNGcVBpQVBxZk1RZlpSUGtfYUhCNGJKdHZDeTRuRm92azNvcVdkZQ?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.15,
+        "relevance": 0.825,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e3606b212924c1c9ff0ab59c9df0360d",
+      "kind": "url",
+      "target": "https://doi.org/10.1038/cdd.2016.40",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.1,
+        "relevance": 0.8,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "dc186a29161b07b38dc501f406be341b",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0002-6000-2337",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.05,
+        "relevance": 1.775,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "c3db8eda6c6424b15da5c98f4098a226",
+      "kind": "url",
+      "target": "https://ror.org/05mydvn22",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6,
+        "relevance": 0.75,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "6fbd34447557a7a55b3db0556816fd9a",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.msn.com%2fen-us%2feducation-and-learning%2fhigher-education%2fai-is-getting-better-at-doing-college-work-mit-says-claims-most-classes-may-now-need-to-change%2far-AA2aYrJK&c=1827356323792607594&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.95,
+        "relevance": 0.725,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "d1e8b0924116f0171df40c1b03761f07",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMijwFBVV95cUxNVWFqQmJzWFR5elJtNl9ncnNMeThGcERBRTAtNVdSQjBaanhLS1hYRkNyNnJEZzVwVjd5TVY3VThTVjRJYS1QSjlVSzY4SXp4UW1jZVRlWFJSc2RBMGZFZ3E2b0JtNF9GX1FSOHIxRzRPSkdfSnhCSDA1QXM3ejZlajdqQnJBNHN2aXN1cWdJOA?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.9,
+        "relevance": 0.7,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5af1d42163fb2e5203b1521ed64eb083",
+      "kind": "url",
+      "target": "https://europepmc.org/article/PMC/PMC10187017",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.85,
+        "relevance": 0.675,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "237aafd8720140e05a088bdbbbc92c8d",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0005-3399-0092",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.8,
+        "relevance": 1.65,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "4c99ad780a096561fa62a8298a2d4441",
+      "kind": "url",
+      "target": "https://ror.org/04gpmm421",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.75,
+        "relevance": 0.625,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "88929f449b411e8f3b5d6db0fd5e14f9",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.miragenews.com%2fgov-healey-mit-president-launch-mit-future-fest-1739172%2f&c=13490493084651654664&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 9.7,
+        "relevance": 2.6,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "03b2be2e71b548ee2f9e67ec3434dbee",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMitAFBVV95cUxNTmFkT2d0aHU5WVJ1Y1NVMVZHbmFja1NwRmh5NDRpZUpyWHdVWHZraUYtNUJpZlprS0RSSkdORVVtOXlfa2g0Q1BPdk93c1JFREtpaldiT2RERHNNRGRxcGQwNkRDY3VjeGtrTUZzV0FKLXIzbHdJQ1pUamRfLVU5UGNFbmJrRjBLQ1o3NFU5VGdWZEMtSFdZZ3RDZjVVMG0zNWhCOGt2RUV1a3QtaVdPUGxUZ2s?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.65,
+        "relevance": 0.575,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "7bc2a54629c6c29011a9cc2a3ab05175",
+      "kind": "url",
+      "target": "https://doi.org/10.1016/j.cub.2008.05.045",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.6,
+        "relevance": 0.55,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "639b157f41455bd5487db526ce467f3c",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0001-5260-5114",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.55,
+        "relevance": 1.525,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "c5e2babce6e20458b66cc2b94d312eed",
+      "kind": "url",
+      "target": "https://ror.org/053r20n13",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.5,
+        "relevance": 0.5,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "c01a0941800d8af2a88fdcb18ef1425a",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fforward.com%2ffast-forward%2f775375%2fmits-jewish-president-rejects-trumps-offer-of-priority-funding-in-exchange-for-policy-changes%2f&c=7343271431481550926&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.45,
+        "relevance": 3.475,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8c4a944e53c4b9bce2b3b023341a5713",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMilAFBVV95cUxQc18zdUd5NHBJVHJTNTRJYl85SzRwQWlLa21GMC05OXI3NE9Bc0kxTm81UGJJNGRFUlI4SjI5ZkRhX1FCM0lNRUxIYTRBdF84ZGFQZVZmTlpNaTdXWER1Z0lSMWNfb1dueDE5aDV0cWxzS1ZfRkQxekFzeXByTlpheGZ6M3Q0SFE0T20zR2FiYUdQTVNf?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.4,
+        "relevance": 0.44999999999999996,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a000037e9f849000b267f733cc8625bb",
+      "kind": "url",
+      "target": "https://doi.org/10.3389/fcell.2020.605379",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.35,
+        "relevance": 0.42500000000000004,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "2c5df8bf-2e8e-4ee9-93e1-1311528e9c26",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "f9ff40cc-750b-4cab-8cc5-0a08cbb11399",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "Sally Kornbluth Massachusetts Institute of Technology",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 60005
+      },
+      "reason": "Discovery returned 24 results.",
+      "occurredAt": "2026-09-06T11:40:36.475Z"
+    },
+    {
+      "id": "b5ab5bc9-d7a5-4f3b-b558-8424bcd50843",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "f11802f0-a2bb-46c9-8954-a6833d75ef4f",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fforward.com%2ffast-forward%2f775375%2fmits-jewish-president-rejects-trumps-offer-of-priority-funding-in-exchange-for-policy-changes%2f&c=7343271431481550926&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.45 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "3af88835-849a-4e7e-8441-fda1b538340e",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "60b52b7d-9279-445b-bcb1-4787b04f29ec",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.miragenews.com%2fgov-healey-mit-president-launch-mit-future-fest-1739172%2f&c=13490493084651654664&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 9.70 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "f829178a-183e-4856-abc3-e0fcc9dd6f17",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "d1984d49-035d-49c0-b474-171cfd5b1c4f",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0002-6907-277X",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.30 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "4e5a4f00-f738-492c-a3f5-874c050c7ea2",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "f4972d7f-ebf6-452c-af09-904891b5c746",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0002-6000-2337",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.05 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "d50de95d-4762-4e74-85b7-a0e65f1027b8",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "2658a73f-d06c-47b0-ad2a-0fbc558f6ad8",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0005-3399-0092",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.80 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "f3ea54ee-7e73-4d89-bc0c-a80d80cbdf08",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "5cfbd38f-8088-45cd-aec8-3395f7e63b7d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0001-5260-5114",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.55 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "43e0d013-303f-4cf8-832c-1fee2a8e29a0",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "95148873-9d53-441c-8536-87049438b2d6",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMiiwFBVV95cUxPY1pVNWlxTTg1b2s5TDdXdHZIMG5uQ2tpQWlNSmVXN0c1UExqU0FrdnNKNGxnTUQtOXdrdy1fSlhXNWFGVzY2OVVhWjNhLWpBRmRpUHE1Q3FjaTQ0a0xmZGxuSmh5MW41STQwTmxicnR2bkRaS2JOaUNkMDhhVGhwbElmYXZvU1N0R0E4?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.45 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "90df85aa-d12e-486f-8481-dc99900eabf7",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "adf09356-4406-4c5f-9d92-24c3eedc9dfa",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1371/journal.pgen.1006438",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.40 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "a6f492ee-b374-4053-8fcf-6d8ed880f1c8",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "3fd80ae3-e9f6-4e72-983d-44bcaa680236",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/ERIC_ED663730",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.35 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "425b9900-eace-4413-bab8-8c71f83160b6",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "597efb1f-8f90-47e0-a6cb-256a8e8362d7",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/042nb2s44",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.25 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "1be0a655-602e-4937-951b-e037be0183db",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "b2ab996a-5e84-4bf7-a2ed-5c6f65d9c2e7",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMieEFVX3lxTE9Bekk5Q1dlNXRHMG1FRzlMNTl4SzJYZXJNZm9lZk1sVnVQUm55cE9ObjBMM0lvaXRrWmFmOWJBRmRBUFFwdTlfWHVWTTgxNU0xSzNGcVBpQVBxZk1RZlpSUGtfYUhCNGJKdHZDeTRuRm92azNvcVdkZQ?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.15 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "7438f6b8-f351-4644-94ac-4d38692d655b",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "556f95fb-65f5-42cb-97ee-1c27bf73ff9f",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1038/cdd.2016.40",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.10 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "39fb8b5d-eaa7-4436-9a82-8b943ff887ea",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "d390045f-59e1-480a-abd0-1f95c52f87ff",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/05mydvn22",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.00 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "bdcfcecb-ad0e-4fca-b18c-71d56d0e645f",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "90a076a0-6276-4ff2-9a9a-cb72cf7f2ffb",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.msn.com%2fen-us%2feducation-and-learning%2fhigher-education%2fai-is-getting-better-at-doing-college-work-mit-says-claims-most-classes-may-now-need-to-change%2far-AA2aYrJK&c=1827356323792607594&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.95 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "1a436c38-4830-4556-8013-738c06bb1123",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "617a1166-2979-49a7-8ea2-8bb5632a73c9",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMijwFBVV95cUxNVWFqQmJzWFR5elJtNl9ncnNMeThGcERBRTAtNVdSQjBaanhLS1hYRkNyNnJEZzVwVjd5TVY3VThTVjRJYS1QSjlVSzY4SXp4UW1jZVRlWFJSc2RBMGZFZ3E2b0JtNF9GX1FSOHIxRzRPSkdfSnhCSDA1QXM3ejZlajdqQnJBNHN2aXN1cWdJOA?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.90 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "f241c15b-3bb2-4179-946e-a1e1cef00a3c",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "ee6758eb-5d6d-4e65-b49f-aef4b874b872",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://europepmc.org/article/PMC/PMC10187017",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.85 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "05e5cb90-f882-44af-97ff-7903342ead16",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "77c1dfa5-9975-45ec-bc6a-7eb1f398669c",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/04gpmm421",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.75 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "2b6e9ce6-72bc-4548-83c9-2b012159ef69",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "4103290b-9cd9-4336-a337-7a47df4b9e5c",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMitAFBVV95cUxNTmFkT2d0aHU5WVJ1Y1NVMVZHbmFja1NwRmh5NDRpZUpyWHdVWHZraUYtNUJpZlprS0RSSkdORVVtOXlfa2g0Q1BPdk93c1JFREtpaldiT2RERHNNRGRxcGQwNkRDY3VjeGtrTUZzV0FKLXIzbHdJQ1pUamRfLVU5UGNFbmJrRjBLQ1o3NFU5VGdWZEMtSFdZZ3RDZjVVMG0zNWhCOGt2RUV1a3QtaVdPUGxUZ2s?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.65 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "2652492c-9e03-45e3-b7b6-2d8d2f39f637",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "dab55f21-39a8-4544-8c68-315e817e623f",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.1016/j.cub.2008.05.045",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.60 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "d44a57fc-4eb4-4edf-870e-3c79f6bad8a3",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "27aaf487-942c-4a10-aad4-a245891d8de3",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/053r20n13",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.50 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "e2d500dd-e845-4914-8a93-2a7632649a98",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "c25f73e6-1238-428a-81b6-4331d7005c5a",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMilAFBVV95cUxQc18zdUd5NHBJVHJTNTRJYl85SzRwQWlLa21GMC05OXI3NE9Bc0kxTm81UGJJNGRFUlI4SjI5ZkRhX1FCM0lNRUxIYTRBdF84ZGFQZVZmTlpNaTdXWER1Z0lSMWNfb1dueDE5aDV0cWxzS1ZfRkQxekFzeXByTlpheGZ6M3Q0SFE0T20zR2FiYUdQTVNf?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.40 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "8778095a-168c-46a1-9864-7d8d4fc84f37",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "0bb37702-5848-4108-a157-d5af0d39b495",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://doi.org/10.3389/fcell.2020.605379",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.35 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:40:36.477Z"
+    },
+    {
+      "id": "6663faad-cc35-40a4-83a6-52f4825ba9c6",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "12087c65-9535-4b8f-9978-a6a10d5ad1fd",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-response-received",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.yahoo.com%2fnews%2farticles%2fmit-becomes-first-college-reject-135149119.html&c=10091071822921399371&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "12087c65-9535-4b8f-9978-a6a10d5ad1fd",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "0"
+      },
+      "reason": "The model boundary returned JSON; dossier validation and publication follow.",
+      "impact": "A model response is available for evidence validation.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:41:13.817Z"
+    },
+    {
+      "id": "34e92604-1434-4342-b88c-ccd5d261e740",
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "attemptOf": "954ec970-4c16-44a4-a29f-060d427ccbc3",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-response-received",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.bostonglobe.com%2f2024%2f08%2f28%2fmetro%2fmit-president-warns-students-over-antisemitism-project%2f&c=11313536803360415992&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "954ec970-4c16-44a4-a29f-060d427ccbc3",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "0"
+      },
+      "reason": "The model boundary returned JSON; dossier validation and publication follow.",
+      "impact": "A model response is available for evidence validation.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:41:46.470Z"
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "22 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "The operation's wall-clock backstop was reached with work still pending. Completed evidence is available and pending leads are retained."
+}

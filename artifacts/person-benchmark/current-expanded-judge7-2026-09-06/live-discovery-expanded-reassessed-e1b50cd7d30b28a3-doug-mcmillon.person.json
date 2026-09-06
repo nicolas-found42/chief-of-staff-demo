@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:28:53.725Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "doug-mcmillon",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "de8d531f-3c37-489a-aa11-7f1842286b47",
+      "integrity": "completed",
+      "judge": "failed",
+      "phases": {
+        "reference": {
+          "status": "failed",
+          "judgements": [],
+          "failure": "Judge reference assessment failed: openrouter: a model call was in flight when the request ceiling fired (model z-ai/glm-5.3-flash, binding forced_tool_call, HTTP 200, 5909 bytes, ceiling 30000ms)"
+        },
+        "support": {
+          "status": "not-attempted",
+          "failure": null
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "doug-mcmillon",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 6023,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "doug-mcmillon",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "failed",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 5909,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 0,
+            "stoppedReason": "The one additional same-binding retry was exhausted."
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "e32ee036b2c6388a15d988637f480cdd7c4cf6054fa77356de382cb4b5d4bb48",
+            "url": "https://fortune.com/2015/06/04/walmart-ceo-doug-mcmillon/",
+            "hash": "a63ffe494cb0e6be1f9c2a5f426252e596cd2fc0b9e373d0b8989e0c53fa41b4",
+            "upstreamIndex": "fortune.com",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 8,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 8,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 8,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "walmart-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "President and CEO, Walmart, Inc.In officeFebruary 2014 – January 2026Preceded byMike DukeSucceeded byJohn Furner",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "divisions",
+          "verdict": "ambiguous",
+          "referenceQuote": "led the company's Sam's Club division, from 2005 to 2009, and Walmart International, from 2009 to 2013",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "first-job",
+          "verdict": "ambiguous",
+          "referenceQuote": "He began his Walmart career in 1984 as an hourly associate",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "tenure-changes",
+          "verdict": "ambiguous",
+          "referenceQuote": "It invested heavily in people by increasing wages, expanding parental leave and funding education opportunities. Walmart also lowered its prices, built a large eCommerce business and embraced technology to improve customer and associate experiences",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "boards",
+          "verdict": "ambiguous",
+          "referenceQuote": "Doug also served on the boards of Business Roundtable and the Consumer Goods Forum",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "education",
+          "verdict": "ambiguous",
+          "referenceQuote": "McMillon attended University of Arkansas, where he graduated with a  Bachelor of Science in Business Administration in accounting in 1989",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "self-description",
+          "verdict": "ambiguous",
+          "referenceQuote": "Doug McMillon is a lifelong merchant",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        },
+        {
+          "factId": "upbringing",
+          "verdict": "ambiguous",
+          "referenceQuote": "McMillon was born in Memphis, Tennessee,[5] and grew up in Jonesboro, Arkansas,[6] the eldest of three children born to Laura and Morris McMillon, a dentist who served in Vietnam",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The judge did not return a usable verdict for this run.",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "Not assessed: the judge failed for this person.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 12,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 168,
+      "failuresByCode": {
+        "document-empty": 4,
+        "challenge-page": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://news.google.com/rss/articles/CBMingFBVV95cUxQVXNWYlpDRV9Ddzc5b2hCR20xRS15T3ZRSkdPM2JuTExfaTZoNV9DUWVDSzh2NlZlT0tCSzdVblBoRlEzOXRWSTVmSVlpSGVZbVdjVUNCR1JqaVVZa2tYWTJpRlpXRHZHbEpoTm0yNjl0Uk92Mmo0Z2R2alNmRnczY2hPZWdaVVN4YVp0Z0ZsYmpjQkk3ZW11OU9veldmUQ?oc=5: Reading produced no usable text (failed).",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d4d50b2454e2fb73cdf87145bbc44&url=https%3a%2f%2fwww.msn.com%2fen-us%2fmoney%2fother%2fwalmart-ceo-doug-mcmillon-signs-off-with-final-annual-book-list%2far-AA1SMU9W&c=4279464190653333850&mkt=en-us: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMisgFBVV95cUxQUkpZdWRsQW5rVFI3TnZPR0staVR2TENUajFkME1Zdmdvdm1sa0liWUNhMm1Xa2Rzd2VWRDBYWWRNMmhPeWwwWXExX2lrOUFwanY2dHdsWmlrZHRIX09YRy1WNF9pbnJYcTNNMmdvNmQzUE1YN0Jtb0Nickh1UWgtUGdkYXh5dld5TWVBT0ZLRXI2djBzTFlMX3pFb3hQUTRLbkdUS3VCSk00LXBTeVpEZ19R?oc=5: Reading produced no usable text (failed).",
+        "168 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 134361
+    }
+  }
+}

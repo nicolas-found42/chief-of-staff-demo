@@ -1,0 +1,654 @@
+{
+  "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+  "profileId": "person_79d8d5646a76",
+  "conclusion": "completed",
+  "startedAt": "2026-09-06T10:33:31.989Z",
+  "finishedAt": "2026-09-06T10:33:31.997Z",
+  "rounds": 4,
+  "modelCalls": 0,
+  "requests": 15,
+  "sourcesRetained": 0,
+  "claimsPublished": 0,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    }
+  ],
+  "leads": [
+    {
+      "id": "4ad37aa66492b2054850410d519bbe34",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" Columbia University",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "2f4632351afbc3bd3b0bed5fc5983d32",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "72e49a5071d61550c71dfc3a2db5d88b",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "368b365b35c6170f929e9ff3c5b1ee44",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "62b03eabdcb33f534dba2668f69d9972",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "970bdda5316590cbe22880de106621e7",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Minouche_Shafik",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "18aed80d839227f245b9e0ff560637c4",
+      "kind": "url",
+      "target": "https://openlibrary.org/search/authors.json?q=Minouche%20Shafik",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.45,
+        "relevance": 2.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "3347433d5ff9ab907eaa1c00905e0554",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" interview transcript video podcast",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "3429c19379588d1b4154c09e75dc9631",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" posts profile account",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e4a8c9bf3f7a73227a7143d179480f4a",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" report pdf presentation",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "0ceeace8edffd87e4ff9ed72766fe125",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" paper publication doi",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "5ab6aa857d2f84fbd92203775eb92747",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" Columbia University registry filing licence",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "05205b9b197a3dbb3385d0646a519d0a",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" credits catalogue collection",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "0c3409dcedf108ff7a692978396a459b",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" Columbia University affiliation identifier",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "464b2267d9dec9b30e0eb7363d5edc1d",
+      "kind": "query",
+      "target": "\"Nemat Shafik\" Columbia University archive former",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    }
+  ],
+  "attempts": [
+    {
+      "id": "8c671ca2-e7bf-4fc8-a803-54b3110f5c95",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "c37579b3-fa7d-4450-9df3-3822ea7bbbf1",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" Columbia University",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.990Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "0830f879-40f1-4b21-8b7e-1c6a21f669f8",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "2c5c3725-e41f-401f-8e4d-0b2250225cb7",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.991Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "42f10235-97c1-459c-88f6-8ee15af72027",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "0f9aa760-bc56-4667-bbac-2aff7c3940a9",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.991Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "402f97a7-b17d-4341-8d43-6bddbfa99c66",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "11ed48ff-c2df-4df0-a2cf-0320b8dd3cbe",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.991Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "fda25d3e-9e82-44f8-b7d5-daa477b1764f",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "c60a6700-7c1a-455d-86ef-ce383663b879",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Minouche_Shafik",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:33:31.991Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "312d935c-7052-4f15-b9eb-35c1a23b327c",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "f8255afa-e949-4e71-b9d2-aac45938f519",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://openlibrary.org/search/authors.json?q=Minouche%20Shafik",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:33:31.991Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "0f3d635f-5cd2-4ee7-9e8d-0f1ce98763e0",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "f3d94645-a03a-4fcc-9fc9-a058d689970b",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" publication OR filing OR registry OR award",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.993Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "2e16eaa2-239e-4bd0-82f7-c41c0d6dfaff",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "06a7be0d-d621-449c-8b1b-9fa4a6348e7f",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" interview transcript video podcast",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.993Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "64d5857b-5bd5-488b-b035-ff86381da76e",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "2b98d63b-bdab-4e89-a9aa-0e201b2f49cf",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" posts profile account",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.993Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "55cf4424-8f28-4497-a54a-e3b170f7b862",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "71599ffa-2c6b-4d8c-b0cc-85a645d75f21",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" report pdf presentation",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.993Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "441acf0d-b485-4d77-b1be-69159c19e1b4",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "d48b8e42-1c38-48a8-90bd-2c9e110d0d08",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" paper publication doi",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.994Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "36a8171e-08a1-481e-ad6b-dcb6a760a95c",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "f03bd997-d08f-4947-92a6-4a3a34a50c39",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" Columbia University registry filing licence",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.994Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "acee2d81-1f43-4b8c-a309-6015f0e16d39",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "b57b20d0-a468-47db-824d-4b861eabf2b2",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" credits catalogue collection",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.994Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "e469943d-c755-446d-ba34-5807833e646c",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "7d3439c1-445f-4642-8862-3b160c2410df",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" Columbia University affiliation identifier",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.995Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "5d2dcdd2-bb87-44d7-b22b-357afde1a58f",
+      "operationId": "9f29c239-6627-438b-879d-1bb066bed147",
+      "attemptOf": "0b42540f-5df3-4b94-aa74-42ca72787479",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Nemat Shafik\" Columbia University archive former",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T10:33:31.996Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Documents, publisher sites and structured records.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed."
+}

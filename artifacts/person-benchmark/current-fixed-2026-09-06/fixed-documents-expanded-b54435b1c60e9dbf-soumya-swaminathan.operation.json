@@ -1,0 +1,689 @@
+{
+  "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+  "profileId": "person_419b2958b92c",
+  "conclusion": "completed",
+  "startedAt": "2026-09-06T11:48:39.290Z",
+  "finishedAt": "2026-09-06T11:48:39.298Z",
+  "rounds": 4,
+  "modelCalls": 0,
+  "requests": 15,
+  "sourcesRetained": 0,
+  "retainedSourceIds": [],
+  "claimsPublished": 0,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "33b432fec2bd095f7fd4b5f11953fc6b",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "c045ea0266c2dd1220d5ffe7084d1102",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "39323e033e27ac1ed0344b20e80e408e",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e8d714659aa204bc6528a64988633f07",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "4001e47d8f0c6f70a2ef920229c4f12a",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "2787baba5741acc6092441415cd820fc",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Soumya_Swaminathan",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.5,
+        "relevance": 3,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "55461e6a4e29d03958c138d74fcf95a1",
+      "kind": "url",
+      "target": "https://api.openalex.org/authors?search=Soumya%20Swaminathan&per-page=3",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.45,
+        "relevance": 2.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "b9af5fa10e3995c24cb9c8b8295c1503",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" interview transcript video podcast",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "1e515e137949caf62bfd4ee337acf3fe",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" posts profile account",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "443893b32990d13286e93913727c3114",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" report pdf presentation",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "9b5d32d454ddc194829d18b591e94533",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" paper publication doi",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "5570d5dc1a28558a938907cfde142415",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation registry filing licence",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "ff3c337bc55b31a03238b5f1b76a37b4",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" credits catalogue collection",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "f40f793f50474d58f3cacee9b2c42b57",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation affiliation identifier",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "9168aa854dc739467aa359c7f839224d",
+      "kind": "query",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation archive former",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    }
+  ],
+  "attempts": [
+    {
+      "id": "3cddbc69-34d9-46c0-b326-03af49f33299",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "40aeab05-e330-4c66-9acf-df7a4545a9ec",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.291Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "a3eb43ea-fea3-4e80-8104-4727297d2c0c",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "f3ad517e-db6b-4220-9bca-8e64f4c21f88",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.293Z",
+      "observed": {
+        "elapsedMilliseconds": 2
+      }
+    },
+    {
+      "id": "0d7ca9ce-a50f-4e02-903a-8a772ced6980",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "7f6c00c6-3be0-4188-8541-78b601e881cf",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.293Z",
+      "observed": {
+        "elapsedMilliseconds": 2
+      }
+    },
+    {
+      "id": "bf7fed65-7a74-4236-877b-66e2afa76fc3",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "a302f27a-2833-4939-b376-5524bd1a02f7",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.293Z",
+      "observed": {
+        "elapsedMilliseconds": 2
+      }
+    },
+    {
+      "id": "0c2d6148-ea7a-4b82-9c07-11437594ad89",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "e25d294c-a61b-420e-839c-feac1675b044",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Soumya_Swaminathan",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T11:48:39.293Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "aeb64714-2f46-401f-8d00-f16a7b3329bb",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "3f9cac75-5795-405f-b369-03807b390383",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://api.openalex.org/authors?search=Soumya%20Swaminathan&per-page=3",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T11:48:39.294Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "9fde7f89-f67b-4f48-8d43-b2765608b490",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "e009b668-2c28-4767-82f0-bd982e245ddc",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" publication OR filing OR registry OR award",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.296Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "7f2ec018-a8e3-4f2d-8183-a020d37f3b90",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "230cdb92-03e0-495a-b869-96291e9c1ce1",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" interview transcript video podcast",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.296Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "b829c109-e3c2-4ed4-884b-05de4f2849c9",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "2fed824e-14a9-4695-b491-5f91ed695b6d",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" posts profile account",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.296Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "34ea9830-0b8c-4165-9381-efd4790a1424",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "d38598bb-b158-4f8a-8956-c15e83a32b3f",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" report pdf presentation",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.296Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "9e5482d9-f256-4ffb-afec-8efa11d53b8a",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "7b1ff228-8f98-4bf7-864c-c474ca51bce0",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" paper publication doi",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.297Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "9e53ef9e-9905-478f-a304-05a561270ddd",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "8143bebe-965f-4564-8c31-fa4660a7394d",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation registry filing licence",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.297Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "704d5b27-dec1-495d-9cca-7a3f73bfab27",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "c276b3dc-0d3b-4eb5-b712-522374e470f9",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" credits catalogue collection",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.297Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "e66fb3e9-6da9-485d-9974-5351001ac244",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "7d48fbde-026c-45df-91cd-57fd5c5d672b",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation affiliation identifier",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.297Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "b7a6c475-123a-43a1-8153-2f6b49b7a444",
+      "operationId": "7567aa8b-4ff3-4aab-9622-5fb1f00c33dc",
+      "attemptOf": "29d8ef71-6f29-4282-8740-878d08634185",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Soumya Swaminathan\" M. S. Swaminathan Research Foundation archive former",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:48:39.297Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Documents, publisher sites and structured records.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed."
+}

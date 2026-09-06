@@ -1,0 +1,690 @@
+{
+  "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+  "profileId": "person_72eb3847e211",
+  "conclusion": "completed",
+  "startedAt": "2026-09-06T10:10:13.425Z",
+  "finishedAt": "2026-09-06T10:10:13.434Z",
+  "rounds": 4,
+  "modelCalls": 0,
+  "requests": 16,
+  "sourcesRetained": 0,
+  "claimsPublished": 0,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    }
+  ],
+  "leads": [
+    {
+      "id": "2502f8c5924745bf023bb3dd93a071ed",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "3cae970d62f3563b32da7154bae43f74",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e114432120d3f1fdb9bfe37d46795ec3",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "7d40b7094b3af40bafee12f4dd8802b5",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "7f0f939c1accbd6b3788804ae6646af2",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "ccfa5fc6b20156cb93efabfd2a5fc941",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Chimamanda_Ngozi_Adichie",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.5,
+        "relevance": 3,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "2be648e309db128f3dcdd289f2ee63bb",
+      "kind": "url",
+      "target": "https://openlibrary.org/search/authors.json?q=Chimamanda%20Ngozi%20Adichie",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.45,
+        "relevance": 2.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "08c6a4e1e92718310517be97d8596eba",
+      "kind": "url",
+      "target": "https://www.loc.gov/search/?q=Chimamanda+Ngozi+Adichie&fo=json&c=5",
+      "origin": "discovery",
+      "family": "creative-records",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.4,
+        "relevance": 2.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "2a18b053652072ceee24d57c76b7ad14",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" interview transcript video podcast",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "fc55b24e61a6d3110233aa7f25cd6242",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" posts profile account",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "def68cff8a13019471da5175c180216e",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" report pdf presentation",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e3f5c4d92229af566f4dada1ffc9a025",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" paper publication doi",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "3ec0e7218384a19bddec831f5c9f8f0d",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author registry filing licence",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "511bdda5c6bbbbdd12ce43ec73d4718a",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" credits catalogue collection",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "0fdc92f610ce08b63bca977f53a1f366",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author affiliation identifier",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "f83ecf247c7482b37daebd901a744824",
+      "kind": "query",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author archive former",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    }
+  ],
+  "attempts": [
+    {
+      "id": "6d045a78-901f-486a-9f91-646ccce71cf8",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "884ac2c7-a209-4aea-bd7d-1c277f42d4d1",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.427Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "e4609b9c-7b2e-4457-8f54-b01f54086bf6",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "907d1f5b-f78f-4069-ac17-99a2000af5da",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.427Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "371c58cf-c3c2-4dc8-bb81-3050c28fa245",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "a0e20156-e2dc-446e-b14d-aa6edf0a5c01",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.428Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "f3969c9f-887f-4223-933e-759f1d1fab39",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "f693a09a-1b75-471e-8c04-5e7a15a634cd",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.428Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "5ffca9c4-9b24-416c-b08d-a3ab3028c5f0",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "80aa21c9-4f4e-48da-b5c2-2d8d128964e3",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Chimamanda_Ngozi_Adichie",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:10:13.429Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "cccbb8b6-328d-48ab-9f31-3537224332c4",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "b272f41e-a00e-4c64-b8ab-9194be086c65",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://openlibrary.org/search/authors.json?q=Chimamanda%20Ngozi%20Adichie",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:10:13.429Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "9bcde5df-cc4d-4fc5-9be1-825a556476af",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "e409c662-beec-4ff4-b20a-ac60100a26c9",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://www.loc.gov/search/?q=Chimamanda+Ngozi+Adichie&fo=json&c=5",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:10:13.429Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "e420705d-07b2-4b5e-a987-05c5f9d3ce0c",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "3e3022dc-7fd9-4284-b36e-844832bd3141",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" publication OR filing OR registry OR award",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.431Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "be360aef-59bd-4602-8465-86af51274c68",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "91aa51d4-01dd-46b5-be58-9f86a83f702d",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" interview transcript video podcast",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.431Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "b22dad9e-a1e8-4691-b2d9-1d1b6c37f865",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "ceef2f1d-9644-410a-afcd-101732200f4e",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" posts profile account",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.431Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "439ff92b-85d8-443e-b075-4870795536b0",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "37984a8e-4223-4562-97a5-b39f5d57f0cb",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" report pdf presentation",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.431Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "cbe0a3d6-718b-485d-ad79-3d6c0406489a",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "2fdb1183-0b42-4fca-b52b-c4674e2e10ae",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" paper publication doi",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.432Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "59e570d9-28f3-42db-b7f6-7b74a26bdf9e",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "c6891dc6-5f66-441a-8962-2c40c32ed85a",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author registry filing licence",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.432Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "e13abab6-43bc-416c-a672-28113a809bee",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "b6dcc2ea-e725-40b7-b639-ea307b8eaf11",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" credits catalogue collection",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.432Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "b79c1aa0-d0c1-4d18-a1df-7f65b5ac0b96",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "472921b7-39f5-43d6-9795-79f2d89226c5",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author affiliation identifier",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.432Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "b60b4716-4928-4403-a6ab-96f1d75633db",
+      "operationId": "c05e7e4f-c264-43d4-819e-da1c9c08e080",
+      "attemptOf": "d8a037e6-400f-4f52-8312-7dcd904d64a0",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Chimamanda Ngozi Adichie\" Independent author archive former",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:10:13.433Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Documents, publisher sites and structured records.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed."
+}

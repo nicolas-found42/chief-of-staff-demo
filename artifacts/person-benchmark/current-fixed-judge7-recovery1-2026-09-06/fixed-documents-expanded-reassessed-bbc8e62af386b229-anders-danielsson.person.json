@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "runId": "bbc8e62af386b229",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:17:24.702Z",
+  "reassessmentOf": "b2838e9176d9058b",
+  "result": {
+    "slug": "anders-danielsson",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "fixed-documents",
+    "failure": null,
+    "assessment": {
+      "operationId": "601ee3db-d436-4c02-b84e-6cac1a4b1166",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "skanska-ceo",
+              "verdict": "ambiguous",
+              "referenceQuote": "Danielsson tillträdde som verkställande direktör och koncernchef för Skanska den 1 januari 2018",
+              "evidenceQuote": "Danielsson tillträdde som verkställande direktör och koncernchef för Skanska den 1 januari 2018.",
+              "claimId": "3b7117fbf5f1c48b3e708df894340820",
+              "rationale": "Dossier states same fact with date 1 January 2018. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "prior-role",
+              "verdict": "ambiguous",
+              "referenceQuote": "Dessförinnan var han vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling",
+              "evidenceQuote": "Dessförinnan var han vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling.",
+              "claimId": "58e77b0f8617ee4a997f75fbf2a06c3a",
+              "rationale": "Same role and responsibilities stated; reference adds effectiveTo 2017 which is consistent context, fact itself matches. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "joined-1991",
+              "verdict": "ambiguous",
+              "referenceQuote": "Han anställdes på Skanska 1991 efter examen från Kungliga Tekniska högskolan",
+              "evidenceQuote": "Han anställdes på Skanska 1991 efter examen från Kungliga Tekniska högskolan.",
+              "claimId": "0554e38dbef0f78ff7a682dadb6dcefb",
+              "rationale": "Joined 1991 after graduating from KTH, as stated. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "sweden-head",
+              "verdict": "ambiguous",
+              "referenceQuote": "År 2008 blev han Sverigechef och kom från år 2013 att ingå i koncernledningen, med ansvar för Norden, Storbritannien och USA",
+              "evidenceQuote": "År 2008 blev han Sverigechef och kom från år 2013 att ingå i koncernledningen, med ansvar för Norden, Storbritannien och USA.",
+              "claimId": "fc54c4b372e0c0ef4561731cdd9c8fdc",
+              "rationale": "Head of Sweden 2008 and group management from 2013 with Nordics, UK, USA responsibility. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "subsidiary-ceo",
+              "verdict": "ambiguous",
+              "referenceQuote": "Han har varit VD för Skanska Norge och Skanska Sverige, samt vice VD för Skanska AB",
+              "evidenceQuote": "Han har varit VD för Skanska Norge och Skanska Sverige, samt vice VD för Skanska AB.",
+              "claimId": "961a14ad5eba7ee4de704eb3e3c8fa50",
+              "rationale": "CEO of Skanska Norge and Skanska Sverige, Deputy CEO of Skanska AB. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "profitability-focus",
+              "verdict": "missing",
+              "referenceQuote": "”Han tar över Skanska: ”Har starkt lönsamhetsfokus”",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement about SvD 2017 coverage or headlines.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "company-scale",
+              "verdict": "missing",
+              "referenceQuote": "179 bnRevenue 2025 (in SEK)27,000 Number of employees7.2 bnOperating income 2025 (in SEK)-65%CO2 emissions reduction",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement about revenue, operating income, employees or emissions.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "company-founded",
+              "verdict": "missing",
+              "referenceQuote": "We were founded in 1887, dedicated to creating infrastructure and buildings that are good for people and good for society",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement about founding year 1887.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "anders-danielsson",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "anders-danielsson",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "21728f203b92f2227ecd6880fe761c14730fc735069e9966312c9b1c3210d588",
+            "url": "https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare)",
+            "hash": "10b86a94be3b2a8cdbfd48fcf8ee3784c8272a93d24a3d5d0be073443d0ffabc",
+            "upstreamIndex": "Wikipedia (Swedish)",
+            "cited": false
+          },
+          {
+            "id": "8c94f7da4f4d5649a28189fa5660cde3fc3b21a376f2373df9a27185063de01c",
+            "url": "https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare)",
+            "hash": "10b86a94be3b2a8cdbfd48fcf8ee3784c8272a93d24a3d5d0be073443d0ffabc",
+            "upstreamIndex": "Wikipedia (Swedish)",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "24943c195ffc8b0705c9fcd387061f70",
+          "3b7117fbf5f1c48b3e708df894340820",
+          "58e77b0f8617ee4a997f75fbf2a06c3a",
+          "0554e38dbef0f78ff7a682dadb6dcefb",
+          "fc54c4b372e0c0ef4561731cdd9c8fdc",
+          "961a14ad5eba7ee4de704eb3e3c8fa50"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 6,
+      "totalCitations": 6,
+      "integrityFindings": [
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "24943c195ffc8b0705c9fcd387061f70",
+          "detail": "Supported by a partially retained version of https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare); the passage verified, the surrounding context may not be complete."
+        },
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "3b7117fbf5f1c48b3e708df894340820",
+          "detail": "Supported by a partially retained version of https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare); the passage verified, the surrounding context may not be complete."
+        },
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "58e77b0f8617ee4a997f75fbf2a06c3a",
+          "detail": "Supported by a partially retained version of https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare); the passage verified, the surrounding context may not be complete."
+        },
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "0554e38dbef0f78ff7a682dadb6dcefb",
+          "detail": "Supported by a partially retained version of https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare); the passage verified, the surrounding context may not be complete."
+        },
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "fc54c4b372e0c0ef4561731cdd9c8fdc",
+          "detail": "Supported by a partially retained version of https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare); the passage verified, the surrounding context may not be complete."
+        },
+        {
+          "check": "citation-source-version",
+          "severity": "minor",
+          "subject": "961a14ad5eba7ee4de704eb3e3c8fa50",
+          "detail": "Supported by a partially retained version of https://sv.wikipedia.org/wiki/Anders_Danielsson_(f%C3%B6retagsledare); the passage verified, the surrounding context may not be complete."
+        }
+      ],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 8,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 3,
+      "ambiguous": 5,
+      "byAcquisition": {
+        "beyond-current-coverage": {
+          "total": 6,
+          "recovered": 0
+        },
+        "app-supported": {
+          "total": 2,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r5": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "skanska-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "Danielsson tillträdde som verkställande direktör och koncernchef för Skanska den 1 januari 2018",
+          "evidenceQuote": "Danielsson tillträdde som verkställande direktör och koncernchef för Skanska den 1 januari 2018.",
+          "claimId": "3b7117fbf5f1c48b3e708df894340820",
+          "rationale": "Dossier states same fact with date 1 January 2018. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "prior-role",
+          "verdict": "ambiguous",
+          "referenceQuote": "Dessförinnan var han vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling",
+          "evidenceQuote": "Dessförinnan var han vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling.",
+          "claimId": "58e77b0f8617ee4a997f75fbf2a06c3a",
+          "rationale": "Same role and responsibilities stated; reference adds effectiveTo 2017 which is consistent context, fact itself matches. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "joined-1991",
+          "verdict": "ambiguous",
+          "referenceQuote": "Han anställdes på Skanska 1991 efter examen från Kungliga Tekniska högskolan",
+          "evidenceQuote": "Han anställdes på Skanska 1991 efter examen från Kungliga Tekniska högskolan.",
+          "claimId": "0554e38dbef0f78ff7a682dadb6dcefb",
+          "rationale": "Joined 1991 after graduating from KTH, as stated. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "sweden-head",
+          "verdict": "ambiguous",
+          "referenceQuote": "År 2008 blev han Sverigechef och kom från år 2013 att ingå i koncernledningen, med ansvar för Norden, Storbritannien och USA",
+          "evidenceQuote": "År 2008 blev han Sverigechef och kom från år 2013 att ingå i koncernledningen, med ansvar för Norden, Storbritannien och USA.",
+          "claimId": "fc54c4b372e0c0ef4561731cdd9c8fdc",
+          "rationale": "Head of Sweden 2008 and group management from 2013 with Nordics, UK, USA responsibility. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "subsidiary-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "Han har varit VD för Skanska Norge och Skanska Sverige, samt vice VD för Skanska AB",
+          "evidenceQuote": "Han har varit VD för Skanska Norge och Skanska Sverige, samt vice VD för Skanska AB.",
+          "claimId": "961a14ad5eba7ee4de704eb3e3c8fa50",
+          "rationale": "CEO of Skanska Norge and Skanska Sverige, Deputy CEO of Skanska AB. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "profitability-focus",
+          "verdict": "missing",
+          "referenceQuote": "”Han tar över Skanska: ”Har starkt lönsamhetsfokus”",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement about SvD 2017 coverage or headlines.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "company-scale",
+          "verdict": "missing",
+          "referenceQuote": "179 bnRevenue 2025 (in SEK)27,000 Number of employees7.2 bnOperating income 2025 (in SEK)-65%CO2 emissions reduction",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement about revenue, operating income, employees or emissions.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "company-founded",
+          "verdict": "missing",
+          "referenceQuote": "We were founded in 1887, dedicated to creating infrastructure and buildings that are good for people and good for society",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement about founding year 1887.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 6,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 2,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 2
+    },
+    "usefulness": {
+      "understanding": 3,
+      "remainingQuestions": 2,
+      "conversationReadiness": 2,
+      "rationale": "The dossier gives a clear, coherently cited picture of the Skanska executive: identity, education, and a stepwise career (joined 1991, Skanska Sweden head 2008, group management 2013, Deputy CEO, CEO since 2018), each backed by a verbatim Swedish Wikipedia quote. All six dossier statements are supported by their cited passages; no overclaims (the known traps — the Migration Agency namesake, company-scale figures, employer award) do not appear in any dossier statement. Remaining questions: the dossier never states what it omits (family, board roles, current status beyond 2018 start, strategy/views), and rests on a single source (Swedish Wikipedia, one article, completeness 'partial'), so completeness is implicitly over-implied rather than explicitly qualified. Conversation readiness is moderate: a reader knows his roles and timeline but has no information on current priorities, personality, or recent developments; single-source coverage limits meeting prep.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "completed",
+      "rounds": 3,
+      "requests": 14,
+      "modelCalls": 1,
+      "sourcesRetained": 2,
+      "leadsInvestigated": 13,
+      "leadsUnresolved": 0,
+      "failuresByCode": {
+        "identity-unmatched": 1,
+        "model-boundary-failed": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 59827
+    }
+  }
+}

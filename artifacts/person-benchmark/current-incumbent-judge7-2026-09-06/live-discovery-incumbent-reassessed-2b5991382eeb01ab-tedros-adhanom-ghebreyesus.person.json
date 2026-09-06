@@ -1,0 +1,389 @@
+{
+  "schemaVersion": 1,
+  "runId": "2b5991382eeb01ab",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "incumbent",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:15:07.414Z",
+  "reassessmentOf": "0ed4213b44f7831b",
+  "result": {
+    "slug": "tedros-adhanom-ghebreyesus",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research bounded before the operation completed.",
+    "assessment": {
+      "operationId": "8fb31d76-b910-4b15-adc7-7b68b3069fe5",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "elected-dg",
+              "verdict": "ambiguous",
+              "referenceQuote": "was elected WHO Director-General for a five-year term by WHO Member States at the Seventieth World Health Assembly in May 2017",
+              "evidenceQuote": "Tedros Adhanom Ghebreyesus is an Ethiopian Director-General of the World Health Organization",
+              "claimId": "830f346b9bc9333183d2ab19d126b17f",
+              "rationale": "The dossier confirms he is WHO Director-General but omits the five-year term, the election by WHO Member States, the Seventieth World Health Assembly, and the May 2017 date. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "first-african-dg",
+              "verdict": "missing",
+              "referenceQuote": "he was the first WHO Director-General elected from among multiple candidates by the World Health Assembly, and was the first person from the WHO African Region to head the world’s leading public health agency",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier makes no statement about him being the first DG elected from multiple candidates or the first from the African Region.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "health-minister",
+              "verdict": "missing",
+              "referenceQuote": "As Minister of Health from 2005 to 2012, he led a comprehensive reform of the country’s health system",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no statement about his tenure as Ethiopia's Minister of Health.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "health-extension-programme",
+              "verdict": "missing",
+              "referenceQuote": "A major component of reforms he drove was the creation of a primary health care extension programme",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of the health extension programme or 40,000 female health workers.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "mortality-reduction",
+              "verdict": "missing",
+              "referenceQuote": "A significant result was an approximate 60% reduction in child and maternal mortality compared to 2000 levels",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No statement about a 60% reduction in child and maternal mortality.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "foreign-minister",
+              "verdict": "missing",
+              "referenceQuote": "As Minister of Foreign Affairs from 2012 to 2016, he elevated health as a political issue nationally, regionally and globally",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No statement about his role as Minister of Foreign Affairs or the Addis Ababa Action Agenda.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "doctorate",
+              "verdict": "missing",
+              "referenceQuote": "Thesis The effects of dams on malaria transmission in Tigray Region, northern Ethiopia, and appropriate control measures  (2000)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No statement about his doctorate, University of Nottingham, or thesis topic.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "global-fund-chair",
+              "verdict": "missing",
+              "referenceQuote": "Prior to his election as Director-General of WHO, Dr Tedros held many leadership positions in global health, including as Chair of the Global Fund",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No statement about his chairmanship of the Global Fund.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "bmj-2024",
+              "verdict": "missing",
+              "referenceQuote": "message.items[0].title[0]: Tedros Adhanom Ghebreyesus: peace is the best medicine",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of the BMJ article or its DOI.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "early-life",
+              "verdict": "missing",
+              "referenceQuote": "born 3 March 1965",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No statement about his birth date, birthplace, or his brother's death.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "tedros-adhanom-ghebreyesus",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "tedros-adhanom-ghebreyesus",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "0984cc887c6f801c0eeca0290466ce79b1b33e7a6e8d04b389ee47ae30e4b647",
+            "url": "https://archive.org/details/usawatchdog.-com-greg-hunter-who-wants-total-control-stop-cv-19-shots-trump-wins-2024-01-19",
+            "hash": "1d36d335e57e800763d5060385ea6b671a71d2ebeedfd01368009bbfd2dfe646",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "bdc30fe7f94c4b27ec0a2e4483c17aa9d95fa7daf1f229aaea63bb807e7f681e",
+            "url": "https://archive.org/details/usawatchdog.-com-greg-hunter-who-wants-total-control-stop-cv-19-shots-trump-wins-2024-01-19",
+            "hash": "1d36d335e57e800763d5060385ea6b671a71d2ebeedfd01368009bbfd2dfe646",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "830f346b9bc9333183d2ab19d126b17f",
+          "ee61747486f0146f18eb1db32dbf2abe",
+          "bb07ff96939e8384888b6c2ef5405807",
+          "bdd89cf4423020a9d934e2939f879cc7"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 4,
+      "totalCitations": 4,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 10,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 9,
+      "ambiguous": 1,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 10,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r6": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "elected-dg",
+          "verdict": "ambiguous",
+          "referenceQuote": "was elected WHO Director-General for a five-year term by WHO Member States at the Seventieth World Health Assembly in May 2017",
+          "evidenceQuote": "Tedros Adhanom Ghebreyesus is an Ethiopian Director-General of the World Health Organization",
+          "claimId": "830f346b9bc9333183d2ab19d126b17f",
+          "rationale": "The dossier confirms he is WHO Director-General but omits the five-year term, the election by WHO Member States, the Seventieth World Health Assembly, and the May 2017 date. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "first-african-dg",
+          "verdict": "missing",
+          "referenceQuote": "he was the first WHO Director-General elected from among multiple candidates by the World Health Assembly, and was the first person from the WHO African Region to head the world’s leading public health agency",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier makes no statement about him being the first DG elected from multiple candidates or the first from the African Region.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "health-minister",
+          "verdict": "missing",
+          "referenceQuote": "As Minister of Health from 2005 to 2012, he led a comprehensive reform of the country’s health system",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no statement about his tenure as Ethiopia's Minister of Health.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "health-extension-programme",
+          "verdict": "missing",
+          "referenceQuote": "A major component of reforms he drove was the creation of a primary health care extension programme",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of the health extension programme or 40,000 female health workers.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "mortality-reduction",
+          "verdict": "missing",
+          "referenceQuote": "A significant result was an approximate 60% reduction in child and maternal mortality compared to 2000 levels",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No statement about a 60% reduction in child and maternal mortality.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "foreign-minister",
+          "verdict": "missing",
+          "referenceQuote": "As Minister of Foreign Affairs from 2012 to 2016, he elevated health as a political issue nationally, regionally and globally",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No statement about his role as Minister of Foreign Affairs or the Addis Ababa Action Agenda.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "doctorate",
+          "verdict": "missing",
+          "referenceQuote": "Thesis The effects of dams on malaria transmission in Tigray Region, northern Ethiopia, and appropriate control measures  (2000)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No statement about his doctorate, University of Nottingham, or thesis topic.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "global-fund-chair",
+          "verdict": "missing",
+          "referenceQuote": "Prior to his election as Director-General of WHO, Dr Tedros held many leadership positions in global health, including as Chair of the Global Fund",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No statement about his chairmanship of the Global Fund.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "bmj-2024",
+          "verdict": "missing",
+          "referenceQuote": "message.items[0].title[0]: Tedros Adhanom Ghebreyesus: peace is the best medicine",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of the BMJ article or its DOI.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "early-life",
+          "verdict": "missing",
+          "referenceQuote": "born 3 March 1965",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No statement about his birth date, birthplace, or his brother's death.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 4,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 2,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 2
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "All dossier statements are blank; the only content is a single citation quote identifying Tedros as Ethiopian Director-General of the WHO, sourced to a conspiracy-oriented USAWatchdog interview page — a weak, non-authoritative source. The identity anchors (ministerships, birthplace, PhD) are asserted in metadata but not supported by any dossier claim. A reader learns only a bare title and role, with no detail on actions, and no gaps or unknowns are flagged. Not sufficient to prepare for a meeting beyond knowing his current title.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "bounded",
+      "rounds": 2,
+      "requests": 7,
+      "modelCalls": 1,
+      "sourcesRetained": 2,
+      "leadsInvestigated": 6,
+      "leadsUnresolved": 109,
+      "failuresByCode": {
+        "identity-unmatched": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "109 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 159959
+    }
+  }
+}

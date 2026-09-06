@@ -1,0 +1,44 @@
+{
+  "id": "person_35c7cd4d6b44",
+  "revision": 2,
+  "createdAt": "2026-09-06T11:03:06.773Z",
+  "updatedAt": "2026-09-06T11:51:01.660Z",
+  "fullName": "Xavier Huillard",
+  "primaryEmail": null,
+  "emails": [],
+  "handles": {},
+  "profileUrls": [],
+  "employerHints": [],
+  "role": "Chairman and Chief Executive Officer of VINCI",
+  "background": null,
+  "currentEmployer": "VINCI",
+  "socialProfiles": [],
+  "websites": [],
+  "feeds": [],
+  "publications": [],
+  "mentions": [],
+  "evidence": [],
+  "sourceDiagnostics": [],
+  "archivedAt": null,
+  "researchFacts": {
+    "role": {
+      "value": "Chairman and Chief Executive Officer of VINCI",
+      "sourceIds": [
+        "aeda921b8740cb5c12bdf42f9cfaef2804da50b85003ec4c94f4281e199a2701"
+      ],
+      "effectiveFrom": "2024-05-03"
+    }
+  },
+  "invalidations": [
+    {
+      "id": "inv_1",
+      "kind": "correction",
+      "affectedRevision": 1,
+      "detail": "Automatic research update. role: Matched source supplies the fact. Sources: aeda921b8740cb5c12bdf42f9cfaef2804da50b85003ec4c94f4281e199a2701. Effective: 2024-05-03.",
+      "affectedRevisions": [
+        1
+      ],
+      "occurredAt": "2026-09-06T11:51:01.660Z"
+    }
+  ]
+}

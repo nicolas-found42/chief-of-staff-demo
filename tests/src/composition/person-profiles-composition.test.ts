@@ -58,6 +58,109 @@ function compose(overrides: Partial<PersonProfilesCompositionDeps> = {}): Harnes
 }
 
 describe("the Person Profiles composition", () => {
+  it("keeps a shutdown interruption observable alongside its retained source", async () => {
+    let release!: (value: unknown) => void;
+    let extracting!: () => void;
+    const started = new Promise<void>((resolve) => {
+      extracting = resolve;
+    });
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: "Maya Chen built Atlas.",
+        }),
+      },
+      complete: () => () =>
+        new Promise<unknown>((resolve) => {
+          release = resolve;
+          extracting();
+        }),
+    });
+    const profile = h.people.research.startFor({
+      fullName: "Maya Chen",
+      profileUrls: ["https://example.com/maya"],
+    });
+    const pending = h.people.research.runNow(profile.id);
+    await started;
+    h.people.stop();
+    release({});
+    await pending;
+    expect(h.people.research.outcome(profile.id)?.conclusion).toBe("interrupted");
+    expect(h.people.queue.status().jobs.find((job) => job.profileId === profile.id)?.state).toBe(
+      "interrupted",
+    );
+    expect(h.people.research.sources(profile.id)).toContainEqual(
+      expect.objectContaining({ text: "Maya Chen built Atlas." }),
+    );
+  });
+
+  it("preserves a long Retry-After and stops recovery rather than retrying early", async () => {
+    vi.useFakeTimers();
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 429,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: "3600",
+          body: "Rate limited",
+        }),
+      },
+    });
+    const profile = h.people.research.startFor({
+      fullName: "Maya Chen",
+      profileUrls: ["https://example.com/maya"],
+    });
+    const pending = h.people.research.runNow(profile.id);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(settled).toBe(true);
+    const outcome = await pending;
+    expect(outcome?.attempts).toContainEqual(
+      expect.objectContaining({
+        code: "rate-limited",
+        recovery: "stopped",
+        observed: expect.objectContaining({ retryAfterMilliseconds: 3_600_000 }),
+        recoveryStopped: expect.stringContaining("Retry-After"),
+      }),
+    );
+  });
+
+  it("redacts credential-bearing URLs from failure explanations, echoed response excerpts and remediation", async () => {
+    const url = "https://example.com/maya?token=private-token-value";
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (target) => ({
+          url: target,
+          status: 403,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `Forbidden request: ${target}`,
+        }),
+      },
+    });
+    const profile = h.people.research.startFor({ fullName: "Maya Chen", profileUrls: [url] });
+    const outcome = await h.people.research.runNow(profile.id);
+    expect(outcome?.attempts.some((attempt) => attempt.outcome === "failed")).toBe(true);
+    expect(
+      outcome?.attempts.find((attempt) => attempt.stage === "access")?.observed?.excerpt,
+    ).toContain("Forbidden request: https://example.com/maya");
+    expect(JSON.stringify(outcome?.attempts)).not.toContain("private-token-value");
+  });
+
   it("reports model-provider failure as interrupted while preserving the retrieved evidence", async () => {
     const h = compose({
       researchTestPorts: {
@@ -236,6 +339,9 @@ describe("the Person Profiles composition", () => {
         };
       },
     });
+    /* The default operation allowance comfortably covers this chain; the
+       bounded-ceiling behavior under a tiny allowance is asserted by the
+       safety-bound test below, which needs profileCalls: 1 to stay bounded. */
     const profile = h.people.profiles.create({ profileUrls: ["https://example.com/1"] });
     await h.people.queue.tick();
     expect(h.people.dossiers.get(profile.id)?.claims.map((claim) => claim.statement)).toContain(
@@ -733,8 +839,36 @@ it("broadens empty discovery and retains useful evidence beyond the first readin
 });
 
 it.each([
+  '<script>window.config={"wgConfirmEditCaptchaNeededForGenericEdit":"hcaptcha","wgConfirmEditForceShowCaptcha":false};</script>',
+  "<p>Her published research studies captcha accessibility and its effect on disabled readers.</p>",
+])("retains a readable biography with incidental captcha content: %s", async (incidental) => {
+  const url = "https://biography.example/maya";
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (target) => ({
+        url: target,
+        status: 200,
+        contentType: "text/html",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: `<html><head><title>Maya Chen</title></head><body>${incidental}<article><h1>Maya Chen</h1><p>Maya Chen led the ocean sensor project from 2020 to 2024. Her team deployed the equipment at three coastal research stations and published the measurement methods for independent review.</p></article></body></html>`,
+      }),
+    },
+  });
+  const profile = h.people.research.startFor({ fullName: "Maya Chen", profileUrls: [url] });
+  const outcome = await h.people.research.runNow(profile.id);
+  expect(h.people.research.sources(profile.id)).toContainEqual(
+    expect.objectContaining({ text: expect.stringContaining("led the ocean sensor project") }),
+  );
+  expect(outcome?.attempts.some((attempt) => attempt.code === "challenge-page")).toBe(false);
+});
+
+it.each([
   ["Forbidden", "http-error"],
   ["<html><body>Please sign in to continue</body></html>", "login-required"],
+  ["<html><body>Please solve the following captcha</body></html>", "challenge-page"],
+  ["<html><body><script>window._cf_chl_opt={};</script></body></html>", "challenge-page"],
 ])("classifies denied social access from response evidence: %s", async (body, code) => {
   const h = compose({
     researchTestPorts: {
@@ -1365,4 +1499,69 @@ it("keeps unfinished traversal when a bounded operation is explicitly requeued",
   expect(second?.operationId).toBe(first?.operationId);
   expect(second?.attempts).toEqual(expect.arrayContaining(first?.attempts ?? []));
   expect(second?.conclusion).toBe("completed");
+});
+
+it("fences a publication when archive occurs inside the serialized write boundary", async () => {
+  let profileId = "";
+  const quote = "Maya built Atlas.";
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (url) => ({
+        url,
+        status: 200,
+        contentType: "text/plain",
+        body: quote,
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+      }),
+    },
+    complete: () => async () => {
+      queueMicrotask(() => queueMicrotask(() => h.people.profiles.archive(profileId)));
+      return {
+        fullName: null,
+        employer: null,
+        sourceClass: "primary-artifact",
+        author: null,
+        publishedAt: null,
+        claims: [
+          {
+            id: "work",
+            section: "work",
+            statement: quote,
+            status: "supported",
+            nature: "statement",
+            matchConfidence: "high",
+            effectiveFrom: null,
+            effectiveTo: null,
+            citations: [{ sourceId: "source", quote }],
+            supports: [],
+            supersedes: [],
+            changeReason: null,
+          },
+        ],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      };
+    },
+  });
+  profileId = h.people.research.startFor({
+    fullName: "Maya",
+    profileUrls: ["https://example.com/maya"],
+  }).id;
+  await h.people.research.runNow(profileId);
+  expect(h.people.profiles.get(profileId)?.archivedAt).not.toBeNull();
+  expect(h.people.research.dossier(profileId)?.claims ?? []).toEqual([]);
+});
+
+it("runs the requested Profile without dispatching an older eligible Profile", async () => {
+  const h = compose();
+  const older = h.people.research.startFor({ fullName: "Older person" });
+  h.people.queue.enqueue(older.id, "explicit");
+  const requested = h.people.research.startFor({ fullName: "Requested person" });
+  const result = await h.people.research.runNow(requested.id);
+  expect(result?.profileId).toBe(requested.id);
+  expect(h.people.research.outcome(older.id)).toBeNull();
 });

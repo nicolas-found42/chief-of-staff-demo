@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { load } from "cheerio";
 import type {
   PersonResearchAttempt,
   PersonResearchFailureCode,
@@ -6,6 +7,7 @@ import type {
   PersonResearchStage,
 } from "@chief-of-staff-demo/shared";
 import { sanitizeDiagnosticContentType } from "../source-adapters/diagnostics.js";
+import { sanitizeModelBoundaryDiagnostic } from "../llm/failure.js";
 
 /**
  * The version stamped onto every attempt this build records. Bump it when a
@@ -14,7 +16,7 @@ import { sanitizeDiagnosticContentType } from "../source-adapters/diagnostics.js
  */
 const COLLECTOR_VERSIONS = {
   "public-search": "2026-09-06",
-  "html-reader": "2026-09-06",
+  "html-reader": "2026-09-06.1",
   "text-reader": "2026-09-06",
   "document-reader": "2026-09-06",
   "feed-reader": "2026-09-06",
@@ -106,14 +108,16 @@ export class ResearchAttemptRecorder {
       targetKind: input.targetKind,
       collector: input.collector,
       collectorVersion: COLLECTOR_VERSIONS[input.collector],
-      reason: input.reason.slice(0, 1000),
+      reason: sanitizeDiagnosticText(input.reason),
       occurredAt: this.now().toISOString(),
       ...(input.configuration ? { configuration: input.configuration } : {}),
       ...(input.observed ? { observed: sanitizeObservation(input.observed) } : {}),
-      ...(input.impact ? { impact: input.impact.slice(0, 1000) } : {}),
-      ...(input.remediation ? { remediation: input.remediation.slice(0, 1000) } : {}),
-      ...(input.hypothesis ? { hypothesis: input.hypothesis.slice(0, 1000) } : {}),
-      ...(input.recoveryStopped ? { recoveryStopped: input.recoveryStopped.slice(0, 1000) } : {}),
+      ...(input.impact ? { impact: sanitizeDiagnosticText(input.impact) } : {}),
+      ...(input.remediation ? { remediation: sanitizeDiagnosticText(input.remediation) } : {}),
+      ...(input.hypothesis ? { hypothesis: sanitizeDiagnosticText(input.hypothesis) } : {}),
+      ...(input.recoveryStopped
+        ? { recoveryStopped: sanitizeDiagnosticText(input.recoveryStopped) }
+        : {}),
       ...(input.profileRevision !== undefined ? { profileRevision: input.profileRevision } : {}),
     };
     this.entries.push(entry);
@@ -146,6 +150,10 @@ export class ResearchAttemptRecorder {
  * targets are public pages already retained as dossier sources, so the origin
  * and path survive; credentials, fragments and unrecognized query values do not.
  */
+function sanitizeDiagnosticText(value: string, limit = 1000): string {
+  return value.replace(/https?:\/\/[^\s<>"']+/gi, sanitizeResearchTarget).slice(0, limit);
+}
+
 function sanitizeResearchTarget(value: string): string {
   try {
     const url = new URL(value);
@@ -165,7 +173,8 @@ function sanitizeResearchTarget(value: string): string {
 }
 
 function sanitizeTarget(value: string, kind: PersonResearchAttempt["targetKind"]): string {
-  if (kind === "query" || kind === "model" || kind === "profile") return value.slice(0, 4000);
+  if (kind === "query" || kind === "model" || kind === "profile")
+    return sanitizeDiagnosticText(value, 4000);
   return sanitizeResearchTarget(value);
 }
 
@@ -176,9 +185,12 @@ function sanitizeObservation(observed: PersonResearchObservation): PersonResearc
     ...(observed.contentType !== undefined
       ? { contentType: sanitizeDiagnosticContentType(observed.contentType) }
       : {}),
-    ...(observed.excerpt ? { excerpt: observed.excerpt.slice(0, 2000) } : {}),
+    ...(observed.excerpt ? { excerpt: sanitizeDiagnosticText(observed.excerpt, 2000) } : {}),
     ...(observed.modelDiagnostic
-      ? { modelDiagnostic: observed.modelDiagnostic.slice(0, 2000) }
+      ? { modelDiagnostic: sanitizeDiagnosticText(observed.modelDiagnostic, 2000) }
+      : {}),
+    ...(observed.modelBoundary
+      ? { modelBoundary: sanitizeModelBoundaryDiagnostic(observed.modelBoundary) }
       : {}),
   };
 }
@@ -273,21 +285,28 @@ export function detectChallenge(
 ): "login-required" | "challenge-page" | null {
   if (contentType && !contentType.includes("html") && !contentType.startsWith("text/")) return null;
   const head = body.slice(0, 20000).toLowerCase();
+  const document = load(head);
+  document("script, style, template").remove();
+  const visible = document.root().text().replace(/\s+/g, " ");
+  // Editing widgets and configuration often mention captcha on otherwise public
+  // articles (including Wikipedia). A token in source markup is not an access wall.
   if (
     head.includes("cf-challenge") ||
     head.includes("cf_chl") ||
-    head.includes("just a moment") ||
-    head.includes("enable javascript and cookies to continue") ||
-    head.includes("checking your browser") ||
-    head.includes("captcha")
+    visible.includes("just a moment") ||
+    visible.includes("enable javascript and cookies to continue") ||
+    visible.includes("checking your browser") ||
+    visible.includes("verify you are human") ||
+    /\b(?:complete|solve|enter)(?:\s+\w+){0,5}\s+captcha\b/.test(visible) ||
+    /^captcha(?: verification| challenge| required)?$/.test(document("title").text().trim())
   )
     return "challenge-page";
   if (
-    head.includes("sign in to continue") ||
-    head.includes("please log in") ||
-    head.includes("login required") ||
-    head.includes("authwall") ||
-    head.includes("join linkedin to see")
+    visible.includes("sign in to continue") ||
+    visible.includes("please log in") ||
+    visible.includes("login required") ||
+    document('[class~="authwall"], [id="authwall"]').length > 0 ||
+    visible.includes("join linkedin to see")
   )
     return "login-required";
   return null;

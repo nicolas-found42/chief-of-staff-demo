@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "runId": "b2838e9176d9058b",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T11:59:25.641Z",
+  "reassessmentOf": "b54435b1c60e9dbf",
+  "result": {
+    "slug": "bong-joon-ho",
+    "referenceVersion": "2026-09-06.2",
+    "mode": "fixed-documents",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "592a08f5-e5d7-4f10-b810-81987a7658a4",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "debut",
+              "verdict": "missing",
+              "referenceQuote": "Bong first became known to audiences and gained a cult following with his feature directorial debut, the dark comedy film Barking Dogs Never Bite (2000).",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty, so no fact about Barking Dogs Never Bite (2000) as feature directorial debut is stated.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "english-crossing",
+              "verdict": "missing",
+              "referenceQuote": "the science fiction action film Snowpiercer (2013), which served as Bong's English-language debut",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no statement about Snowpiercer (2013) as English-language debut exists.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "parasite-awards",
+              "verdict": "missing",
+              "referenceQuote": "Bong won Academy Awards for Best Picture, Best Director, and Best Original Screenplay, making Parasite the first non-English language film to win Best Picture.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no Academy Awards or Parasite facts are stated.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "shared-screenplay",
+              "verdict": "missing",
+              "referenceQuote": "is one of four writers (along with Jang Joon-hwan) credited for the screenplay of Phantom: The Submarine (1999).",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; nothing about Phantom: The Submarine (1999) or its credited writers appears.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "debut-failure",
+              "verdict": "missing",
+              "referenceQuote": "비평가들로부터의 평가는 긍정적이었지만 흥행에는 실패했다. 그럼에도 불구하고 이 영화는 스페인의 산세바스티안 국제영화제 공식경쟁부문에 초청되었으며, 홍콩의 슬램댄스 국제 영화제에서 국제영화비평가상과 뮌헨 영화제 신인감독상을 수상했다.[9] 해외 영화제에서의 국제적인 입소문을 서서히 구축하는 것도 영화의 재정적 도움을 주었다. 영화가 출시 된 지 2년이 지났을 때 영화는 해외 판매 수익으로 인해 손익분기점에 도달했다.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty; no claim about Barking Dogs Never Bite's box-office failure or overseas sales appears.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "bong-joon-ho",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "bong-joon-ho",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "8a7f6fa1bbba309644b489f124d22f6ac39e40fea2bf7434f208547c201dccfc",
+            "url": "https://ko.wikipedia.org/wiki/%EB%B4%89%EC%A4%80%ED%98%B8",
+            "hash": "15a11d5ea87f7519ab4a14d848aafc9795f32986cc6ce8527ecd2314fef14e43",
+            "upstreamIndex": "Wikipedia (Korean)",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 4,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "debut",
+          "verdict": "missing",
+          "referenceQuote": "Bong first became known to audiences and gained a cult following with his feature directorial debut, the dark comedy film Barking Dogs Never Bite (2000).",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty, so no fact about Barking Dogs Never Bite (2000) as feature directorial debut is stated.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "english-crossing",
+          "verdict": "missing",
+          "referenceQuote": "the science fiction action film Snowpiercer (2013), which served as Bong's English-language debut",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no statement about Snowpiercer (2013) as English-language debut exists.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "parasite-awards",
+          "verdict": "missing",
+          "referenceQuote": "Bong won Academy Awards for Best Picture, Best Director, and Best Original Screenplay, making Parasite the first non-English language film to win Best Picture.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no Academy Awards or Parasite facts are stated.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "shared-screenplay",
+          "verdict": "missing",
+          "referenceQuote": "is one of four writers (along with Jang Joon-hwan) credited for the screenplay of Phantom: The Submarine (1999).",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; nothing about Phantom: The Submarine (1999) or its credited writers appears.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "debut-failure",
+          "verdict": "missing",
+          "referenceQuote": "비평가들로부터의 평가는 긍정적이었지만 흥행에는 실패했다. 그럼에도 불구하고 이 영화는 스페인의 산세바스티안 국제영화제 공식경쟁부문에 초청되었으며, 홍콩의 슬램댄스 국제 영화제에서 국제영화비평가상과 뮌헨 영화제 신인감독상을 수상했다.[9] 해외 영화제에서의 국제적인 입소문을 서서히 구축하는 것도 영화의 재정적 도움을 주었다. 영화가 출시 된 지 2년이 지났을 때 영화는 해외 판매 수익으로 인해 손익분기점에 도달했다.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty; no claim about Barking Dogs Never Bite's box-office failure or overseas sales appears.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty: no biographical statements, no citations to assess, no noted gaps. The identity anchor alone (South Korean filmmaker, b. 1969, director of Parasite and Memories of Murder) tells a reader almost nothing about the person's actual career, roles, or recent activity. The two pre-flagged unjustified conclusions concern claims not present in any dossier text, so no overclaims can be matched to verbatim excerpts. A retained Wikipedia excerpt exists but extraction coverage is 'unattempted', so nothing substantive was carried over.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 6,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 1,
+      "failuresByCode": {
+        "identity-unmatched": 1,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "1 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 63411
+    }
+  }
+}

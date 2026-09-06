@@ -1,0 +1,44 @@
+{
+  "id": "person_af8c6391f6ca",
+  "revision": 2,
+  "createdAt": "2026-09-06T11:25:10.622Z",
+  "updatedAt": "2026-09-06T11:26:21.387Z",
+  "fullName": "Jane Fraser",
+  "primaryEmail": null,
+  "emails": [],
+  "handles": {},
+  "profileUrls": [],
+  "employerHints": [],
+  "role": "Chairwoman and CEO of Citigroup",
+  "background": null,
+  "currentEmployer": "Citigroup",
+  "socialProfiles": [],
+  "websites": [],
+  "feeds": [],
+  "publications": [],
+  "mentions": [],
+  "evidence": [],
+  "sourceDiagnostics": [],
+  "archivedAt": null,
+  "researchFacts": {
+    "role": {
+      "value": "Chairwoman and CEO of Citigroup",
+      "sourceIds": [
+        "085af752457f3863da5a6fad23aebec96834069fb9a9d805bb1c4102f4c1d5f0"
+      ],
+      "effectiveFrom": "2021-03"
+    }
+  },
+  "invalidations": [
+    {
+      "id": "inv_1",
+      "kind": "correction",
+      "affectedRevision": 1,
+      "detail": "Automatic research update. role: Matched source supplies the fact. Sources: 085af752457f3863da5a6fad23aebec96834069fb9a9d805bb1c4102f4c1d5f0. Effective: 2021-03.",
+      "affectedRevisions": [
+        1
+      ],
+      "occurredAt": "2026-09-06T11:26:21.387Z"
+    }
+  ]
+}

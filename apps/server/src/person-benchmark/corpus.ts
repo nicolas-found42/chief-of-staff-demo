@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   BENCHMARK_DOSSIER_REQUIREMENTS,
   BenchmarkPersonSchema,
+  BenchmarkCollectionScenarioSchema,
+  type BenchmarkCollectionScenario,
   type BenchmarkDossierRequirement,
   type BenchmarkPerson,
 } from "@chief-of-staff-demo/shared";
@@ -21,6 +23,7 @@ import {
 export interface BenchmarkCorpus {
   version: string;
   people: BenchmarkPerson[];
+  scenarios: BenchmarkCollectionScenario[];
   /** Problems that made a file unusable. Never silently skipped. */
   rejected: { file: string; reason: string }[];
 }
@@ -50,8 +53,40 @@ export function loadCorpus(directory = DEFAULT_CORPUS_DIR): BenchmarkCorpus {
   }
   /* The corpus version is derived from the references themselves, so a report
      cannot claim to have run against a corpus it did not run against. */
-  const version = createHash("sha256").update(JSON.stringify(people)).digest("hex").slice(0, 16);
-  return { version, people, rejected };
+  const scenarios: BenchmarkCollectionScenario[] = [];
+  const scenarioPath = join(directory, "..", "collection-scenarios.json");
+  if (existsSync(scenarioPath)) {
+    try {
+      const entries = BenchmarkCollectionScenarioSchema.array()
+        .max(100)
+        .parse(JSON.parse(readFileSync(scenarioPath, "utf8")));
+      for (const scenario of entries) {
+        if (scenarios.some((entry) => entry.id === scenario.id))
+          throw new Error(`Duplicate collection scenario ${scenario.id}`);
+        for (const expected of scenario.expected) {
+          const person = people.find((entry) => entry.slug === expected.slug);
+          if (
+            !person ||
+            expected.factIds.some((id) => !person.facts.some((fact) => fact.id === id))
+          )
+            throw new Error(
+              `Collection scenario ${scenario.id} cites an unknown person or reference fact.`,
+            );
+        }
+        scenarios.push(scenario);
+      }
+    } catch (error) {
+      rejected.push({
+        file: scenarioPath,
+        reason: error instanceof Error ? error.message : "Unreadable collection scenarios.",
+      });
+    }
+  }
+  const version = createHash("sha256")
+    .update(JSON.stringify(scenarios.length ? { people, scenarios } : people))
+    .digest("hex")
+    .slice(0, 16);
+  return { version, people, scenarios, rejected };
 }
 
 /** Everything a reference has to satisfy before it may judge anything. */

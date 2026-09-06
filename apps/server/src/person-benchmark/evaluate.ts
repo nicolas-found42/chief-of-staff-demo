@@ -4,7 +4,10 @@ import {
   type BenchmarkMode,
   type BenchmarkPerson,
   type BenchmarkPersonResult,
+  type BenchmarkModelAttempt,
   type PersonProfile,
+  type PersonDossier,
+  type PersonSourceDocument,
   type PersonResearchOperationOutcome,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
@@ -18,6 +21,7 @@ import type { readPersonSource } from "../person-profile/research-readers.js";
 import { isolatedLookup } from "./corpus.js";
 import { checkIntegrity, criticalCount } from "./integrity.js";
 import { judgePerson } from "./judge.js";
+import { sourceContributions } from "./source-contributions.js";
 
 /**
  * What the evaluator needs to run one Benchmark Person through production.
@@ -112,6 +116,7 @@ function fixedDocumentPorts(person: BenchmarkPerson): {
 }
 
 export interface PersonEvaluation {
+  profileId: string;
   result: BenchmarkPersonResult;
   /** The operation record behind the result, for the failure breakdown. */
   operation: PersonResearchOperationOutcome | null;
@@ -130,13 +135,28 @@ export async function evaluatePerson(
   mode: BenchmarkMode,
   ports: EvaluationPorts,
 ): Promise<PersonEvaluation> {
-  const startedAt = Date.now();
-  const fixed = mode === "fixed-documents" ? fixedDocumentPorts(person) : null;
+  const people = composeEvaluation(
+    ports,
+    1,
+    mode === "fixed-documents" ? fixedDocumentPorts(person) : null,
+  );
+  const profile = people.research.startFor(isolatedLookup(person));
+  return evaluateInComposition(person, mode, ports, people, profile.id);
+}
+
+function composeEvaluation(
+  ports: EvaluationPorts,
+  concurrency: number,
+  fixed: ReturnType<typeof fixedDocumentPorts> | null = null,
+): PersonProfilesComposition {
   const people: PersonProfilesComposition = composePersonProfiles({
     workspaceDir: ports.workspaceDir,
     search: fixed?.search ?? ports.search,
     complete: ports.complete,
-    ...(ports.plan ? { plan: ports.plan } : {}),
+    /* Fixed-document mode isolates downstream quality over a supplied corpus.
+       Asking for internet targets here cannot add evidence and confounds that
+       measurement with adaptive discovery. Live mode keeps the real planner. */
+    ...(ports.plan && !fixed ? { plan: ports.plan } : {}),
     ...(ports.render && !fixed ? { render: ports.render } : {}),
     /* One seam, two uses: fixed-document mode replaces retrieval with the
        retained excerpts, and the incumbent baseline replaces it with the two
@@ -155,7 +175,7 @@ export async function evaluatePerson(
   });
   people.queue.configure({
     paused: false,
-    concurrency: 1,
+    concurrency,
     ...(ports.settings?.profileCalls !== undefined
       ? { profileCalls: ports.settings.profileCalls }
       : {}),
@@ -167,11 +187,64 @@ export async function evaluatePerson(
       : {}),
   });
 
+  return people;
+}
+
+/** Live workers share the actual queue, stores, source cooldowns and model ports. */
+export async function evaluateLivePopulation(
+  selected: BenchmarkPerson[],
+  ports: EvaluationPorts & {
+    concurrency: number;
+    onStarted?: (person: BenchmarkPerson, index: number) => void;
+    onEvaluated?: (evaluation: PersonEvaluation, index: number) => void;
+  },
+): Promise<{ people: PersonProfilesComposition; evaluations: PersonEvaluation[] }> {
+  if (!Number.isInteger(ports.concurrency) || ports.concurrency < 1 || ports.concurrency > 4)
+    throw new Error("Live benchmark concurrency must be an integer from 1 to 4.");
+  if (new Set(selected.map((person) => person.slug)).size !== selected.length)
+    throw new Error("Live benchmarking requires unique selected Benchmark People.");
+  const people = composeEvaluation(ports, ports.concurrency);
+  const profiles = selected.map((person) => people.research.startFor(isolatedLookup(person)));
+  if (new Set(profiles.map((profile) => profile.id)).size !== selected.length)
+    throw new Error("Selected Benchmark People resolved to duplicate canonical Profiles.");
+  const evaluations: PersonEvaluation[] = new Array<PersonEvaluation>(selected.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(ports.concurrency, selected.length) }, async () => {
+    while (next < selected.length) {
+      const index = next++;
+      const person = selected[index]!;
+      ports.onStarted?.(person, index);
+      const evaluation = await evaluateInComposition(
+        person,
+        "live-discovery",
+        ports,
+        people,
+        profiles[index]!.id,
+      );
+      evaluations[index] = evaluation;
+      ports.onEvaluated?.(evaluation, index);
+    }
+  });
+  // An output/assessment failure must not let the CLI delete a workspace while
+  // another accepted operation still has I/O or publication in flight.
+  const settled = await Promise.allSettled(workers);
+  const failure = settled.find((result) => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+  return { people, evaluations };
+}
+
+async function evaluateInComposition(
+  person: BenchmarkPerson,
+  mode: BenchmarkMode,
+  ports: EvaluationPorts,
+  people: PersonProfilesComposition,
+  profileId: string,
+): Promise<PersonEvaluation> {
+  const startedAt = Date.now();
   let failure: string | null = null;
   let operation: PersonResearchOperationOutcome | null = null;
-  const profile = people.research.startFor(isolatedLookup(person));
   try {
-    operation = await people.research.runNow(profile.id);
+    operation = await people.research.runNow(profileId);
   } catch (error) {
     failure = `Research failed: ${error instanceof Error ? error.message : "unknown error"}`;
   }
@@ -179,16 +252,71 @@ export async function evaluatePerson(
   if (!operation || operation.conclusion !== "completed")
     failure ??= `Research ${operation?.conclusion ?? "interrupted"} before the operation completed.`;
 
-  const dossier = people.research.dossier(profile.id, "private");
-  const sources = people.research.sources(profile.id);
-  const integrity = checkIntegrity(dossier, sources, people.research.dossier(profile.id, "public"));
+  const dossier = people.research.dossier(profileId, "private");
+  const sources = people.research.sources(profileId);
+  const result = await assessPerson(person, mode, {
+    dossier,
+    sources,
+    publicProjection: people.research.dossier(profileId, "public"),
+    operation,
+    judge: ports.judge,
+    elapsedMilliseconds: Date.now() - startedAt,
+    failure,
+  });
+  return { result, operation, profileId };
+}
+
+/** Assess retained production evidence without initiating research. */
+export async function assessPerson(
+  person: BenchmarkPerson,
+  mode: BenchmarkMode,
+  evidence: {
+    dossier: PersonDossier | null;
+    sources: PersonSourceDocument[];
+    publicProjection: PersonDossier | null;
+    operation: PersonResearchOperationOutcome | null;
+    judge: CompleteJson;
+    elapsedMilliseconds: number;
+    failure?: string | null;
+  },
+): Promise<BenchmarkPersonResult> {
+  const { dossier, sources, operation } = evidence;
+  let failure =
+    evidence.failure ??
+    (operation?.conclusion === "completed"
+      ? null
+      : `Research ${operation?.conclusion ?? "interrupted"} before the operation completed.`);
+  const integrity = checkIntegrity(dossier, sources, evidence.publicProjection);
 
   let judged;
+  let judgeCompleted = false;
+  const modelAttempts: BenchmarkModelAttempt[] = [];
+  let judgeCalls = 0;
+  const observedJudge: CompleteJson = (request) => {
+    const call = ++judgeCalls;
+    return evidence.judge({
+      ...request,
+      retry: {
+        onAttempt: (observation) => modelAttempts.push({ call, subject: person.slug, observation }),
+      },
+    });
+  };
   try {
-    judged = await judgePerson(ports.judge, person, dossier, sources);
+    judged = await judgePerson(observedJudge, person, dossier, sources);
+    judgeCompleted = judged.complete;
+    if (!judgeCompleted) failure ??= judged.incompleteReason ?? "Judge assessment was incomplete.";
   } catch (error) {
-    failure ??= `Judge failed: ${error instanceof Error ? error.message : "unknown error"}`;
+    const judgeFailure =
+      `Judge reference assessment failed: ${error instanceof Error ? error.message : "unknown error"}`.slice(
+        0,
+        2000,
+      );
+    failure ??= judgeFailure;
     judged = {
+      phases: {
+        reference: { status: "failed" as const, judgements: [], failure: judgeFailure },
+        support: { status: "not-attempted" as const, failure: null },
+      },
       judgements: person.facts.map((fact) => ({
         factId: fact.id,
         verdict: "ambiguous" as const,
@@ -209,7 +337,46 @@ export async function evaluatePerson(
     };
   }
 
-  const verdicts = judged.judgements;
+  const verdicts = judged.judgements.map((judgement) => {
+    const supportIncomplete = judged.phases.support.status !== "completed";
+    const overclaimed = judged.overclaims.some((finding) => finding.claimId === judgement.claimId);
+    const failedChecks = [
+      ...new Set(
+        integrity.findings
+          .filter(
+            (finding) => finding.severity === "critical" && finding.subject === judgement.claimId,
+          )
+          .map((finding) => finding.check),
+      ),
+    ];
+    if (
+      (failedChecks.length === 0 && !supportIncomplete && !overclaimed) ||
+      (judgement.verdict !== "recovered" && judgement.verdict !== "partial")
+    )
+      return judgement;
+    // Semantic agreement cannot turn a broken evidence record into recovery.
+    // Preserve the judge's decision for review before computing every aggregate.
+    const reasons = [
+      ...(overclaimed
+        ? [
+            "the matched claim has a validated overclaim finding, including findings requiring review",
+          ]
+        : []),
+      ...(failedChecks.length
+        ? [`the matched claim failed critical integrity checks: ${failedChecks.join(", ")}`]
+        : []),
+      ...(supportIncomplete
+        ? ["support/usefulness assessment did not complete; positive recovery credit is withheld"]
+        : []),
+    ];
+    const explanation = `Original semantic verdict: ${judgement.verdict}; downgraded to ambiguous because ${reasons.join("; ")}. `;
+    return {
+      ...judgement,
+      verdict: "ambiguous" as const,
+      reviewRequired: true,
+      rationale: `${explanation}${judgement.rationale}`.slice(0, 2000),
+    };
+  });
   const counted = (verdict: string) =>
     verdicts.filter((judgement) => judgement.verdict === verdict).length;
   const recoveredIds = new Set(
@@ -240,11 +407,32 @@ export async function evaluatePerson(
     referenceVersion: person.referenceVersion,
     mode,
     failure,
+    sourceContributions: sourceContributions(
+      dossier,
+      sources,
+      verdicts,
+      new Set([
+        ...integrity.findings
+          .filter((finding) => finding.severity === "critical")
+          .map((finding) => finding.subject),
+        ...judged.overclaims.map((overclaim) => overclaim.claimId),
+      ]),
+    ),
+    assessment: {
+      operationId: operation?.operationId ?? null,
+      integrity: "completed",
+      judge: judgeCompleted ? "completed" : "failed",
+      phases: judged.phases,
+      modelAttempts,
+    },
     factualReliability: {
       verifiedCitations: integrity.verifiedCitations,
       totalCitations: integrity.totalCitations,
       integrityFindings: integrity.findings.slice(0, 200),
       criticalFindings: criticalCount(integrity.findings),
+      criticalFindingKeys: integrity.findings
+        .filter((finding) => finding.severity === "critical")
+        .map((finding) => finding.fingerprint ?? `${finding.check}:${finding.detail}`),
       overclaims: judged.overclaims,
       wrongPersonAttributions: judged.overclaims.filter((entry) => entry.kind === "wrong-person")
         .length,
@@ -292,10 +480,10 @@ export async function evaluatePerson(
       ).length,
       failuresByCode,
       coverageGaps: operation?.gaps ?? [],
-      elapsedMilliseconds: Date.now() - startedAt,
+      elapsedMilliseconds: evidence.elapsedMilliseconds,
     },
   };
-  return { result, operation };
+  return result;
 }
 
 /** A stable run identity from what the run was actually over. */

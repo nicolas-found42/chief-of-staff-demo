@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "hilary-cottam",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Hilary Cottam",
   "industry": "government",
   "role": "Social entrepreneur and author; designer of public service models",
@@ -11,7 +11,7 @@
   "fictional": false,
   "lookup": {
     "fullName": "Hilary Cottam",
-    "employerHint": "Independent",
+    "employerHint": null,
     "profileUrls": [],
     "emails": []
   },

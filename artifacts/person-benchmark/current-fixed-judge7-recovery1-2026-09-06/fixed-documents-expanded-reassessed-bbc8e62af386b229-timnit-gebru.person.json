@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "runId": "bbc8e62af386b229",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:17:24.725Z",
+  "reassessmentOf": "b2838e9176d9058b",
+  "result": {
+    "slug": "timnit-gebru",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "fixed-documents",
+    "failure": null,
+    "assessment": {
+      "operationId": "3f084d9c-180b-4d88-91f0-32ad1422fabb",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "organizations",
+              "verdict": "missing",
+              "referenceQuote": "She is a co-founder of Black in AI, an advocacy group that has pushed for more Black roles in AI development and research.[5] She is the founder of the Distributed Artificial Intelligence Research Institute (DAIR).",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty; no information about Black in AI or DAIR.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "doctorate",
+              "verdict": "missing",
+              "referenceQuote": "her PhD in computer vision[13] in 2017.[14] Gebru was advised during her PhD program by Fei-Fei Li.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty; no Stanford PhD information.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "addiscoder",
+              "verdict": "missing",
+              "referenceQuote": "Both during her PhD program in 2016 and in 2018, Gebru returned to Ethiopia with Jelani Nelson's programming campaign, AddisCoder.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty; no AddisCoder information.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "departure-dispute",
+              "verdict": "missing",
+              "referenceQuote": "Google terminated her employment immediately, stating that they were accepting her resignation. Gebru maintained that she had not formally offered to resign, and only threatened to.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty; no Google departure information.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "apple-contribution",
+              "verdict": "missing",
+              "referenceQuote": "She went on to develop signal processing algorithms for the first iPad.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier is empty; no Apple/iPad information.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "timnit-gebru",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "timnit-gebru",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 5,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r13": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r5": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "organizations",
+          "verdict": "missing",
+          "referenceQuote": "She is a co-founder of Black in AI, an advocacy group that has pushed for more Black roles in AI development and research.[5] She is the founder of the Distributed Artificial Intelligence Research Institute (DAIR).",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty; no information about Black in AI or DAIR.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "doctorate",
+          "verdict": "missing",
+          "referenceQuote": "her PhD in computer vision[13] in 2017.[14] Gebru was advised during her PhD program by Fei-Fei Li.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty; no Stanford PhD information.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "addiscoder",
+          "verdict": "missing",
+          "referenceQuote": "Both during her PhD program in 2016 and in 2018, Gebru returned to Ethiopia with Jelani Nelson's programming campaign, AddisCoder.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty; no AddisCoder information.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "departure-dispute",
+          "verdict": "missing",
+          "referenceQuote": "Google terminated her employment immediately, stating that they were accepting her resignation. Gebru maintained that she had not formally offered to resign, and only threatened to.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty; no Google departure information.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "apple-contribution",
+          "verdict": "missing",
+          "referenceQuote": "She went on to develop signal processing algorithms for the first iPad.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier is empty; no Apple/iPad information.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 0,
+      "distinctFamilies": 0,
+      "distinctUpstreamIndexes": 0,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty and there are no retained sources, so nothing substantiates who Gebru is or what she did; only unvetted identity anchors exist. The dossier never states what it does not know, but it also makes no claims implying completeness. With no narrative content or evidence, a reader could not prepare for a meeting. No dossier statements exist to assess as overclaims; the listed unjustified conclusions cannot be matched to any cited claim.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "completed",
+      "rounds": 4,
+      "requests": 17,
+      "modelCalls": 0,
+      "sourcesRetained": 0,
+      "leadsInvestigated": 13,
+      "leadsUnresolved": 0,
+      "failuresByCode": {
+        "identity-unmatched": 4
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 22
+    }
+  }
+}

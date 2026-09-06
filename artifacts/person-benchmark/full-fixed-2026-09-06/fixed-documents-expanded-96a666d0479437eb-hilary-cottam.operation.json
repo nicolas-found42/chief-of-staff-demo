@@ -1,0 +1,690 @@
+{
+  "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+  "profileId": "person_568a9750d1a1",
+  "conclusion": "completed",
+  "startedAt": "2026-09-06T10:16:34.206Z",
+  "finishedAt": "2026-09-06T10:16:34.217Z",
+  "rounds": 4,
+  "modelCalls": 0,
+  "requests": 16,
+  "sourcesRetained": 0,
+  "claimsPublished": 0,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No grounded evidence was attributed to this section."]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": ["No source in this family contributed evidence in this operation."]
+    }
+  ],
+  "leads": [
+    {
+      "id": "872399c729a403cbe16c03d90b76bb19",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" Independent",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "4b70e860dc101655a59517524044b379",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "29613b4ff26213dcf4839f0224b21669",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "73f2ca0e213a3abd79e96df80247313f",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "7714abc223c6537efa9afc4954a79255",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "a32d42a71f13821757690304f81f5c86",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Hilary_Cottam",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.5,
+        "relevance": 3,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "d4c9d42397c97a25a28ba01237a005ea",
+      "kind": "url",
+      "target": "https://openlibrary.org/search/authors.json?q=Hilary%20Cottam",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.45,
+        "relevance": 2.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "fa7af127d9f3cea12142a2e6fecf9488",
+      "kind": "url",
+      "target": "https://www.ted.com/talks/hilary_cottam_social_services_are_broken_how_we_can_fix_them",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "rejected",
+      "reason": "No established identity match for this person.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.4,
+        "relevance": 2.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a0a1f6acaed1822a16ed593f9d3db55d",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" interview transcript video podcast",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "73bb890a840242e60fdceb74b6493103",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" posts profile account",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "d1c2b1121cdb86ac00c55e68fd6ab101",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" report pdf presentation",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "48dd8c8e01272b78ee98c8526419e3ef",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" paper publication doi",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "0970e4b7266be08f7772a1efb17277b4",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" Independent registry filing licence",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "ed3eea260f3b308d2a2e9759dfe62505",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" credits catalogue collection",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e11462decbdf4bdbfa40288219b443a1",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" Independent affiliation identifier",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "aacefe6266bbb3839a39f2547704089b",
+      "kind": "query",
+      "target": "\"Hilary Cottam\" Independent archive former",
+      "origin": "expansion",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    }
+  ],
+  "attempts": [
+    {
+      "id": "043a2a62-7d17-43b4-a297-83167d226add",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "df1ad1ae-696b-46c0-8c87-f4e5d11ebbef",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" Independent",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.208Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "b75aea17-468d-4891-9d6d-35cd8ad2e392",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "cde6b4e0-f6fb-4c30-89bb-898abc41c5fd",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.209Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "3edfd266-6881-4454-a9d2-aaac2072bef3",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "c08152fd-406b-4b12-be52-99b15f2bbafe",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.209Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "d1756b67-92fe-41e7-a9c2-25a1c2594737",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "3929a577-0dcf-4044-af12-0a126c29ab42",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.209Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "c4d25eba-1b37-4757-872f-4508f9664390",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "af4406d5-acae-4191-8df6-71306a47e98a",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Hilary_Cottam",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:16:34.210Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "6c6938b4-13d6-45b0-a61a-6d638afbd3a7",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "cb13c74e-d3dd-4f6a-a7ef-319e35039f0e",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://openlibrary.org/search/authors.json?q=Hilary%20Cottam",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:16:34.210Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "b08cc9ea-e7d4-4bda-a0c7-977e08167a59",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "9d539f68-81bc-477f-bc5e-87c5ad1c1af1",
+      "attempt": 1,
+      "stage": "identity",
+      "code": "identity-unmatched",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "cause": "observed",
+      "target": "https://www.ted.com/talks/hilary_cottam_social_services_are_broken_how_we_can_fix_them",
+      "targetKind": "url",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "reason": "The document carries no signal tying it to this person; it was excluded from factual sections.",
+      "occurredAt": "2026-09-06T10:16:34.210Z",
+      "impact": "Retrieved text was not attributed to this Profile.",
+      "remediation": "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually."
+    },
+    {
+      "id": "d786aa9a-7b05-448c-9b8e-2657704df0e7",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "a2fca137-4ca1-42da-b1a4-79ce3d6debce",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" publication OR filing OR registry OR award",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.214Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "b21567fe-b2c4-463e-9e8c-8a86ca982463",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "11e3ee7a-e73b-4da7-9256-8e749228513f",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" interview transcript video podcast",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.214Z",
+      "observed": {
+        "elapsedMilliseconds": 1
+      }
+    },
+    {
+      "id": "f8c890c4-7930-4bba-b9f5-7ea3a5169bd2",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "5d55f4a5-4d71-4af7-855a-f1d0f954a436",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" posts profile account",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.214Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "b1b4a3d5-359b-4144-b8e4-f645207dca3c",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "74a6af97-6c79-437d-971b-3b003e56d4c8",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" report pdf presentation",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.214Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "ef2149a7-39de-48a7-b26f-4d99deaebb03",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "fee17052-7842-47e5-8c73-b37ec72059ea",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" paper publication doi",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.215Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "97221038-eca4-459b-b6e6-230415f3b391",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "00f1c9fe-aef6-491e-ba96-5f7f0c98758c",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" Independent registry filing licence",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.215Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "6453406c-3970-4b0f-b2cd-525513b5e18f",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "8c3f7f8f-021e-4199-8498-b8fd97adf0f8",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" credits catalogue collection",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.215Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "84a8d688-513a-45a4-b7c5-1203902cc617",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "e194d0e9-593f-46c6-90a5-da885f0eb654",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" Independent affiliation identifier",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.215Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    },
+    {
+      "id": "0f21d9e0-32d9-4317-a13d-e46dbfff4501",
+      "operationId": "ec4b2822-e4a5-4ddb-b70c-f42f356d1b47",
+      "attemptOf": "25645eba-360e-4cbf-b2db-976ef3c0af59",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Hilary Cottam\" Independent archive former",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T10:16:34.216Z",
+      "observed": {
+        "elapsedMilliseconds": 0
+      }
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Documents, publisher sites and structured records.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed."
+}

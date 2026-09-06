@@ -1,0 +1,481 @@
+{
+  "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+  "profileId": "person_bf2a3bb6abce",
+  "conclusion": "interrupted",
+  "interruption": {
+    "code": "model-boundary-failed",
+    "reason": "The configured model provider failed during extraction."
+  },
+  "startedAt": "2026-09-06T11:45:40.701Z",
+  "finishedAt": "2026-09-06T11:46:44.607Z",
+  "rounds": 1,
+  "modelCalls": 1,
+  "requests": 6,
+  "sourcesRetained": 1,
+  "retainedSourceIds": [
+    "5532ee1aa0134f3f407ec20275719941091f0d5e2263da983c773e84696d3258"
+  ],
+  "claimsPublished": 0,
+  "publishedDossierRevision": 1,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 0,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "1b5edc09780d830b001b3aefde9c9c17",
+      "kind": "query",
+      "target": "\"Sébastien Bazin\" Accor",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "3bcc853c8639b9c6dd05224ba6df54aa",
+      "kind": "query",
+      "target": "\"Sébastien Bazin\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "95d602470714c59a0687b116d122cde1",
+      "kind": "query",
+      "target": "\"Sébastien Bazin\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "bdb50757bf7a7d0fbe716bd051999d0b",
+      "kind": "query",
+      "target": "\"Sébastien Bazin\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 2 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "4024fad87d3936896aa8e70197d5808d",
+      "kind": "query",
+      "target": "\"Sébastien Bazin\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false
+    },
+    {
+      "id": "ab84c94210868e1dc5e858f16dce1158",
+      "kind": "url",
+      "target": "https://fr.wikipedia.org/wiki/S%C3%A9bastien_Bazin",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retrieved and retained; extraction failed.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8c4438b858c962c76ee7083d857520a6",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/S%C3%A9bastien_Bazin",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.45,
+        "relevance": 3.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "3a36f5d2-d82b-4083-bfdc-5139689ba04d",
+      "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+      "attemptOf": "1efc1287-c6f0-4c15-b263-891f19034033",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Sébastien Bazin\" Accor",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:45:40.702Z"
+    },
+    {
+      "id": "4e7faf9c-9e49-4475-bd1c-e7bf385816eb",
+      "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+      "attemptOf": "51aa0000-a28b-4676-8992-4b590a03fedd",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Sébastien Bazin\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:45:40.703Z"
+    },
+    {
+      "id": "6aeece91-98ba-474f-b442-0b59424b3234",
+      "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+      "attemptOf": "1c771902-2421-4873-97da-26d96bacd66a",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Sébastien Bazin\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:45:40.703Z"
+    },
+    {
+      "id": "6b549459-36e5-4064-a89c-acc02035fbb3",
+      "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+      "attemptOf": "f0ff8e45-acfd-407c-9581-92435ea5ad9d",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Sébastien Bazin\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 2 results.",
+      "occurredAt": "2026-09-06T11:45:40.703Z"
+    },
+    {
+      "id": "6b7ebe2f-de29-4002-9cd1-ff7ccf7a2cac",
+      "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+      "attemptOf": "3d7ca630-c191-43ec-af6a-0067aac4407d",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "https://fr.wikipedia.org/wiki/S%C3%A9bastien_Bazin",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "3d7ca630-c191-43ec-af6a-0067aac4407d",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 12033,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:46:12.301Z"
+    },
+    {
+      "id": "f538398c-bf0d-4afb-82e7-bc8873cc9698",
+      "operationId": "4aa6d782-d2a7-42a3-94b8-4ade34e68030",
+      "attemptOf": "3d7ca630-c191-43ec-af6a-0067aac4407d",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "recoveryStopped": "The one additional same-binding retry was exhausted.",
+      "cause": "observed",
+      "target": "https://fr.wikipedia.org/wiki/S%C3%A9bastien_Bazin",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "3d7ca630-c191-43ec-af6a-0067aac4407d",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 7130,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; The one additional same-binding retry was exhausted..",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:46:44.605Z"
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "2 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Model-provider failure interrupted research; retrieved evidence and pending work are retained."
+}

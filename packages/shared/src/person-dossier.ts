@@ -254,6 +254,8 @@ export const PersonResearchCheckpointSchema = z.object({
   visited: z.array(z.string().max(4000)),
   linked: z.array(z.string().max(4000)),
   pendingSourceId: id.optional(),
+  /** Distinct source versions already retained in this operation across restarts. */
+  retainedSourceIds: z.array(z.string().length(64)).max(10000).optional(),
 });
 export type PersonResearchCheckpoint = z.infer<typeof PersonResearchCheckpointSchema>;
 export const PersonResearchJobSchema = z.object({

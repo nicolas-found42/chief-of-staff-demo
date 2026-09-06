@@ -6,6 +6,7 @@ import {
   type PersonResearchSettings,
   type PersonResearchStatus,
   type PersonResearchJob,
+  type PersonResearchOperationOutcome,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspacePersonProfiles } from "./profiles.js";
 import type { PersonResearch } from "./research.js";
@@ -120,11 +121,14 @@ export class PersonResearchQueue {
         return;
       }
       old.state = "queued";
-      old.calls = 0;
-      old.elapsedMilliseconds = 0;
-      if (old.operation?.conclusion !== "bounded") delete old.checkpoint;
+      if (old.operation?.conclusion !== "bounded" && old.operation?.conclusion !== "interrupted")
+        delete old.checkpoint;
+      if (!old.checkpoint) {
+        old.calls = 0;
+        old.elapsedMilliseconds = 0;
+        old.sources = 0;
+      }
       delete old.startedAt;
-      old.sources = 0;
       old.queuedAt = now;
       old.nextAt = now;
     } else
@@ -174,10 +178,11 @@ export class PersonResearchQueue {
     await this.pending;
   }
 
-  async tick(): Promise<void> {
+  async tick(profileId?: string): Promise<void> {
     if (!this.deps.enabled() || this.state.settings.paused) return;
     this.rollDay();
     for (const profile of this.deps.people.search()) {
+      if (profileId !== undefined && profile.id !== profileId) continue;
       this.enqueue(profile.id, "backfill");
       const job = this.state.jobs.find((candidate) => candidate.profileId === profile.id);
       const revision = this.deps.evidenceRevision?.(profile.id);
@@ -187,8 +192,8 @@ export class PersonResearchQueue {
         this.save();
       }
     }
-    for (const profileId of this.deps.upcomingProfileIds?.() ?? [])
-      this.enqueue(profileId, "meeting");
+    for (const upcomingId of this.deps.upcomingProfileIds?.() ?? [])
+      if (profileId === undefined || upcomingId === profileId) this.enqueue(upcomingId, "meeting");
     const now = this.now();
     const priority = (job: PersonResearchJob) => {
       const waitingHours = (Date.parse(now) - Date.parse(job.queuedAt)) / 3600000;
@@ -206,6 +211,7 @@ export class PersonResearchQueue {
     const eligible = this.state.jobs
       .filter(
         (j) =>
+          (profileId === undefined || j.profileId === profileId) &&
           !this.running.has(j.profileId) &&
           (j.state === "queued" || j.state === "paused") &&
           j.nextAt <= now,
@@ -290,10 +296,20 @@ export class PersonResearchQueue {
           if (
             JSON.stringify(this.deps.people.get(job.profileId)) !== fingerprint ||
             this.deps.evidenceRevision?.(profile.id) !== evidenceRevision
-          )
+          ) {
             delete job.checkpoint;
-          job.state = "queued";
-          job.detail = "Profile or research policy changed; stale results were stopped.";
+            delete job.operation;
+            job.state = "queued";
+            job.detail = "Profile or evidence changed; stale results were stopped.";
+          } else {
+            this.retainOperation(job, result.operation);
+            job.diagnostics = result.diagnostics;
+
+            job.state = "interrupted";
+            job.detail =
+              "Research was interrupted by shutdown or a policy change; completed evidence is retained.";
+            job.nextAt = this.now();
+          }
         }
       } else {
         if (ownUpdate && job.checkpoint && result.publishedProfileRevision !== undefined)
@@ -301,23 +317,9 @@ export class PersonResearchQueue {
         job.state = result.state;
         if (historical && ["current", "empty"].includes(result.state))
           job.lastHistoricalAt = this.now();
-        job.sources += result.sources;
+
         job.diagnostics = result.diagnostics;
-        const previous = job.operation;
-        if (previous?.operationId === result.operation.operationId) {
-          result.operation.startedAt = previous.startedAt;
-          result.operation.modelCalls += previous.modelCalls;
-          result.operation.requests += previous.requests;
-          result.operation.sourcesRetained += previous.sourcesRetained;
-          result.operation.claimsPublished += previous.claimsPublished;
-          result.operation.attempts = [...previous.attempts, ...result.operation.attempts];
-          const leads = new Map(previous.leads.map((lead) => [lead.id, lead]));
-          for (const lead of result.operation.leads)
-            if (lead.disposition !== "deduplicated" || !leads.has(lead.id))
-              leads.set(lead.id, lead);
-          result.operation.leads = [...leads.values()];
-        }
-        job.operation = result.operation;
+        this.retainOperation(job, result.operation);
         job.detail = result.detail;
         /* A completed operation clears its traversal: the next run is a
            refresh of changed evidence, not the second half of this one. */
@@ -343,6 +345,33 @@ export class PersonResearchQueue {
       job.updatedAt = this.now();
       this.save();
     }
+  }
+  private retainOperation(job: PersonResearchJob, operation: PersonResearchOperationOutcome): void {
+    const previous = job.operation;
+    if (previous?.operationId === operation.operationId) {
+      operation.startedAt = previous.startedAt;
+      operation.modelCalls += previous.modelCalls;
+      operation.requests += previous.requests;
+      if (previous.retainedSourceIds && operation.retainedSourceIds) {
+        operation.retainedSourceIds = [
+          ...new Set([...previous.retainedSourceIds, ...operation.retainedSourceIds]),
+        ];
+        operation.sourcesRetained = operation.retainedSourceIds.length;
+      } else {
+        // Legacy counters lack identities: summing could count a resumed source twice.
+        // Preserve a conservative lower bound without claiming an exact identity set.
+        operation.sourcesRetained = Math.max(previous.sourcesRetained, operation.sourcesRetained);
+        delete operation.retainedSourceIds;
+      }
+      operation.claimsPublished += previous.claimsPublished;
+      operation.attempts = [...previous.attempts, ...operation.attempts];
+      const leads = new Map(previous.leads.map((lead) => [lead.id, lead]));
+      for (const lead of operation.leads)
+        if (lead.disposition !== "deduplicated" || !leads.has(lead.id)) leads.set(lead.id, lead);
+      operation.leads = [...leads.values()];
+    }
+    job.operation = operation;
+    job.sources = operation.sourcesRetained;
   }
   private rollDay(): void {
     const day = this.now().slice(0, 10);

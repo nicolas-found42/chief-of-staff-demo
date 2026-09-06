@@ -1,4 +1,5 @@
-import type { ProviderId } from "./schemas.js";
+import { z } from "zod";
+import { ProviderIdSchema, type ProviderId } from "./schemas.js";
 
 /** One model call's absolute ceiling — the backstop above the token idle ceiling. */
 export const MODEL_REQUEST_TIMEOUT_MS = 120_000;
@@ -37,6 +38,8 @@ export const MODEL_BOUNDARY_CLASSIFICATIONS = [
   "transport_failure",
   /** The seam's own request ceiling fired while the call was in flight. */
   "request_timeout",
+  /** The streamed answer began repeating one short unit instead of finishing. */
+  "repetition_loop",
   /** The provider answered with a status outside 2xx. */
   "http_error",
   /** A 2xx answer with no body at all. */
@@ -87,6 +90,35 @@ export interface ModelBoundaryDiagnostic {
   /** The ceiling that fired, for `request_timeout`; `null` otherwise. */
   timeoutMs: number | null;
 }
+
+/** Bounded wire contract for durable, shape-only model failures. */
+export const ModelBoundaryDiagnosticSchema: z.ZodType<ModelBoundaryDiagnostic> = z.object({
+  classification: z.enum(MODEL_BOUNDARY_CLASSIFICATIONS),
+  provider: ProviderIdSchema,
+  model: z.string().max(200),
+  upstreamServer: z.string().max(200).nullable(),
+  upstreamCode: z.number().int().safe().nullable(),
+  binding: z.enum(RESULT_SHAPE_BINDINGS),
+  status: z.number().int().min(100).max(599).nullable(),
+  finishReason: z.string().max(200).nullable(),
+  bodyBytes: z.number().int().nonnegative().safe(),
+  topLevelKeys: z.array(z.string().max(200)).max(64),
+  populatedFields: z.array(z.string().max(200)).max(64),
+  emptyFields: z.array(z.string().max(200)).max(64),
+  timeoutMs: z.number().int().nonnegative().safe().nullable(),
+});
+
+/** Shape-only observation of one completion wire attempt, including recovered failures. */
+export const ModelAttemptEventSchema = z.object({
+  attempt: z.number().int().positive().safe(),
+  binding: z.enum(RESULT_SHAPE_BINDINGS),
+  outcome: z.enum(["retrying", "succeeded", "failed"]),
+  diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
+  /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */
+  delayMs: z.number().int().nonnegative().max(500),
+  stoppedReason: z.string().max(1000).nullable(),
+});
+export type ModelAttemptEvent = z.infer<typeof ModelAttemptEventSchema>;
 
 /** One field that did not conform to a Module's declared Result Shape. */
 export interface ResultShapeIssue {

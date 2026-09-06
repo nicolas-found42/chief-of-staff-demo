@@ -4,6 +4,7 @@ import { Readability } from "@mozilla/readability";
 import type { PersonSourceFamily } from "@chief-of-staff-demo/shared";
 import { convertToText } from "../text/convert.js";
 import {
+  retryAfterMilliseconds,
   type PublicHttpBytesFetch,
   type PublicHttpFetch,
   type PublicHttpResponse,
@@ -1210,20 +1211,27 @@ async function request(
       }
       const temporary = response.status === 429 || [500, 502, 503, 504].includes(response.status);
       if (!temporary || attempt === 3) return response;
-      const delay = Math.min(
-        60_000,
-        retryDelay(response.retryAfter) ?? Math.min(8_000, 500 * 2 ** attempt),
-      );
+      const requestedDelay = retryAfterMilliseconds(response.retryAfter, new Date());
+      const delay = requestedDelay ?? Math.min(8_000, 500 * 2 ** attempt);
+      const retrying = delay <= 60_000;
       context.recorder.record({
         stage: "transport",
         code: response.status === 429 ? "rate-limited" : "http-error",
         outcome: "failed",
-        recovery: "retry",
+        recovery: retrying ? "retry" : "stopped",
         cause: "observed",
         target: url,
         targetKind: "url",
         collector,
-        reason: `HTTP ${response.status}; waiting ${delay} ms before retrying.`,
+        reason: retrying
+          ? `HTTP ${response.status}; waiting ${delay} ms before retrying.`
+          : `HTTP ${response.status}; Retry-After exceeds this request's recovery allowance.`,
+        ...(!retrying
+          ? {
+              recoveryStopped:
+                "The upstream Retry-After exceeds the 60-second request recovery allowance; this route will not retry early.",
+            }
+          : {}),
         attemptOf: context.attemptOf,
         attempt,
         observed: {
@@ -1232,10 +1240,11 @@ async function request(
           contentType: response.contentType,
           bytes: response.body.length,
           bodyHash: hash(response.body),
-          retryAfterMilliseconds: delay,
+          ...(requestedDelay !== undefined ? { retryAfterMilliseconds: requestedDelay } : {}),
           elapsedMilliseconds: Date.now() - startedAt,
         },
       });
+      if (!retrying) return response;
       await sleep(delay);
     } catch (error) {
       lastError = error;
@@ -1261,14 +1270,6 @@ async function request(
     }
   }
   return lastError ? null : null;
-}
-
-function retryDelay(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
-  const date = Date.parse(value);
-  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -1,0 +1,498 @@
+{
+  "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+  "profileId": "person_b51082a087ee",
+  "conclusion": "interrupted",
+  "interruption": {
+    "code": "model-boundary-failed",
+    "reason": "The configured model provider failed during extraction."
+  },
+  "startedAt": "2026-09-06T11:23:40.455Z",
+  "finishedAt": "2026-09-06T11:24:42.371Z",
+  "rounds": 1,
+  "modelCalls": 1,
+  "requests": 7,
+  "sourcesRetained": 1,
+  "retainedSourceIds": [
+    "d8fd46dbe00645f8d69228f5cbd3ee12655aa25ab31d229566be804d8b736036"
+  ],
+  "claimsPublished": 0,
+  "publishedDossierRevision": 1,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 0,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    }
+  ],
+  "leads": [
+    {
+      "id": "9df596f5ef45bcb8ac65dff93af61de1",
+      "kind": "query",
+      "target": "\"Irene Tracey\" University of Oxford",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "d1644949721173b5212fd53cac9b240b",
+      "kind": "query",
+      "target": "\"Irene Tracey\" biography role career",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "20cf4ba5918070e5b24440cd070e9957",
+      "kind": "query",
+      "target": "\"Irene Tracey\" interview OR podcast OR talk",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "71cd63f5888f5c49a505f1bed30841f4",
+      "kind": "query",
+      "target": "\"Irene Tracey\" profile OR announcement OR appointment",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 3 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "e5a91f93eb88fcbfd20bf7e469eb4351",
+      "kind": "query",
+      "target": "\"Irene Tracey\" publication OR filing OR registry OR award",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false
+    },
+    {
+      "id": "3797cbb7e429e5c3c1b2aad3af81d446",
+      "kind": "url",
+      "target": "https://en.wikipedia.org/wiki/Irene_Tracey",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retrieved and retained; extraction failed.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "13da59e6f7cf287cf5729d142fdfc5e4",
+      "kind": "url",
+      "target": "https://api.openalex.org/authors?search=Irene%20Tracey&per-page=3",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.45,
+        "relevance": 2.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "337c666879a401e5db6bf0bd4b446814",
+      "kind": "url",
+      "target": "https://api.crossref.org/works?query.bibliographic=Irene%20Tracey%20pain&rows=5&mailto=owner@found42.local",
+      "origin": "discovery",
+      "family": "published-work",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "The operation was interrupted before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 10.4,
+        "relevance": 2.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "2bfe414d-68e1-44df-b51e-c049d448af5b",
+      "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+      "attemptOf": "517ebe1b-90b5-401d-8455-c31f31964e83",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Irene Tracey\" University of Oxford",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T11:23:40.458Z"
+    },
+    {
+      "id": "60a3fc47-3843-4f6b-ac43-3a454abb78e1",
+      "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+      "attemptOf": "9635efe2-005a-4fc5-b14e-d93414f0401e",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Irene Tracey\" biography role career",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T11:23:40.458Z"
+    },
+    {
+      "id": "f5aada1b-b155-4040-915d-1ba0888f886e",
+      "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+      "attemptOf": "05d003bd-d30e-4a17-a329-fa2c434895ef",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Irene Tracey\" interview OR podcast OR talk",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 1
+      },
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T11:23:40.458Z"
+    },
+    {
+      "id": "1feb8bfd-8d7b-45da-b13d-41b6213043b2",
+      "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+      "attemptOf": "f4b9c415-e647-446e-9d45-525afa02f85c",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "\"Irene Tracey\" profile OR announcement OR appointment",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 0
+      },
+      "reason": "Discovery returned 3 results.",
+      "occurredAt": "2026-09-06T11:23:40.458Z"
+    },
+    {
+      "id": "d11a6dcc-c7e4-4370-92ec-c9cc5b709c54",
+      "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+      "attemptOf": "729c7a96-4aba-49b4-8905-3a8eb4bd4379",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "retry",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Irene_Tracey",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "729c7a96-4aba-49b4-8905-3a8eb4bd4379",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "500"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 7039,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; retrying the same binding within the original request deadline.",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:24:11.177Z"
+    },
+    {
+      "id": "d38688bf-faa4-4f0f-8e8e-f9a9fa82ff09",
+      "operationId": "2b346d5c-7ed4-4a13-ba44-b8a5c3be590d",
+      "attemptOf": "729c7a96-4aba-49b4-8905-3a8eb4bd4379",
+      "attempt": 2,
+      "stage": "extraction",
+      "code": "model-boundary-failed",
+      "outcome": "failed",
+      "recovery": "stopped",
+      "recoveryStopped": "The one additional same-binding retry was exhausted.",
+      "cause": "observed",
+      "target": "https://en.wikipedia.org/wiki/Irene_Tracey",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "729c7a96-4aba-49b4-8905-3a8eb4bd4379",
+        "wireAttempt": "2",
+        "retryDelayMilliseconds": "0"
+      },
+      "observed": {
+        "modelBoundary": {
+          "classification": "request_timeout",
+          "provider": "openrouter",
+          "model": "z-ai/glm-5.3-flash",
+          "upstreamServer": null,
+          "upstreamCode": null,
+          "binding": "forced_tool_call",
+          "status": 200,
+          "finishReason": null,
+          "bodyBytes": 6648,
+          "topLevelKeys": [],
+          "populatedFields": [],
+          "emptyFields": [],
+          "timeoutMs": 30000
+        }
+      },
+      "reason": "request_timeout; The one additional same-binding retry was exhausted..",
+      "impact": "This wire attempt produced no usable response; its partial output was discarded.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:24:42.371Z"
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Who this person is.",
+    "No grounded evidence was found for: Dated career history and focus changes.",
+    "No grounded evidence was found for: Specific work, contributions and outcomes.",
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "No evidence was collected from: Archived and historical evidence.",
+    "3 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "Model-provider failure interrupted research; retrieved evidence and pending work are retained."
+}

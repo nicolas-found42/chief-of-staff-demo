@@ -1,0 +1,459 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:30:46.183Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "irene-tracey",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "69220767-6094-428c-a778-3885751ea940",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "vc-oxford",
+              "verdict": "partial",
+              "referenceQuote": "Vice Chancellor of the University of OxfordIncumbentAssumed office 1 January 2023",
+              "evidenceQuote": "Irene Tracey is Vice-Chancellor of the University of Oxford, as of a letter dated 9 January 2026.",
+              "claimId": "8f8a216d5adb90e5408bab003d84c49e",
+              "rationale": "Dossier confirms she is Vice-Chancellor but omits the reference's start date of 1 January 2023.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "merton-warden",
+              "verdict": "missing",
+              "referenceQuote": "is a British neuroscientist who is Vice-Chancellor of the University of Oxford and former Warden of Merton College, Oxford",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not mention Warden of Merton College or Pro-Vice-Chancellor role.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "fmrib-cofounder",
+              "verdict": "missing",
+              "referenceQuote": "She is a co-founder of the Oxford Centre for Functional Magnetic Resonance Imaging of the Brain (FMRIB), now the University of Oxford Centre for Integrative Neuroimaging",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of FMRIB or the Centre for Integrative Neuroimaging.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "research-area",
+              "verdict": "missing",
+              "referenceQuote": "Her team’s research concerns the neuroscience of pain, specifically pain perception and analgesia as well as how anaesthetics produce altered states of consciousness",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier contains nothing about her research on pain or anaesthetics.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "doctorate",
+              "verdict": "missing",
+              "referenceQuote": "ThesisMRS and Biochemical Studies on Animal Models of Human Disease (1993)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No details of her education, Gibbs Prize, or 1993 doctorate appear.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "harvard-postdoc",
+              "verdict": "missing",
+              "referenceQuote": "As an early career researcher, Tracey held a postdoctoral position at Harvard Medical School",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of a Harvard postdoctoral position.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "awards",
+              "verdict": "ambiguous",
+              "referenceQuote": "AwardsSuffrage Science Award (2014)Feldberg Prize (2017)",
+              "evidenceQuote": "Professor Irene Tracey, CBE, FRS, FMedSci",
+              "claimId": "dab51db3ff3487df159ea63d40aff3b7",
+              "rationale": "Dossier only records CBE and fellowships (FRS, FMedSci); Suffrage Science Award 2014 and Feldberg Prize 2017 are absent. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "citation-record",
+              "verdict": "missing",
+              "referenceQuote": "results[0].works_count: 454",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No bibliometric data or ORCID given.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "lancet-profile",
+              "verdict": "missing",
+              "referenceQuote": "message.items[0].title[0]: Irene Tracey: seeing pain for what it is",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of the Lancet profile.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "family",
+              "verdict": "missing",
+              "referenceQuote": "Myles Allen​(m. 1994)​Children3",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of marriage to Myles Allen or children.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "irene-tracey",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 10976,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "irene-tracey",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "irene-tracey",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "9aa4ba698cf9e9c63582fe6373cb66775a447374ffa1c11ddf5f5018b8181050",
+            "url": "https://archive.org/details/oxford-acknowledge-dmwfs",
+            "hash": "3922ce423d0e312a13f70bcfe48edcf953901d9d16be5071ab554cc37c700637",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "451c1c7d465590ed56cdf85e1cb70da0c300d0bb66c64fe828a3907851342ddd",
+            "url": "https://archive.org/details/oxford-acknowledge-dmwfs",
+            "hash": "3922ce423d0e312a13f70bcfe48edcf953901d9d16be5071ab554cc37c700637",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "8f8a216d5adb90e5408bab003d84c49e",
+          "a401b084f2c93a159ca6e9665ce8fa24",
+          "dab51db3ff3487df159ea63d40aff3b7"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "spoken-evidence",
+        "sources": [
+          {
+            "id": "6f458904de7c37201925c97cb2423528578197f0020f9e57afb000a7cf02d274",
+            "url": "http://podcasts.ox.ac.uk/people/irene-tracey",
+            "hash": "253dd2831acac793b5cb171a19485bfad35476b5a3edb122106478a5d987236c",
+            "upstreamIndex": "podcasts.ox.ac.uk",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 3,
+      "totalCitations": 3,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 10,
+      "recovered": 0,
+      "partial": 1,
+      "missing": 8,
+      "ambiguous": 1,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 10,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r13": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "vc-oxford",
+          "verdict": "partial",
+          "referenceQuote": "Vice Chancellor of the University of OxfordIncumbentAssumed office 1 January 2023",
+          "evidenceQuote": "Irene Tracey is Vice-Chancellor of the University of Oxford, as of a letter dated 9 January 2026.",
+          "claimId": "8f8a216d5adb90e5408bab003d84c49e",
+          "rationale": "Dossier confirms she is Vice-Chancellor but omits the reference's start date of 1 January 2023.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "merton-warden",
+          "verdict": "missing",
+          "referenceQuote": "is a British neuroscientist who is Vice-Chancellor of the University of Oxford and former Warden of Merton College, Oxford",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not mention Warden of Merton College or Pro-Vice-Chancellor role.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "fmrib-cofounder",
+          "verdict": "missing",
+          "referenceQuote": "She is a co-founder of the Oxford Centre for Functional Magnetic Resonance Imaging of the Brain (FMRIB), now the University of Oxford Centre for Integrative Neuroimaging",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of FMRIB or the Centre for Integrative Neuroimaging.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "research-area",
+          "verdict": "missing",
+          "referenceQuote": "Her team’s research concerns the neuroscience of pain, specifically pain perception and analgesia as well as how anaesthetics produce altered states of consciousness",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier contains nothing about her research on pain or anaesthetics.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "doctorate",
+          "verdict": "missing",
+          "referenceQuote": "ThesisMRS and Biochemical Studies on Animal Models of Human Disease (1993)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No details of her education, Gibbs Prize, or 1993 doctorate appear.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "harvard-postdoc",
+          "verdict": "missing",
+          "referenceQuote": "As an early career researcher, Tracey held a postdoctoral position at Harvard Medical School",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of a Harvard postdoctoral position.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "awards",
+          "verdict": "ambiguous",
+          "referenceQuote": "AwardsSuffrage Science Award (2014)Feldberg Prize (2017)",
+          "evidenceQuote": "Professor Irene Tracey, CBE, FRS, FMedSci",
+          "claimId": "dab51db3ff3487df159ea63d40aff3b7",
+          "rationale": "Dossier only records CBE and fellowships (FRS, FMedSci); Suffrage Science Award 2014 and Feldberg Prize 2017 are absent. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "citation-record",
+          "verdict": "missing",
+          "referenceQuote": "results[0].works_count: 454",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No bibliometric data or ORCID given.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "lancet-profile",
+          "verdict": "missing",
+          "referenceQuote": "message.items[0].title[0]: Irene Tracey: seeing pain for what it is",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of the Lancet profile.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "family",
+          "verdict": "missing",
+          "referenceQuote": "Myles Allen​(m. 1994)​Children3",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of marriage to Myles Allen or children.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 3,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 3,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 2
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 0,
+      "conversationReadiness": 1,
+      "rationale": "The dossier establishes only that Irene Tracey is Vice-Chancellor of the University of Oxford and holds the honors CBE, FRS, FMedSci, all supported by a single archive.org acknowledgment page. Nothing covers her neuroscience career, FMRIB co-founding, or research contributions, so a reader learns who she is but almost nothing about what she did. The dossier never flags its own gaps (no remaining-questions content), implying a completeness it does not have. For meeting prep, one could confirm her title and honors but little else. No overclaims found: the three dossier statements each rest on a verbatim quote that directly supports them, and the listed unjustified conclusions (New England Biolabs, Lancet authorship, sole founder) do not appear in the dossier text.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 5,
+      "requests": 60,
+      "modelCalls": 6,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 22,
+      "leadsUnresolved": 538,
+      "failuresByCode": {
+        "document-empty": 8,
+        "identity-unmatched": 10,
+        "http-error": 2,
+        "resource-unavailable": 8,
+        "challenge-page": 8,
+        "connectivity-failed": 2,
+        "dns-failed": 3,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read https://news.google.com/rss/articles/CBMi1wFBVV95cUxNWEFpWUNob3dZNV9IbU40dWlMQnBRVEN4amlUS0s0Wk5UY091SzE1dzZGckN5Ri02bERDMnZpOVd1WDdkbkZoSlNlWGxMOFlGNUNBdTZXcDYwMjRJYzdTVzlBcVREYkZHMTJBcFpjc0JaUmstUkp2OHE1RE5uWmFKYjNZZ0l5bkpPbm1xbFdqcENFaDAxNklfdmVDdVE4aWtoQ19UM29VYnVIbUhpRGl5YmUzR0VhQV9kakNnX2s3TXBRb1pyLVVVdFQ4MkRpTlJTdl90aDVzWQ?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMid0FVX3lxTE96LTh0cnJ4TnF2aTc4MlQtZGVuRzl6aEktRXREX1pwMUdENnhmSHEzLXY3bVc5cUZPTjlCa0p3eHktZXpPeXRMdjBzMWhLNDdFNDladWpnQUY0MkYxazRmbFdXaWowZ0lVVmU0UnpHYlZKY2VOTVJj?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMikwFBVV95cUxNbnMxZTFuVklldnd4N1I5RnBHVjFnTUMxNE9DYU5iSWloUFhzeHNkOENKMEVjM25DaEZuOGNPRE0yVVpRYnVZeEg1WXc1OS1xcFo4bGZ2MUxicVdpWmNETVVtc0dsVEU3YlJXNVJzRGNwaWlYd1VWTUd4Qy1VdF93emhkY3p4UjAyUE91T01Oc3V2WTA?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMijAFBVV95cUxOc3B6aWNRVElTcE1sX2lOdl92cmNIUzUzX0xHVjhOakpvOVpROElRRHVSVkNrcGlYS3ZCT3Z2TjFiTVhuZHRtRmFVZXpjVGpIcm1BdFBwUHYwd0FrNURWc3k5Y2xVakRaalhtRGNuWS03QWRaMWZRaUxZUkZJYU0zVU1UT1NibWlrNk93Mg?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://www.ox.ac.uk/about/organisation/vice-chancellor: Reading produced no usable text (blocked).",
+        "Could not read https://www.ndcn.ox.ac.uk/team/irene-tracey: Reading produced no usable text (blocked).",
+        "Could not read https://scholar.google.com/citations?user=qDXJkDsAAAAJ: Reading produced no usable text (failed).",
+        "Could not read https://www.youtube.com/results?search_query=Irene+Tracey: Reading produced no usable text (failed).",
+        "Could not read https://x.com/ProfIreneTracey: Reading produced no usable text (blocked).",
+        "Could not read https://f1000.com/prime: Reading produced no usable text (blocked).",
+        "Could not read https://www.merton.ox.ac.uk/about-merton/people/professor-irene-tracey: Reading produced no usable text (failed).",
+        "Could not read https://royalsociety.org/people/irene-tracey-13322/: Reading produced no usable text (failed).",
+        "Could not read https://acmedsci.ac.uk/fellows/fellows-directory: Reading produced no usable text (blocked).",
+        "Could not read https://www.bbc.co.uk/programmes/b091vjv7: Reading produced no usable text (failed).",
+        "Could not read https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(22)00077-X/fulltext: Reading produced no usable text (blocked).",
+        "Could not read https://ora.ox.ac.uk/search?q=Irene+Tracey: Reading produced no usable text (failed).",
+        "Could not read https://www.gov.uk/government/search?keywords=Irene+Tracey: Reading produced no usable text (failed).",
+        "Could not read https://www.the-tms.org/…/search?q=Irene+Tracey: Reading produced no usable text (failed).",
+        "Could not read https://podcasts.ox.ac.uk/search?search_api_fulltext=Irene+Tracey: Reading produced no usable text (failed).",
+        "Could not read https://wellcome.org/search?search=Irene%20Tracey: Reading produced no usable text (failed).",
+        "538 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 551321
+    }
+  }
+}

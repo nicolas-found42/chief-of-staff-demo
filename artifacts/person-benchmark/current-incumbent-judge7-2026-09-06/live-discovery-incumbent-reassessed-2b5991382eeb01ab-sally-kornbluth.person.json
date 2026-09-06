@@ -1,0 +1,448 @@
+{
+  "schemaVersion": 1,
+  "runId": "2b5991382eeb01ab",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "incumbent",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:12:27.703Z",
+  "reassessmentOf": "0ed4213b44f7831b",
+  "result": {
+    "slug": "sally-kornbluth",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research bounded before the operation completed.",
+    "assessment": {
+      "operationId": "fd4f84e1-cf14-4f22-8445-fa14dbc4a8a4",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "mit-president",
+              "verdict": "partial",
+              "referenceQuote": "Since becoming MIT’s 18th president in January 2023",
+              "evidenceQuote": "Sally Kornbluth is the President of the Massachusetts Institute of Technology (MIT).",
+              "claimId": "a16e9ec9b488537c8a2ff4257e298266",
+              "rationale": "Dossier states she is MIT president but gives no 18th or January 2023 details.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "duke-provost",
+              "verdict": "missing",
+              "referenceQuote": "Provost of Duke UniversityIn officeJuly 1, 2014 – December 31, 2022",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier claim mentions Duke provost role or dates.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "climate-project",
+              "verdict": "missing",
+              "referenceQuote": "She began by creating the Climate Project at MIT with the aim of driving technological, behavioral and policy solutions to help change the expected trajectory of global climate outcomes",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not mention the Climate Project at MIT.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "mithic",
+              "verdict": "missing",
+              "referenceQuote": "In 2024, she introduced the MIT Human Insight Collaborative (MITHIC) to spark unexpected collaborations between MIT faculty in the arts, humanities, and social sciences and colleagues in other disciplines",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not mention the MIT Human Insight Collaborative.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "mgaic-qmit",
+              "verdict": "missing",
+              "referenceQuote": "In 2025, Kornbluth introduced the MIT Generative AI Impact Consortium (MGAIC, called “magic”)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not mention the MIT Generative AI Impact Consortium, New Manufacturing initiative, or QMIT.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education-pivot",
+              "verdict": "missing",
+              "referenceQuote": "Kornbluth graduated from Williams College in 1982 with a BA in political science. Making a sharp pivot toward biology, she received a scholarship to attend Cambridge University, where she earned a BA in genetics in 1984",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier says nothing about Williams College, Cambridge, or Rockefeller education.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "duke-faculty",
+              "verdict": "missing",
+              "referenceQuote": "She joined Duke University in 1994 as an assistant professor of pharmacology and cancer biology, and by 2005 had risen to full professor",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not mention her 1994 Duke faculty appointment.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "research-area",
+              "verdict": "missing",
+              "referenceQuote": "Her research focuses on cell growth and programmed cell death and how cancer cells evade apoptosis",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not describe her research on apoptosis or caspase-2.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "duke-awards",
+              "verdict": "missing",
+              "referenceQuote": "At Duke, she received a Research Mentoring award in 2012 and the Distinguished Faculty Award from the Duke Medical Alumni Association in 2013",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier does not mention Duke mentoring or Distinguished Faculty awards.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "free-expression",
+              "verdict": "partial",
+              "referenceQuote": "she has championed the Institute’s commitment to freedom of expression, while making sure everyone remains free to do their best work",
+              "evidenceQuote": "Kornbluth underscored free expression as a core MIT value",
+              "claimId": "d2ed2e781479d2741b42583c304509a8",
+              "rationale": "Dossier supports her championing free expression but not the claim that everyone remains free to do their best work or that it spans her whole presidency.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "citation-record",
+              "verdict": "missing",
+              "referenceQuote": "results[0].works_count: 156",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "Dossier gives no bibliometric figures.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "sally-kornbluth",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "retrying",
+            "diagnostic": {
+              "classification": "request_timeout",
+              "provider": "openrouter",
+              "model": "z-ai/glm-5.3-flash",
+              "upstreamServer": null,
+              "upstreamCode": null,
+              "binding": "forced_tool_call",
+              "status": 200,
+              "finishReason": null,
+              "bodyBytes": 39057,
+              "topLevelKeys": [],
+              "populatedFields": [],
+              "emptyFields": [],
+              "timeoutMs": 30000
+            },
+            "delayMs": 500,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 1,
+          "subject": "sally-kornbluth",
+          "observation": {
+            "attempt": 2,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "sally-kornbluth",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "b4cc070b8d7a0e89da97b5213412538bd301eb150159aa163647cd4d8bb22182",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.yahoo.com%2fnews%2farticles%2fmit-becomes-first-college-reject-135149119.html&c=10091071822921399371&mkt=en-us",
+            "hash": "a5e8ed38d98ab0dc2b471dfe70c50be8859dd718f02656003ad723d56a82e207",
+            "upstreamIndex": "yahoo.com",
+            "cited": false
+          },
+          {
+            "id": "604d0afc566852d5b3aa7a2752f0da1f7a9965aa84178e934c769927f08d2f0f",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.yahoo.com%2fnews%2farticles%2fmit-becomes-first-college-reject-135149119.html&c=10091071822921399371&mkt=en-us",
+            "hash": "a5e8ed38d98ab0dc2b471dfe70c50be8859dd718f02656003ad723d56a82e207",
+            "upstreamIndex": "yahoo.com",
+            "cited": true
+          },
+          {
+            "id": "f78f26c18f435dbdc391fb8fb024f3fcf98d99d938d52ca32194010715766cf6",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.bostonglobe.com%2f2024%2f08%2f28%2fmetro%2fmit-president-warns-students-over-antisemitism-project%2f&c=11313536803360415992&mkt=en-us",
+            "hash": "c81c49aabb6e152f26e5ca2293b4fb170099ad791c964142d5f6d2897e3df4dc",
+            "upstreamIndex": "bostonglobe.com",
+            "cited": false
+          },
+          {
+            "id": "bc72c98ad8fd6e989fc0f9f43dbea690962245287ecc1fe3b69985d49450c9cd",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d50f8cf4c47e09cab49d9bdee1ef0&url=https%3a%2f%2fwww.bostonglobe.com%2f2024%2f08%2f28%2fmetro%2fmit-president-warns-students-over-antisemitism-project%2f&c=11313536803360415992&mkt=en-us",
+            "hash": "c81c49aabb6e152f26e5ca2293b4fb170099ad791c964142d5f6d2897e3df4dc",
+            "upstreamIndex": "bostonglobe.com",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "a16e9ec9b488537c8a2ff4257e298266",
+          "81e7c3b11792c505a40f3c392b5119dd",
+          "d2ed2e781479d2741b42583c304509a8",
+          "55d9b4575208590fe9d683a4c9feb745",
+          "8aee4e4e2781e03f8396283c073076f3",
+          "f3bb7de7833ef50b6ffb3456f87c4a2b",
+          "52e557b0ec05874c78cd187207a58728",
+          "8807ed9e3de90494f0f11e28672e0726",
+          "5ba3c3098a5318e30db710c230e87446",
+          "47b11d4d25d5576c85d0c8029ccceb23"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 10,
+      "totalCitations": 10,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 11,
+      "recovered": 0,
+      "partial": 2,
+      "missing": 9,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 11,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 3,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r3": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r14": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r19": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r20": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "mit-president",
+          "verdict": "partial",
+          "referenceQuote": "Since becoming MIT’s 18th president in January 2023",
+          "evidenceQuote": "Sally Kornbluth is the President of the Massachusetts Institute of Technology (MIT).",
+          "claimId": "a16e9ec9b488537c8a2ff4257e298266",
+          "rationale": "Dossier states she is MIT president but gives no 18th or January 2023 details.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "duke-provost",
+          "verdict": "missing",
+          "referenceQuote": "Provost of Duke UniversityIn officeJuly 1, 2014 – December 31, 2022",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier claim mentions Duke provost role or dates.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "climate-project",
+          "verdict": "missing",
+          "referenceQuote": "She began by creating the Climate Project at MIT with the aim of driving technological, behavioral and policy solutions to help change the expected trajectory of global climate outcomes",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not mention the Climate Project at MIT.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "mithic",
+          "verdict": "missing",
+          "referenceQuote": "In 2024, she introduced the MIT Human Insight Collaborative (MITHIC) to spark unexpected collaborations between MIT faculty in the arts, humanities, and social sciences and colleagues in other disciplines",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not mention the MIT Human Insight Collaborative.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "mgaic-qmit",
+          "verdict": "missing",
+          "referenceQuote": "In 2025, Kornbluth introduced the MIT Generative AI Impact Consortium (MGAIC, called “magic”)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not mention the MIT Generative AI Impact Consortium, New Manufacturing initiative, or QMIT.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education-pivot",
+          "verdict": "missing",
+          "referenceQuote": "Kornbluth graduated from Williams College in 1982 with a BA in political science. Making a sharp pivot toward biology, she received a scholarship to attend Cambridge University, where she earned a BA in genetics in 1984",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier says nothing about Williams College, Cambridge, or Rockefeller education.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "duke-faculty",
+          "verdict": "missing",
+          "referenceQuote": "She joined Duke University in 1994 as an assistant professor of pharmacology and cancer biology, and by 2005 had risen to full professor",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not mention her 1994 Duke faculty appointment.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "research-area",
+          "verdict": "missing",
+          "referenceQuote": "Her research focuses on cell growth and programmed cell death and how cancer cells evade apoptosis",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not describe her research on apoptosis or caspase-2.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "duke-awards",
+          "verdict": "missing",
+          "referenceQuote": "At Duke, she received a Research Mentoring award in 2012 and the Distinguished Faculty Award from the Duke Medical Alumni Association in 2013",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier does not mention Duke mentoring or Distinguished Faculty awards.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "free-expression",
+          "verdict": "partial",
+          "referenceQuote": "she has championed the Institute’s commitment to freedom of expression, while making sure everyone remains free to do their best work",
+          "evidenceQuote": "Kornbluth underscored free expression as a core MIT value",
+          "claimId": "d2ed2e781479d2741b42583c304509a8",
+          "rationale": "Dossier supports her championing free expression but not the claim that everyone remains free to do their best work or that it spans her whole presidency.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "citation-record",
+          "verdict": "missing",
+          "referenceQuote": "results[0].works_count: 156",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "Dossier gives no bibliometric figures.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 10,
+      "works": 2,
+      "expertise": 0,
+      "connections": 2,
+      "sources": 4,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 5
+    },
+    "usefulness": {
+      "understanding": 2,
+      "remainingQuestions": 1,
+      "conversationReadiness": 2,
+      "rationale": "The dossier clearly establishes who Kornbluth is (MIT president) and documents two concrete episodes: her October 2025 letter rejecting the federal higher-education compact and her August 2024 warnings to students about antisemitic flyers, including the December congressional testimony and its fallout. Statements are well-anchored to verbatim quotes and no statement exceeds its citation. However, coverage is narrow: nothing in the dossier's statements conveys her scientific career, Duke provostship, or background (which appear only in the identity anchors), and the dossier does not state what it does not know. A reader could prepare talking points on the compact and campus-speech topics but not a full briefing on her career.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "bounded",
+      "rounds": 1,
+      "requests": 3,
+      "modelCalls": 2,
+      "sourcesRetained": 4,
+      "leadsInvestigated": 3,
+      "leadsUnresolved": 22,
+      "failuresByCode": {},
+      "coverageGaps": [
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "22 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 130140
+    }
+  }
+}

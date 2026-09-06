@@ -1,0 +1,307 @@
+{
+  "schemaVersion": 1,
+  "runId": "09cbcaad3a1bafe8",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T13:35:21.790Z",
+  "result": {
+    "slug": "timnit-gebru",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "bcd01db5-6eea-4fed-9343-0e9ff7108aa6",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "organizations",
+              "verdict": "ambiguous",
+              "referenceQuote": "She is a co-founder of Black in AI, an advocacy group that has pushed for more Black roles in AI development and research.[5] She is the founder of the Distributed Artificial Intelligence Research Institute (DAIR).",
+              "evidenceQuote": "Timnit Gebru is the founder and executive director of the Distributed AI Research Institute",
+              "claimId": "ac824e3dd5e18a76ae19fcea01a2efb7",
+              "rationale": "Dossier covers DAIR founding but says nothing about Black in AI co-founding. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "doctorate",
+              "verdict": "missing",
+              "referenceQuote": "her PhD in computer vision[13] in 2017.[14] Gebru was advised during her PhD program by Fei-Fei Li.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier statement mentions a Stanford PhD, 2017, or Fei-Fei Li.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "addiscoder",
+              "verdict": "missing",
+              "referenceQuote": "Both during her PhD program in 2016 and in 2018, Gebru returned to Ethiopia with Jelani Nelson's programming campaign, AddisCoder.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No mention of AddisCoder or Jelani Nelson in the dossier.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "departure-dispute",
+              "verdict": "ambiguous",
+              "referenceQuote": "Google terminated her employment immediately, stating that they were accepting her resignation. Gebru maintained that she had not formally offered to resign, and only threatened to.",
+              "evidenceQuote": "her experience of getting fired by Google in a very public way",
+              "claimId": "d88ade347fba198ba050777afe8ee9e4",
+              "rationale": "Dossier asserts she was fired, whereas the reference fact describes a contested resignation/firing dispute with no settled claim. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "apple-contribution",
+              "verdict": "missing",
+              "referenceQuote": "She went on to develop signal processing algorithms for the first iPad.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "No dossier mention of Apple, iPad, or audio/signal-processing work.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "timnit-gebru",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "timnit-gebru",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "870a2e157303e9514a9903b80aad644203399bf632c4e42511de520bf13cbad0",
+            "url": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d6b840d964c0da4b9e104c6d013f9&url=https%3a%2f%2fwww.democracynow.org%2f2026%2f8%2f13%2ftimnit_gebru&c=1786304233705789411&mkt=en-us",
+            "hash": "ca5edecd1a7f72ea515f4bfb24c5fc35cac1653629c359f8fdbde7661f5359ff",
+            "upstreamIndex": "democracynow.org",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      },
+      {
+        "family": "historical-evidence",
+        "sources": [
+          {
+            "id": "b6031ad5b2bff31659863a31699e14e765cce1c85f53681c039e65dc0a3a9f77",
+            "url": "https://archive.org/details/mwzesdka1zszgze8iuknbrifrgkklmdb4n2nqcp0",
+            "hash": "6f3bdca79dcbb06179ca804ea732ea727deb005b7648f3973c69c1261498d259",
+            "upstreamIndex": "archive.org",
+            "cited": false
+          },
+          {
+            "id": "a73a0dc3f0774ba5f0309918b5b3d8db91b53e28e997f2d71df1cd1257ce784a",
+            "url": "https://archive.org/details/mwzesdka1zszgze8iuknbrifrgkklmdb4n2nqcp0",
+            "hash": "6f3bdca79dcbb06179ca804ea732ea727deb005b7648f3973c69c1261498d259",
+            "upstreamIndex": "archive.org",
+            "cited": true
+          }
+        ],
+        "claimIds": [
+          "ac824e3dd5e18a76ae19fcea01a2efb7",
+          "772fdf542d80ee604570af29ea44389c",
+          "c1a2ec6054133e0a43063aa6e80e4de1",
+          "d88ade347fba198ba050777afe8ee9e4",
+          "567f54392fc8fc0abf54b9e80d073266"
+        ],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 5,
+      "totalCitations": 5,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 5,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 3,
+      "ambiguous": 2,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 5,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r13": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r5": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r10": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "organizations",
+          "verdict": "ambiguous",
+          "referenceQuote": "She is a co-founder of Black in AI, an advocacy group that has pushed for more Black roles in AI development and research.[5] She is the founder of the Distributed Artificial Intelligence Research Institute (DAIR).",
+          "evidenceQuote": "Timnit Gebru is the founder and executive director of the Distributed AI Research Institute",
+          "claimId": "ac824e3dd5e18a76ae19fcea01a2efb7",
+          "rationale": "Dossier covers DAIR founding but says nothing about Black in AI co-founding. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "doctorate",
+          "verdict": "missing",
+          "referenceQuote": "her PhD in computer vision[13] in 2017.[14] Gebru was advised during her PhD program by Fei-Fei Li.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier statement mentions a Stanford PhD, 2017, or Fei-Fei Li.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "addiscoder",
+          "verdict": "missing",
+          "referenceQuote": "Both during her PhD program in 2016 and in 2018, Gebru returned to Ethiopia with Jelani Nelson's programming campaign, AddisCoder.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No mention of AddisCoder or Jelani Nelson in the dossier.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "departure-dispute",
+          "verdict": "ambiguous",
+          "referenceQuote": "Google terminated her employment immediately, stating that they were accepting her resignation. Gebru maintained that she had not formally offered to resign, and only threatened to.",
+          "evidenceQuote": "her experience of getting fired by Google in a very public way",
+          "claimId": "d88ade347fba198ba050777afe8ee9e4",
+          "rationale": "Dossier asserts she was fired, whereas the reference fact describes a contested resignation/firing dispute with no settled claim. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "apple-contribution",
+          "verdict": "missing",
+          "referenceQuote": "She went on to develop signal processing algorithms for the first iPad.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "No dossier mention of Apple, iPad, or audio/signal-processing work.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 5,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 3,
+      "distinctFamilies": 2,
+      "distinctUpstreamIndexes": 2,
+      "sectionsWithGroundedSummary": 3
+    },
+    "usefulness": {
+      "understanding": 1,
+      "remainingQuestions": 2,
+      "conversationReadiness": 1,
+      "rationale": "All dossier claim statements are empty; only citation quotes carry substance. From them a reader learns Gebru founded/executive-directs DAIR, formerly co-led Google's Ethical AI team, was publicly fired by Google, and has written on exploited labor behind AI and harmful EA-influenced AI ethics. That is a thin but coherent sketch matching the identity anchors. However, everything rests on a single 2023 podcast source (same underlying archive.org URL appears twice), the contested Google departure and ideas claims are flagged contested without resolution, and there is no detail on her research, publications, or DAIR's work. No overclaims can be matched because the dossier's own statements contain no verbatim text; the listed unjustified conclusions (current Google role, feed authorship, DAIR size) do not appear in the dossier.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 3,
+      "requests": 36,
+      "modelCalls": 4,
+      "sourcesRetained": 3,
+      "leadsInvestigated": 14,
+      "leadsUnresolved": 343,
+      "failuresByCode": {
+        "document-empty": 5,
+        "identity-unmatched": 10,
+        "resource-unavailable": 3,
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "Could not read http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d6ab8739549c5a81ab3017d4f6a4b&url=https%3a%2f%2fwww.msn.com%2fen-us%2flifestyle%2fshopping%2fafrotech-2026-speakers-include-timnit-gebru-rep-ayanna-pressley-louis-carr-and-more%2far-AA257vQ0&c=14595790343609517611&mkt=en-us: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMiYEFVX3lxTE9jTnNXVjhQTGVZTnJuSkVFYksxVGJsWkYwSjlsM0pKb01iaXpEMllFZlQ0ZUlsNGM1QmFzRGZrYm9VLTFid1g3LTE5WnFBRXA4Q19GQVNHa21zbEV4dWdlcg?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://tubefree.org/videos/watch/8000f0a2-5d89-4b7f-816a-6626c2c068ff: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMiiwFBVV95cUxPTUVrNThWSmpnTmplRk9aUF9pdFJxMGpkZnFOR01fRjFBSHhvYS1iNmNQVUlCTmwzZ25SOWpuZ0E2eGpuMllGNTZaT3N5aEdSWDBlMWU1VWxXREFZWFppM0xTTHFxdDhBX3ptbE1RREN1LXZyYm84RUd1N1ZtUEt1b3duRHU2cWppVFpz?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://arxiv.org/a/gebru_t_1: Reading produced no usable text (failed).",
+        "Could not read https://www.youtube.com/results?search_query=timnit+gebru+keynote: Reading produced no usable text (failed).",
+        "Could not read https://www.wired.com/story/timnit-gebru-fired-google/: Reading produced no usable text (failed).",
+        "Could not read https://www.ted.com/speakers/timnit_gebru: Reading produced no usable text (failed).",
+        "343 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 307778
+    }
+  }
+}

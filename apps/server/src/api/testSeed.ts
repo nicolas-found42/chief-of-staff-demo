@@ -99,8 +99,28 @@ const SEED_CORPUS = [
  */
 export async function registerTestSeed(app: FastifyInstance, ctx: TestSeedContext): Promise<void> {
   app.post("/api/test/person-dossier-source", async (request) => {
-    const input = request.body as { url: string; text: string; extraction: unknown };
-    dossierSources.set(input.url, { text: input.text, extraction: input.extraction });
+    const input = request.body as {
+      url: string;
+      text: string;
+      extraction: unknown;
+      extractionError?: string;
+      holdExtraction?: boolean;
+    };
+    dossierSources.set(input.url, {
+      text: input.text,
+      extraction: input.extraction,
+      ...(input.extractionError ? { extractionError: input.extractionError } : {}),
+      ...(input.holdExtraction ? { hold: createExtractionHold() } : {}),
+    });
+    return { ok: true };
+  });
+  app.get("/api/test/person-dossier-extraction", async (request) => {
+    const { url } = request.query as { url: string };
+    return { started: dossierSources.get(url)?.hold?.started ?? false };
+  });
+  app.post("/api/test/person-dossier-extraction/release", async (request) => {
+    const { url } = request.body as { url: string };
+    dossierSources.get(url)?.hold?.release();
     return { ok: true };
   });
   app.post("/api/test/seed", async (request, reply) => {
@@ -581,7 +601,27 @@ export function contentScoutTestPorts(now: () => Date): {
 }
 
 /** The browser suite replaces only remote I/O; the production research pipeline stays intact. */
-const dossierSources = new Map<string, { text: string; extraction: unknown }>();
+function createExtractionHold() {
+  let release!: () => void;
+  const wait = new Promise<void>((resolve) => {
+    // A failed browser assertion must not leave the hermetic model pending forever.
+    const timer = setTimeout(resolve, 30_000);
+    release = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+  });
+  return { wait, release, started: false };
+}
+const dossierSources = new Map<
+  string,
+  {
+    text: string;
+    extraction: unknown;
+    extractionError?: string;
+    hold?: ReturnType<typeof createExtractionHold>;
+  }
+>();
 export const personDossierTestPorts: {
   search: import("../source-adapters/search.js").PublicSearch;
   fetch: import("../source-adapters/http.js").PublicHttpFetch;
@@ -615,7 +655,13 @@ export const personDossierTestPorts: {
   }),
   complete: async (request) => {
     const input = JSON.parse(request.user) as { document?: { url: string } };
-    return input.document ? (dossierSources.get(input.document.url)?.extraction ?? {}) : {};
+    const source = input.document ? dossierSources.get(input.document.url) : undefined;
+    if (source?.hold) {
+      source.hold.started = true;
+      await source.hold.wait;
+    }
+    if (source?.extractionError) throw new Error(source.extractionError);
+    return source?.extraction ?? {};
   },
   /* The fixture planner proposes nothing: the browser journey exercises the
      production loop, not a model's imagination. */

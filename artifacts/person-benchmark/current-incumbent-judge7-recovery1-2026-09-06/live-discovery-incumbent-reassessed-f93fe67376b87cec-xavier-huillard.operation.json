@@ -1,0 +1,1131 @@
+{
+  "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+  "profileId": "person_35c7cd4d6b44",
+  "conclusion": "bounded",
+  "startedAt": "2026-09-06T11:48:34.980Z",
+  "finishedAt": "2026-09-06T11:51:01.664Z",
+  "rounds": 1,
+  "modelCalls": 2,
+  "requests": 3,
+  "sourcesRetained": 4,
+  "retainedSourceIds": [
+    "7defef9d81e31a74aa1f689e1af603376c1d8766141da90338929c775a41da0e",
+    "aeda921b8740cb5c12bdf42f9cfaef2804da50b85003ec4c94f4281e199a2701",
+    "4f093eced187055347cddd4306d4ed43563c61fd7605417bfc95880365d68fc1",
+    "f5a4106bfdce3057a82ca7fa8a3407145381e322c8d12e3cb2415cefc30b76b0"
+  ],
+  "claimsPublished": 7,
+  "publishedDossierRevision": 6,
+  "coverage": [
+    {
+      "key": "overview",
+      "label": "Who this person is",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 5,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "career",
+      "label": "Dated career history and focus changes",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 3,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "work",
+      "label": "Specific work, contributions and outcomes",
+      "kind": "dossier-section",
+      "state": "satisfied",
+      "sources": 1,
+      "claims": 1,
+      "gaps": [
+        "This account reflects the sources collected so far; further evidence may exist."
+      ]
+    },
+    {
+      "key": "expertise",
+      "label": "Claimed and demonstrated expertise",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "ideas",
+      "label": "Writing, talks and arguments",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "connections",
+      "label": "Counterparties and repeated collaboration",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "recognition",
+      "label": "Independent verification and credit",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Constraints, governance and availability",
+      "kind": "dossier-section",
+      "state": "planned",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No grounded evidence was attributed to this section."
+      ]
+    },
+    {
+      "key": "general-discovery",
+      "label": "General web discovery",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "spoken-evidence",
+      "label": "Video, podcast and broadcast material",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "public-social",
+      "label": "Public social posts and pages",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "documents-publishers",
+      "label": "Documents, publisher sites and structured records",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 4,
+      "gaps": []
+    },
+    {
+      "key": "published-work",
+      "label": "Published and deposited work",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "professional-records",
+      "label": "Professional and institutional records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "creative-records",
+      "label": "Creative and cultural catalogue records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "identity-affiliation",
+      "label": "Identity and affiliation records",
+      "kind": "source-family",
+      "state": "investigated",
+      "sources": 0,
+      "claims": 0,
+      "gaps": [
+        "No source in this family contributed evidence in this operation."
+      ]
+    },
+    {
+      "key": "historical-evidence",
+      "label": "Archived and historical evidence",
+      "kind": "source-family",
+      "state": "satisfied",
+      "sources": 2,
+      "claims": 3,
+      "gaps": []
+    }
+  ],
+  "leads": [
+    {
+      "id": "ee86a484477339071b2bbb914ea83a97",
+      "kind": "query",
+      "target": "Xavier Huillard VINCI",
+      "origin": "seed",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Discovery returned 24 candidates.",
+      "yieldedEvidence": true
+    },
+    {
+      "id": "92701035052511f81423473b748d16f8",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2ffinance.yahoo.com%2fnews%2fpierre-anjolras-appointed-chief-operating-064500784.html&c=7866488972698610960&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retained and extracted 4 grounded claims.",
+      "yieldedEvidence": true,
+      "selection": {
+        "score": 12.5,
+        "relevance": 4,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "e495d02064b03f7187227ce519cc8220",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxPanpkSUxIMjY2eS1ITXFLZlVkYWdlZWQ1akxiWjRRS0NCRHlrS0k4S3BfQ0Y4dXU3WDRzdm9lYjYxQWt0Z2FTVjFPM09WOThiTTdmV1N0Z0I3cWRSbDdWTUtPRmRhell2a2xSdmMxVnNybkVDUENlaVV0S0JrRHFiSDh4YS1xREhMOEZpU3drckRkeVZHLVVaR1dOdWhHMS1xU3MwR1oxTG1EaTJDeHRXSDRrUHBKNXhNQW9iMUo5SjVBYXc?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.45,
+        "relevance": 1.975,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "3c751f825390e78d9140eec81c0b0c20",
+      "kind": "url",
+      "target": "https://archive.org/details/youtube-0rrdi9tLtGY",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "investigated",
+      "reason": "Retained and extracted 3 grounded claims.",
+      "yieldedEvidence": true,
+      "selection": {
+        "score": 12.4,
+        "relevance": 3.95,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "c2139099535277abd27e6ecfaa713373",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0002-9481-7948",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.35,
+        "relevance": 1.925,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "de7a3a4d7b070c213e1eb92d401100a4",
+      "kind": "url",
+      "target": "https://ror.org/01bshdg19",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.3,
+        "relevance": 0.9,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a917f05c99f0ba7bb0d4a12671164c7f",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fwww.nasdaq.com%2fpress-release%2fvincis-shareholders-general-meeting-and-board-directors-meeting-17-april-2025-2025-04&c=18100796329294156387&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.25,
+        "relevance": 3.875,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "ea24ff51072750eaad41b099f568e97d",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMisgFBVV95cUxPYlJIQlRzcWdaQm5ZTzg5Q1R0ck1fODVSNGw2OHA0T3RkU0hjVExlUWNwbm1fSmtIYkVpUDhlWnJFY2l1RFY1MGVZdjFTdDBJblJna1dYZHBvVVlEOWFGd3NaV3djWUdsdEM0T1FiaHBLSkg3ZUhHVDd3eWtUQy1md3dsTFNpVFVFQnFsUDV6SThlN0Y3Z0RZZkVuMVRMY3dENTlMWjBja0xYSkgxMFhlMk13?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 8.2,
+        "relevance": 1.85,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "b7805b2175b8ef2c25a3be6511eda00d",
+      "kind": "url",
+      "target": "https://archive.org/details/youtube-0VFwDQUbP7o",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12.15,
+        "relevance": 3.825,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9cca7a9f7dbeba56e4d837878ac7746e",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0001-9764-0845",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.1,
+        "relevance": 0.8,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "9672d8fbd24506c0813f0303397b64e1",
+      "kind": "url",
+      "target": "https://ror.org/04p5w4d81",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 6.05,
+        "relevance": 0.775,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8521aedc89afbc904bc7ae199b1d7936",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fmarkets.ft.com%2fdata%2fannounce%2fdetail%3fdockey%3d1330-1001175801en-258T7E5P45TAAVAV6R2SQ7CNRJ&c=3289490467981741343&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 12,
+        "relevance": 3.75,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "89c0408983d62f83226b565bd28e8724",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMipwFBVV95cUxQUkdHNy1OWXAyNDU4WlIzdnh2enJ5X0laam91eUxUaUp4czc5cXo3T1pkVDY3ajd5SDVBdDFlbE5sYjBFdEZYNDRDd0hJUUZxZFMybmFfQUNXcmFGaUR2OEJ4QmNYV2dtRUxoMWF1T3JGX0REUS1QZ3JDR2lsU3NycXdwcVZLNmw1cndLT2lkZmp1bFhsWXF3VHZFUWlCZkdjVzg0dlZVcw?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.95,
+        "relevance": 3.725,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "fc748161c9a8d54ea47adb4a54c0f62d",
+      "kind": "url",
+      "target": "https://archive.org/details/youtube-PSMeMZjRsp4",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.9,
+        "relevance": 3.7,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "a461ea605960041189fb0daf72a75a21",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0009-5818-0802",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.85,
+        "relevance": 1.675,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "4e2951c6bd1f79b32c70256cd9af6553",
+      "kind": "url",
+      "target": "https://ror.org/03e278q38",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.8,
+        "relevance": 0.65,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "df3e155d25a4da152ddc50e69e4935c3",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fbloomberg.com%2fnews%2farticles%2f2016-01-19%2fvinci-chief-sees-signs-of-improvement-in-french-construction&c=14902608596037769992&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 11.75,
+        "relevance": 3.625,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "25327392e6556230017ab70e53047879",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMivgFBVV95cUxQZG9wZ3lpZkJuZnpoTDRMNWN3X0djT0xFRGxLWnhhSnMwcE11Y21fMU1iT2dkcGN0U2NSbmx1VlJCUmM2RDRDNU5LRWd5SnRsUVhjS1IyMGJqUUxnS0lWLUg5TXZoQlJ1WUdUMEJHY3laQTBPOU9uOGw2V1JjWFpoMnBzRmVzZWxJUk5YbGpiM0ctVllBSmVmWjE1UURoQkN2cXlKR0U4dkxScVBzVk5tRUFZckUtUHI4NEhHSXlB?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.7,
+        "relevance": 1.6,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "ce77a18e21912e123c60a23359236743",
+      "kind": "url",
+      "target": "https://archive.org/details/1000ceos0000unse",
+      "origin": "discovery",
+      "family": "historical-evidence",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.65,
+        "relevance": 0.575,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "5edd8afd0e5a94929779ef575c7c2c42",
+      "kind": "url",
+      "target": "https://orcid.org/0009-0000-1298-0630",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.6,
+        "relevance": 1.55,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "62f68a5135e282e256d29d2362e77e80",
+      "kind": "url",
+      "target": "https://ror.org/05phe2d91",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.55,
+        "relevance": 0.525,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "1d3680abcd78458f9854a8608df780a6",
+      "kind": "url",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fwww.forbes.com%2fsites%2fstevedenning%2f2018%2f12%2f02%2fdrucker-forum-2018-post-bureaucratic-management-at-vinci-and-haier%2f&c=2416554659202362020&mkt=en-us",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.5,
+        "relevance": 1.5,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "8f1d4bed2108abd24929b5052df1cc91",
+      "kind": "url",
+      "target": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPTkVaVXMxMzF4MkJJSE5hR1VpcGRlUFpWUXNObFVYdmUxSXh3bUZQNGNWMXlEZ0pMa29sc1M3cmNiQVV5WjcwaWlJdHJ4ZGNULW9MdlRvTFZtWE9PUTRpd3NfcjJlOVllUmNEeHF4czJ3TzBuLUxJaGJTYWp3d0tvdnBDanNKSTNrTUVnbWw0WVFYMHRkQ25SM2k1Mkl2c0VRZ3R1Y0RENlg1bGM4YWVZclZGWQ?oc=5",
+      "origin": "discovery",
+      "family": "documents-publishers",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 7.45,
+        "relevance": 1.475,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "d1e6b484203f86e4fd78074154f4fe58",
+      "kind": "url",
+      "target": "https://orcid.org/0000-0001-9871-4420",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.4,
+        "relevance": 0.44999999999999996,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    },
+    {
+      "id": "90f78bde83746a87bc14a49b23c7bd64",
+      "kind": "url",
+      "target": "https://ror.org/04hx99g79",
+      "origin": "discovery",
+      "family": "identity-affiliation",
+      "coverage": [],
+      "disposition": "interrupted",
+      "reason": "A safety bound stopped the operation before this lead was investigated.",
+      "yieldedEvidence": false,
+      "selection": {
+        "score": 5.35,
+        "relevance": 0.42500000000000004,
+        "independence": 3,
+        "coverageGap": 1.5
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "18b2098f-46a5-4dfa-a099-b2ac76dc86ab",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "39fb888e-f3ee-4ba2-ba8b-09702d4ff5f2",
+      "attempt": 1,
+      "stage": "discovery",
+      "code": "retrieval-recovered",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "Xavier Huillard VINCI",
+      "targetKind": "query",
+      "collector": "public-search",
+      "collectorVersion": "2026-09-06",
+      "observed": {
+        "elapsedMilliseconds": 60006
+      },
+      "reason": "Discovery returned 24 results.",
+      "occurredAt": "2026-09-06T11:49:34.996Z"
+    },
+    {
+      "id": "1d828c6d-7dc3-4417-a4ca-4eddd89b5d2c",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "603d2ff2-f165-42ad-9dbd-a04cad31e3b2",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fwww.nasdaq.com%2fpress-release%2fvincis-shareholders-general-meeting-and-board-directors-meeting-17-april-2025-2025-04&c=18100796329294156387&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 12.25 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "510df56b-77c3-403e-95f0-28f77d901c03",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "c584017f-7ad1-42c4-afc4-75481e88c677",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/youtube-0VFwDQUbP7o",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 12.15 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "194bad4a-e7a4-483e-aaf7-f5d13c598fe6",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "00e27bc1-1b55-4c59-9e46-29e8a909d485",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fmarkets.ft.com%2fdata%2fannounce%2fdetail%3fdockey%3d1330-1001175801en-258T7E5P45TAAVAV6R2SQ7CNRJ&c=3289490467981741343&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 12.00 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "76d47bef-0da6-4249-ab94-2060d962805d",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "e20586ff-ef37-4b69-86c7-ac9646ee4a55",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMipwFBVV95cUxQUkdHNy1OWXAyNDU4WlIzdnh2enJ5X0laam91eUxUaUp4czc5cXo3T1pkVDY3ajd5SDVBdDFlbE5sYjBFdEZYNDRDd0hJUUZxZFMybmFfQUNXcmFGaUR2OEJ4QmNYV2dtRUxoMWF1T3JGX0REUS1QZ3JDR2lsU3NycXdwcVZLNmw1cndLT2lkZmp1bFhsWXF3VHZFUWlCZkdjVzg0dlZVcw?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.95 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "3e36c9db-9030-489b-b461-35a14eb4d2bd",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "c9269a55-de4a-4c05-9af3-6cc260b8ad13",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/youtube-PSMeMZjRsp4",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.90 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "3adfe4bd-78d1-445f-8530-1513a3e5cac5",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "8548f048-aa45-4f4e-a14f-04c6a62c4bb0",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fbloomberg.com%2fnews%2farticles%2f2016-01-19%2fvinci-chief-sees-signs-of-improvement-in-french-construction&c=14902608596037769992&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 11.75 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "720450b0-89bb-496b-9fe7-56a8a52b16f7",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "2d54476a-3a34-46b2-8b94-c4b6973eb67a",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxPanpkSUxIMjY2eS1ITXFLZlVkYWdlZWQ1akxiWjRRS0NCRHlrS0k4S3BfQ0Y4dXU3WDRzdm9lYjYxQWt0Z2FTVjFPM09WOThiTTdmV1N0Z0I3cWRSbDdWTUtPRmRhell2a2xSdmMxVnNybkVDUENlaVV0S0JrRHFiSDh4YS1xREhMOEZpU3drckRkeVZHLVVaR1dOdWhHMS1xU3MwR1oxTG1EaTJDeHRXSDRrUHBKNXhNQW9iMUo5SjVBYXc?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.45 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "d0339710-3f1d-45b6-ad84-6f6e373d8657",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "a4c09248-37d7-411c-87fc-aabdae2895a3",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0002-9481-7948",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.35 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "e44779cc-c7e6-43c5-801e-9deae015187c",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "92955918-5fee-40b4-944a-51399a47dd4d",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMisgFBVV95cUxPYlJIQlRzcWdaQm5ZTzg5Q1R0ck1fODVSNGw2OHA0T3RkU0hjVExlUWNwbm1fSmtIYkVpUDhlWnJFY2l1RFY1MGVZdjFTdDBJblJna1dYZHBvVVlEOWFGd3NaV3djWUdsdEM0T1FiaHBLSkg3ZUhHVDd3eWtUQy1md3dsTFNpVFVFQnFsUDV6SThlN0Y3Z0RZZkVuMVRMY3dENTlMWjBja0xYSkgxMFhlMk13?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 8.20 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "9d56bfd7-9dbc-4d9b-8615-db5516fa44e2",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "d7f42337-b003-4b1b-b4d0-f03423cf8183",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0009-5818-0802",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.85 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "b85bac96-6963-42ed-a2e9-58d5ce446a32",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "04939764-ca13-48e8-9441-b15b4f634a27",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMivgFBVV95cUxQZG9wZ3lpZkJuZnpoTDRMNWN3X0djT0xFRGxLWnhhSnMwcE11Y21fMU1iT2dkcGN0U2NSbmx1VlJCUmM2RDRDNU5LRWd5SnRsUVhjS1IyMGJqUUxnS0lWLUg5TXZoQlJ1WUdUMEJHY3laQTBPOU9uOGw2V1JjWFpoMnBzRmVzZWxJUk5YbGpiM0ctVllBSmVmWjE1UURoQkN2cXlKR0U4dkxScVBzVk5tRUFZckUtUHI4NEhHSXlB?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.70 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "afda3043-1e92-47e9-81e8-1d751097288e",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "31915d8b-3f9f-4f90-84af-53abba77488b",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0009-0000-1298-0630",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.60 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "af42067c-1245-4a26-b881-35de8ba2fc0b",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "86e6ecba-3eb4-4560-91d3-eae40c4be2ce",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2fwww.forbes.com%2fsites%2fstevedenning%2f2018%2f12%2f02%2fdrucker-forum-2018-post-bureaucratic-management-at-vinci-and-haier%2f&c=2416554659202362020&mkt=en-us",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.50 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "7e07bc8f-39be-42b1-a136-91c033f389c0",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "fa8d92f5-7869-475a-9400-c9c662186133",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPTkVaVXMxMzF4MkJJSE5hR1VpcGRlUFpWUXNObFVYdmUxSXh3bUZQNGNWMXlEZ0pMa29sc1M3cmNiQVV5WjcwaWlJdHJ4ZGNULW9MdlRvTFZtWE9PUTRpd3NfcjJlOVllUmNEeHF4czJ3TzBuLUxJaGJTYWp3d0tvdnBDanNKSTNrTUVnbWw0WVFYMHRkQ25SM2k1Mkl2c0VRZ3R1Y0RENlg1bGM4YWVZclZGWQ?oc=5",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 7.45 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "28ca1b7e-3d8b-4ca8-901d-facfb9c15582",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "8704e042-c108-42b7-b759-cef2ed66edf1",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/01bshdg19",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.30 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "e0f959cd-5514-4527-987a-218e6f9b8376",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "2b0eca1d-1707-41ba-bb02-97e9f85fca14",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0001-9764-0845",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.10 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "602e09f0-7840-4f7c-a005-9fe5c2aa6366",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "f977136c-1e49-40b4-9d8d-6bfa308e4f5a",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/04p5w4d81",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 6.05 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "5591a2e9-8428-42b5-ac91-3a0cd7cc6233",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "f0602386-99d5-4377-b868-049dcbc56167",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/03e278q38",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.80 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "7eacd337-0726-46aa-8099-622533e9efc8",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "13ec0035-ceae-42de-aeca-d84920bf3069",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/1000ceos0000unse",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.65 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "8ee37804-11e0-4b66-8d0b-e0795ebded82",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "5e869ea9-6206-448b-9852-7585fe2a7505",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/05phe2d91",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.55 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "4f30b5b6-f1c1-4846-a39b-03f781efaf31",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "465286b5-80b7-40df-937b-03b481deebac",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://orcid.org/0000-0001-9871-4420",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.40 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "01719695-cc7c-4106-8d0b-0bf8988e879f",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "be9b0a4a-5b82-4db2-ab23-6568fd42bb71",
+      "attempt": 1,
+      "stage": "selection",
+      "code": "selection-deferred",
+      "outcome": "skipped",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://ror.org/04hx99g79",
+      "targetKind": "url",
+      "collector": "selection",
+      "collectorVersion": "2026-09-06",
+      "reason": "Deferred to a later round; selection score 5.35 ranked below the batch.",
+      "impact": "Discovered but not yet read.",
+      "remediation": "It stays pending; a later round reads it if the bounds allow.",
+      "occurredAt": "2026-09-06T11:49:34.999Z"
+    },
+    {
+      "id": "7eb84ed3-2c8e-4751-b74d-8f597786f1ce",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "0d106d44-0cb8-4496-b60d-28d50f0e04e9",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-response-received",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "http://www.bing.com/news/apiclick.aspx?ref=FexRss&aid=&tid=6a9d5313b3d348a7846cb58a64ce897b&url=https%3a%2f%2ffinance.yahoo.com%2fnews%2fpierre-anjolras-appointed-chief-operating-064500784.html&c=7866488972698610960&mkt=en-us",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "0d106d44-0cb8-4496-b60d-28d50f0e04e9",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "0"
+      },
+      "reason": "The model boundary returned JSON; dossier validation and publication follow.",
+      "impact": "A model response is available for evidence validation.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:50:04.919Z"
+    },
+    {
+      "id": "74314872-2a95-4fda-86a6-9e3a1c110a6c",
+      "operationId": "b442304a-2c12-4849-a449-5ebe28bdd828",
+      "attemptOf": "a7983f5f-b485-4706-9f1c-97db1a6ccc65",
+      "attempt": 1,
+      "stage": "extraction",
+      "code": "model-response-received",
+      "outcome": "succeeded",
+      "recovery": "none",
+      "cause": "observed",
+      "target": "https://archive.org/details/youtube-0rrdi9tLtGY",
+      "targetKind": "model",
+      "collector": "extraction",
+      "collectorVersion": "2026-09-06",
+      "configuration": {
+        "binding": "forced_tool_call",
+        "logicalCall": "a7983f5f-b485-4706-9f1c-97db1a6ccc65",
+        "wireAttempt": "1",
+        "retryDelayMilliseconds": "0"
+      },
+      "reason": "The model boundary returned JSON; dossier validation and publication follow.",
+      "impact": "A model response is available for evidence validation.",
+      "remediation": "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+      "occurredAt": "2026-09-06T11:51:01.613Z"
+    }
+  ],
+  "gaps": [
+    "No grounded evidence was found for: Claimed and demonstrated expertise.",
+    "No grounded evidence was found for: Writing, talks and arguments.",
+    "No grounded evidence was found for: Counterparties and repeated collaboration.",
+    "No grounded evidence was found for: Independent verification and credit.",
+    "No grounded evidence was found for: Constraints, governance and availability.",
+    "No evidence was collected from: General web discovery.",
+    "No evidence was collected from: Video, podcast and broadcast material.",
+    "No evidence was collected from: Public social posts and pages.",
+    "No evidence was collected from: Published and deposited work.",
+    "No evidence was collected from: Professional and institutional records.",
+    "No evidence was collected from: Creative and cultural catalogue records.",
+    "No evidence was collected from: Identity and affiliation records.",
+    "22 leads were left uninvestigated when the operation stopped.",
+    "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+  ],
+  "detail": "The operation's wall-clock backstop was reached with work still pending. Completed evidence is available and pending leads are retained."
+}

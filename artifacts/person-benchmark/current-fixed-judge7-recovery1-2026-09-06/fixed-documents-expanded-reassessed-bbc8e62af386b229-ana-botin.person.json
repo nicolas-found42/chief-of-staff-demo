@@ -1,0 +1,393 @@
+{
+  "schemaVersion": 1,
+  "runId": "bbc8e62af386b229",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:16:30.111Z",
+  "reassessmentOf": "b2838e9176d9058b",
+  "result": {
+    "slug": "ana-botin",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "fixed-documents",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "32063345-031e-4494-9d41-d804fcdc5278",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "santander-chair",
+              "verdict": "ambiguous",
+              "referenceQuote": "is a Spanish banker who has been the executive chairman of Santander Group since 2014",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "santander-uk-ceo",
+              "verdict": "ambiguous",
+              "referenceQuote": "In November 2010, Botín succeeded António Horta Osório as chief executive of Santander UK",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "banesto",
+              "verdict": "ambiguous",
+              "referenceQuote": "In 2002, she became the executive chairman of the Spanish bank, Banesto",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "jpmorgan",
+              "verdict": "ambiguous",
+              "referenceQuote": "Botín worked at JP Morgan in the US from 1981 to 1988",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "banco-osorno",
+              "verdict": "ambiguous",
+              "referenceQuote": "she was involved in the bank's 1997 acquisition of a 51 percent stake in Banco Osorno y La Union, the largest bank in Chile, for $495 million",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "suala-capital",
+              "verdict": "ambiguous",
+              "referenceQuote": "En 2000, fundó el fondo de capital de riesgo Suala Capital",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "ebf-president",
+              "verdict": "ambiguous",
+              "referenceQuote": "Desde el año 2021 es la presidenta de la Federación Bancaria Europea, sucediendo a Jean Pierre Mustier, convirtiéndose en la primera mujer en ostentar el cargo",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "coca-cola-board",
+              "verdict": "ambiguous",
+              "referenceQuote": "In 2013, Botín was appointed a director of the Coca-Cola Company",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "removed-1999",
+              "verdict": "ambiguous",
+              "referenceQuote": "pero en 1999 fue apartada del cargo por su padre, Emilio Botín",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "education",
+              "verdict": "ambiguous",
+              "referenceQuote": "She received her high school education at St Mary's School Ascot",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            },
+            {
+              "factId": "dbe",
+              "verdict": "ambiguous",
+              "referenceQuote": "Honorary Dame Commander of the Order of the British Empire (2015)",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+              "reviewRequired": true
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "ana-botin",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "ana-botin",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [
+      {
+        "family": "documents-publishers",
+        "sources": [
+          {
+            "id": "fb50181ebc49e9e6e1d23fc5f42ba941e3fbc67656a9d4eb582c5122b3d80fea",
+            "url": "https://es.wikipedia.org/wiki/Ana_Bot%C3%ADn",
+            "hash": "ae288afb552f3195995af137e25f00255d169cc14666f9143e523c37862ad7f2",
+            "upstreamIndex": "Wikipedia (Spanish)",
+            "cited": false
+          }
+        ],
+        "claimIds": [],
+        "recoveredFactIds": [],
+        "exclusiveRecoveredFactIds": []
+      }
+    ],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 11,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 0,
+      "ambiguous": 11,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 9,
+          "recovered": 0
+        },
+        "beyond-current-coverage": {
+          "total": 2,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 6,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 4,
+          "recovered": 0
+        },
+        "r17": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r15": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r9": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r4": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "santander-chair",
+          "verdict": "ambiguous",
+          "referenceQuote": "is a Spanish banker who has been the executive chairman of Santander Group since 2014",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "santander-uk-ceo",
+          "verdict": "ambiguous",
+          "referenceQuote": "In November 2010, Botín succeeded António Horta Osório as chief executive of Santander UK",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "banesto",
+          "verdict": "ambiguous",
+          "referenceQuote": "In 2002, she became the executive chairman of the Spanish bank, Banesto",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "jpmorgan",
+          "verdict": "ambiguous",
+          "referenceQuote": "Botín worked at JP Morgan in the US from 1981 to 1988",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "banco-osorno",
+          "verdict": "ambiguous",
+          "referenceQuote": "she was involved in the bank's 1997 acquisition of a 51 percent stake in Banco Osorno y La Union, the largest bank in Chile, for $495 million",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "suala-capital",
+          "verdict": "ambiguous",
+          "referenceQuote": "En 2000, fundó el fondo de capital de riesgo Suala Capital",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "ebf-president",
+          "verdict": "ambiguous",
+          "referenceQuote": "Desde el año 2021 es la presidenta de la Federación Bancaria Europea, sucediendo a Jean Pierre Mustier, convirtiéndose en la primera mujer en ostentar el cargo",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "coca-cola-board",
+          "verdict": "ambiguous",
+          "referenceQuote": "In 2013, Botín was appointed a director of the Coca-Cola Company",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "removed-1999",
+          "verdict": "ambiguous",
+          "referenceQuote": "pero en 1999 fue apartada del cargo por su padre, Emilio Botín",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "education",
+          "verdict": "ambiguous",
+          "referenceQuote": "She received her high school education at St Mary's School Ascot",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        },
+        {
+          "factId": "dbe",
+          "verdict": "ambiguous",
+          "referenceQuote": "Honorary Dame Commander of the Order of the British Empire (2015)",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier contains no claims, so no fact can be recovered. (Downgraded: the quoted dossier text does not occur in the dossier.)",
+          "reviewRequired": true
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 1,
+      "distinctFamilies": 1,
+      "distinctUpstreamIndexes": 1,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 2,
+      "remainingQuestions": 0,
+      "conversationReadiness": 1,
+      "rationale": "The dossier body is empty; only identity anchors (name, birth, role as Santander executive chairman since 2014, family lineage) and one retained Wikipedia source are present. A reader learns basic identity but nothing about her actual actions, career history, or decisions. The dossier nowhere states what it does not know, so remainingQuestions scores 0. Conversation readiness is minimal: a reader knows who she is and her current title but has no substantive material to prepare with. No overclaims can be assessed because no dossier claims with citations exist; the three listed unjustified conclusions (acquisition-authorship, rankings-as-authority, inherited-role) have no matching dossier statements to map to.",
+      "reviewRequired": false
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 1,
+      "requests": 6,
+      "modelCalls": 1,
+      "sourcesRetained": 1,
+      "leadsInvestigated": 5,
+      "leadsUnresolved": 2,
+      "failuresByCode": {
+        "model-boundary-failed": 2
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "2 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 90643
+    }
+  }
+}

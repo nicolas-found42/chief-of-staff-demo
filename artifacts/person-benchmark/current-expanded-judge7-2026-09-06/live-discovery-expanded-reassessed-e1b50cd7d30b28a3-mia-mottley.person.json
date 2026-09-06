@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "runId": "e1b50cd7d30b28a3",
+  "corpusVersion": "cd3bd2a050f51de7",
+  "pipeline": "expanded",
+  "judgeProvider": "openrouter",
+  "judgeModel": "z-ai/glm-5.3-flash",
+  "judgeVersion": "2026-09-06.7",
+  "assessedAt": "2026-09-06T12:37:17.941Z",
+  "reassessmentOf": "a3e9d45607dd4f31",
+  "result": {
+    "slug": "mia-mottley",
+    "referenceVersion": "2026-09-06.1",
+    "mode": "live-discovery",
+    "failure": "Research interrupted before the operation completed.",
+    "assessment": {
+      "operationId": "eddbf69b-b755-4f11-aa37-18e9787dff2c",
+      "integrity": "completed",
+      "judge": "completed",
+      "phases": {
+        "reference": {
+          "status": "completed",
+          "judgements": [
+            {
+              "factId": "pm",
+              "verdict": "missing",
+              "referenceQuote": "Mia Amor Mottley[1] (born 1 October 1965) is a Barbadian politician and lawyer who has served as the eighth prime minister of Barbados since 2018 and as Leader of the Barbados Labour Party (BLP) since 2008. Mottley is the first woman to hold both positions.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty and contains no claim about Mottley becoming prime minister in 2018.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "election",
+              "verdict": "missing",
+              "referenceQuote": "In 2018, her party won a historic landslide victory in the 24 May general election, securing all 30 seats in the House and 72.8% of the popular vote",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty and contains no claim about the May 2018 general election results.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "early-defeat",
+              "verdict": "missing",
+              "referenceQuote": "Mottley first entered Barbadian politics in 1991, when she lost an election race in St. Michael North East against Leroy Brathwaite (a defeat of fewer than 200 votes).",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty and contains no claim about the 1991 Saint Michael North East defeat.",
+              "reviewRequired": false
+            },
+            {
+              "factId": "education-paper",
+              "verdict": "missing",
+              "referenceQuote": "During her tenure, she co-authored the White Paper on Education entitled Each Child Matters, which draws the link between better education and job fulfilment.",
+              "evidenceQuote": null,
+              "claimId": null,
+              "rationale": "The dossier is empty and contains no claim about the education White Paper Each Child Matters.",
+              "reviewRequired": false
+            }
+          ],
+          "failure": null
+        },
+        "support": {
+          "status": "completed",
+          "failure": null,
+          "unresolvedFindings": []
+        }
+      },
+      "modelAttempts": [
+        {
+          "call": 1,
+          "subject": "mia-mottley",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        },
+        {
+          "call": 2,
+          "subject": "mia-mottley",
+          "observation": {
+            "attempt": 1,
+            "binding": "forced_tool_call",
+            "outcome": "succeeded",
+            "diagnostic": null,
+            "delayMs": 0,
+            "stoppedReason": null
+          }
+        }
+      ]
+    },
+    "sourceContributions": [],
+    "factualReliability": {
+      "verifiedCitations": 0,
+      "totalCitations": 0,
+      "integrityFindings": [],
+      "criticalFindings": 0,
+      "criticalFindingKeys": [],
+      "overclaims": [],
+      "wrongPersonAttributions": 0,
+      "contradictedFacts": 0
+    },
+    "completeness": {
+      "referenceFacts": 4,
+      "recovered": 0,
+      "partial": 0,
+      "missing": 4,
+      "ambiguous": 0,
+      "byAcquisition": {
+        "app-supported": {
+          "total": 4,
+          "recovered": 0
+        }
+      },
+      "byRequirement": {
+        "r7": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r11": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r1": {
+          "total": 2,
+          "recovered": 0
+        },
+        "r2": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r12": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r8": {
+          "total": 1,
+          "recovered": 0
+        },
+        "r16": {
+          "total": 1,
+          "recovered": 0
+        }
+      },
+      "judgements": [
+        {
+          "factId": "pm",
+          "verdict": "missing",
+          "referenceQuote": "Mia Amor Mottley[1] (born 1 October 1965) is a Barbadian politician and lawyer who has served as the eighth prime minister of Barbados since 2018 and as Leader of the Barbados Labour Party (BLP) since 2008. Mottley is the first woman to hold both positions.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty and contains no claim about Mottley becoming prime minister in 2018.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "election",
+          "verdict": "missing",
+          "referenceQuote": "In 2018, her party won a historic landslide victory in the 24 May general election, securing all 30 seats in the House and 72.8% of the popular vote",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty and contains no claim about the May 2018 general election results.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "early-defeat",
+          "verdict": "missing",
+          "referenceQuote": "Mottley first entered Barbadian politics in 1991, when she lost an election race in St. Michael North East against Leroy Brathwaite (a defeat of fewer than 200 votes).",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty and contains no claim about the 1991 Saint Michael North East defeat.",
+          "reviewRequired": false
+        },
+        {
+          "factId": "education-paper",
+          "verdict": "missing",
+          "referenceQuote": "During her tenure, she co-authored the White Paper on Education entitled Each Child Matters, which draws the link between better education and job fulfilment.",
+          "evidenceQuote": null,
+          "claimId": null,
+          "rationale": "The dossier is empty and contains no claim about the education White Paper Each Child Matters.",
+          "reviewRequired": false
+        }
+      ]
+    },
+    "richness": {
+      "claims": 0,
+      "works": 0,
+      "expertise": 0,
+      "connections": 0,
+      "sources": 0,
+      "distinctFamilies": 0,
+      "distinctUpstreamIndexes": 0,
+      "sectionsWithGroundedSummary": 0
+    },
+    "usefulness": {
+      "understanding": 0,
+      "remainingQuestions": 0,
+      "conversationReadiness": 0,
+      "rationale": "The dossier body is empty: no passages, no retained sources, no citations. A reader learns only a one-line identity anchor (Barbadian politician, Saint Michael North East MP, PM since 2018) from metadata, but there is no evidence describing what Mottley actually did, no citations to verify anything, and no explicit statements of gaps or unknowns. Conversation preparation would rest entirely on the single identity line. The listed unjustified conclusions (all-seats, bermuda-ag) reference dossier claims that are not present, so no overclaim findings can be anchored to a verbatim excerpt with a citation index; I return no overclaims and flag uncertainty since the empty dossier itself is ambiguous.",
+      "reviewRequired": true
+    },
+    "operational": {
+      "conclusion": "interrupted",
+      "rounds": 2,
+      "requests": 24,
+      "modelCalls": 2,
+      "sourcesRetained": 0,
+      "leadsInvestigated": 8,
+      "leadsUnresolved": 254,
+      "failuresByCode": {
+        "document-empty": 2,
+        "challenge-page": 2,
+        "identity-unmatched": 10,
+        "rate-limited": 3,
+        "resource-unavailable": 1,
+        "model-boundary-failed": 1
+      },
+      "coverageGaps": [
+        "No grounded evidence was found for: Who this person is.",
+        "No grounded evidence was found for: Dated career history and focus changes.",
+        "No grounded evidence was found for: Specific work, contributions and outcomes.",
+        "No grounded evidence was found for: Claimed and demonstrated expertise.",
+        "No grounded evidence was found for: Writing, talks and arguments.",
+        "No grounded evidence was found for: Counterparties and repeated collaboration.",
+        "No grounded evidence was found for: Independent verification and credit.",
+        "No grounded evidence was found for: Constraints, governance and availability.",
+        "No evidence was collected from: General web discovery.",
+        "No evidence was collected from: Video, podcast and broadcast material.",
+        "No evidence was collected from: Public social posts and pages.",
+        "No evidence was collected from: Documents, publisher sites and structured records.",
+        "No evidence was collected from: Published and deposited work.",
+        "No evidence was collected from: Professional and institutional records.",
+        "No evidence was collected from: Creative and cultural catalogue records.",
+        "No evidence was collected from: Identity and affiliation records.",
+        "No evidence was collected from: Archived and historical evidence.",
+        "Could not read https://en.wikipedia.org/wiki/Mia_Mottley: Reading produced no usable text (blocked).",
+        "Could not read https://news.google.com/rss/articles/CBMipAFBVV95cUxOZndqbmFSN3p4ajVfSzZzX1oyOTZ5SVp0TUhzMHFtWlQ3LThrdXJLcWxOUi15SXM2T3BFdXFYQ1hFc1RSd0JBd3BsVnROQ2ZObmlEcmNQRFhZOGhXanB0djl3dkk3V2k5bFJVUTA0SXQ1R2RSNFlYV2N6QXZ0ZmNRR1VtT0hfX016ZU1PMXlkZUFLS1ZPTUpleDE0cXg0RHNUMlM0eA?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://news.google.com/rss/articles/CBMiVkFVX3lxTE95SXlxN0xwX0xJeE9BZmVpaHRGZVctc25GUENmR0R1SlpNb3A2RFJoOUhuemxMTUN5RmlvOTE4M05GNi1DWFh6S1lIWVhaWlVWNm04TjVn?oc=5: Reading produced no usable text (failed).",
+        "Could not read https://pmo.gov.bb/: Reading produced no usable text (blocked).",
+        "Could not read https://search.worldcat.org/search?q=mia+mottley: Reading produced no usable text (failed).",
+        "Could not read https://viaf.org/en/search?query=Mia+Mottley: Reading produced no usable text (failed).",
+        "254 leads were left uninvestigated when the operation stopped.",
+        "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found."
+      ],
+      "elapsedMilliseconds": 313342
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "chimamanda-ngozi-adichie",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Chimamanda Ngozi Adichie",
   "industry": "media",
   "role": "Novelist and essayist",
@@ -11,7 +11,7 @@
   "fictional": false,
   "lookup": {
     "fullName": "Chimamanda Ngozi Adichie",
-    "employerHint": "Independent author",
+    "employerHint": null,
     "profileUrls": [],
     "emails": []
   },

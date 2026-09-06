@@ -11,11 +11,10 @@ import type { readPersonSource } from "../person-profile/research-readers.js";
  * seed set it started from, no planner, serial reading, and its short
  * per-profile allowance.
  *
- * This is a *reconstruction*, not the old binary, and the report says so. Two
- * differences it deliberately does not reproduce are named in the comparison's
- * conditions instead of being silently absorbed: the incumbent's stricter
- * identity rule and its per-source retry schedule live inside the orchestrator
- * rather than at a seam, so the baseline runs today's versions of both.
+ * This is a *reconstruction*, not the old binary, and the report says so. Differences
+ * it deliberately does not reproduce are named in the comparison's conditions:
+ * identity, extraction prompt/binding selection and per-source retry behavior
+ * remain today's production implementation in both arms.
  */
 export type BenchmarkPipeline = "incumbent" | "expanded";
 
@@ -121,7 +120,7 @@ export function configurePipeline(
       planner: false,
       readConcurrency: 1,
       reconstruction:
-        "Configured reconstruction of the pre-#228 pipeline, not the pre-#228 binary; the identity rule and per-source retry schedule are today's.",
+        "Configured reconstruction of the pre-#228 pipeline, not the pre-#228 binary; identity, extraction prompt/binding selection and per-source retry behavior are today's in both arms.",
     },
   };
 }
