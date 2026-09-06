@@ -666,3 +666,84 @@ one: for `cary-fowler` and `timnit-gebru` the reference documents are rejected a
 `identity-unmatched` before any extraction, so those operations retain zero sources and make zero
 model calls. That is a failure to use evidence already in hand, and belongs to #233 and #237
 rather than to this boundary diagnosis.
+
+## Correction: the model never stopped, the client did (issue #232)
+
+**The named cause recorded in the previous section is wrong and is retracted.** It read the
+absence of token deltas as the model ceasing to generate. It was the 30-second stream idle
+ceiling aborting calls the model was completing.
+
+This upstream does not stream tool-call arguments token by token. It emits an opening fragment,
+buffers the rest of the generation, and delivers it in very few large deltas. The app's idle timer
+measures the gap *between* deltas, so the gap grows with the size of the answer — and past thirty
+seconds the client aborts a call that would have succeeded.
+
+### The evidence that settles it
+
+**1. Silence scales with output size.** Holding model, schema, binding, prompt and route fixed and
+varying only how much of the reference document is supplied:
+
+| Document characters | Outcome | Tool-argument characters | Completion tokens | Longest silence |
+| --- | --- | --- | --- | --- |
+| 200 | 3 claims | 2,686 | 798 | 10,253 ms |
+| 600 | 7 claims | 5,017 | 1,434 | 17,472 ms |
+| 1,500 | 9 claims | 8,943 | 2,379 | 26,960 ms |
+| 3,000 | **aborted** | 0 | — | 29,814 ms |
+
+The failure is not a cliff in the model. It is the moment a monotonically growing gap crosses a
+fixed client ceiling.
+
+**2. The same request succeeds when it is not streamed.** The identical body with `stream` removed
+returned 21,369 characters of valid tool-call JSON, `finish_reason: tool_calls`, 5,535 completion
+tokens, in 104 seconds. The model completes this task.
+
+**3. Raising only the idle ceiling makes it succeed.** With `MODEL_STREAM_IDLE_TIMEOUT_MS` raised
+from 30,000 to 110,000 and nothing else changed, the full-document extraction succeeded three times
+out of three — 19, 19 and 18 claims, valid JSON, `tool_calls` and `[DONE]` observed, longest
+silences of 66,796, 54,050 and 62,643 ms. The override was reverted immediately; it is a
+falsifiable test, not a proposed fix.
+
+The eleven characters were never a stopping point. They were the first delta; everything else was
+sitting in the upstream's buffer waiting for a client that had already given up.
+
+### What this re-explains
+
+- **Filler answered, the real document did not.** Filler yields an empty result set, a small
+  answer and a short gap. Nothing to do with document content as such.
+- **The trivial 126-byte schema also stalled.** It was mid-answer in one buffered delta. Schema
+  size was never the variable — which is why the bisection from 7,897 bytes down to 126 bytes
+  changed nothing.
+- **`response_format` and `prompt_only` behaved differently.** Those bindings stream content
+  incrementally on this route (longest silence 2.9 s and 11.2 s), so the idle ceiling never fires;
+  they hit the 120-second absolute ceiling instead, having produced 16,531 and 9,668 characters.
+  The binding mattered because it changes how the upstream chunks its output, not because tool
+  calling is broken.
+- **Wafer and NextBit both showed it.** Both buffer. The route was never the variable either.
+
+### Re-reading the 33-model survey
+
+Every model at or below the configured model's price was run against the same request, serially so
+that a timeout means the model rather than contention. Sorting by mechanism rather than by
+pass/fail:
+
+| Mechanism | Signature | Models |
+| --- | --- | --- |
+| Client idle ceiling aborted a working model | silence 29.7–30.0 s | `z-ai/glm-5.3-flash`, `~z-ai/glm-flash-latest`, `openai/gpt-oss-120b`, `google/gemma-3-12b-it`, `inclusionai/ling-3.0-flash-fin`, `mistralai/mistral-small-3.2-24b-instruct`, `nvidia/nemotron-3-ultra-550b-a55b:free` |
+| Genuinely slow; hit the 120 s absolute ceiling while actively generating | low silence, large reasoning or tool output | `nvidia/nemotron-3-super-120b-a12b:free`, `nvidia/nemotron-3.5-lightning:free`, `nex-agi/nex-n2-mini`, `~deepseek/deepseek-v4-flash-latest`, `deepseek/deepseek-v4-flash-0731`, `qwen/qwen3-30b-a3b-instruct-2507` |
+| Ignored the forced tool call and answered in content | `finish: stop`, `[DONE]`, zero tool calls | `cohere/north-mini-code:free`, `openai/gpt-oss-20b` |
+| No endpoint for these parameters | HTTP 404 before any generation | 7 models |
+| Request rejected by the upstream | HTTP 400 from Google AI Studio | `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free` |
+| Completed the full contract as-is | valid tool call, `tool_calls`, `[DONE]` | `upstage/solar-pro4` (38 claims), `inclusionai/ling-3.0-flash-fin:free` (18), `mistralai/mistral-nemo` (14), `inclusionai/ling-3.0-flash-sante:free` (13), `inception/mercury-2.5-preview` (8), `inclusionai/ling-3.0-flash` (8), `meta-llama/llama-3.1-8b-instruct` (4), `nvidia/nemotron-3-nano-30b-a3b` (2) |
+
+Only the third and fifth groups are model or upstream properties. The first is ours.
+
+An earlier survey of the same models run four-at-a-time reported `upstage/solar-pro4` failing at
+120 s; serially it completes in 85 s with 38 claims. Concurrency was confounding the measurement,
+and that earlier ranking should not be used.
+
+### Still unknown
+
+Why this upstream buffers tool-call arguments rather than streaming them, and whether it is a
+property of the upstream, of tool-call decoding, or of OpenRouter's normalisation, cannot be
+determined from the client. It does not need to be: the client's job is to tell a buffering
+upstream from a dead one, and the observations above give it the means.
