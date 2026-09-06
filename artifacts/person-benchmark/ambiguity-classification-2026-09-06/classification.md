@@ -4,9 +4,9 @@ Every ambiguous verdict in the retained populations, each assigned one named cau
 
 ## Inputs (read-only; sha256 recorded before parsing)
 
-- **fixed**: `/Users/Nicolas/Documents/github/chief-of-staff-demo/artifacts/person-benchmark/current-fixed-judge7-recovery1-2026-09-06/fixed-documents-expanded-reassessed-bbc8e62af386b229.json` sha256 `c5ae879b7503fa1cd7f284690cc08cfc571d022e064e69371325140a038009fd` — 59 ambiguous of 235 facts
-- **incumbent**: `/Users/Nicolas/Documents/github/chief-of-staff-demo/artifacts/person-benchmark/current-incumbent-judge7-recovery1-2026-09-06/live-discovery-incumbent-reassessed-f93fe67376b87cec.json` sha256 `1381d4e4002ecdd97d0f1ebcb4f50b4818663549b973d378e71d88fe6d2c161d` — 23 ambiguous of 235 facts
-- **expanded**: `/Users/Nicolas/Documents/github/chief-of-staff-demo/artifacts/person-benchmark/current-expanded-judge7-2026-09-06/live-discovery-expanded-reassessed-e1b50cd7d30b28a3.json` sha256 `c5ef1a27f14c4cd27f937c499e93965fb07dd23d6670deb9d5a0e3a818205a7c` — 51 ambiguous of 235 facts
+- **fixed**: `artifacts/person-benchmark/current-fixed-judge7-recovery1-2026-09-06/fixed-documents-expanded-reassessed-bbc8e62af386b229.json` sha256 `c5ae879b7503fa1cd7f284690cc08cfc571d022e064e69371325140a038009fd` — 59 ambiguous of 235 facts
+- **incumbent**: `artifacts/person-benchmark/current-incumbent-judge7-recovery1-2026-09-06/live-discovery-incumbent-reassessed-f93fe67376b87cec.json` sha256 `1381d4e4002ecdd97d0f1ebcb4f50b4818663549b973d378e71d88fe6d2c161d` — 23 ambiguous of 235 facts
+- **expanded**: `artifacts/person-benchmark/current-expanded-judge7-2026-09-06/live-discovery-expanded-reassessed-e1b50cd7d30b28a3.json` sha256 `c5ef1a27f14c4cd27f937c499e93965fb07dd23d6670deb9d5a0e3a818205a7c` — 51 ambiguous of 235 facts
 
 Corpus `benchmark/person-research/people` version `cd3bd2a050f51de7` (reference-fact citations only).
 
@@ -17,6 +17,7 @@ Corpus `benchmark/person-research/people` version `cd3bd2a050f51de7` (reference-
 | judge-call-failed | 0 | 0 | 28 | 28 |
 | support-assessment-failed | 0 | 0 | 1 | 1 |
 | unresolved-support-observation | 0 | 0 | 1 | 1 |
+| integrity-overclaim-downgrade | 0 | 0 | 0 | 0 |
 | empty-dossier-no-evidence | 54 | 18 | 0 | 72 |
 | no-evidence-cited-nonempty-dossier | 0 | 0 | 10 | 10 |
 | quote-matches-reference-text | 5 | 0 | 0 | 5 |
@@ -58,6 +59,8 @@ Total ambiguous verdicts classified: 133.
   - unresolved support observations name claim(s): fbbedfe8
   - this verdict's claim (c8ddd0dc) is withheld credit regardless of which claim was unresolved
   - Fix: Support observation resolution: judge support prompt plus verbatim-statement and citation-index discipline (validFinding in judge.ts).
+
+### integrity-overclaim-downgrade (0 assignments)
 
 ### empty-dossier-no-evidence
 

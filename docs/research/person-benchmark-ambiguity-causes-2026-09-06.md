@@ -39,13 +39,17 @@ in order:
 1. The rationale markers written by the judge/evaluator seams —
    `The judge did not return a usable verdict for this run.` (reference-phase
    judge exception, evaluate.ts), `Original semantic verdict: …; downgraded
-   to ambiguous because …` (evaluate.ts credit gate), and `(Downgraded: the
+   to ambiguous because …` (evaluate.ts credit gate — the because-clause is
+   parsed, so only a clause citing incomplete support attributes a support
+   cause; an overclaim/integrity-only clause is its own downgrade cause), and `(Downgraded: the
    quoted dossier text does not occur in the dossier.)` (exact-claim guard,
    judge.ts).
 2. Whether a claim and dossier quote were cited (`claimId`, `evidenceQuote`).
-3. Whether the named claim ID is retained anywhere in the report
+3. Whether the named claim ID resolves positively anywhere in the report
    (overclaims, integrity finding subjects, `sourceContributions` claim IDs,
-   unresolved support findings) — the checkable proxy for "known claim".
+   unresolved support findings). Those lists are partial, so a miss proves
+   nothing: an unresolvable ID stays explicitly undetermined rather than
+   being labeled unknown.
 4. Normalized quote comparisons: evidence-vs-reference equality, and
    evidence-vs-retained-cited-passage prefix equality for the same claim.
 5. The dossier's retained claim count (`richness.claims`) and the
@@ -77,6 +81,7 @@ synthetic fixture per cause plus the unknown bucket).
 | quote-matches-reference-text | 5 | 0 | 0 | 5 |
 | judge-quoted-citation-passage | 0 | 0 | 1 | 1 |
 | unresolved-support-observation | 0 | 0 | 1 | 1 |
+| integrity-overclaim-downgrade | 0 | 0 | 0 | 0 |
 | support-assessment-failed | 0 | 0 | 1 | 1 |
 | unknown-claim-id | 0 | 0 | 0 | 0 |
 | judge-semantic-ambiguous | 0 | 0 | 0 | 0 |
@@ -136,6 +141,13 @@ ana-botin (10 verdicts, dossier holds 4 claims, none cited).
   so all positive credit was withheld. Fix: support observation
   resolution — judge support prompt plus verbatim-statement/citation-index
   discipline (validFinding in judge.ts).
+- **integrity-overclaim-downgrade (0).** No retained verdict hits this path:
+  an evaluator downgrade whose because-clause cites only a validated
+  overclaim finding and/or failed critical integrity checks (never
+  incomplete support) would land here. Attribution parses the
+  because-clause so a future overclaim/integrity downgrade cannot be
+  mislabeled as a support failure. Fix: evaluate.ts credit gate
+  (factualReliability seam); the downgrade is working as intended.
 - **support-assessment-failed (1).** mary-barra/gm-ceo (expanded): partial
   on claim `2aa64bc2…`, downgraded because the support/usefulness call hit
   the request ceiling (no unresolved findings). Fix: judge reliability for
@@ -163,9 +175,12 @@ ana-botin (10 verdicts, dossier holds 4 claims, none cited).
   should re-test this hypothesis first on the Swedish/French/Spanish facts.
 - An unresolved support observation: **confirmed, 1 case**
   (laurent-freixe/nestle-ceo).
-- An unknown claim ID: **refuted, 0 cases** — all 21 set claim IDs resolve
-  in retained claim-ID lists (sourceContributions, integrity subjects,
-  overclaims). The judge never invents an ID in this data; it mis-quotes
+- An unknown claim ID: **refuted, 0 cases** — all 21 judge-named claim IDs
+  resolve positively in retained claim-ID lists (sourceContributions,
+  integrity subjects, overclaims), so none required an absence judgment.
+  The classifier deliberately never infers "unknown" from absence: the
+  retained lists are partial, and an unresolvable ID would stay explicitly
+  undetermined. The judge never invents an ID in this data; it mis-quotes
   known ones.
 - Genuine judge uncertainty (`judge-semantic-ambiguous`, guard passed, no
   downgrade): **0 cases**. Every retained ambiguous verdict carries a

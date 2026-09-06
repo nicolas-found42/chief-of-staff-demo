@@ -21,10 +21,14 @@ export const AMBIGUITY_CAUSES = [
   "judge-call-failed",
   "support-assessment-failed",
   "unresolved-support-observation",
+  "integrity-overclaim-downgrade",
   "empty-dossier-no-evidence",
   "no-evidence-cited-nonempty-dossier",
   "quote-matches-reference-text",
   "judge-quoted-citation-passage",
+  // Retained as a named hypothesis from the issue, but never emitted: the
+  // retained claim-ID lists are partial, so absence there cannot prove a
+  // claim is unknown. Unresolvable IDs land in undetermined-quote-mismatch.
   "unknown-claim-id",
   "judge-semantic-ambiguous",
   "undetermined-quote-mismatch",
@@ -36,6 +40,8 @@ export type AmbiguityCause = (typeof AMBIGUITY_CAUSES)[number];
 const JUDGE_CALL_FAILURE_RATIONALE = "The judge did not return a usable verdict for this run.";
 const GUARD_DOWNGRADE_MARKER = "does not occur in the dossier";
 const EVALUATOR_DOWNGRADE_PREFIX = "Original semantic verdict:";
+/** Literal evaluate.ts writes when incomplete support withholds credit. */
+const SUPPORT_DOWNGRADE_MARKER = "support/usefulness assessment did not complete";
 
 /** Minimum normalized characters before a quote-prefix comparison counts. */
 const CITATION_PREFIX_MIN_LENGTH = 20;
@@ -103,6 +109,10 @@ const DOWNSTREAM_FIX: Record<AmbiguityCause, string> = {
   "unresolved-support-observation":
     "Support observation resolution: judge support prompt plus verbatim-statement " +
     "and citation-index discipline (validFinding in judge.ts).",
+  "integrity-overclaim-downgrade":
+    "evaluate.ts credit gate: a validated overclaim finding or failed critical " +
+    "integrity checks withheld recovery credit for the matched claim " +
+    "(factualReliability seam); the downgrade is working as intended.",
   "empty-dossier-no-evidence":
     "Judge prompt: short-circuit an empty dossier to missing with no evidence " +
     "instead of a non-missing verdict without evidence (judge.ts recovery prompt).",
@@ -180,6 +190,21 @@ export function classifyJudgement(
     const original = (
       judgement.rationale.slice(EVALUATOR_DOWNGRADE_PREFIX.length).split(";")[0] ?? ""
     ).trim();
+    if (!judgement.rationale.includes(SUPPORT_DOWNGRADE_MARKER)) {
+      return {
+        ...base,
+        cause: "integrity-overclaim-downgrade",
+        basis: [
+          verdictBasis,
+          `rationale starts with "Original semantic verdict: ${original}" but its because-clause ` +
+            `names no incomplete support/usefulness assessment`,
+          `the downgrade attributes to a validated overclaim finding and/or failed critical ` +
+            `integrity checks on the matched claim`,
+          `phases.support.status=${person.supportStatus}`,
+        ],
+        downstreamFix: DOWNSTREAM_FIX["integrity-overclaim-downgrade"],
+      };
+    }
     if (person.unresolved.length > 0) {
       const named = person.unresolved.map((entry) => shortId(entry.claimId)).join(", ");
       return {
@@ -252,14 +277,15 @@ export function classifyJudgement(
       if (where === undefined) {
         return {
           ...base,
-          cause: "unknown-claim-id",
+          cause: "undetermined-quote-mismatch",
           basis: [
             verdictBasis,
             guardBasis,
             `claimId ${shortId(judgement.claimId)} appears in no retained claim-ID list ` +
-              `(overclaims, integrity subjects, sourceContributions claimIds, unresolvedFindings) for ${person.slug}`,
+              `(overclaims, integrity subjects, sourceContributions claimIds, unresolvedFindings) for ${person.slug}, ` +
+              `but those lists are partial, so absence there cannot prove the claim is unknown`,
           ],
-          downstreamFix: DOWNSTREAM_FIX["unknown-claim-id"],
+          downstreamFix: DOWNSTREAM_FIX["undetermined-quote-mismatch"],
         };
       }
       const claimBasis =
@@ -343,8 +369,8 @@ export function classifyJudgement(
 
 /**
  * Classify every ambiguous verdict of one person. Returns one assignment per
- * verdict === "ambiguous", in judgement order. Throws nothing: unexpected
- * shapes fall into the undetermined bucket via the final branch above.
+ * verdict === "ambiguous", in judgement order. Throws nothing: a verdict carrying
+ * no downgrade marker is the judge's own ambiguity (judge-semantic-ambiguous).
  */
 export function classifyPerson(
   population: string,

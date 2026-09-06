@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-06T23:25:31.434Z",
+  "generatedAt": "2026-09-06T23:45:22.912Z",
   "corpusVersion": "cd3bd2a050f51de7",
   "corpusDir": "benchmark/person-research/people",
   "inputs": [
     {
       "population": "fixed",
-      "reportPath": "/Users/Nicolas/Documents/github/chief-of-staff-demo/artifacts/person-benchmark/current-fixed-judge7-recovery1-2026-09-06/fixed-documents-expanded-reassessed-bbc8e62af386b229.json",
+      "reportPath": "artifacts/person-benchmark/current-fixed-judge7-recovery1-2026-09-06/fixed-documents-expanded-reassessed-bbc8e62af386b229.json",
       "sha256": "c5ae879b7503fa1cd7f284690cc08cfc571d022e064e69371325140a038009fd"
     },
     {
       "population": "incumbent",
-      "reportPath": "/Users/Nicolas/Documents/github/chief-of-staff-demo/artifacts/person-benchmark/current-incumbent-judge7-recovery1-2026-09-06/live-discovery-incumbent-reassessed-f93fe67376b87cec.json",
+      "reportPath": "artifacts/person-benchmark/current-incumbent-judge7-recovery1-2026-09-06/live-discovery-incumbent-reassessed-f93fe67376b87cec.json",
       "sha256": "1381d4e4002ecdd97d0f1ebcb4f50b4818663549b973d378e71d88fe6d2c161d"
     },
     {
       "population": "expanded",
-      "reportPath": "/Users/Nicolas/Documents/github/chief-of-staff-demo/artifacts/person-benchmark/current-expanded-judge7-2026-09-06/live-discovery-expanded-reassessed-e1b50cd7d30b28a3.json",
+      "reportPath": "artifacts/person-benchmark/current-expanded-judge7-2026-09-06/live-discovery-expanded-reassessed-e1b50cd7d30b28a3.json",
       "sha256": "c5ef1a27f14c4cd27f937c499e93965fb07dd23d6670deb9d5a0e3a818205a7c"
     }
   ],
@@ -74,6 +74,7 @@
     "judge-call-failed",
     "support-assessment-failed",
     "unresolved-support-observation",
+    "integrity-overclaim-downgrade",
     "empty-dossier-no-evidence",
     "no-evidence-cited-nonempty-dossier",
     "quote-matches-reference-text",

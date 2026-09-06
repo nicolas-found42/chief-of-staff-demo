@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { BenchmarkReportSchema } from "../packages/shared/src/index.js";
 import { loadCorpus } from "../apps/server/src/person-benchmark/corpus.js";
 import {
@@ -49,6 +49,18 @@ function arg(name: string): string | undefined {
 }
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
+/**
+ * Report paths are recorded repo-relative so committed outputs carry no
+ * machine-specific absolute paths. Absolute paths are used only for reading.
+ */
+function repoRelativePath(path: string): string {
+  const normalized = resolve(path).replace(/\\/g, "/");
+  const needle = "artifacts/person-benchmark/";
+  const index = normalized.indexOf(needle);
+  if (index !== -1) return normalized.slice(index);
+  return relative(process.cwd(), resolve(path)).replace(/\\/g, "/");
+}
+
 function args(name: string): string[] {
   const values: string[] = [];
   for (let index = 0; index < process.argv.length; index += 1) {
@@ -96,7 +108,7 @@ for (let index = 0; index < reportPaths.length; index += 1) {
     throw new Error("Every --report needs a matching --population, in order.");
   const raw = readFileSync(reportPath, "utf8");
   const sha256 = createHash("sha256").update(raw).digest("hex");
-  inputs.push({ population, reportPath, sha256 });
+  inputs.push({ population, reportPath: repoRelativePath(reportPath), sha256 });
   const report = BenchmarkReportSchema.parse(JSON.parse(raw));
   let facts = 0;
   let ambiguous = 0;

@@ -170,7 +170,7 @@ describe("classifyJudgement", () => {
     expect(assignment.cause).toBe("judge-quoted-citation-passage");
   });
 
-  it("assigns unknown-claim-id when the named claim is retained nowhere", () => {
+  it("leaves a claim retained nowhere explicitly undetermined, never unknown", () => {
     const assignment = classifyJudgement(
       "fixed",
       person({ claimCount: 3 }),
@@ -181,7 +181,30 @@ describe("classifyJudgement", () => {
       }),
       corpus(),
     );
-    expect(assignment.cause).toBe("unknown-claim-id");
+    expect(assignment.cause).toBe("undetermined-quote-mismatch");
+    expect(assignment.basis.join("\n")).toContain("cannot prove the claim is unknown");
+  });
+
+  it("assigns integrity-overclaim-downgrade when the because-clause cites no support failure", () => {
+    const assignment = classifyJudgement(
+      "expanded",
+      person({
+        claimCount: 6,
+        supportStatus: "completed",
+        supportFailure: null,
+        overclaims: [{ claimId: "gm-claim", citedQuote: null }],
+      }),
+      judgement({
+        claimId: "gm-claim",
+        evidenceQuote: "Barra was named CEO in 2013.",
+        rationale:
+          "Original semantic verdict: recovered; downgraded to ambiguous because " +
+          "the matched claim has a validated overclaim finding, including findings requiring review. " +
+          "Dossier says named CEO in 2013.",
+      }),
+      corpus(),
+    );
+    expect(assignment.cause).toBe("integrity-overclaim-downgrade");
   });
 
   it("assigns judge-semantic-ambiguous when the judge itself was uncertain", () => {
@@ -241,7 +264,7 @@ describe("classifyPerson and summarizeAssignments", () => {
   });
 
   it("covers every named cause with a downstream fix", () => {
-    expect(AMBIGUITY_CAUSES).toHaveLength(10);
+    expect(AMBIGUITY_CAUSES).toHaveLength(11);
     for (const cause of AMBIGUITY_CAUSES) expect(downstreamFixFor(cause).length).toBeGreaterThan(0);
   });
 });
