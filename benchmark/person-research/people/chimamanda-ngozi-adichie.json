@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "chimamanda-ngozi-adichie",
-  "referenceVersion": "2026-09-06.2",
+  "referenceVersion": "2026-09-06.3",
   "displayName": "Chimamanda Ngozi Adichie",
   "industry": "media",
   "role": "Novelist and essayist",
@@ -61,6 +61,51 @@
       "hash": "afe5fc766a8725aec0828b06a609287c25bb280b0262dfcdbd3f3bebfb8003c7",
       "excerpt": "breadcrumbs[0].Library of Congress: https://www.loc.gov\nbreadcrumbs[1].Search: https://www.loc.gov/search/?c=5&fo=json&q=chimamanda+ngozi+adichie\nfacet_trail[0].facet: searchTerms\nfacet_trail[0].field: searchTerms\nfacet_trail[0].superset: https://www.loc.gov/search/?c=5&fo=json\nfacet_trail[0].value: chimamanda ngozi adichie\nfacet_trail[1].facet: Available Online\nfacet_trail[1].field: digitized\nfacet_trail[1].superset: https://www.loc.gov/search/?all=true&c=5&fo=json&q=chimamanda+ngozi+adichie\nfacet_trail[1].value: digitized\nfacet_views.calendar: https://www.loc.gov/search/?c=5&fo=json&fs=calendar&q=chimamanda+ngozi+adichie\nfacet_views.chart: https://www.loc.gov/search/?c=5&fo=json&fs=chart&q=chimamanda+ngozi+adichie\nfacet_views.current: list\nfacet_views.list: https://www.loc.gov/search/?c=5&fo=json&q=chimamanda+ngozi+adichie\nfacets[0].filters[0].count: 43\nfacets[0].filters[0].on: https://www.loc.gov/search/?c=5&fo=json&q=chimamanda+ngozi+adichie\nfacets[0].filters[0].title: Available at the Library of Congress Campus\nfacets[0].filters[0].value: true\nfacets[0].filters[1].count: 167\nfacets[0].filters[1].on: https://www.loc.gov/search/?all=true&c=5&fo=json&q=chimamanda+ngozi+adichie\nfacets[0].filters[1].title: Available Online\nfacets[0].filters[1].value: false\nfacets[0].title: Available Online\nfacets[0].type: digitized\nfacets[1].filters[0].count: 29\nfacets[1].filters[0].not: https://www.loc.gov/search/?c=5&fa=original-format!:web+page&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[0].on: https://www.loc.gov/search/?c=5&fa=original-format:web+page&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[0].title: Web Page\nfacets[1].filters[0].value: web page\nfacets[1].filters[1].count: 7\nfacets[1].filters[1].not: https://www.loc.gov/search/?c=5&fa=original-format!:film,+video&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[1].on: https://www.loc.gov/film-and-videos/?c=5&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[1].title: Film, Video\nfacets[1].filters[1].value: film, video\nfacets[1].filters[2].count: 5\nfacets[1].filters[2].not: https://www.loc.gov/search/?c=5&fa=original-format!:book&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[2].on: https://www.loc.gov/books/?c=5&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[2].title: Book/Printed Material\nfacets[1].filters[2].value: book\nfacets[1].filters[3].count: 2\nfacets[1].filters[3].not: https://www.loc.gov/search/?c=5&fa=original-format!:event&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[3].on: https://www.loc.gov/search/?c=5&fa=original-format:event&fo=json&q=chimamanda+ngozi+adichie\nfacets[1].filters[3].title: Event\nfacets[1].filters[3].value: event\nfacets[1].title: Original Format\nfacets[1].type: original-format\nfacets[2].filters[0].count: 22\nfacets[2].filters[0].not: https://www.loc.gov/search/?c=5&fa=online-format!:image&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[0].on: https://www.loc.gov/search/?c=5&fa=online-format:image&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[0].title: Image\nfacets[2].filters[0].value: image\nfacets[2].filters[1].count: 17\nfacets[2].filters[1].not: https://www.loc.gov/search/?c=5&fa=online-format!:online+text&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[1].on: https://www.loc.gov/search/?c=5&fa=online-format:online+text&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[1].title: Online Text\nfacets[2].filters[1].value: online text\nfacets[2].filters[2].count: 15\nfacets[2].filters[2].not: https://www.loc.gov/search/?c=5&fa=online-format!:web+page&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[2].on: https://www.loc.gov/search/?c=5&fa=online-format:web+page&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[2].title: Web Page\nfacets[2].filters[2].value: web page\nfacets[2].filters[3].count: 7\nfacets[2].filters[3].not: https://www.loc.gov/search/?c=5&fa=online-format!:video&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[3].on: https://www.loc.gov/search/?c=5&fa=online-format:video&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[3].title: Video\nfacets[2].filters[3].value: video\nfacets[2].filters[4].count: 6\nfacets[2].filters[4].not: https://www.loc.gov/search/?c=5&fa=online-format!:pdf&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[4].on: https://www.loc.gov/search/?c=5&fa=online-format:pdf&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[4].title: PDF\nfacets[2].filters[4].value: pdf\nfacets[2].filters[5].count: 1\nfacets[2].filters[5].not: https://www.loc.gov/search/?c=5&fa=online-format!:epub&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[5].on: https://www.loc.gov/search/?c=5&fa=online-format:epub&fo=json&q=chimamanda+ngozi+adichie\nfacets[2].filters[5].title: EPUB\nfacets[2].filters[5].value: epub\nfacets[2].title: Online Format\nfacets[2].type: online-format\nfacets[3].filters[0].count: 19\nfacets[3].filters[0].on: https://www.loc.gov/search/?c=5&dates=2000/2027&fo=json&q=chimamanda+ngozi+adichie\nfacets[3].filters[0].term: 2000-01-01T00:00:00Z\nfacets[3].filters[0].title: 2000 to 2027\nfacets[3].filters[0].value: 2000-01-01T00:00:00Z\nfacets[3].title: Date\nfacets[3].type: dates\nfacets[4].filters[0].count: 2\nfacets[4].filters[0].not: https://www.loc.gov/search/?c=5&fa=location!:in+person&fo=json&q=chimamanda+ngozi+adichie\nfacets[4].filters[0].on: https://www.loc.gov/search/?c=5&fa=location:in+person&fo=json&q=chimamanda+ngozi+adichie\nfacets[4].filters[0].title: In Person\nfacets[4].filters[0].value: in person\nfacets[4].filters[1].count: 2\nfacets[4].filters[1].not: https://www.loc.gov/search/?c=5&fa=location!:off-site&fo=json&q=chimamanda+ngozi+adichie\nfacets[4].filters[1].on: https://www.loc.gov/search/?c=5&fa=location:off-site&fo=json&q=chimamanda+ngozi+adichie\nfacets[4].filters[1].title: Off-Site\nfacets[4].filters[1].value: off-site\nfacets[4].filters[2].count: 2\nfacets[4].filters[2].not: https://www.loc.gov/search/?c=5&fa=location!:united+states&fo=json&q=chimamanda+ngozi+adichie\nfacets[4].filters[2].on: https://www.loc.gov/search/",
       "rights": "public-record"
+    },
+    {
+      "id": "openlibrary-americanah-2013",
+      "url": "https://openlibrary.org/books/OL25428864M.json",
+      "title": "Americanah — Open Library edition record OL25428864M",
+      "publisher": "Open Library",
+      "publishedAt": "2013",
+      "retrievedAt": "2026-09-06T23:22:32Z",
+      "family": "creative-records",
+      "sourceClass": "primary-artifact",
+      "language": "en",
+      "hash": "57ef476eaab9bce67ea4c9a1891509c7526940b4110b5c7833ddfe10e0206c2f",
+      "excerpt": "key: /books/OL25428864M\ntitle: Americanah\npublish_date: 2013\npublishers[0]: Alfred A. Knopf\nnumber_of_pages: 477\nphysical_format: Hardcover\nisbn_13[0]: 9780307271082\nworks[0].key: /works/OL16805415W",
+      "rights": "public-record",
+      "note": "Dated catalogue entry for the 2013 Alfred A. Knopf first-edition record; genuinely new evidence beside the existing author-level Open Library search record."
+    },
+    {
+      "id": "ted-single-story-2009",
+      "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
+      "title": "Chimamanda Ngozi Adichie: The danger of a single story | TED Talk",
+      "publisher": "TED",
+      "publishedAt": "2009-07",
+      "retrievedAt": "2026-09-06T23:22:32Z",
+      "family": "creative-records",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "03c4bb704ca270c0103fd4b1683f685eedd7afd578789dfe092529f7b9bd52d6",
+      "excerpt": "The danger of a single story\n42,753,022 plays |\nChimamanda Ngozi Adichie |\nTEDGlobal 2009\n• July 2009\nRead transcript\nOur lives, our cultures, are composed of many overlapping stories. Novelist Chimamanda Adichie tells the story of how she found her authentic cultural voice -- and warns that if we hear only a single story about another person or country, we risk a critical misunderstanding.",
+      "rights": "short-quotation",
+      "note": "TED talk catalogue entry dated July 2009 (TEDGlobal 2009)."
+    },
+    {
+      "id": "macarthur-fellow-2008",
+      "url": "https://www.macfound.org/fellows/class-of-2008/chimamanda-adichie",
+      "title": "Chimamanda Adichie — MacArthur Fellows, Class of 2008",
+      "publisher": "John D. and Catherine T. MacArthur Foundation",
+      "publishedAt": "2008-01-27",
+      "retrievedAt": "2026-09-06T23:22:32Z",
+      "family": "historical-evidence",
+      "sourceClass": "independent-account",
+      "language": "en",
+      "hash": "93363cae7cbe641c116e58f25ee49adfdc4cc978f5b04e3aef9cb3cb07f13db7",
+      "excerpt": "Fiction Writer\nClass of 2008\nExploring the circumstances that lead to ethnic conflict in richly imagined novels and stories inspired by events in her native Nigeria.\nLocation\nColumbia, Maryland\nAge\n31 at time of award\nArea of Focus\nFiction and Nonfiction Writing\nAbout Chimamanda's Work\nChimamanda Adichie is a young writer who illuminates the complexities of human experience in works inspired by events in her native Nigeria. Adichie explores the intersection of the personal and the public by placing the intimate details of the lives of her characters within the larger social and political forces in contemporary Nigeria. Dividing her time over the last decade between the United States and Nigeria, she is widely appreciated for her stark yet balanced depiction of events in the post-colonial era. In her most recent novel, Half of a Yellow Sun (2006), Adichie unflinchingly portrays the horror and destruction of the civil war following the establishment of the Republic of Biafra. Using multiple narrative voices, a precise movement back and forth in time, and prose that is at once witty and empathetic, she immerses the reader in the psyches of her characters, whose loyalties to each other and their ideals are tested as their world gradually falls apart. In humanizing the Biafran tragedy, Adichie’s novel has enriched conversation about the war within Nigeria while also offering insight into the circumstances that lead to ethnic conflict. A writer of great promise, Adichie’s powerful rendering of the Nigerian experience is enlightening audiences both in her homeland and around the world.\nBiography\nChimamanda Adichie received a B.A. (2001) from Eastern Connecticut State University, an M.A. (2003) from Johns Hopkins University, and an M.A. (2008) from Yale University. Her additional works include the novel Purple Hibiscus (2003) and short stories that have appeared in such publications as the New Yorker , Granta , and the Virginia Quarterly Review .\nPublished on January 27, 2008",
+      "rights": "short-quotation",
+      "note": "Institutional fellowship record stating its own publication date of 27 January 2008."
     }
   ],
   "facts": [
@@ -139,6 +184,82 @@
         {
           "documentId": "openlibrary",
           "quote": "docs[0].top_work: Americanah"
+        }
+      ],
+      "importance": "core",
+      "acquisition": "app-supported"
+    },
+    {
+      "id": "americanah-first-edition",
+      "requirements": ["r16"],
+      "section": "work",
+      "statement": "Open Library catalogue record /books/OL25428864M describes Americanah as a 477-page Alfred A. Knopf hardcover published in 2013 (ISBN 9780307271082) attached to work OL16805415W.",
+      "effectiveFrom": "2013",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "openlibrary-americanah-2013",
+          "quote": "publish_date: 2013"
+        },
+        {
+          "documentId": "openlibrary-americanah-2013",
+          "quote": "publishers[0]: Alfred A. Knopf"
+        },
+        {
+          "documentId": "openlibrary-americanah-2013",
+          "quote": "number_of_pages: 477"
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "app-supported"
+    },
+    {
+      "id": "single-story-talk-record",
+      "requirements": ["r16", "r8"],
+      "section": "ideas",
+      "statement": "TED's talk catalogue records Chimamanda Ngozi Adichie's talk 'The danger of a single story' at TEDGlobal in July 2009, summarising it as the story of how she found her authentic cultural voice and a warning that hearing only a single story about another person or country risks a critical misunderstanding.",
+      "effectiveFrom": "2009-07",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "ted-single-story-2009",
+          "quote": "The danger of a single story"
+        },
+        {
+          "documentId": "ted-single-story-2009",
+          "quote": "• July 2009"
+        },
+        {
+          "documentId": "ted-single-story-2009",
+          "quote": "Our lives, our cultures, are composed of many overlapping stories. Novelist Chimamanda Adichie tells the story of how she found her authentic cultural voice -- and warns that if we hear only a single story about another person or country, we risk a critical misunderstanding."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "app-supported"
+    },
+    {
+      "id": "macarthur-2008-citation",
+      "requirements": ["r14"],
+      "section": "recognition",
+      "statement": "The MacArthur Foundation named Adichie to its fellowship class of 2008, describing her as a young writer illuminating post-colonial Nigerian experience; the citation names Half of a Yellow Sun (2006) as her most recent novel and Purple Hibiscus (2003) among her additional works.",
+      "effectiveFrom": "2008-01-27",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "macarthur-fellow-2008",
+          "quote": "Class of 2008"
+        },
+        {
+          "documentId": "macarthur-fellow-2008",
+          "quote": "Chimamanda Adichie is a young writer who illuminates the complexities of human experience in works inspired by events in her native Nigeria. Adichie explores the intersection of the personal and the public by placing the intimate details of the lives of her characters within the larger social and political forces in contemporary Nigeria. Dividing her time over the last decade between the United States and Nigeria, she is widely appreciated for her stark yet balanced depiction of events in the post-colonial era. In her most recent novel, Half of a Yellow Sun (2006), Adichie unflinchingly portrays the horror and destruction of the civil war following the establishment of the Republic of Biafra. Using multiple narrative voices, a precise movement back and forth in time, and prose that is at once witty and empathetic, she immerses the reader in the psyches of her characters, whose loyalties to each other and their ideals are tested as their world gradually falls apart. In humanizing the Biafran tragedy, Adichie’s novel has enriched conversation about the war within Nigeria while also offering insight into the circumstances that lead to ethnic conflict. A writer of great promise, Adichie’s powerful rendering of the Nigerian experience is enlightening audiences both in her homeland and around the world."
+        },
+        {
+          "documentId": "macarthur-fellow-2008",
+          "quote": "Chimamanda Adichie received a B.A. (2001) from Eastern Connecticut State University, an M.A. (2003) from Johns Hopkins University, and an M.A. (2008) from Yale University. Her additional works include the novel Purple Hibiscus (2003) and short stories that have appeared in such publications as the New Yorker , Granta , and the Virginia Quarterly Review ."
+        },
+        {
+          "documentId": "macarthur-fellow-2008",
+          "quote": "Published on January 27, 2008"
         }
       ],
       "importance": "core",
