@@ -26,6 +26,16 @@ it as a filename filter rather than a flag. A path works. A flag is swallowed in
 0, which is how the coverage floors sat unenforced in CI until 2026-09-05. Reach for
 `exec vitest run` whenever a real flag is involved.
 
+### Tests need the shared package built
+
+`test` and `test:coverage` build `@chief-of-staff-demo/shared` first, and that is not a
+convenience. `packages/shared` resolves through its `dist`, and the benchmark CLI tests spawn the
+real script as a subprocess, so an unbuilt `dist` fails them with `ERR_MODULE_NOT_FOUND` rather
+than with anything about the behaviour under test. It passed locally only because an earlier
+typecheck had left a `dist` behind; on a clean checkout CI failed 17 tests this way, and `check`
+was racing its own typecheck for the same file. Verified both directions: 17 failures with `dist`
+removed and no build step, 2,136 passing with it.
+
 The unit coverage gate measures `apps/server/src`, excluding the process bootstrap and the
 test-only e2e seed seam. CI reports the result in its job summary and enforces the lines,
 statements, functions, and branches floors in `tests/vitest.config.ts`. A run that produces no
