@@ -20,7 +20,7 @@ export function registerPersonDossierApi(
 ): void {
   const view = (id: string) => ({
     dossier: deps.dossiers.get(id),
-    research: deps.queue.status().jobs.find((job) => job.profileId === id) ?? null,
+    research: deps.queue.job(id),
   });
   app.get<{ Params: { profileId: string; revision: string } }>(
     "/api/people/:profileId/dossier/revisions/:revision",

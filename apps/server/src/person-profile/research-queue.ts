@@ -95,6 +95,19 @@ export class PersonResearchQueue {
     const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
     return job?.operation ? structuredClone(job.operation) : null;
   }
+  /**
+   * The queue's one record for one Profile.
+   *
+   * The dossier view used to reach through `status()` to find it, which
+   * deep-clones every job in the queue to return one (#231). Named here next
+   * to `operation()`, rolling the day first exactly as `status()` does, so a
+   * one-Profile read stays a one-job clone.
+   */
+  job(profileId: string): PersonResearchJob | null {
+    this.rollDay();
+    const job = this.state.jobs.find((candidate) => candidate.profileId === profileId);
+    return job ? structuredClone(job) : null;
+  }
   configure(input: PersonResearchSettingsPatch): PersonResearchStatus {
     /* A patch names only the settings the owner changed: an absent key leaves
        the live value alone, so an unrelated edit cannot re-assert `paused` and
