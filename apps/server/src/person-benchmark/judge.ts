@@ -172,7 +172,13 @@ export async function judgePerson(
        invented anywhere else, leaves the selection unresolved: the verdict
        is parked as ambiguous for review, never credited. */
     const quoted = found.evidence?.trim() ?? "";
-    const named = claims.find((claim) => claim.id === found.claimId) ?? null;
+    /* A blank or whitespace-only id names no claim, and the schema permits
+       one. Treating it as a name would record a claim the report cannot
+       resolve, and would withhold a `missing` verdict that named nothing to
+       begin with. The id itself is still matched exactly: only the question
+       of whether one was given is normalized. */
+    const claimId = (found.claimId ?? "").trim().length > 0 ? found.claimId : null;
+    const named = claims.find((claim) => claim.id === claimId) ?? null;
     const excerptOfNamed = named !== null && quoted.length > 0 && named.statement.includes(quoted);
     const normalizedQuoted = normalizeQuote(quoted);
     const excerptOfCitedPassage =
@@ -190,7 +196,7 @@ export async function judgePerson(
        claim that broadens the reference fact is only checkable when the
        verdict carries the dossier text it was rejected against; a fact no
        dossier claim addresses names neither a claim nor a quote. */
-    const namedWithoutQuote = found.claimId !== null && quoted.length === 0;
+    const namedWithoutQuote = claimId !== null && quoted.length === 0;
     const present =
       !namedWithoutQuote &&
       ((found.verdict === "missing" && quoted.length === 0) || excerptOfNamed);
@@ -199,7 +205,7 @@ export async function judgePerson(
       verdict: present ? found.verdict : "ambiguous",
       referenceQuote,
       evidenceQuote: quoted || null,
-      claimId: found.claimId,
+      claimId,
       rationale: present
         ? found.rationale
         : namedWithoutQuote

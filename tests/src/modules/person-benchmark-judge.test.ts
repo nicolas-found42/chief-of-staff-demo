@@ -814,3 +814,43 @@ it("leaves a genuinely undetermined match for review rather than guessing", asyn
      so the ambiguity classifier attributes it to semantic judgement. */
   expect(result.judgements[0].rationale).not.toContain("Downgraded");
 });
+
+it.each(["", "   "])(
+  "reads a blank claim id (%j) as naming no claim rather than as an unquoted rejection",
+  async (blank) => {
+    /* RecoverySchema permits a blank id, so the guard has to decide what one
+       means. It names no claim: the fact is simply missing, and recording the
+       blank would put a claim in the report that nothing resolves. */
+    const { person, factId, dossier, sources } = semanticFixture({
+      reference: "Maya led the Berlin office from 2019 to 2021.",
+      claim: "Maya spoke at a conference in Lisbon.",
+      passage: "Maya spoke at a conference in Lisbon.",
+    });
+    const result = await judgePerson(
+      async ({ user }) =>
+        user.includes('"references":')
+          ? {
+              judgements: [
+                {
+                  factId,
+                  verdict: "missing",
+                  evidence: null,
+                  claimId: blank,
+                  rationale: "No claim addresses the Berlin office.",
+                },
+              ],
+            }
+          : SUPPORT_OK,
+      person,
+      dossier,
+      sources,
+    );
+    expect(result.judgements[0]).toMatchObject({
+      verdict: "missing",
+      claimId: null,
+      evidenceQuote: null,
+      reviewRequired: false,
+    });
+    expect(result.judgements[0].rationale).not.toContain("Downgraded");
+  },
+);
