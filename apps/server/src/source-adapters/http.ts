@@ -133,7 +133,7 @@ export function createHttpFetch(
 
 export const publicHttpFetch: PublicHttpFetch = createHttpFetch();
 
-interface PublicHttpBytesResponse {
+export interface PublicHttpBytesResponse {
   url: string;
   status: number;
   contentType: string | null;

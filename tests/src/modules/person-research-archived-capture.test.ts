@@ -256,3 +256,66 @@ test("an archived document is fetched once, by the reader whose bytes are retain
   expect(result.capturedAt).toBe("2024-05-23T20:03:41.000Z");
   expect(result.upstreamIndex).toBe("bank.example");
 });
+
+/* A document address is no guarantee the archive answers with a document. When
+   it answers with its own error page instead, the converter would call the file
+   broken; the fault is the archive's and the capture was never read. */
+test("an archived document answered by the archive's error page retains nothing", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-error-page");
+  const result = await readPersonSource(
+    "https://web.archive.org/web/20240523200341/https://bank.example/reports/annual.pdf",
+    "Search snippet naming the person",
+    fromPartial<ReaderPorts>({
+      fetch: async () => {
+        throw new Error("The capture must not be asked for as text as well.");
+      },
+      fetchBytes: async (url: string) => ({
+        url,
+        status: 200,
+        contentType: "text/html; charset=utf-8",
+        retryAfter: null,
+        bytes: Buffer.from(
+          "<html><body><h1>Internet Archive</h1><p>We are having technical difficulties.</p></body></html>",
+          "utf8",
+        ),
+      }),
+      recorder,
+      timeoutMs: 1000,
+    }),
+  );
+
+  /* The archive's fault, named as such rather than as a broken document. */
+  expect(result.access).not.toBe("retrieved");
+  const codes = recorder.failures().map((attempt) => attempt.code);
+  expect(codes).toContain("archive-error-page");
+  expect(codes).not.toContain("parser-failed");
+  /* Nothing retained — not the archive's page, and not the snippet the caller
+     brought, which is search text about the person and no evidence at all. */
+  expect(result.text).toBe("");
+});
+
+test("an archived document that could not be retrieved retains no snippet", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-missing");
+  const result = await readPersonSource(
+    "https://web.archive.org/web/20240523200341/https://bank.example/reports/annual.pdf",
+    "Search snippet naming the person",
+    fromPartial<ReaderPorts>({
+      fetch: async () => {
+        throw new Error("The capture must not be asked for as text as well.");
+      },
+      fetchBytes: async (url: string) => ({
+        url,
+        status: 404,
+        contentType: "text/html",
+        retryAfter: null,
+        bytes: Buffer.from("not found", "utf8"),
+      }),
+      recorder,
+      timeoutMs: 1000,
+    }),
+  );
+
+  expect(result.access).not.toBe("retrieved");
+  expect(result.text).toBe("");
+  expect(result.route).toBe(WAYBACK_CAPTURE_ROUTE);
+});

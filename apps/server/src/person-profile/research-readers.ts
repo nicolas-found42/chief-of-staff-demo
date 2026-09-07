@@ -8,6 +8,7 @@ import {
   type PublicHttpBytesFetch,
   type PublicHttpFetch,
   type PublicHttpResponse,
+  type PublicHttpBytesResponse,
 } from "../source-adapters/http.js";
 import type { BrowserRenderer } from "../source-adapters/browser.js";
 import {
@@ -340,7 +341,13 @@ async function readArchivedCapture(
      just validated and dated, so the bytes retained would not be the bytes
      checked. Its own reader records the transport and status failures. */
   if (looksLikeBinaryDocument(capture.original))
-    return finishCapture(await readDocument(capture.contentUrl, family, context), capture, context);
+    return finishCapture(
+      await readDocument(capture.contentUrl, family, context, (response) =>
+        screenArchiveBytes(response, capture, context),
+      ),
+      capture,
+      context,
+    );
 
   const response = await request(capture.contentUrl, context, "archive-reader");
   if (!response) return failed("failed", url);
@@ -433,7 +440,13 @@ function finishCapture(
 ): SourceReadResult {
   const family: PersonSourceFamily = "historical-evidence";
   const routed = { ...read, family, route: WAYBACK_CAPTURE_ROUTE };
-  if (read.access !== "retrieved") return routed;
+  /* A reader that failed still hands back the caller's snippet, which is search
+     text about the person rather than anything the archive said. On this route
+     that snippet would be retained as archived evidence of a capture that was
+     never read, so a failure here keeps its access and its diagnostics and
+     gives up its text. */
+  if (read.access !== "retrieved")
+    return unavailable(family, WAYBACK_CAPTURE_ROUTE, read.access, "", read.finalUrl);
   const refuse = (
     code: "archive-error-page" | "resource-unavailable",
     reason: string,
@@ -751,6 +764,12 @@ async function readDocument(
   url: string,
   family: PersonSourceFamily,
   context: ReadContext,
+  /* Inspect the retrieved bytes before conversion. The archived-capture route
+     uses it to recognise the archive's own error page: served for a document
+     address it is HTML, which the converter would reject as a broken file and
+     report as `parser-failed` rather than as the service fault it is. The hook
+     reads the response already in hand, so the capture is still fetched once. */
+  inspect?: (response: PublicHttpBytesResponse) => SourceReadResult | null,
 ): Promise<SourceReadResult> {
   let response;
   try {
@@ -792,6 +811,8 @@ async function readDocument(
     });
     return unavailable(family, "document-reader", "blocked", context.snippet, response.url);
   }
+  const inspected = inspect?.(response) ?? null;
+  if (inspected) return inspected;
   const name = documentFileName(response.url, response.contentType);
   try {
     const text = await convertToText(name, response.bytes);
