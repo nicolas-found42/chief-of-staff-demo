@@ -1193,10 +1193,31 @@ export class PersonResearch {
        exactly how a namesake with a conflicting affiliation was absorbed
        (review finding on issue #250, PR #295). Every other route carries no
        such structure, so the whole rendered text is still searched for it. */
-    const ownAffiliations = read.namedIndividuals
-      ? read.namedIndividuals
-          .filter((entry) => entry.name.toLowerCase() === name)
-          .flatMap((entry) => entry.affiliations.map((affiliation) => affiliation.toLowerCase()))
+    const matchedIndividuals = read.namedIndividuals
+      ? read.namedIndividuals.filter((entry) => entry.name.toLowerCase() === name)
+      : null;
+    /* A record can name this person while its own shape states nothing
+       about their affiliation at all — an NPPES specialty (a namesake's
+       taxonomy is not their employer) or an organisation's own name (never
+       its authorized official's) is never a stand-in for one, so
+       `institutional-records.ts` renders `null`, not `[]`, for either.
+       There is nothing here to corroborate *or* refute, so a same-name
+       match stays ambiguous rather than being confirmed by a coincidental
+       employer match, or rejected for lacking one it could never have
+       stated (review finding on issue #250, PR #295). This is checked
+       before the employer loop below: a stated absence of corroboration is
+       not the same question as "did this record ever say anything about
+       affiliation". */
+    if (matchedIndividuals && !matchedIndividuals.some((entry) => entry.affiliations !== null))
+      return {
+        decision: "probable",
+        reason:
+          "This record names the person but its own shape states no affiliation for them, so a same-name match can be neither corroborated nor ruled out.",
+      };
+    const ownAffiliations = matchedIndividuals
+      ? matchedIndividuals.flatMap((entry) =>
+          (entry.affiliations ?? []).map((affiliation) => affiliation.toLowerCase()),
+        )
       : null;
     for (const employer of corroborating) {
       const foldedEmployer = employer.toLowerCase();

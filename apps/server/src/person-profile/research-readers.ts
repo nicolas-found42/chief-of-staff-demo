@@ -85,8 +85,15 @@ export interface SourceReadResult {
    * known employer, so a trial sponsored by the Profile's employer cannot
    * corroborate a same-name investigator whose own affiliation conflicts
    * (review finding on issue #250, PR #295).
+   *
+   * An entry's `affiliations` is `null`, distinct from `[]`, when the
+   * record's own shape cannot state an affiliation for that person at all —
+   * an NPPES specialty or an organisation's own name is never a stand-in.
+   * Identity resolution reads `null` as "cannot corroborate or refute" and
+   * holds a same-name match ambiguous rather than confirming or rejecting it
+   * (review finding on issue #250, PR #295).
    */
-  namedIndividuals?: { name: string; affiliations: string[] }[];
+  namedIndividuals?: { name: string; affiliations: string[] | null }[];
 }
 
 export interface ReaderPorts {

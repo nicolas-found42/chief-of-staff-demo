@@ -30,6 +30,20 @@ import type { PersonSourceRights } from "@chief-of-staff-demo/shared";
  * individual's, and cannot stand in for their own affiliation (review
  * finding on issue #250, PR #295). Nothing here repeats that resolution;
  * this module only renders what one matched record says.
+ *
+ * `affiliations` is `null`, distinct from `[]`, whenever a route's own shape
+ * cannot state an affiliation for the person it names at all — an NPPES
+ * individual (NPI-1) registration states a specialty and a practice
+ * address, never an employer, and an NPI-2's "authorized official" is a
+ * registration contact whose relationship to the organisation the record
+ * never states either. Reusing the specialty description or the
+ * organisation's own name as a stand-in affiliation was the review finding
+ * this module now avoids: a Profile whose employer happened to equal a
+ * medical specialty or the organisation's name was absorbed as a confident
+ * match with nothing real corroborating it. Identity resolution reads a
+ * `null` as "cannot corroborate or refute" and holds the match ambiguous
+ * rather than either confirming or rejecting it (review finding on issue
+ * #250, PR #295).
  */
 
 /** The indexes whose records this module can render. */
@@ -50,7 +64,14 @@ interface NamedIndividual {
   /** How the record itself describes this person's relationship to it. */
   role: string;
   identifiers: string[];
-  affiliations: string[];
+  /**
+   * This person's own affiliation strings, or `null` when the record's shape
+   * cannot state one for them at all (a specialty is not an employer, and an
+   * organisation's own name is not its authorized official's affiliation).
+   * `null` is never collapsed to `[]`: the two mean different things to
+   * identity resolution (see the module doc comment above).
+   */
+  affiliations: string[] | null;
 }
 
 /** A document a record links without granting rights over it. */
@@ -96,9 +117,13 @@ export interface InstitutionalRecordRendering {
    * searching the whole rendered text for a known employer, so a trial
    * sponsored by the Profile's employer cannot corroborate a same-name
    * investigator whose own affiliation conflicts (review finding on issue
-   * #250, PR #295).
+   * #250, PR #295). An entry's `affiliations` is `null`, distinct from `[]`,
+   * when this record's shape cannot state one for that person at all (an
+   * NPPES specialty or an organisation's own name is never a stand-in): a
+   * `null` reads to identity resolution as "cannot corroborate or refute",
+   * never as a stated absence of affiliation to compare against.
    */
-  namedIndividuals: { name: string; affiliations: string[] }[];
+  namedIndividuals: { name: string; affiliations: string[] | null }[];
 }
 
 /**
@@ -162,7 +187,7 @@ function assemble(index: string, facts: RecordFacts): InstitutionalRecordRenderi
                 ? entry.identifiers.join(", ")
                 : "no identifier in this record"
             }; ${
-              entry.affiliations.length
+              entry.affiliations?.length
                 ? entry.affiliations.join("; ")
                 : "no affiliation in this record"
             }`,
@@ -284,10 +309,14 @@ function nppesFacts(body: unknown): RecordFacts | null {
         statusLabel ? ` (registration ${statusLabel})` : ""
       }.`,
       identifiers: [`NPI ${number}`],
-      affiliations: taxonomies.flatMap((entry) => {
-        const desc = str(record(entry)?.desc, 200);
-        return desc ? [desc] : [];
-      }),
+      /* NPPES states this provider's specialty (taxonomy) and practice
+         address, never an employer — the specialty is rendered separately
+         as "Primary taxonomy" below. Reusing it here would let a Profile
+         whose employer happens to equal a medical specialty ("Internal
+         Medicine") corroborate a same-name match that shares nothing real
+         with them (review finding on issue #250, PR #295), so this record
+         states no affiliation for its named individual at all. */
+      affiliations: null,
     });
   } else {
     const officialName = [
@@ -303,7 +332,15 @@ function nppesFacts(body: unknown): RecordFacts | null {
           str(basic.authorized_official_title_or_position, 120) ?? "title not stated in this record"
         }) named on this organization's registration, NPI ${number}.`,
         identifiers: [],
-        affiliations: subjectName ? [subjectName] : [],
+        /* The organization's own name is a record-level fact — this
+           registration's subject, not the authorized official's stated
+           affiliation. NPPES never says what the official's own employer
+           is (most are the organization, but the record does not say so),
+           so reusing the organization name here would let a Profile whose
+           employer happens to equal it corroborate a same-name match with
+           nothing real behind it (review finding on issue #250, PR #295).
+           This record states no affiliation for its named official. */
+        affiliations: null,
       });
   }
 
@@ -394,11 +431,16 @@ function clinicalTrialsFacts(body: unknown): RecordFacts | null {
     ...list(contacts?.overallOfficials).map((entry) => {
       const official = record(entry);
       const role = str(official?.role, 60);
+      /* Present when this trial's own registration states this official's
+         affiliation; `null` (never `[]`) when it does not, so identity
+         resolution can tell "this record says nothing about their
+         affiliation" apart from "we checked and it does not match". */
+      const affiliation = str(official?.affiliation, 200);
       return {
         name: str(official?.name, 200) ?? "Unnamed official",
         role: `${role ? (OFFICIAL_ROLE_LABELS[role] ?? role) : "Overall official"} of this trial.`,
         identifiers: [],
-        affiliations: [str(official?.affiliation, 200)].flatMap((value) => (value ? [value] : [])),
+        affiliations: affiliation ? [affiliation] : null,
       };
     }),
     ...list(contacts?.centralContacts).map((entry) => {
@@ -409,7 +451,10 @@ function clinicalTrialsFacts(body: unknown): RecordFacts | null {
         identifiers: [str(contact?.email, 200), str(contact?.phone, 60)].flatMap((value) =>
           value ? [value] : [],
         ),
-        affiliations: [],
+        /* ClinicalTrials.gov never carries an affiliation for a central
+           contact at all — this is not "checked and empty", it is
+           unstated. */
+        affiliations: null,
       };
     }),
   ];

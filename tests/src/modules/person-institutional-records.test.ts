@@ -333,8 +333,22 @@ test("a linked trial document is never turned into a lead the research loop auto
   expect(fetchedUrls).not.toContain(protocolUrl);
 });
 
-test("a matched NPPES individual record carries the NPI and taxonomy, not personal contribution", async () => {
-  const { sources, dossier } = await runResearch({
+test("a matched NPPES individual record carries the NPI and taxonomy, but a coincidental taxonomy match does not confirm identity", async () => {
+  /* The Profile's employer here is deliberately set to the record's taxonomy
+     description. An NPPES individual (NPI-1) registration states a
+     provider's specialty and practice address, never an employer, so this
+     is not a real corroborating signal — it is a same-name collision with
+     nothing to corroborate against.
+     Previously this test asserted a full ("high" confidence) match, on the
+     theory that the taxonomy description corroborated the Profile's
+     employer. That was wrong: it made "Internal Medicine" (a specialty)
+     stand in for an employer, so any Profile whose employer happened to
+     equal a medical specialty would be confidently — and wrongly —
+     attributed to any same-name NPI record bearing that specialty
+     (review finding, PR #295). With no genuine affiliation evidence either
+     way, identity stays unresolved: the record is still retained, but only
+     at reduced ("ambiguous-attribution") confidence. */
+  const { sources, dossier, outcome } = await runResearch({
     url: NPI_URL,
     lookup: { fullName: "Maya Chen", currentEmployer: "Internal Medicine" },
     works: true,
@@ -352,6 +366,33 @@ test("a matched NPPES individual record carries the NPI and taxonomy, not person
   expect(record.text).toContain(MATCH_LIMIT);
   expect(dossier?.works[0]?.contribution).toBeNull();
   expect(dossier?.works[0]?.authority).toEqual([]);
+  expect(dossier?.claims.map((claim) => claim.matchConfidence)).toEqual(["medium"]);
+  expect(outcome.attempts.map((attempt) => attempt.code)).toContain("ambiguous-attribution");
+});
+
+test("an organizational NPPES record whose organization name equals the Profile's employer does not confirm identity", async () => {
+  /* The named individual on an NPI-2 registration is the organization's
+     authorized official — a registration contact, not an employee whose
+     employer the record states. The organization's own name is a
+     record-level fact, never the official's affiliation, so a Profile whose
+     employer happens to equal the organization's name is a same-name
+     collision, not a corroborated match: the record is retained, but only
+     at reduced ("ambiguous-attribution") confidence, exactly as the NPI-1
+     case above. */
+  const { sources, dossier, outcome } = await runResearch({
+    url: NPI_URL,
+    lookup: { fullName: "Maya Chen", currentEmployer: "Riverside Health System" },
+    fetch: async (url) =>
+      url.includes("npiregistry.cms.hhs.gov")
+        ? answer(url, 200, NPPES_ORGANIZATION)
+        : answer(url, 404, ""),
+  });
+
+  const record = sources[0];
+  expect(record).toBeDefined();
+  expect(record.text).toContain("Riverside Health System");
+  expect(dossier?.claims.map((claim) => claim.matchConfidence)).toEqual(["medium"]);
+  expect(outcome.attempts.map((attempt) => attempt.code)).toContain("ambiguous-attribution");
 });
 
 test("an organizational NPPES record names its authorized official, not a clinician", () => {

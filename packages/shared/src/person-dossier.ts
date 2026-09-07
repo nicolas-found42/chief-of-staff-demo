@@ -168,12 +168,19 @@ export const PersonSourceDocumentSchema = z.object({
    * trial sponsored by the Profile's employer cannot corroborate a same-name
    * investigator whose own affiliation conflicts (review finding on issue
    * #250, PR #295).
+   *
+   * An entry's `affiliations` is `null`, distinct from `[]`, when the
+   * record's own shape cannot state an affiliation for that person at all —
+   * an NPPES specialty or an organisation's own name is never a stand-in.
+   * Identity resolution reads `null` as "cannot corroborate or refute" and
+   * holds a same-name match ambiguous rather than confirming or rejecting it
+   * (review finding on issue #250, PR #295).
    */
   namedIndividuals: z
     .array(
       z.object({
         name: z.string().max(400),
-        affiliations: z.array(z.string().max(400)).max(20),
+        affiliations: z.array(z.string().max(400)).max(20).nullable(),
       }),
     )
     .max(20)
