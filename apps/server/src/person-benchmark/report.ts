@@ -755,6 +755,12 @@ export function renderComparison(comparison: BenchmarkComparison): string {
     "| Family | Baseline retained / cited | Candidate retained / cited | Baseline recovered / exclusive | Candidate recovered / exclusive |",
   );
   lines.push("| --- | --- | --- | --- | --- |");
+  /* A family's recovered counts inherit the assessment withholding: while
+     any person on a side has an incomplete assessment, that side's recovered
+     and exclusive columns are unmeasured rather than zero (#271, #281,
+     #282). Retained/cited source counts stay measured either way. */
+  const baselineFamiliesMeasured = comparison.perPerson.every((entry) => entry.baselineAssessed);
+  const candidateFamiliesMeasured = comparison.perPerson.every((entry) => entry.candidateAssessed);
   for (const entry of comparison.sourceContributions ?? []) {
     const sources = (side: typeof entry.baseline) =>
       side ? `${String(side.retainedSources)} / ${String(side.citedSources)}` : "unmeasured";
@@ -763,7 +769,7 @@ export function renderComparison(comparison: BenchmarkComparison): string {
         ? `${String(side.recoveredFacts)} / ${String(side.exclusiveRecoveredFacts)}`
         : "unmeasured";
     lines.push(
-      `| ${entry.family} | ${sources(entry.baseline)} | ${sources(entry.candidate)} | ${recovered(entry.baseline)} | ${recovered(entry.candidate)} |`,
+      `| ${entry.family} | ${sources(entry.baseline)} | ${sources(entry.candidate)} | ${baselineFamiliesMeasured ? recovered(entry.baseline) : "unmeasured"} | ${candidateFamiliesMeasured ? recovered(entry.candidate) : "unmeasured"} |`,
     );
   }
   lines.push("");
