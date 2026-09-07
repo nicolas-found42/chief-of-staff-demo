@@ -146,3 +146,26 @@ it("keeps a stated, an absent and an unmeasured source version apart in the repo
   expect(lineFor("0000-0002-2222-2222")).not.toContain("unmeasured");
   expect(lineFor("0000-0002-3333-3333")).not.toContain("none stated");
 });
+
+/* A retained document holds a version or holds none; there is no third state
+   there. So a freshly written report says "states none" with null, and keeps
+   absent to mean the report itself predates the field. */
+it("records a document with no version as an explicit null in a new report", () => {
+  const document: PersonSourceDocument = fromPartial({
+    id: "no-version",
+    url: "https://orcid.org/0000-0002-4444-4444",
+    hash: "no-version-hash",
+    text: "Registry identity",
+    evidenceFamily: "identity-affiliation",
+    upstreamIndex: "orcid.org",
+    visibility: "public",
+  });
+
+  const contributions = sourceContributions(fromPartial({ claims: [] }), [document], [], new Set());
+  const identity = contributions.find((entry) => entry.family === "identity-affiliation");
+  if (!identity) throw new Error("no identity-affiliation contribution");
+  /* Present and null — "asked, states none" — rather than absent, which a
+     reader would take to mean this report predates version measurement. */
+  expect(Object.hasOwn(identity.sources[0], "sourceVersion")).toBe(true);
+  expect(identity.sources[0].sourceVersion).toBeNull();
+});
