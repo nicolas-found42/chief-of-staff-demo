@@ -162,6 +162,19 @@ it("renders every markdown table with rows of one cell count", () => {
   assertTablesWellFormed(renderComparison(compareReports(report, candidate)));
 });
 
+it("escapes a backslash so it cannot swallow the following cell delimiter", () => {
+  /* #284: escapeCell escapes pipes but not pre-existing backslashes, so a
+     value carrying `\|` renders as `\\|` — markdown reads that as an
+     escaped backslash plus a REAL delimiter, splitting the cell. */
+  const report = assessedReport();
+  const corpus = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  );
+  const people = corpus.people.filter((person) => report.selection.evaluated.includes(person.slug));
+  report.remainingMisses[0].statement = "Statement with a backslash \\| before the pipe";
+  assertTablesWellFormed(renderReport(report, people));
+});
+
 it("names the planning model only when the pipeline ran one, and keeps usefulness honest", () => {
   const report = assessedReport();
   const corpus = loadCorpus(

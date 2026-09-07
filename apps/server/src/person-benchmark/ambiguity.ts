@@ -46,7 +46,7 @@ const GUARD_DOWNGRADE_MARKER = "does not occur in the dossier";
 const CITATION_PASSAGE_MARKER = "cited passage, not the claim statement";
 /** Written by the judge seam when a verdict names a claim it never quoted (issue #236). */
 const NO_QUOTE_MARKER = "quotes no dossier text";
-const EVALUATOR_DOWNGRADE_PREFIX = "Original semantic verdict:";
+export const EVALUATOR_DOWNGRADE_PREFIX = "Original semantic verdict:";
 /** Literal evaluate.ts writes when incomplete support withholds credit. */
 const SUPPORT_DOWNGRADE_MARKER = "support/usefulness assessment did not complete";
 

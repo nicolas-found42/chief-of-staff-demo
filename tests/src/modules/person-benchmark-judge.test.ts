@@ -366,6 +366,50 @@ it("attributes verdicts withheld for an incomplete support assessment separately
   expect(readable).toContain("0 contradicted by the reference, and 0 still missing.");
 });
 
+it("appends the withholding disclosure to beyond-current-coverage miss rows", async () => {
+  /* #284: the anders-danielsson withheld rows read only as research-side
+     language ambiguity because the beyond-current-coverage branch replaces
+     the judgement's rationale — which carries the downgrade disclosure —
+     with the corpus note. The disclosure must survive the substitution. */
+  const { person, dossier, sources } = fixture();
+  for (const source of sources)
+    source.hash = createHash("sha256").update(source.text).digest("hex");
+  person.facts[0] = {
+    ...person.facts[0],
+    acquisition: "beyond-current-coverage",
+    note: "Recorded only in the Swedish-language source.",
+  };
+  const result = await assessPerson(person, "fixed-documents", {
+    dossier,
+    publicProjection: dossier,
+    sources,
+    operation: null,
+    elapsedMilliseconds: 0,
+    judge: async ({ user }) => {
+      if (user.includes('"references":'))
+        return {
+          judgements: [
+            {
+              factId: person.facts[0].id,
+              verdict: "recovered",
+              evidence: dossier.claims[120].statement,
+              claimId: "claim-120",
+              rationale: "Semantic match.",
+            },
+          ],
+        };
+      throw new Error("SSE error chunk from the upstream: code 502");
+    },
+  });
+  const { report, rendered: readable } = await renderedReport(person, result);
+  const miss = report.remainingMisses[0];
+  expect(miss.explanation).toContain("Recorded only in the Swedish-language source.");
+  expect(miss.explanation).toContain(
+    "Original semantic verdict: recovered; downgraded to ambiguous because support/usefulness assessment did not complete; positive recovery credit is withheld.",
+  );
+  expect(readable).toContain("positive recovery credit is withheld.");
+});
+
 it("does not attribute a judge's own ambiguity to an incomplete support assessment", async () => {
   const { person, dossier, sources } = fixture();
   for (const source of sources)
