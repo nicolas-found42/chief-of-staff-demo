@@ -539,6 +539,22 @@ test("a registry error envelope that names the Profile is failed, never retained
     "",
     ports(recorder, async () => answer(NPI_URL, 200, body)),
   );
+  /* NPPES's own documented refusal spells the key capitalized: observed live
+     2026-09-07 as {"Errors":[{"description":"No valid search criteria
+     provided","field":"generic","number":"04"}]}. */
+  const capitalized = await readPersonSource(
+    NPI_URL,
+    "",
+    ports(recorder, async () =>
+      answer(
+        NPI_URL,
+        200,
+        JSON.stringify({ Errors: [{ description: "No provider matches Maya Chen." }] }),
+      ),
+    ),
+  );
+  expect(capitalized.access).toBe("failed");
+  expect(capitalized.text).toBe("");
 
   expect(result.access).toBe("failed");
   expect(result.text).toBe("");

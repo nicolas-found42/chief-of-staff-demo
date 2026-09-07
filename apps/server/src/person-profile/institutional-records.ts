@@ -181,10 +181,14 @@ export function registryNonRecordBody(
   if (index !== "npiregistry.cms.hhs.gov" && index !== "clinicaltrials.gov") return null;
   const envelope = record(body);
   if (!envelope) return null;
-  /* Both indexes answer refusals and API errors under a top-level `error`
-     key — ClinicalTrials.gov nests its message, NPPES names the invalid
-     parameter. A record of either index never carries one. */
-  if ("error" in envelope || "errors" in envelope) return "registry-error-envelope";
+  /* Both indexes answer refusals and API errors under a top-level error
+     key — ClinicalTrials.gov nests its message under `error`; NPPES
+     documents its invalid-parameter envelope with a capitalized `Errors`
+     key (observed live 2026-09-07: {"Errors":[{"description":"No valid
+     search criteria provided","field":"generic","number":"04"}]}). A record
+     of either index never carries one. */
+  if ("error" in envelope || "errors" in envelope || "Errors" in envelope)
+    return "registry-error-envelope";
   /* NPPES's answer for an identifier it does not register: the envelope is
      present and says it holds nothing. */
   if (index === "npiregistry.cms.hhs.gov" && Array.isArray(envelope.results))
