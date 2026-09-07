@@ -172,6 +172,26 @@ describe("classifyJudgement", () => {
     expect(assignment.cause).toBe("judge-quoted-citation-passage");
   });
 
+  it("assigns judge-quoted-citation-passage from the claim-excerpt-selection marker alone", () => {
+    const assignment = classifyJudgement(
+      "fixed",
+      // No retained citedQuote: the verdict names its own cause.
+      person({ claimCount: 6, integritySubjects: ["claim-9"] }),
+      judgement({
+        referenceQuote: "Danielsson became CEO on 1 January 2018.",
+        evidenceQuote: "Danielsson tillträdde som verkställande direktör.",
+        claimId: "claim-9",
+        rationale:
+          "Same fact with date. " +
+          "(Downgraded: the quoted dossier text does not occur in the dossier. " +
+          "The quotation is from the named claim's cited passage, not the claim statement.)",
+      }),
+      corpus(),
+    );
+    expect(assignment.cause).toBe("judge-quoted-citation-passage");
+    expect(assignment.basis.join("\n")).toContain("claim-excerpt-selection marker");
+  });
+
   it("leaves a claim retained nowhere explicitly undetermined, never unknown", () => {
     const assignment = classifyJudgement(
       "fixed",

@@ -318,3 +318,125 @@ it.each(["wrong-index", "null-with-citations", "null-without-citations"] as cons
     }
   },
 );
+
+const SUPPORT_OK = {
+  understanding: 1,
+  remainingQuestions: 1,
+  conversationReadiness: 1,
+  uncertain: false,
+  rationale: "Reviewed support.",
+  overclaims: [],
+};
+
+it("credits a verdict that selects its claim by a verbatim claim excerpt", async () => {
+  const { person, dossier, sources } = fixture();
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "recovered",
+                evidence: dossier.claims[120].statement,
+                claimId: "claim-120",
+                rationale: "The dossier states the same fact.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0]).toMatchObject({ verdict: "recovered", claimId: "claim-120" });
+  expect(result.judgements[0].rationale).not.toContain("does not occur in the dossier");
+  expect(result.judgements[0].reviewRequired).toBe(false);
+});
+
+it("rejects a citation-passage selection as an unresolved observation", async () => {
+  const { person, dossier, sources, quote } = fixture();
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "recovered",
+                evidence: quote,
+                claimId: "claim-120",
+                rationale: "The dossier states the same fact.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0].verdict).toBe("ambiguous");
+  expect(result.judgements[0].reviewRequired).toBe(true);
+  expect(result.judgements[0].rationale).toContain("does not occur in the dossier");
+  expect(result.judgements[0].rationale).toContain("cited passage, not the claim statement");
+});
+
+it("rejects an invented excerpt as an unresolved observation", async () => {
+  const { person, dossier, sources } = fixture();
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "recovered",
+                evidence: "Maya single-handedly invented the scheduler in 1999.",
+                claimId: "claim-120",
+                rationale: "The dossier states the same fact.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0].verdict).toBe("ambiguous");
+  expect(result.judgements[0].reviewRequired).toBe(true);
+  expect(result.judgements[0].rationale).toContain("does not occur in the dossier");
+  expect(result.judgements[0].rationale).not.toContain("cited passage, not the claim statement");
+});
+
+it("shows the recovery judge claim statements without cited passages", async () => {
+  const { person, dossier, sources } = fixture();
+  const captured: { dossier: unknown[] | null } = { dossier: null };
+  await judgePerson(
+    async ({ user }) => {
+      const request = JSON.parse(user) as { references?: unknown; dossier: unknown[] };
+      if (request.references) {
+        captured.dossier = request.dossier;
+        return {
+          judgements: [
+            {
+              factId: person.facts[0].id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "Not recovered.",
+            },
+          ],
+        };
+      }
+      return SUPPORT_OK;
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(captured.dossier).toHaveLength(dossier.claims.length);
+  for (const entry of captured.dossier ?? []) {
+    expect(entry).not.toHaveProperty("citations");
+    expect(JSON.stringify(entry)).not.toContain("Context.");
+  }
+});
