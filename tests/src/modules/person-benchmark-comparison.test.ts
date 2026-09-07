@@ -63,6 +63,46 @@ it("compares fully assessed failed research without converting the run to succes
   expect(renderComparison(comparison)).toContain("failed");
 });
 
+it("excludes support-incomplete pairs from the recovery verdict and names the exclusion", () => {
+  const baseline = assessedReport();
+  for (const person of baseline.people)
+    person.assessment!.phases = {
+      reference: { status: "completed", failure: null, judgements: [] },
+      support: { status: "completed", failure: null, unresolvedFindings: [] },
+    };
+  const candidate = structuredClone(baseline);
+  for (const person of candidate.people) person.completeness.recovered += 1;
+  expect(compareReports(baseline, candidate).verdict).toBe("improved");
+
+  /* The same research delta with one support phase failed: that pair's
+     recovery credit is withheld under ADR-0067, so it cannot carry the
+     verdict — the measured pairs still do, and the exclusion is named (#281). */
+  const withSupportFailed = structuredClone(candidate);
+  withSupportFailed.people[0].assessment!.phases!.support.status = "failed";
+  const comparison = compareReports(baseline, withSupportFailed);
+  expect(comparison.comparable).toBe(true);
+  expect(comparison.perPerson[0].candidateAssessed).toBe(false);
+  expect(comparison.perPerson.slice(1).every((entry) => entry.candidateAssessed)).toBe(true);
+  expect(comparison.verdict).toBe("improved");
+  expect(comparison.verdictDetail).toContain("support/usefulness assessment did not complete");
+  expect(comparison.verdictDetail).toContain(comparison.perPerson[0].slug);
+  expect(comparison.conditionChanges.join("\n")).toContain("support/usefulness");
+});
+
+it("declares a comparison with no measured pair not comparable", () => {
+  const baseline = assessedReport();
+  for (const person of baseline.people)
+    person.assessment!.phases = {
+      reference: { status: "completed", failure: null, judgements: [] },
+      support: { status: "failed", failure: null, unresolvedFindings: [] },
+    };
+  const candidate = structuredClone(baseline);
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.comparable).toBe(false);
+  expect(comparison.verdict).toBe("not-comparable");
+  expect(comparison.conditionChanges.join("\n")).toContain("no pair");
+});
+
 /* Three shipped reports carried a table whose separator row had one cell
    fewer than its header (#271, #282) — markdown consumers rendered the
    columns misaligned and the missing count stayed unread. Within one table

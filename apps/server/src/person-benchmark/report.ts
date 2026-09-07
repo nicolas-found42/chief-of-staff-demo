@@ -5,6 +5,8 @@ import {
   type BenchmarkPerson,
   type BenchmarkPersonResult,
   type BenchmarkReport,
+  type PersonResearchLead,
+  type PersonResearchOperationOutcome,
 } from "@chief-of-staff-demo/shared";
 import { requirementLabel } from "./evaluate.js";
 import { EVALUATOR_DOWNGRADE_PREFIX } from "./ambiguity.js";
@@ -114,6 +116,62 @@ export function remainingMisses(
     }
   }
   return misses;
+}
+
+/**
+ * Report-level aggregation over the run's research operation records (#281):
+ * how every recorded lead resolved — with each disposition's share of the
+ * denominator, so "#239: unresolved leads no longer dominant" is checkable
+ * from the report alone — and how much planned coverage stays open. The
+ * per-lead detail stays in the operation records; the report carries totals.
+ */
+export function leadDispositionTotals(
+  outcomes: PersonResearchOperationOutcome[],
+): NonNullable<BenchmarkReport["leadDispositions"]> {
+  const counts: Record<PersonResearchLead["disposition"], number> = {
+    pending: 0,
+    investigated: 0,
+    rejected: 0,
+    deduplicated: 0,
+    inaccessible: 0,
+    interrupted: 0,
+  };
+  let totalLeads = 0;
+  for (const outcome of outcomes)
+    for (const lead of outcome.leads) {
+      totalLeads += 1;
+      counts[lead.disposition] += 1;
+    }
+  return {
+    totalLeads,
+    dispositions: Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([disposition, count]) => ({
+        disposition: disposition as PersonResearchLead["disposition"],
+        count,
+        share: totalLeads === 0 ? 0 : count / totalLeads,
+      }))
+      .sort((a, b) => b.count - a.count || a.disposition.localeCompare(b.disposition)),
+  };
+}
+
+/** The open-coverage side of the same aggregation: planned areas against the
+ *  gaps they still name, plus the operations' own explicit remaining gaps. */
+export function coverageGapTotals(
+  outcomes: PersonResearchOperationOutcome[],
+): NonNullable<BenchmarkReport["coverageGaps"]> {
+  const totals = { areas: 0, areasWithOpenGaps: 0, areaGaps: 0, explicitGaps: 0 };
+  for (const outcome of outcomes) {
+    totals.explicitGaps += outcome.gaps.length;
+    for (const area of outcome.coverage) {
+      totals.areas += 1;
+      if (area.gaps.length > 0) {
+        totals.areasWithOpenGaps += 1;
+        totals.areaGaps += area.gaps.length;
+      }
+    }
+  }
+  return totals;
 }
 
 /**
@@ -263,6 +321,27 @@ export function compareReports(
       String(candidate.provenance.researchSettings[key] ?? "absent"),
     );
 
+  /* #281: the support/usefulness phase withholds recovery credit under
+     ADR-0067, so its completion profile is a recorded condition like any
+     other. A differing profile does not make the runs incomparable — the
+     verdict reads only the pairs whose recovery credit is not withheld. */
+  const supportProfile = (report: BenchmarkReport) => {
+    const counts = { completed: 0, failed: 0, "not-attempted": 0, unrecorded: 0 };
+    for (const person of report.people) {
+      const status = person.assessment?.phases?.support.status;
+      counts[
+        status === "completed" || status === "failed" || status === "not-attempted"
+          ? status
+          : "unrecorded"
+      ] += 1;
+    }
+    return Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([status, count]) => `${status} ${String(count)}`)
+      .join(", ");
+  };
+  note("support/usefulness assessment", supportProfile(baseline), supportProfile(candidate));
+  note("corpus version", baseline.provenance.corpusVersion, candidate.provenance.corpusVersion);
   /* A changed reference version invalidates the comparison outright: the two
      runs were not answering the same questions. */
   const referenceChanges = [
@@ -282,7 +361,10 @@ export function compareReports(
       `reference ${slug}: ${version} → ${candidate.provenance.referenceVersions[slug] ?? "absent"}`,
     );
 
-  const comparable =
+  /* #281: a differing support/usefulness profile is a recorded condition like
+     any other, but it does not make the runs incomparable — the verdict below
+     simply reads only the pairs whose recovery credit is not withheld. */
+  const conditionsComparable =
     referenceChanges.length === 0 &&
     JSON.stringify([...baseline.selection.evaluated].sort()) ===
       JSON.stringify([...candidate.selection.evaluated].sort()) &&
@@ -295,10 +377,9 @@ export function compareReports(
     completeEvaluation(candidate);
 
   const baselineBySlug = new Map(baseline.people.map((entry) => [entry.slug, entry]));
-  /* The same completed-assessment test the report's execution.assessed count
-     uses: recovery credit is withheld while the assessment phases are
-     incomplete, so a zero from an unassessed side is unmeasured rather than a
-     proven absence (#271, #281). */
+  /* Recovery credit is withheld while the assessment phases are incomplete,
+     so a zero from an unmeasured side is not evidence (#271, #281): the pair
+     flags below say which sides were actually measured. */
   const perPerson: BenchmarkComparison["perPerson"] = [];
   for (const entry of candidate.people) {
     const before = baselineBySlug.get(entry.slug);
@@ -310,8 +391,19 @@ export function compareReports(
       candidateRecovered: entry.completeness.recovered,
       baselineConclusion: before.operational.conclusion,
       candidateConclusion: entry.operational.conclusion,
-      baselineAssessed: assessmentComplete(before),
-      candidateAssessed: assessmentComplete(entry),
+      /* ADR-0067: recovery credit is withheld while the support/usefulness
+         assessment has not completed, so a zero from such a side is unmeasured
+         rather than a proven absence. Reports written before the phases field
+         existed measured recovery without one, and their counts stay
+         vouchable as recorded. */
+      baselineAssessed:
+        assessmentComplete(before) &&
+        (before.assessment?.phases
+          ? before.assessment.phases.support.status === "completed"
+          : true),
+      candidateAssessed:
+        assessmentComplete(entry) &&
+        (entry.assessment?.phases ? entry.assessment.phases.support.status === "completed" : true),
       newCriticalFindings: introduced(criticalKeys(before), criticalKeys(entry)),
       newWrongPersonAttributions: introduced(
         overclaimKeys(before, true),
@@ -320,11 +412,20 @@ export function compareReports(
       newOverclaims: introduced(overclaimKeys(before), overclaimKeys(entry)),
     });
   }
+  const measured = perPerson.filter((entry) => entry.baselineAssessed && entry.candidateAssessed);
+  if (perPerson.length > 0 && measured.length === 0)
+    conditionChanges.push(
+      "no pair has a measured completeness dimension: every compared person's support/usefulness assessment is incomplete on at least one side, and ADR-0067 withholds their recovery credit",
+    );
+  const comparable = conditionsComparable && (perPerson.length === 0 || measured.length > 0);
+  const excludedPairs = perPerson.filter(
+    (entry) => !(entry.baselineAssessed && entry.candidateAssessed),
+  );
 
   const totals = {
     referenceFacts: perPerson.reduce((sum, entry) => sum + entry.referenceFacts, 0),
-    baselineRecovered: perPerson.reduce((sum, entry) => sum + entry.baselineRecovered, 0),
-    candidateRecovered: perPerson.reduce((sum, entry) => sum + entry.candidateRecovered, 0),
+    baselineRecovered: measured.reduce((sum, entry) => sum + entry.baselineRecovered, 0),
+    candidateRecovered: measured.reduce((sum, entry) => sum + entry.candidateRecovered, 0),
     baselineCriticalFindings: baseline.people.reduce(
       (sum, entry) => sum + entry.factualReliability.criticalFindings,
       0,
@@ -399,7 +500,7 @@ export function compareReports(
     verdict,
     verdictDetail: !comparable
       ? `Not comparable: ${conditionChanges.join("; ") || "one of the runs did not complete"}.`
-      : `Reference coverage: ${gained >= 0 ? "+" : ""}${String(gained)} reference facts recovered out of ${String(totals.referenceFacts)}; ${String(newCritical)} newly introduced critical integrity findings; ${String(newIdentityFailures)} newly introduced wrong-person attributions. Research outcomes are separate: ${String(operational.regressedPeople.length)} people regressed from completed research to bounded or interrupted. Failed run statuses remain unchanged.`,
+      : `Reference coverage: ${gained >= 0 ? "+" : ""}${String(gained)} reference facts recovered out of ${String(totals.referenceFacts)}, read across the ${String(measured.length)} of ${String(perPerson.length)} pairs whose recovery credit is not withheld${excludedPairs.length ? `; for ${excludedPairs.map((entry) => entry.slug).join(", ")}, whose support/usefulness assessment did not complete on one side, ADR-0067 withholds recovery credit` : ""}; ${String(newCritical)} newly introduced critical integrity findings; ${String(newIdentityFailures)} newly introduced wrong-person attributions. Research outcomes are separate: ${String(operational.regressedPeople.length)} people regressed from completed research to bounded or interrupted. Failed run statuses remain unchanged.`,
   });
 }
 
@@ -777,6 +878,29 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       `| ${miss.slug} | ${escapeCell(miss.statement)} | ${miss.requirements.map(requirementLabel).join("; ")} | ${miss.acquisition} | ${escapeCell(miss.explanation)} |`,
     );
   lines.push("");
+  if (report.leadDispositions) {
+    lines.push("## Lead dispositions");
+    lines.push("");
+    lines.push("| Disposition | Leads | Share |");
+    lines.push("| --- | --- | --- |");
+    for (const entry of report.leadDispositions.dispositions)
+      lines.push(
+        `| ${entry.disposition} | ${String(entry.count)} | ${String(Math.round(entry.share * 1000) / 10)}% |`,
+      );
+    lines.push("");
+    lines.push(
+      `of ${String(report.leadDispositions.totalLeads)} leads the run's research operations recorded.`,
+    );
+    lines.push("");
+  }
+  if (report.coverageGaps) {
+    lines.push("## Coverage gaps");
+    lines.push("");
+    lines.push(
+      `${String(report.coverageGaps.areas)} planned coverage areas; ${String(report.coverageGaps.areasWithOpenGaps)} still name open gaps (${String(report.coverageGaps.areaGaps)} in total), and the operations recorded ${String(report.coverageGaps.explicitGaps)} explicit remaining gaps.`,
+    );
+    lines.push("");
+  }
   return lines.join("\n");
 }
 

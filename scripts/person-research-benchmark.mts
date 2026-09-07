@@ -8,6 +8,7 @@ import {
   type BenchmarkPersonResult,
   type BenchmarkReport,
   type BenchmarkCollectionResult,
+  type PersonResearchOperationOutcome,
 } from "../packages/shared/src/index.js";
 import { ConfigStore } from "../apps/server/src/config.js";
 import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
@@ -31,6 +32,8 @@ import { reassessReport } from "../apps/server/src/person-benchmark/reassess.js"
 import { configurePipeline } from "../apps/server/src/person-benchmark/pipelines.js";
 import {
   compareReports,
+  coverageGapTotals,
+  leadDispositionTotals,
   remainingMisses,
   renderComparison,
   renderReport,
@@ -316,6 +319,7 @@ mkdirSync(outDir, { recursive: true });
 const stem = `${mode}-${pipeline}-${id}`;
 
 const results: BenchmarkPersonResult[] = [];
+const researchOutcomes: PersonResearchOperationOutcome[] = [];
 const population: { slug: string; profileId: string }[] = [];
 let collection: BenchmarkCollectionResult[] = [];
 let status: BenchmarkReport["status"] = "completed";
@@ -355,6 +359,7 @@ try {
         selected.findIndex((person) => person.slug === b.slug),
     );
     population.push({ slug: person.slug, profileId: evaluation.profileId });
+    if (evaluation.operation) researchOutcomes.push(evaluation.operation);
     writeFileSync(
       join(outDir, `${stem}-${person.slug}.operation.json`),
       `${JSON.stringify(evaluation.operation)}\n`,
@@ -525,6 +530,8 @@ const report: BenchmarkReport = {
   collection,
   groups: summarizeGroups(selected, results),
   remainingMisses: remainingMisses(selected, results),
+  leadDispositions: leadDispositionTotals(researchOutcomes),
+  coverageGaps: coverageGapTotals(researchOutcomes),
 };
 
 const validated = BenchmarkReportSchema.parse(report);

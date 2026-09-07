@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { ModelAttemptEventSchema } from "./llm.js";
-import { PERSON_SOURCE_FAMILIES, type PersonSourceFamily } from "./person-research.js";
+import {
+  PERSON_SOURCE_FAMILIES,
+  PersonResearchLeadSchema,
+  type PersonSourceFamily,
+} from "./person-research.js";
 
 /** Wire attempts observed while assessing one public benchmark subject. */
 export const BenchmarkModelAttemptSchema = z.object({
@@ -699,6 +703,34 @@ export const BenchmarkReportSchema = z.object({
       }),
     )
     .max(2000),
+  /** Run-time aggregation over the run's research operation records (#281):
+   *  how every recorded lead resolved — with each disposition's share of the
+   *  denominator — and how much planned coverage stays open. Reports written
+   *  before the fields existed omit them, and a reassessment assembles no
+   *  research operations of its own. */
+  leadDispositions: z
+    .object({
+      totalLeads: z.number().int().nonnegative(),
+      dispositions: z
+        .array(
+          z.object({
+            disposition: PersonResearchLeadSchema.shape.disposition,
+            count: z.number().int().nonnegative(),
+            /** count / totalLeads, as a fraction. */
+            share: z.number().min(0).max(1),
+          }),
+        )
+        .max(6),
+    })
+    .optional(),
+  coverageGaps: z
+    .object({
+      areas: z.number().int().nonnegative(),
+      areasWithOpenGaps: z.number().int().nonnegative(),
+      areaGaps: z.number().int().nonnegative(),
+      explicitGaps: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 export type BenchmarkReport = z.infer<typeof BenchmarkReportSchema>;
 

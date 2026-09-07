@@ -5,6 +5,16 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 import { evaluatePerson } from "../../../apps/server/src/person-benchmark/evaluate";
+import {
+  coverageGapTotals,
+  leadDispositionTotals,
+  renderReport,
+} from "../../../apps/server/src/person-benchmark/report";
+import {
+  BenchmarkReportSchema,
+  PersonResearchOperationOutcomeSchema,
+  type PersonResearchLead,
+} from "@chief-of-staff-demo/shared";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -657,4 +667,118 @@ it("reports a saturated semantic assessment as failed instead of fully assessed"
     rationale: expect.stringContaining("overclaim response limit of 40"),
   });
   expect(result.factualReliability.overclaims).toEqual([]);
+});
+
+it("aggregates lead dispositions and coverage gaps at report level", () => {
+  const outcome = (leads: PersonResearchLead[]) =>
+    PersonResearchOperationOutcomeSchema.parse({
+      operationId: "op-1",
+      profileId: "profile-1",
+      conclusion: "completed",
+      startedAt: "2026-09-07",
+      finishedAt: "2026-09-07",
+      rounds: 1,
+      modelCalls: 1,
+      requests: 1,
+      sourcesRetained: 0,
+      claimsPublished: 0,
+      coverage: [
+        {
+          key: "employment",
+          label: "Employment",
+          kind: "dossier-section",
+          state: "investigated",
+          sources: 1,
+          claims: 1,
+          gaps: ["Start date unconfirmed"],
+        },
+        {
+          key: "education",
+          label: "Education",
+          kind: "source-family",
+          state: "satisfied",
+          sources: 2,
+          claims: 1,
+          gaps: [],
+        },
+      ],
+      leads,
+      attempts: [],
+      gaps: ["No interview record found"],
+      detail: "done",
+    });
+  const lead = (id: string, disposition: "investigated" | "pending" | "inaccessible") => ({
+    id,
+    kind: "url" as const,
+    target: `https://example.com/${id}`,
+    origin: "seed" as const,
+    coverage: [],
+    disposition,
+    reason: "fixture",
+    yieldedEvidence: false,
+  });
+  const first = outcome([
+    lead("l1", "investigated"),
+    lead("l2", "investigated"),
+    lead("l3", "pending"),
+    lead("l4", "inaccessible"),
+  ]);
+  const second = outcome([lead("l5", "investigated")]);
+  const dispositions = leadDispositionTotals([first, second]);
+  expect(dispositions.totalLeads).toBe(5);
+  expect(dispositions.dispositions).toEqual([
+    { disposition: "investigated", count: 3, share: 0.6 },
+    { disposition: "inaccessible", count: 1, share: 0.2 },
+    { disposition: "pending", count: 1, share: 0.2 },
+  ]);
+  expect(coverageGapTotals([first, second])).toEqual({
+    areas: 4,
+    areasWithOpenGaps: 2,
+    areaGaps: 2,
+    explicitGaps: 2,
+  });
+  /* The rendered report carries both aggregations; a report assembled before
+     the fields existed renders neither. */
+  const report = BenchmarkReportSchema.parse({
+    schemaVersion: 1,
+    runId: "aggregation",
+    status: "completed",
+    statusDetail: "Fixture",
+    mode: "live-discovery",
+    selection: { requested: ["alice"], evaluated: ["alice"], skipped: [] },
+    provenance: {
+      corpusVersion: "fixed",
+      referenceVersions: { alice: "2026-09-06.1" },
+      pipeline: "expanded",
+      researchProvider: "openrouter",
+      researchModel: "research",
+      judgeProvider: "openrouter",
+      judgeModel: "judge",
+      judgeVersion: "1",
+      promptVersion: "1",
+      collectorVersions: {},
+      researchSettings: {},
+      network: "live",
+      startedAt: "2026-09-06",
+      finishedAt: "2026-09-06",
+      host: "fixture",
+    },
+    people: [],
+    groups: [],
+    remainingMisses: [],
+    leadDispositions: dispositions,
+    coverageGaps: coverageGapTotals([first, second]),
+  });
+  const rendered = renderReport(report, []);
+  expect(rendered).toContain("## Lead dispositions");
+  expect(rendered).toContain("| investigated | 3 | 60% |");
+  expect(rendered).toContain("## Coverage gaps");
+  expect(rendered).toContain("4 planned coverage areas");
+  const bare = BenchmarkReportSchema.parse({
+    ...report,
+    leadDispositions: undefined,
+    coverageGaps: undefined,
+  });
+  expect(renderReport(bare, [])).not.toContain("## Lead dispositions");
+  expect(renderReport(bare, [])).not.toContain("## Coverage gaps");
 });
