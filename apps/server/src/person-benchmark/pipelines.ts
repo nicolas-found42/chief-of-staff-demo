@@ -110,6 +110,11 @@ export function configurePipeline(
             anchors: [],
             provenanceNote:
               "The incumbent pipeline had no reader for this format; the snippet is all it kept.",
+            /* The record behind the version and rights was not retained here,
+               so carrying its provenance onto a search snippet would attach
+               them to text they never described. */
+            sourceVersion: null,
+            rights: null,
           };
     },
     settings: { profileCalls: 12, profileMilliseconds: 120_000, readConcurrency: 1 },

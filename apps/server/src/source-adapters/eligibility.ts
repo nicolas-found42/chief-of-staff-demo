@@ -244,12 +244,19 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
   {
     route: "openalex",
     family: "published-work",
-    terms: "The OpenAlex API is free and keyless; a mailto contact joins the polite pool.",
-    documentation: "https://docs.openalex.org/how-to-use-the-api/api-overview",
+    /* Re-read 2026-09-07 for #249: the documented model changed under this
+       entry. The polite pool is gone, the old docs host redirects, and access
+       is now budgeted — basic use stays keyless, while the free key needs an
+       account and a bigger budget is paid. Both of those are excluded, so the
+       route stays eligible only for as long as the keyless tier answers. */
+    terms:
+      "Basic API use is free with no key and no account; a free API key raises the daily budget tenfold and heavier use is pay-as-you-go. The data are CC0.",
+    documentation: "https://help.openalex.org/api/authentication/",
     cost: "anonymous",
     indexes: ["openalex.org"],
     status: "in-production",
-    observed: LIVE,
+    observed:
+      "An anonymous work request on 2026-09-07 answered HTTP 200 and reported the keyless daily budget in its own headers (x-ratelimit-limit 1000, x-ratelimit-limit-usd 0.1), shared per IP. A 429 is budget exhaustion, and no key is sent to lift it.",
   },
   {
     route: "orcid",
@@ -425,13 +432,56 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
   {
     route: "crossref",
     family: "published-work",
-    terms: "Free REST API; a mailto contact joins the polite pool. No key.",
-    documentation: "https://api.crossref.org/swagger-ui/index.html",
+    terms:
+      "No sign-up is required, and almost none of the metadata is subject to copyright; abstracts inside it may be. A mailto contact joins the polite pool and is not a key.",
+    documentation: "https://www.crossref.org/documentation/retrieve-metadata/rest-api/",
     cost: "anonymous",
     indexes: ["crossref.org"],
     status: "in-production",
     probe:
       "https://api.crossref.org/works?query.bibliographic=Doudna&rows=2&mailto=owner@found42.local",
+    probeAccept: "json",
+    expect: json,
+  },
+  {
+    /* Reading one work by DOI is a different endpoint from searching, and it
+       is what a discovered DOI actually reaches, so it carries its own terms
+       and its own probe rather than inheriting the search route's (#249). */
+    route: "crossref-record",
+    family: "published-work",
+    terms:
+      "The same keyless REST API, addressed by DOI. The metadata permission does not extend to an abstract carried inside the record.",
+    documentation: "https://www.crossref.org/documentation/retrieve-metadata/rest-api/",
+    cost: "anonymous",
+    indexes: ["crossref.org"],
+    status: "in-production",
+    probe: "https://api.crossref.org/works/10.1126%2Fscience.1225829",
+    probeAccept: "json",
+    expect: json,
+  },
+  {
+    route: "datacite-record",
+    family: "published-work",
+    terms:
+      "The Public API retrieves metadata without authentication; the Data File waiver covers DataCite's own rights in DOIs and deposited metadata, not the linked resources.",
+    documentation: "https://support.datacite.org/docs/datacite-data-file-use-policy",
+    cost: "anonymous",
+    indexes: ["datacite.org"],
+    status: "in-production",
+    probe: "https://api.datacite.org/dois/10.5281%2Fzenodo.31780",
+    probeAccept: "json",
+    expect: json,
+  },
+  {
+    route: "openalex-record",
+    family: "published-work",
+    terms:
+      "Basic keyless use of the same API, addressed by work id; the abstract ships as an inverted index rather than as text.",
+    documentation: "https://help.openalex.org/api/authentication/",
+    cost: "anonymous",
+    indexes: ["openalex.org"],
+    status: "in-production",
+    probe: "https://api.openalex.org/works/W2045435533",
     probeAccept: "json",
     expect: json,
   },

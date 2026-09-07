@@ -516,6 +516,8 @@ it.each(["recovered", "partial"] as const)(
         author: null,
         anchors: [],
         provenanceNote: "Controlled evaluator fixture",
+        sourceVersion: null,
+        rights: null,
         finalUrl: url,
       }),
       complete: () => async () => ({

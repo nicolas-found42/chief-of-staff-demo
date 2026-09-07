@@ -17,6 +17,54 @@ export const PersonDossierSectionSchema = z.enum([
   "recognition",
   "context",
 ]);
+/**
+ * What a retained source may be used for, recorded per material (issue #249).
+ *
+ * A publication or deposit index grants permission over its *metadata*, and
+ * that permission stops there: an abstract carried inside the same response,
+ * and the full text the record links to, each need their own rights basis. One
+ * blanket "this record is open" field would erase that boundary, so the
+ * permission the fields were retained under, the licences the record itself
+ * declares, and what this read did with every other material are three
+ * separate things here.
+ */
+export const PersonSourceRightsSchema = z.object({
+  /** The permission the record's own metadata fields were retained under. */
+  metadata: z.object({
+    basis: z.enum(["crossref-rest-metadata", "datacite-data-file-cc0", "openalex-cc0"]),
+    statement: z.string().max(600),
+    /** Where that permission was read; a catalogue label is not a source. */
+    documentation: z.string().max(600),
+  }),
+  /** Licences the record declares, each naming the material it covers. */
+  declared: z
+    .array(
+      z.object({
+        material: z.enum(["deposited-resource", "full-text"]),
+        statement: z.string().max(300),
+        url: z.string().max(600).nullable(),
+        appliesFrom: z.string().max(40).nullable(),
+      }),
+    )
+    .max(20),
+  /** Every material beyond the metadata, and what this read did with it. */
+  materials: z
+    .array(
+      z.object({
+        material: z.enum(["abstract", "full-text"]),
+        disposition: z.enum([
+          "retained-under-declared-licence",
+          "withheld-no-rights-basis",
+          "not-retrieved",
+        ]),
+        /** The declared licence the disposition rests on, when there is one. */
+        licence: z.string().max(300).nullable(),
+        reason: z.string().max(400),
+      }),
+    )
+    .max(10),
+});
+export type PersonSourceRights = z.infer<typeof PersonSourceRightsSchema>;
 export const PersonSourceDocumentSchema = z.object({
   schemaVersion: z.literal(1),
   id,
@@ -75,6 +123,14 @@ export const PersonSourceDocumentSchema = z.object({
    * captions versus speech recognition, a rendered page versus a raw response.
    */
   provenanceNote: z.string().max(1000).optional(),
+  /**
+   * The upstream's own version marker for this record — Crossref's indexing
+   * build, DataCite's update stamp — when it states one. A retained version is
+   * dated by when we read it; this says which version of the record that was.
+   */
+  sourceVersion: z.string().max(200).optional(),
+  /** Rights provenance, absent when the route established none (issue #249). */
+  rights: PersonSourceRightsSchema.optional(),
 });
 const citation = z.object({ sourceId: id, quote: text });
 export const PersonClaimSchema = z.object({

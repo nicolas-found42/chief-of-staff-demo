@@ -39,6 +39,7 @@ import {
   seedQueries,
 } from "./research-plan.js";
 import { readPersonSource, type SourceReadResult } from "./research-readers.js";
+import { isPublicationRecordRead } from "./publication-records.js";
 import {
   PublicationGate,
   ResearchBudget,
@@ -520,6 +521,8 @@ export class PersonResearch {
             author: null,
             anchors: [],
             provenanceNote: "A Workspace Transcript confirmed for this Profile.",
+            sourceVersion: null,
+            rights: null,
             finalUrl: pending.url,
           };
         } else if (resumable && resumable.url === pending.url) {
@@ -540,6 +543,8 @@ export class PersonResearch {
             author: resumable.author,
             anchors: resumable.anchors ?? [],
             provenanceNote: resumable.provenanceNote ?? null,
+            sourceVersion: resumable.sourceVersion ?? null,
+            rights: resumable.rights ?? null,
             finalUrl: resumable.url,
           };
         } else {
@@ -727,7 +732,7 @@ export class PersonResearch {
                 },
               }),
             }),
-            read.text,
+            read,
             allowance.scope === "current",
           );
         } catch (error) {
@@ -1225,6 +1230,8 @@ export class PersonResearch {
       ...(read.upstreamIndex ? { upstreamIndex: read.upstreamIndex } : {}),
       ...(read.anchors.length ? { anchors: read.anchors.slice(0, 500) } : {}),
       ...(read.provenanceNote ? { provenanceNote: read.provenanceNote } : {}),
+      ...(read.sourceVersion ? { sourceVersion: read.sourceVersion } : {}),
+      ...(read.rights ? { rights: read.rights } : {}),
     });
     const dossier = this.deps.dossiers.get(profile.id);
     if (!(dossier?.sourceIds ?? []).includes(source.id))
@@ -1343,9 +1350,10 @@ export class PersonResearch {
 
   private parsePartial(
     raw: unknown,
-    text: string,
-    currentOnly = false,
+    read: SourceReadResult,
+    currentOnly: boolean,
   ): z.infer<typeof Extraction> {
+    const text = read.text;
     const partial = Extraction.extend({
       claims: z.array(z.unknown()).max(2000),
       works: z.array(z.unknown()).max(500),
@@ -1374,15 +1382,29 @@ export class PersonResearch {
     }
     const ids = new Set(claims.map((c) => c.id));
     const grounded = (record: { claimIds: string[] }) => record.claimIds.every((id) => ids.has(id));
+    /* A publication or deposit record lists who took part. What any one of
+       them personally did, and who decided what, is not in the record, so the
+       two personal-scope fields cannot rest on this source alone (#249). The
+       participation itself survives — as claims, and as the work record they
+       ground — and a source that does state a contribution still carries one
+       on its own work record; the merge never overwrites a recorded
+       contribution with the null written here. */
+    const participationOnly = isPublicationRecordRead({
+      acquisition: read.route,
+      upstreamIndex: read.upstreamIndex,
+    });
     const works = valid(PersonWorkRecordSchema, partial.works)
       .filter(grounded)
       .map((work) => ({
         ...work,
-        contribution: work.contribution && grounded(work.contribution) ? work.contribution : null,
+        contribution:
+          !participationOnly && work.contribution && grounded(work.contribution)
+            ? work.contribution
+            : null,
         teamContribution:
           work.teamContribution && grounded(work.teamContribution) ? work.teamContribution : null,
         scale: work.scale.filter(grounded),
-        authority: work.authority.filter(grounded),
+        authority: participationOnly ? [] : work.authority.filter(grounded),
         constraints: work.constraints.filter(grounded),
         outcomes: work.outcomes.filter(grounded),
       }));

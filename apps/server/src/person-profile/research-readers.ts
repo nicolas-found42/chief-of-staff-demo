@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import type { PersonSourceFamily } from "@chief-of-staff-demo/shared";
+import type { PersonSourceFamily, PersonSourceRights } from "@chief-of-staff-demo/shared";
 import { convertToText } from "../text/convert.js";
 import {
   retryAfterMilliseconds,
@@ -17,6 +17,7 @@ import {
   type CollectorName,
   type ResearchAttemptRecorder,
 } from "./research-diagnostics.js";
+import { renderPublicationRecord } from "./publication-records.js";
 
 /** Text kept per source. Matches the dossier store's own retention ceiling. */
 const MAX_TEXT = 500_000;
@@ -55,6 +56,17 @@ export interface SourceReadResult {
    * automatic speech recognition, a caption timestamp versus a named speaker.
    */
   provenanceNote: string | null;
+  /**
+   * The upstream's own version of what was read, where the source states one.
+   * A retained version is dated by when it was read; this says which version
+   * of the upstream record that reading saw (#249).
+   */
+  sourceVersion: string | null;
+  /**
+   * What each material in this read may be used for. Null where the route
+   * established no rights basis at all — which is not the same as free.
+   */
+  rights: PersonSourceRights | null;
   finalUrl: string;
 }
 
@@ -91,6 +103,8 @@ const unavailable = (
   author: null,
   anchors: [],
   provenanceNote: null,
+  sourceVersion: null,
+  rights: null,
   finalUrl,
 });
 
@@ -159,8 +173,8 @@ export async function readPersonSource(
   try {
     if (family === "spoken-evidence" && isVideoPage(url)) return await readSpoken(url, context);
     if (family === "public-social") return await readSocial(url, context);
-    const record = recordRoute(url);
-    if (record) return await readRecord(url, record, family, context);
+    const records = recordRoute(url);
+    if (records.length) return await readRecord(url, records, family, context);
     return await readWeb(url, family, context);
   } catch (error) {
     const { code, reason } = classifyTransportError(error);
@@ -341,6 +355,8 @@ async function readHtml(
       author: meta("article:author") ?? meta("author") ?? null,
       anchors: [],
       provenanceNote: null,
+      sourceVersion: null,
+      rights: null,
       finalUrl: response.url,
     };
   } finally {
@@ -386,6 +402,8 @@ async function tryRender(
         author: null,
         anchors: [],
         provenanceNote: "Text came from a bounded anonymous render, not the raw response.",
+        sourceVersion: null,
+        rights: null,
         finalUrl: rendered.url,
       };
     } finally {
@@ -471,6 +489,8 @@ async function readDocument(
       author: null,
       anchors: pageAnchors(text),
       provenanceNote: `Text extracted from a ${name.split(".").pop() ?? "document"} document.`,
+      sourceVersion: null,
+      rights: null,
       finalUrl: response.url,
     };
   } catch (error) {
@@ -565,6 +585,8 @@ async function readFeed(
       author: null,
       anchors: [],
       provenanceNote: "Feed entry text is publisher-written description, not a transcript.",
+      sourceVersion: null,
+      rights: null,
       finalUrl: response.url,
     };
   } finally {
@@ -708,6 +730,8 @@ async function readSpoken(url: string, context: ReadContext): Promise<SourceRead
     provenanceNote: track.asr
       ? "Automatic speech recognition captions. Timestamps locate speech; they do not identify the speaker."
       : "Publisher-provided captions. Timestamps locate speech; they do not identify the speaker.",
+    sourceVersion: null,
+    rights: null,
     finalUrl: page.url,
   };
 }
@@ -739,6 +763,8 @@ async function readVideoDescription(
     anchors: [],
     provenanceNote:
       "Publisher-written video description only; no caption track was available for this video.",
+    sourceVersion: null,
+    rights: null,
     finalUrl: page.url,
   };
 }
@@ -901,6 +927,8 @@ async function readBluesky(url: string, context: ReadContext): Promise<SourceRea
     anchors: [],
     provenanceNote:
       "The account's own posts. Self-report: a post is not independent verification of itself.",
+    sourceVersion: null,
+    rights: null,
     finalUrl: url,
   };
 }
@@ -960,6 +988,8 @@ async function readMastodon(url: string, context: ReadContext): Promise<SourceRe
     anchors: [],
     provenanceNote:
       "The account's own posts. Self-report: a post is not independent verification of itself.",
+    sourceVersion: null,
+    rights: null,
     finalUrl: url,
   };
 }
@@ -976,7 +1006,22 @@ async function readMastodon(url: string, context: ReadContext): Promise<SourceRe
  * readable, quotable lines so a claim can cite a record the same way it cites
  * an article.
  */
-const RECORD_ROUTES: { match: RegExp; build: (url: URL) => string | null; index: string }[] = [
+interface RecordRoute {
+  match: RegExp;
+  build: (url: URL) => string | null;
+  index: string;
+  /**
+   * Where to look next when the first index does not hold this identifier.
+   *
+   * A DOI is one namespace with several registration agencies behind it, so
+   * the work index answering 404 is that agency saying "not mine", not the
+   * record being unreadable: a deposited dataset resolves through DataCite
+   * exactly where a journal article resolves through Crossref (#249).
+   */
+  alternates?: { build: (url: URL) => string | null; index: string }[];
+}
+
+const RECORD_ROUTES: RecordRoute[] = [
   {
     match: /(^|\.)wikidata\.org$/,
     index: "wikidata.org",
@@ -989,6 +1034,13 @@ const RECORD_ROUTES: { match: RegExp; build: (url: URL) => string | null; index:
     match: /(^|\.)doi\.org$/,
     index: "crossref.org",
     build: (url) => `https://api.crossref.org/works/${encodeURIComponent(url.pathname.slice(1))}`,
+    alternates: [
+      {
+        index: "datacite.org",
+        build: (url) =>
+          `https://api.datacite.org/dois/${encodeURIComponent(url.pathname.slice(1))}`,
+      },
+    ],
   },
   {
     match: /(^|\.)crossref\.org$/,
@@ -1073,34 +1125,45 @@ const RECORD_ROUTES: { match: RegExp; build: (url: URL) => string | null; index:
  * it costs before it can be reached from production.
  */
 export const RECORD_ROUTE_INDEXES: readonly string[] = [
-  ...new Set(RECORD_ROUTES.map((route) => route.index)),
+  ...new Set(
+    RECORD_ROUTES.flatMap((route) => [
+      route.index,
+      ...(route.alternates ?? []).map((alternate) => alternate.index),
+    ]),
+  ),
 ];
 
-function recordRoute(url: string): { endpoint: string; index: string } | null {
+/** The endpoints a URL can be read as a record at, in the order they are tried. */
+function recordRoute(url: string): { endpoint: string; index: string }[] {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    for (const route of RECORD_ROUTES)
-      if (route.match.test(host)) {
-        const endpoint = route.build(parsed);
-        if (endpoint) return { endpoint, index: route.index };
-      }
-    return null;
+    for (const route of RECORD_ROUTES) {
+      if (!route.match.test(host)) continue;
+      return [route, ...(route.alternates ?? [])].flatMap((entry) => {
+        const endpoint = entry.build(parsed);
+        return endpoint ? [{ endpoint, index: entry.index }] : [];
+      });
+    }
+    return [];
   } catch {
-    return null;
+    return [];
   }
 }
 
 async function readRecord(
   url: string,
-  route: { endpoint: string; index: string },
+  routes: { endpoint: string; index: string }[],
   family: PersonSourceFamily,
   context: ReadContext,
 ): Promise<SourceReadResult> {
-  /* Record endpoints answer data, not pages: several of them serve XML or a
-     406 to the shared transport's HTML-first accept list. */
-  const response = await request(route.endpoint, context, "record-reader", "application/json");
-  if (!response || response.status >= 400) {
+  for (const [position, route] of routes.entries()) {
+    /* Record endpoints answer data, not pages: several of them serve XML or a
+       406 to the shared transport's HTML-first accept list. */
+    const response = await request(route.endpoint, context, "record-reader", "application/json");
+    if (response && response.status < 400)
+      return renderJson(url, response, family, context, route.index);
+    const remaining = routes.length - position - 1;
     context.recorder.record({
       stage: "access",
       code: response
@@ -1117,12 +1180,13 @@ async function readRecord(
         : `The ${route.index} public record endpoint did not answer.`,
       attemptOf: context.attemptOf,
       ...(response ? { observed: { status: response.status, finalUrl: response.url } } : {}),
-      impact: "Falling back to reading the record's human-facing page.",
+      impact: remaining
+        ? "Trying the next index that registers this identifier."
+        : "Falling back to reading the record's human-facing page.",
       remediation: `Reproduce with: curl -sS '${route.endpoint}'`,
     });
-    return readWeb(url, family, context);
   }
-  return renderJson(url, response, family, context, route.index);
+  return readWeb(url, family, context);
 }
 
 function renderJson(
@@ -1155,6 +1219,31 @@ function renderJson(
     });
     return unavailable(family, "record-reader", "failed", context.snippet, response.url);
   }
+  /* A publication or deposit record is rendered field by field rather than
+     flattened whole: the flattener would carry the abstract into retained text
+     under a permission that does not cover it, and would drop the dates,
+     record version and rights a claim on this evidence has to keep (#249). */
+  const publication = renderPublicationRecord(index, parsed);
+  if (publication)
+    return {
+      text: publication.text.slice(0, MAX_TEXT),
+      completeness: publication.text.length > MAX_TEXT ? "partial" : "full",
+      access: "retrieved",
+      outboundUrls: publication.outboundUrls.slice(0, 200),
+      family,
+      route: "record-reader",
+      upstreamIndex: index,
+      publishedAt: publication.publishedAt,
+      /* The people in the record are its subject, not its author: the index
+         published the record, and naming a listed author here would turn
+         participation into authorship of the evidence about it. */
+      author: null,
+      anchors: publication.anchors,
+      provenanceNote: publication.provenanceNote,
+      sourceVersion: publication.sourceVersion,
+      rights: publication.rights,
+      finalUrl: response.url,
+    };
   const text = flattenJson(parsed);
   return {
     text: text.slice(0, MAX_TEXT),
@@ -1168,6 +1257,8 @@ function renderJson(
     author: null,
     anchors: [],
     provenanceNote: `Structured public record from ${index}, rendered as field lines.`,
+    sourceVersion: null,
+    rights: null,
     finalUrl: response.url,
   };
 }
