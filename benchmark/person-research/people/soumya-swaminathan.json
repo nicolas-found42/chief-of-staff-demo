@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "soumya-swaminathan",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Soumya Swaminathan",
   "industry": "healthcare",
   "role": "Paediatrician and clinical scientist; former Chief Scientist of the World Health Organization",
@@ -52,6 +52,21 @@
       "hash": "7da407b1bfc426bafbba83146724023248e5b658e8119109ec9bdf5fb8639a3e",
       "excerpt": "meta.count: 14\nmeta.db_response_time_ms: 94\nmeta.page: 1\nmeta.per_page: 3\nmeta.x_query.oql: authors where text has (Soumya Swaminathan)\nmeta.x_query.oqo.get_rows: authors\nmeta.x_query.oqo.filter_rows[0].column_id: text.search\nmeta.x_query.oqo.filter_rows[0].value: Soumya Swaminathan\nmeta.x_query.oqo.filter_rows[0].operator: has\nmeta.x_query.url: /authors?filter=text.search:Soumya Swaminathan&per_page=3\nmeta.cost_usd: 0.001\nresults[0].id: https://openalex.org/A5076624513\nresults[0].orcid: https://orcid.org/0009-0004-2233-7250\nresults[0].display_name: Soumya Swaminathan\nresults[0].raw_author_names[0]: S Swaminathan\nresults[0].raw_author_names[1]: S. R. SWAMINATHAN\nresults[0].raw_author_names[2]: S. R. Swaminathan\nresults[0].raw_author_names[3]: S. Swaminathan\nresults[0].raw_author_names[4]: SOUMYA SWAMINATHAN\nresults[0].raw_author_names[5]: Soumya Swaminathan\nresults[0].raw_author_names[6]: Swaminathan S\nresults[0].raw_author_names[7]: Swaminathan, S.\nresults[0].raw_author_names[8]: Swaminathan, Soumya\nresults[0].full_name: Soumya Swaminathan\nresults[0].relevance_score: 55947.062\nresults[0].works_count: 453\nresults[0].cited_by_count: 87674\nresults[0].summary_stats.2yr_mean_citedness: 3.75\nresults[0].summary_stats.h_index: 81\nresults[0].summary_stats.i10_index: 280\nresults[0].ids.openalex: https://openalex.org/A5076624513\nresults[0].ids.orcid: https://orcid.org/0009-0004-2233-7250\nresults[0].affiliations[0].institution.id: https://openalex.org/I102420622\nresults[0].affiliations[0].institution.ror: https://ror.org/00nv9r617\nresults[0].affiliations[0].institution.display_name: College of Saint Rose\nresults[0].affiliations[0].institution.country_code: US\nresults[0].affiliations[0].institution.type: education\nresults[0].affiliations[0].years[0]: 1974\nresults[0].affiliations[0].years[1]: 1972\nresults[0].affiliations[1].institution.id: https://openalex.org/I1141210\nresults[0].affiliations[1].institution.ror: https://ror.org/03kkevc75\nresults[0].affiliations[1].institution.display_name: Indian Agricultural Statistics Research Institute\nresults[0].affiliations[1].institution.country_code: IN\nresults[0].affiliations[1].institution.type: facility\nresults[0].affiliations[1].years[0]: 2017\nresults[0].affiliations[2].institution.id: https://openalex.org/I1174212\nresults[0].affiliations[2].institution.ror: https://ror.org/03taz7m60\nresults[0].affiliations[2].institution.display_name: University of Southern California\nresults[0].affiliations[2].institution.country_code: US\nresults[0].affiliations[2].institution.type: education\nresults[0].affiliations[2].years[0]: 1989\nresults[0].affiliations[3].institution.id: https://openalex.org/I1285815856\nresults[0].affiliations[3].institution.ror: https://ror.org/01vzd5j10\nresults[0].affiliations[3].institution.display_name: National Tuberculosis Institute\nresults[0].affiliations[3].institution.country_code: IN\nresults[0].affiliations[3].institution.type: facility\nresults[0].affiliations[3].years[0]: 2025\nresults[0].affiliations[4].institution.id: https://openalex.org/I1290603121\nresults[0].affiliations[4].institution.ror: https://ror.org/047bn1w15\nresults[0].affiliations[4].institution.display_name: World Health Organization - Pakistan\nresults[0].affiliations[4].institution.country_code: PK\nresults[0].affiliations[4].institution.type: government\nresults[0].affiliations[4].years[0]: 2025\nresults[0].affiliations[4].years[1]: 2022\nresults[0].affiliations[5].institution.id: https://openalex.org/I1294671590\nresults[0].affiliations[5].institution.ror: https://ror.org/02feahw73\nresults[0].affiliations[5].institution.display_name: Centre National de la Recherche Scientifique\nresults[0].affiliations[5].institution.country_code: FR\nresults[0].affiliations[5].institution.type: government\nresults[0].affiliations[5].years[0]: 2025\nresults[0].affiliations[6].institution.id: https://openalex.org/I1298973761\nresults[0].affiliations[6].institution.ror: https://ror.org/022mz6y25\nresults[0].affiliations[6].institution.display_name: Drugs for Neglected Diseases Initiative\nresults[0].affiliations[6].institution.country_code: CH\nresults[0].affiliations[6].institution.type: nonprofit\nresults[0].affiliations[6].years[0]: 2010\nresults[0].affiliations[7].institution.id: https://openalex.org/I1311269955\nresults[0].affiliations[7].institution.ror: https://ror.org/04ehjr030\nresults[0].affiliations[7].institution.display_name: Apple (Israel)\nresults[0].affiliations[7].institution.country_code: IL\nresults[0].affiliations[7].institution.type: company\nresults[0].affiliations[7].years[0]: 2015\nresults[0].affiliations[8].institution.id: https://openalex.org/I1318287680\nresults[0].affiliations[8].institution.ror: https://ror.org/02nr3fr97\nresults[0].affiliations[8].institution.display_name: Center for Biologics Evaluation and Research\nresults[0].affiliations[8].institution.country_code: US\nresults[0].affiliations[8].institution.type: facility\nresults[0].affiliations[8].years[0]: 2021\nresults[0].affiliations[9].institution.id: https://openalex.org/I1334329717\nresults[0].affiliations[9].institution.ror: https://ror.org/00ae7jd04\nresults[0].affiliations[9].institution.display_name: World Bank\nresults[0].affiliations[9].institution.country_code: US\nresults[0].affiliations[9].institution.type: other\nresults[0].affiliations[9].years[0]: 2011\nresults[0].affiliations[9].years[1]: 2010\nresults[0].affiliations[10].institution.id: https://openalex.org/I1336910626\nresults[0].affiliations[10].institution.ror: https://ror.org/00412ts95\nresults[0].affiliations[10].institution.display_name: Children's Hospital of Los Angeles\nresults[0].affiliations[10].institution.country_code: US\nresults[0].affiliations[10].institution.type: funder\nresults[0].affiliations[10].years[0]: 1993\nresults[0].affiliations[10].years[1]: 1991\nresults[0].affiliations[10].years[2]: 1989\nresults[0].affiliations[11].institution.id: https://openalex.org/I157614274\nresults[0].affiliations[11].institution.ror: https://ror.org/03p74gp79\nresults[0].af",
       "rights": "public-record"
+    },
+    {
+      "id": "science-in-5-ep1",
+      "url": "https://www.who.int/emergencies/diseases/novel-coronavirus-2019/media-resources/science-in-5/episode-1",
+      "title": "COVID-19: Science in 5: Episode #1 — Herd immunity",
+      "publisher": "World Health Organization",
+      "publishedAt": "2020-08-28",
+      "retrievedAt": "2026-09-06T23:16:12Z",
+      "family": "spoken-evidence",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "54ec38f5ad2be04e4d70f31d0bd22928aa0afca88014964ce290e0a250d68787",
+      "excerpt": "Hello and welcome to Science in 5, WHO's conversations in science. I'm Vismita Gupta-Smith. And this is a series where WHO experts will explain the science related to COVID-19, so that you can protect yourself and your loved ones. In today's show, we are talking to WHO's Chief Scientist, Dr Soumya Swaminathan and she is going to explain herd immunity. Welcome, Soumya. Soumya:  Thank you, Vismita. Vismita:  Soumya, we are hearing a lot about herd immunity. So let's start with, please tell us what is herd immunity? Soumya:  So, let's take an example, of a disease like measles, which is a very common childhood infectious illness caused by measles virus, for which there is a very effective vaccine. Now, we say that to achieve herd immunity in the population, for measles, you need about 95% of the people to have immunity or antibodies. Even if you have 5% of children not vaccinated, these others actually have enough protection in the population to prevent the measles virus from actually going from one person to the next. So it's really like having a barrier of people who are protected, who break that chain of transmission. So, you don't need every single person in the area, in the population, to necessarily be protected. Vismita:  Is it the right way to think about herd immunity in the context of COVID to say the vaccine is far away, why don't we just let everyone get infected?  Soumya:  So, the SARS-CoV-2 virus is a highly transmissible virus. We think it needs at least 60 to 70% of the population to have immunity to really break the chain of transmission. If you allow this to happen naturally, it will take a long time, of course, but more importantly, it's going to do a lot of collateral damage. So even if 1% of people who get infected are ultimately going to die, then this can add up to a huge number of people, if we look at the global population. And that is why we believe it's not a good idea to try to achieve herd immunity by just letting the infection run wild in the population and infect a lot of people and that we should talk about herd immunity in the context of a vaccine.",
+      "rights": "public-record",
+      "note": "Page carries the full episode transcript with Swaminathan introduced as WHO’s Chief Scientist; page dates the episode 28 August 2020."
     }
   ],
   "facts": [
@@ -211,6 +226,46 @@
       "importance": "supporting",
       "acquisition": "beyond-current-coverage",
       "note": "The OpenAlex author record merges several people named Swaminathan, including affiliations at the College of Saint Rose in 1974 and the Indian Agricultural Statistics Research Institute. Strong research would recognise the conflation rather than adopt the merged record."
+    },
+    {
+      "id": "herd-immunity-explainer",
+      "requirements": ["r2", "r3"],
+      "section": "expertise",
+      "statement": "In the first Science in 5 episode on 28 August 2020, Swaminathan explained herd immunity with measles: about 95% of people need immunity or antibodies, so that even with 5% of children unvaccinated the protected form a barrier that breaks the chain of transmission.",
+      "effectiveFrom": "2020-08-28",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "science-in-5-ep1",
+          "quote": "for measles, you need about 95% of the people to have immunity or antibodies."
+        },
+        {
+          "documentId": "science-in-5-ep1",
+          "quote": "these others actually have enough protection in the population to prevent the measles virus from actually going from one person to the next. So it's really like having a barrier of people who are protected, who break that chain of transmission."
+        }
+      ],
+      "importance": "core",
+      "acquisition": "app-supported"
+    },
+    {
+      "id": "vaccines-not-wild-infection",
+      "requirements": ["r3", "r7"],
+      "section": "expertise",
+      "statement": "She warned that letting infection spread naturally to reach herd immunity would take long and do great collateral damage — even 1% mortality adds to a huge toll globally — and concluded herd immunity should be discussed in the context of a vaccine.",
+      "effectiveFrom": "2020-08-28",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "science-in-5-ep1",
+          "quote": "If you allow this to happen naturally, it will take a long time, of course, but more importantly, it's going to do a lot of collateral damage. So even if 1% of people who get infected are ultimately going to die, then this can add up to a huge number of people, if we look at the global population."
+        },
+        {
+          "documentId": "science-in-5-ep1",
+          "quote": "And that is why we believe it's not a good idea to try to achieve herd immunity by just letting the infection run wild in the population and infect a lot of people and that we should talk about herd immunity in the context of a vaccine."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "app-supported"
     }
   ],
   "unjustified": [
@@ -247,5 +302,12 @@
       "reason": "No retained source records availability constraints or commitments."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:16:12Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added the 28 August 2020 Science in 5 Episode #1 transcript as a spoken-evidence document with two dated facts (herd-immunity-explainer; vaccines-not-wild-infection). Existing references unchanged.",
+      "evidence": "Dated spoken-evidence transcripts fetched and inspected 2026-09-06; see docs/research/person-benchmark-spoken-evidence-facts-2026-09-06.md."
+    }
+  ]
 }

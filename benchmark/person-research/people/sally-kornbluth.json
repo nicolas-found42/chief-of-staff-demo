@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "sally-kornbluth",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Sally Kornbluth",
   "industry": "education",
   "role": "President, Massachusetts Institute of Technology",
@@ -63,6 +63,21 @@
       "hash": "4eb9d54644ff4bb8cc0036670d281abc89380878e76147684e7b9258fc5ce30a",
       "excerpt": "meta.count: 3\nmeta.db_response_time_ms: 44\nmeta.page: 1\nmeta.per_page: 3\nmeta.x_query.oql: authors where text has (Sally Kornbluth)\nmeta.x_query.oqo.get_rows: authors\nmeta.x_query.oqo.filter_rows[0].column_id: text.search\nmeta.x_query.oqo.filter_rows[0].value: Sally Kornbluth\nmeta.x_query.oqo.filter_rows[0].operator: has\nmeta.x_query.url: /authors?filter=text.search:Sally Kornbluth&per_page=3\nmeta.cost_usd: 0.001\nresults[0].id: https://openalex.org/A5053532303\nresults[0].display_name: Sally Kornbluth\nresults[0].raw_author_names[0]: Kornbluth, Sally\nresults[0].raw_author_names[1]: S Kornbluth\nresults[0].raw_author_names[2]: S. Kornbluth\nresults[0].raw_author_names[3]: Sally A. Kornbluth\nresults[0].raw_author_names[4]: Sally Kornbluth\nresults[0].full_name: Sally A. Kornbluth\nresults[0].relevance_score: 20122.084\nresults[0].works_count: 156\nresults[0].cited_by_count: 10978\nresults[0].summary_stats.2yr_mean_citedness: 0\nresults[0].summary_stats.h_index: 56\nresults[0].summary_stats.i10_index: 107\nresults[0].ids.openalex: https://openalex.org/A5053532303\nresults[0].affiliations[0].institution.id: https://openalex.org/I1283280774\nresults[0].affiliations[0].institution.ror: https://ror.org/04b6nzv94\nresults[0].affiliations[0].institution.display_name: Brigham and Women's Hospital\nresults[0].affiliations[0].institution.country_code: US\nresults[0].affiliations[0].institution.type: healthcare\nresults[0].affiliations[0].years[0]: 1996\nresults[0].affiliations[1].institution.id: https://openalex.org/I129775632\nresults[0].affiliations[1].institution.ror: https://ror.org/047z4n946\nresults[0].affiliations[1].institution.display_name: Semiconductor Research Corporation\nresults[0].affiliations[1].institution.country_code: US\nresults[0].affiliations[1].institution.type: nonprofit\nresults[0].affiliations[1].years[0]: 2006\nresults[0].affiliations[2].institution.id: https://openalex.org/I150468666\nresults[0].affiliations[2].institution.ror: https://ror.org/03czfpz43\nresults[0].affiliations[2].institution.display_name: Emory University\nresults[0].affiliations[2].institution.country_code: US\nresults[0].affiliations[2].institution.type: education\nresults[0].affiliations[2].years[0]: 1998\nresults[0].affiliations[3].institution.id: https://openalex.org/I160856358\nresults[0].affiliations[3].institution.ror: https://ror.org/03jbbze48\nresults[0].affiliations[3].institution.display_name: University of San Diego\nresults[0].affiliations[3].institution.country_code: US\nresults[0].affiliations[3].institution.type: education\nresults[0].affiliations[3].years[0]: 1992\nresults[0].affiliations[4].institution.id: https://openalex.org/I170897317\nresults[0].affiliations[4].institution.ror: https://ror.org/00py81415\nresults[0].affiliations[4].institution.display_name: Duke University\nresults[0].affiliations[4].institution.country_code: US\nresults[0].affiliations[4].institution.type: education\nresults[0].affiliations[4].years[0]: 2018\nresults[0].affiliations[4].years[1]: 2015\nresults[0].affiliations[4].years[2]: 2014\nresults[0].affiliations[4].years[3]: 2013\nresults[0].affiliations[4].years[4]: 2012\nresults[0].affiliations[4].years[5]: 2011\nresults[0].affiliations[4].years[6]: 2010\nresults[0].affiliations[4].years[7]: 2009\nresults[0].affiliations[4].years[8]: 2008\nresults[0].affiliations[4].years[9]: 2007\nresults[0].affiliations[4].years[10]: 2006\nresults[0].affiliations[4].years[11]: 2004\nresults[0].affiliations[4].years[12]: 2003\nresults[0].affiliations[4].years[13]: 2002\nresults[0].affiliations[4].years[14]: 1998\nresults[0].affiliations[4].years[15]: 1997\nresults[0].affiliations[5].institution.id: https://openalex.org/I36258959\nresults[0].affiliations[5].institution.ror: https://ror.org/0168r3w48\nresults[0].affiliations[5].institution.display_name: University of California San Diego\nresults[0].affiliations[5].institution.country_code: US\nresults[0].affiliations[5].institution.type: education\nresults[0].affiliations[5].years[0]: 2007\nresults[0].affiliations[5].years[1]: 1994\nresults[0].affiliations[5].years[2]: 1992\nresults[0].affiliations[6].institution.id: https://openalex.org/I4210091992\nresults[0].affiliations[6].institution.ror: https://ror.org/00hh6j532\nresults[0].affiliations[6].institution.display_name: National Institute of Child Health\nresults[0].affiliations[6].institution.country_code: HU\nresults[0].affiliations[6].institution.type: healthcare\nresults[0].affiliations[6].years[0]: 1992\nresults[0].affiliations[7].institution.id: https://openalex.org/I4210126298\nresults[0].affiliations[7].institution.ror: https://ror.org/03njmea73\nresults[0].affiliations[7].institution.display_name: Duke Medical Center\nresults[0].affiliations[7].institution.country_code: US\nresults[0].affiliations[7].institution.type: healthcare\nresults[0].affiliations[7].years[0]: 2018\nresults[0].affiliations[7].years[1]: 2016\nresults[0].affiliations[7].years[2]: 2015\nresults[0].affiliations[7].years[3]: 2014\nresults[0].affiliations[7].years[4]: 2013\nresults[0].affiliations[7].years[5]: 2012\nresults[0].affiliations[7].years[6]: 2011\nresults[0].affiliations[7].years[7]: 2010\nresults[0].affiliations[7].years[8]: 2009\nresults[0].affiliations[7].years[9]: 2008\nresults[0].affiliations[7].years[10]: 2007\nresults[0].affiliations[7].years[11]: 2006\nresults[0].affiliations[7].years[12]: 2005\nresults[0].affiliations[7].years[13]: 2004\nresults[0].affiliations[7].years[14]: 2003\nresults[0].affiliations[7].years[15]: 2002\nresults[0].affiliations[7].years[16]: 2001\nresults[0].affiliations[7].years[17]: 2000\nresults[0].affiliations[7].years[18]: 1999\nresults[0].affiliations[7].years[19]: 1998\nresults[0].affiliations[7].years[20]: 1997\nresults[0].affiliations[7].years[21]: 1996\nresults[0].affiliations[8].institution.id: https://openalex.org/I4210140852\nresults[0].affiliations[8].institution.ror: https://ror.org/03yg7hz06\nresults[0].affiliations[8].institution.display_name: Centre for Cancer Biology\nresults[0].affiliations[8].institution.country_code: AU\nresults[0].affil",
       "rights": "public-record"
+    },
+    {
+      "id": "inaugural-address-2023",
+      "url": "https://president.mit.edu/writing-speeches/inaugural-address",
+      "title": "Inaugural Address — MIT Office of the President",
+      "publisher": "Massachusetts Institute of Technology",
+      "publishedAt": "2023-05-01",
+      "retrievedAt": "2026-09-06T23:15:29Z",
+      "family": "spoken-evidence",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "c7fe024c36c86f08cbd7b993ee97430a9ce704290b7476e1932fa8cfeb1291fe",
+      "excerpt": "(To my fellow university leaders: I’m starting with a question that may feel a little bit…close to home. But I don’t worry! I’ve got you!) “What are university leaders good for?” I got my first inkling about 30 years ago. Before I was a vice dean or a provost or a president, I was a cancer biologist. A hands-on, pipette-and-centrifuge, buckets-and-buckets-of-frog-eggs biologist. My lab had maybe 12 people – and we did the most fundamental, curiosity-driven research you can imagine, tinkering and tinkering with biological systems to understand the deep cell biology and biochemistry that go wrong when cells turn cancerous. It was fascinating. And I  loved  it. There’s nothing like the pleasure of being part of a team when an experiment shows you something new – something no one else has ever seen before. On the days when you’re in the flow, you never want to leave the lab. But there were also other kinds of days! On those days, I was frustrated – because I needed things I could not get on my own. I needed the institution to transform the way it recruited young researchers, so we could get the best graduate students. And I needed it to invest in sophisticated core facilities, so I could sequence all those proteins we’d purified. In other words, selfishly, to do the science I loved, I needed the  collective  to  work . So I took my first job in academic administration. And over a number of years – with help from lots and lots of people – I helped to make those changes happen. For my lab, the new talent and core facilities were terrific! And it turned out that they were  also  terrific for many other labs in the medical school, and across the whole campus.  And  that  was when I began to understand what university leaders are good for. I started to see that leadership makes a difference: that I could lead the way to changes that accelerated progress way   beyond the narrow band of my research.",
+      "rights": "public-record",
+      "note": "Official transcript of the 1 May 2023 inaugural address; MIT News independently reports the same address delivered that day."
     }
   ],
   "facts": [
@@ -261,6 +276,50 @@
       ],
       "importance": "supporting",
       "acquisition": "app-supported"
+    },
+    {
+      "id": "bench-scientist-roots",
+      "requirements": ["r3", "r7"],
+      "section": "career",
+      "statement": "In her 1 May 2023 inaugural address, Kornbluth described her own start as a hands-on cancer biologist — \"pipette-and-centrifuge, buckets-and-buckets-of-frog-eggs\" — running a laboratory of about twelve people doing curiosity-driven fundamental research into the cell biology and biochemistry that goes wrong when cells turn cancerous.",
+      "effectiveFrom": "2023-05-01",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "inaugural-address-2023",
+          "quote": "Before I was a vice dean or a provost or a president, I was a cancer biologist."
+        },
+        {
+          "documentId": "inaugural-address-2023",
+          "quote": "pipette-and-centrifuge, buckets-and-buckets-of-frog-eggs biologist. My lab had maybe 12 people"
+        },
+        {
+          "documentId": "inaugural-address-2023",
+          "quote": "we did the most fundamental, curiosity-driven research you can imagine, tinkering and tinkering with biological systems to understand the deep cell biology and biochemistry that go wrong when cells turn cancerous."
+        }
+      ],
+      "importance": "core",
+      "acquisition": "app-supported"
+    },
+    {
+      "id": "leaders-good-for",
+      "requirements": ["r11", "r7"],
+      "section": "ideas",
+      "statement": "Posing the question \"What are university leaders good for?\", she answered from her own move into administration that leadership makes a difference by accelerating progress well beyond the narrow band of one’s own research.",
+      "effectiveFrom": "2023-05-01",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "inaugural-address-2023",
+          "quote": "“What are university leaders good for?”"
+        },
+        {
+          "documentId": "inaugural-address-2023",
+          "quote": "was when I began to understand what university leaders are good for. I started to see that leadership makes a difference: that I could lead the way to changes that accelerated progress way   beyond the narrow band of my research."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "app-supported"
     }
   ],
   "unjustified": [
@@ -297,5 +356,12 @@
       "reason": "No retained source records governance, funding or advisory ties outside her employer."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:15:29Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added the 1 May 2023 inaugural address as a spoken-evidence document with two dated facts (bench-scientist-roots; leaders-good-for). Existing references unchanged.",
+      "evidence": "Dated spoken-evidence transcripts fetched and inspected 2026-09-06; see docs/research/person-benchmark-spoken-evidence-facts-2026-09-06.md."
+    }
+  ]
 }

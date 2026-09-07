@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "tedros-adhanom-ghebreyesus",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Tedros Adhanom Ghebreyesus",
   "industry": "healthcare",
   "role": "Director-General, World Health Organization",
@@ -62,6 +62,20 @@
       "language": "en",
       "hash": "997c19149fb697120cc8ec88df803c3a96a86a35f13de671beff7d6cb4323e71",
       "excerpt": "status: ok\nmessage-type: work-list\nmessage-version: 1.0.0\nmessage.total-results: 297\nmessage.items[0].indexed.date-time: 2026-01-16T10:21:22Z\nmessage.items[0].indexed.timestamp: 1768558882798\nmessage.items[0].indexed.version: 3.49.0\nmessage.items[0].reference-count: 12\nmessage.items[0].publisher: BMJ\nmessage.items[0].license[0].content-version: tdm\nmessage.items[0].license[0].delay-in-days: 0\nmessage.items[0].license[0].URL: http://www.bmj.com/company/legal-information/terms-conditions/legal-information/tdm-licencepolicy\nmessage.items[0].content-domain.domain[0]: bmj.com\nmessage.items[0].content-domain.crossmark-restriction: true\nmessage.items[0].short-container-title[0]: BMJ\nmessage.items[0].DOI: 10.1136/bmj.q2629\nmessage.items[0].type: journal-article\nmessage.items[0].created.date-time: 2024-12-18T12:51:43Z\nmessage.items[0].created.timestamp: 1734526303000\nmessage.items[0].page: q2629\nmessage.items[0].update-policy: https://doi.org/10.1136/crossmarkpolicy\nmessage.items[0].source: Crossref\nmessage.items[0].is-referenced-by-count: 3\nmessage.items[0].title[0]: Tedros Adhanom Ghebreyesus: peace is the best medicine\nmessage.items[0].prefix: 10.1136\nmessage.items[0].author[0].given: Tedros Adhanom\nmessage.items[0].author[0].family: Ghebreyesus\nmessage.items[0].author[0].sequence: first\nmessage.items[0].member: 239\nmessage.items[0].reference[0].key: 2024122011251091000_387.dec18_9.q2629.1\nmessage.items[0].reference[0].unstructured: WHO. Estimating trauma rehabilitation needs in Gaza using injury data from emergency medical teams. Sep 2024. https://www.who.int/publications/m/item/estimating-trauma-rehabilitation-needs-in-gaza-using-injury-data-from-emergency-medical-teams\nmessage.items[0].reference[1].key: 2024122011251091000_387.dec18_9.q2629.2\nmessage.items[0].reference[1].unstructured: IPC. Gaza Strip: acute malnutrition situation for September - October 2024 and projection for November 2024 - April 2025. Oct 2024. https://www.ipcinfo.org/ipc-country-analysis/details-map/en/c/1157985/\nmessage.items[0].reference[2].key: 2024122011251091000_387.dec18_9.q2629.3\nmessage.items[0].reference[2].unstructured: Save the Children. Women Facing life-threatening complications in pregnancy after nine months of Gaza conflict. Jul 2024. https://www.savethechildren.net/news/women-self-inducing-labour-and-facing-life-threatening-complications-pregnancy-after-nine\nmessage.items[0].reference[3].key: 2024122011251091000_387.dec18_9.q2629.4\nmessage.items[0].reference[3].unstructured: Unicef. Humanitarian action for children 2024—state of Palestine. Revision 3. Jun 2024. https://www.unicef.org/media/158391/file/2024-HAC-State%20of%20Palestine-revised-June.pdf\nmessage.items[0].reference[4].key: 2024122011251091000_387.dec18_9.q2629.5\nmessage.items[0].reference[4].unstructured: WHO. First phase of polio campaign concludes successfully in Gaza. Sep 2024. https://www.who.int/news/item/04-09-2024-first-phase-of-polio-campaign-concludes-successfully-in-gaza\nmessage.items[0].reference[5].key: 2024122011251091000_387.dec18_9.q2629.6\nmessage.items[0].reference[5].unstructured: International Organization for Migration. Displacement tracking matrix. Sudan mobility overview 3. https://dtm.iom.int/reports/sudan-mobility-overview-3\nmessage.items[0].reference[6].key: 2024122011251091000_387.dec18_9.q2629.7\nmessage.items[0].reference[6].doi-asserted-by: publisher\nmessage.items[0].reference[6].DOI: 10.1136/bmjgh-2022-010270\nmessage.items[0].reference[7].key: 2024122011251091000_387.dec18_9.q2629.8\nmessage.items[0].reference[7].unstructured: WHO. Surveillance system for attacks on health care. WHO. http://ssa.who.int\nmessage.items[0].reference[8].key: 2024122011251091000_387.dec18_9.q2629.9\nmessage.items[0].reference[8].unstructured: International Committee of the Red Cross. Customary international humanitarian law. Rule 28: medical units. https://ihl-databases.icrc.org/en/customary-ihl/v1/rule28\nmessage.items[0].reference[9].key: 2024122011251091000_387.dec18_9.q2629.10\nmessage.items[0].reference[9].unstructured: International Committee of the Red Cross. Customary international humanitarian law. Rule 1: the principle of distinction between civilians and combatants. https://ihl-databases.icrc.org/en/customary-ihl/v1/rule1\nmessage.items[0].reference[10].key: 2024122011251091000_387.dec18_9.q2629.11\nmessage.items[0].reference[10].unstructured: Brennan R, Martinez E, Rubenstein L, et al. In the line of fire: protecting health in armed conflict. Qatar Foundation, WISH, World Health Organization. Nov 2024. https://cdn.who.int/media/docs/default-source/health-workforce/hwp/in-the-line-of-fire-(1).pdf\nmessage.items[0].reference[11].key: 2024122011251091000_387.dec18_9.q2629.12\nmessage.items[0].reference[11].unstructured: WHO. Roadmap for the global health and peace initiative. https://www.who.int/publications/m/item/roadmap-for-the-global-health-for-peace-initiative--draft\nmessage.items[0].container-title[0]: BMJ\nmessage.items[0].language: en\nmessage.items[0].link[0].URL: http://data.bmj.org/tdm/10.1136/bmj.q2629\nmessage.items[0].link[0].content-type: unspecified\nmessage.items[0].link[0].content-version: vor\nmessage.items[0].link[0].intended-application: text-mining\nmessage.items[0].link[1].URL: https://syndication.highwire.org/content/doi/10.1136/bmj.q2629\nmessage.items[0].link[1].content-type: unspecified\nmessage.items[0].link[1].content-version: vor\nmessage.items[0].link[1].intended-application: similarity-checking\nmessage.items[0].deposited.date-time: 2024-12-20T19:25:23Z\nmessage.items[0].deposited.timestamp: 1734722723000\nmessage.items[0].score: 57.692604\nmessage.items[0].resource.primary.URL: https://www.bmj.com/lookup/doi/10.1136/bmj.q2629\nmessage.items[0].references-count: 12\nmessage.items[0].alternative-id[0]: 10.1136/bmj.q2629\nmessage.items[0].URL: https://doi.org/10.1136/bmj.q2629\nmessage.items[0].ISSN[0]: 1756-1833\nmessage.items[0].issn-type[0].value: 1756-1833\nmessage.items[0].issn-type[0].type: electronic\nmessage.items[1].i",
+      "rights": "public-record"
+    },
+    {
+      "id": "who-briefing-2020-03-11",
+      "url": "https://www.who.int/news-room/speeches/item/who-director-general-s-opening-remarks-at-the-media-briefing-on-covid-19---11-march-2020",
+      "title": "WHO Director-General’s opening remarks at the media briefing on COVID-19 — 11 March 2020",
+      "publisher": "World Health Organization",
+      "publishedAt": "2020-03-11",
+      "retrievedAt": "2026-09-06T23:15:52Z",
+      "family": "spoken-evidence",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "8b66bca5bddc2ccb3171d961c0c03198020d2d9e0376c230526c6febd225e97c",
+      "excerpt": "Good afternoon. In the past two weeks, the number of cases of COVID-19 outside China has increased 13-fold, and the number of affected countries has tripled.   There are now more than 118,000 cases in 114 countries, and 4,291 people have lost their lives.  Thousands more are fighting for their lives in hospitals. In the days and weeks ahead, we expect to see the number of cases, the number of deaths, and the number of affected countries climb even higher. WHO has been assessing this outbreak around the clock and we are deeply concerned both by the alarming levels of spread and severity, and by the alarming levels of inaction. We have therefore made the assessment that COVID-19 can be characterized as a pandemic.  Pandemic is not a word to use lightly or carelessly. It is a word that, if misused, can cause unreasonable fear, or unjustified acceptance that the fight is over, leading to unnecessary suffering and death. Describing the situation as a pandemic does not change WHO’s assessment of the threat posed by this virus. It doesn’t change what WHO is doing, and it doesn’t change what countries should do. We have never before seen a pandemic sparked by a coronavirus. This is the first pandemic caused by a coronavirus. And we have never before seen a pandemic that can be controlled, at the same time.   WHO has been in full response mode since we were notified of the first cases.   And we have called every day for countries to take urgent and aggressive action. We have rung the alarm bell loud and clear.",
       "rights": "public-record"
     }
   ],
@@ -249,6 +263,54 @@
       ],
       "importance": "supporting",
       "acquisition": "app-supported"
+    },
+    {
+      "id": "pandemic-characterization",
+      "requirements": ["r2", "r11"],
+      "section": "overview",
+      "statement": "On 11 March 2020 Tedros reported more than 118,000 COVID-19 cases in 114 countries with 4,291 dead after a 13-fold rise outside China in two weeks, and announced WHO’s assessment that COVID-19 could be characterized as a pandemic, citing alarming levels of spread, severity and inaction.",
+      "effectiveFrom": "2020-03-11",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "who-briefing-2020-03-11",
+          "quote": "There are now more than 118,000 cases in 114 countries, and 4,291 people have lost their lives."
+        },
+        {
+          "documentId": "who-briefing-2020-03-11",
+          "quote": "we are deeply concerned both by the alarming levels of spread and severity, and by the alarming levels of inaction."
+        },
+        {
+          "documentId": "who-briefing-2020-03-11",
+          "quote": "We have therefore made the assessment that COVID-19 can be characterized as a pandemic."
+        }
+      ],
+      "importance": "core",
+      "acquisition": "app-supported"
+    },
+    {
+      "id": "first-controllable-pandemic",
+      "requirements": ["r7", "r11"],
+      "section": "overview",
+      "statement": "He called it the first pandemic sparked by a coronavirus and the first pandemic that could still be controlled, saying that describing it as a pandemic changed neither WHO’s threat assessment nor what countries should do, and that WHO had rung the alarm bell loud and clear.",
+      "effectiveFrom": "2020-03-11",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "who-briefing-2020-03-11",
+          "quote": "We have never before seen a pandemic sparked by a coronavirus. This is the first pandemic caused by a coronavirus."
+        },
+        {
+          "documentId": "who-briefing-2020-03-11",
+          "quote": "And we have never before seen a pandemic that can be controlled, at the same time."
+        },
+        {
+          "documentId": "who-briefing-2020-03-11",
+          "quote": "We have rung the alarm bell loud and clear."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "app-supported"
     }
   ],
   "unjustified": [
@@ -281,5 +343,12 @@
       "reason": "No retained source records working languages, availability or commitments beyond the office he holds."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:15:52Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added the 11 March 2020 WHO media-briefing remarks as a spoken-evidence document with two dated facts (pandemic-characterization; first-controllable-pandemic). Existing references unchanged.",
+      "evidence": "Dated spoken-evidence transcripts fetched and inspected 2026-09-06; see docs/research/person-benchmark-spoken-evidence-facts-2026-09-06.md."
+    }
+  ]
 }
