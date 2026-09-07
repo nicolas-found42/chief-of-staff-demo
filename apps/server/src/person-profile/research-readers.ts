@@ -423,6 +423,57 @@ async function readArchivedCapture(
 }
 
 /**
+ * Refuse an archive error page that arrived where a captured document was
+ * expected, before anything tries to parse it as one.
+ *
+ * The archive serves its own pages as HTML whatever the captured address
+ * looked like, so without this the bytes would reach the PDF converter and be
+ * recorded as `parser-failed`. That is an observed cause but the wrong one:
+ * the parser did not fail, the archive never served the document, and only the
+ * second reading tells a developer this is worth retrying (#253). The refusal
+ * is made here rather than passed on as a retrieved result, so the archive's
+ * page is never a value anything downstream could decide to keep.
+ */
+function screenArchiveBytes(
+  response: PublicHttpBytesResponse,
+  capture: WaybackCapture,
+  context: ReadContext,
+): SourceReadResult | null {
+  const type = response.contentType?.toLowerCase() ?? "";
+  if (!type.includes("html") && !type.includes("xml")) return null;
+  const marker = archiveFailurePage(
+    new TextDecoder().decode(response.bytes.subarray(0, ARCHIVE_FAILURE_HEAD)),
+  );
+  if (!marker) return null;
+  context.recorder.record({
+    stage: "access",
+    code: "archive-error-page",
+    outcome: "failed",
+    recovery: "stopped",
+    cause: "observed",
+    target: capture.contentUrl,
+    targetKind: "document",
+    collector: "archive-reader",
+    reason: `The archive answered with its own ${marker} page instead of the captured document.`,
+    attemptOf: context.attemptOf,
+    /* Shape only: status, size, hash and which phrase matched. The page's own
+       text is exactly what must not be retained. */
+    observed: {
+      status: response.status,
+      finalUrl: response.url,
+      contentType: response.contentType,
+      bytes: response.bytes.length,
+      bodyHash: hash(response.bytes),
+      parserLocation: marker,
+    },
+    impact: "No archived text was retained, and no claim rests on this capture.",
+    remediation: `Retry later, then reproduce with: curl -sSL -D- -o/dev/null '${capture.contentUrl}'`,
+    ...(context.profileRevision !== undefined ? { profileRevision: context.profileRevision } : {}),
+  });
+  return unavailable("historical-evidence", WAYBACK_CAPTURE_ROUTE, "failed", "", response.url);
+}
+
+/**
  * Turn whatever a reader produced from a capture into dated archived evidence,
  * or refuse it.
  *
