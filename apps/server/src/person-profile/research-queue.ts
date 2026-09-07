@@ -31,6 +31,8 @@ export class PersonResearchQueue {
   private running = new Set<string>();
   /** Profiles this instance deliberately dropped; never re-adopted on merge. */
   private readonly removed = new Set<string>();
+  /** Profiles the file already held when this instance loaded it. */
+  private readonly loaded = new Set<string>();
   private generation = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private pending: Promise<void> | undefined;
@@ -59,6 +61,7 @@ export class PersonResearchQueue {
           usedCalls: 0,
           jobs: [],
         };
+    for (const job of this.state.jobs) this.loaded.add(job.profileId);
     /* A process cannot carry its in-flight operation through a restart, and a
        shutdown is an interruption rather than a completion: the job says so,
        keeps its completed evidence, and is re-dispatched automatically. */
@@ -405,9 +408,15 @@ export class PersonResearchQueue {
    * Jobs are keyed by profileId and disjoint across instances of one
    * Workspace by construction — a Profile is researched by one runtime at a
    * time — so this instance's job wins for every profileId it holds and
-   * every other on-disk job is preserved with its position. A job this
-   * instance removed is the exception: preserving it would undo a deletion,
-   * so a removed profileId is dropped from the disk side too.
+   * every other on-disk job is preserved with its position.
+   *
+   * Deletion is the exception in both directions, because a merge must never
+   * undo one. A profileId this instance removed is dropped from the disk
+   * side, so its own deletion is not read back from a snapshot written
+   * before it. And a job this instance still holds is re-added only when the
+   * instance created it — a job that was in the file at load time and is
+   * gone from it now was deleted by another instance, and a stale snapshot
+   * is not grounds to resurrect it.
    *
    * `usedCalls` is a daily diagnostic rather than a gate, so the larger of
    * the two is kept: it cannot under-report what the Workspace spent, and no
@@ -434,7 +443,8 @@ export class PersonResearchQueue {
       jobs.push(own.get(job.profileId) ?? job);
       merged.add(job.profileId);
     }
-    for (const job of this.state.jobs) if (!merged.has(job.profileId)) jobs.push(job);
+    for (const job of this.state.jobs)
+      if (!merged.has(job.profileId) && !this.loaded.has(job.profileId)) jobs.push(job);
     return {
       ...this.state,
       usedCalls:
