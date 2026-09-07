@@ -349,6 +349,19 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
       "Probes took 25-75 s, so the provider overrides the composite deadline rather than timing out on a healthy answer.",
   },
   {
+    route: "wayback-capture",
+    family: "historical-evidence",
+    terms:
+      "Retrieving a capture's own bytes from web.archive.org is public and keyless, the same as browsing the Wayback Machine; the `id_` modifier the reader uses is the documented way to ask for the capture without the archive's navigation wrapper.",
+    documentation: "https://help.archive.org/help/using-the-wayback-machine/",
+    cost: "anonymous",
+    status: "in-production",
+    probe: "https://web.archive.org/web/20200101000000id_/https://example.com/",
+    expect: (body) => body.includes("Example Domain"),
+    observed:
+      "Live 2026-09-07: a lookup timestamp answered 302 to the closest capture and then 200 with the publisher's own 1,256-byte document, so the answered address is what dates the evidence. The same request against a URL the archive does not hold answered 404, and a dated capture of a real past-people biography returned 79,935 bytes carrying the retained reference quote.",
+  },
+  {
     route: "mwmbl",
     family: "general-discovery",
     terms: "Open, non-commercial web index; public API needs no account or key.",

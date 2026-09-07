@@ -9,7 +9,10 @@ import {
   createPublicSearch,
   PublicSearchUnavailableError,
 } from "../../../apps/server/src/source-adapters/search";
-import { RECORD_ROUTE_INDEXES } from "../../../apps/server/src/person-profile/research-readers";
+import {
+  RECORD_ROUTE_INDEXES,
+  WAYBACK_CAPTURE_ROUTE,
+} from "../../../apps/server/src/person-profile/research-readers";
 
 /**
  * The whole configured research source collection, checked against #228's one
@@ -90,6 +93,18 @@ describe("the configured research source collection", () => {
        escalated to is claimed by a declared route. */
     const claimed = new Set(SOURCE_ELIGIBILITY.flatMap((entry) => entry.indexes ?? []));
     expect(RECORD_ROUTE_INDEXES.filter((index) => !claimed.has(index))).toEqual([]);
+
+    /* So is retrieving an archived capture's content: a second endpoint and a
+       second acquisition beyond the availability API the `wayback` entry
+       covers, so the reader's own route name has to be declared with terms and
+       an anonymous probe of its own (#253). */
+    const capture = byRoute.get(WAYBACK_CAPTURE_ROUTE);
+    expect([capture?.cost, capture?.status, !!capture?.probe, !!capture?.terms]).toEqual([
+      "anonymous",
+      "in-production",
+      true,
+      true,
+    ]);
   });
 
   it("requires no key, payment, sign-in, imported session or paid proxy", () => {

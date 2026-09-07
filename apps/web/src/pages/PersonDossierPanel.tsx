@@ -185,12 +185,19 @@ export function PersonDossierPanel({
         Evidence {index + 1}
       </button>
     ));
+  /* A claim grounded in archived material is evidence about the capture date
+     and nothing after it (#253). The reader sees the claim, not the retained
+     source behind it, so the date is stated here rather than left to the
+     source inspector — a past role read as a present one is the whole risk. */
+  const capturedAt = (item: PersonClaim) =>
+    item.citations.find((citation) => citation.capturedAt)?.capturedAt?.slice(0, 10) ?? null;
   const claim = (item: PersonClaim) => (
     <article className="card" key={item.id} id={`claim-${item.id}`}>
       <p>{item.statement}</p>
       <p className="muted">
         {item.status} · {item.nature} · {item.effectiveFrom ?? "Date unknown"}
         {item.effectiveTo ? ` to ${item.effectiveTo}` : ""}
+        {capturedAt(item) ? ` · archived capture ${capturedAt(item)}` : ""}
       </p>
       {item.citations.map((citation, index) => (
         <button

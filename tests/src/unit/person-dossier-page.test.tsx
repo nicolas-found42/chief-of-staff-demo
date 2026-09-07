@@ -159,3 +159,66 @@ test.each(["supported", "contested"] as const)(
     }
   },
 );
+
+test("a claim grounded in an archived capture shows the capture date and its bounded period", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dossier-capture-ui-"));
+  const store = new PersonDossierStore(directory);
+  const source = store.retainSource({
+    url: "https://web.archive.org/web/20240523200341/https://bank.example/past/shafik",
+    title: "Past people biography",
+    author: null,
+    publishedAt: null,
+    retrievedAt: "2026-09-07",
+    capturedAt: "2024-05-23T20:03:41.000Z",
+    text: "Deputy Governor, Markets and Banking between 2014 and 2017.",
+    family: "bank.example",
+    sourceClass: "self-report",
+    visibility: "public",
+    completeness: "full",
+    extractionCoverage: "full",
+    access: "retrieved",
+    acquisition: "wayback-capture",
+  });
+  const dossier = store.publish("shafik", 0, {
+    sourceIds: [source.id],
+    claims: [
+      {
+        id: "tenure",
+        section: "career",
+        statement: source.text,
+        fact: { field: "role", value: "Deputy Governor, Markets and Banking" },
+        status: "stale",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: "2014-08-01",
+        effectiveTo: "2024-05-23",
+        citations: [{ sourceId: source.id, quote: source.text, capturedAt: source.capturedAt }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  });
+  const client = makeClient();
+  client.read = async () => ({ dossier, research: null });
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(PersonDossierPanel, { profileId: "shafik", client })),
+    );
+    /* The reader sees a former role as former, dated by the capture, without
+       having to open the retained source behind it. */
+    expect(container.textContent).toContain("archived capture 2024-05-23");
+    expect(container.textContent).toContain("2014-08-01 to 2024-05-23");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

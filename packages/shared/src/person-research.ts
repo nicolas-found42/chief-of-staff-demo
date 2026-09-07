@@ -62,6 +62,13 @@ export const PersonResearchFailureCodeSchema = z.enum([
   "login-required",
   "challenge-page",
   "resource-unavailable",
+  /**
+   * An archive answered with its own error or technical-difficulty page rather
+   * than the capture, whatever status it used to do it (issue #253). Separate
+   * from `resource-unavailable`, which is the archive saying it holds no
+   * capture: one is a service fault to retry, the other a fact about coverage.
+   */
+  "archive-error-page",
   "robots-excluded",
   // Rendering, parsing and media
   "rendering-failed",
