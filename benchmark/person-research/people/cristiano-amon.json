@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "cristiano-amon",
-  "referenceVersion": "2026-09-06.2",
+  "referenceVersion": "2026-09-06.3",
   "displayName": "Cristiano Amon",
   "industry": "technology",
   "role": "President and Chief Executive Officer, Qualcomm",
@@ -165,7 +165,7 @@
     },
     {
       "id": "summit2025-keynote-independent",
-      "requirements": ["r9", "r14", "r20"],
+      "requirements": ["r9", "r14"],
       "section": "work",
       "statement": "Attendee Céline Amilien independently reported Amon's Summit keynote claim that distributed AI makes ambient computing practical, with 1B parameters on glasses, 7–10B on phones and 70B in the cloud.",
       "effectiveFrom": "2025-09-24",
@@ -217,6 +217,12 @@
       "referenceVersion": "2026-09-06.2",
       "change": "Added two dated public-social references (Amon's 2025-09-18 Summit announcement and Amilien's 2025-09-24 keynote account) with two facts and one unsupported-inference guard. Existing references remain unchanged.",
       "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    },
+    {
+      "at": "2026-09-07T00:18:16Z",
+      "referenceVersion": "2026-09-06.3",
+      "change": "Removed r20 from fact summit2025-keynote-independent: Amilien's keynote account and Amon's event-plan post are different propositions, so they do not form an independent-verification pair. The r9/r14 independent coverage stands. No reference weakened.",
+      "evidence": "CodeRabbit review on PR #265; see docs/research/person-benchmark-public-social-facts-2026-09-06.md."
     }
   ]
 }

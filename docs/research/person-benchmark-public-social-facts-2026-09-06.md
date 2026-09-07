@@ -4,10 +4,11 @@ Authored 2026-09-06 for issue #241 (child of #228). Scope is the six-person
 partition for this issue: Timnit Gebru, Maria Ressa, Arvind Krishna, Michelle
 Gass, Cristiano Amon, Doug McMillon. Five gained dated public-social reference
 facts; Doug McMillon is left honest (see below). Corpus version after these
-additions plus the review fixes (corrections entries, Amilien doc rename):
-`c122ce22b340a5cf`. Each edited file bumped `2026-09-06.1` →
-`2026-09-06.2` with a corrections entry recording the change; the diff is
-additive-only (no pre-existing reference removed or weakened).
+additions plus the review rounds (corrections entries, Amilien doc rename,
+Gass/Amon pair-scope corrections): `135a02dce2b7fed7`. Gebru, Gass and Amon
+stand at `2026-09-06.3` with corrections entries recording each change;
+Krishna and Ressa remain at `2026-09-06.2`. The diff is additive-only (no
+pre-existing reference removed or weakened).
 
 ## Method and retention
 
@@ -46,29 +47,37 @@ that treats the reshare as the announcement itself. (b) Gebru: fact
 (`wrong-person`) fails any dossier that attributes the quoter's hashtags to
 Gebru.
 
-**Self-statement vs independent account.** Every authored person carries a
-pair: the person's own post (`sourceClass: self-report`) plus a third-party
-account of the same matter (`sourceClass: independent-account`) —
-`lightwell-announcement`/`lightwell-independent-reception` (Krishna),
-`liveinlevis-sheeran`/`gass-performance-independent` (Gass),
-`summit2025-announcement`/`summit2025-keynote-independent` (Amon),
-`lie-told-credo`/`nobel-account` (Ressa),
-`spatial-apartheid-review`/`biased-review-independent` (Gebru) — with explicit
-`r20` pairing facts (`lightwell-original-vs-reshare`,
-`gass-self-vs-independent`, `ressa-self-vs-independent`,
-`gebru-original-vs-quote`, and Amon's `summit2025-keynote-independent`
-itself carrying `r20`) plus `unsupported-inference` unjustified conclusions
-failing any dossier that cites a self-report as independent verification
+**Self-statement vs independent account.** Three same-proposition pairs: the
+person's own post (`sourceClass: self-report`) plus a third-party account of
+the same matter (`sourceClass: independent-account`) —
+`lightwell-announcement`/`lightwell-independent-reception` (Krishna, both on
+the 28 May 2026 Lightwell announcement),
+`lie-told-credo`/`nobel-account` (Ressa, credo and press-freedom record),
+`spatial-apartheid-review`/`biased-review-independent` (Gebru, the same
+peer-review pattern, adjacent days, with Gebru's post embedding Chanda's) —
+with explicit `r20` pairing facts (`lightwell-original-vs-reshare`,
+`ressa-self-vs-independent`, `gebru-original-vs-quote`) plus
+`unsupported-inference` unjustified conclusions failing any dossier that cites
+a self-report as independent verification
 (`gass-posts-as-verification`, `amon-announcement-as-verification`,
-`ressa-self-as-verification`).
+`ressa-self-as-verification`). Honest limitation (CodeRabbit review on PR
+#265): for Gass and Amon the retained records do NOT form same-proposition
+verification pairs — Gass's 2023 brand-moment post and Phil W.'s 2026
+performance assessment are different propositions, as are Amon's event-plan
+post and Amilien's keynote-parameter account. The earlier
+`gass-self-vs-independent` pairing fact was therefore removed and `r20`
+dropped from `summit2025-keynote-independent` (now `r9`/`r14` only); each
+underlying record and fact stands on its own, and the two
+`unsupported-inference` guards stay because a dossier could still cite the
+self-report as verification of the independent claim.
 
 ## Per-person summary
 
 | Person | +Docs | +Facts | +Unjustified | Sources and dates |
 | --- | --- | --- | --- | --- |
 | Arvind Krishna | 2 | 3 | 1 | Own LinkedIn post on Project Lightwell, 2026-05-28; Alain J. LinkedIn reshare with commentary, 2026-05-28 |
-| Michelle Gass | 2 | 3 | 1 | Own #liveinlevis LinkedIn post (Sheeran jacket), 2023-09-22; Phil W. LinkedIn post on her Levi's performance, 2026-04-09 |
-| Cristiano Amon | 2 | 2 | 1 | Own LinkedIn post announcing Snapdragon Summit 2025, 2025-09-18; Céline Amilien LinkedIn post on his distributed-AI keynote, 2025-09-24 |
+| Michelle Gass | 2 | 2 | 1 | Own #liveinlevis LinkedIn post (Sheeran jacket), 2023-09-22; Phil W. LinkedIn post on her Levi's performance, 2026-04-09 (different propositions; no verification pair claimed) |
+| Cristiano Amon | 2 | 2 | 1 | Own LinkedIn post announcing Snapdragon Summit 2025, 2025-09-18; Céline Amilien LinkedIn post on his distributed-AI keynote, 2025-09-24 (different propositions; no verification pair claimed) |
 | Maria Ressa | 2 | 3 | 1 | Own X post ("A lie told a million times…"), 2019-12-09; @NobelPrize X post on her record, 2021-10-08 |
 | Timnit Gebru | 3 | 3 | 1 | Own Bluesky post on the spatial-apartheid paper's peer review, 2026-09-05; Chanda Prescod-Weinstein Bluesky post on biased review, 2026-09-04; nonpareil Bluesky quote-post, 2026-09-05 |
 
@@ -85,8 +94,8 @@ failing any dossier that cites a self-report as independent verification
 ## Verification
 
 - `pnpm exec tsx scripts/person-research-benchmark.mts --corpus-coverage`:
-  zero REJECTED lines; corpus `c122ce22b340a5cf` (after review fixes; was
-  `01b3b02b41ab1663` before); r20 now 18 people / 21 facts.
+  zero REJECTED lines; corpus `135a02dce2b7fed7` (after CodeRabbit pair-scope
+  fixes; was `c122ce22b340a5cf` before).
 - `pnpm --filter @chief-of-staff-demo/tests exec vitest run
   tests/src/modules/person-benchmark-collection.test.ts
   tests/src/modules/person-benchmark.test.ts`: green.

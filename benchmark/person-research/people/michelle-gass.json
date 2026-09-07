@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "michelle-gass",
-  "referenceVersion": "2026-09-06.2",
+  "referenceVersion": "2026-09-06.3",
   "displayName": "Michelle Gass",
   "industry": "retail",
   "role": "President and Chief Executive Officer, Levi Strauss & Co.",
@@ -284,27 +284,6 @@
       "importance": "supporting",
       "acquisition": "beyond-current-coverage",
       "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source. (On LinkedIn specifically see docs/research/linkedin-reading-options.md.)"
-    },
-    {
-      "id": "gass-self-vs-independent",
-      "requirements": ["r20", "r9"],
-      "section": "context",
-      "statement": "Gass's #liveinlevis stadium post is a self-report of a brand moment, while Phil W.'s April 2026 post is an independent assessment of her CEO performance; the brand post cannot serve as independent verification of the performance claim.",
-      "effectiveFrom": "2026-04-09",
-      "effectiveTo": null,
-      "support": [
-        {
-          "documentId": "linkedin-liveinlevis-post",
-          "quote": "Thanks to the team who created and personalized Ed’s jacket. It was a perfect fit."
-        },
-        {
-          "documentId": "linkedin-gass-performance-philw",
-          "quote": "In Gass’s case, the seasoned executive has found a role that aligns with her particular set of retail chops, and for now, Levi’s is stronger for it."
-        }
-      ],
-      "importance": "supporting",
-      "acquisition": "beyond-current-coverage",
-      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source. (On LinkedIn specifically see docs/research/linkedin-reading-options.md.)"
     }
   ],
   "unjustified": [
@@ -353,6 +332,12 @@
       "referenceVersion": "2026-09-06.2",
       "change": "Added two dated public-social references (Gass's 2023-09-22 #liveinlevis post and Phil W.'s 2026-04-09 performance assessment) with three facts and one unsupported-inference guard. Existing references remain unchanged.",
       "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    },
+    {
+      "at": "2026-09-07T00:18:16Z",
+      "referenceVersion": "2026-09-06.3",
+      "change": "Removed fact gass-self-vs-independent: the 2023 brand-moment self-report and the 2026 performance assessment are different propositions, so they do not form an independent-verification pair. Both underlying records and facts stand. No reference weakened.",
+      "evidence": "CodeRabbit review on PR #265; see docs/research/person-benchmark-public-social-facts-2026-09-06.md."
     }
   ]
 }
