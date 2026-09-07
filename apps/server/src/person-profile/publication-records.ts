@@ -15,7 +15,8 @@ import type { PersonSourceRights } from "@chief-of-staff-demo/shared";
  *   the same response, and the full text the record links to, need their own
  *   rights basis, so an abstract is retained only where the record declares a
  *   licence over the deposited resource itself, and linked full text is never
- *   fetched under the metadata permission — it stays a lead with its own read.
+ *   fetched under the metadata permission — the record names it as provenance
+ *   for a later read under its own rights, never as a URL this loop follows.
  * - A person's appearance in a record establishes that they took part in the
  *   work. It does not establish what they personally did, so the rendering
  *   says so and the extraction path drops personal-scope fields that rest on
@@ -147,7 +148,7 @@ function assemble(index: string, facts: RecordFacts): PublicationRecordRendering
       disposition: "not-retrieved",
       licence: facts.declared.find((entry) => entry.material === "full-text")?.statement ?? null,
       reason:
-        "Linked full text is not retrieved under a metadata permission; it stays a lead to be read under its own rights.",
+        "Linked full text is not retrieved under a metadata permission; it is named here as provenance for a later read under its own rights, not offered as a URL to follow.",
     });
   const rights: PersonSourceRights = {
     metadata: facts.metadata,
