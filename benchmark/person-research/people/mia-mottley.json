@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "mia-mottley",
-  "referenceVersion": "2026-09-06.2",
+  "referenceVersion": "2026-09-06.3",
   "displayName": "Mia Mottley",
   "industry": "government",
   "role": "Prime Minister of Barbados",
@@ -35,19 +35,34 @@
       "rights": "short-quotation"
     },
     {
-      "id": "cop26-world-leaders-summit",
       "url": "https://www.blackagendareport.com/transcript-will-they-mourn-us-front-line-mia-mottley-pm-barbados-speech-opening-world-leaders",
-      "title": "TRANSCRIPT: \"Will they mourn us on the front line?\" — Mia Mottley at the opening of the COP26 World Leaders Summit, November 1, 2021",
       "publisher": "Black Agenda Report",
       "publishedAt": "2021-11-03",
       "retrievedAt": "2026-09-06T23:16:45Z",
-      "family": "spoken-evidence",
       "sourceClass": "self-report",
       "language": "en",
-      "hash": "bb8035ad2097f0e74c69a2fb1e6c4cb656e9b100ca9f3e2e196a8b9ef1809d48",
-      "excerpt": "The pandemic has taught us that national solutions to global problems do not work. We come to Glasgow with global ambition, to save our people, and to save our planet. But we now find three gaps. On mitigation: climate pledges are NDCs. Without more, we will leave the world on a pathway to 2.7 °C and, with more, we are still likely to get to 2°C. These commitments, made by some, are based on technologies yet to be developed. And this is at best reckless and at worst dangerous. On finance: we are $20 billion dollars short of the $100 billion and this commitment, even then, might only be met in 2023. On adaptation: adaptation finance remains only at 25%, not the 50/50 split that was promised nor needed given the warming that is already taking place on this earth. Climate finance to frontline small island developing states declined by 25% in 2019. Failure to provide the critical finance, and that of loss and damage, is measured, my friends, on lives and livelihoods in our communities. This is immoral. And it is unjust. If Glasgow is to deliver on the promises of Paris , it must close these three gaps. So I ask to you: what must we say to our people living on the front line in the Caribbean, in Africa, in Latin America, in the Pacific, when both ambition and, regrettably, some of the needed faces at Glasgow are not present? What excuse should we give for the failure? In the words of that Caribbean icon Eddy Grant: “ Will they mourn us on the front line ?” When will we, as leaders across the world, address the pressing issues that are truly causing our people angst and worry, whether it is climate or whether it is vaccines? Simply put: when will leaders lead? Our people are watching and our people are taking note. And are we really going to leave Scotland without the resolve and the ambition that is sorely needed to save lives and to save our planet? How many more voices and how many pictures of people must we see on these screens without being able to move? Or are we so blinded and hardened that we can no longer appreciate the cries of humanity? I have been saying to Barbadians for many years that many hands make light work. Today, we need the correct mix of voices, ambition, and action. Do some leaders in this world believe that they can survive and thrive on their own? Have they not learned from the pandemic? Can there be peace and prosperity if one third of the world, literally, prospers and the other two thirds of the world live under siege and face calamitous threats to our well being? What the world needs now, my friends, is that which is within the ambit of less than 200 persons who are willing and prepared to lead. Leaders must not fail those who elected them to lead. And I say to you there is a sword that can cut down this Gordian knot.  And it has been wielded before. The central banks of the wealthiest countries engaged in $25 trillion of quantitative easing in the last 13 years. 25 trillion. Of that, $9 trillion was in the past 18 months - to fight the pandemic. Had we used that $25 trillion to purchase bonds to finance the energy transitions or the transition of how we eat or how we move ourselves in transport, we would now, today, be reaching that 1.5 °C limit that is so vital to us. I say to you today in Glasgow, that an annual increase in the [Subsidy Dependence Indices] of $500 billion a year for twenty years put in a trust to finance the transition is the real gap, Secretary General, that we need to close. Not the $50 billion being proposed for adaptation. And if $500 billion sounds big to you, guess what? It is just 2% of the $25 trillion. This is the sword we need to wield. Our excited one hour into this event if far less than it was six months ago leading up to this event. Can we, with those voices and these pictures from Sir David [ Attenborough ] and others, find it within ourselves to get the resolve to bring Glasgow back on track or do we leave today believing that it was a failure before it starts? Our world, my friends, stands at a fork in the road - one no less significant than when the United Nations was formed in 1945. But then, the majority of our countries here did not exist. We exist now. The difference is we want to exist 100 years from now. And if our existence is to mean anything, then we must act in the interest of all of our people who are dependent on us. And if we don’t, we will allow the path of greed and selfishness to sow the seeds of our common destruction. The leaders of today - not 2030; not 2050 - must make this choice. It is in our hands. And our people  and our planet need it more than ever. We could work with who is ready to go because the train is ready to leave. And those who are not yet ready, we need to continue to encircle and to remind them that their people - not our people - that their citizens need them to get on board as soon as possible. Code red! Code red! To the G7 countries: Code Red! Code Red! To the G20: Earth to COP, that’s what it says? Earth to COP? For those who have eyes to see, for those who have ears to listen, and for those who have a heart to feel: 1.5 °C is what we need to survive, 2 °C, yes, S[ecretary] G[eneral], is a death sentence for the people of Antigua and Barbuda, for the people of the Maldives, for the people of Dominica and Fiji, for the people of Kenya and Mozambique, and yes, for the people of Samoa and Barbados. We do not want that dreaded death sentence. And we have come here to say: “Try harder.” Try harder because our people, the climate army, the world, the planet, need our actions now - not next year, not in the next decade. Thank you.",
-      "rights": "public-record",
-      "note": "Transcript of the official 1 November 2021 statement of the Prime Minister of Barbados at the opening of the COP26 World Leaders Summit — a head-of-government address in a UN proceeding, retained here as that public record (page transcription of the video recording; page published 3 November 2021)."
+      "id": "cop26-three-gaps",
+      "title": "TRANSCRIPT (excerpt): Mottley on the three gaps — COP26 World Leaders Summit opening, November 1, 2021",
+      "family": "spoken-evidence",
+      "hash": "fa6be1bb9fb7e68de27d49d840747277eeaedb238cb4268196d0d02c521ef410",
+      "excerpt": "We come to Glasgow with global ambition, to save our people, and to save our planet. But we now find three gaps. On mitigation: climate pledges are NDCs. Without more, we will leave the world on a pathway to 2.7 °C and, with more, we are still likely to get to 2°C. These commitments, made by some, are based on technologies yet to be developed. And this is at best reckless and at worst dangerous. On finance: we are $20 billion dollars short of the $100 billion and this commitment, even then, might only be met in 2023. On adaptation: adaptation finance remains only at 25%, not the 50/50 split that was promised nor needed given the warming that is already taking place on this earth. Climate finance to frontline small island developing states declined by 25% in 2019.",
+      "rights": "short-quotation",
+      "note": "Bounded excerpt retained under quotation: the three-gaps passage of the 1 November 2021 address only, not the whole speech (page transcription of the video recording; page published 3 November 2021)."
+    },
+    {
+      "url": "https://www.blackagendareport.com/transcript-will-they-mourn-us-front-line-mia-mottley-pm-barbados-speech-opening-world-leaders",
+      "publisher": "Black Agenda Report",
+      "publishedAt": "2021-11-03",
+      "retrievedAt": "2026-09-06T23:16:45Z",
+      "sourceClass": "self-report",
+      "language": "en",
+      "id": "cop26-code-red",
+      "title": "TRANSCRIPT (excerpt): Mottley’s \"code red\" close — COP26 World Leaders Summit opening, November 1, 2021",
+      "family": "spoken-evidence",
+      "hash": "97ae90c846cd65577057a695cb64398bfb1ca6cf6a05eaeb6e9d9b7589f45dfe",
+      "excerpt": "And those who are not yet ready, we need to continue to encircle and to remind them that their people - not our people - that their citizens need them to get on board as soon as possible. Code red! Code red! To the G7 countries: Code Red! Code Red! To the G20: Earth to COP, that’s what it says? Earth to COP? For those who have eyes to see, for those who have ears to listen, and for those who have a heart to feel: 1.5 °C is what we need to survive, 2 °C, yes, S[ecretary] G[eneral], is a death sentence for the people of Antigua and Barbuda, for the people of the Maldives, for the people of Dominica and Fiji, for the people of Kenya and Mozambique, and yes, for the people of Samoa and Barbados. We do not want that dreaded death sentence. And we have come here to say: “Try harder.”",
+      "rights": "short-quotation",
+      "note": "Bounded excerpt retained under quotation: the \"code red\" closing passage of the 1 November 2021 address only, not the whole speech (page transcription of the video recording; page published 3 November 2021)."
     }
   ],
   "facts": [
@@ -124,15 +139,15 @@
       "effectiveTo": null,
       "support": [
         {
-          "documentId": "cop26-world-leaders-summit",
+          "documentId": "cop26-three-gaps",
           "quote": "we will leave the world on a pathway to 2.7 °C and, with more, we are still likely to get to 2°C."
         },
         {
-          "documentId": "cop26-world-leaders-summit",
+          "documentId": "cop26-three-gaps",
           "quote": "On finance: we are $20 billion dollars short of the $100 billion and this commitment, even then, might only be met in 2023."
         },
         {
-          "documentId": "cop26-world-leaders-summit",
+          "documentId": "cop26-three-gaps",
           "quote": "On adaptation: adaptation finance remains only at 25%, not the 50/50 split that was promised nor needed given the warming that is already taking place on this earth. Climate finance to frontline small island developing states declined by 25% in 2019."
         }
       ],
@@ -148,15 +163,15 @@
       "effectiveTo": null,
       "support": [
         {
-          "documentId": "cop26-world-leaders-summit",
+          "documentId": "cop26-code-red",
           "quote": "Code red! Code red! To the G7 countries: Code Red! Code Red! To the G20:"
         },
         {
-          "documentId": "cop26-world-leaders-summit",
+          "documentId": "cop26-code-red",
           "quote": "1.5 °C is what we need to survive, 2 °C, yes, S[ecretary] G[eneral], is a death sentence for the people of Antigua and Barbuda, for the people of the Maldives, for the people of Dominica and Fiji, for the people of Kenya and Mozambique, and yes, for the people of Samoa and Barbados."
         },
         {
-          "documentId": "cop26-world-leaders-summit",
+          "documentId": "cop26-code-red",
           "quote": "We do not want that dreaded death sentence. And we have come here to say: “Try harder.”"
         }
       ],
@@ -194,6 +209,12 @@
       "referenceVersion": "2026-09-06.2",
       "change": "Added the 1 November 2021 COP26 World Leaders Summit address transcript as a spoken-evidence document with two dated facts (three-gaps; code-red-1-5). Existing references unchanged.",
       "evidence": "Dated spoken-evidence transcripts fetched and inspected 2026-09-06; see docs/research/person-benchmark-spoken-evidence-facts-2026-09-06.md."
+    },
+    {
+      "at": "2026-09-07T00:19:00Z",
+      "referenceVersion": "2026-09-06.3",
+      "change": "Split the COP26 address document into two bounded quotation excerpts (cop26-three-gaps; cop26-code-red) with support re-pointed; trimmed nothing from either fact.",
+      "evidence": "Review follow-up; see docs/research/person-benchmark-spoken-evidence-facts-2026-09-06.md."
     }
   ]
 }

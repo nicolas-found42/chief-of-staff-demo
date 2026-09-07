@@ -279,7 +279,7 @@
       "id": "simplicity-before-cost",
       "requirements": ["r3", "r7"],
       "section": "ideas",
-      "statement": "Citing Paul O’Neill’s \"keystone habit\", he argued against talking about cost reduction and for making healthcare simple for patients, so costs fall automatically — illustrating with the claim that even in top American hospitals one patient in 200 dies from medical error.",
+      "statement": "He argued against talking about cost reduction and for making healthcare simple for patients, so costs fall automatically — illustrating with the claim that even in top American hospitals one patient in 200 dies from medical error.",
       "effectiveFrom": "2019-02-11",
       "effectiveTo": null,
       "support": [
@@ -325,10 +325,6 @@
     {
       "requirement": "r19",
       "reason": "No retained source records availability constraints or commitments."
-    },
-    {
-      "requirement": "r5",
-      "reason": "No retained source documents the constraint environment the hospital model operates under."
     }
   ],
   "corrections": [
