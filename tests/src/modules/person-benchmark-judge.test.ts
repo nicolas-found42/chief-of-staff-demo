@@ -1,6 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { PersonDossierSchema, PersonSourceDocumentSchema } from "@chief-of-staff-demo/shared";
+import type {
+  BenchmarkPerson,
+  PersonDossier,
+  PersonSourceDocument,
+} from "@chief-of-staff-demo/shared";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus.js";
 import { judgePerson } from "../../../apps/server/src/person-benchmark/judge.js";
 
@@ -466,4 +471,346 @@ it("shows the recovery judge claim statements without cited passages", async () 
     expect(entry).not.toHaveProperty("citations");
     expect(JSON.stringify(entry)).not.toContain("Context.");
   }
+});
+
+/* Issue #236: paraphrase and cross-language matches receive decided verdicts. */
+
+/**
+ * One reference fact, one dossier claim, one cited passage. The wording of
+ * each is the variable under test, so a paraphrase, a translation and an
+ * unsupported broadening differ only in the strings supplied here.
+ */
+function semanticFixture(options: { reference: string; claim: string; passage: string }): {
+  person: BenchmarkPerson;
+  factId: string;
+  dossier: PersonDossier;
+  sources: PersonSourceDocument[];
+} {
+  const person = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  ).people[0];
+  person.fictional = true;
+  person.displayName = "Fictional Maya";
+  const factId = person.facts[0].id;
+  person.facts = [{ ...person.facts[0], statement: options.reference }];
+  const sources = [
+    PersonSourceDocumentSchema.parse({
+      schemaVersion: 1,
+      id: "source-0",
+      url: "https://example.com/0",
+      title: "Source 0",
+      author: null,
+      publishedAt: null,
+      retrievedAt: "2026-09-06",
+      text: `Context. ${options.passage}`,
+      hash: "b".repeat(64),
+      family: "fixture",
+      sourceClass: "independent-account",
+      visibility: "public",
+      completeness: "full",
+      access: "retrieved",
+      acquisition: "fixture",
+      outboundUrls: [],
+    }),
+  ];
+  const dossier = PersonDossierSchema.parse({
+    schemaVersion: 1,
+    profileId: "semantic-fixture",
+    revision: 1,
+    updatedAt: "2026-09-06",
+    sourceIds: ["source-0"],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+    claims: [
+      {
+        id: "claim-semantic",
+        statement: options.claim,
+        section: "career",
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+        citations: [{ sourceId: "source-0", quote: options.passage }],
+      },
+    ],
+  });
+  return { person, factId, dossier, sources };
+}
+
+it("states the meaning contract to the recovery judge", async () => {
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Maya designed the scheduler in 2021.",
+    claim: "In 2021 Maya created the scheduling component.",
+    passage: "Colleagues confirm Maya created the scheduling component in 2021.",
+  });
+  let recoverySystem = "";
+  await judgePerson(
+    async ({ system, user }) => {
+      if (!user.includes('"references":')) return SUPPORT_OK;
+      recoverySystem = system;
+      return {
+        judgements: [
+          { factId, verdict: "missing", evidence: null, claimId: null, rationale: "Not stated." },
+        ],
+      };
+    },
+    person,
+    dossier,
+    sources,
+  );
+  /* Paraphrase and translation are decidable; scope, subject and dates are
+     what a paraphrase has to preserve; ambiguous is for evidence that does
+     not settle the question, not for wording the judge has to work at. */
+  expect(recoverySystem).toContain("same scope, subject and dates");
+  expect(recoverySystem).toContain("different language");
+  expect(recoverySystem).toContain("broadens");
+  expect(recoverySystem).toContain("genuinely does not settle");
+});
+
+it("credits a paraphrase that preserves scope, subject and dates", async () => {
+  const claim = "In 2021 Maya created the scheduling component.";
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Maya designed the scheduler in 2021.",
+    claim,
+    passage: "Colleagues confirm Maya created the scheduling component in 2021.",
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "recovered",
+                evidence: claim,
+                claimId: "claim-semantic",
+                rationale: "The dossier restates the fact with the same scope, subject and dates.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0]).toMatchObject({
+    verdict: "recovered",
+    claimId: "claim-semantic",
+    evidenceQuote: claim,
+    reviewRequired: false,
+  });
+  expect(result.judgements[0].rationale).not.toContain("Downgraded");
+});
+
+it("judges a claim written in another language than its citation on meaning", async () => {
+  /* The claim is Swedish, its cited passage Swedish, the reference English:
+     the language gap is the designed property the collection carries, not a
+     reason to withhold a verdict. */
+  const claim = "Danielsson tillträdde som verkställande direktör för Skanska den 1 januari 2018.";
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Anders Danielsson took office as chief executive of Skanska on 1 January 2018.",
+    claim,
+    passage: `Enligt bolaget: ${claim}`,
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "recovered",
+                evidence: claim,
+                claimId: "claim-semantic",
+                rationale: "The Swedish claim states the English reference fact.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0]).toMatchObject({
+    verdict: "recovered",
+    claimId: "claim-semantic",
+    evidenceQuote: claim,
+    reviewRequired: false,
+  });
+  /* Citation integrity is untouched by the language gap: the cited passage
+     still has to occur verbatim in the retained source. */
+  const { checkIntegrity } = await import("../../../apps/server/src/person-benchmark/integrity.js");
+  expect(checkIntegrity(dossier, sources, dossier).findings).toEqual([]);
+});
+
+it("keeps the excerpt contract for a cross-language citation-passage selection", async () => {
+  const claim = "Danielsson tillträdde som verkställande direktör för Skanska den 1 januari 2018.";
+  const passage = `Enligt bolaget: ${claim}`;
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Anders Danielsson took office as chief executive of Skanska on 1 January 2018.",
+    claim,
+    passage,
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "recovered",
+                evidence: passage,
+                claimId: "claim-semantic",
+                rationale: "The dossier states the same fact.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0].verdict).toBe("ambiguous");
+  expect(result.judgements[0].rationale).toContain("cited passage, not the claim statement");
+});
+
+it("rejects an unsupported broadening and records the claim it rejected", async () => {
+  const claim = "Maya led European operations for several years.";
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Maya led the Berlin office from 2019 to 2021.",
+    claim,
+    passage: "Maya led European operations for several years, the profile says.",
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "missing",
+                evidence: claim,
+                claimId: "claim-semantic",
+                rationale: "The dossier widens the Berlin office to European operations.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0]).toMatchObject({
+    verdict: "missing",
+    claimId: "claim-semantic",
+    evidenceQuote: claim,
+    reviewRequired: false,
+  });
+  expect(result.judgements[0].rationale).not.toContain("Downgraded");
+});
+
+it("withholds a rejection that names a claim it never quoted", async () => {
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Maya led the Berlin office from 2019 to 2021.",
+    claim: "Maya led European operations for several years.",
+    passage: "Maya led European operations for several years, the profile says.",
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "missing",
+                evidence: null,
+                claimId: "claim-semantic",
+                rationale: "The dossier claims something broader.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0].verdict).toBe("ambiguous");
+  expect(result.judgements[0].reviewRequired).toBe(true);
+  expect(result.judgements[0].rationale).toContain("quotes no dossier text");
+});
+
+it("leaves a fact no claim addresses missing without inventing evidence", async () => {
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Maya led the Berlin office from 2019 to 2021.",
+    claim: "Maya spoke at a conference in Lisbon.",
+    passage: "Maya spoke at a conference in Lisbon.",
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "missing",
+                evidence: null,
+                claimId: null,
+                rationale: "No claim addresses the Berlin office.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0]).toMatchObject({
+    verdict: "missing",
+    claimId: null,
+    evidenceQuote: null,
+    reviewRequired: false,
+  });
+});
+
+it("leaves a genuinely undetermined match for review rather than guessing", async () => {
+  const claim = "Maya worked on scheduling around that time.";
+  const { person, factId, dossier, sources } = semanticFixture({
+    reference: "Maya designed the scheduler in 2021.",
+    claim,
+    passage: "Maya worked on scheduling around that time, colleagues recall.",
+  });
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId,
+                verdict: "ambiguous",
+                evidence: claim,
+                claimId: "claim-semantic",
+                rationale: "The wording does not settle whether the scheduler is the same work.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0]).toMatchObject({
+    verdict: "ambiguous",
+    claimId: "claim-semantic",
+    evidenceQuote: claim,
+    reviewRequired: true,
+  });
+  /* The judge's own ambiguity is preserved as itself: no downgrade marker,
+     so the ambiguity classifier attributes it to semantic judgement. */
+  expect(result.judgements[0].rationale).not.toContain("Downgraded");
 });
