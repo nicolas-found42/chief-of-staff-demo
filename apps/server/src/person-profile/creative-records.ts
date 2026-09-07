@@ -655,12 +655,143 @@ function libraryOfCongressFacts(body: unknown): RecordFacts | null {
  */
 function tvmazeFacts(body: unknown): RecordFacts | null {
   const envelope = record(body);
-  const person = record(envelope?.person) ?? envelope;
-  const id = num(person?.id);
-  const name = str(person?.name, 200);
-  const page = str(person?.url, 600);
-  if (!person || id === null || !name || !page || page.includes("tvmaze.com") === false)
-    return null;
+  if (!envelope) return null;
+  const embeddedCast = list(record(envelope._embedded)?.cast);
+  const page = str(envelope.url, 600);
+  const selfHref = str(record(record(envelope._links)?.self)?.href, 600);
+  const isShow = Boolean(
+    embeddedCast.length > 0 || page?.includes("/shows/") || selfHref?.includes("/shows/"),
+  );
+  if (isShow) return tvmazeShowFacts(envelope, embeddedCast);
+  return tvmazePersonFacts(envelope);
+}
+
+function tvmazeShowFacts(
+  show: Record<string, unknown>,
+  embeddedCast: unknown[],
+): RecordFacts | null {
+  const id = num(show.id);
+  const name = str(show.name, 300);
+  const page = str(show.url, 600);
+  if (id === null || !name || !page || page.includes("tvmaze.com") === false) return null;
+  const cast = embeddedCast.flatMap((entry) => {
+    const raw = record(entry);
+    const person = record(raw?.person);
+    const character = record(raw?.character);
+    const personName = str(person?.name, 200);
+    const personUrl = str(person?.url, 600);
+    const characterName = str(character?.name, 300);
+    const characterUrl = str(character?.url, 600);
+    if (!personName) return [];
+    return [
+      {
+        personName,
+        personUrl,
+        characterName: characterName ?? "an unnamed role",
+        characterUrl,
+      },
+    ];
+  });
+  const image = str(record(show.image)?.original, 600) ?? str(record(show.image)?.medium, 600);
+  const linked: LinkedMaterial[] = [];
+  for (const member of cast) {
+    if (member.personUrl)
+      linked.push({ label: `Credited person: ${member.personName}`, url: member.personUrl });
+    if (member.characterUrl)
+      linked.push({
+        label: `Credited character: ${member.characterName}`,
+        url: member.characterUrl,
+      });
+  }
+  if (image) linked.push({ label: "Show image (not retrieved)", url: image });
+  const updated = num(show.updated);
+  return {
+    identity: pairs([
+      ["Index", "tvmaze.com"],
+      ["Record", String(id)],
+      ["Show", name],
+      ["TVmaze page", page],
+      ["Type", str(show.type, 80)],
+      ["Language", str(show.language, 60)],
+      ["Premiered", str(show.premiered, 40)],
+      ["Ended", str(show.ended, 40)],
+    ]),
+    dates: pairs([
+      ["Premiered", str(show.premiered, 40)],
+      ["Ended", str(show.ended, 40)],
+    ]),
+    credited:
+      cast.length > 0
+        ? cast.map((member) => ({
+            name: member.personName,
+            role: `credited as ${member.characterName} on ${name}`,
+            identifiers: member.personUrl ? [member.personUrl] : [page],
+          }))
+        : [
+            {
+              name,
+              role: "catalogue show entry (no cast in this response)",
+              identifiers: [page],
+            },
+          ],
+    linked,
+    fieldLicences: [
+      {
+        fields: "Catalogue fields (biography, credits, schedules)",
+        licence: "retained under the CC BY-SA 4.0 permission above, with credit to TVmaze",
+        attribution: "TVmaze, via the catalogue page named above",
+      },
+      ...(image
+        ? ([
+            {
+              fields: "Show image",
+              licence: "not retrieved — the response states no licence over the image itself",
+              attribution: null,
+            },
+          ] as FieldLicence[])
+        : []),
+    ],
+    publishedAt: null,
+    sourceVersion: updated === null ? null : `tvmaze-updated-${String(updated)}`,
+    metadata: {
+      basis: "tvmaze-free-api",
+      statement:
+        "TVmaze API data is CC BY-SA 4.0: the catalogue fields above are retained with credit to TVmaze, and any reuse of them must share alike. Portrait and show images travel in the response under no stated licence of their own.",
+      documentation: "https://www.tvmaze.com/api",
+    },
+    materials: [
+      ...(image
+        ? ([
+            {
+              material: "cover-image",
+              disposition: "not-retrieved",
+              licence: null,
+              reason:
+                "The show image travels in the response under no stated licence of its own; it is named here as provenance, never fetched.",
+            },
+          ] as RecordFacts["materials"])
+        : []),
+      ...(cast.length > 0
+        ? ([
+            {
+              material: "linked-work",
+              disposition: "not-retrieved",
+              licence: null,
+              reason:
+                "Credited people and characters stay leads to be read as their own records under the same permission, not URLs this read follows.",
+            },
+          ] as RecordFacts["materials"])
+        : []),
+    ],
+  };
+}
+
+function tvmazePersonFacts(envelope: Record<string, unknown>): RecordFacts | null {
+  const person = record(envelope.person) ?? envelope;
+  const id = num(person.id);
+  const name = str(person.name, 200);
+  const page = str(person.url, 600);
+  if (id === null || !name || !page || page.includes("tvmaze.com") === false) return null;
   const credits = list(record(person._embedded)?.castcredits).flatMap((entry) => {
     const links = record(record(entry)?._links);
     const embedded = record(record(entry)?._embedded);

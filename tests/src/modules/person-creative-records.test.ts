@@ -128,6 +128,42 @@ const TVMAZE_PERSON = {
     ],
   },
 };
+/** A real TVmaze show shape (/shows/82) with embedded cast, trimmed. */
+const TVMAZE_SHOW = {
+  id: 82,
+  url: "https://www.tvmaze.com/shows/82/game-of-thrones",
+  name: "Game of Thrones",
+  type: "Scripted",
+  language: "English",
+  premiered: "2011-04-17",
+  ended: "2019-05-19",
+  image: {
+    medium: "https://static.tvmaze.com/uploads/images/medium_portrait/190/476117.jpg",
+    original: "https://static.tvmaze.com/uploads/images/original_untouched/190/476117.jpg",
+  },
+  updated: 1784898520,
+  _links: { self: { href: "https://api.tvmaze.com/shows/82" } },
+  _embedded: {
+    cast: [
+      {
+        person: {
+          id: 14076,
+          url: "https://www.tvmaze.com/people/14076/lena-headey",
+          name: "Lena Headey",
+          birthday: "1973-10-03",
+          country: { name: "Bermuda" },
+        },
+        character: {
+          id: 1234,
+          url: "https://www.tvmaze.com/characters/1234/game-of-thrones-cersei-lannister",
+          name: "Cersei Lannister",
+        },
+        self: false,
+        voice: false,
+      },
+    ],
+  },
+};
 
 /** A real loc.gov search shape (?fo=json), one authority result, trimmed. */
 const LOC_SEARCH = {
@@ -242,6 +278,23 @@ test("a TVmaze person record credits cast roles under CC BY-SA with the portrait
   );
   expect(rendered.outboundUrls).toEqual([]);
   expect(rendered.sourceVersion).toContain("1784898520");
+});
+test("a TVmaze show record with embedded cast parses cast members under CC BY-SA", () => {
+  const rendered = renderCreativeRecord("tvmaze.com", TVMAZE_SHOW)!;
+  expect(rendered).not.toBeNull();
+  expect(rendered.text).toContain("Show: Game of Thrones");
+  expect(rendered.text).toContain("Lena Headey — credited as Cersei Lannister on Game of Thrones");
+  expect(rendered.text).toContain("https://www.tvmaze.com/people/14076/lena-headey");
+  expect(rendered.text).toContain(CREDIT_LIMIT);
+  expect(rendered.rights.metadata.basis).toBe("tvmaze-free-api");
+  expect(rendered.rights.metadata.statement).toContain("CC BY-SA");
+  expect(rendered.rights.metadata.statement).toContain("TVmaze");
+  expect(materialsOf(rendered).find((entry) => entry.material === "cover-image")?.disposition).toBe(
+    "not-retrieved",
+  );
+  expect(materialsOf(rendered).find((entry) => entry.material === "linked-work")?.disposition).toBe(
+    "not-retrieved",
+  );
 });
 
 test("a Library of Congress search result renders the entry with its access flag", () => {
