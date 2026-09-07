@@ -1,0 +1,102 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { expect, it } from "vitest";
+import { fromPartial } from "@total-typescript/shoehorn";
+import {
+  BenchmarkReportSchema,
+  type PersonDossier,
+  type PersonSourceDocument,
+} from "@chief-of-staff-demo/shared";
+import { renderReport } from "../../../apps/server/src/person-benchmark/report.js";
+import { sourceContributions } from "../../../apps/server/src/person-benchmark/source-contributions.js";
+
+const ORCID_URL = "https://orcid.org/0000-0002-1825-0097";
+
+function fixtureReport() {
+  return BenchmarkReportSchema.parse(
+    JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            "../../../artifacts/person-benchmark/fixed-documents-expanded-2d0a903133188b6a.json",
+            import.meta.url,
+          ),
+        ),
+        "utf8",
+      ),
+    ),
+  );
+}
+
+it("traces a cited identity anchor to its retained record version in the source-contribution record", () => {
+  const quote = "ORCID iD: 0000-0002-1825-0097";
+  const anchor: PersonSourceDocument = fromPartial({
+    id: "anchor-source",
+    url: ORCID_URL,
+    hash: "anchor-hash",
+    text: `Registry identity\n${quote}\nName: Josiah Carberry`,
+    evidenceFamily: "identity-affiliation",
+    upstreamIndex: "orcid.org",
+    sourceVersion: "orcid record last modified 2026-09-01T15:10:02.435Z",
+    visibility: "public",
+  });
+  const dossier: PersonDossier = fromPartial({
+    claims: [
+      {
+        id: "identity",
+        status: "supported",
+        citations: [{ sourceId: "anchor-source", quote }],
+      },
+    ],
+  });
+
+  const contributions = sourceContributions(dossier, [anchor], [], new Set());
+  const identity = contributions.find((entry) => entry.family === "identity-affiliation")!;
+  expect(identity.sources).toEqual([
+    expect.objectContaining({
+      url: ORCID_URL,
+      upstreamIndex: "orcid.org",
+      sourceVersion: "orcid record last modified 2026-09-01T15:10:02.435Z",
+      cited: true,
+    }),
+  ]);
+});
+
+it("renders a retained identity anchor per person in the evaluation report, traceable to its source version", () => {
+  const report = fixtureReport();
+  const person = report.people[0];
+  person.sourceContributions = [
+    {
+      family: "identity-affiliation",
+      sources: [
+        {
+          id: "anchor-source",
+          url: ORCID_URL,
+          hash: "anchor-hash",
+          upstreamIndex: "orcid.org",
+          cited: true,
+          sourceVersion: "orcid record last modified 2026-09-01T15:10:02.435Z",
+        },
+      ],
+      claimIds: ["identity"],
+      recoveredFactIds: [],
+      exclusiveRecoveredFactIds: [],
+    },
+  ];
+
+  const rendered = renderReport(report, []);
+  expect(rendered).toContain("## Identity anchors");
+  const identityLine = rendered
+    .split("\n")
+    .find((line) => line.includes(person.slug) && line.includes(ORCID_URL));
+  expect(identityLine).toContain("orcid.org");
+  expect(identityLine).toContain("orcid record last modified 2026-09-01T15:10:02.435Z");
+  expect(identityLine).toContain("yes");
+});
+
+it("says plainly when a report retains no identity or affiliation registry record", () => {
+  const report = fixtureReport();
+  for (const person of report.people) delete person.sourceContributions;
+  const rendered = renderReport(report, []);
+  expect(rendered).toContain("no identity or affiliation registry record retained");
+});

@@ -31,7 +31,14 @@ export const PersonDossierSectionSchema = z.enum([
 export const PersonSourceRightsSchema = z.object({
   /** The permission the record's own metadata fields were retained under. */
   metadata: z.object({
-    basis: z.enum(["crossref-rest-metadata", "datacite-data-file-cc0", "openalex-cc0"]),
+    /* "orcid-public-api" joined the publication/deposit bases for identity
+       and affiliation registry records (issue #252). */
+    basis: z.enum([
+      "crossref-rest-metadata",
+      "datacite-data-file-cc0",
+      "openalex-cc0",
+      "orcid-public-api",
+    ]),
     statement: z.string().max(600),
     /** Where that permission was read; a catalogue label is not a source. */
     documentation: z.string().max(600),

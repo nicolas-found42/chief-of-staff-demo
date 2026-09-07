@@ -37,6 +37,7 @@ export function sourceContributions(
       hash: source.hash,
       upstreamIndex: source.upstreamIndex ?? null,
       cited: false,
+      sourceVersion: source.sourceVersion ?? null,
     });
     contributions.set(key, contribution);
   }

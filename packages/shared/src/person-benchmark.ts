@@ -400,6 +400,13 @@ export const BenchmarkSourceContributionSchema = z.object({
         hash: z.string().max(100),
         upstreamIndex: z.string().max(500).nullable(),
         cited: z.boolean(),
+        /**
+         * The upstream's own version marker for this retained source, when it
+         * states one (issue #252), mirroring `PersonSourceDocument.sourceVersion`.
+         * Null means the source's route states no version, never that the
+         * version went unmeasured.
+         */
+        sourceVersion: z.string().max(200).nullable(),
       }),
     )
     .max(10000),

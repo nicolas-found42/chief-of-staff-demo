@@ -246,3 +246,62 @@ transport or fixed-document replacement.
 A retrieved capture establishes anonymous capture-content access and dated retention. It does not
 establish rights in the captured material, source independence from a live read of the same
 publisher, or successful dossier extraction.
+
+## Identity and affiliation registry records, 2026-09-07 (#252)
+
+Reading one ORCID iD's public record is a different endpoint from `orcid`'s expanded-search, so
+it carries its own eligibility entry, `orcid-record`, with its own anonymous probe. Terms read
+2026-09-07: [the API tutorials documentation](https://info.orcid.org/documentation/api-tutorials/)
+states `pub.orcid.org` serves the public record without a token, and the curated transport sends
+the JSON accept header the documentation asks for. No key, account, payment or sign-in appears
+anywhere in the path.
+
+| Route | Endpoint the reader uses | Probe result |
+| --- | --- | --- |
+| orcid-record | `https://pub.orcid.org/v3.0/<orcid-id>/record` | 200, parseable JSON with the expected shape |
+
+The record is rendered field by field, exactly as a publication or deposit record is
+(`identity-anchors.ts`, mirroring `publication-records.ts` from #249): the ORCID iD, name, other
+names and external identifiers as the identity anchor; employments and educations as affiliations;
+and a stated limit, because ORCID's own `activities-summary` lists works the iD holder claims.
+Registry membership establishes that the iD belongs to the named person. It does not establish that
+every work or employment the record links belongs to them as a verified personal accomplishment, so
+no linked work's title becomes retained fact text — each is kept only as a DOI lead, to be read and
+attributed under its own record. The same limit gates extraction: a Work Record grounded only in an
+identity-affiliation record keeps no personal `contribution` and no `authority` role, the same rule
+`research.ts` already applies to a publication or deposit record.
+
+No biography or other prose field is retained as quoted text: the record declares no licence over
+it, and unlike a Crossref or DataCite abstract there is no companion licensed-resource field to rest
+one on, so the rights section says a prose field was withheld for lack of a declared basis rather
+than a case-by-case check being run for a field this reader never quotes.
+
+Wikidata and ROR remain readable through the existing generic record flattener; this pass does not
+extend structured rendering to them. Wikidata's claims are keyed by property id (`P106`, `P108`, …)
+and resolving them to readable labels needs a second lookup this pass did not add. ROR's record
+names an organization, not a person, and carries no field a person's identity could be matched
+against — its useful role is corroborating an affiliation already named by another source, not
+standing as its own person-attributed identity anchor. Both stay explicit gaps rather than being
+claimed as covered.
+
+### Production-reader check: one real ORCID record
+
+At `2026-09-07`, an isolated harness called the actual `readPersonSource` with production
+`publicHttpFetch` and `publicHttpFetchBytes`, an empty snippet, a fresh `ResearchAttemptRecorder`
+and a 25-second request limit. It used no model, configuration credential, live Workspace, mocked
+transport or fixed-document replacement. The URL was ORCID's own published demonstration record,
+`https://orcid.org/0000-0002-1825-0097`.
+
+Observed result: `route: record-reader`, `family: identity-affiliation`, `upstreamIndex: orcid.org`,
+`access: retrieved`, `completeness: full`, 1,210 text characters across six sections (Registry
+identity, Other names, External identifiers, Affiliations, Linked activity, Rights),
+`sourceVersion: orcid record last modified 2026-09-01T15:10:02.435Z`,
+`rights.metadata.basis: orcid-public-api`, and six DOI leads in `outboundUrls` — none of the linked
+works' titles appear in the retained text. Extracted-text SHA-256:
+`62896fa2bd230a8013a4c60599fe50cf8917159f2dcf96df58be158a2969defb`. No failed attempts were
+recorded.
+
+A retrieved identity record establishes anonymous registry access, dated retention and that the
+identifier read belongs to the named person. It does not establish that every linked work is theirs
+as a verified accomplishment, source independence from a separate read of the same work's own DOI
+record, or successful dossier extraction.

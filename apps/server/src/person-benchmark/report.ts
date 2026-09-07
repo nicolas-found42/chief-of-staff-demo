@@ -645,6 +645,32 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
   );
   lines.push("");
 
+  lines.push("## Identity anchors");
+  lines.push("");
+  lines.push(
+    "Retained identity and affiliation registry records (issue #252): the anchor that establishes an identifier belongs to this person, traced to the upstream index and the record's own version. Registry membership on its own does not attribute a linked work or activity to the person; a cited anchor means a claim actually rests on it, not that every fact about the person came from it.",
+  );
+  lines.push("");
+  lines.push("| Person | Source | Upstream index | Source version | Cited |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  let anyIdentityAnchors = false;
+  for (const person of report.people) {
+    const anchors = (person.sourceContributions ?? []).find(
+      (entry) => entry.family === "identity-affiliation",
+    );
+    if (!anchors || anchors.sources.length === 0) continue;
+    anyIdentityAnchors = true;
+    for (const source of anchors.sources)
+      lines.push(
+        `| ${person.slug} | ${escapeCell(source.url)} | ${source.upstreamIndex ? escapeCell(source.upstreamIndex) : "—"} | ${source.sourceVersion ? escapeCell(source.sourceVersion) : "unstated"} | ${source.cited ? "yes" : "no"} |`,
+      );
+  }
+  if (!anyIdentityAnchors)
+    lines.push(
+      "| — | no identity or affiliation registry record retained in this report | — | — | — |",
+    );
+  lines.push("");
+
   const judgeAttempts = report.people.flatMap((person) => person.assessment?.modelAttempts ?? []);
   const collectionAttempts =
     report.collection?.flatMap((result) => result.modelAttempts ?? []) ?? [];

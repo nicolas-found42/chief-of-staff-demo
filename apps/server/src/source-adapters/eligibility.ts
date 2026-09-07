@@ -270,6 +270,23 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
       "Served only to an explicit JSON accept header; the curated transport asks the way the documentation does.",
   },
   {
+    /* Reading one iD's record is a different endpoint from expanded-search,
+       and it is what a discovered ORCID URL actually reaches, so it carries
+       its own terms and its own probe rather than inheriting the search
+       route's (#252, mirroring crossref-record's split from crossref #249). */
+    route: "orcid-record",
+    family: "identity-affiliation",
+    terms:
+      "The same keyless public record endpoint, addressed by ORCID iD. Establishes that the iD belongs to the named person; a linked work or employment is the record's own claim, not independently verified attribution.",
+    documentation: "https://info.orcid.org/documentation/api-tutorials/",
+    cost: "anonymous",
+    indexes: ["orcid.org"],
+    status: "in-production",
+    probe: "https://pub.orcid.org/v3.0/0000-0002-1825-0097/record",
+    probeAccept: "json",
+    expect: json,
+  },
+  {
     route: "dblp",
     family: "published-work",
     terms: "The dblp publication search API is public and keyless.",
