@@ -511,7 +511,7 @@ function clinicalTrialsFacts(body: unknown): RecordFacts | null {
     return [
       {
         label: str(doc?.label, 120) ?? filename,
-        url: `https://clinicaltrials.gov/ProvidedDocs/${nctId.slice(-2)}/${nctId}/${filename}`,
+        url: `https://clinicaltrials.gov/ProvidedDocs/${nctId.slice(-2)}/${nctId}/${encodeURIComponent(filename)}`,
       },
     ];
   });

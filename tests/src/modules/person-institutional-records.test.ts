@@ -603,3 +603,16 @@ test("an NPPES answer of no records is a coverage fact, not retained record text
   expect(coverage.collector).toBe("record-reader");
   expect(coverage.reason).toContain("no record");
 });
+
+test("a linked document's provenance URL encodes the registry's filename", () => {
+  const body = JSON.parse(clinicalTrialsRecord({ name: "Maya Chen", affiliation: null })) as {
+    documentSection: { largeDocumentModule: { largeDocs: { label: string; filename: string }[] } };
+  };
+  body.documentSection.largeDocumentModule.largeDocs = [
+    { label: "Study Protocol", filename: "Protocol Schedule v2.pdf" },
+  ];
+  const rendering = renderInstitutionalRecord("clinicaltrials.gov", body)!;
+  expect(rendering.text).toContain(
+    "https://clinicaltrials.gov/ProvidedDocs/86/NCT00949286/Protocol%20Schedule%20v2.pdf",
+  );
+});
