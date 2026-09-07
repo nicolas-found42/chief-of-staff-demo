@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "arvind-krishna",
-  "referenceVersion": "2026-09-06.1",
+  "referenceVersion": "2026-09-06.2",
   "displayName": "Arvind Krishna",
   "industry": "technology",
   "role": "Chairman and Chief Executive Officer, IBM",
@@ -50,6 +50,36 @@
       "hash": "f88feea6d88afc0ea49c8e9d1d83d634e8014ea06188a83dbbfb3bc20b419397",
       "excerpt": "Chairman, President and Chief Executive Officer, IBM\nArvind Krishna is the Chairman, President and Chief Executive Officer of IBM. As a business leader and technologist, he has led the building and expansion of new markets for IBM in artificial intelligence, cloud, quantum computing, and blockchain. He has also played a significant role in the development of innovative IBM products and solutions based on these emerging technologies.\nOver his 30-year career at IBM, Arvind led a series of bold transformations and delivered proven business results. He most recently drove the successful $34 billion acquisition of Red Hat – the largest software acquisition – that has defined the hybrid cloud market. Together, IBM and Red Hat give clients the unique ability to build mission-critical applications once and run them anywhere.\nArvind previously was senior vice president of Cloud and Cognitive Software, where he pioneered the company’s hybrid cloud business, transformed IBM’s entire software and services portfolio and offerings for cloud, and grew the business. He also headed IBM Research, where he drove innovation in core and emerging technologies including artificial intelligence, quantum computing, blockchain, cloud platform services, data-driven solutions, and nanotechnology. In 2016, Wired Magazine selected Arvind as “one of 25 geniuses who are creating the future of business” for his foundational work on blockchain.\nAs general manager of IBM Systems and Technology Group’s development and manufacturing organization, Arvind led the strategy for data-centric systems and the widespread industry adoption of open and collaborative technology standards. He also grew the IBM Information Management business by 50 percent.\nAt IBM, Arvind has been an outspoken advocate for learning at every stage of one’s career. He has made scientific contributions in a number of technical fields, including wireless networking, security, systems, and databases. In addition, he founded IBM’s security software business and helped create the world’s first commercial wireless system.\nArvind is a member of the Board of Directors of the New York Federal Reserve Bank, and he serves on the Board of Directors of Northrop Grumman and the US-India Strategic Partnership Forum. Arvind has an undergraduate degree from the Indian Institute of Technology, Kanpur (IITK) and a Ph.D. from the University of Illinois at Urbana-Champaign. He is the recipient of distinguished alumni awards from both institutions.",
       "rights": "short-quotation"
+    },
+    {
+      "id": "linkedin-lightwell-post",
+      "url": "https://www.linkedin.com/posts/arvindkrishna_today-ibm-and-red-hat-are-announcing-project-activity-7465709126950514688-PhOi",
+      "title": "Arvind Krishna — LinkedIn post announcing Project Lightwell",
+      "publisher": "LinkedIn",
+      "publishedAt": "2026-05-28T10:22:42.015Z",
+      "retrievedAt": "2026-09-06T23:27:00Z",
+      "family": "public-social",
+      "sourceClass": "self-report",
+      "language": "en",
+      "hash": "7d42b08b0ff1b04518d980b92ed8d643bcbb624665cd78b90c875adf463b5434",
+      "excerpt": "Arvind Krishna (Chairman and Chief Executive Officer, IBM) — public LinkedIn post, activity 7465709126950514688, dated 2026-05-28T10:22:42Z by the page's embedded metadata. Verbatim post text:\n\nToday, IBM and Red Hat are announcing Project Lightwell, a $5B commitment to tackle what we see as one of the biggest emerging challenges facing organizations today: securing and maintaining open-source software at AI scale and speed.\n\nAt its core, Lightwell introduces a ‘clearinghouse’ model, a coordinated security layer that helps enterprises identify vulnerabilities and deploy validated patches across the software supply chain.\n\nIBM and Red Hat have already begun collaborating with a select group of early adopters on Project Lightwell, including Bank of America, BNY, Citi, Goldman Sachs, JPMorganChase, Mastercard, Morgan Stanley, RBC, State Street, Visa and Wells Fargo.\n\nThis is about acting at the speed of AI with trust, scale, and collaboration across the ecosystem to secure open source for the next generation of innovation. https://lnkd.in/e-7KDwEv",
+      "rights": "short-quotation",
+      "note": "Post text retained from the public post page; trailing comment-count chrome omitted."
+    },
+    {
+      "id": "linkedin-lightwell-reshare-alain",
+      "url": "https://www.linkedin.com/posts/alainjesulus_grc-opensource-softwaresupplychain-activity-7465803697072304130-WC-b",
+      "title": "Alain J. — LinkedIn post resharing Krishna's Project Lightwell announcement",
+      "publisher": "LinkedIn",
+      "publishedAt": "2026-05-28T16:38:29.290Z",
+      "retrievedAt": "2026-09-06T23:27:00Z",
+      "family": "public-social",
+      "sourceClass": "independent-account",
+      "language": "en",
+      "hash": "8cfaa16b41b5955efff9d5a2d58567e6711c8f4772ea7fda85e8e4d494b30f26",
+      "excerpt": "Alain J. — public LinkedIn post, activity 7465803697072304130, dated 2026-05-28T16:38:29Z by the page's embedded metadata. Verbatim commentary text:\n\nIBM and Red Hat just announced Project Lightwell. $5 billion. 20,000+ engineers. AI-validated patches for open-source software at enterprise scale.\n\nThis is the kind of investment the problem actually requires.\n\nOpen source has always been one of the governance gaps nobody wanted to talk about. You're depending on community maintainers, inconsistent patch cycles, and supply chain dependencies most organizations can't fully map.\n\nLightwell builds a clearinghouse that changes that equation. Enterprises can report vulnerabilities, receive AI-validated fixes, and plug them directly into their supply chains.\n\nThat's not just a security upgrade. That's audit evidence. That's a defensible control.\n\nThe early adopters are all major financial institutions. That tells you who this is built for and how seriously software supply chain risk is being taken right now, as it should be.\n\nWorth watching closely.\n\n\n#GRC #OpenSource #SoftwareSupplyChain #RiskManagement",
+      "rights": "short-quotation",
+      "note": "Posted as a reshare embedding Krishna's 2026-05-28 original announcement; only the commentary retained here is Alain J.'s own statement — the embedded reshare is Krishna's, not his."
     }
   ],
   "facts": [
@@ -132,6 +162,61 @@
       ],
       "importance": "core",
       "acquisition": "app-supported"
+    },
+    {
+      "id": "lightwell-announcement",
+      "requirements": ["r7", "r8", "r16"],
+      "section": "work",
+      "statement": "In a public LinkedIn post dated 28 May 2026, IBM chairman and CEO Arvind Krishna announced Project Lightwell, a $5B IBM–Red Hat commitment to secure open-source software at AI scale through a clearinghouse model that identifies vulnerabilities and deploys validated patches, naming Bank of America, BNY, Citi, Goldman Sachs, JPMorganChase, Mastercard, Morgan Stanley, RBC, State Street, Visa and Wells Fargo as early adopters.",
+      "effectiveFrom": "2026-05-28",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "linkedin-lightwell-post",
+          "quote": "Today, IBM and Red Hat are announcing Project Lightwell, a $5B commitment to tackle what we see as one of the biggest emerging challenges facing organizations today: securing and maintaining open-source software at AI scale and speed."
+        }
+      ],
+      "importance": "core",
+      "acquisition": "beyond-current-coverage",
+      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source. (On LinkedIn specifically see docs/research/linkedin-reading-options.md.)"
+    },
+    {
+      "id": "lightwell-independent-reception",
+      "requirements": ["r9", "r14", "r20"],
+      "section": "recognition",
+      "statement": "Independent practitioner Alain J. received the announcement the same day as a serious enterprise control, writing that Lightwell changes the supply-chain equation and calling it audit evidence and a defensible control.",
+      "effectiveFrom": "2026-05-28",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "linkedin-lightwell-reshare-alain",
+          "quote": "That's not just a security upgrade. That's audit evidence. That's a defensible control."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "beyond-current-coverage",
+      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source. (On LinkedIn specifically see docs/research/linkedin-reading-options.md.)"
+    },
+    {
+      "id": "lightwell-original-vs-reshare",
+      "requirements": ["r20", "r16"],
+      "section": "context",
+      "statement": "Krishna's Lightwell text circulates in two distinguishable forms: his 28 May 2026 original post, and Alain J.'s same-day LinkedIn reshare, which embeds Krishna's original beneath Alain's own commentary. The reshare does not make the announcement Alain's statement.",
+      "effectiveFrom": "2026-05-28",
+      "effectiveTo": null,
+      "support": [
+        {
+          "documentId": "linkedin-lightwell-post",
+          "quote": "Today, IBM and Red Hat are announcing Project Lightwell, a $5B commitment"
+        },
+        {
+          "documentId": "linkedin-lightwell-reshare-alain",
+          "quote": "IBM and Red Hat just announced Project Lightwell."
+        }
+      ],
+      "importance": "supporting",
+      "acquisition": "beyond-current-coverage",
+      "note": "No current collector reads public social timelines; this fact is a coverage target, not a currently acquirable source. (On LinkedIn specifically see docs/research/linkedin-reading-options.md.)"
     }
   ],
   "unjustified": [
@@ -146,6 +231,12 @@
       "statement": "Krishna personally financed the $34 billion Red Hat transaction.",
       "why": "IBM acquired Red Hat; leadership credit does not imply personal funding.",
       "kind": "team-output-as-personal"
+    },
+    {
+      "id": "lightwell-reshare-as-announcement",
+      "statement": "Alain J. announced Project Lightwell in May 2026.",
+      "why": "Alain J.'s LinkedIn post embeds Arvind Krishna's 28 May 2026 original announcement as a reshare; only the surrounding commentary is Alain's own statement. Treating the reshare as the announcement misattributes authorship from Krishna to the reposter.",
+      "kind": "wrong-person"
     }
   ],
   "unavailable": [
@@ -158,5 +249,12 @@
       "reason": "The retained record does not define a complete population of work against which a capability intersection can be counted."
     }
   ],
-  "corrections": []
+  "corrections": [
+    {
+      "at": "2026-09-06T23:44:01Z",
+      "referenceVersion": "2026-09-06.2",
+      "change": "Added two dated public-social references (Krishna's 2026-05-28 Project Lightwell post and Alain J.'s same-day reshare) with three facts and one wrong-person guard. Existing references remain unchanged.",
+      "evidence": "Public post pages/API responses retained 2026-09-06. See docs/research/person-benchmark-public-social-facts-2026-09-06.md."
+    }
+  ]
 }
