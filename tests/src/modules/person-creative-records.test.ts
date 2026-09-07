@@ -1,3 +1,5 @@
+import { fromPartial } from "@total-typescript/shoehorn";
+import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,9 +12,10 @@ import {
   PersonResearch,
   researchAllowance,
 } from "../../../apps/server/src/person-profile/research.js";
-import type {
-  ReaderPorts,
-  SourceReadResult,
+import {
+  readPersonSource,
+  type ReaderPorts,
+  type SourceReadResult,
 } from "../../../apps/server/src/person-profile/research-readers.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 import {
@@ -617,4 +620,35 @@ test("a catalogue refusal envelope fails the read and retains no source", async 
   expect(dossiers.get(profile.id)?.sourceIds ?? []).toEqual([]);
   const dossier: PersonDossier | null = dossiers.get(profile.id);
   expect(dossier?.claims ?? []).toEqual([]);
+});
+test("a 404 JSON response from a creative record endpoint returns an empty failed read", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-creative-refusal-404");
+  const result = await readPersonSource(
+    "https://openlibrary.org/works/OL12345W",
+    "some snippet text that should not be kept",
+    fromPartial<ReaderPorts>({
+      fetch: async (url: string) => ({
+        url,
+        status: 404,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: JSON.stringify({ error: "notfound", key: "/works/OL12345W" }),
+      }),
+      recorder,
+      timeoutMs: 1000,
+    }),
+  );
+
+  expect(result.access).toBe("failed");
+  expect(result.text).toBe("");
+  expect(result.completeness).toBe("unavailable");
+  const failures = recorder.failures();
+  expect(failures.length).toBeGreaterThan(0);
+  expect(failures[0]).toMatchObject({
+    collector: "record-reader",
+    code: "resource-unavailable",
+    outcome: "failed",
+  });
 });

@@ -1701,8 +1701,41 @@ async function readRecord(
     /* Record endpoints answer data, not pages: several of them serve XML or a
        406 to the shared transport's HTML-first accept list. */
     const response = await request(route.endpoint, context, "record-reader", "application/json");
-    if (response && response.status < 400)
-      return renderJson(url, response, family, context, route.index);
+    if (response) {
+      if (response.status < 400) return renderJson(url, response, family, context, route.index);
+      const parsed = safeJson(response.body);
+      const nonRecord = parsed
+        ? (registryNonRecordBody(route.index, parsed) ?? creativeNonRecordBody(route.index, parsed))
+        : null;
+      if (nonRecord) {
+        const refusal = nonRecord === "registry-error-envelope";
+        context.recorder.record({
+          stage: "access",
+          code: nonRecord,
+          outcome: "failed",
+          recovery: "stopped",
+          cause: "observed",
+          target: response.url,
+          targetKind: "record",
+          collector: "record-reader",
+          reason: refusal
+            ? `The ${route.index} record endpoint answered HTTP ${response.status} with its own error envelope rather than a record.`
+            : `The ${route.index} record endpoint answered: no record for this identifier.`,
+          attemptOf: context.attemptOf,
+          observed: {
+            status: response.status,
+            finalUrl: response.url,
+            bytes: response.body.length,
+            bodyHash: hash(response.body),
+          },
+          impact: refusal
+            ? "The record contributed no text."
+            : `The ${route.index} catalogue holds no record for this identifier.`,
+          remediation: `Retry later, then reproduce with: curl -sS '${response.url}'`,
+        });
+        return unavailable(family, "record-reader", "failed", "", response.url);
+      }
+    }
     const remaining = routes.length - position - 1;
     context.recorder.record({
       stage: "access",
