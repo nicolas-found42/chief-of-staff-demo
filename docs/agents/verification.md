@@ -83,7 +83,7 @@ runtime measurements, fault probes, and the scope of each gate.
 
 Goldens live in `tests/fixtures/debrief-golden/` (expectations plus the input
 transcripts). `upstage/solar-pro4` is the gate model; cheaper models (e.g.
-`moonshotai/mercury-2.5-preview`) run as data points only, never as the gate.
+`inception/mercury-2.5-preview`) run as data points only, never as the gate.
 The gate needs `OPENROUTER_API_KEY` and spends real API budget, so it is not
 part of `check` — run it before commits that touch the debrief prompt and any
 time eval outputs are refreshed. Goldens are hand-written from the transcripts,
