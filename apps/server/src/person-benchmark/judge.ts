@@ -10,6 +10,7 @@ import type {
   PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
+import { normalizeQuote } from "./ambiguity.js";
 
 /** The judge's own version. A comparison holds it fixed across both runs. */
 export const JUDGE_VERSION = "2026-09-06.8";
@@ -167,15 +168,18 @@ export async function judgePerson(
     const quoted = found.evidence?.trim() ?? "";
     const named = claims.find((claim) => claim.id === found.claimId) ?? null;
     const excerptOfNamed = named !== null && quoted.length > 0 && named.statement.includes(quoted);
+    const normalizedQuoted = normalizeQuote(quoted);
     const excerptOfCitedPassage =
       !excerptOfNamed &&
       named !== null &&
-      quoted.length >= CITATION_QUOTE_MIN_LENGTH &&
-      named.citations.some(
-        (citation) =>
-          citation.quote.length >= CITATION_QUOTE_MIN_LENGTH &&
-          (citation.quote.includes(quoted) || quoted.includes(citation.quote)),
-      );
+      normalizedQuoted.length >= CITATION_QUOTE_MIN_LENGTH &&
+      named.citations.some((citation) => {
+        const cited = normalizeQuote(citation.quote);
+        return (
+          cited.length >= CITATION_QUOTE_MIN_LENGTH &&
+          (cited.includes(normalizedQuoted) || normalizedQuoted.includes(cited))
+        );
+      });
     const present = (found.verdict === "missing" && quoted.length === 0) || excerptOfNamed;
     return {
       factId: fact.id,

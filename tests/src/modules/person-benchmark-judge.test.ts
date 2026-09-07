@@ -381,6 +381,33 @@ it("rejects a citation-passage selection as an unresolved observation", async ()
   expect(result.judgements[0].rationale).toContain("cited passage, not the claim statement");
 });
 
+it("recognizes a citation-passage selection despite formatting differences", async () => {
+  const { person, dossier, sources, quote } = fixture();
+  const wrapped = quote.replace("built the interface;", "built the\ninterface;");
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "recovered",
+                evidence: wrapped,
+                claimId: "claim-120",
+                rationale: "The dossier states the same fact.",
+              },
+            ],
+          }
+        : SUPPORT_OK,
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.judgements[0].verdict).toBe("ambiguous");
+  expect(result.judgements[0].rationale).toContain("does not occur in the dossier");
+  expect(result.judgements[0].rationale).toContain("cited passage, not the claim statement");
+});
+
 it("rejects an invented excerpt as an unresolved observation", async () => {
   const { person, dossier, sources } = fixture();
   const result = await judgePerson(
