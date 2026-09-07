@@ -2470,6 +2470,124 @@ describe("openrouter route rests and the binding ladder", () => {
     expect(routing(1)).toEqual({ sort: "throughput", ignore: ["DeepInfra"] });
   });
 
+  /* ADR-0068 bounds the rest list "so a bad stretch cannot narrow a model
+     served by few endpoints down to none", but the bound is a constant eight
+     while `inception/mercury-2.5-preview` is served by exactly one endpoint.
+     Issue #228: one request timeout rested that single route process-wide, and
+     every later call for all thirty people answered HTTP 404 "All providers
+     have been ignored" — a self-inflicted outage the seam mistook for an
+     upstream refusal and spent the whole binding ladder on. A rest may cost a
+     route; it may never cost the model every route it has. */
+  it("clears the rests when routing reports it ignored every route", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 429,
+      body: {
+        error: {
+          message: "Provider returned error",
+          code: 429,
+          metadata: { provider_name: "Inception" },
+        },
+      },
+    });
+    await openrouter("some/single-endpoint-model")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch(() => undefined);
+
+    /* The rest is now the model's entire routing pool, so routing has nowhere
+       left to send the call and says so at its own funnel step. */
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 404,
+      body: {
+        error: {
+          message: "All providers have been ignored.",
+          code: 404,
+          metadata: {
+            routing_funnel: [{ step: "Initial Endpoints", endpoint_count: 1 }],
+            failed_routing_step: "Filter by Ignored Providers",
+          },
+        },
+      },
+    });
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+
+    await expect(
+      openrouter("some/single-endpoint-model")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+
+    /* The call that emptied the pool carried the rest; the recovery drops it
+       and asks again rather than stepping the ladder down against a route
+       that was never asked. */
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Inception"] });
+    expect(routing(2)).toEqual({ sort: "throughput" });
+  });
+
+  /* The recovery gives the rests up and asks again; it must not become a way
+     to keep asking. This pins its shape: one call carries the rest, one gives
+     it up, and refusals after that are spent on the ladder.
+
+     What it does NOT pin is the `restsGivenUp` latch. `routeRest` is
+     process-wide and operations run concurrently, so a peer can rest the route
+     again between the clear and the retry and hand the pair another empty
+     pool; the latch bounds that. This harness drives one call at a time and
+     nothing re-rests between iterations, so the test stays green with the
+     latch removed — verified, not assumed. Pinning it needs a seam that lets a
+     peer rest a route mid-call, which the seam does not offer today. The latch
+     is kept as the cheaper side of that gap and the gap is recorded here. */
+  it("carries the rest once and gives it up once, then spends the ladder", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 429,
+      body: { error: { message: "…", code: 429, metadata: { provider_name: "Inception" } } },
+    });
+    await openrouter("some/one-route-under-contention")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch(() => undefined);
+    const restedCalls = calls.length;
+
+    for (let n = 0; n < 40; n += 1) {
+      declarations.push(declaring("temperature"));
+      responses.push({
+        status: 404,
+        body: {
+          error: {
+            message: "All providers have been ignored.",
+            code: 404,
+            metadata: { failed_routing_step: "Filter by Ignored Providers" },
+          },
+        },
+      });
+    }
+
+    const refused = await openrouter("some/one-route-under-contention")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+
+    expect(refused).toMatchObject({ classification: "http_error", status: 404 });
+    /* Forty refusals were queued and the ladder is a handful of rungs; ending
+       well inside that queue is ending on the ladder. */
+    expect(calls.length - restedCalls).toBeLessThan(10);
+    expect(routing(restedCalls)).toEqual({ sort: "throughput", ignore: ["Inception"] });
+    expect(
+      calls.slice(restedCalls).filter((call) => {
+        const provider = call.body.provider as Record<string, unknown>;
+        return provider.ignore !== undefined;
+      }),
+    ).toHaveLength(1);
+  });
+
   /* A route that names a fault of its own is not a route that cannot serve the
      call: the upstream answered, said what went wrong, and may well answer the
      next one. Resting on every failure alike would empty the routing pool. */
