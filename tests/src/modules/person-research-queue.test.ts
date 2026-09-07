@@ -46,6 +46,37 @@ test("queue coalesces creation requests and counts failed calls without deferrin
   expect(queue.status().usedCalls).toBe(1);
   expect(queue.status().jobs[0]?.state).toBe("unavailable");
 });
+test("one named lookup returns one Profile's queue record", () => {
+  const root = mkdtempSync(join(tmpdir(), "research-queue-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const queue = new PersonResearchQueue({
+    workspaceDir: root,
+    people,
+    research,
+    enabled: () => true,
+  });
+  queue.enqueue(person.id, "created");
+  const job = queue.job(person.id);
+  expect(job?.profileId).toBe(person.id);
+  expect(job?.state).toBe("queued");
+  /* The named lookup hands back the same record the status endpoint reports
+     for this Profile, so the dossier view keeps its response shape. */
+  expect(job).toEqual(queue.status().jobs.find((entry) => entry.profileId === person.id));
+  /* And a clone: a caller holding the record cannot mutate the queue. */
+  job!.state = "researching";
+  expect(queue.job(person.id)?.state).toBe("queued");
+  expect(queue.job("no-such-profile")).toBeNull();
+});
 
 test.each(["archive", "correction", "merge", "privacy", "pause", "gate", "stop", "evidence"])(
   "%s during retrieval prevents late research publication",
