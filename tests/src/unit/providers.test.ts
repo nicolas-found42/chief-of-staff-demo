@@ -2470,6 +2470,66 @@ describe("openrouter route rests and the binding ladder", () => {
     expect(routing(1)).toEqual({ sort: "throughput", ignore: ["DeepInfra"] });
   });
 
+  /* ADR-0068 bounds the rest list "so a bad stretch cannot narrow a model
+     served by few endpoints down to none", but the bound is a constant eight
+     while `inception/mercury-2.5-preview` is served by exactly one endpoint.
+     Issue #228: one request timeout rested that single route process-wide, and
+     every later call for all thirty people answered HTTP 404 "All providers
+     have been ignored" — a self-inflicted outage the seam mistook for an
+     upstream refusal and spent the whole binding ladder on. A rest may cost a
+     route; it may never cost the model every route it has. */
+  it("clears the rests when routing reports it ignored every route", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 429,
+      body: {
+        error: {
+          message: "Provider returned error",
+          code: 429,
+          metadata: { provider_name: "Inception" },
+        },
+      },
+    });
+    await openrouter("some/single-endpoint-model")({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+    }).catch(() => undefined);
+
+    /* The rest is now the model's entire routing pool, so routing has nowhere
+       left to send the call and says so at its own funnel step. */
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 404,
+      body: {
+        error: {
+          message: "All providers have been ignored.",
+          code: 404,
+          metadata: {
+            routing_funnel: [{ step: "Initial Endpoints", endpoint_count: 1 }],
+            failed_routing_step: "Filter by Ignored Providers",
+          },
+        },
+      },
+    });
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+
+    await expect(
+      openrouter("some/single-endpoint-model")({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+      }),
+    ).resolves.toEqual(RESULT);
+
+    /* The call that emptied the pool carried the rest; the recovery drops it
+       and asks again rather than stepping the ladder down against a route
+       that was never asked. */
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Inception"] });
+    expect(routing(2)).toEqual({ sort: "throughput" });
+  });
+
   /* A route that names a fault of its own is not a route that cannot serve the
      call: the upstream answered, said what went wrong, and may well answer the
      next one. Resting on every failure alike would empty the routing pool. */

@@ -1136,6 +1136,23 @@ function restFailedRoute(model: string, diagnostic: ModelBoundaryDiagnostic | nu
 }
 
 /**
+ * Drop every rest this model is carrying.
+ *
+ * ADR-0068 bounds the rest list so "a bad stretch cannot narrow a model served
+ * by few endpoints down to none", but it spends a constant eight on a question
+ * only the model's own endpoint count can answer: the configured
+ * `inception/mercury-2.5-preview` is served by exactly one route, so the first
+ * rest is already the whole pool. Rather than learn the count — a catalogue
+ * lookup ADR-0068 rejected as a label that goes stale — the seam lets routing
+ * tell it, and gives the rests up the moment they are what stands between the
+ * call and a route.
+ */
+function clearRests(model: string): void {
+  const prefix = `${model}\u0000`;
+  for (const key of [...routeRest.keys()]) if (key.startsWith(prefix)) routeRest.delete(key);
+}
+
+/**
  * The bindings one call may use, in the order it will try them.
  *
  * `chosen` is what the model declared support for, or `null` when there is no
@@ -1198,6 +1215,9 @@ async function openAiCompatibleComplete(
     }
     const call = modelCall(cfg, ladder[index] ?? "prompt_only");
     const body = chatCompletionBody(call.binding, cfg, request, schema);
+    /* What this attempt asked routing to skip, so a refusal can be read as the
+       rests' doing rather than the binding's. */
+    let skippedRoutes: string[] = [];
     if (stream) body.stream = true;
     /* OpenRouter unions endpoint declarations across a model's routes, so a
        declared binding is not a promise that any single route honours the
@@ -1224,6 +1244,7 @@ async function openAiCompatibleComplete(
         provider.preferred_min_throughput = request.preferredMinThroughput;
       if (resting.length > 0) provider.ignore = resting;
       body.provider = provider;
+      skippedRoutes = resting;
     }
     let response: HttpResponse;
     try {
@@ -1302,6 +1323,32 @@ async function openAiCompatibleComplete(
        The refusal is read off the 404 status alone: OpenRouter's body wording
        varies with what its routing pool happened to say that day, so it is
        not a contract to match against (#271). */
+    /* A 404 while this attempt carried `ignore` is not the route refusing the
+       binding — it is routing reporting that the rests left it nowhere to go,
+       and stepping the ladder down answers a question no route was ever asked.
+       The discriminator is what the attempt sent, not how the body was worded:
+       #271 established that OpenRouter's wording varies with its routing pool
+       and is not a contract to match against. Giving the rests up costs at
+       most a repeat of the failure that earned them; keeping them costs every
+       remaining call in the operation (#228). */
+    if (cfg.provider === "openrouter" && response.status === 404 && skippedRoutes.length > 0) {
+      clearRests(cfg.model);
+      deadline.reportAttempt({
+        outcome: "retrying",
+        diagnostic:
+          modelBoundaryDiagnostic(
+            modelBoundaryFailure({
+              call,
+              classification: "http_error",
+              status: response.status,
+              body: response.text,
+            }),
+          ) ?? null,
+        delayMs: 0,
+        stoppedReason: null,
+      });
+      continue;
+    }
     if (
       index < ladder.length - 1 &&
       (response.status === 404 ||
