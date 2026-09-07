@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "g=\"${CLAUDE_PROJECT_DIR:-$PWD}/.claude/hooks/require-clean-sourcery-review.sh\"; if [ -x \"$g\" ]; then exec \"$g\"; else jq -n '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"The merge guard .claude/hooks/require-clean-sourcery-review.sh could not be run, so the Sourcery review gate could not be checked. Restore the script or check it is executable.\"}}'; fi",
+            "timeout": 30,
+            "statusMessage": "Checking the Sourcery review for this head commit"
+          }
+        ]
+      }
+    ]
+  }
+}
