@@ -364,6 +364,17 @@ test("a TVmaze Not Found envelope contributes no creative fact", () => {
   ).toBe("resource-unavailable");
   expect(renderCreativeRecord("tvmaze.com", { name: "Not Found", status: 404 })).toBeNull();
   expect(creativeNonRecordBody("tvmaze.com", TVMAZE_PERSON)).toBeNull();
+  expect(creativeNonRecordBody("tvmaze.com", [])).toBe("resource-unavailable");
+  expect(renderCreativeRecord("tvmaze.com", [])).toBeNull();
+});
+
+test("a TVmaze people-search response unwraps the hit under CC BY-SA", () => {
+  const searchHit = [{ score: 0.95, person: TVMAZE_PERSON }];
+  const rendered = renderCreativeRecord("tvmaze.com", searchHit)!;
+  expect(rendered).not.toBeNull();
+  expect(rendered.text).toContain("Lena Headey");
+  expect(rendered.text).toContain("credited as Cersei Lannister on Game of Thrones");
+  expect(rendered.rights.metadata.basis).toBe("tvmaze-free-api");
 });
 
 test("an empty LOC result set is a coverage fact, never retained text", () => {
@@ -423,7 +434,7 @@ const wiredCreativeRead = (body: unknown, index: string, finalUrl: string): Sour
     anchors: rendered.anchors,
     provenanceNote: rendered.provenanceNote,
     sourceVersion: rendered.sourceVersion,
-    rights: null,
+    rights: rendered.rights,
     finalUrl,
   };
 };

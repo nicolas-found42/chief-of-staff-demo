@@ -364,9 +364,6 @@ async function readArchivedCapture(
   context: ReadContext,
 ): Promise<SourceReadResult> {
   const family: PersonSourceFamily = "historical-evidence";
-  if (commonCrawlCapture(capture.original)) {
-    return refuseCommonCrawlCapture(url, family, context);
-  }
   const failed = (access: SourceReadResult["access"], finalUrl: string): SourceReadResult =>
     /* Deliberately no snippet: the only text in hand is the archive's, and a
        failed capture must contribute nothing that could be read as evidence. */
@@ -521,7 +518,7 @@ function commonCrawlCapture(url: string): boolean {
     const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
     return (
       host === "data.commoncrawl.org" ||
-      (host.endsWith("commoncrawl.org") &&
+      (/(^|\.)commoncrawl\.org$/.test(host) &&
         (parsed.pathname.includes("/crawl-data/") || /\.warc(\.gz)?/i.test(parsed.pathname)))
     );
   } catch {

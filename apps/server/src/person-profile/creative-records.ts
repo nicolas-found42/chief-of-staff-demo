@@ -49,12 +49,9 @@ export const CREDIT_LIMIT =
 /**
  * Metadata permission bases this module's renderings are retained under.
  *
- * These become exact the moment the integration owner adds them to the
- * shared `PersonSourceRights` metadata-basis enum alongside the
- * sibling-ticket bases (`orcid-public-api` for #252, `nppes-public-registry`
- * and `clinicaltrials-public-api` for #250). Until then the assembly below
- * carries them through one contained cast; the runtime values — which the
- * tests assert — are already these strings.
+ * Sibling-ticket bases join them in the shared `PersonSourceRights` enum:
+ * `orcid-public-api` for #252, `nppes-public-registry` and
+ * `clinicaltrials-public-api` for #250, and these three for #251.
  */
 export const CREATIVE_METADATA_BASES = [
   "openlibrary-public-api",
@@ -187,6 +184,14 @@ export function creativeNonRecordBody(
   body: unknown,
 ): PersonResearchFailureCode | null {
   if (!(CREATIVE_RENDERERS as readonly string[]).includes(index)) return null;
+  if (index === "tvmaze.com") {
+    /* An empty search result set answers HTTP 200 with [] */
+    if (Array.isArray(body) && body.length === 0) return "resource-unavailable";
+    const envelope = record(body);
+    if (envelope && typeof envelope.status === "number")
+      return envelope.status === 404 ? "resource-unavailable" : "registry-error-envelope";
+    return null;
+  }
   const envelope = record(body);
   if (!envelope) return null;
   if (index === "openlibrary.org") {
@@ -204,12 +209,6 @@ export function creativeNonRecordBody(
       return envelope.results.length === 0 ? "resource-unavailable" : null;
     return null;
   }
-  /* A person, show or credit lookup that matches nothing answers HTTP 404
-     with {"name": "Not Found", ..., "status": 404}. The numeric `status` is
-     what tells the envelope apart: a person record also carries `name`, so
-     matching on `name` alone would refuse every person. */
-  if (typeof envelope.status === "number")
-    return envelope.status === 404 ? "resource-unavailable" : "registry-error-envelope";
   return null;
 }
 
@@ -218,15 +217,11 @@ export function creativeNonRecordBody(
 /* ------------------------------------------------------------------ */
 
 function assemble(index: string, facts: RecordFacts): CreativeRecordRendering {
-  /* The three new metadata bases and the three new materials join the shared
-     schema with the integration owner's extension (see
-     CREATIVE_METADATA_BASES and CREATIVE_MATERIALS): one contained cast at
-     the single place renderings are built, never a per-field fudge. */
-  const rights = {
+  const rights: PersonSourceRights = {
     metadata: facts.metadata,
     declared: [],
     materials: facts.materials,
-  } as unknown as PersonSourceRights;
+  };
 
   const sections: [string, string[]][] = [
     ["Record identity", facts.identity.map(([label, value]) => `${label}: ${value}`)],
@@ -654,8 +649,11 @@ function libraryOfCongressFacts(body: unknown): RecordFacts | null {
  * never says what performing the role meant.
  */
 function tvmazeFacts(body: unknown): RecordFacts | null {
-  const envelope = record(body);
-  if (!envelope) return null;
+  const unwrapped = Array.isArray(body)
+    ? (record(record(body[0])?.person) ?? record(body[0]))
+    : record(body);
+  if (!unwrapped) return null;
+  const envelope = unwrapped;
   const embeddedCast = list(record(envelope._embedded)?.cast);
   const page = str(envelope.url, 600);
   const selfHref = str(record(record(envelope._links)?.self)?.href, 600);
