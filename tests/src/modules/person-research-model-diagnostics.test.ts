@@ -223,6 +223,8 @@ test.each([1, 3])(
         request.retry?.onAttempt({
           attempt: 1,
           binding: "forced_tool_call",
+          provider: "openrouter",
+          model: "model",
           outcome: "retrying",
           diagnostic,
           delayMs: 500,
@@ -232,6 +234,8 @@ test.each([1, 3])(
         request.retry?.onAttempt({
           attempt: 2,
           binding: "forced_tool_call",
+          provider: "openrouter",
+          model: "model",
           outcome: "succeeded",
           diagnostic: null,
           delayMs: 0,

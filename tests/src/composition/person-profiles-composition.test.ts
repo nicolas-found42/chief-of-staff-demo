@@ -8,6 +8,7 @@ import {
   type PersonProfilesComposition,
   type PersonProfilesCompositionDeps,
 } from "../../../apps/server/src/person-profile/composition";
+import { modelBoundaryFailure } from "../../../apps/server/src/llm/failure";
 
 /**
  * The Person Profiles product, composed without a Shell.
@@ -186,6 +187,93 @@ describe("the Person Profiles composition", () => {
       "Maya built Atlas.",
     );
     expect(dossier.claims).toEqual([]);
+  });
+  /**
+   * The diagnosed extraction stall is a stream that opens a tool call and
+   * then buffers it: the silent ceiling fires `request_timeout` naming the
+   * route, while the document itself is fine (#232). Extraction asks routing
+   * for a fast route up front, and the operation completes once an answer
+   * arrives instead of interrupting on the stall (#233).
+   */
+  it("asks routing for a fast route and completes after a stalled extraction attempt", async () => {
+    const floors: unknown[] = [];
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `Maya built project ${new URL(url).pathname.slice(1)}.`,
+        }),
+      },
+      complete: () => async (request) => {
+        /* `preferredMinThroughput` does not exist pre-fix; the cast keeps this
+           red at runtime rather than uncompilable while the fix is absent. */
+        floors.push((request as unknown as Record<string, unknown>).preferredMinThroughput);
+        const { document } = JSON.parse(request.user) as { document: { url: string } };
+        const index = new URL(document.url).pathname.slice(1);
+        if (index === "1") {
+          throw modelBoundaryFailure({
+            call: { provider: "openrouter", model: "test/model", binding: "forced_tool_call" },
+            classification: "request_timeout",
+            timeoutMs: 90_000,
+            upstreamServer: "Wafer",
+          });
+        }
+        const quote = `Maya built project ${index}.`;
+        return {
+          fullName: null,
+          employer: null,
+          sourceClass: "primary-artifact",
+          author: null,
+          publishedAt: null,
+          claims: [
+            {
+              id: `work-${index}`,
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        };
+      },
+    });
+    const profile = h.people.profiles.create({
+      profileUrls: ["https://example.com/1", "https://example.com/2"],
+    });
+    await h.people.queue.tick();
+    const outcome = h.people.research.outcome(profile.id)!;
+    /* The stall is absorbed and the surviving document still yields its claim. */
+    expect(outcome.conclusion).toBe("completed");
+    expect(h.people.dossiers.get(profile.id)!.claims.map((claim) => claim.statement)).toEqual([
+      "Maya built project 2.",
+    ]);
+    /* Every extraction attempt asked routing for a fast route. */
+    expect(floors).toEqual([50, 50]);
+    /* And the research record names the preference, so a later comparison
+       stays attributable instead of silently faster. */
+    expect(outcome.attempts).toContainEqual(
+      expect.objectContaining({
+        stage: "extraction",
+        code: "model-boundary-failed",
+        configuration: expect.objectContaining({ preferredMinThroughput: "50 tokens/second" }),
+      }),
+    );
   });
 
   /**

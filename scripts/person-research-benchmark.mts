@@ -24,6 +24,7 @@ import {
 } from "../apps/server/src/person-benchmark/evaluate.js";
 import { evaluateCollection } from "../apps/server/src/person-benchmark/collection.js";
 import { composePersonProfiles } from "../apps/server/src/person-profile/composition.js";
+import { EXTRACTION_PREFERRED_MIN_THROUGHPUT } from "../apps/server/src/person-profile/research.js";
 import { JUDGE_VERSION } from "../apps/server/src/person-benchmark/judge.js";
 import { retainEvidence } from "../apps/server/src/person-benchmark/evidence.js";
 import { reassessReport } from "../apps/server/src/person-benchmark/reassess.js";
@@ -66,7 +67,7 @@ Options
   --profile-calls <n>                      Model-call bound per operation.
   --profile-ms <n>                         Wall-clock bound per operation.
   --read-concurrency <n>                   Sources read at once.
-  --concurrency <1-4>                      Live people researched concurrently (default: 1).
+  --concurrency <1-4>                      People researched concurrently (default: 1).
   --retain-evidence                       Preserve a public evidence snapshot under --out for reassessment.
   --render                                 Allow the bounded anonymous browser route (live mode).
   --compare <baseline.json> <candidate.json>  Compare two saved reports and exit.
@@ -180,8 +181,6 @@ if (pipeline !== "incumbent" && pipeline !== "expanded")
 
 const concurrency = positiveInteger("concurrency", 1);
 if (concurrency > 4) throw new Error("--concurrency must be an integer from 1 to 4.");
-if (mode === "fixed-documents" && concurrency > 1)
-  throw new Error("Fixed-document mode requires --concurrency 1.");
 
 const configPath = arg("config") ?? "workspace/config.json";
 const settings = new ConfigStore(resolve(configPath), false);
@@ -382,10 +381,30 @@ try {
       onEvaluated,
     }));
   } else {
-    for (const [index, person] of selected.entries()) {
-      onStarted(person, index);
-      onEvaluated(await evaluatePerson(person, mode, ports));
-    }
+    /* Fixed-document mode used to research people serially. Each person runs
+       through its own composition over the shared collection workspace, and
+       every store under it is keyed per profile or per source, so parallel
+       people touch disjoint files; collection scoring reads the workspace
+       only after every worker settles. The one shared file (the research
+       queue snapshot) is loaded per composition and only its throwaway
+       persistence can interleave — nothing mid-run reads it back. Route
+       rests are process-wide by design, so parallel people share what each
+       learns about bad routes, the way the long-running app does (#233). */
+    let next = 0;
+    const workers = Array.from({ length: Math.min(concurrency, selected.length) }, async () => {
+      while (next < selected.length) {
+        const index = next++;
+        const person = selected[index]!;
+        onStarted(person, index);
+        onEvaluated(await evaluatePerson(person, mode, ports));
+      }
+    });
+    /* An output/assessment failure must not strand a sibling's accepted
+       operation mid-write: every worker settles before the first failure
+       surfaces, mirroring the live population path. */
+    const settled = await Promise.allSettled(workers);
+    const failure = settled.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
     people = composePersonProfiles({
       workspaceDir,
       search: configured.search,
@@ -481,6 +500,8 @@ const report: BenchmarkReport = {
         "Logical request text and returned answer characters; excludes retried wire payloads",
       judgeBindingPreference: "forced_tool_call when model-declared; default otherwise",
       extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
+      extractionRouteSort: "throughput",
+      extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
       planner: mode === "live-discovery" && pipeline === "expanded",
     },
     network: mode === "live-discovery" ? "live" : "fixed-documents",
