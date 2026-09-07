@@ -1403,6 +1403,17 @@ export class PersonResearch {
       .filter(grounded)
       .map((work) => ({
         ...work,
+        /* A work grounded only in a publication or deposit record carries no
+           independently-crawlable URL of its own: `deriveLeads` turns a
+           published work's `url` into an expansion lead every later round,
+           and a model asked to extract from this record's rendered text can
+           point that field at the record's own linked full text just as
+           easily as at a legitimate page. Dropping it here is what keeps that
+           full text unread under this record's metadata permission no matter
+           what the model claims about it (#249; the same review finding as
+           the sibling record module, PR #295) — the record's own matched URL
+           is retained as the source itself, not lost by nulling this field. */
+        url: participationOnly ? null : work.url,
         contribution:
           !participationOnly && work.contribution && grounded(work.contribution)
             ? work.contribution

@@ -33,6 +33,8 @@ afterEach(() => {
 const WORK_DOI = "https://doi.org/10.1126/science.1225829";
 const DEPOSIT_DOI = "https://doi.org/10.5281/zenodo.31780";
 const ABSTRACT = "Ditching invading DNA is what this abstract is about.";
+/** The full text a record links to: named in the record, read under its own rights. */
+const FULL_TEXT = "https://example.org/fulltext.pdf";
 
 /** One anonymous response, as the shared transport hands it to a reader. */
 const answer = (url: string, status: number, body: string): PublicHttpResponse => ({
@@ -82,7 +84,7 @@ function crossrefWork(author: {
       ],
       link: [
         {
-          URL: "https://example.org/fulltext.pdf",
+          URL: FULL_TEXT,
           "content-type": "application/pdf",
           "content-version": "vor",
         },
@@ -146,6 +148,8 @@ async function runResearch(options: {
   fetch: PublicHttpFetch;
   lookup: PersonProfileCreateInput;
   works?: boolean;
+  /** The url a "work" the model extracts claims for; defaults to none. */
+  workUrl?: string | null;
 }): Promise<RunResult> {
   const root = mkdtempSync(join(tmpdir(), "publication-records-"));
   roots.push(root);
@@ -195,7 +199,7 @@ async function runResearch(options: {
               {
                 id: "endonuclease",
                 title: "A Programmable Dual-RNA-Guided DNA Endonuclease",
-                url: null,
+                url: options.workUrl ?? null,
                 kind: "paper",
                 startedAt: null,
                 endedAt: null,
@@ -279,8 +283,14 @@ test("a matched publication record is retained with its dates, record version an
     expect.objectContaining({ material: "full-text", disposition: "not-retrieved" }),
   );
   expect(record.text).not.toContain(ABSTRACT);
-  /* The linked full text stays a lead with its own rights, not retained text. */
-  expect(record.outboundUrls).toContain("https://example.org/fulltext.pdf");
+  /* The linked full text is recorded provenance — named in the retained text
+     and in `rights.materials` — but it is never an outbound URL.
+     `outboundUrls` is exactly what PersonResearch turns into an
+     automatically-read lead (review finding on issue #249, PR #293): the full
+     text must stay unread under this record's metadata permission until
+     something reads it under its own rights. */
+  expect(record.text).toContain(FULL_TEXT);
+  expect(record.outboundUrls ?? []).not.toContain(FULL_TEXT);
 
   /* Participation is recorded as participation. The record names who took
      part; it does not state what any of them personally did. */
@@ -290,6 +300,40 @@ test("a matched publication record is retained with its dates, record version an
   expect(dossier?.works[0]?.contribution).toBeNull();
   expect(dossier?.works[0]?.authority).toEqual([]);
   expect(outcome.conclusion).toBe("completed");
+});
+
+test("a linked full text is never turned into a lead the research loop auto-fetches, even when a work claims it", async () => {
+  const fetchedUrls: string[] = [];
+  const { outcome, sources } = await runResearch({
+    url: WORK_DOI,
+    lookup: { fullName: "Maya Chen", currentEmployer: "Atlas Institute" },
+    works: true,
+    /* The model attributes contribution to a "work" addressed at exactly the
+       record's own linked full text — the shape PersonResearch turns into a
+       URL lead when it appears among a read's outboundUrls, and the shape
+       `deriveLeads` re-enqueues from a published work every later round
+       (review finding on issue #249, PR #293). */
+    workUrl: FULL_TEXT,
+    fetch: async (url) => {
+      fetchedUrls.push(url);
+      return url.includes("api.crossref.org")
+        ? answer(
+            url,
+            200,
+            crossrefWork({
+              given: "Maya",
+              family: "Chen",
+              affiliation: "Atlas Institute",
+              orcid: "https://orcid.org/0000-0002-1825-0097",
+            }),
+          )
+        : answer(url, 404, "");
+    },
+  });
+
+  expect(sources[0]?.outboundUrls ?? []).not.toContain(FULL_TEXT);
+  expect(outcome.leads.some((lead) => lead.target === FULL_TEXT)).toBe(false);
+  expect(fetchedUrls).not.toContain(FULL_TEXT);
 });
 
 test("a deposit record is read from the deposit index when the work index does not hold the DOI", async () => {
@@ -407,7 +451,7 @@ test("an inverted abstract index is not reconstructed into retained text", () =>
     abstract_inverted_index: { Ditching: [0], invading: [1], DNA: [2] },
     primary_location: {
       landing_page_url: "https://doi.org/10.1126/science.1225829",
-      pdf_url: "https://example.org/fulltext.pdf",
+      pdf_url: FULL_TEXT,
       license: "cc-by",
       source: { display_name: "Science" },
     },
@@ -431,7 +475,8 @@ test("an inverted abstract index is not reconstructed into retained text", () =>
   expect(rendering.rights.declared).toEqual([
     expect.objectContaining({ material: "full-text", statement: "cc-by", url: null }),
   ]);
-  expect(rendering.outboundUrls).toContain("https://doi.org/10.1126/science.1225829");
+  expect(rendering.text).toContain("https://doi.org/10.1126/science.1225829");
+  expect(rendering.outboundUrls).toEqual([]);
   expect(rendering.text).not.toContain("Ditching");
   expect(rendering.text).toContain("Maya Chen");
   expect(rendering.text).toContain(PARTICIPATION_LIMIT);
