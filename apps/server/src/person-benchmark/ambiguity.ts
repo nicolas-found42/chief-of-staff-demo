@@ -14,8 +14,11 @@
  * evaluate.ts downgrades recovered/partial verdicts to ambiguous when the
  * support/usefulness assessment did not complete
  * (`Original semantic verdict: ...; downgraded to ambiguous because ...`);
- * and a thrown reference-phase judge call leaves every fact of that person
- * ambiguous (`The judge did not return a usable verdict for this run.`).
+ * a verdict that names a dossier claim without quoting it is forced to
+ * ambiguous too (`(Downgraded: the verdict names a dossier claim but quotes no
+ * dossier text.)`); and a thrown reference-phase judge call leaves every fact
+ * of that person ambiguous (`The judge did not return a usable verdict for
+ * this run.`).
  */
 export const AMBIGUITY_CAUSES = [
   "judge-call-failed",
@@ -41,6 +44,8 @@ const JUDGE_CALL_FAILURE_RATIONALE = "The judge did not return a usable verdict 
 const GUARD_DOWNGRADE_MARKER = "does not occur in the dossier";
 /** Written by the judge seam when the quotation is from the named claim's cited passage (issue #235). */
 const CITATION_PASSAGE_MARKER = "cited passage, not the claim statement";
+/** Written by the judge seam when a verdict names a claim it never quoted (issue #236). */
+const NO_QUOTE_MARKER = "quotes no dossier text";
 const EVALUATOR_DOWNGRADE_PREFIX = "Original semantic verdict:";
 /** Literal evaluate.ts writes when incomplete support withholds credit. */
 const SUPPORT_DOWNGRADE_MARKER = "support/usefulness assessment did not complete";
@@ -120,7 +125,8 @@ const DOWNSTREAM_FIX: Record<AmbiguityCause, string> = {
     "instead of a non-missing verdict without evidence (judge.ts recovery prompt).",
   "no-evidence-cited-nonempty-dossier":
     "Judge citation discipline: require a claimId plus a verbatim claim excerpt for " +
-    "every non-missing verdict (judge.ts recovery prompt; the exact-claim guard stays).",
+    "every non-missing verdict, and a quote from every verdict that names a claim " +
+    "(judge.ts recovery prompt; the exact-claim guard stays).",
   "quote-matches-reference-text":
     "Judge quoting discipline plus guard normalization: quote the supplied dossier " +
     "claim rather than the reference wording, and normalize trailing punctuation in " +
@@ -170,9 +176,12 @@ export function classifyJudgement(
     corpusStatement,
   };
   const verdictBasis = `verdict ${judgement.factId}=ambiguous (${person.slug}/${population})`;
-  const guardBasis =
-    `rationale carries the exact-claim-guard downgrade ` +
-    `"(Downgraded: the quoted dossier text does not occur in the dossier.)"`;
+  const namedWithoutQuote = judgement.rationale.includes(NO_QUOTE_MARKER);
+  const guardBasis = namedWithoutQuote
+    ? `rationale carries the claim-quotation downgrade ` +
+      `"(Downgraded: the verdict names a dossier claim but quotes no dossier text.)"`
+    : `rationale carries the exact-claim-guard downgrade ` +
+      `"(Downgraded: the quoted dossier text does not occur in the dossier.)"`;
 
   if (judgement.rationale === JUDGE_CALL_FAILURE_RATIONALE) {
     return {
@@ -237,7 +246,7 @@ export function classifyJudgement(
     };
   }
 
-  if (judgement.rationale.includes(GUARD_DOWNGRADE_MARKER)) {
+  if (judgement.rationale.includes(GUARD_DOWNGRADE_MARKER) || namedWithoutQuote) {
     /* Claim-excerpt-selection verdicts (issue #235) name their own cause: the
        judge seam detected the quotation in the named claim's cited passage,
        so no retained citedQuote comparison is needed to decide the mismatch. */
@@ -254,7 +263,14 @@ export function classifyJudgement(
         downstreamFix: DOWNSTREAM_FIX["judge-quoted-citation-passage"],
       };
     }
-    if (judgement.claimId === null && judgement.evidenceQuote === null) {
+    /* No dossier text was quoted, so there is nothing to compare against a
+       claim statement or a cited passage. Whether the judge also named a
+       claim only changes the basis, not the cause (issue #236). */
+    if (judgement.evidenceQuote === null) {
+      const quotationBasis =
+        judgement.claimId === null
+          ? `claimId=null and evidenceQuote=null: the judge named no claim and quoted no dossier text`
+          : `claimId ${shortId(judgement.claimId)} is named and evidenceQuote=null: the judge named a claim and quoted no dossier text`;
       if (person.claimCount === 0) {
         return {
           ...base,
@@ -262,7 +278,7 @@ export function classifyJudgement(
           basis: [
             verdictBasis,
             guardBasis,
-            `claimId=null and evidenceQuote=null: the judge named no claim and quoted no dossier text`,
+            quotationBasis,
             `richness.claims=0: the dossier holds no claim that could have been cited`,
           ],
           downstreamFix: DOWNSTREAM_FIX["empty-dossier-no-evidence"],
@@ -274,7 +290,7 @@ export function classifyJudgement(
         basis: [
           verdictBasis,
           guardBasis,
-          `claimId=null and evidenceQuote=null: the judge named no claim and quoted no dossier text`,
+          quotationBasis,
           `richness.claims=${String(person.claimCount)}: the dossier holds claims, none of them cited`,
         ],
         downstreamFix: DOWNSTREAM_FIX["no-evidence-cited-nonempty-dossier"],
@@ -309,7 +325,7 @@ export function classifyJudgement(
       const claimBasis =
         `claimId ${shortId(judgement.claimId)} is retained via ${where} for ${person.slug}, ` +
         `so the ID is known and the guard failed on the quoted text`;
-      const normalizedEvidence = normalizeQuote(judgement.evidenceQuote ?? "");
+      const normalizedEvidence = normalizeQuote(judgement.evidenceQuote);
       const normalizedReference = normalizeQuote(judgement.referenceQuote);
       if (normalizedEvidence.length > 0 && normalizedEvidence === normalizedReference) {
         return {

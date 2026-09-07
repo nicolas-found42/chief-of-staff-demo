@@ -13,6 +13,8 @@ import {
 } from "../../../apps/server/src/person-benchmark/ambiguity.js";
 
 const GUARD_SUFFIX = "(Downgraded: the quoted dossier text does not occur in the dossier.)";
+const NO_QUOTE_SUFFIX =
+  "(Downgraded: the verdict names a dossier claim but quotes no dossier text.)";
 
 function person(overrides: Partial<ClassifiablePerson> = {}): ClassifiablePerson {
   return {
@@ -128,6 +130,24 @@ describe("classifyJudgement", () => {
       corpus(),
     );
     expect(assignment.cause).toBe("no-evidence-cited-nonempty-dossier");
+  });
+
+  it("assigns no-evidence-cited-nonempty-dossier when a named claim is never quoted", () => {
+    /* Issue #236: the judge seam forces this verdict to ambiguous with its own
+       marker rather than the exact-claim guard's, and it is still the same
+       cause — a verdict with no dossier text to check. */
+    const assignment = classifyJudgement(
+      "expanded",
+      person({ claimCount: 4 }),
+      judgement({
+        claimId: "broadening-claim",
+        rationale: `The dossier claims something broader. ${NO_QUOTE_SUFFIX}`,
+      }),
+      corpus(),
+    );
+    expect(assignment.cause).toBe("no-evidence-cited-nonempty-dossier");
+    expect(assignment.basis.join("\n")).toContain("quotes no dossier text");
+    expect(assignment.basis.join("\n")).toContain("named and evidenceQuote=null");
   });
 
   it("assigns quote-matches-reference-text when the quote equals the reference wording", () => {
