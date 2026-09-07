@@ -7,6 +7,7 @@ import {
   type BenchmarkReport,
 } from "@chief-of-staff-demo/shared";
 import { requirementLabel } from "./evaluate.js";
+import { EVALUATOR_DOWNGRADE_PREFIX } from "./ambiguity.js";
 
 /**
  * Grouped results, always with their denominators.
@@ -87,6 +88,18 @@ export function remainingMisses(
       if (judgement.verdict === "recovered") continue;
       const fact = person.facts.find((entry) => entry.id === judgement.factId);
       if (!fact) continue;
+      /* A withheld verdict's rationale opens with the evaluator's downgrade
+         disclosure, and the beyond-current-coverage branch reports the corpus
+         note instead of that rationale — so the disclosure must be carried
+         over explicitly, or a judge-confirmed-but-credit-withheld fact reads
+         as never-captured (issue #284). The disclosure is the rationale's
+         first sentence; the downgrade reasons never carry a period of their
+         own, and an unsentenced rationale is appended whole. */
+      const withheld = judgement.rationale.startsWith(EVALUATOR_DOWNGRADE_PREFIX);
+      const end = judgement.rationale.indexOf(". ");
+      const disclosure = withheld
+        ? ` ${(end === -1 ? judgement.rationale : judgement.rationale.slice(0, end + 1)).trim()}`
+        : "";
       misses.push({
         slug: person.slug,
         factId: fact.id,
@@ -95,7 +108,7 @@ export function remainingMisses(
         requirements: fact.requirements,
         explanation:
           fact.acquisition === "beyond-current-coverage"
-            ? `${judgement.verdict}: ${fact.note ?? "the reference records evidence the application cannot currently acquire."}`
+            ? `${judgement.verdict}: ${fact.note ?? "the reference records evidence the application cannot currently acquire."}${disclosure}`
             : `${judgement.verdict}: ${judgement.rationale}`,
       });
     }
@@ -848,5 +861,9 @@ export function renderComparison(comparison: BenchmarkComparison): string {
 }
 
 function escapeCell(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 300);
+  /* The backslash pass runs first: a value carrying `\|` must render the
+     backslash escaped before the pipe pass escapes the pipe, or markdown
+     reads the pair as an escaped backslash plus a REAL column delimiter and
+     splits the cell (issue #284). */
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 300);
 }
