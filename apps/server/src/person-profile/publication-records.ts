@@ -65,7 +65,16 @@ export interface PublicationRecordRendering {
   rights: PersonSourceRights;
   provenanceNote: string;
   anchors: { kind: "section"; value: string; offset: number }[];
-  /** Links the record names. They are leads, never material retained here. */
+  /**
+   * Always empty. The full text and landing pages a record links to are
+   * recorded provenance — named in the "Linked material" text section and in
+   * `rights.materials` — never a URL here: `outboundUrls` is exactly what
+   * `PersonResearch` turns into an automatically-read lead (once directly,
+   * for a feed, and once when a model attributes a "work" to one of them),
+   * and linked full text has to stay unread under this record's metadata
+   * permission until something reads it under its own rights (#249; the same
+   * review finding as the sibling record module, PR #295).
+   */
   outboundUrls: string[];
 }
 
@@ -204,7 +213,13 @@ function assemble(index: string, facts: RecordFacts): PublicationRecordRendering
     rights,
     provenanceNote: `Publication or deposit record from ${index}, rendered from its metadata fields. ${PARTICIPATION_LIMIT}`,
     anchors,
-    outboundUrls: facts.linked,
+    /* A linked resource is recorded above, in "Linked material" and in
+       `rights.materials`; it never becomes an outbound URL. `outboundUrls` is
+       what PersonResearch turns into a URL lead it reads automatically, and
+       full text or a landing page must stay unread under this record's
+       metadata permission (#249; the same review finding as the sibling
+       record module, PR #295). */
+    outboundUrls: [],
   };
 }
 
