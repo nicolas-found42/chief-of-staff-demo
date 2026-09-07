@@ -488,6 +488,9 @@ const report: BenchmarkReport = {
     pipeline,
     researchProvider: research.provider,
     researchModel: research.model,
+    ...(mode === "live-discovery" && pipeline === "expanded"
+      ? { planningProvider: planning.provider, planningModel: planning.model }
+      : {}),
     judgeProvider: judging.provider,
     judgeModel: judging.model,
     judgeVersion: JUDGE_VERSION,
