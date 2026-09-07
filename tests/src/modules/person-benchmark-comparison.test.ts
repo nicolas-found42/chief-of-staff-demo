@@ -61,8 +61,39 @@ it("compares fully assessed failed research without converting the run to succes
 it("renders withheld recovery as unmeasured rather than a proven zero", () => {
   const baseline = assessedReport();
   const candidate = structuredClone(baseline);
-  /* The observed judge-infrastructure shape (#271, #282): the assessment
-     never completed, so the candidate's recovered count was never measured. */
+  /* The tracked 2d0a fixture carries null contributions on every person;
+     stamp entries on all four sides so the family totals measure the stamped
+     rows instead of reporting a whole side unmeasured. The candidate-side
+     assessment deletion is the observed judge-infrastructure shape (#271,
+     #282): that person's recovery was never measured. */
+  for (const side of [baseline, candidate])
+    side.people[0].sourceContributions = [
+      {
+        family: "documents-publishers",
+        claimIds: [],
+        recoveredFactIds: [],
+        exclusiveRecoveredFactIds: [],
+        sources: [],
+      },
+    ];
+  candidate.people[1].sourceContributions = [
+    {
+      family: "public-social",
+      claimIds: [],
+      recoveredFactIds: ["fact-1"],
+      exclusiveRecoveredFactIds: [],
+      sources: [],
+    },
+  ];
+  baseline.people[1].sourceContributions = [
+    {
+      family: "public-social",
+      claimIds: [],
+      recoveredFactIds: ["fact-1"],
+      exclusiveRecoveredFactIds: ["fact-1"],
+      sources: [],
+    },
+  ];
   delete candidate.people[1].assessment;
   const comparison = compareReports(baseline, candidate);
   expect(comparison.perPerson[1]).toMatchObject({
@@ -70,14 +101,14 @@ it("renders withheld recovery as unmeasured rather than a proven zero", () => {
     candidateAssessed: false,
   });
   const rendered = renderComparison(comparison);
-  const withheldRow = rendered
-    .split("\n")
-    .find((line) => line.startsWith(`| ${comparison.perPerson[1].slug} `));
-  expect(withheldRow).toContain("| 0 | unmeasured |");
-  const assessedRow = rendered
-    .split("\n")
-    .find((line) => line.startsWith(`| ${comparison.perPerson[0].slug} `));
-  expect(assessedRow).not.toContain("unmeasured");
+  const rowOf = (slug: string) =>
+    rendered.split("\n").find((line) => line.startsWith(`| ${slug} `));
+  expect(rowOf(comparison.perPerson[1].slug)).toContain("| 0 | unmeasured |");
+  expect(rowOf(comparison.perPerson[0].slug)).not.toContain("unmeasured");
+  /* The family table inherits the same withholding: the candidate side holds
+     an unassessed person, so its recovered column is unmeasured while the
+     fully assessed baseline side keeps its numbers. */
+  expect(rowOf("public-social")).toBe("| public-social | 0 / 0 | 0 / 0 | 1 / 1 | unmeasured |");
 });
 it.each(["critical", "wrong-person"])(
   "detects a newly introduced %s failure when another failure disappears at the same count",
