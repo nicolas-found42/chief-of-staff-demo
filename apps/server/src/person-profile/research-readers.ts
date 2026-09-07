@@ -334,6 +334,14 @@ async function readArchivedCapture(
        failed capture must contribute nothing that could be read as evidence. */
     unavailable(family, WAYBACK_CAPTURE_ROUTE, access, "", finalUrl);
 
+  /* A capture whose address names a document goes straight to the byte reader.
+     Asking for it as text first would fetch the same capture twice and leave
+     the archive free to answer the second request differently from the one
+     just validated and dated, so the bytes retained would not be the bytes
+     checked. Its own reader records the transport and status failures. */
+  if (looksLikeBinaryDocument(capture.original))
+    return finishCapture(await readDocument(capture.contentUrl, family, context), capture, context);
+
   const response = await request(capture.contentUrl, context, "archive-reader");
   if (!response) return failed("failed", url);
   if (response.status >= 400) {
@@ -400,41 +408,85 @@ async function readArchivedCapture(
     return failed("failed", response.url);
   }
 
-  /* The archive resolves a partial timestamp to the closest capture, so the
-     answered address is what dates the evidence. Undatable archived text is
-     refused: it is the date that makes a capture safe to use at all. */
-  const capturedAt = waybackCapture(response.url)?.capturedAt ?? capture.capturedAt;
-  if (!capturedAt) {
+  return finishCapture(
+    await readRetrieved(capture.contentUrl, response, family, context),
+    capture,
+    context,
+  );
+}
+
+/**
+ * Turn whatever a reader produced from a capture into dated archived evidence,
+ * or refuse it.
+ *
+ * Deliberately reads the *retrieved text*, not the response the checks above
+ * saw: a reader chosen from the response fetches the capture with its own
+ * transport, so the text in hand is the only thing known to be the bytes that
+ * would be retained. Both refusals are the ticket's rule (#253) — an archive's
+ * error page is not evidence, and undated archived text is not safe to use,
+ * because it is the date that makes a former role read as former.
+ */
+function finishCapture(
+  read: SourceReadResult,
+  capture: WaybackCapture,
+  context: ReadContext,
+): SourceReadResult {
+  const family: PersonSourceFamily = "historical-evidence";
+  const routed = { ...read, family, route: WAYBACK_CAPTURE_ROUTE };
+  if (read.access !== "retrieved") return routed;
+  const refuse = (
+    code: "archive-error-page" | "resource-unavailable",
+    reason: string,
+    marker?: string,
+  ): SourceReadResult => {
     context.recorder.record({
       stage: "access",
-      code: "resource-unavailable",
+      code,
       outcome: "failed",
       recovery: "stopped",
       cause: "observed",
       target: capture.contentUrl,
       targetKind: "url",
       collector: "archive-reader",
-      reason: "The archive answered without resolving this lookup to a dated capture.",
+      reason,
       attemptOf: context.attemptOf,
+      /* Shape only: size, hash, the answered address and which phrase matched.
+         The page's own text is exactly what must not be retained. */
       observed: {
-        status: response.status,
-        finalUrl: response.url,
-        contentType: response.contentType,
-        bytes: response.body.length,
+        finalUrl: read.finalUrl,
+        bytes: read.text.length,
+        bodyHash: hash(read.text),
+        ...(marker ? { parserLocation: marker } : {}),
       },
-      impact: "Undated archived text was refused rather than retained as current evidence.",
-      remediation: `Ask the archive for an exact capture: curl -sS -D- -o/dev/null '${capture.contentUrl}'`,
+      impact: "No archived text was retained, and no claim rests on this capture.",
+      remediation: `Retry later, then reproduce with: curl -sSL '${capture.contentUrl}'`,
+      ...(context.profileRevision !== undefined
+        ? { profileRevision: context.profileRevision }
+        : {}),
     });
-    return failed("failed", response.url);
-  }
+    return unavailable(family, WAYBACK_CAPTURE_ROUTE, "failed", "", read.finalUrl);
+  };
 
-  const read = await readRetrieved(capture.contentUrl, response, family, context);
-  if (read.access !== "retrieved") return { ...read, family, route: WAYBACK_CAPTURE_ROUTE };
+  const marker = archiveFailurePage(read.text);
+  if (marker)
+    return refuse(
+      "archive-error-page",
+      `The archive's own ${marker} page reached extraction instead of the capture.`,
+      marker,
+    );
+
+  /* The archive resolves a partial timestamp to the closest capture, so the
+     answered address is what dates the evidence. */
+  const capturedAt = waybackCapture(read.finalUrl)?.capturedAt ?? capture.capturedAt;
+  if (!capturedAt)
+    return refuse(
+      "resource-unavailable",
+      "The archive answered without resolving this lookup to a dated capture.",
+    );
+
   return {
-    ...read,
+    ...routed,
     capturedAt,
-    family,
-    route: WAYBACK_CAPTURE_ROUTE,
     /* The publisher, not the archive: a live read and an archived read of one
        page are one publisher's account, and counting them as two independent
        indexes would manufacture corroboration. */

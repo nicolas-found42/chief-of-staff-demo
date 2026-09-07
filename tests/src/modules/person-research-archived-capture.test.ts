@@ -10,6 +10,7 @@ import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile
 import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
 import {
   readPersonSource,
+  WAYBACK_CAPTURE_ROUTE,
   type ReaderPorts,
 } from "../../../apps/server/src/person-profile/research-readers.js";
 import {
@@ -189,4 +190,69 @@ test("an archive error page answered with HTTP 200 is never retained as successf
   expect(failure.observed?.excerpt).toBeUndefined();
   expect(failure.observed?.status).toBe(200);
   expect(failure.observed?.bytes).toBe(body.length);
+});
+
+/** The smallest PDF carrying one line of extractable text. */
+function minimalPdf(text: string): Buffer {
+  const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+    `4 0 obj\n<< /Length ${String(stream.length)} >>\nstream\n${stream}\nendstream\nendobj\n`,
+    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (const object of objects) {
+    offsets.push(pdf.length);
+    pdf += object;
+  }
+  const startxref = pdf.length;
+  pdf += `xref\n0 ${String(objects.length + 1)}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(startxref)}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+test("an archived document is fetched once, by the reader whose bytes are retained", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-document");
+  const requested: { route: "text" | "bytes"; url: string }[] = [];
+  const result = await readPersonSource(
+    "https://web.archive.org/web/20240523200341/https://bank.example/reports/annual.pdf",
+    "",
+    fromPartial<ReaderPorts>({
+      fetch: async (url: string) => {
+        requested.push({ route: "text", url });
+        throw new Error("The capture must not be asked for as text as well.");
+      },
+      fetchBytes: async (url: string) => {
+        requested.push({ route: "bytes", url });
+        return {
+          url,
+          status: 200,
+          contentType: "application/pdf",
+          retryAfter: null,
+          bytes: minimalPdf("Captured annual report text"),
+        };
+      },
+      recorder,
+      timeoutMs: 1000,
+    }),
+  );
+
+  /* One request, and it is the one whose bytes were parsed: a second fetch
+     leaves the archive free to answer differently from the response that was
+     checked for an error page and dated. */
+  expect(requested).toEqual([
+    {
+      route: "bytes",
+      url: "https://web.archive.org/web/20240523200341id_/https://bank.example/reports/annual.pdf",
+    },
+  ]);
+  expect(result.access).toBe("retrieved");
+  expect(result.route).toBe(WAYBACK_CAPTURE_ROUTE);
+  expect(result.text).toContain("Captured annual report text");
+  expect(result.capturedAt).toBe("2024-05-23T20:03:41.000Z");
+  expect(result.upstreamIndex).toBe("bank.example");
 });
