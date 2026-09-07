@@ -1623,6 +1623,9 @@ function renderJson(
   if (publication)
     return {
       text: publication.text.slice(0, MAX_TEXT),
+      /* A record read live carries no capture date: it is the index's current
+         answer, not evidence of what it said on some earlier day (#253). */
+      capturedAt: null,
       completeness: publication.text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls: publication.outboundUrls.slice(0, 200),
