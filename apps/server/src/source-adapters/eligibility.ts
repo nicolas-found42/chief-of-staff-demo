@@ -629,6 +629,17 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     probe: "https://index.commoncrawl.org/collinfo.json",
     expect: json,
   },
+  {
+    route: "commoncrawl-capture",
+    family: "historical-evidence",
+    terms:
+      "Common Crawl Terms of Use §2(l) prohibits collecting or harvesting personally identifiable information for use separately from the Crawled Content; Section 3 requires respecting third-party copyrights and provides no citation exception. A pipeline that retains source documents and extracts personal claims operates separately from the crawl and has no rights basis under these terms (ADR-0072).",
+    documentation: "https://commoncrawl.org/terms-of-use",
+    cost: "anonymous",
+    status: "excluded",
+    exclusion:
+      "Excluded by ADR-0072: Terms of Use §2(l) forbids collecting personal information for use separately from the crawl. Research retains full documents and publishes structured personal-data claims, which collapses the distinction between retaining and building a separate store.",
+  },
 ];
 
 export interface EligibilityProbeResult {

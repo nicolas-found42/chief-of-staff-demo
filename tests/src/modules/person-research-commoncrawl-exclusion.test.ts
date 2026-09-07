@@ -43,11 +43,10 @@ test("the eligibility record establishes only catalogue reachability for Common 
      whether a capture's bytes can be retrieved, so nothing may read this
      entry as capture coverage; adding capture retrieval to production without
      revisiting ADR-0072 fails here. */
-  expect(
-    SOURCE_ELIGIBILITY.filter((entry) => entry.route === "commoncrawl-capture").map(
-      (entry) => entry.status,
-    ),
-  ).not.toContain("in-production");
+  const capture = SOURCE_ELIGIBILITY.find((entry) => entry.route === "commoncrawl-capture")!;
+  expect(capture).toBeDefined();
+  expect(capture.status).toBe("excluded");
+  expect(capture.exclusion).toContain("ADR-0072");
 });
 
 test("Common Crawl addresses enter the archive pipeline but carry no capture date", () => {
