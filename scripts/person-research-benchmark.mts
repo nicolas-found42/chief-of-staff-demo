@@ -94,12 +94,15 @@ function arg(name: string): string | undefined {
 }
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
+/* Machine-read benchmark artifacts persist minified: one JSON document per line keeps a
+   30-person run's committed diff small enough for review tooling to fetch (Sourcery cannot
+   fetch diffs over 20k lines), and the .md report stays the human-readable record. (#237) */
 function persistPersonArtifact(value: unknown, stem: string, out: string): void {
   const artifact = BenchmarkPersonArtifactSchema.parse(value);
   mkdirSync(out, { recursive: true });
   const person = artifact.result;
   const path = join(out, `${stem}-${person.slug}.person.json`);
-  writeFileSync(path, `${JSON.stringify(artifact, null, 2)}\n`, { flag: "wx" });
+  writeFileSync(path, `${JSON.stringify(artifact)}\n`, { flag: "wx" });
   const phases = person.assessment?.phases;
   const phaseDetail = phases
     ? `reference ${phases.reference.status}, support/usefulness ${phases.support.status}`
@@ -166,7 +169,7 @@ if (comparisonIndex !== -1) {
   const comparison = compareReports(baseline, candidate);
   const out = arg("out") ?? "artifacts/person-benchmark";
   mkdirSync(out, { recursive: true });
-  writeFileSync(join(out, "comparison.json"), `${JSON.stringify(comparison, null, 2)}\n`);
+  writeFileSync(join(out, "comparison.json"), `${JSON.stringify(comparison)}\n`);
   writeFileSync(join(out, "comparison.md"), `${renderComparison(comparison)}\n`);
   process.stdout.write(`${renderComparison(comparison)}\n`);
   process.exit(!comparison.comparable || comparison.verdict === "regressed" ? 1 : 0);
@@ -230,7 +233,7 @@ if (reassessmentPath) {
       persistPersonArtifact(artifact, stem, out);
       writeFileSync(
         join(out, `${stem}-${artifact.result.slug}.operation.json`),
-        `${JSON.stringify(operation, null, 2)}\n`,
+        `${JSON.stringify(operation)}\n`,
         { flag: "wx" },
       );
     },
@@ -247,7 +250,7 @@ if (reassessmentPath) {
   const out = arg("out") ?? "artifacts/person-benchmark";
   mkdirSync(out, { recursive: true });
   const stem = `${report.mode}-${report.provenance.pipeline}-reassessed-${report.runId}`;
-  writeFileSync(join(out, `${stem}.json`), `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
+  writeFileSync(join(out, `${stem}.json`), `${JSON.stringify(report)}\n`, { flag: "wx" });
   writeFileSync(join(out, `${stem}.md`), `${renderReport(report, corpus.people)}\n`, {
     flag: "wx",
   });
@@ -354,7 +357,7 @@ try {
     population.push({ slug: person.slug, profileId: evaluation.profileId });
     writeFileSync(
       join(outDir, `${stem}-${person.slug}.operation.json`),
-      `${JSON.stringify(evaluation.operation, null, 2)}\n`,
+      `${JSON.stringify(evaluation.operation)}\n`,
     );
     persistPersonArtifact(
       {
@@ -522,7 +525,7 @@ const report: BenchmarkReport = {
 };
 
 const validated = BenchmarkReportSchema.parse(report);
-writeFileSync(join(outDir, `${stem}.json`), `${JSON.stringify(validated, null, 2)}\n`);
+writeFileSync(join(outDir, `${stem}.json`), `${JSON.stringify(validated)}\n`);
 writeFileSync(join(outDir, `${stem}.md`), `${renderReport(validated, selected)}\n`);
 process.stdout.write(`${renderReport(validated, selected)}\n`);
 process.stdout.write(`\nWrote ${join(outDir, `${stem}.json`)} and ${join(outDir, `${stem}.md`)}\n`);
