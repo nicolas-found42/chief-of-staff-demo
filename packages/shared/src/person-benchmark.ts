@@ -733,6 +733,11 @@ export const BenchmarkComparisonSchema = z.object({
         candidateRecovered: z.number().int().nonnegative(),
         baselineConclusion: z.enum(["completed", "bounded", "interrupted"]),
         candidateConclusion: z.enum(["completed", "bounded", "interrupted"]),
+        /* Recovery credit is withheld while the assessment phases are
+           incomplete, so the rendered comparison needs to know which sides
+           were actually measured rather than reading zeros as evidence. */
+        baselineAssessed: z.boolean(),
+        candidateAssessed: z.boolean(),
         newCriticalFindings: z.number().int().nonnegative(),
         newWrongPersonAttributions: z.number().int().nonnegative().optional(),
         newOverclaims: z.number().int().nonnegative(),

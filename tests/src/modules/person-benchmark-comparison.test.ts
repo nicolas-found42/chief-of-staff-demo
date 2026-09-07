@@ -58,6 +58,27 @@ it("compares fully assessed failed research without converting the run to succes
   expect(renderComparison(comparison)).toContain("failed");
 });
 
+it("renders withheld recovery as unmeasured rather than a proven zero", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  /* The observed judge-infrastructure shape (#271, #282): the assessment
+     never completed, so the candidate's recovered count was never measured. */
+  delete candidate.people[1].assessment;
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.perPerson[1]).toMatchObject({
+    baselineAssessed: true,
+    candidateAssessed: false,
+  });
+  const rendered = renderComparison(comparison);
+  const withheldRow = rendered
+    .split("\n")
+    .find((line) => line.startsWith(`| ${comparison.perPerson[1].slug} `));
+  expect(withheldRow).toContain("| 0 | unmeasured |");
+  const assessedRow = rendered
+    .split("\n")
+    .find((line) => line.startsWith(`| ${comparison.perPerson[0].slug} `));
+  expect(assessedRow).not.toContain("unmeasured");
+});
 it.each(["critical", "wrong-person"])(
   "detects a newly introduced %s failure when another failure disappears at the same count",
   (kind) => {
