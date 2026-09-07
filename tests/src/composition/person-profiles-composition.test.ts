@@ -1552,7 +1552,16 @@ it.each([
     "https://npiregistry.cms.hhs.gov/api/?version=2.1&number=1234567890",
     "npiregistry.cms.hhs.gov",
   ],
-  ["https://www.tvmaze.com/people/12", "https://api.tvmaze.com/people/12", "tvmaze.com"],
+  [
+    "https://www.tvmaze.com/people/12",
+    "https://api.tvmaze.com/people/12?embed=castcredits",
+    "tvmaze.com",
+  ],
+  [
+    "https://openlibrary.org/authors/OL123A",
+    "https://openlibrary.org/authors/OL123A.json",
+    "openlibrary.org",
+  ],
   ["https://www.artic.edu/artworks/12", "https://api.artic.edu/api/v1/artworks/12", "artic.edu"],
   ["https://www.loc.gov/item/12/", "https://www.loc.gov/item/12/?fo=json", "loc.gov"],
 ])(

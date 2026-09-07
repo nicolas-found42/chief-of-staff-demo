@@ -43,6 +43,7 @@ import { readPersonSource, type SourceReadResult } from "./research-readers.js";
 import { isPublicationRecordRead } from "./publication-records.js";
 import { isIdentityAnchorRead } from "./identity-anchors.js";
 import { isInstitutionalRecordRead } from "./institutional-records.js";
+import { isCreativeRecordRead } from "./creative-records.js";
 import {
   PublicationGate,
   ResearchBudget,
@@ -1463,18 +1464,19 @@ export class PersonResearch {
     }
     const ids = new Set(claims.map((c) => c.id));
     const grounded = (record: { claimIds: string[] }) => record.claimIds.every((id) => ids.has(id));
-    /* Three record kinds carry the same limit for the same reason. A
+    /* Four record kinds carry the same limit for the same reason. A
        publication or deposit record lists who took part (#249). A professional
        or institutional record establishes only that the named individual
-       matched it (#250). An identity or affiliation registry record
-       establishes that an identifier belongs to this person, never that a work
-       it links is theirs as a verified personal accomplishment (#252). None of
-       them states what any one person did or decided, so the two
-       personal-scope fields cannot rest on any of these sources alone. The
-       participation itself survives — as claims, and as the work record they
-       ground — and a source that does state a contribution still carries one
-       on its own work record; the merge never overwrites a recorded
-       contribution with the null written here. */
+       matched it (#250). A creative or cultural catalogue record establishes a
+       credit, not authorship or significance (#251). An identity or
+       affiliation registry record establishes that an identifier belongs to
+       this person, never that a work it links is theirs as a verified
+       personal accomplishment (#252). None of them states what any one person
+       did or decided, so the two personal-scope fields cannot rest on any of
+       these sources alone. The participation itself survives — as claims, and
+       as the work record they ground — and a source that does state a
+       contribution still carries one on its own work record; the merge never
+       overwrites a recorded contribution with the null written here. */
     const participationOnly =
       isPublicationRecordRead({
         acquisition: read.route,
@@ -1485,6 +1487,10 @@ export class PersonResearch {
         upstreamIndex: read.upstreamIndex,
       }) ||
       isInstitutionalRecordRead({
+        acquisition: read.route,
+        upstreamIndex: read.upstreamIndex,
+      }) ||
+      isCreativeRecordRead({
         acquisition: read.route,
         upstreamIndex: read.upstreamIndex,
       });

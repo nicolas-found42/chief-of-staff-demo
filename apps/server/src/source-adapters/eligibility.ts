@@ -596,6 +596,8 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     status: "in-production",
     probe: "https://api.tvmaze.com/search/people?q=lena",
     expect: json,
+    observed:
+      'Live 2026-09-07 (#251): people search answered 200; an unknown person id answered 404 {"name": "Not Found", "status": 404}. API data is CC BY-SA 4.0 (attribution plus sharealike); portraits are hotlinkable per the docs but under no stated licence in the response. Rate limit at least 20 calls / 10 s per IP, 429 on excess.',
   },
   {
     route: "library-of-congress",
@@ -607,6 +609,33 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     status: "in-production",
     probe: "https://www.loc.gov/search/?q=Ansel+Adams&fo=json&c=2",
     expect: json,
+    observed:
+      "Live 2026-09-07 (#251): search ?fo=json answered 200 with catalogue entries carrying access_restricted, image_url and item-page links; a full-item fetch timed out once and was not retried, so item-level rights advisories stay unread. API docs confirm no key with rate limits; page metadata notes site text is U.S. Government Work.",
+  },
+  {
+    route: "openlibrary-record",
+    family: "creative-records",
+    terms:
+      "Open Library's public REST API serves catalogue metadata to anonymous callers with no key; identified callers (User-Agent plus contact) get triple the 1 req/s default, and bulk harvest is out. Bibliographic fields are retained under that API permission; publisher flap copy and cover art carried in a response are withheld / not retrieved.",
+    documentation: "https://openlibrary.org/developers/api",
+    cost: "anonymous",
+    indexes: ["openlibrary.org"],
+    status: "in-production",
+    probe: "https://openlibrary.org/books/OL25428864M.json",
+    probeAccept: "json",
+    expect: json,
+    observed:
+      'Live 2026-09-07 (#251): the Americanah edition record answered 200 with bibliographic fields, an author-key reference, flap-copy description and a cover id; an unknown key answered 404 {"error": "notfound"}.',
+  },
+  {
+    route: "europeana",
+    family: "creative-records",
+    terms: "Europeana's REST API requires a personal API key (wskey) on every call.",
+    documentation: "https://pro.europeana.eu/pages/get-api",
+    cost: "api-key",
+    status: "excluded",
+    exclusion:
+      'Observed 2026-09-07 (#251): an anonymous search answered HTTP 401 {"success": false, "error": "Unauthorized"}. A key is required, which #228 excludes even where the tier is free. Not counted as expansion.',
   },
   {
     route: "artic",
