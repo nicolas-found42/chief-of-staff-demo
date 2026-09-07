@@ -13,7 +13,6 @@ import {
   type PersonResearchCheckpoint,
   type PersonResearchCoverageArea,
   type PersonResearchJob,
-  type PersonResearchLead,
   type PersonResearchOperationOutcome,
   type PersonSourceDocument,
   type PersonSourceFamily,
@@ -332,10 +331,12 @@ export class PersonResearch {
     checkpoint();
 
     let quiet = 0;
-    /* Expansion rounds this operation has completed, across restarts. Until
-       one has run, a coverage area nothing reached is still `planned` rather
-       than unreachable: the operation has not tried yet. */
-    let expansions = allowance.checkpoint?.pass ?? 0;
+    /* Expansion rounds this run has completed. Until one has run, a coverage
+       area nothing reached is still `planned` rather than unreachable: the
+       operation has not tried yet. A resumed run counts from zero rather than
+       from the checkpoint's round count, because a round that stopped before
+       its expansion is still recorded there as a round. */
+    let expansions = 0;
     while (active() && budget.within()) {
       rounds += 1;
       let producedEvidence = false;
@@ -929,7 +930,7 @@ export class PersonResearch {
         checkpoint();
       }
 
-      this.updateCoverage(coverage, profile, leads.all(), expansions);
+      this.updateCoverage(coverage, profile, leads, expansions);
       if (!active() || !budget.within()) break;
 
       /* 4. Expansion. New leads come from the evidence itself and from the
@@ -1048,7 +1049,7 @@ export class PersonResearch {
           "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
       };
 
-    this.updateCoverage(coverage, profile, leads.all(), expansions);
+    this.updateCoverage(coverage, profile, leads, expansions);
     /* The completion conditions, asked rather than assumed (#238). An
        operation that stopped short of its own plan concludes `bounded` with
        the condition it did not meet, which keeps the three conclusions
@@ -1244,7 +1245,7 @@ export class PersonResearch {
   private updateCoverage(
     coverage: PersonResearchCoverageArea[],
     profile: PersonProfile,
-    leads: PersonResearchLead[],
+    leads: LeadRegistry,
     expansions: number,
   ): void {
     const dossier = this.deps.dossiers.get(profile.id);
@@ -1252,11 +1253,25 @@ export class PersonResearch {
       const source = this.deps.dossiers.source(profile.id, id);
       return source ? [source] : [];
     });
-    /* Whether the operation worked its plan at all. Every dossier section is
-       asked of every source that is read, so one resolved lead is what moves
-       a section off `planned`; an operation that resolved none of them never
-       started, which is what refuses it completion. */
-    const workedThePlan = leads.some((lead) => lead.disposition !== "pending");
+    /* One rule for both kinds of area, so a dossier section and a source
+       family cannot drift apart in what the plan's own states mean: evidence
+       satisfies an area, an investigation that came back empty investigates
+       it, and an area nothing ever reached is inaccessible with its reason —
+       a refused search is not a report that the family holds nothing. Before
+       expansion has run at all the area stays `planned`, which is what
+       refuses completion to an operation that never worked its plan. */
+    const reached = (
+      area: PersonResearchCoverageArea,
+      evidence: number,
+      investigated: boolean,
+    ): PersonResearchCoverageArea["state"] =>
+      evidence
+        ? "satisfied"
+        : investigated
+          ? "investigated"
+          : expansions > 0
+            ? "inaccessible"
+            : area.state;
     for (const area of coverage) {
       if (area.kind === "dossier-section") {
         const claims = (dossier?.claims ?? []).filter(
@@ -1268,13 +1283,7 @@ export class PersonResearch {
         area.sources = new Set(
           claims.flatMap((claim) => claim.citations.map((citation) => citation.sourceId)),
         ).size;
-        area.state = claims.length
-          ? "satisfied"
-          : workedThePlan
-            ? "investigated"
-            : expansions > 0
-              ? "inaccessible"
-              : area.state;
+        area.state = reached(area, claims.length, leads.investigated());
         area.gaps = claims.length
           ? ["This account reflects the sources collected so far; further evidence may exist."]
           : ["No grounded evidence was attributed to this section."];
@@ -1288,25 +1297,15 @@ export class PersonResearch {
             familySources.some((source) => source.id === citation.sourceId),
           ),
         ).length;
-        /* A family the operation went looking for is investigated whether or
-           not it answered; one that expansion could aim nothing at is
-           inaccessible with its reason. Neither is quietly dropped from the
-           plan, and neither is left `planned` once the work has run. */
-        const aimed = leads.some(
-          (lead) => lead.family === area.key || lead.coverage.includes(area.key),
-        );
-        area.state = familySources.length
-          ? "satisfied"
-          : aimed
-            ? "investigated"
-            : expansions > 0
-              ? "inaccessible"
-              : area.state;
-        area.gaps = familySources.length
-          ? []
-          : aimed
-            ? ["No source in this family contributed evidence in this operation."]
-            : ["No query or source in this operation could be aimed at this family."];
+        /* A family the operation reached is investigated whether or not it
+           answered, and one it never got into says so instead. */
+        area.state = reached(area, familySources.length, leads.investigated(area.key));
+        area.gaps =
+          familySources.length || area.state === "satisfied"
+            ? []
+            : area.state === "inaccessible"
+              ? ["No query or source in this operation could be aimed at this family."]
+              : ["No source in this family contributed evidence in this operation."];
       }
     }
   }

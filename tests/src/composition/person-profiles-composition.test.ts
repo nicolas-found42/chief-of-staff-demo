@@ -9,6 +9,7 @@ import {
   type PersonProfilesCompositionDeps,
 } from "../../../apps/server/src/person-profile/composition";
 import { modelBoundaryFailure } from "../../../apps/server/src/llm/failure";
+import { PublicSearchUnavailableError } from "../../../apps/server/src/source-adapters/search";
 import { PersonResearchStatusSchema } from "@chief-of-staff-demo/shared";
 
 /**
@@ -57,6 +58,37 @@ function compose(overrides: Partial<PersonProfilesCompositionDeps> = {}): Harnes
     ...overrides,
   });
   return { root, people, evidence, upcoming, enabled };
+}
+
+/** One supported claim from one read document: what extraction returns. */
+function extractedClaim(quote: string) {
+  return {
+    fullName: null,
+    employer: null,
+    sourceClass: "primary-artifact",
+    author: null,
+    publishedAt: null,
+    claims: [
+      {
+        id: "work",
+        section: "work",
+        statement: quote,
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        citations: [{ sourceId: "source", quote }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  };
 }
 
 describe("the Person Profiles composition", () => {
@@ -778,33 +810,7 @@ describe("the Person Profiles composition", () => {
           body: `<article><p>${quote}</p></article>`,
         }),
       },
-      complete: () => async () => ({
-        fullName: null,
-        employer: null,
-        sourceClass: "primary-artifact",
-        author: null,
-        publishedAt: null,
-        claims: [
-          {
-            id: "work",
-            section: "work",
-            statement: quote,
-            status: "supported",
-            nature: "statement",
-            matchConfidence: "high",
-            effectiveFrom: null,
-            effectiveTo: null,
-            citations: [{ sourceId: "source", quote }],
-            supports: [],
-            supersedes: [],
-            changeReason: null,
-          },
-        ],
-        works: [],
-        expertise: [],
-        connections: [],
-        sections: [],
-      }),
+      complete: () => async () => extractedClaim(quote),
     });
     const profile = h.people.profiles.create({ fullName: "Maya Okafor" });
     await h.people.queue.tick();
@@ -848,36 +854,13 @@ describe("the Person Profiles composition", () => {
           body: `<article><p>${quote}</p></article>`,
         }),
       },
-      complete: () => async () => ({
-        fullName: null,
-        employer: null,
-        sourceClass: "primary-artifact",
-        author: null,
-        publishedAt: null,
-        claims: [
-          {
-            id: "work",
-            section: "work",
-            statement: quote,
-            status: "supported",
-            nature: "statement",
-            matchConfidence: "high",
-            effectiveFrom: null,
-            effectiveTo: null,
-            citations: [{ sourceId: "source", quote }],
-            supports: [],
-            supersedes: [],
-            changeReason: null,
-          },
-        ],
-        works: [],
-        expertise: [],
-        connections: [],
-        sections: [],
-      }),
+      complete: () => async () => extractedClaim(quote),
     });
     /* The shape the spec objected to: a handful investigated against a long
-       tail that nothing ever looked at. */
+       tail that nothing ever looked at. The loop upholds this by construction
+       — its only completing exit needs an empty pending list — so this pins
+       the invariant rather than reporting a bug, and the completion policy's
+       own suite asks the condition directly. */
     h.people.queue.configure({ profileCalls: 2 });
     const profile = h.people.profiles.create({ fullName: "Maya Okafor" });
     await h.people.queue.tick();
@@ -892,6 +875,25 @@ describe("the Person Profiles composition", () => {
     expect(outcome.leads.filter((lead) => lead.disposition === "pending")).toEqual([]);
     expect(unresolved.every((lead) => lead.reason.length > 0)).toBe(true);
     expect(h.people.queue.status().jobs[0]?.state).toBe("incomplete");
+  });
+
+  it("does not record a refused search as coverage it investigated", async () => {
+    const h = compose({
+      search: () => {
+        throw new PublicSearchUnavailableError("Every provider refused this query.");
+      },
+    });
+    const profile = h.people.profiles.create({ fullName: "Maya Okafor" });
+    await h.people.queue.tick();
+
+    const outcome = h.people.research.outcome(profile.id)!;
+    /* Every query was refused, so nothing was investigated. A refused search
+       is an attempt, not a report that the family holds nothing about this
+       person, and the plan says so rather than claiming it looked. */
+    expect(outcome.coverage.some((area) => area.state === "investigated")).toBe(false);
+    expect(outcome.coverage.every((area) => area.state === "inaccessible")).toBe(true);
+    expect(outcome.leads.every((lead) => lead.disposition === "inaccessible")).toBe(true);
+    expect(h.people.queue.status().jobs[0]?.state).toBe("unavailable");
   });
 
   it("reports an interruption during discovery as interrupted rather than complete", async () => {

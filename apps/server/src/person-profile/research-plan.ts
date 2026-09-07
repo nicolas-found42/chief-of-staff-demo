@@ -88,15 +88,19 @@ export class LeadRegistry {
       .slice(0, 32);
     const recorded = this.leads.get(id);
     if (recorded) {
-      /* Re-proposing a lead records what it was proposed *for*, even though
-         the lead itself is not registered twice. A checkpoint carries a
-         pending query without the coverage it was aimed at, so a resumed
-         operation would otherwise report that area as one nothing had been
-         aimed at. */
-      if (input.family && !recorded.family) recorded.family = input.family;
-      for (const key of input.coverage ?? [])
-        if (recorded.coverage.length < 20 && !recorded.coverage.includes(key))
-          recorded.coverage.push(key);
+      /* Re-proposing a lead still awaiting investigation records what it was
+         proposed *for*, even though the lead itself is not registered twice: a
+         checkpoint carries a pending query without the coverage it was aimed
+         at, so a resumed operation would otherwise report that area as one
+         nothing had been aimed at. A lead that already reached a disposition
+         is left alone — a finished record is not rewritten by a later
+         proposal. */
+      if (recorded.disposition === "pending") {
+        if (input.family && !recorded.family) recorded.family = input.family;
+        for (const key of input.coverage ?? [])
+          if (recorded.coverage.length < 20 && !recorded.coverage.includes(key))
+            recorded.coverage.push(key);
+      }
       return null;
     }
     if (this.seenTargets.has(normalized)) {
@@ -174,6 +178,28 @@ export class LeadRegistry {
 
   all(): PersonResearchLead[] {
     return [...this.leads.values()];
+  }
+
+  /**
+   * Whether the operation investigated anything — optionally, anything aimed
+   * at one coverage area, by its source family or by the plan that proposed
+   * it.
+   *
+   * `inaccessible` and `rejected` deliberately do not count. A search that
+   * refused and a page that would not open are attempts, not investigations,
+   * so a coverage area whose only leads ended that way was never worked: the
+   * difference between looking and finding nothing, and never getting in.
+   * `deduplicated` does count — that lead was investigated, here or in an
+   * earlier operation.
+   */
+  investigated(coverageKey?: string): boolean {
+    return [...this.leads.values()].some(
+      (lead) =>
+        (lead.disposition === "investigated" || lead.disposition === "deduplicated") &&
+        (coverageKey === undefined ||
+          lead.family === coverageKey ||
+          lead.coverage.includes(coverageKey)),
+    );
   }
 
   investigatedTargets(): string[] {
