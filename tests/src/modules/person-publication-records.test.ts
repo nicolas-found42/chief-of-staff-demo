@@ -426,6 +426,12 @@ test("an inverted abstract index is not reconstructed into retained text", () =>
   expect(rendering.rights.materials).toContainEqual(
     expect.objectContaining({ material: "abstract", disposition: "withheld-no-rights-basis" }),
   );
+  /* The licence is an OpenAlex identifier with no licence document behind it;
+     the work's landing page is not evidence of its terms. */
+  expect(rendering.rights.declared).toEqual([
+    expect.objectContaining({ material: "full-text", statement: "cc-by", url: null }),
+  ]);
+  expect(rendering.outboundUrls).toContain("https://doi.org/10.1126/science.1225829");
   expect(rendering.text).not.toContain("Ditching");
   expect(rendering.text).toContain("Maya Chen");
   expect(rendering.text).toContain(PARTICIPATION_LIMIT);

@@ -472,9 +472,14 @@ function openalexFacts(body: unknown): RecordFacts | null {
     declared: licence
       ? [
           {
+            /* OpenAlex names the licence with its own identifier ("cc-by") and
+               publishes no URL for the licence document. The landing page is
+               where the work lives, not where its terms are stated, so the
+               licence URL stays null rather than pointing a reader at a page
+               that does not substantiate it. */
             material: "full-text" as const,
             statement: licence,
-            url: str(primary?.landing_page_url, 600),
+            url: null,
             appliesFrom: null,
           },
         ]
