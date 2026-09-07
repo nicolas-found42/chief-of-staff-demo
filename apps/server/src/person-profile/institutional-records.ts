@@ -1,4 +1,4 @@
-import type { PersonSourceRights } from "@chief-of-staff-demo/shared";
+import type { PersonResearchFailureCode, PersonSourceRights } from "@chief-of-staff-demo/shared";
 
 /**
  * Professional and institutional records, read as evidence rather than as
@@ -155,6 +155,41 @@ export function renderInstitutionalRecord(
         ? clinicalTrialsFacts(body)
         : null;
   return facts ? assemble(index, facts) : null;
+}
+
+/**
+ * Whether one of this module's two indexes answered with a body that, by
+ * that index's own conventions, is not a record and never becomes one, and
+ * the failure code its read takes: a refusal envelope is the index
+ * declining to serve (`registry-error-envelope`); NPPES's empty result set
+ * is a fact about coverage (`resource-unavailable`).
+ *
+ * Deliberately narrower than "the renderer returned null": a body the
+ * renderer cannot fully read — a record whose shape outgrew the facts
+ * readers, or an unrelated JSON document the endpoint served — stays with
+ * the generic flattener, the normal retention path for records this module
+ * has not grown into (#249, #250). Only an answer the index's own
+ * conventions define as a non-record is refused here, and its text is
+ * never retained: such an envelope can echo the requested name, and no
+ * rights basis, version or attribution would cover it (review finding on
+ * issue #250, PR #295).
+ */
+export function registryNonRecordBody(
+  index: string,
+  body: unknown,
+): PersonResearchFailureCode | null {
+  if (index !== "npiregistry.cms.hhs.gov" && index !== "clinicaltrials.gov") return null;
+  const envelope = record(body);
+  if (!envelope) return null;
+  /* Both indexes answer refusals and API errors under a top-level `error`
+     key — ClinicalTrials.gov nests its message, NPPES names the invalid
+     parameter. A record of either index never carries one. */
+  if ("error" in envelope || "errors" in envelope) return "registry-error-envelope";
+  /* NPPES's answer for an identifier it does not register: the envelope is
+     present and says it holds nothing. */
+  if (index === "npiregistry.cms.hhs.gov" && Array.isArray(envelope.results))
+    return envelope.results.length === 0 ? "resource-unavailable" : null;
+  return null;
 }
 
 /* ------------------------------------------------------------------ */

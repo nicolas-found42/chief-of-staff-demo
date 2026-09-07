@@ -15,6 +15,11 @@ import {
 } from "../../../apps/server/src/person-profile/research.js";
 import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile/profiles.js";
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
+import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
+import {
+  readPersonSource,
+  type ReaderPorts,
+} from "../../../apps/server/src/person-profile/research-readers.js";
 import {
   MATCH_LIMIT,
   isInstitutionalRecordRead,
@@ -511,4 +516,74 @@ test("a body that is not a record of the expected shape renders nothing rather t
       fromPartial({ acquisition: "record-reader", upstreamIndex: "loc.gov" }),
     ),
   ).toBe(false);
+});
+/**
+ * The failure this guards (review finding on issue #250, PR #295): a
+ * registry endpoint answering HTTP 2xx with its own error or refusal
+ * envelope — or with its empty result set — must never be retained as
+ * record text. The envelope can echo the requested name, and text retained
+ * without the record renderer's rights basis, version and attribution
+ * limit would outlive the read that produced it.
+ */
+const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
+  fromPartial({ fetch, recorder, timeoutMs: 1000 });
+
+test("a registry error envelope that names the Profile is failed, never retained as record text", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-refusal");
+  const body = JSON.stringify({
+    error: "invalid_request",
+    error_description: "No provider record matches Maya Chen (NPI 1316660632).",
+  });
+  const result = await readPersonSource(
+    NPI_URL,
+    "",
+    ports(recorder, async () => answer(NPI_URL, 200, body)),
+  );
+
+  expect(result.access).toBe("failed");
+  expect(result.text).toBe("");
+  const refusal = recorder
+    .failures()
+    .find((attempt) => attempt.code === "registry-error-envelope")!;
+  expect([refusal.stage, refusal.collector, refusal.cause]).toEqual([
+    "access",
+    "record-reader",
+    "observed",
+  ]);
+  /* Shape only: the refusal's own text — which can echo the requested name —
+     is hashed, never excerpted. */
+  expect(refusal.observed?.excerpt).toBeUndefined();
+  expect(refusal.observed?.bytes).toBe(body.length);
+});
+
+test("a ClinicalTrials.gov error envelope is failed rather than flattened into record text", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-trial-refusal");
+  const result = await readPersonSource(
+    TRIAL_URL,
+    "",
+    ports(recorder, async () =>
+      answer(TRIAL_URL, 200, JSON.stringify({ error: { message: "No study matches." } })),
+    ),
+  );
+
+  expect(result.access).toBe("failed");
+  expect(
+    recorder.failures().find((attempt) => attempt.code === "registry-error-envelope"),
+  ).toBeTruthy();
+});
+
+test("an NPPES answer of no records is a coverage fact, not retained record text", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-empty");
+  const body = JSON.stringify({ result_count: 0, results: [] });
+  const result = await readPersonSource(
+    NPI_URL,
+    "",
+    ports(recorder, async () => answer(NPI_URL, 200, body)),
+  );
+
+  expect(result.access).toBe("failed");
+  expect(result.text).toBe("");
+  const coverage = recorder.failures().find((attempt) => attempt.code === "resource-unavailable")!;
+  expect(coverage.collector).toBe("record-reader");
+  expect(coverage.reason).toContain("no record");
 });

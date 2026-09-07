@@ -20,7 +20,7 @@ import {
 } from "./research-diagnostics.js";
 import { renderPublicationRecord } from "./publication-records.js";
 import { renderIdentityAnchor } from "./identity-anchors.js";
-import { renderInstitutionalRecord } from "./institutional-records.js";
+import { registryNonRecordBody, renderInstitutionalRecord } from "./institutional-records.js";
 
 /** Text kept per source. Matches the dossier store's own retention ceiling. */
 const MAX_TEXT = 500_000;
@@ -1693,6 +1693,47 @@ function renderJson(
       rights: identityAnchor.rights,
       finalUrl: response.url,
     };
+  /* A record index with a specialized renderer answers every request with
+     either a record or one of the non-record answers its own conventions
+     define: an error or refusal envelope, an empty result set. Such an
+     answer is never retained as text — it can echo the requested name, and
+     no rights basis, version or attribution would cover it (review finding
+     on issue #250, PR #295) — so the read fails, the way the renderers
+     above refuse a body that is not a record they can render. A body that
+     is merely a record shape the renderer cannot fully read still
+     flattens: that is the normal retention path for records this module
+     has not grown into (#249, #250). */
+  const nonRecord = registryNonRecordBody(index, parsed);
+  if (nonRecord) {
+    const refusal = nonRecord === "registry-error-envelope";
+    context.recorder.record({
+      stage: "access",
+      code: nonRecord,
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: response.url,
+      targetKind: "record",
+      collector: "record-reader",
+      reason: refusal
+        ? `The ${index} record endpoint answered HTTP ${response.status} with its own error envelope rather than a record.`
+        : `The ${index} record endpoint answered: no record for this identifier.`,
+      attemptOf: context.attemptOf,
+      /* Shape only: the answered address, its size and hash. The body's own
+         text is exactly what must not be retained — it can echo the
+         requested name. */
+      observed: {
+        finalUrl: response.url,
+        bytes: response.body.length,
+        bodyHash: hash(response.body),
+      },
+      impact: refusal
+        ? "The record contributed no text."
+        : "The registry holds no record for this identifier.",
+      remediation: `Retry later, then reproduce with: curl -sS '${response.url}'`,
+    });
+    return unavailable(family, "record-reader", "failed", context.snippet, response.url);
+  }
   const text = flattenJson(parsed);
   return {
     text: text.slice(0, MAX_TEXT),
