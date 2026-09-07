@@ -24,8 +24,21 @@ import {
  * itself as dated capture evidence.
  */
 
-const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
-  fromPartial({ fetch, recorder, timeoutMs: 1000 });
+const ports = (
+  recorder: ResearchAttemptRecorder,
+  fetch: ReaderPorts["fetch"],
+  fetchBytes?: ReaderPorts["fetchBytes"],
+): ReaderPorts =>
+  fromPartial({
+    fetch,
+    fetchBytes:
+      fetchBytes ??
+      (async (url: string) => {
+        throw new Error(`fetchBytes unexpected on ${url}`);
+      }),
+    recorder,
+    timeoutMs: 1000,
+  });
 
 const INDEX_QUERY =
   "https://index.commoncrawl.org/CC-MAIN-2025-30-index?url=example.com%2F*&output=json";
@@ -105,20 +118,35 @@ test("an index catalogue answer is never dated capture evidence", async () => {
   expect(result.text).toContain("warc/CC-MAIN-20250702035953");
 });
 
-test("an unreachable capture byte range retains nothing and records its observed cause", async () => {
+test("a Common Crawl capture URL is explicitly refused without network retrieval", async () => {
   const recorder = new ResearchAttemptRecorder("operation-cc-bytes");
+  let networkCalled = false;
   const result = await readPersonSource(
     CAPTURE_BYTES,
     "",
-    ports(recorder, async (url) => {
-      throw new Error(`connect ECONNREFUSED ${url}`);
-    }),
+    ports(
+      recorder,
+      async () => {
+        networkCalled = true;
+        throw new Error("network fetch must not be called for an excluded capture route");
+      },
+      async () => {
+        networkCalled = true;
+        throw new Error("network fetchBytes must not be called for an excluded capture route");
+      },
+    ),
   );
 
-  expect(result.access).not.toBe("retrieved");
+  expect(networkCalled).toBe(false);
+  expect(result.access).toBe("unsupported");
   expect(result.capturedAt).toBeNull();
   expect(result.text).toBe("");
-  expect(recorder.failures().map((attempt) => [attempt.collector, attempt.outcome])).toContainEqual(
-    ["html-reader", "failed"],
-  );
+  const failures = recorder.failures();
+  expect(failures.length).toBeGreaterThan(0);
+  expect(failures[0]).toMatchObject({
+    collector: "archive-reader",
+    code: "resource-unavailable",
+    outcome: "failed",
+  });
+  expect(failures[0]?.reason).toContain("ADR-0072");
 });

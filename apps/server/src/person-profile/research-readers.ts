@@ -207,6 +207,7 @@ export async function readPersonSource(
   try {
     const capture = waybackCapture(url);
     if (capture) return await readArchivedCapture(url, capture, context);
+    if (commonCrawlCapture(url)) return refuseCommonCrawlCapture(url, family, context);
     if (family === "spoken-evidence" && isVideoPage(url)) return await readSpoken(url, context);
     if (family === "public-social") return await readSocial(url, context);
     const records = recordRoute(url);
@@ -497,6 +498,49 @@ function screenArchiveBytes(
     ...(context.profileRevision !== undefined ? { profileRevision: context.profileRevision } : {}),
   });
   return unavailable("historical-evidence", WAYBACK_CAPTURE_ROUTE, "failed", "", response.url);
+}
+/**
+ * Common Crawl capture retrieval is excluded by ADR-0072: Terms of Use §2(l)
+ * prohibits collecting or harvesting personal information for use separately
+ * from the crawl. Any capture URL on data.commoncrawl.org or under crawl-data
+ * is refused before any network request is made.
+ */
+function commonCrawlCapture(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    return (
+      host === "data.commoncrawl.org" ||
+      (host.endsWith("commoncrawl.org") &&
+        (parsed.pathname.includes("/crawl-data/") || /\.warc(\.gz)?/i.test(parsed.pathname)))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function refuseCommonCrawlCapture(
+  url: string,
+  family: PersonSourceFamily,
+  context: ReadContext,
+): SourceReadResult {
+  context.recorder.record({
+    stage: "access",
+    code: "resource-unavailable",
+    outcome: "failed",
+    recovery: "stopped",
+    cause: "observed",
+    target: url,
+    targetKind: "url",
+    collector: "archive-reader",
+    reason:
+      "Common Crawl capture retrieval is excluded by ADR-0072: Terms of Use §2(l) prohibits harvesting personal information separately from the crawl.",
+    attemptOf: context.attemptOf,
+    impact: "No source material was retained from this Common Crawl capture URL.",
+    remediation:
+      "Do not retrieve Common Crawl capture content; the route is excluded from production research.",
+  });
+  return unavailable(family, "archive-reader", "unsupported", context.snippet, url);
 }
 
 /**
