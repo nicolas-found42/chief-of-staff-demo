@@ -9,6 +9,7 @@ import {
   type PersonProfilesCompositionDeps,
 } from "../../../apps/server/src/person-profile/composition";
 import { modelBoundaryFailure } from "../../../apps/server/src/llm/failure";
+import { PublicSearchUnavailableError } from "../../../apps/server/src/source-adapters/search";
 import { PersonResearchStatusSchema } from "@chief-of-staff-demo/shared";
 
 /**
@@ -57,6 +58,37 @@ function compose(overrides: Partial<PersonProfilesCompositionDeps> = {}): Harnes
     ...overrides,
   });
   return { root, people, evidence, upcoming, enabled };
+}
+
+/** One supported claim from one read document: what extraction returns. */
+function extractedClaim(quote: string) {
+  return {
+    fullName: null,
+    employer: null,
+    sourceClass: "primary-artifact",
+    author: null,
+    publishedAt: null,
+    claims: [
+      {
+        id: "work",
+        section: "work",
+        statement: quote,
+        status: "supported",
+        nature: "statement",
+        matchConfidence: "high",
+        effectiveFrom: null,
+        effectiveTo: null,
+        citations: [{ sourceId: "source", quote }],
+        supports: [],
+        supersedes: [],
+        changeReason: null,
+      },
+    ],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+  };
 }
 
 describe("the Person Profiles composition", () => {
@@ -749,6 +781,195 @@ describe("the Person Profiles composition", () => {
     expect(
       job.operation?.leads.filter((lead) => lead.disposition === "interrupted").length,
     ).toBeGreaterThan(0);
+  });
+
+  /**
+   * The completion conditions, driven end to end (#238).
+   *
+   * Completion used to be whatever was left when nothing else went wrong: not
+   * interrupted, no bound reached, therefore complete. These four ask the
+   * operation to have earned the word — its planned coverage worked, every
+   * lead dispositioned, expansion gone quiet — and to say so honestly when it
+   * has not.
+   */
+  it("completes with explicit gaps and a recorded disposition for every lead", async () => {
+    const quote = "Maya Okafor designed the Atlas scheduler.";
+    const h = compose({
+      search: async (query) =>
+        query.includes("Okafor")
+          ? [{ url: "https://records.example/okafor", title: "Public record", snippet: quote }]
+          : [],
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/html",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `<article><p>${quote}</p></article>`,
+        }),
+      },
+      complete: () => async () => extractedClaim(quote),
+    });
+    const profile = h.people.profiles.create({ fullName: "Maya Okafor" });
+    await h.people.queue.tick();
+
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("completed");
+    /* Every lead the operation ever considered says where it ended and why:
+       "the query list ran out" is not a disposition. */
+    expect(outcome.leads.filter((lead) => lead.disposition === "pending")).toEqual([]);
+    expect(outcome.leads.every((lead) => lead.reason.length > 0)).toBe(true);
+    /* And no planned coverage area is still merely planned: a completed
+       operation worked its plan rather than stopping when the leads ran out. */
+    expect(outcome.coverage.filter((area) => area.state === "planned")).toEqual([]);
+    /* Completion publishes what stayed unknown instead of implying it found
+       everything. */
+    expect(outcome.gaps.length).toBeGreaterThan(0);
+    expect(outcome.gaps).toContain(
+      "Completion means the planned coverage and every actionable lead were accounted for. It does not mean every public fact about this person was found.",
+    );
+  });
+
+  it("refuses to complete while actionable leads are still unresolved", async () => {
+    const quote = "Maya Okafor shipped the record.";
+    const h = compose({
+      search: async (query) =>
+        query.includes("Okafor")
+          ? Array.from({ length: 24 }, (_, index) => ({
+              url: `https://records.example/okafor-${index + 1}`,
+              title: "Public record",
+              snippet: quote,
+            }))
+          : [],
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/html",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `<article><p>${quote}</p></article>`,
+        }),
+      },
+      complete: () => async () => extractedClaim(quote),
+    });
+    /* The shape the spec objected to: a handful investigated against a long
+       tail that nothing ever looked at. The loop upholds this by construction
+       — its only completing exit needs an empty pending list — so this pins
+       the invariant rather than reporting a bug, and the completion policy's
+       own suite asks the condition directly. */
+    h.people.queue.configure({ profileCalls: 2 });
+    const profile = h.people.profiles.create({ fullName: "Maya Okafor" });
+    await h.people.queue.tick();
+
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("bounded");
+    const investigated = outcome.leads.filter((lead) => lead.disposition === "investigated");
+    const unresolved = outcome.leads.filter((lead) => lead.disposition === "interrupted");
+    expect(unresolved.length).toBeGreaterThan(investigated.length);
+    /* Unresolved is a disposition with a reason, not an absence of one, and
+       nothing is left `pending` in the durable record. */
+    expect(outcome.leads.filter((lead) => lead.disposition === "pending")).toEqual([]);
+    expect(unresolved.every((lead) => lead.reason.length > 0)).toBe(true);
+    expect(h.people.queue.status().jobs[0]?.state).toBe("incomplete");
+  });
+
+  it("does not record a refused search as coverage it investigated", async () => {
+    const h = compose({
+      search: () => {
+        throw new PublicSearchUnavailableError("Every provider refused this query.");
+      },
+    });
+    const profile = h.people.profiles.create({ fullName: "Maya Okafor" });
+    await h.people.queue.tick();
+
+    const outcome = h.people.research.outcome(profile.id)!;
+    /* Every query was refused, so nothing was investigated. A refused search
+       is an attempt, not a report that the family holds nothing about this
+       person, and the plan says so rather than claiming it looked. */
+    expect(outcome.coverage.some((area) => area.state === "investigated")).toBe(false);
+    expect(outcome.coverage.every((area) => area.state === "inaccessible")).toBe(true);
+    expect(outcome.leads.every((lead) => lead.disposition === "inaccessible")).toBe(true);
+    expect(h.people.queue.status().jobs[0]?.state).toBe("unavailable");
+  });
+
+  it("reports an interruption during discovery as interrupted rather than complete", async () => {
+    let discovering!: () => void;
+    const started = new Promise<void>((resolve) => {
+      discovering = resolve;
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = compose({
+      search: async () => {
+        discovering();
+        await held;
+        return [];
+      },
+    });
+    const profile = h.people.research.startFor({ fullName: "Maya Okafor" });
+    const pending = h.people.research.runNow(profile.id);
+    await started;
+    h.people.stop();
+    release();
+    await pending;
+
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("interrupted");
+    expect(outcome.interruption?.code).toBe("lifecycle-invalidated");
+    expect(outcome.leads.filter((lead) => lead.disposition === "pending")).toEqual([]);
+    /* A coverage area the operation was still working when it stopped is
+       recorded as interrupted, never as investigated and never as planned. */
+    expect(outcome.coverage.every((area) => area.state !== "planned")).toBe(true);
+    expect(outcome.coverage.some((area) => area.state === "interrupted")).toBe(true);
+  });
+
+  it("reports an interruption during reading as interrupted rather than complete", async () => {
+    let reading!: () => void;
+    const started = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => {
+          reading();
+          await held;
+          return {
+            url,
+            status: 200,
+            contentType: "text/html",
+            etag: null,
+            lastModified: null,
+            retryAfter: null,
+            body: "<article><p>Maya Okafor shipped the record.</p></article>",
+          };
+        },
+      },
+    });
+    const profile = h.people.research.startFor({
+      fullName: "Maya Okafor",
+      profileUrls: ["https://records.example/okafor"],
+    });
+    const pending = h.people.research.runNow(profile.id);
+    await started;
+    h.people.stop();
+    release();
+    await pending;
+
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("interrupted");
+    const lead = outcome.leads.find((entry) => entry.target === "https://records.example/okafor")!;
+    expect(lead.disposition).toBe("interrupted");
+    expect(lead.reason).toContain("interrupted");
   });
 
   it("retains useful evidence beyond the former eight-result reading cutoff", async () => {

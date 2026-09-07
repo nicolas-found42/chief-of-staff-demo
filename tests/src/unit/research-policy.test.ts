@@ -1,18 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { PersonProfile, PersonResearchLead } from "@chief-of-staff-demo/shared";
+import type {
+  PersonProfile,
+  PersonResearchCoverageArea,
+  PersonResearchLead,
+} from "@chief-of-staff-demo/shared";
 import {
   PublicationGate,
   ResearchBudget,
+  evaluateCompletion,
   selectReadBatch,
 } from "../../../apps/server/src/person-profile/research-policy";
 import { researchAllowance } from "../../../apps/server/src/person-profile/research";
 
 /**
- * The three policies one research operation runs under, asked directly.
+ * The four policies one research operation runs under, asked directly.
  *
  * Each of these was a closure inside `PersonResearch.run`, so the only way to
  * ask what the budget does at its ceiling, or which leads selection defers, was
- * to drive a whole operation and infer the answer from its report (#231).
+ * to drive a whole operation and infer the answer from its report (#231). The
+ * completion conditions joined them for the same reason: whether an operation
+ * has earned the word "completed" is a question with an answer, and reading it
+ * off a conclusion the loop happened to reach is not asking it (#238).
  */
 
 const profile = (overrides: Partial<PersonProfile> = {}): PersonProfile =>
@@ -26,6 +34,20 @@ const profile = (overrides: Partial<PersonProfile> = {}): PersonProfile =>
     revision: 1,
     ...overrides,
   }) as PersonProfile;
+
+const area = (
+  key: string,
+  state: PersonResearchCoverageArea["state"],
+  kind: PersonResearchCoverageArea["kind"] = "source-family",
+): PersonResearchCoverageArea => ({
+  key,
+  label: `The ${key} area`,
+  kind,
+  state,
+  sources: 0,
+  claims: 0,
+  gaps: [],
+});
 
 const lead = (target: string, overrides: Partial<PersonResearchLead> = {}): PersonResearchLead => ({
   id: target,
@@ -167,5 +189,82 @@ describe("the publication policy", () => {
     const after = gate.publish(() => "published");
     await expect(failed).rejects.toThrow("Publication conflict");
     await expect(after).resolves.toBe("published");
+  });
+});
+
+describe("the completion policy", () => {
+  const worked = [
+    area("general-discovery", "satisfied"),
+    area("career", "investigated", "dossier-section"),
+  ];
+
+  it("completes with gaps once coverage was worked, leads are accounted for and expansion went quiet", () => {
+    /* Completion is not a claim that the internet was exhausted: an area that
+       was investigated and yielded nothing still completes, and its gap is
+       what the report carries instead. */
+    expect(
+      evaluateCompletion({
+        coverage: [...worked, area("historical-evidence", "inaccessible")],
+        leads: [
+          lead("https://news.example/a", { disposition: "investigated", reason: "Read." }),
+          lead("https://paywall.example/b", {
+            disposition: "inaccessible",
+            reason: "The publisher required a login.",
+          }),
+        ],
+        quietRounds: 2,
+        requiredQuietRounds: 2,
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses completion while an actionable lead is still unresolved, and names one", () => {
+    const shortfall = evaluateCompletion({
+      coverage: worked,
+      leads: [
+        lead("https://news.example/a", { disposition: "investigated", reason: "Read." }),
+        lead("https://news.example/unread"),
+      ],
+      quietRounds: 2,
+      requiredQuietRounds: 2,
+    });
+    expect(shortfall?.condition).toBe("leads-pending");
+    expect(shortfall?.reason).toContain("https://news.example/unread");
+  });
+
+  it("refuses completion while a planned coverage area was never investigated", () => {
+    const shortfall = evaluateCompletion({
+      coverage: [...worked, area("spoken-evidence", "planned")],
+      leads: [lead("https://news.example/a", { disposition: "investigated", reason: "Read." })],
+      quietRounds: 2,
+      requiredQuietRounds: 2,
+    });
+    expect(shortfall?.condition).toBe("coverage-uninvestigated");
+    expect(shortfall?.reason).toContain("The spoken-evidence area");
+  });
+
+  it("refuses completion while expansion is still producing something new", () => {
+    /* "The query list ran out" is not this condition: expansion has to have
+       been tried against the thin areas and found nothing further. */
+    const shortfall = evaluateCompletion({
+      coverage: worked,
+      leads: [lead("https://news.example/a", { disposition: "investigated", reason: "Read." })],
+      quietRounds: 1,
+      requiredQuietRounds: 2,
+    });
+    expect(shortfall?.condition).toBe("expansion-unfinished");
+  });
+
+  it("reports the coverage shortfall ahead of the leads it left pending", () => {
+    /* One reason, in the spec's own order, so a bounded operation's detail
+       names the condition that actually stopped it rather than the last one
+       checked. */
+    const shortfall = evaluateCompletion({
+      coverage: [area("spoken-evidence", "planned")],
+      leads: [lead("https://news.example/unread")],
+      quietRounds: 0,
+      requiredQuietRounds: 2,
+    });
+    expect(shortfall?.condition).toBe("coverage-uninvestigated");
   });
 });

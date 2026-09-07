@@ -1,9 +1,13 @@
-import type { PersonProfile, PersonResearchLead } from "@chief-of-staff-demo/shared";
+import type {
+  PersonProfile,
+  PersonResearchCoverageArea,
+  PersonResearchLead,
+} from "@chief-of-staff-demo/shared";
 import { scoreLead, type SelectionContext } from "./research-plan.js";
 import type { ResearchAllowance } from "./research.js";
 
 /**
- * The three policies one continuous research operation runs under.
+ * The four policies one continuous research operation runs under.
  *
  * They used to be closures inside `PersonResearch.run`, which made them
  * unreachable except by driving a whole research operation: to ask what the
@@ -11,6 +15,12 @@ import type { ResearchAllowance } from "./research.js";
  * to run research and infer the answer from its report. Naming them here does
  * not change any of those answers — the existing suites are the specification —
  * it makes each one askable on its own.
+ *
+ * The completion conditions joined them for a stronger reason (#238): whether
+ * an operation has earned the word `completed` was never asked at all. It was
+ * inferred — nothing interrupted it, no bound was reached, therefore it must be
+ * finished — which is how an operation that never worked its plan could report
+ * completion.
  */
 
 /**
@@ -168,4 +178,57 @@ export class PublicationGate {
     );
     return result;
   }
+}
+
+/** Which completion condition an operation has not met. */
+export interface CompletionShortfall {
+  /**
+   * The condition, as its own vocabulary rather than prose: a caller deciding
+   * what to do next reads this, and a reader reads `reason`.
+   */
+  condition: "coverage-uninvestigated" | "leads-pending" | "expansion-unfinished";
+  /** One sentence naming what is missing, for the operation's own detail. */
+  reason: string;
+}
+
+/**
+ * Completion policy: whether this operation has earned the word `completed`.
+ *
+ * The conditions are the spec's own, in its order: the planned coverage has
+ * been worked, every lead the operation ever considered carries a disposition,
+ * and expansion has been tried against the thin areas and gone quiet. All three
+ * are read off the durable record — the coverage plan and the lead registry —
+ * so neither the shape of the loop's exit nor a model's statement that it is
+ * finished is an input.
+ *
+ * Returns the first unmet condition, or null when all of them hold. Completion
+ * still asserts nothing about the internet: an area that was investigated and
+ * yielded nothing completes, with its gap published rather than hidden.
+ */
+export function evaluateCompletion(input: {
+  coverage: PersonResearchCoverageArea[];
+  leads: PersonResearchLead[];
+  /** Consecutive expansion rounds that produced neither evidence nor leads. */
+  quietRounds: number;
+  /** How many of those the allowance requires before expansion is finished. */
+  requiredQuietRounds: number;
+}): CompletionShortfall | null {
+  const unworked = input.coverage.filter((area) => area.state === "planned");
+  if (unworked[0])
+    return {
+      condition: "coverage-uninvestigated",
+      reason: `${String(unworked.length)} planned coverage areas were never investigated, starting with: ${unworked[0].label}.`,
+    };
+  const pending = input.leads.filter((lead) => lead.disposition === "pending");
+  if (pending[0])
+    return {
+      condition: "leads-pending",
+      reason: `${String(pending.length)} actionable leads were still unresolved, starting with: ${pending[0].target.slice(0, 200)}.`,
+    };
+  if (input.quietRounds < input.requiredQuietRounds)
+    return {
+      condition: "expansion-unfinished",
+      reason: `Expansion was still producing new evidence or leads after ${String(input.quietRounds)} of ${String(input.requiredQuietRounds)} quiet rounds.`,
+    };
+  return null;
 }

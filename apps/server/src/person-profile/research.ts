@@ -39,7 +39,12 @@ import {
   seedQueries,
 } from "./research-plan.js";
 import { readPersonSource, type SourceReadResult } from "./research-readers.js";
-import { PublicationGate, ResearchBudget, selectReadBatch } from "./research-policy.js";
+import {
+  PublicationGate,
+  ResearchBudget,
+  evaluateCompletion,
+  selectReadBatch,
+} from "./research-policy.js";
 
 const Extraction = PersonDossierContentSchema.extend({
   fullName: z.string().max(200).nullable(),
@@ -295,8 +300,11 @@ export class PersonResearch {
       const lead = leads.add({ kind: "url", target: target.url, origin: "document-link" });
       if (lead) leadContext.set(lead.id, { title: target.title, snippet: target.snippet, rank: 0 });
     }
+    /* A plain search of the person's name is general web discovery, and saying
+       so is what lets the completion report distinguish a coverage area that
+       was gone looking for from one nothing was ever aimed at. */
     for (const query of allowance.checkpoint?.queries ?? (this.deps.seeds ?? seedQueries)(profile))
-      leads.add({ kind: "query", target: query, origin: "seed" });
+      leads.add({ kind: "query", target: query, origin: "seed", family: "general-discovery" });
 
     const checkpoint = () => {
       if (!allowance.saveCheckpoint || !allowance.active()) return;
@@ -323,6 +331,12 @@ export class PersonResearch {
     checkpoint();
 
     let quiet = 0;
+    /* Expansion rounds this run has completed. Until one has run, a coverage
+       area nothing reached is still `planned` rather than unreachable: the
+       operation has not tried yet. A resumed run counts from zero rather than
+       from the checkpoint's round count, because a round that stopped before
+       its expansion is still recorded there as a round. */
+    let expansions = 0;
     while (active() && budget.within()) {
       rounds += 1;
       let producedEvidence = false;
@@ -916,7 +930,7 @@ export class PersonResearch {
         checkpoint();
       }
 
-      this.updateCoverage(coverage, profile, readIndexes);
+      this.updateCoverage(coverage, profile, leads, expansions);
       if (!active() || !budget.within()) break;
 
       /* 4. Expansion. New leads come from the evidence itself and from the
@@ -927,7 +941,12 @@ export class PersonResearch {
       const dossier = this.deps.dossiers.get(profile.id);
       const derived = deriveLeads(profile, dossier, unsatisfiedAreas);
       for (const query of derived.queries)
-        leads.add({ kind: "query", target: query, origin: "expansion" });
+        leads.add({
+          kind: "query",
+          target: query.target,
+          origin: "expansion",
+          ...(query.family ? { family: query.family } : {}),
+        });
       for (const url of derived.urls) {
         const added = leads.add({ kind: "url", target: url, origin: "expansion" });
         if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 3 });
@@ -991,6 +1010,7 @@ export class PersonResearch {
           };
         }
       }
+      expansions += 1;
       const grew = leads.pending().length > before;
       quiet = producedEvidence || grew ? 0 : quiet + 1;
       checkpoint();
@@ -1029,20 +1049,42 @@ export class PersonResearch {
           "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
       };
 
-    this.updateCoverage(coverage, profile, readIndexes);
-    const conclusion = interruption ? "interrupted" : budget.reason ? "bounded" : "completed";
+    this.updateCoverage(coverage, profile, leads, expansions);
+    /* The completion conditions, asked rather than assumed (#238). An
+       operation that stopped short of its own plan concludes `bounded` with
+       the condition it did not meet, which keeps the three conclusions
+       distinct: an interruption is never a completion, and neither is running
+       out of leads before the plan was worked. */
+    const shortfall = interruption
+      ? null
+      : evaluateCompletion({
+          coverage,
+          leads: leads.all(),
+          quietRounds: quiet,
+          requiredQuietRounds: allowance.quietRounds,
+        });
+    const conclusion = interruption
+      ? "interrupted"
+      : budget.reason || shortfall
+        ? "bounded"
+        : "completed";
     if (conclusion !== "completed")
       leads.interruptPending(
         interruption
           ? "The operation was interrupted before this lead was investigated."
           : "A safety bound stopped the operation before this lead was investigated.",
       );
+    /* A coverage area the operation was still going to work says so, the way
+       its pending leads do. Nothing here upgrades an area to investigated. */
+    if (conclusion === "interrupted")
+      for (const area of coverage) if (area.state === "planned") area.state = "interrupted";
     const gaps = this.describeGaps(coverage, leads, conclusion);
     const dossier = this.deps.dossiers.get(profile.id);
+    const stoppedShort = budget.reason ?? shortfall?.reason;
     const detail = interruption
       ? interruption.reason
-      : budget.reason
-        ? `${budget.reason} Completed evidence is available and pending leads are retained.`
+      : stoppedShort
+        ? `${stoppedShort} Completed evidence is available and pending leads are retained.`
         : claimsPublished
           ? `Investigated the planned coverage and every actionable lead; ${String(gaps.length)} gaps remain and are listed.`
           : "Investigated the planned coverage without finding evidence that could be attributed to this person; the gaps are listed.";
@@ -1203,13 +1245,33 @@ export class PersonResearch {
   private updateCoverage(
     coverage: PersonResearchCoverageArea[],
     profile: PersonProfile,
-    readIndexes: Map<string, number>,
+    leads: LeadRegistry,
+    expansions: number,
   ): void {
     const dossier = this.deps.dossiers.get(profile.id);
     const sources = (dossier?.sourceIds ?? []).flatMap((id) => {
       const source = this.deps.dossiers.source(profile.id, id);
       return source ? [source] : [];
     });
+    /* One rule for both kinds of area, so a dossier section and a source
+       family cannot drift apart in what the plan's own states mean: evidence
+       satisfies an area, an investigation that came back empty investigates
+       it, and an area nothing ever reached is inaccessible with its reason —
+       a refused search is not a report that the family holds nothing. Before
+       expansion has run at all the area stays `planned`, which is what
+       refuses completion to an operation that never worked its plan. */
+    const reached = (
+      area: PersonResearchCoverageArea,
+      evidence: number,
+      investigated: boolean,
+    ): PersonResearchCoverageArea["state"] =>
+      evidence
+        ? "satisfied"
+        : investigated
+          ? "investigated"
+          : expansions > 0
+            ? "inaccessible"
+            : area.state;
     for (const area of coverage) {
       if (area.kind === "dossier-section") {
         const claims = (dossier?.claims ?? []).filter(
@@ -1221,11 +1283,7 @@ export class PersonResearch {
         area.sources = new Set(
           claims.flatMap((claim) => claim.citations.map((citation) => citation.sourceId)),
         ).size;
-        area.state = claims.length
-          ? "satisfied"
-          : area.state === "planned"
-            ? "planned"
-            : "investigated";
+        area.state = reached(area, claims.length, leads.investigated());
         area.gaps = claims.length
           ? ["This account reflects the sources collected so far; further evidence may exist."]
           : ["No grounded evidence was attributed to this section."];
@@ -1239,14 +1297,15 @@ export class PersonResearch {
             familySources.some((source) => source.id === citation.sourceId),
           ),
         ).length;
-        area.state = familySources.length
-          ? "satisfied"
-          : readIndexes.size > 0
-            ? "investigated"
-            : area.state;
-        area.gaps = familySources.length
-          ? []
-          : ["No source in this family contributed evidence in this operation."];
+        /* A family the operation reached is investigated whether or not it
+           answered, and one it never got into says so instead. */
+        area.state = reached(area, familySources.length, leads.investigated(area.key));
+        area.gaps =
+          familySources.length || area.state === "satisfied"
+            ? []
+            : area.state === "inaccessible"
+              ? ["No query or source in this operation could be aimed at this family."]
+              : ["No source in this family contributed evidence in this operation."];
       }
     }
   }
