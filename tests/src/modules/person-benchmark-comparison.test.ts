@@ -162,6 +162,45 @@ it("renders every markdown table with rows of one cell count", () => {
   assertTablesWellFormed(renderComparison(compareReports(report, candidate)));
 });
 
+it("names the planning model only when the pipeline ran one, and keeps usefulness honest", () => {
+  const report = assessedReport();
+  const corpus = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  );
+  const people = corpus.people.filter((person) => report.selection.evaluated.includes(person.slug));
+  /* The bare fixture has no planning provenance (fixed-documents runs no
+     planner) and no support/usefulness assessments, so the Conditions table
+     carries no planning row and the usefulness measure is unavailable
+     rather than an averaged zero (#289). */
+  const bare = renderReport(report, people);
+  expect(bare).not.toContain("Planning provider/model");
+  expect(bare).toContain(
+    "Meeting-preparation usefulness** — unavailable: no support/usefulness assessment completed",
+  );
+  /* The schema enforces the pair: the script records both or neither, and a
+     half-written planning record fails at parse instead of rendering a
+     half-documented Conditions table. */
+  const halfProvenance = structuredClone(report);
+  halfProvenance.provenance.planningProvider = "fixture";
+  delete halfProvenance.provenance.planningModel;
+  expect(() => BenchmarkReportSchema.parse(halfProvenance)).toThrow();
+  report.provenance.planningProvider = "fixture";
+  report.provenance.planningModel = "fixture/mercury";
+  const assessment = report.people[1].assessment;
+  if (!assessment) throw new Error("fixture lost its assessment");
+  assessment.phases = {
+    reference: { status: "completed", failure: null, judgements: [] },
+    support: { status: "completed", failure: null, unresolvedFindings: [] },
+  };
+  const rendered = renderReport(report, people);
+  expect(rendered).toContain("Planning provider/model");
+  expect(rendered).toContain("fixture · fixture/mercury");
+  /* The mean runs over the one completed support assessment, not the
+     population (the unassessed dossier offers no zero to average). */
+  expect(rendered).toContain("of 3 over 1 completed support/usefulness assessments");
+  assertTablesWellFormed(rendered);
+});
+
 it("renders withheld recovery as unmeasured rather than a proven zero", () => {
   const baseline = assessedReport();
   const candidate = structuredClone(baseline);

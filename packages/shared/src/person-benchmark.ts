@@ -552,32 +552,41 @@ export type BenchmarkPersonArtifact = z.infer<typeof BenchmarkPersonArtifactSche
  * Absent measurements stay absent — an invented token count would defeat the
  * purpose of recording usage at all.
  */
-export const BenchmarkProvenanceSchema = z.object({
-  corpusVersion: z.string().max(80),
-  referenceVersions: z.record(z.string().max(80), z.string().max(40)),
-  pipeline: z.enum(["incumbent", "expanded"]),
-  researchProvider: z.string().max(80),
-  researchModel: z.string().max(200),
-  judgeProvider: z.string().max(80),
-  judgeModel: z.string().max(200),
-  judgeVersion: z.string().max(40),
-  promptVersion: z.string().max(40),
-  collectorVersions: z.record(z.string().max(120), z.string().max(40)),
-  researchSettings: z.record(z.string().max(80), z.union([z.string(), z.number(), z.boolean()])),
-  network: z.enum(["live", "fixed-documents", "offline"]),
-  /** Only present when the model boundary actually reported usage. */
-  usage: z
-    .object({
-      inputCharacters: z.number().int().nonnegative(),
-      outputCharacters: z.number().int().nonnegative(),
-      tokens: z.literal("unavailable"),
-      cost: z.literal("unavailable"),
-    })
-    .optional(),
-  startedAt: z.string().max(40),
-  finishedAt: z.string().max(40),
-  host: z.string().max(200),
-});
+export const BenchmarkProvenanceSchema = z
+  .object({
+    corpusVersion: z.string().max(80),
+    referenceVersions: z.record(z.string().max(80), z.string().max(40)),
+    pipeline: z.enum(["incumbent", "expanded"]),
+    researchProvider: z.string().max(80),
+    researchModel: z.string().max(200),
+    /** Present when the pipeline ran a planner; fixed-documents and the incumbent have none. */
+    planningProvider: z.string().max(80).optional(),
+    planningModel: z.string().max(200).optional(),
+    judgeProvider: z.string().max(80),
+    judgeModel: z.string().max(200),
+    judgeVersion: z.string().max(40),
+    promptVersion: z.string().max(40),
+    collectorVersions: z.record(z.string().max(120), z.string().max(40)),
+    researchSettings: z.record(z.string().max(80), z.union([z.string(), z.number(), z.boolean()])),
+    network: z.enum(["live", "fixed-documents", "offline"]),
+    /** Only present when the model boundary actually reported usage. */
+    usage: z
+      .object({
+        inputCharacters: z.number().int().nonnegative(),
+        outputCharacters: z.number().int().nonnegative(),
+        tokens: z.literal("unavailable"),
+        cost: z.literal("unavailable"),
+      })
+      .optional(),
+    startedAt: z.string().max(40),
+    finishedAt: z.string().max(40),
+    host: z.string().max(200),
+  })
+  .refine(
+    (provenance) =>
+      (provenance.planningProvider === undefined) === (provenance.planningModel === undefined),
+    { message: "planningProvider and planningModel are recorded together" },
+  );
 export type BenchmarkProvenance = z.infer<typeof BenchmarkProvenanceSchema>;
 
 /** Aggregation over a labelled slice of the collection, with denominators. */

@@ -231,6 +231,16 @@ export function compareReports(
   note("judge model", baseline.provenance.judgeModel, candidate.provenance.judgeModel);
   note("judge version", baseline.provenance.judgeVersion, candidate.provenance.judgeVersion);
   note("research model", baseline.provenance.researchModel, candidate.provenance.researchModel);
+  note(
+    "planning provider",
+    baseline.provenance.planningProvider ?? "absent",
+    candidate.provenance.planningProvider ?? "absent",
+  );
+  note(
+    "planning model",
+    baseline.provenance.planningModel ?? "absent",
+    candidate.provenance.planningModel ?? "absent",
+  );
   note("mode", baseline.mode, candidate.mode);
   note("network", baseline.provenance.network, candidate.provenance.network);
   for (const [key, value] of Object.entries(baseline.provenance.researchSettings))
@@ -434,6 +444,14 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       "Research provider/model",
       `${report.provenance.researchProvider} · ${report.provenance.researchModel}`,
     ],
+    ...(report.provenance.planningProvider && report.provenance.planningModel
+      ? [
+          [
+            "Planning provider/model",
+            `${report.provenance.planningProvider} · ${report.provenance.planningModel}`,
+          ] as [string, string],
+        ]
+      : []),
     [
       "Judge provider/model",
       `${report.provenance.judgeProvider} · ${report.provenance.judgeModel}`,
@@ -555,7 +573,6 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       completedOperations: 0,
     },
   );
-  const people_ = Math.max(1, report.people.length);
   lines.push(
     `- **Factual reliability** — ${String(totals.verified)} of ${String(totals.citations)} citations verify against their retained source version; ${String(totals.critical)} critical integrity findings; ${String(totals.overclaims)} judged overclaims, of which ${String(totals.wrongPerson)} are wrong-person attributions.`,
   );
@@ -565,8 +582,17 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
   lines.push(
     `- **Absolute richness** — ${String(totals.claims)} published claims over ${String(totals.sources)} retained sources; reported beside completeness, never folded into it.`,
   );
+  /* A dossier whose support/usefulness phases never completed offers no
+   judged usefulness signal; averaging its zeros over the population would
+   present unavailable as an observed score (#281). The mean runs over the
+   people whose support assessment actually completed. */
+  const supportAssessed = report.people.filter(
+    (entry) => entry.assessment?.phases?.support.status === "completed",
+  );
   lines.push(
-    `- **Meeting-preparation usefulness** — mean understanding ${(totals.understanding / people_).toFixed(2)} of 3, judged with cited evidence.`,
+    supportAssessed.length
+      ? `- **Meeting-preparation usefulness** — mean understanding ${(supportAssessed.reduce((sum, entry) => sum + entry.usefulness.understanding, 0) / supportAssessed.length).toFixed(2)} of 3 over ${String(supportAssessed.length)} completed support/usefulness assessments, judged with cited evidence.`
+      : `- **Meeting-preparation usefulness** — unavailable: no support/usefulness assessment completed, so the run carries no judged usefulness signal.`,
   );
   lines.push(
     `- **Operational reliability** — ${String(totals.completedOperations)} of ${String(report.people.length)} operations reached their own completion conditions.`,
