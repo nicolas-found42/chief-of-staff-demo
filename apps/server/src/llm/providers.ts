@@ -1199,6 +1199,13 @@ async function openAiCompatibleComplete(
      the ceilings (#233). */
   const ladder = declared.ladder;
   let index = 0;
+  /* The rests may be given up once per call. `routeRest` is process-wide and
+     operations run concurrently, so a peer operation can rest the route again
+     between the clear and the retry; without this latch that pair of calls
+     trades 404s until the request deadline expires rather than the ladder
+     making progress. One clear is all the recovery needs — after it, an empty
+     `ignore` means a further 404 is the route's own answer. */
+  let restsGivenUp = false;
   let retried = false;
   let recoveryFailure: { error: unknown } | null = null;
   for (;;) {
@@ -1331,7 +1338,13 @@ async function openAiCompatibleComplete(
        and is not a contract to match against. Giving the rests up costs at
        most a repeat of the failure that earned them; keeping them costs every
        remaining call in the operation (#228). */
-    if (cfg.provider === "openrouter" && response.status === 404 && skippedRoutes.length > 0) {
+    if (
+      cfg.provider === "openrouter" &&
+      response.status === 404 &&
+      skippedRoutes.length > 0 &&
+      !restsGivenUp
+    ) {
+      restsGivenUp = true;
       clearRests(cfg.model);
       deadline.reportAttempt({
         outcome: "retrying",
