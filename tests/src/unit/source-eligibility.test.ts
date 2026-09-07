@@ -179,6 +179,27 @@ describe("the configured research source collection", () => {
     expect(byRoute.get("podcastindex")?.status).toBe("excluded");
     expect(byRoute.get("linkedin")?.status).toBe("excluded");
     expect(byRoute.get("youtube-captions")?.status).toBe("unavailable");
+    /* The known gaps pin their full reason, not just their status: silently
+       rewriting a reason would pass a non-empty check while changing what
+       "we cannot read this" means. Additions stay free; only silent removal
+       or rewriting fails. */
+    const gapReasonByRoute: Record<string, string | undefined> = Object.fromEntries(
+      SOURCE_ELIGIBILITY.filter((entry) => entry.status !== "in-production").map((entry) => [
+        entry.route,
+        entry.exclusion,
+      ]),
+    );
+    expect({
+      podcastindex: gapReasonByRoute["podcastindex"],
+      linkedin: gapReasonByRoute["linkedin"],
+      "youtube-captions": gapReasonByRoute["youtube-captions"],
+    }).toEqual({
+      podcastindex: "A key is required, which #228 excludes even where the tier is free.",
+      linkedin:
+        "No keyless anonymous read exists. Research records a login-required failure for a LinkedIn URL rather than importing a session or using a paid proxy.",
+      "youtube-captions":
+        "Observed 2026-09-06: every listed track returned HTTP 200 with a zero-byte body in every format (srv1, srv3, json3, vtt, ttml). Research falls back to the publisher's video description and records the gap. Local transcription would be the next route and is not installed on this host.",
+    });
   });
 
   it("does not let a catalogue label alone mark a route eligible", () => {
