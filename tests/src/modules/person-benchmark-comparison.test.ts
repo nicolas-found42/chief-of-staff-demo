@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { BenchmarkReportSchema } from "@chief-of-staff-demo/shared";
-import { compareReports, renderComparison } from "../../../apps/server/src/person-benchmark/report";
+import {
+  compareReports,
+  renderComparison,
+  renderReport,
+} from "../../../apps/server/src/person-benchmark/report";
+import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 
 /** Historical failed smoke data stays failed; these controlled assessments are test-only. */
 function assessedReport() {
@@ -56,6 +61,105 @@ it("compares fully assessed failed research without converting the run to succes
   });
   expect(renderComparison(comparison)).toContain("Research outcomes");
   expect(renderComparison(comparison)).toContain("failed");
+});
+
+/* Three shipped reports carried a table whose separator row had one cell
+   fewer than its header (#271, #282) — markdown consumers rendered the
+   columns misaligned and the missing count stayed unread. Within one table
+   block, every row must carry the same cell count. */
+function assertTablesWellFormed(rendered: string): void {
+  let block: string[] = [];
+  const check = (rows: string[]) => {
+    if (rows.length < 2) return;
+    for (const row of rows) {
+      const trimmed = row.trim();
+      if (!trimmed.startsWith("|") || !trimmed.endsWith("|"))
+        throw new Error(`table row lost its outer delimiters: ${row}`);
+    }
+    /* A pipe is a column delimiter unless markdown-escaped: escapeCell
+       renders in-cell pipes as \|, and markdown reads \| as a literal pipe
+       while \\| is an escaped backslash followed by a real delimiter — so
+       the decision is backslash parity, not the immediately preceding
+       character. */
+    const cells = rows.map((row) => {
+      let delimiters = 0;
+      let backslashes = 0;
+      for (const character of row) {
+        if (character === "\\") backslashes++;
+        else {
+          if (character === "|" && backslashes % 2 === 0) delimiters++;
+          backslashes = 0;
+        }
+      }
+      return delimiters - 1;
+    });
+    if (new Set(cells).size !== 1)
+      throw new Error(`table rows disagree on cell count: ${JSON.stringify(cells)}`);
+  };
+  for (const line of rendered.split("\n")) {
+    if (line.startsWith("|")) block.push(line);
+    else {
+      check(block);
+      block = [];
+    }
+  }
+  check(block);
+}
+
+it("renders every markdown table with rows of one cell count", () => {
+  const report = assessedReport();
+  const corpus = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  );
+  const people = corpus.people.filter((person) => report.selection.evaluated.includes(person.slug));
+  /* The conditional tables only render when the fixture carries the data:
+     a collection entry for the intersections table, and judge phases —
+     one failed support phase — for the per-person support-failed column. */
+  report.collection = [
+    {
+      scenarioId: "intersection",
+      assessmentStatus: "completed",
+      requirement: "r18",
+      categories: ["directing", "screenwriting"],
+      expectedMatches: [],
+      recoveredMatches: [],
+      missingMatches: [],
+      additionalMatchesForReview: [],
+      assessments: [],
+      demonstrated: [],
+      claimed: [],
+      coverage: {
+        activeProfiles: report.people.length,
+        researchedProfiles: 0,
+        demonstrated: 0,
+        claimedOnly: 0,
+      },
+      scope: "Controlled missing intersection",
+    },
+  ];
+  for (const [index, person] of report.people.entries()) {
+    const assessment = person.assessment;
+    if (!assessment) throw new Error("fixture lost its assessment");
+    assessment.phases = {
+      reference: { status: "completed", failure: null, judgements: [] },
+      support: {
+        status: index === 0 ? "failed" : "completed",
+        failure: null,
+        unresolvedFindings: [],
+      },
+    };
+  }
+  /* Exercise the delimiter-parity path: escapeCell renders this statement's
+     pipe as \| inside the remaining-misses cell, which the checker must
+     read as content rather than a column delimiter. */
+  report.remainingMisses[0].statement = "Statement with a | literal pipe";
+  const rendered = renderReport(report, people);
+  expect(rendered).toContain("\\|");
+  assertTablesWellFormed(rendered);
+  const candidate = structuredClone(report);
+  candidate.people[0].completeness.recovered += 1;
+  assertTablesWellFormed(renderReport(candidate, people));
+  assertTablesWellFormed(renderComparison(compareReports(report, candidate)));
 });
 
 it("renders withheld recovery as unmeasured rather than a proven zero", () => {
