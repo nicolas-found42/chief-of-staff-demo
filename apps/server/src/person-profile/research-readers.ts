@@ -27,6 +27,7 @@ import {
 import { renderPublicationRecord } from "./publication-records.js";
 import { renderIdentityAnchor } from "./identity-anchors.js";
 import { registryNonRecordBody, renderInstitutionalRecord } from "./institutional-records.js";
+import { creativeNonRecordBody, renderCreativeRecord } from "./creative-records.js";
 
 /** Text kept per source. Matches the dossier store's own retention ceiling. */
 const MAX_TEXT = 500_000;
@@ -179,7 +180,7 @@ export function classifySourceFamily(url: string): PersonSourceFamily {
     )
   )
     return "professional-records";
-  if (/(^|\.)(tvmaze\.com|loc\.gov|artic\.edu|imdb\.com|discogs\.com)/.test(host))
+  if (/(^|\.)(tvmaze\.com|loc\.gov|artic\.edu|imdb\.com|discogs\.com|openlibrary\.org)/.test(host))
     return "creative-records";
   if (/(^|\.)(wikidata\.org|ror\.org|orcid\.org|isni\.org|viaf\.org)/.test(host))
     return "identity-affiliation";
@@ -1612,10 +1613,30 @@ const RECORD_ROUTES: RecordRoute[] = [
     },
   },
   {
+    match: /(^|\.)openlibrary\.org$/,
+    index: "openlibrary.org",
+    build: (url) => {
+      const path = url.pathname;
+      if (path.startsWith("/search/authors.json")) return url.toString();
+      const match = /^\/(authors|books|works)\/(OL[0-9A-Za-z]+)(\.json)?$/i.exec(path);
+      if (match) {
+        return `https://openlibrary.org/${match[1]}/${match[2]}.json`;
+      }
+      return null;
+    },
+  },
+  {
     match: /(^|\.)tvmaze\.com$/,
     index: "tvmaze.com",
-    build: (url) =>
-      url.hostname.startsWith("api.") ? url.toString() : `https://api.tvmaze.com${url.pathname}`,
+    build: (url) => {
+      const personId = /\/people\/(\d+)/.exec(url.pathname)?.[1];
+      if (personId) return `https://api.tvmaze.com/people/${personId}?embed=castcredits`;
+      const showId = /\/shows\/(\d+)/.exec(url.pathname)?.[1];
+      if (showId) return `https://api.tvmaze.com/shows/${showId}?embed=cast`;
+      return url.hostname.startsWith("api.")
+        ? url.toString()
+        : `https://api.tvmaze.com${url.pathname}${url.search}`;
+    },
   },
   {
     match: /(^|\.)artic\.edu$/,
@@ -1749,7 +1770,8 @@ function renderJson(
      renderers read the same shapes for different indexes, so a body that
      matched one never needs to be tried against the other. */
   const institutional = publication ? null : renderInstitutionalRecord(index, parsed);
-  const structured = publication ?? institutional;
+  const creative = publication || institutional ? null : renderCreativeRecord(index, parsed);
+  const structured = publication ?? institutional ?? creative;
   if (structured)
     return {
       text: structured.text.slice(0, MAX_TEXT),
@@ -1807,7 +1829,7 @@ function renderJson(
      is merely a record shape the renderer cannot fully read still
      flattens: that is the normal retention path for records this module
      has not grown into (#249, #250). */
-  const nonRecord = registryNonRecordBody(index, parsed);
+  const nonRecord = registryNonRecordBody(index, parsed) ?? creativeNonRecordBody(index, parsed);
   if (nonRecord) {
     const refusal = nonRecord === "registry-error-envelope";
     context.recorder.record({
@@ -1836,7 +1858,7 @@ function renderJson(
         : "The registry holds no record for this identifier.",
       remediation: `Retry later, then reproduce with: curl -sS '${response.url}'`,
     });
-    return unavailable(family, "record-reader", "failed", context.snippet, response.url);
+    return unavailable(family, "record-reader", "failed", "", response.url);
   }
   const text = flattenJson(parsed);
   return {

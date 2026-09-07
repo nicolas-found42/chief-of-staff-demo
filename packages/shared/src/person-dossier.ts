@@ -43,6 +43,9 @@ export const PersonSourceRightsSchema = z.object({
          licence over the record and no warranty about the person it names. */
       "nppes-public-registry",
       "clinicaltrials-public-api",
+      "openlibrary-public-api",
+      "loc-json-api",
+      "tvmaze-free-api",
     ]),
     statement: z.string().max(600),
     /** Where that permission was read; a catalogue label is not a source. */
@@ -66,10 +69,10 @@ export const PersonSourceRightsSchema = z.object({
         material: z.enum([
           "abstract",
           "full-text",
-          /* A trial record's protocol, statistical analysis plan or consent
-             form: linked documents named by a professional or institutional
-             record, never fetched under its metadata permission (#250). */
           "linked-document",
+          "cover-image",
+          "linked-work",
+          "description",
         ]),
         disposition: z.enum([
           "retained-under-declared-licence",
