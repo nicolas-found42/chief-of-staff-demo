@@ -12,8 +12,8 @@
     "@playwright/test": "^1.62.1",
     "@total-typescript/shoehorn": "^0.1.2",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@types/react-dom": "^19.2.7",
+    "@vitest/coverage-v8": "^5.0.0",
     "fastify": "^5.12.1",
     "googleapis": "^175.0.0",
     "googleapis-common": "^8.0.3",
@@ -22,7 +22,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
-    "vitest": "^4.1.11",
+    "vitest": "^5.0.0",
     "zod": "^3.25.76"
   }
 }
