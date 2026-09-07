@@ -19,6 +19,7 @@ import {
   type ResearchAttemptRecorder,
 } from "./research-diagnostics.js";
 import { renderPublicationRecord } from "./publication-records.js";
+import { renderIdentityAnchor } from "./identity-anchors.js";
 
 /** Text kept per source. Matches the dossier store's own retention ceiling. */
 const MAX_TEXT = 500_000;
@@ -1641,6 +1642,29 @@ function renderJson(
       provenanceNote: publication.provenanceNote,
       sourceVersion: publication.sourceVersion,
       rights: publication.rights,
+      finalUrl: response.url,
+    };
+  /* An identity or affiliation registry record is rendered the same
+     deliberate way: the identifier and affiliations are what a claim can cite
+     as the anchor, and the flattener would carry a linked work's title in as
+     if the registry itself established it (#252). */
+  const identityAnchor = renderIdentityAnchor(index, parsed);
+  if (identityAnchor)
+    return {
+      text: identityAnchor.text.slice(0, MAX_TEXT),
+      capturedAt: null,
+      completeness: identityAnchor.text.length > MAX_TEXT ? "partial" : "full",
+      access: "retrieved",
+      outboundUrls: identityAnchor.outboundUrls.slice(0, 200),
+      family,
+      route: "record-reader",
+      upstreamIndex: index,
+      publishedAt: identityAnchor.publishedAt,
+      author: null,
+      anchors: identityAnchor.anchors,
+      provenanceNote: identityAnchor.provenanceNote,
+      sourceVersion: identityAnchor.sourceVersion,
+      rights: identityAnchor.rights,
       finalUrl: response.url,
     };
   const text = flattenJson(parsed);

@@ -41,6 +41,7 @@ import {
 } from "./research-plan.js";
 import { readPersonSource, type SourceReadResult } from "./research-readers.js";
 import { isPublicationRecordRead } from "./publication-records.js";
+import { isIdentityAnchorRead } from "./identity-anchors.js";
 import {
   PublicationGate,
   ResearchBudget,
@@ -1390,15 +1391,24 @@ export class PersonResearch {
     const grounded = (record: { claimIds: string[] }) => record.claimIds.every((id) => ids.has(id));
     /* A publication or deposit record lists who took part. What any one of
        them personally did, and who decided what, is not in the record, so the
-       two personal-scope fields cannot rest on this source alone (#249). The
-       participation itself survives — as claims, and as the work record they
-       ground — and a source that does state a contribution still carries one
-       on its own work record; the merge never overwrites a recorded
-       contribution with the null written here. */
-    const participationOnly = isPublicationRecordRead({
-      acquisition: read.route,
-      upstreamIndex: read.upstreamIndex,
-    });
+       two personal-scope fields cannot rest on this source alone (#249). An
+       identity or affiliation registry record carries the same limit for the
+       same reason: it establishes that an identifier belongs to this person,
+       never that a work or activity it links belongs to them as a verified
+       personal accomplishment (#252). The participation itself survives — as
+       claims, and as the work record they ground — and a source that does
+       state a contribution still carries one on its own work record; the
+       merge never overwrites a recorded contribution with the null written
+       here. */
+    const participationOnly =
+      isPublicationRecordRead({
+        acquisition: read.route,
+        upstreamIndex: read.upstreamIndex,
+      }) ||
+      isIdentityAnchorRead({
+        acquisition: read.route,
+        upstreamIndex: read.upstreamIndex,
+      });
     const works = valid(PersonWorkRecordSchema, partial.works)
       .filter(grounded)
       .map((work) => ({

@@ -390,6 +390,25 @@ export function compareReports(
   });
 }
 
+/**
+ * How a retained source's version reads in the report.
+ *
+ * Three states, kept apart because they say different things. A version the
+ * route stated is printed. `null` means the route was asked and states none.
+ * Absent means the report was written before the field existed, so nobody
+ * asked — printing that as "none stated" would put a claim about the route
+ * into a report that never measured it (#252).
+ */
+function renderSourceVersion(source: { sourceVersion?: string | null | undefined }): string {
+  const stated = source.sourceVersion;
+  /* Absent and `undefined` alike mean nobody asked: the report predates the
+     field. `Object.hasOwn` distinguishes them from an explicit null but does
+     not narrow the type, so the value is tested directly. */
+  if (stated === undefined) return "unmeasured";
+  if (stated === null || stated === "") return "none stated";
+  return escapeCell(stated);
+}
+
 function contributionTotals(
   people: BenchmarkPersonResult[],
   family: NonNullable<BenchmarkPersonResult["sourceContributions"]>[number]["family"],
@@ -643,6 +662,32 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
   lines.push(
     "The JSON report retains each contributing source URL, hash, upstream index, cited claim IDs and recovered reference-fact IDs, including retained sources that contributed no claims.",
   );
+  lines.push("");
+
+  lines.push("## Identity anchors");
+  lines.push("");
+  lines.push(
+    "Retained identity and affiliation registry records (issue #252): the anchor that establishes an identifier belongs to this person, traced to the upstream index and the record's own version. Registry membership on its own does not attribute a linked work or activity to the person; a cited anchor means a claim actually rests on it, not that every fact about the person came from it.",
+  );
+  lines.push("");
+  lines.push("| Person | Source | Upstream index | Source version | Cited |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  let anyIdentityAnchors = false;
+  for (const person of report.people) {
+    const anchors = (person.sourceContributions ?? []).find(
+      (entry) => entry.family === "identity-affiliation",
+    );
+    if (!anchors || anchors.sources.length === 0) continue;
+    anyIdentityAnchors = true;
+    for (const source of anchors.sources)
+      lines.push(
+        `| ${person.slug} | ${escapeCell(source.url)} | ${source.upstreamIndex ? escapeCell(source.upstreamIndex) : "—"} | ${renderSourceVersion(source)} | ${source.cited ? "yes" : "no"} |`,
+      );
+  }
+  if (!anyIdentityAnchors)
+    lines.push(
+      "| — | no identity or affiliation registry record retained in this report | — | — | — |",
+    );
   lines.push("");
 
   const judgeAttempts = report.people.flatMap((person) => person.assessment?.modelAttempts ?? []);

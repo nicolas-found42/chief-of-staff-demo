@@ -37,6 +37,14 @@ export function sourceContributions(
       hash: source.hash,
       upstreamIndex: source.upstreamIndex ?? null,
       cited: false,
+      /* A retained source document holds a version or holds none — the field
+         is `string | undefined` there, with no third state — so absent at this
+         layer already means the route stated no version, and null is how a
+         freshly written report says so. Absent in a *report* means something
+         else entirely: that the report predates the field. Keeping this `??
+         null` is what preserves that difference; passing `undefined` through
+         would make a new report indistinguishable from a pre-#252 one. */
+      sourceVersion: source.sourceVersion ?? null,
     });
     contributions.set(key, contribution);
   }
