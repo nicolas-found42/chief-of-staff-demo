@@ -473,7 +473,21 @@ it("shows the recovery judge claim statements without cited passages", async () 
   }
 });
 
-/* Issue #236: paraphrase and cross-language matches receive decided verdicts. */
+/* Issue #236: paraphrase and cross-language matches receive decided verdicts.
+ *
+ * The contract has a deterministic half and a model half, and only the first
+ * is reachable from here. These tests pin the recovery prompt's contract and
+ * the guard's treatment of each verdict shape: that a decided paraphrase
+ * survives, that a cross-language excerpt is credited while citation
+ * integrity stays exact, that a rejection carries the claim it rejected, and
+ * that the judge's own ambiguity is preserved as itself.
+ *
+ * Whether the model actually decides a paraphrase it could have parked is not
+ * a unit test — it needs a live call, which spends provider budget and has no
+ * credential in CI, so it belongs in a prompt eval rather than in `check`.
+ * That measurement is issue #270, against a population whose dossiers carry
+ * claims; the run recorded on the pull request is its first data point.
+ */
 
 /**
  * One reference fact, one dossier claim, one cited passage. The wording of
