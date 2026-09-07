@@ -419,9 +419,9 @@ describe("providers", () => {
             ? { fail: new Error("SECRET provider text") }
             : {
                 /* A partial answer and then nothing at all. Keepalives used to
-             stand in for idleness here; since #232 they say the upstream
-             is alive and buffering, which is a different fixture and its
-             own test. This one is the connection going quiet. */
+           stand in for idleness here; since #232 they say the upstream
+           is alive and buffering, which is a different fixture and its
+           own test. This one is the connection going quiet. */
                 sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
@@ -892,6 +892,38 @@ describe("providers", () => {
     ).toMatchObject({ summary: "ok" });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.body.tool_choice).toBeUndefined();
+  });
+
+  it("openrouter: a routing 404 steps the binding down on the status alone", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    /* The same transient routing outage reaches the seam under other prose
+       (#271): OpenRouter's body wording is not a contract, so the decision
+       keys on the 404 status instead of matching a phrase. */
+    responses.push({
+      status: 404,
+      body: {
+        error: {
+          code: 404,
+          message: "No routes are currently available for this model. Try again later.",
+        },
+      },
+    });
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/other-404-body", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    expect(
+      await complete({
+        system: "S",
+        user: "U",
+        schema: z.object({ isTranscript: z.boolean(), summary: z.string() }).passthrough(),
+        preferredBinding: "forced_tool_call",
+      }),
+    ).toMatchObject({ summary: "ok" });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body.tool_choice).toBeUndefined();
+    expect(calls[1]?.body.response_format).toBeUndefined();
   });
 
   it("openrouter: an upstream that ignores forced tool choice steps down", async () => {

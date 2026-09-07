@@ -1,13 +1,26 @@
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { PersonDossierSchema, PersonSourceDocumentSchema } from "@chief-of-staff-demo/shared";
+import {
+  BenchmarkReportSchema,
+  PersonDossierSchema,
+  PersonSourceDocumentSchema,
+} from "@chief-of-staff-demo/shared";
 import type {
   BenchmarkPerson,
+  BenchmarkPersonResult,
+  BenchmarkReport,
   PersonDossier,
   PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus.js";
+import { assessPerson } from "../../../apps/server/src/person-benchmark/evaluate.js";
 import { judgePerson } from "../../../apps/server/src/person-benchmark/judge.js";
+import {
+  remainingMisses,
+  renderReport,
+  summarizeGroups,
+} from "../../../apps/server/src/person-benchmark/report.js";
 
 function fixture() {
   const person = loadCorpus(
@@ -263,6 +276,136 @@ it.each([
     }
   },
 );
+/** A minimal report around one assessed fixture person, rendered the way a run writes it. */
+async function renderedReport(
+  person: BenchmarkPerson,
+  result: BenchmarkPersonResult,
+): Promise<{
+  report: BenchmarkReport;
+  rendered: string;
+}> {
+  const report = BenchmarkReportSchema.parse({
+    schemaVersion: 1,
+    runId: "support-attribution",
+    status: "failed",
+    statusDetail: "Fixture",
+    mode: "fixed-documents",
+    selection: { requested: [person.slug], evaluated: [person.slug], skipped: [] },
+    provenance: {
+      corpusVersion: "fixed",
+      referenceVersions: { [person.slug]: person.referenceVersion },
+      pipeline: "expanded",
+      researchProvider: "fixture",
+      researchModel: "fixture",
+      judgeProvider: "fixture",
+      judgeModel: "fixture",
+      judgeVersion: "1",
+      promptVersion: "1",
+      collectorVersions: {},
+      researchSettings: {},
+      network: "fixed-documents",
+      startedAt: "2026-09-07",
+      finishedAt: "2026-09-07",
+      host: "fixture",
+    },
+    people: [result],
+    groups: summarizeGroups([person], [result]),
+    remainingMisses: remainingMisses([person], [result]),
+  });
+  return { report, rendered: renderReport(report, [person]) };
+}
+it("attributes verdicts withheld for an incomplete support assessment separately from semantic ambiguity", async () => {
+  const { person, dossier, sources } = fixture();
+  for (const source of sources)
+    source.hash = createHash("sha256").update(source.text).digest("hex");
+  /* The observed shape (#271): the reference phase completes on the same
+     model, and the support/usefulness phase fails against the upstream. The
+     judge fake fails the support call the way the seam reports it. */
+  const result = await assessPerson(person, "fixed-documents", {
+    dossier,
+    publicProjection: dossier,
+    sources,
+    operation: null,
+    elapsedMilliseconds: 0,
+    judge: async ({ user }) => {
+      if (user.includes('"references":'))
+        return {
+          judgements: [
+            {
+              factId: person.facts[0].id,
+              verdict: "recovered",
+              evidence: dossier.claims[120].statement,
+              claimId: "claim-120",
+              rationale: "Semantic match.",
+            },
+          ],
+        };
+      throw new Error("SSE error chunk from the upstream: code 502");
+    },
+  });
+  /* ADR-0067 keeps the per-verdict record withheld; what changes is that the
+     headline counts name the cause instead of blurring it into ambiguity. */
+  expect(result.completeness).toMatchObject({
+    recovered: 0,
+    ambiguous: 1,
+    ambiguousSupportAssessmentFailed: 1,
+  });
+  expect(result.assessment?.phases?.support.status).toBe("failed");
+  const { report, rendered: readable } = await renderedReport(person, result);
+  expect(readable).toContain(
+    "1 of them withheld for an incomplete support/usefulness assessment rather than semantic ambiguity",
+  );
+  expect(readable).toContain("Support-failed");
+  /* The group table is a headline consumers read; the summary must carry the
+     same attribution the per-person record does (#271, CODING_STANDARDS:
+     a test asserts the record, not only its summary). */
+  for (const group of report.groups) expect(group.ambiguousSupportAssessmentFailed).toBe(1);
+});
+
+it("does not attribute a judge's own ambiguity to an incomplete support assessment", async () => {
+  const { person, dossier, sources } = fixture();
+  for (const source of sources)
+    source.hash = createHash("sha256").update(source.text).digest("hex");
+  const result = await assessPerson(person, "fixed-documents", {
+    dossier,
+    publicProjection: dossier,
+    sources,
+    operation: null,
+    elapsedMilliseconds: 0,
+    judge: async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "ambiguous",
+                evidence: dossier.claims[120].statement,
+                claimId: "claim-120",
+                rationale: "The evidence genuinely underdetermines the fact.",
+              },
+            ],
+          }
+        : {
+            understanding: 1,
+            remainingQuestions: 1,
+            conversationReadiness: 1,
+            uncertain: false,
+            rationale: "Reviewed support.",
+            overclaims: [],
+          },
+  });
+  expect(result.assessment?.phases?.support.status).toBe("completed");
+  expect(result.completeness).toMatchObject({
+    recovered: 0,
+    ambiguous: 1,
+    ambiguousSupportAssessmentFailed: 0,
+  });
+  const { report, rendered: readable } = await renderedReport(person, result);
+  expect(readable).toContain(
+    "0 of them withheld for an incomplete support/usefulness assessment rather than semantic ambiguity",
+  );
+  for (const group of report.groups) expect(group.ambiguousSupportAssessmentFailed).toBe(0);
+});
 
 it.each(["wrong-index", "null-with-citations", "null-without-citations"] as const)(
   "validates the selected citation against its own claim: %s",

@@ -1298,10 +1298,13 @@ async function openAiCompatibleComplete(
        refuses it surfaces that refusal rather than silently degrading. A
        routing refusal is different in kind — no model saw the request, because
        OpenRouter's union of endpoint declarations promised a binding no single
-       route honours — so it steps down whatever the declaration said (#232). */
+       route honours — so it steps down whatever the declaration said (#232).
+       The refusal is read off the 404 status alone: OpenRouter's body wording
+       varies with what its routing pool happened to say that day, so it is
+       not a contract to match against (#271). */
     if (
       index < ladder.length - 1 &&
-      (routingRefusal(response) ||
+      (response.status === 404 ||
         (declared.chosen === null && refusesBinding(call.binding, response)))
     ) {
       const failure = modelBoundaryFailure({
@@ -1400,19 +1403,6 @@ function degenerateRepeat(value: string): boolean {
 }
 
 /** Whether a 4xx says the model will not honour the binding that was sent. */
-/**
- * Whether the router found nowhere to send this body.
- *
- * Observed live: `HTTP 404 — No endpoints found that support the provided
- * 'tool_choice' value`, for models whose own metadata declares `tool_choice`.
- * No model refused anything; the request never arrived. Treating it as
- * terminal left seven surveyed models unreachable, when the same models answer
- * in under a second at a weaker binding (#232).
- */
-function routingRefusal(response: HttpResponse): boolean {
-  return response.status === 404 && /no endpoints found/i.test(response.text);
-}
-
 function refusesBinding(binding: ResultShapeBinding, response: HttpResponse): boolean {
   if (response.status < 400 || response.status >= 500) return false;
   if (binding === "response_format") {
