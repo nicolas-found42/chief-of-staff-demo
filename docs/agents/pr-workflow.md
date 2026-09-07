@@ -110,13 +110,23 @@ went out as #274 seven minutes later.
 and a review carrying blocking findings each come back as a denial naming the reason. It fails
 closed on a merge it cannot check, and stays quiet on a command that only carries the text of one.
 
-That distinction took three passes to get right, so it is worth knowing how it decides. Text a
-shell would never execute is blanked first — heredoc bodies, then quoted spans — and what is left
-is split on the shell's own separators, where a segment *starting* with the call is an invocation.
-A command naming no resolvable pull request is prose, since `gh` would have nothing to merge. So a
-grep for the call, a document explaining it and a pull request body quoting it all pass, while a
-merge hidden behind a `&&` does not. `require-clean-sourcery-review.test.sh` beside it is the case
-matrix; it reaches GitHub for two permanent fixtures and is not part of `pnpm run check`.
+Telling a merge from the text of one is most of the hook, so it is worth knowing how it decides.
+Text a shell would never execute is blanked first — heredoc bodies, then quoted spans — and what
+is left is split on the shell's own separators, where a segment *starting* with the call (leading
+environment assignments included) is an invocation. So a grep for the call, a document explaining
+it and a pull request body quoting it all pass.
+
+Two consequences worth expecting:
+
+- **The merge stands alone in its command.** `git push && gh pr merge <n>` is refused, because one
+  check cannot vouch for two invocations, and a second merge behind the first would ride in
+  unchecked. Run the push and the merge as separate commands.
+- **The allowed merge comes back carrying `--match-head-commit`.** The review was read at one
+  commit, and no check that runs *before* a command can stop a push from landing between the two —
+  GitHub refusing a mismatched head can, so the hook binds the merge to the head it validated.
+
+`require-clean-sourcery-review.test.sh` beside it is the case matrix, twenty cases over that whole
+distinction. It reaches GitHub for two permanent fixtures, so it is not part of `pnpm run check`.
 
 Dependabot is the exception: its PRs are configured to merge themselves, below.
 

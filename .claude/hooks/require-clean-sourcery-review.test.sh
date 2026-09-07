@@ -14,11 +14,19 @@ cd "$(dirname "$0")/../.." || exit 1
 g=.claude/hooks/require-clean-sourcery-review.sh
 fails=0
 
+# expected is allow | deny | bind — `bind` allows the merge and rewrites the
+# command to carry --match-head-commit.
 check() {
   local expected="$1" cmd="$2" label="${3:-}" payload out actual
   payload=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$cmd" '$c')")
   out=$(printf '%s' "$payload" | bash "$g")
-  if [ -z "$out" ]; then actual="allow"; else actual="deny"; fi
+  if [ -z "$out" ]; then
+    actual="allow"
+  elif printf '%s' "$out" | jq -e '.hookSpecificOutput.updatedInput.command' >/dev/null 2>&1; then
+    actual="bind"
+  else
+    actual="deny"
+  fi
   if [ "$actual" = "$expected" ]; then
     printf 'ok    %-5s  %s\n' "$actual" "${label:-$cmd}"
   else
@@ -36,20 +44,28 @@ check allow 'echo "run: gh pr merge 273 --squash"' 'quoted in an echo'
 check allow "gh pr create --body 'first gh pr create --fill; then gh pr merge 273 --squash'" 'quoted in a PR body'
 check allow 'git commit -m "docs: explain gh pr merge; and its gate"' 'quoted in a commit message'
 check allow 'python3 - <<PY
-s = s.replace(x, "then: git push && gh pr merge <n> --squash")
+s = s.replace(x, "then: gh pr merge 273 --squash")
 PY' 'unquoted inside a heredoc'
 check allow 'cat > doc.md <<MD
 Merge it with: gh pr merge 273 --squash
 MD' 'a real number inside a heredoc'
-check allow 'gh pr merge <n> --squash' 'a placeholder resolves to no PR'
 
-# --- the merge the gate exists for ---
-check allow 'gh pr merge 275 --squash' 'clean review at head'
-check deny  'gh pr merge 273 --squash' 'blocking findings at head'
-check deny  'gh pr merge 273 --auto --squash' '--auto'
-check deny  'git push && gh pr merge 273 --squash' 'real compound invocation'
-check deny  'gh pr create --fill; gh pr merge 273 --squash' 'real sequenced invocation'
-check deny  'gh pr merge 99999 --squash' 'a resolved PR it cannot read fails closed'
+# --- a merge must stand alone, so one check covers one merge ---
+check deny 'git push && gh pr merge 275 --squash' 'a merge riding on another command'
+check deny 'gh pr merge 275 --squash && gh pr merge 273 --squash' 'a second merge behind the first'
+
+# --- resolving which pull request ---
+check deny 'gh pr merge <n> --squash' 'an unresolvable explicit target'
+check bind 'gh pr merge --squash 275' 'a target placed after its flags'
+check bind 'gh pr merge -b "some body text" 275 --squash' 'a target after a quoted flag value'
+check deny 'GH_TOKEN=x gh pr merge 273 --squash' 'an environment-prefixed invocation'
+
+# --- the gate itself ---
+check bind 'gh pr merge 275 --squash' 'clean review at head, bound to it'
+check deny 'gh pr merge 273 --squash' 'blocking findings at head'
+check deny 'gh pr merge 273 --auto --squash' '--auto'
+check deny 'gh pr merge 99999 --squash' 'a target it cannot resolve fails closed'
+check allow 'gh pr merge 275 --squash --match-head-commit 5c618805a1e0a3b6b0a8b9e0e7e6e4e1e0b0a0c0' 'already bound, left alone'
 
 printf '\n%s\n' "failures: $fails"
 exit "$fails"
