@@ -76,6 +76,14 @@ interface CompletionRequest {
    * whose prompt names its fields is not silently rewritten under it.
    */
   compactWireNames?: boolean;
+  /**
+   * Preferred minimum route throughput in tokens/second. OpenRouter only, and
+   * a preference rather than a pin: routes below it are deprioritized, never
+   * excluded, so a stale number degrades to today's order instead of failing.
+   * Opt-in per request so each caller names the number its own measurements
+   * justify — extraction asks from the #232 route survey (#233).
+   */
+  preferredMinThroughput?: number;
 }
 
 export type CompleteJson = (request: CompletionRequest) => Promise<unknown>;
@@ -102,7 +110,10 @@ const RUNAWAY_ANSWER = new Set<string>(["repetition_loop", "answer_overrun"]);
 interface RequestDeadline {
   signal: AbortSignal;
   timeRemaining(): number;
-  reportAttempt(event: Omit<ModelAttemptEvent, "attempt" | "binding">): void;
+  /* The seam stamps `attempt`, `binding` and who-answered centrally in
+     `withinRequestCeiling`, so recovery paths below name what they tried
+     without restating it per call site. */
+  reportAttempt(event: Omit<ModelAttemptEvent, "attempt" | "binding" | "provider" | "model">): void;
   calling(call: ModelCall): void;
   observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
 }
@@ -1203,10 +1214,16 @@ async function openAiCompatibleComplete(
          which of them just cost this model an operation. The rests do, and
          they ride along as `ignore` — verified to accept the very name the
          stream reports as its serving `provider`, so no catalogue lookup and
-         no name mapping stands between the observation and the control. */
+         no name mapping stands between the observation and the control. A
+         requested throughput floor rides beside both: routes below it are
+         deprioritized, never excluded, so it steers the first attempt onto a
+         fast route without ever refusing the call a home (#233). */
       const resting = restingRoutes(cfg.model);
-      body.provider =
-        resting.length > 0 ? { sort: "throughput", ignore: resting } : { sort: "throughput" };
+      const provider: Record<string, unknown> = { sort: "throughput" };
+      if (request.preferredMinThroughput !== undefined)
+        provider.preferred_min_throughput = request.preferredMinThroughput;
+      if (resting.length > 0) provider.ignore = resting;
+      body.provider = provider;
     }
     let response: HttpResponse;
     try {
@@ -1588,7 +1605,13 @@ async function withinRequestCeiling<T>(
   const reportAttempt: RequestDeadline["reportAttempt"] = (event) => {
     if (!attempt || terminalReported) return;
     if (event.outcome !== "retrying") terminalReported = true;
-    retry?.onAttempt({ ...event, attempt, binding: call.binding });
+    retry?.onAttempt({
+      ...event,
+      attempt,
+      binding: call.binding,
+      provider: call.provider,
+      model: call.model,
+    });
   };
   let observed: { status?: number; bodyBytes: number; upstreamServer?: string } = {
     bodyBytes: 0,

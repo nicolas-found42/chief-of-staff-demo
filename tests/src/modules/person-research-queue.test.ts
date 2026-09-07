@@ -395,3 +395,73 @@ test("aged backfill wins fairly while concurrent ticks enforce configured concur
   await first;
   expect(queue.status().jobs.find((job) => job.profileId === meeting.id)?.calls).toBe(0);
 });
+
+test("a save merges a concurrent instance's jobs", () => {
+  /* One Workspace can carry several queue instances at once — the benchmark
+     researches fixed-document people concurrently (#233) — and each holds the
+     snapshot it loaded. A save merges with the file so neither instance drops
+     the other's jobs. */
+  const { root, deps, kept, dropped } = shared("merge");
+  const first = new PersonResearchQueue(deps);
+  const second = new PersonResearchQueue(deps);
+  /* Both loaded the empty file before either wrote. */
+  first.enqueue(kept.id, "explicit");
+  second.enqueue(dropped.id, "explicit");
+  expect(onDisk(root).sort()).toEqual([kept.id, dropped.id].sort());
+});
+
+test.each(["the instance that removed it", "an instance still holding it"])(
+  "a removal survives a later save by %s",
+  (saver) => {
+    /* A merge must never undo a deletion, and the two directions fail
+       differently. The remover must not read its own deleted job back from a
+       snapshot written before the removal. A concurrent instance must not
+       re-add a job it still holds but the file no longer has — that job was
+       deleted by someone else, and a stale snapshot is not grounds to
+       resurrect it. Privacy deletion depends on both. */
+    const { root, deps, kept, dropped } = shared("removal");
+    const remover = new PersonResearchQueue(deps);
+    remover.enqueue(kept.id, "explicit");
+    remover.enqueue(dropped.id, "explicit");
+    /* Loads with both jobs, so it holds the one about to be deleted. */
+    const stale = new PersonResearchQueue(deps);
+    expect(onDisk(root).sort()).toEqual([kept.id, dropped.id].sort());
+
+    remover.remove(dropped.id);
+    expect(onDisk(root)).toEqual([kept.id]);
+
+    /* Any unrelated change is enough to trigger the merge. */
+    (saver === "the instance that removed it" ? remover : stale).configure({ paused: true });
+    expect(onDisk(root)).toEqual([kept.id]);
+  },
+);
+
+/** One Workspace, two Profiles, and the deps every queue instance shares. */
+function shared(label: string) {
+  const root = mkdtempSync(join(tmpdir(), `research-queue-${label}-`));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const kept = people.create({ primaryEmail: "kept@example.com" });
+  const dropped = people.create({ primaryEmail: "dropped@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  return {
+    root,
+    kept,
+    dropped,
+    deps: { workspaceDir: root, people, research, enabled: () => true },
+  };
+}
+
+function onDisk(root: string): string[] {
+  const state = JSON.parse(readFileSync(join(root, "person-research.json"), "utf8")) as {
+    jobs: { profileId: string }[];
+  };
+  return state.jobs.map((job) => job.profileId);
+}

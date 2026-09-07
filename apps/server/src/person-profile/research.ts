@@ -62,6 +62,17 @@ const Extraction = PersonDossierContentSchema.extend({
  * awkward page. A success anywhere in between resets the count.
  */
 const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
+/**
+ * Throughput floor asked of OpenRouter routing on extraction calls, in
+ * tokens/second. Measured on the configured model (#232): the routes that
+ * lose an operation generate at 24-28 tok/s against 66-75 on the routes that
+ * complete it, so 50 steers the first attempt onto a fast route. A
+ * preference, never a pin: routes below it are deprioritized, not excluded,
+ * so a stale number degrades to today's order. Named in each attempt's
+ * configuration and the benchmark provenance so a later comparison stays
+ * attributable instead of silently faster (#233).
+ */
+export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
 
 /**
  * The bounds one continuous research operation runs inside.
@@ -644,9 +655,12 @@ export class PersonResearch {
                     attempt: event.attempt,
                     configuration: {
                       binding: event.binding,
+                      provider: event.provider,
+                      model: event.model,
                       logicalCall: extractionAttemptOf,
                       wireAttempt: String(event.attempt),
                       retryDelayMilliseconds: String(event.delayMs),
+                      preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
                     },
                     ...(event.diagnostic ? { observed: { modelBoundary: event.diagnostic } } : {}),
                     ...(event.stoppedReason ? { recoveryStopped: event.stoppedReason } : {}),
@@ -663,6 +677,11 @@ export class PersonResearch {
                   });
                 },
               },
+              /* Steer the first attempt onto a fast route: the routes that lose
+                 an operation generate at 24-28 tok/s against 66-75 on the ones
+                 that complete it (#232). A routing preference, never a model
+                 change — provider and model stay exactly as configured. */
+              preferredMinThroughput: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
               temperature: 0,
               /* A dossier repeats its field names once per claim, and they were
                  a quarter to a third of every answer. Abbreviating them on the
@@ -710,6 +729,9 @@ export class PersonResearch {
               target: pending.url,
               targetKind: zod ? "url" : "model",
               collector: "extraction",
+              configuration: {
+                preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+              },
               reason: zod
                 ? `The model's reply did not satisfy the dossier schema: ${error.issues
                     .map((issue) => `${issue.path.join(".")}: ${issue.code}`)

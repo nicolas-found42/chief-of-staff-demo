@@ -161,6 +161,12 @@ export const ModelBoundaryDiagnosticSchema: z.ZodType<ModelBoundaryDiagnostic> =
 export const ModelAttemptEventSchema = z.object({
   attempt: z.number().int().positive().safe(),
   binding: z.enum(RESULT_SHAPE_BINDINGS),
+  /* Who answered, on every attempt — success or failure — so a provider or
+     model change is never a silent swap in any record kept from these events
+     (#233). Failures already carry both in their diagnostic; this names them
+     where the call succeeded too. */
+  provider: ProviderIdSchema,
+  model: z.string().max(200),
   outcome: z.enum(["retrying", "succeeded", "failed"]),
   diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
   /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */

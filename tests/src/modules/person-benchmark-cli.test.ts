@@ -201,10 +201,10 @@ it.each([
     args: ["--mode", "live-discovery", "--concurrency", "1.5"],
     error: "--concurrency must be a positive integer",
   },
-  {
-    args: ["--mode", "fixed-documents", "--concurrency", "2"],
-    error: "Fixed-document mode requires --concurrency 1",
-  },
+  /* Fixed-document mode researches people concurrently now: each person runs
+     through its own composition over per-profile keyed stores, so parallel
+     people touch disjoint files and share only process-wide route rests
+     (#233). There is no fixed-documents concurrency case left to reject. */
 ])("rejects unsafe benchmark concurrency: $args", ({ args, error }) => {
   const result = spawnSync(
     process.execPath,

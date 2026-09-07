@@ -419,9 +419,9 @@ describe("providers", () => {
             ? { fail: new Error("SECRET provider text") }
             : {
                 /* A partial answer and then nothing at all. Keepalives used to
-                   stand in for idleness here; since #232 they say the upstream
-                   is alive and buffering, which is a different fixture and its
-                   own test. This one is the connection going quiet. */
+             stand in for idleness here; since #232 they say the upstream
+             is alive and buffering, which is a different fixture and its
+             own test. This one is the connection going quiet. */
                 sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
@@ -791,6 +791,75 @@ describe("providers", () => {
        on another. Sorting is OpenRouter's own continuous measurement; naming a
        vendor here would be a catalogue label that goes stale. */
     expect(calls[0]?.body.provider).toEqual({ sort: "throughput" });
+  });
+  it("openrouter: sends a requested throughput floor beside the sort", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/floor", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const events: ModelAttemptEvent[] = [];
+    await complete({
+      system: "S",
+      user: "U",
+      schema: z.object({ isTranscript: z.boolean() }).passthrough(),
+      preferredBinding: "forced_tool_call",
+      preferredMinThroughput: 50,
+      retry: { onAttempt: (event) => events.push(event) },
+    });
+    /* Who answered rides on the success event too, so no record kept from it
+       can silently swap provider or model (#233). */
+    expect(events).toMatchObject([
+      { outcome: "succeeded", provider: "openrouter", model: "some/floor" },
+    ]);
+    /* A preference, not a pin: routes below it are deprioritized, never
+       excluded — so a stale number degrades to today's order, and a number
+       the router does not recognise can only do nothing (#233). */
+    expect(calls[0]?.body.provider).toEqual({ sort: "throughput", preferred_min_throughput: 50 });
+  });
+
+  it("openrouter: keeps a requested throughput floor beside a rested route", async () => {
+    declarations.push(declaring("temperature"));
+    responses.push({
+      status: 429,
+      body: {
+        error: {
+          message: "Provider returned error",
+          code: 429,
+          metadata: { provider_name: "DeepInfra" },
+        },
+      },
+    });
+    const failed = await makeCompleteJson(
+      { provider: "openrouter", model: "some/floor-keeps-rest", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    )({
+      system: "S",
+      user: "U",
+      schema: z.object({ answer: z.string() }),
+      preferredMinThroughput: 50,
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failed).toMatchObject({ classification: "http_error", upstreamServer: "DeepInfra" });
+
+    declarations.push(declaring("temperature"));
+    responses.push({ sse: sseChatCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      makeCompleteJson(
+        { provider: "openrouter", model: "some/floor-keeps-rest", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      )({
+        system: "S",
+        user: "U",
+        schema: z.object({ answer: z.string() }),
+        preferredMinThroughput: 50,
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls[1]?.body.provider).toEqual({
+      sort: "throughput",
+      preferred_min_throughput: 50,
+      ignore: ["DeepInfra"],
+    });
   });
 
   it("openrouter: a routing refusal steps the binding down instead of failing", async () => {
