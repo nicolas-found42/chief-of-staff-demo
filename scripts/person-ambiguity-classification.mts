@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { BenchmarkReportSchema } from "../packages/shared/src/index.js";
 import { loadCorpus } from "../apps/server/src/person-benchmark/corpus.js";
 import {
@@ -50,17 +51,28 @@ function arg(name: string): string | undefined {
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
 /**
- * Report paths are recorded repo-relative so committed outputs carry no
- * machine-specific absolute paths. Absolute paths are used only for reading.
+ * The checkout root owning this script. Worktrees carry a `.git` file rather
+ * than a directory, so existence — not type — is the marker.
  */
-function repoRelativePath(path: string): string {
-  const normalized = resolve(path).replace(/\\/g, "/");
-  const needle = "artifacts/person-benchmark/";
-  const index = normalized.indexOf(needle);
-  if (index !== -1) return normalized.slice(index);
-  return relative(process.cwd(), resolve(path)).replace(/\\/g, "/");
+function repositoryRoot(): string {
+  let current = dirname(fileURLToPath(import.meta.url));
+  for (; current !== dirname(current); current = dirname(current))
+    if (existsSync(join(current, ".git"))) return current;
+  throw new Error("Unable to locate the repository root.");
 }
 
+/**
+ * Report paths are recorded repo-relative so committed outputs carry no
+ * machine-specific absolute paths, and must live inside the repository: an
+ * outside path would otherwise serialize as `../` traversal into the
+ * committed artifacts. The original path is still used for reading.
+ */
+function repoRelativePath(path: string): string {
+  const within = relative(repositoryRoot(), resolve(path)).replace(/\\/g, "/");
+  if (within === ".." || within.startsWith("../"))
+    throw new Error(`--report path must live inside the repository: ${path}`);
+  return within;
+}
 function args(name: string): string[] {
   const values: string[] = [];
   for (let index = 0; index < process.argv.length; index += 1) {
@@ -108,9 +120,11 @@ for (let index = 0; index < reportPaths.length; index += 1) {
   const population = populations[index];
   if (reportPath === undefined || population === undefined)
     throw new Error("Every --report needs a matching --population, in order.");
+  // Validates in-repository before any report is read, then records it repo-relative.
+  const displayPath = repoRelativePath(reportPath);
   const raw = readFileSync(reportPath, "utf8");
   const sha256 = createHash("sha256").update(raw).digest("hex");
-  inputs.push({ population, reportPath: repoRelativePath(reportPath), sha256 });
+  inputs.push({ population, reportPath: displayPath, sha256 });
   const report = BenchmarkReportSchema.parse(JSON.parse(raw));
   let facts = 0;
   let ambiguous = 0;

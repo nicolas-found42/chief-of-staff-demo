@@ -292,3 +292,21 @@ it("rejects duplicate --population labels before processing any report", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("--population values must be unique.");
 });
+
+it("rejects a --report path outside the repository before reading it", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "scripts/person-ambiguity-classification.mts",
+      "--report",
+      "../outside-the-repository.json",
+      "--population",
+      "fixed",
+    ],
+    { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("--report path must live inside the repository");
+});
