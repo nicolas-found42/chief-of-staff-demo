@@ -212,11 +212,11 @@ export function compareReports(
   const conditionChanges: string[] = [];
   if (!completeEvaluation(baseline))
     conditionChanges.push(
-      "Baseline evaluation is incomplete or lacks explicit assessment evidence.",
+      "Baseline evaluation is incomplete or lacks explicit assessment evidence",
     );
   if (!completeEvaluation(candidate))
     conditionChanges.push(
-      "Candidate evaluation is incomplete or lacks explicit assessment evidence.",
+      "Candidate evaluation is incomplete or lacks explicit assessment evidence",
     );
   const note = (label: string, before: string, after: string) => {
     if (before !== after) conditionChanges.push(`${label}: ${before} → ${after}`);
@@ -272,6 +272,10 @@ export function compareReports(
     completeEvaluation(candidate);
 
   const baselineBySlug = new Map(baseline.people.map((entry) => [entry.slug, entry]));
+  /* The same completed-assessment test the report's execution.assessed count
+     uses: recovery credit is withheld while the assessment phases are
+     incomplete, so a zero from an unassessed side is unmeasured rather than a
+     proven absence (#271, #281). */
   const perPerson: BenchmarkComparison["perPerson"] = [];
   for (const entry of candidate.people) {
     const before = baselineBySlug.get(entry.slug);
@@ -283,6 +287,8 @@ export function compareReports(
       candidateRecovered: entry.completeness.recovered,
       baselineConclusion: before.operational.conclusion,
       candidateConclusion: entry.operational.conclusion,
+      baselineAssessed: assessmentComplete(before),
+      candidateAssessed: assessmentComplete(entry),
       newCriticalFindings: introduced(criticalKeys(before), criticalKeys(entry)),
       newWrongPersonAttributions: introduced(
         overclaimKeys(before, true),
@@ -724,7 +730,7 @@ export function renderComparison(comparison: BenchmarkComparison): string {
   lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const entry of comparison.perPerson)
     lines.push(
-      `| ${entry.slug} | ${String(entry.referenceFacts)} | ${String(entry.baselineRecovered)} | ${String(entry.candidateRecovered)} | ${entry.baselineConclusion} | ${entry.candidateConclusion} | ${String(entry.newCriticalFindings)} | ${String(entry.newWrongPersonAttributions ?? 0)} | ${String(entry.newOverclaims)} |`,
+      `| ${entry.slug} | ${String(entry.referenceFacts)} | ${entry.baselineAssessed ? String(entry.baselineRecovered) : "unmeasured"} | ${entry.candidateAssessed ? String(entry.candidateRecovered) : "unmeasured"} | ${entry.baselineConclusion} | ${entry.candidateConclusion} | ${String(entry.newCriticalFindings)} | ${String(entry.newWrongPersonAttributions ?? 0)} | ${String(entry.newOverclaims)} |`,
     );
   lines.push("");
   lines.push("## Actual source-family contribution changes");
