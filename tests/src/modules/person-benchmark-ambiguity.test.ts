@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   AMBIGUITY_CAUSES,
@@ -267,4 +269,26 @@ describe("classifyPerson and summarizeAssignments", () => {
     expect(AMBIGUITY_CAUSES).toHaveLength(11);
     for (const cause of AMBIGUITY_CAUSES) expect(downstreamFixFor(cause).length).toBeGreaterThan(0);
   });
+});
+
+it("rejects duplicate --population labels before processing any report", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "scripts/person-ambiguity-classification.mts",
+      "--report",
+      "a.json",
+      "--population",
+      "fixed",
+      "--report",
+      "b.json",
+      "--population",
+      "fixed",
+    ],
+    { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("--population values must be unique.");
 });

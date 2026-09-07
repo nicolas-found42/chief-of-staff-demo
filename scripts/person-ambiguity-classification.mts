@@ -84,6 +84,8 @@ const populations = args("population");
 if (reportPaths.length === 0) throw new Error("--report <path> is required.");
 if (reportPaths.length !== populations.length)
   throw new Error("Every --report needs a matching --population, in order.");
+if (new Set(populations).size !== populations.length)
+  throw new Error("--population values must be unique.");
 
 const corpusDir = arg("corpus") ?? "benchmark/person-research/people";
 const outDir = arg("out") ?? "artifacts/person-benchmark/ambiguity-classification-2026-09-06";
