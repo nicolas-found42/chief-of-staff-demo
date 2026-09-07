@@ -206,7 +206,11 @@ export async function readPersonSource(
   const family = classifySourceFamily(url);
   try {
     const capture = waybackCapture(url);
-    if (capture) return await readArchivedCapture(url, capture, context);
+    if (capture) {
+      if (commonCrawlCapture(capture.original))
+        return refuseCommonCrawlCapture(url, family, context);
+      return await readArchivedCapture(url, capture, context);
+    }
     if (commonCrawlCapture(url)) return refuseCommonCrawlCapture(url, family, context);
     if (family === "spoken-evidence" && isVideoPage(url)) return await readSpoken(url, context);
     if (family === "public-social") return await readSocial(url, context);
@@ -337,7 +341,9 @@ function waybackCapture(url: string): WaybackCapture | null {
  * URLs — so an archived document is dated the same way whoever fetched it.
  */
 export function archivedCaptureDate(url: string): string | null {
-  return waybackCapture(url)?.capturedAt ?? null;
+  const capture = waybackCapture(url);
+  if (!capture || commonCrawlCapture(capture.original)) return null;
+  return capture.capturedAt;
 }
 
 /**
@@ -357,6 +363,9 @@ async function readArchivedCapture(
   context: ReadContext,
 ): Promise<SourceReadResult> {
   const family: PersonSourceFamily = "historical-evidence";
+  if (commonCrawlCapture(capture.original)) {
+    return refuseCommonCrawlCapture(url, family, context);
+  }
   const failed = (access: SourceReadResult["access"], finalUrl: string): SourceReadResult =>
     /* Deliberately no snippet: the only text in hand is the archive's, and a
        failed capture must contribute nothing that could be read as evidence. */

@@ -150,3 +150,38 @@ test("a Common Crawl capture URL is explicitly refused without network retrieval
   });
   expect(failures[0]?.reason).toContain("ADR-0072");
 });
+test("a Wayback-wrapped Common Crawl capture URL is refused and carries no capture date", async () => {
+  const wrappedUrl = `https://web.archive.org/web/20250702035953/${CAPTURE_BYTES}`;
+  expect(archivedCaptureDate(wrappedUrl)).toBeNull();
+
+  const recorder = new ResearchAttemptRecorder("operation-cc-wayback-wrapped");
+  let networkCalled = false;
+  const result = await readPersonSource(
+    wrappedUrl,
+    "",
+    ports(
+      recorder,
+      async () => {
+        networkCalled = true;
+        throw new Error("network fetch must not be called for a wrapped Common Crawl capture");
+      },
+      async () => {
+        networkCalled = true;
+        throw new Error("network fetchBytes must not be called for a wrapped Common Crawl capture");
+      },
+    ),
+  );
+
+  expect(networkCalled).toBe(false);
+  expect(result.access).toBe("unsupported");
+  expect(result.capturedAt).toBeNull();
+  expect(result.text).toBe("");
+  const failures = recorder.failures();
+  expect(failures.length).toBeGreaterThan(0);
+  expect(failures[0]).toMatchObject({
+    collector: "archive-reader",
+    code: "resource-unavailable",
+    outcome: "failed",
+  });
+  expect(failures[0]?.reason).toContain("ADR-0072");
+});
