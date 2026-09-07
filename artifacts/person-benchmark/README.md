@@ -75,3 +75,18 @@ and six failures. Its CLI comparison in `pre-reader-repair-comparison-2026-09-06
 returns `not-comparable` and exit 1. It has an explicitly rejected positive: Ana Botín's
 chairmanship was called recovered even though the judge's rationale says the required date and
 family detail are missing. Do not treat that positive alone as the required improvement.
+
+## Frozen acceptance corpus (#243)
+
+Corpus `14bca86ee0b97d28` (content identity from `loadCorpus`, sha256 over the
+references themselves) is frozen as the reference for both acceptance arms: 30
+people, 277 reference facts, 1 collection scenario
+(`directing-and-screenwriting`, requirement r18), zero rejected. Any
+reference-content change moves this version, so both arms must cite it for a
+comparison to be attributable. Individual-fact coverage across all twenty
+dossier requirements (r18 carried solely by the collection scenario) and the
+scenario's real-output assessment — missing in both retained `.7`
+reassessments (`bbc8e62af386b229` fixed, `f93fe67376b87cec` incumbent; Bong's
+operations published zero claims, so the demonstrated set was empty) — are
+recorded in
+[the collection assessment record](../../docs/research/person-benchmark-collection-assessment-2026-09-06.md).

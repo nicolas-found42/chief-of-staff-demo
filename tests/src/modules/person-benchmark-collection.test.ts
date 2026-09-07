@@ -284,3 +284,25 @@ it("rejects unknown scenario support and changes the reference version when its 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("rejects duplicate person slugs instead of silently evaluating one copy", async () => {
+  const { loadCorpus } = await import("../../../apps/server/src/person-benchmark/corpus");
+  const real = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  );
+  const root = mkdtempSync(join(tmpdir(), "benchmark-duplicate-slug-"));
+  try {
+    const directory = join(root, "people");
+    mkdirSync(directory);
+    const person = real.people.find((entry) => entry.slug === "bong-joon-ho");
+    writeFileSync(join(directory, "bong-a.json"), JSON.stringify(person));
+    writeFileSync(join(directory, "bong-b.json"), JSON.stringify(person));
+    const corpus = loadCorpus(directory);
+    expect(corpus.people.map((entry) => entry.slug)).toEqual(["bong-joon-ho"]);
+    expect(corpus.rejected).toContainEqual(
+      expect.objectContaining({ reason: expect.stringMatching(/duplicate person slug/i) }),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
