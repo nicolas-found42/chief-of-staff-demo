@@ -520,6 +520,14 @@ collection completeness, the upstream's own version of what was read, and the pe
 material was retained under. It can support several claims without making those claims independent.
 _Avoid_: Profile snapshot, Person Evidence (a source document alone does not establish attribution)
 
+**Archived Capture**:
+A Person Source Document a web archive holds rather than the live web, carrying the **capture date**
+the archive took it on. It is evidence of what that page said on its capture date and of nothing
+after it, so a current role or employer read out of one is bounded at that date rather than
+published as current, and its publisher — never the archive — is the index it came from. An archive
+answering with its own error or technical-difficulty page has produced no capture at all.
+_Avoid_: Snapshot (the Meeting Brief's word), cached page, mirror (a mirror is undated)
+
 **Rights Provenance**:
 What one retained Person Source Document may be used for, recorded per material rather than for the
 document as a whole: the permission its own metadata was retained under, the licences the source

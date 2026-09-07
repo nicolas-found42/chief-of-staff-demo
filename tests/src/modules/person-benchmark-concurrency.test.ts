@@ -55,6 +55,7 @@ function fixture() {
       active -= 1;
       return {
         text: `Fixture Person ${index} has a public page.`,
+        capturedAt: null,
         completeness: "full",
         access: "retrieved",
         outboundUrls: [],

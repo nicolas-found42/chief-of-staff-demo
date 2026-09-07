@@ -506,6 +506,7 @@ it.each(["recovered", "partial"] as const)(
       seeds: () => [url],
       readSource: async () => ({
         text: statements.join(" "),
+        capturedAt: null,
         completeness: "full",
         access: "retrieved",
         outboundUrls: [],

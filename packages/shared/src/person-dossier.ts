@@ -73,6 +73,15 @@ export const PersonSourceDocumentSchema = z.object({
   author: z.string().max(1000).nullable(),
   publishedAt: date,
   retrievedAt: z.string().max(40),
+  /**
+   * When a web archive captured this material, for text read out of a capture
+   * rather than off the live web (issue #253). Distinct from `retrievedAt`,
+   * which says when this operation asked the archive, and from `publishedAt`,
+   * which the publisher states: a capture is evidence of what the page said on
+   * its capture date and of nothing after it. Absent means the text is not
+   * archived material, never that its capture date is unknown.
+   */
+  capturedAt: z.string().max(40).optional(),
   text: z.string().max(500000),
   hash: z.string().length(64),
   family: text,
@@ -132,7 +141,20 @@ export const PersonSourceDocumentSchema = z.object({
   /** Rights provenance, absent when the route established none (issue #249). */
   rights: PersonSourceRightsSchema.optional(),
 });
-const citation = z.object({ sourceId: id, quote: text });
+/**
+ * One passage a claim rests on.
+ *
+ * `capturedAt` repeats the cited source's capture date on the citation itself
+ * (issue #253) rather than leaving a reader to join the two: a claim grounded
+ * in archived material is only evidence about the capture date, and a reader
+ * preparing for a meeting sees the claim, not the source record behind it. It
+ * is written from the retained source, never from a model's answer.
+ */
+const citation = z.object({
+  sourceId: id,
+  quote: text,
+  capturedAt: z.string().max(40).optional(),
+});
 export const PersonClaimSchema = z.object({
   id,
   section: PersonDossierSectionSchema,

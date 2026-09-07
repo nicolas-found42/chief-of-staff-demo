@@ -17,7 +17,7 @@ import {
   composePersonProfiles,
   type PersonProfilesComposition,
 } from "../person-profile/composition.js";
-import type { readPersonSource } from "../person-profile/research-readers.js";
+import { archivedCaptureDate, type readPersonSource } from "../person-profile/research-readers.js";
 import { isolatedLookup } from "./corpus.js";
 import { checkIntegrity, criticalCount } from "./integrity.js";
 import { judgePerson } from "./judge.js";
@@ -85,6 +85,7 @@ function fixedDocumentPorts(person: BenchmarkPerson): {
     if (!document)
       return {
         text: snippet,
+        capturedAt: null,
         completeness: "unavailable",
         access: "failed",
         outboundUrls: [],
@@ -101,6 +102,10 @@ function fixedDocumentPorts(person: BenchmarkPerson): {
       };
     return {
       text: document.excerpt,
+      /* A reference document captured from a web archive is dated by its
+         capture here too: fixed-document mode replaces retrieval, never the
+         rule that archived evidence is evidence about its capture date. */
+      capturedAt: archivedCaptureDate(document.url),
       completeness: "partial",
       access: "retrieved",
       outboundUrls: [],

@@ -8,6 +8,7 @@ import {
   type PublicHttpBytesFetch,
   type PublicHttpFetch,
   type PublicHttpResponse,
+  type PublicHttpBytesResponse,
 } from "../source-adapters/http.js";
 import type { BrowserRenderer } from "../source-adapters/browser.js";
 import {
@@ -36,6 +37,12 @@ interface SourceAnchor {
 
 export interface SourceReadResult {
   text: string;
+  /**
+   * When a web archive captured this text, ISO-8601, or null for live web
+   * material. A capture is evidence about its capture date and nothing after
+   * it, so this travels with the text from here to the citation (issue #253).
+   */
+  capturedAt: string | null;
   completeness: "full" | "partial" | "snippet" | "unavailable";
   access: "retrieved" | "blocked" | "failed" | "unsupported";
   outboundUrls: string[];
@@ -93,6 +100,7 @@ const unavailable = (
   finalUrl: string,
 ): SourceReadResult => ({
   text: snippet,
+  capturedAt: null,
   completeness: snippet ? "snippet" : "unavailable",
   access,
   outboundUrls: [],
@@ -171,6 +179,8 @@ export async function readPersonSource(
   const context: ReadContext = { ...ports, attemptOf: ports.recorder.correlate(url), snippet };
   const family = classifySourceFamily(url);
   try {
+    const capture = waybackCapture(url);
+    if (capture) return await readArchivedCapture(url, capture, context);
     if (family === "spoken-evidence" && isVideoPage(url)) return await readSpoken(url, context);
     if (family === "public-social") return await readSocial(url, context);
     const records = recordRoute(url);
@@ -195,6 +205,358 @@ export async function readPersonSource(
     });
     return unavailable(family, "reader", "failed", snippet, url);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Archived captures                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The eligibility record's name for reading a Wayback capture's *content*.
+ *
+ * Deliberately not the `wayback` entry, which covers the availability API and
+ * answers only whether a capture exists: retrieving the capture's bytes is a
+ * second endpoint and a second acquisition, and #228 requires each route to
+ * declare what it costs before production can reach it.
+ */
+export const WAYBACK_CAPTURE_ROUTE = "wayback-capture";
+
+interface WaybackCapture {
+  /** The capture instant read from the address, or null for a lookup. */
+  capturedAt: string | null;
+  /** The URL that was captured; the publisher this evidence came from. */
+  original: string;
+  /** The captured bytes, without the archive's own navigation chrome. */
+  contentUrl: string;
+}
+
+/**
+ * Phrases the Internet Archive serves in place of a capture.
+ *
+ * The archive answers some of these with HTTP 200, so status alone cannot tell
+ * a capture from a service fault, and a technical-difficulty page retained as
+ * evidence would read as a publisher's own words. Matching is bounded to the
+ * head of the body: a genuine capture that discusses an outage further down
+ * its page is still a capture. A capture whose *opening* text says one of
+ * these is dropped and recorded as a failure — costing a source rather than
+ * inventing a fact, which is the trade this ticket asks for (#253).
+ */
+const ARCHIVE_FAILURE_PHRASES: readonly { marker: string; phrase: string }[] = [
+  { marker: "not-archived", phrase: "wayback machine has not archived that url" },
+  { marker: "excluded", phrase: "has been excluded from the wayback machine" },
+  { marker: "offline", phrase: "internet archive services are temporarily offline" },
+  { marker: "technical-difficulties", phrase: "technical difficulties" },
+];
+const ARCHIVE_FAILURE_HEAD = 4000;
+
+/** Which archive failure this body announces, by marker name, or null. */
+function archiveFailurePage(body: string): string | null {
+  const head = body.slice(0, ARCHIVE_FAILURE_HEAD).toLowerCase();
+  return ARCHIVE_FAILURE_PHRASES.find((entry) => head.includes(entry.phrase))?.marker ?? null;
+}
+
+/** The capture instant a 14-digit Wayback timestamp names, or null. */
+function captureInstant(timestamp: string): string | null {
+  if (!/^\d{14}$/.test(timestamp)) return null;
+  const [year, month, day, hour, minute, second] = [0, 4, 6, 8, 10, 12].map((at, index) =>
+    Number(timestamp.slice(at, at + (index === 0 ? 4 : 2))),
+  ) as [number, number, number, number, number, number];
+  const at = Date.UTC(year, month - 1, day, hour, minute, second);
+  if (!Number.isFinite(at)) return null;
+  const iso = new Date(at).toISOString();
+  /* A timestamp that does not round-trip was never a real instant: `20241340…`
+     would otherwise become a confident date in the following month. */
+  return iso.slice(0, 19).replace(/[-:T]/g, "") === timestamp ? iso : null;
+}
+
+/**
+ * Whether this URL addresses one Wayback capture, and what to fetch for it.
+ *
+ * `/web/<timestamp>/<url>` serves the capture inside the archive's own banner
+ * with its links rewritten back into the archive; the `id_` modifier serves the
+ * captured bytes as the publisher sent them. Reading the wrapper would retain
+ * the archive's navigation as though the publisher had written it, and would
+ * turn the page's outbound links into archive addresses.
+ */
+function waybackCapture(url: string): WaybackCapture | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname.toLowerCase().replace(/^www\./, "") !== "web.archive.org") return null;
+  const path = `${parsed.pathname}${parsed.search}`;
+  const match = /^\/web\/(\d{4,14})(?:[a-z]{2}_)?\/(.+)$/i.exec(path);
+  if (!match) return null;
+  const [, timestamp, captured] = match as unknown as [string, string, string];
+  /* The archive writes the captured address with or without its scheme, and
+     accepts either back. The scheme is filled in only to name the publisher;
+     the request repeats the address exactly as the archive gave it. */
+  const original = /^https?:\/\//i.test(captured) ? captured : `https://${captured}`;
+  if (!hostOf(original)) return null;
+  return {
+    capturedAt: captureInstant(timestamp),
+    original,
+    contentUrl: `https://web.archive.org/web/${timestamp}id_/${captured}`,
+  };
+}
+
+/**
+ * The instant a web-archive address names, or null for live material.
+ *
+ * Exported for the paths that hand the pipeline text they retrieved elsewhere
+ * — the benchmark's fixed-document mode replays retained excerpts at their real
+ * URLs — so an archived document is dated the same way whoever fetched it.
+ */
+export function archivedCaptureDate(url: string): string | null {
+  return waybackCapture(url)?.capturedAt ?? null;
+}
+
+/**
+ * Read one archived capture as dated historical evidence.
+ *
+ * Two things separate this from reading the same page live. The capture date
+ * travels with the text, because a capture is evidence of what the page said
+ * on that date and of nothing after it — a former role read here must never
+ * reach a Profile as a current one. And the archive's own error pages are
+ * refused rather than retained: an archive answering "we are having technical
+ * difficulties" has told us nothing about the person, and recording it as a
+ * read source would turn a service fault into an absence of evidence.
+ */
+async function readArchivedCapture(
+  url: string,
+  capture: WaybackCapture,
+  context: ReadContext,
+): Promise<SourceReadResult> {
+  const family: PersonSourceFamily = "historical-evidence";
+  const failed = (access: SourceReadResult["access"], finalUrl: string): SourceReadResult =>
+    /* Deliberately no snippet: the only text in hand is the archive's, and a
+       failed capture must contribute nothing that could be read as evidence. */
+    unavailable(family, WAYBACK_CAPTURE_ROUTE, access, "", finalUrl);
+
+  /* A capture whose address names a document goes straight to the byte reader.
+     Asking for it as text first would fetch the same capture twice and leave
+     the archive free to answer the second request differently from the one
+     just validated and dated, so the bytes retained would not be the bytes
+     checked. Its own reader records the transport and status failures. */
+  if (looksLikeBinaryDocument(capture.original))
+    return finishCapture(
+      await readDocument(capture.contentUrl, family, context, (response) =>
+        screenArchiveBytes(response, capture, context),
+      ),
+      capture,
+      context,
+    );
+
+  const response = await request(capture.contentUrl, context, "archive-reader");
+  if (!response) return failed("failed", url);
+  if (response.status >= 400) {
+    const missing = response.status === 404 || response.status === 410;
+    const classified = classifyHttpStatus(response.status, response.body, response.contentType);
+    context.recorder.record({
+      stage: "access",
+      code: missing ? "resource-unavailable" : classified.code,
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: capture.contentUrl,
+      targetKind: "url",
+      collector: "archive-reader",
+      reason: missing
+        ? `The archive holds no capture for this address: HTTP ${response.status}.`
+        : classified.reason,
+      attemptOf: context.attemptOf,
+      observed: {
+        status: response.status,
+        finalUrl: response.url,
+        contentType: response.contentType,
+        bytes: response.body.length,
+        bodyHash: hash(response.body),
+      },
+      impact: "No archived text was retained, and no claim rests on this capture.",
+      remediation: `Reproduce with: curl -sS -D- -o/dev/null '${capture.contentUrl}'`,
+      ...(context.profileRevision !== undefined
+        ? { profileRevision: context.profileRevision }
+        : {}),
+    });
+    return failed(response.status === 403 || response.status === 401 ? "blocked" : "failed", url);
+  }
+
+  const marker = archiveFailurePage(response.body);
+  if (marker) {
+    context.recorder.record({
+      stage: "access",
+      code: "archive-error-page",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: capture.contentUrl,
+      targetKind: "url",
+      collector: "archive-reader",
+      reason: `The archive answered with its own ${marker} page instead of the capture.`,
+      attemptOf: context.attemptOf,
+      /* Shape only: status, size, hash and which phrase matched. The page's
+         own text is exactly what must not be retained. */
+      observed: {
+        status: response.status,
+        finalUrl: response.url,
+        contentType: response.contentType,
+        bytes: response.body.length,
+        bodyHash: hash(response.body),
+        parserLocation: marker,
+      },
+      impact: "No archived text was retained, and no claim rests on this capture.",
+      remediation: `Retry later, then reproduce with: curl -sS '${capture.contentUrl}'`,
+      ...(context.profileRevision !== undefined
+        ? { profileRevision: context.profileRevision }
+        : {}),
+    });
+    return failed("failed", response.url);
+  }
+
+  return finishCapture(
+    await readRetrieved(capture.contentUrl, response, family, context),
+    capture,
+    context,
+  );
+}
+
+/**
+ * Refuse an archive error page that arrived where a captured document was
+ * expected, before anything tries to parse it as one.
+ *
+ * The archive serves its own pages as HTML whatever the captured address
+ * looked like, so without this the bytes would reach the PDF converter and be
+ * recorded as `parser-failed`. That is an observed cause but the wrong one:
+ * the parser did not fail, the archive never served the document, and only the
+ * second reading tells a developer this is worth retrying (#253). The refusal
+ * is made here rather than passed on as a retrieved result, so the archive's
+ * page is never a value anything downstream could decide to keep.
+ */
+function screenArchiveBytes(
+  response: PublicHttpBytesResponse,
+  capture: WaybackCapture,
+  context: ReadContext,
+): SourceReadResult | null {
+  const type = response.contentType?.toLowerCase() ?? "";
+  if (!type.includes("html") && !type.includes("xml")) return null;
+  const marker = archiveFailurePage(
+    new TextDecoder().decode(response.bytes.subarray(0, ARCHIVE_FAILURE_HEAD)),
+  );
+  if (!marker) return null;
+  context.recorder.record({
+    stage: "access",
+    code: "archive-error-page",
+    outcome: "failed",
+    recovery: "stopped",
+    cause: "observed",
+    target: capture.contentUrl,
+    targetKind: "document",
+    collector: "archive-reader",
+    reason: `The archive answered with its own ${marker} page instead of the captured document.`,
+    attemptOf: context.attemptOf,
+    /* Shape only: status, size, hash and which phrase matched. The page's own
+       text is exactly what must not be retained. */
+    observed: {
+      status: response.status,
+      finalUrl: response.url,
+      contentType: response.contentType,
+      bytes: response.bytes.length,
+      bodyHash: hash(response.bytes),
+      parserLocation: marker,
+    },
+    impact: "No archived text was retained, and no claim rests on this capture.",
+    remediation: `Retry later, then reproduce with: curl -sSL -D- -o/dev/null '${capture.contentUrl}'`,
+    ...(context.profileRevision !== undefined ? { profileRevision: context.profileRevision } : {}),
+  });
+  return unavailable("historical-evidence", WAYBACK_CAPTURE_ROUTE, "failed", "", response.url);
+}
+
+/**
+ * Turn whatever a reader produced from a capture into dated archived evidence,
+ * or refuse it.
+ *
+ * Deliberately reads the *retrieved text*, not the response the checks above
+ * saw: a reader chosen from the response fetches the capture with its own
+ * transport, so the text in hand is the only thing known to be the bytes that
+ * would be retained. Both refusals are the ticket's rule (#253) — an archive's
+ * error page is not evidence, and undated archived text is not safe to use,
+ * because it is the date that makes a former role read as former.
+ */
+function finishCapture(
+  read: SourceReadResult,
+  capture: WaybackCapture,
+  context: ReadContext,
+): SourceReadResult {
+  const family: PersonSourceFamily = "historical-evidence";
+  const routed = { ...read, family, route: WAYBACK_CAPTURE_ROUTE };
+  /* A reader that failed still hands back the caller's snippet, which is search
+     text about the person rather than anything the archive said. On this route
+     that snippet would be retained as archived evidence of a capture that was
+     never read, so a failure here keeps its access and its diagnostics and
+     gives up its text. */
+  if (read.access !== "retrieved")
+    return unavailable(family, WAYBACK_CAPTURE_ROUTE, read.access, "", read.finalUrl);
+  const refuse = (
+    code: "archive-error-page" | "resource-unavailable",
+    reason: string,
+    marker?: string,
+  ): SourceReadResult => {
+    context.recorder.record({
+      stage: "access",
+      code,
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: capture.contentUrl,
+      targetKind: "url",
+      collector: "archive-reader",
+      reason,
+      attemptOf: context.attemptOf,
+      /* Shape only: size, hash, the answered address and which phrase matched.
+         The page's own text is exactly what must not be retained. */
+      observed: {
+        finalUrl: read.finalUrl,
+        bytes: read.text.length,
+        bodyHash: hash(read.text),
+        ...(marker ? { parserLocation: marker } : {}),
+      },
+      impact: "No archived text was retained, and no claim rests on this capture.",
+      remediation: `Retry later, then reproduce with: curl -sSL '${capture.contentUrl}'`,
+      ...(context.profileRevision !== undefined
+        ? { profileRevision: context.profileRevision }
+        : {}),
+    });
+    return unavailable(family, WAYBACK_CAPTURE_ROUTE, "failed", "", read.finalUrl);
+  };
+
+  const marker = archiveFailurePage(read.text);
+  if (marker)
+    return refuse(
+      "archive-error-page",
+      `The archive's own ${marker} page reached extraction instead of the capture.`,
+      marker,
+    );
+
+  /* The archive resolves a partial timestamp to the closest capture, so the
+     answered address is what dates the evidence. */
+  const capturedAt = waybackCapture(read.finalUrl)?.capturedAt ?? capture.capturedAt;
+  if (!capturedAt)
+    return refuse(
+      "resource-unavailable",
+      "The archive answered without resolving this lookup to a dated capture.",
+    );
+
+  return {
+    ...routed,
+    capturedAt,
+    /* The publisher, not the archive: a live read and an archived read of one
+       page are one publisher's account, and counting them as two independent
+       indexes would manufacture corroboration. */
+    upstreamIndex: hostOf(capture.original),
+    provenanceNote: `Web archive capture of ${capture.original}, captured ${capturedAt}. It states what that page said on its capture date, not what is true now.`,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -247,6 +609,24 @@ async function readWeb(
       response.url,
     );
   }
+  return readRetrieved(url, response, family, context);
+}
+
+/**
+ * Pick the reader for a response already in hand.
+ *
+ * Separate from `readWeb` because the archived-capture route arrives here with
+ * its own request already made: a capture may be HTML, a PDF, a feed or plain
+ * text exactly as the live page was, and duplicating this dispatch is how the
+ * two would drift into reading the same publisher's page differently depending
+ * on whether it was read live or out of an archive.
+ */
+async function readRetrieved(
+  url: string,
+  response: PublicHttpResponse,
+  family: PersonSourceFamily,
+  context: ReadContext,
+): Promise<SourceReadResult> {
   const type = response.contentType?.toLowerCase() ?? "";
   if (type.includes("pdf")) return readDocument(url, family, context);
   if (isFeed(type, response.body)) return readFeed(url, response, family, context);
@@ -344,6 +724,7 @@ async function readHtml(
     }
     return {
       text: text.slice(0, MAX_TEXT),
+      capturedAt: null,
       completeness: text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls,
@@ -392,6 +773,7 @@ async function tryRender(
       });
       return {
         text: text.slice(0, MAX_TEXT),
+        capturedAt: null,
         completeness: text.length > MAX_TEXT ? "partial" : "full",
         access: "retrieved",
         outboundUrls: [],
@@ -433,6 +815,12 @@ async function readDocument(
   url: string,
   family: PersonSourceFamily,
   context: ReadContext,
+  /* Inspect the retrieved bytes before conversion. The archived-capture route
+     uses it to recognise the archive's own error page: served for a document
+     address it is HTML, which the converter would reject as a broken file and
+     report as `parser-failed` rather than as the service fault it is. The hook
+     reads the response already in hand, so the capture is still fetched once. */
+  inspect?: (response: PublicHttpBytesResponse) => SourceReadResult | null,
 ): Promise<SourceReadResult> {
   let response;
   try {
@@ -474,11 +862,14 @@ async function readDocument(
     });
     return unavailable(family, "document-reader", "blocked", context.snippet, response.url);
   }
+  const inspected = inspect?.(response) ?? null;
+  if (inspected) return inspected;
   const name = documentFileName(response.url, response.contentType);
   try {
     const text = await convertToText(name, response.bytes);
     return {
       text: text.slice(0, MAX_TEXT),
+      capturedAt: null,
       completeness: text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls: [],
@@ -575,6 +966,7 @@ async function readFeed(
     const text = lines.join("\n\n");
     return {
       text: text.slice(0, MAX_TEXT),
+      capturedAt: null,
       completeness: text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls: [...new Set(outboundUrls)].slice(0, 200),
@@ -718,6 +1110,7 @@ async function readSpoken(url: string, context: ReadContext): Promise<SourceRead
   if (!text.trim()) return readVideoDescription(url, page, context);
   return {
     text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
     completeness: text.length > MAX_TEXT ? "partial" : "full",
     access: "retrieved",
     outboundUrls: [],
@@ -752,6 +1145,7 @@ async function readVideoDescription(
     return unavailable("spoken-evidence", "caption-reader", "failed", context.snippet, url);
   return {
     text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
     completeness: "partial",
     access: "retrieved",
     outboundUrls: [],
@@ -916,6 +1310,7 @@ async function readBluesky(url: string, context: ReadContext): Promise<SourceRea
   const text = `Public Bluesky feed for ${handle}; entries retain their own authors\n\n${lines.join("\n\n")}`;
   return {
     text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
     completeness: "partial",
     access: "retrieved",
     outboundUrls: [],
@@ -977,6 +1372,7 @@ async function readMastodon(url: string, context: ReadContext): Promise<SourceRe
   const text = `Public Mastodon posts by @${handle}@${instance}\n\n${lines.join("\n\n")}`;
   return {
     text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
     completeness: "partial",
     access: "retrieved",
     outboundUrls: [],
@@ -1227,6 +1623,9 @@ function renderJson(
   if (publication)
     return {
       text: publication.text.slice(0, MAX_TEXT),
+      /* A record read live carries no capture date: it is the index's current
+         answer, not evidence of what it said on some earlier day (#253). */
+      capturedAt: null,
       completeness: publication.text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
       outboundUrls: publication.outboundUrls.slice(0, 200),
@@ -1247,6 +1646,7 @@ function renderJson(
   const text = flattenJson(parsed);
   return {
     text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
     completeness: text.length > MAX_TEXT ? "partial" : "full",
     access: "retrieved",
     outboundUrls: [...new Set(collectUrls(parsed))].slice(0, 200),

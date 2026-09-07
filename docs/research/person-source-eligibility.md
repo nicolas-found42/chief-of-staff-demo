@@ -185,3 +185,64 @@ alongside the routes it already probed. One unrelated observation from the same 
 rather than in a commit message: `open-library` reported `Probe failed: fetch failed`, while the
 same URL answered 200 to a direct request seconds later — a transient result on a route this
 ticket did not touch, recorded so a later run does not read it as new.
+
+## Archived capture retrieval, 2026-09-07 (#253)
+
+The `wayback` entry above covers the availability API, which answers only whether a capture
+exists. Retrieving that capture's **content** is a second endpoint and a second acquisition, so it
+is recorded separately as `wayback-capture` and probed on its own.
+
+| Route | Endpoint the reader uses | Primary documentation | Probe result |
+| --- | --- | --- | --- |
+| wayback-capture | `https://web.archive.org/web/<timestamp>id_/<original URL>` | [Using the Wayback Machine](https://help.archive.org/help/using-the-wayback-machine/) | 200 after one 302, 1,256 bytes, expected shape |
+
+Terms read 2026-09-07: the help page rendered anonymously over HTTP 200 and states that the Wayback
+Machine "is built so that it can be used and referenced", with fuzzy URL matching and date
+specification as documented features; no key, account, payment or sign-in appears anywhere in the
+capture-reading path. The same page documents that a site owner may ask for material to be excluded,
+and that a site may be absent because it was never crawled — so an absent capture is a fact about
+archive coverage, never about the person. The `archive.org` terms URL returned a JavaScript shell to
+direct anonymous inspection, so **current served terms verification remains incomplete**; nothing
+here treats the archive as licensing the captured material.
+
+Three anonymous probes were run on 2026-09-07, and all three are what the reader's behaviour rests
+on:
+
+- A lookup timestamp (`.../20200101000000id_/https://example.com/`) answered 302 to the closest
+  capture and then 200 with the publisher's own 1,256-byte document. The **answered** address, not
+  the requested one, carries the capture timestamp, which is why the reader dates evidence from the
+  final URL and refuses archived text it cannot date.
+- A dated capture of a real past-people biography
+  (`.../20240523200341id_/https://www.bankofengland.co.uk/about/people/past/minouche-shafik/biography`)
+  answered 200 with 79,935 bytes carrying the quote the benchmark reference retains, and a
+  `memento-datetime` header agreeing with the address.
+- The same request shape against a path the archive does not hold answered 404 with its own
+  "not archived" page. That is recorded as `resource-unavailable`, distinct from the archive
+  answering with an error or technical-difficulty page, which is recorded as `archive-error-page`
+  and never retained as evidence.
+
+Retention limits and disposition: the archive's own reading terms are not a licence for the captured
+material. A capture carries the original publisher's rights, so a retained passage is assessed
+exactly as the live page would be, and the capture's `upstreamIndex` stays the **publisher's** host
+rather than `web.archive.org` — a live read and an archived read of one page are one publisher's
+account, not two independent ones. Every claim grounded in a capture carries the capture date on its
+citation, and a role or employer read out of a capture is bounded at that date rather than published
+as current. Exclusion requests mean a capture that answered today may be gone tomorrow; a later
+absence is recorded as an observed retrieval failure, not as a correction of what was retained.
+
+### Production-reader check: three real captures
+
+At `2026-09-07`, an isolated harness called the actual `readPersonSource` with production
+`publicHttpFetch` and `publicHttpFetchBytes`, an empty snippet, a fresh `ResearchAttemptRecorder`
+and a 60-second request limit. It used no model, configuration credential, live Workspace, mocked
+transport or fixed-document replacement.
+
+| Address asked for | Observed result |
+| --- | --- |
+| The dated Bank of England past-people biography capture | `route: wayback-capture`, `family: historical-evidence`, `access: retrieved`, `completeness: full`, `capturedAt: 2024-05-23T20:03:41.000Z`, `upstreamIndex: bankofengland.co.uk`, 4,216 characters carrying the retained reference quote, no failed attempts. Extracted-text SHA-256 `2b51e4e2780901444e9ef2b87b359fbc3a2ec4a02cace0bd31f7cd02fa66c2b7`. |
+| A lookup timestamp for `example.com` | `access: retrieved`, 180 characters, `capturedAt: 2019-12-31T23:45:01.000Z` — the answered capture, not the `20200101000000` that was asked for. |
+| A path the archive does not hold | `access: failed`, nothing retained, one recorded attempt: collector `archive-reader`, code `resource-unavailable`, cause `observed`, HTTP 404, 4,633 bytes. |
+
+A retrieved capture establishes anonymous capture-content access and dated retention. It does not
+establish rights in the captured material, source independence from a live read of the same
+publisher, or successful dossier extraction.

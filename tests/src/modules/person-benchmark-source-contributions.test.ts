@@ -49,6 +49,7 @@ it("reports actual cited-family recovery separately from reference cohorts and u
       search: async () => [],
       readSource: async (url) => ({
         text: `${quote} ${url === socialUrl ? "Public post." : "Institutional copy not extracted."}`,
+        capturedAt: null,
         completeness: "full",
         access: "retrieved",
         outboundUrls: [],
