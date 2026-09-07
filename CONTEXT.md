@@ -441,9 +441,41 @@ _Avoid_: Guest Profile, guest dossier, contact profile (the person need not be a
 **Person Research Operation**:
 One continuous investigation of a Person Profile's public evidence, with findings published as
 research proceeds and an explicit conclusion that distinguishes completion from interruption or
-unfinished work stopped by a safety bound. A later refresh investigates changed evidence; it does
-not imply that an unfinished investigation was completed.
+unfinished work that stopped short of its plan. A later refresh investigates changed evidence; it
+does not imply that an unfinished investigation was completed.
 _Avoid_: Enrichment pass, daily research allowance, research refresh (for unfinished work)
+
+**Research Lead**:
+One thing a Person Research Operation learned it could investigate: a query, a URL, a record, a
+media item or a document, carrying where it came from and where it ended. Completion is defined
+against the leads rather than against a finite list of queries.
+_Avoid_: Candidate, result, search hit, URL or query (a lead may be any of those)
+
+**Lead Disposition**:
+Where one Research Lead ended and why — investigated, rejected, deduplicated, inaccessible or
+interrupted, each with its own reason — or pending while it still awaits investigation. Reaching
+the end of a query list is not one of them.
+_Avoid_: Status, state, outcome (an operation reaches a conclusion; a lead reaches a disposition)
+
+**Coverage Area**:
+One part of the coverage a Person Research Operation plans to work: a dossier section, or a Source
+Family that could carry evidence about this person. It is planned until the operation reaches it,
+and then satisfied, investigated, inaccessible or interrupted — an area investigated and empty is
+not an area nothing ever got into.
+_Avoid_: Topic, category, gap, section (a dossier section is one kind of area)
+
+**Source Family**:
+One kind of place evidence about a person lives, such as spoken evidence, public social posts,
+published work, professional records, or the Workspace's own confirmed Transcripts. A family names
+what is being looked for, never which provider answers.
+_Avoid_: Provider, adapter, source type, channel
+
+**Completion Condition**:
+One of the three that must hold before a Person Research Operation may report completion: its
+planned coverage worked, every Research Lead given a disposition, and expansion tried against the
+thin areas and no longer finding anything. A model's statement that it is finished is not one of
+them, and completion publishes its remaining gaps rather than implying there are none.
+_Avoid_: Done, exit condition, stopping rule (a safety bound is one of those too)
 
 **Person Research Benchmark**:
 A curated reference collection for evaluating person research, with independently checked, dated
