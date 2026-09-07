@@ -1283,6 +1283,12 @@ export class PersonResearch {
         area.sources = new Set(
           claims.flatMap((claim) => claim.citations.map((citation) => citation.sourceId)),
         ).size;
+        /* Deliberately the operation's whole investigation, not leads aimed
+           at this section: a section is a question asked of every source that
+           is read, never a target a query can be pointed at. Nothing tags a
+           lead with a section key except the planner, so narrowing this to
+           per-section leads would leave every section `planned` and refuse
+           every operation completion. */
         area.state = reached(area, claims.length, leads.investigated());
         area.gaps = claims.length
           ? ["This account reflects the sources collected so far; further evidence may exist."]
