@@ -59,6 +59,8 @@ it("reports actual cited-family recovery separately from reference cohorts and u
         author: null,
         anchors: [],
         provenanceNote: "Controlled test",
+        sourceVersion: null,
+        rights: null,
         finalUrl: url,
       }),
       complete:

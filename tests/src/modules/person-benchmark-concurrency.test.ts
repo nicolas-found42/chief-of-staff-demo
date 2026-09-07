@@ -65,6 +65,8 @@ function fixture() {
         author: null,
         anchors: [],
         provenanceNote: "Controlled parallel research",
+        sourceVersion: null,
+        rights: null,
         finalUrl: url,
       };
     },

@@ -126,3 +126,62 @@ rights assessment is in
 Temporary reproduction files: `/private/tmp/issue-228-senate-reader.mts` and
 `/private/tmp/issue-228-senate-reader.json`. Their salient observations are retained here because
 temporary files may expire. No benchmark corpus or reference version was changed.
+
+## Publication and deposit record routes, 2026-09-07
+
+Recorded for issue #249, which reads publication and deposit records as evidence rather than as
+catalogue hits. Reading one record by identifier is a different endpoint from searching an index,
+so the three read routes carry their own entries in `eligibility.ts` — `crossref-record`,
+`datacite-record` and `openalex-record` — each with the terms read today and its own anonymous
+probe. The search entries for the same indexes are unchanged apart from Crossref's documentation
+link and OpenAlex's terms, both of which had drifted (below).
+
+| Route | Terms read 2026-09-07 | Anonymous probe |
+| --- | --- | --- |
+| `crossref-record` | [REST API documentation](https://www.crossref.org/documentation/retrieve-metadata/rest-api/): "No sign-up is required to use the REST API, and almost none of the metadata is subject to copyright, and you may use it for any purpose. Some abstracts contained in the metadata may be subject to copyright by publishers or authors." | `https://api.crossref.org/works/10.1126%2Fscience.1225829` — 200, 10,237 bytes, parseable JSON |
+| `datacite-record` | [Data File Use Policy](https://support.datacite.org/docs/datacite-data-file-use-policy) (page updated 2026-08-07): CC0 over the Data File — "all DOIs and deposited metadata" — with the waiver expressly not reaching linked resources or the privacy and publicity rights of the individuals described. The [API guide](https://support.datacite.org/docs/api) separates the unauthenticated Public API from the authenticated Member API. | `https://api.datacite.org/dois/10.5281%2Fzenodo.31780` — 200, 5,038 bytes, parseable JSON |
+| `openalex-record` | [API authentication](https://help.openalex.org/api/authentication/): "OpenAlex data is free, and so is casual use of the API — you can make basic queries with no key at all." A free key needs an account and raises the daily budget tenfold; beyond that, [pricing](https://help.openalex.org/access/pricing/) is pay-as-you-go. The API reference states the data are CC0. | `https://api.openalex.org/works/W2045435533` — 200, 34,375 bytes, parseable JSON |
+
+### OpenAlex's terms moved, and the registry said otherwise
+
+The prior entry recorded "free and keyless; a mailto contact joins the polite pool" against
+`docs.openalex.org`, which now redirects to a help centre that does not carry that page. The
+current model is a budget: an anonymous request on 2026-09-07 answered 200 and reported its own
+keyless allowance in `x-ratelimit-limit: 1000` / `x-ratelimit-limit-usd: 0.1`, shared per IP and
+reset at midnight UTC. A free API key needs an account, which #228 excludes exactly as it excludes
+a free tier behind a key, and larger budgets are paid. The route stays eligible for as long as the
+keyless tier answers; a 429 here is budget exhaustion and is never answered with a key.
+
+### What a retained record may be used for
+
+Each retained record now carries its rights per material rather than one verdict for the whole
+response, because the permissions genuinely differ inside one body:
+
+- **Metadata** is retained under the index's own documented permission, named in the record.
+- **An abstract** is retained only where the record declares a licence over the deposited resource
+  itself — a DataCite `rightsList` entry, say. Crossref's metadata permission expressly stops short
+  of abstracts, and a Crossref `license` entry describes the version of record rather than the
+  abstract field, so a Crossref abstract is withheld with that reason recorded. OpenAlex ships the
+  abstract only as an inverted index, which is not reconstructed into retained text.
+- **Linked full text** is never fetched under a metadata permission. The link is kept as a lead, to
+  be read under whatever its own route establishes.
+
+A person's appearance in a record establishes participation in the work it describes. It does not
+establish the scope of their individual contribution, so the rendering states that limit and the
+extraction path drops the personal-scope fields of a Work Record — the contribution and the
+authority roles — when a publication or deposit record is the only source behind them. A later
+source that does state a contribution still fills them in.
+
+A DOI is one namespace over several registration agencies, so a DOI the work index does not hold is
+stepped down to the deposit index before the human-facing page is tried; the 404 is recorded as an
+alternative-route attempt rather than as a failure to read the record.
+
+None of these routes needs a key, a payment, a sign-in, an imported session or a paid proxy. No
+production configuration changed in this audit beyond the corrected OpenAlex terms.
+
+The registry's own probe command (`--probe-sources`) was run on 2026-09-07 and reported
+`crossref-record`, `datacite-record` and `openalex-record` answering 200 with the expected shape,
+alongside the routes it already probed. One unrelated observation from the same run belongs here
+rather than in a commit message: `open-library` reported `Probe failed: fetch failed`, while the
+same URL answered 200 to a direct request seconds later — a transient result on a route this
+ticket did not touch, recorded so a later run does not read it as new.

@@ -95,6 +95,8 @@ function fixedDocumentPorts(person: BenchmarkPerson): {
         author: null,
         anchors: [],
         provenanceNote: "Not part of this person's retained reference corpus.",
+        sourceVersion: null,
+        rights: null,
         finalUrl: url,
       };
     return {
@@ -109,6 +111,8 @@ function fixedDocumentPorts(person: BenchmarkPerson): {
       author: null,
       anchors: [],
       provenanceNote: `Retained reference excerpt of ${document.url}, ${document.rights}.`,
+      sourceVersion: null,
+      rights: null,
       finalUrl: document.url,
     };
   };

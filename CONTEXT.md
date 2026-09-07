@@ -515,9 +515,17 @@ person, employer, or owned publishing surface as fact.
 _Avoid_: Profile data, intelligence (alone), fact (unless the evidence establishes it)
 
 **Person Source Document**:
-One retained version of source material used to research a person, with its origin, dates, and
-collection completeness. It can support several claims without making those claims independent.
+One retained version of source material used to research a person, with its origin, dates,
+collection completeness, the upstream's own version of what was read, and the permission each
+material was retained under. It can support several claims without making those claims independent.
 _Avoid_: Profile snapshot, Person Evidence (a source document alone does not establish attribution)
+
+**Rights Provenance**:
+What one retained Person Source Document may be used for, recorded per material rather than for the
+document as a whole: the permission its own metadata was retained under, the licences the source
+itself declares, and what became of every other material it carries. A permission over metadata
+never reaches an abstract or linked full text on its own.
+_Avoid_: Licence (alone), open, public domain (a permission over one material is none of these)
 
 **Person Claim**:
 One attributed assertion about a person, their work, or a connection, supported by specific passages
