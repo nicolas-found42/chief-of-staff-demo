@@ -20,6 +20,7 @@ import {
 } from "./research-diagnostics.js";
 import { renderPublicationRecord } from "./publication-records.js";
 import { renderIdentityAnchor } from "./identity-anchors.js";
+import { renderInstitutionalRecord } from "./institutional-records.js";
 
 /** Text kept per source. Matches the dossier store's own retention ceiling. */
 const MAX_TEXT = 500_000;
@@ -1616,32 +1617,35 @@ function renderJson(
     });
     return unavailable(family, "record-reader", "failed", context.snippet, response.url);
   }
-  /* A publication or deposit record is rendered field by field rather than
-     flattened whole: the flattener would carry the abstract into retained text
-     under a permission that does not cover it, and would drop the dates,
-     record version and rights a claim on this evidence has to keep (#249). */
-  const publication = renderPublicationRecord(index, parsed);
-  if (publication)
+  /* A publication or deposit record, and a professional or institutional
+     record, are each rendered field by field rather than flattened whole: the
+     flattener would carry an abstract into retained text under a permission
+     that does not cover it, or a registry's organisation scale into a
+     personal-competence claim, and would drop the dates, record version and
+     rights a claim on this evidence has to keep (#249, #250). */
+  const structured =
+    renderPublicationRecord(index, parsed) ?? renderInstitutionalRecord(index, parsed);
+  if (structured)
     return {
-      text: publication.text.slice(0, MAX_TEXT),
+      text: structured.text.slice(0, MAX_TEXT),
       /* A record read live carries no capture date: it is the index's current
          answer, not evidence of what it said on some earlier day (#253). */
       capturedAt: null,
-      completeness: publication.text.length > MAX_TEXT ? "partial" : "full",
+      completeness: structured.text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
-      outboundUrls: publication.outboundUrls.slice(0, 200),
+      outboundUrls: structured.outboundUrls.slice(0, 200),
       family,
       route: "record-reader",
       upstreamIndex: index,
-      publishedAt: publication.publishedAt,
+      publishedAt: structured.publishedAt,
       /* The people in the record are its subject, not its author: the index
          published the record, and naming a listed author here would turn
          participation into authorship of the evidence about it. */
       author: null,
-      anchors: publication.anchors,
-      provenanceNote: publication.provenanceNote,
-      sourceVersion: publication.sourceVersion,
-      rights: publication.rights,
+      anchors: structured.anchors,
+      provenanceNote: structured.provenanceNote,
+      sourceVersion: structured.sourceVersion,
+      rights: structured.rights,
       finalUrl: response.url,
     };
   /* An identity or affiliation registry record is rendered the same

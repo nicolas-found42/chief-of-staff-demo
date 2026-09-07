@@ -305,3 +305,106 @@ A retrieved identity record establishes anonymous registry access, dated retenti
 identifier read belongs to the named person. It does not establish that every linked work is theirs
 as a verified accomplishment, source independence from a separate read of the same work's own DOI
 record, or successful dossier extraction.
+
+## Professional and institutional record routes, 2026-09-07 (#250)
+
+Recorded for issue #250, which reads professional and institutional records as evidence rather than
+as catalogue hits. `nppes` and `clinicaltrials` already carried entries above (added for #228's
+expansion, as search routes over `npiregistry.cms.hhs.gov` and `clinicaltrials.gov`); reading one
+record by identifier uses the same host and the same terms, so this ticket strengthens those two
+entries in place with terms re-read today rather than adding parallel `-record` entries, and records
+what each registry's own documentation says the record is good for.
+
+| Route | Terms read 2026-09-07 | Anonymous probe |
+| --- | --- | --- |
+| `nppes` | [NPPES API](https://npiregistry.cms.hhs.gov/api-page): public, keyless. [CMS's public-dissemination guidance](https://www.cms.gov/initiatives/burden-reduction/overview/interoperability/frequently-asked-questions/bulk-upload-reviewing-updating-digital-contact-information-national-plan-provider-enumeration-system), rendered anonymously, names this API and the NPI Files bulk download as the public routes to the same registry data. Neither states that an NPI record validates the licensure, credentials, or clinical competence of the person or organization it names. | `https://npiregistry.cms.hhs.gov/api/?version=2.1&number=1316660632` — 200, parseable JSON |
+| `clinicaltrials` | [ClinicalTrials.gov API v2](https://clinicaltrials.gov/data-api/api): public, unauthenticated. The registry's own terms page describes free public access, but **current served terms verification remains incomplete** — see below. | `https://clinicaltrials.gov/api/v2/studies/NCT00949286` — 200, parseable JSON |
+
+### ClinicalTrials.gov's own terms page answers only its application shell
+
+Direct anonymous inspection of `https://clinicaltrials.gov/about-site/terms-conditions` and of
+`https://clinicaltrials.gov/data-api/about-api` both returned the identical 94,295-byte response: an
+Angular single-page application with an empty `<app-root>` mount point and a bundled script, which
+strips down to 156 characters of glossary boilerplate once scripts and styles are removed — no terms
+text at all. This reproduces the 2026-09-06 primary-document review's finding for the same route;
+this session repeated the request rather than assuming the earlier finding still held, and it does.
+`https://npiregistry.cms.hhs.gov/api-page` answers the same way: a bare Angular shell
+(`<app-root></app-root>` plus a bundled script), the exact NPPES finding the same 2026-09-06 review
+recorded for its documentation routes. Neither registry's actual data API answered this way — both
+record-read probes above returned real JSON — so this is a property of each registry's own
+human-facing documentation site, not of the API a person research read depends on. No non-JS route to
+either terms page was found; the terms named above come from the search-indexed summary the prior
+review cited, not from a page this session could read directly, and that limitation is unchanged
+from 2026-09-06.
+
+### What a retained record may be used for
+
+An NPI or trial record carries no abstract and no licensed full text the way a publication record
+does, so its rights are simpler than #249's: the registry's public-dissemination permission covers
+the whole rendered record, and the one thing that still needs its own rights basis is a linked
+document — a trial's provided protocol, statistical analysis plan or consent-form PDF, named by the
+record but never fetched under its metadata permission. Each such document is retained as a lead,
+addressed the way the registry itself serves provided documents
+(`https://clinicaltrials.gov/ProvidedDocs/<last two digits of the NCT ID>/<NCT ID>/<filename>`), to be
+read under whatever that document's own route establishes.
+
+A person's appearance in either registry establishes that the named individual matched the record. It
+does not establish that they are competent, credentialed, currently available, or personally
+responsible for their organisation's output — the two registries make this concrete in different
+ways. NPPES's *organizational* (NPI-2) records name no clinician at all: the one person they carry is
+the "authorized official", a registration contact the registry requires every organization to name,
+and the production-reader check below retrieved a real such record where that official carries no
+clinical taxonomy and no license — she is the hospital system's president, not a treating physician.
+A ClinicalTrials.gov trial's principal investigator is named as exactly that: the record does not
+state what they personally decided or performed within a multi-site study. `institutional-records.ts`
+renders both with this limit attached to the text, and `research.ts` drops the personal-contribution
+and authority fields the same way #249 already does for a publication record, so a claim survives
+but no invented capability rides along with it.
+
+Same-name records are held apart by the identity resolution that already runs over every retained
+source (`PersonResearch.decideIdentity`): a record naming the Profile's exact name alongside no other
+corroborating signal is attributed at reduced ("probable") confidence rather than merged into
+confirmed fact, and a record naming the same name alongside a conflicting affiliation is rejected
+outright. This ticket adds no new resolution mechanism; a common name colliding across two entirely
+different real people is exactly what NPPES returns for an ordinary name query (recorded below), and
+the existing mechanism is what keeps them apart.
+
+None of these routes needs a key, a payment, a sign-in, an imported session or a paid proxy. No
+production configuration changed in this audit beyond the two entries' re-read terms.
+
+The registry's own probe command (`--probe-sources`) was run on 2026-09-07 and reported `nppes` and
+`clinicaltrials` both answering 200 with the expected shape, alongside the routes it already probed.
+Two unrelated observations from the same run belong here rather than in a commit message, so a later
+run does not read either as new: `open-library` again reported `Probe failed: fetch failed`, the same
+transient result recorded for this run on 2026-09-07 in the section above; `library-of-congress`
+answered 429, a rate limit rather than an eligibility change on a route this ticket does not touch.
+
+### A same-name query, for real
+
+`https://npiregistry.cms.hhs.gov/api/?version=2.1&first_name=John&last_name=Smith&limit=5` — read
+anonymously on 2026-09-07 — returned five real, currently active NPI records for the exact name
+"JOHN SMITH": a peer specialist in West Virginia (NPI 1316660632), a pharmacist in Oklahoma, a dentist
+in Pennsylvania, a clinical nurse specialist in Ohio, and a respiratory therapist in South Carolina —
+five different people in five different professions and states, sharing nothing but a common name.
+Nothing in one of these records disambiguates it from another; a Profile's own corroborating signal
+(an employer, a specialty, a location) is what identity resolution needs to attribute any one of them,
+and its absence is why an exact-name-only match stays at reduced confidence rather than becoming fact.
+
+### Production-reader check: two registries, three real records
+
+At `2026-09-07`, an isolated harness called the actual `readPersonSource` with production
+`publicHttpFetch` and `publicHttpFetchBytes`, an empty snippet, a fresh `ResearchAttemptRecorder` and
+a 25-second request limit. It used no model, configuration credential, live Workspace, mocked
+transport or fixed-document replacement.
+
+| Address asked for | Observed result |
+| --- | --- |
+| A real ClinicalTrials.gov trial ([NCT00949286](https://clinicaltrials.gov/study/NCT00949286)) | `route: record-reader`, `family: professional-records`, `access: retrieved`, `completeness: full`, `upstreamIndex: clinicaltrials.gov`, `publishedAt: 2009-07-30`, `sourceVersion` names the 2014-05-19 update, 1,346 characters naming both listed principal investigators and carrying the registry match limit, no failed attempts. |
+| A real individual NPPES record ([NPI 1316660632](https://npiregistry.cms.hhs.gov/provider-view/1316660632)) | `access: retrieved`, `completeness: full`, `upstreamIndex: npiregistry.cms.hhs.gov`, `publishedAt: 2022-09-21`, 929 characters naming the registrant and their primary taxonomy, no failed attempts. |
+| A real organizational NPPES record ([NPI 1285692145](https://npiregistry.cms.hhs.gov/provider-view/1285692145)) | `access: retrieved`, `completeness: full`, 993 characters naming the organization's authorized official — its president, not a clinician — with the registry match limit attached, no failed attempts. |
+
+No source or profile URL touched in this check names a real Benchmark Person; every read is a
+worked example of the routes and rendering, not a benchmark run. A retrieved record establishes
+anonymous record-content access, a rendered field-by-field account and the rights recorded above. It
+does not establish that this or any other retained record correctly resolves to a particular person,
+which remains the identity resolution's job on every read.
