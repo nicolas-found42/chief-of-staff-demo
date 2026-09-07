@@ -103,13 +103,19 @@ export class LeadRegistry {
       }
       return null;
     }
+    /* A URL's family comes from the URL, so it is known whichever branch
+       registers the lead. A deduplicated lead that lost it reported a source
+       family a previous operation had investigated as one nothing could be
+       aimed at, which is a coverage claim the record cannot support. */
+    const family =
+      input.family ?? (input.kind === "url" ? classifySourceFamily(input.target) : undefined);
     if (this.seenTargets.has(normalized)) {
       this.leads.set(id, {
         id,
         kind: input.kind,
         target: input.target,
         origin: input.origin,
-        ...(input.family ? { family: input.family } : {}),
+        ...(family ? { family } : {}),
         coverage: input.coverage ?? [],
         disposition: "deduplicated",
         reason: "Already investigated in this operation or an earlier one.",
@@ -122,11 +128,7 @@ export class LeadRegistry {
       kind: input.kind,
       target: input.target,
       origin: input.origin,
-      ...(input.family
-        ? { family: input.family }
-        : input.kind === "url"
-          ? { family: classifySourceFamily(input.target) }
-          : {}),
+      ...(family ? { family } : {}),
       coverage: input.coverage ?? [],
       disposition: "pending",
       reason: "Awaiting investigation.",
