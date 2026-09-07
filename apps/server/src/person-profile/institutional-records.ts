@@ -23,7 +23,12 @@ import type { PersonSourceRights } from "@chief-of-staff-demo/shared";
  * a record naming this person alongside no other corroborating signal is
  * attributed at reduced ("probable") confidence rather than merged into
  * confirmed fact, and a record naming this person alongside a conflicting
- * affiliation is rejected outright. Nothing here repeats that resolution;
+ * affiliation is rejected outright. That corroboration is read from
+ * `namedIndividuals` below, each entry's own affiliation strings, never from
+ * a trial's lead sponsor or responsible organization or an NPI's
+ * organisation name: a record-level field is the record's, not the named
+ * individual's, and cannot stand in for their own affiliation (review
+ * finding on issue #250, PR #295). Nothing here repeats that resolution;
  * this module only renders what one matched record says.
  */
 
@@ -72,8 +77,28 @@ export interface InstitutionalRecordRendering {
   rights: PersonSourceRights;
   provenanceNote: string;
   anchors: { kind: "section"; value: string; offset: number }[];
-  /** Links the record names. They are leads, never material retained here. */
+  /**
+   * Always empty. A trial's linked protocol, statistical analysis plan or
+   * consent form is recorded provenance — named in the "Linked material" text
+   * section and in `rights.materials` — never a URL here: `outboundUrls` is
+   * exactly what `PersonResearch` turns into an automatically-read lead (once
+   * directly, for a feed, and once when a model attributes a "work" to one of
+   * them), and a linked document has to stay unread under this record's
+   * metadata-only permission until something reads it under its own rights
+   * (review finding on issue #250, PR #295).
+   */
   outboundUrls: string[];
+  /**
+   * Every individual this record names, by name, with only their own
+   * affiliation strings — a trial's lead sponsor and responsible
+   * organization, and an NPPES organization's own name, are record-level and
+   * deliberately excluded. Identity resolution reads this instead of
+   * searching the whole rendered text for a known employer, so a trial
+   * sponsored by the Profile's employer cannot corroborate a same-name
+   * investigator whose own affiliation conflicts (review finding on issue
+   * #250, PR #295).
+   */
+  namedIndividuals: { name: string; affiliations: string[] }[];
 }
 
 /**
@@ -176,7 +201,17 @@ function assemble(index: string, facts: RecordFacts): InstitutionalRecordRenderi
     rights,
     provenanceNote: `Professional or institutional record from ${index}, rendered from its metadata fields. ${MATCH_LIMIT}`,
     anchors,
-    outboundUrls: facts.linked.map((entry) => entry.url),
+    /* A linked document is recorded above, in "Linked material" and in
+       `rights.materials`; it never becomes an outbound URL. `outboundUrls` is
+       what PersonResearch turns into a URL lead it reads automatically, and
+       a protocol, statistical analysis plan or consent form must stay
+       unread under this record's metadata-only permission (review finding
+       on issue #250, PR #295). */
+    outboundUrls: [],
+    namedIndividuals: facts.named.map((entry) => ({
+      name: entry.name,
+      affiliations: entry.affiliations,
+    })),
   };
 }
 

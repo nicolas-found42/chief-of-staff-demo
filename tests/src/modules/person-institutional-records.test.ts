@@ -168,6 +168,8 @@ async function runResearch(options: {
   fetch: PublicHttpFetch;
   lookup: PersonProfileCreateInput;
   works?: boolean;
+  /** The url a "work" the model extracts claims for; defaults to none. */
+  workUrl?: string | null;
 }): Promise<RunResult> {
   const root = mkdtempSync(join(tmpdir(), "institutional-records-"));
   roots.push(root);
@@ -217,7 +219,7 @@ async function runResearch(options: {
               {
                 id: "trial",
                 title: "Action in Diabetes and Vascular Disease Observational Study",
-                url: null,
+                url: options.workUrl ?? null,
                 kind: "research",
                 startedAt: null,
                 endedAt: null,
@@ -249,7 +251,7 @@ async function runResearch(options: {
   return { outcome: result.operation, sources, dossier };
 }
 
-test("a matched ClinicalTrials.gov record is retained with its dates, version, rights and a linked document as a lead", async () => {
+test("a matched ClinicalTrials.gov record is retained with its dates, version, rights and a linked document recorded as provenance", async () => {
   const { outcome, sources, dossier } = await runResearch({
     url: TRIAL_URL,
     lookup: { fullName: "Maya Chen", currentEmployer: "Atlas Institute" },
@@ -279,9 +281,16 @@ test("a matched ClinicalTrials.gov record is retained with its dates, version, r
   expect(record.rights?.materials).toContainEqual(
     expect.objectContaining({ material: "linked-document", disposition: "not-retrieved" }),
   );
-  /* The protocol PDF is a lead, addressed the way the registry itself serves
-     provided documents, never text retained under this record's rights. */
-  expect(record.outboundUrls).toContain(
+  /* The protocol PDF is recorded provenance, addressed the way the registry
+     itself serves provided documents and named in the retained text — but it
+     is never an outbound URL. `outboundUrls` is exactly what PersonResearch
+     turns into an automatically-read lead (Sourcery review, PR #295): a
+     linked document must stay unread under this record's metadata-only
+     permission until something reads it under its own rights. */
+  expect(record.text).toContain(
+    "https://clinicaltrials.gov/ProvidedDocs/86/NCT00949286/Prot_001.pdf",
+  );
+  expect(record.outboundUrls ?? []).not.toContain(
     "https://clinicaltrials.gov/ProvidedDocs/86/NCT00949286/Prot_001.pdf",
   );
 
@@ -293,6 +302,35 @@ test("a matched ClinicalTrials.gov record is retained with its dates, version, r
   expect(dossier?.works[0]?.contribution).toBeNull();
   expect(dossier?.works[0]?.authority).toEqual([]);
   expect(outcome.conclusion).toBe("completed");
+});
+
+test("a linked trial document is never turned into a lead the research loop auto-fetches, even when a work claims it", async () => {
+  const protocolUrl = "https://clinicaltrials.gov/ProvidedDocs/86/NCT00949286/Prot_001.pdf";
+  const fetchedUrls: string[] = [];
+  const { outcome, sources } = await runResearch({
+    url: TRIAL_URL,
+    lookup: { fullName: "Maya Chen", currentEmployer: "Atlas Institute" },
+    works: true,
+    /* The model attributes contribution to a "work" addressed at exactly the
+       registry's own linked-document URL — the shape PersonResearch turns
+       into a URL lead at #250's review (Sourcery, PR #295) when it appears
+       among a read's outboundUrls. */
+    workUrl: protocolUrl,
+    fetch: async (url) => {
+      fetchedUrls.push(url);
+      return url.includes("clinicaltrials.gov/api/v2/studies")
+        ? answer(
+            url,
+            200,
+            clinicalTrialsRecord({ name: "Maya Chen", affiliation: "Atlas Institute" }),
+          )
+        : answer(url, 404, "");
+    },
+  });
+
+  expect(sources[0]?.outboundUrls ?? []).not.toContain(protocolUrl);
+  expect(outcome.leads.some((lead) => lead.target === protocolUrl)).toBe(false);
+  expect(fetchedUrls).not.toContain(protocolUrl);
 });
 
 test("a matched NPPES individual record carries the NPI and taxonomy, not personal contribution", async () => {
@@ -336,6 +374,34 @@ test("a same-name record with no shared identity signal is not attributed to the
   const { outcome, sources, dossier } = await runResearch({
     url: TRIAL_URL,
     lookup: { fullName: "Maya Chen", currentEmployer: "Atlas Institute" },
+    fetch: async (url) =>
+      url.includes("clinicaltrials.gov/api/v2/studies")
+        ? answer(
+            url,
+            200,
+            clinicalTrialsRecord({ name: "Maya Chen", affiliation: "Borealis College" }),
+          )
+        : answer(url, 404, ""),
+  });
+
+  expect(dossier?.claims ?? []).toEqual([]);
+  expect(sources).toEqual([]);
+  expect(outcome.attempts.map((attempt) => attempt.code)).toContain("identity-unmatched");
+  expect(
+    outcome.leads.filter((lead) => lead.kind === "url").map((lead) => lead.disposition),
+  ).toEqual(["rejected"]);
+});
+
+test("a same-name record whose sponsor matches the Profile's employer is not attributed when the named individual's own affiliation conflicts", async () => {
+  /* The trial's lead sponsor and responsible organization are both "The
+     George Institute" in `clinicalTrialsRecord`'s fixture — a record-level
+     field, never the named investigator's own affiliation. A Profile whose
+     employer happens to equal that sponsor must not be corroborated by it:
+     the named "Maya Chen" here is affiliated with a conflicting institution,
+     so this is a namesake, not a match (#250 review, Sourcery PR #295). */
+  const { outcome, sources, dossier } = await runResearch({
+    url: TRIAL_URL,
+    lookup: { fullName: "Maya Chen", currentEmployer: "The George Institute" },
     fetch: async (url) =>
       url.includes("clinicaltrials.gov/api/v2/studies")
         ? answer(

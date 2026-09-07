@@ -553,6 +553,7 @@ export class PersonResearch {
             sourceVersion: resumable.sourceVersion ?? null,
             rights: resumable.rights ?? null,
             finalUrl: resumable.url,
+            ...(resumable.namedIndividuals ? { namedIndividuals: resumable.namedIndividuals } : {}),
           };
         } else {
           if (!budget.takeRequest()) return null;
@@ -1184,12 +1185,30 @@ export class PersonResearch {
     const corroborating = [profile.currentEmployer, ...profile.employerHints].filter(
       (value): value is string => !!value,
     );
-    for (const employer of corroborating)
-      if (folded.includes(employer.toLowerCase()))
+    /* A professional or institutional record names individuals structurally,
+       each carrying only their own affiliation: a trial's lead sponsor or
+       responsible organization, or an NPPES applicant's registration scale,
+       is the record's, never the named individual's, so an employer that
+       appears only there must never corroborate a same-name match — that is
+       exactly how a namesake with a conflicting affiliation was absorbed
+       (review finding on issue #250, PR #295). Every other route carries no
+       such structure, so the whole rendered text is still searched for it. */
+    const ownAffiliations = read.namedIndividuals
+      ? read.namedIndividuals
+          .filter((entry) => entry.name.toLowerCase() === name)
+          .flatMap((entry) => entry.affiliations.map((affiliation) => affiliation.toLowerCase()))
+      : null;
+    for (const employer of corroborating) {
+      const foldedEmployer = employer.toLowerCase();
+      const corroborates = ownAffiliations
+        ? ownAffiliations.some((affiliation) => affiliation.includes(foldedEmployer))
+        : folded.includes(foldedEmployer);
+      if (corroborates)
         return {
           decision: "matched",
           reason: "The document names this person alongside a known employer.",
         };
+    }
     if (
       corroborating.length === 0 &&
       profile.emails.length === 0 &&
@@ -1240,6 +1259,7 @@ export class PersonResearch {
       ...(read.provenanceNote ? { provenanceNote: read.provenanceNote } : {}),
       ...(read.sourceVersion ? { sourceVersion: read.sourceVersion } : {}),
       ...(read.rights ? { rights: read.rights } : {}),
+      ...(read.namedIndividuals ? { namedIndividuals: read.namedIndividuals } : {}),
     });
     const dossier = this.deps.dossiers.get(profile.id);
     if (!(dossier?.sourceIds ?? []).includes(source.id))
@@ -1419,16 +1439,17 @@ export class PersonResearch {
       .filter(grounded)
       .map((work) => ({
         ...work,
-        /* A work grounded only in a publication or deposit record carries no
+        /* A work grounded only in one of these records carries no
            independently-crawlable URL of its own: `deriveLeads` turns a
-           published work's `url` into an expansion lead every later round,
-           and a model asked to extract from this record's rendered text can
-           point that field at the record's own linked full text just as
-           easily as at a legitimate page. Dropping it here is what keeps that
-           full text unread under this record's metadata permission no matter
-           what the model claims about it (#249; the same review finding as
-           the sibling record module, PR #295) — the record's own matched URL
-           is retained as the source itself, not lost by nulling this field. */
+           published work's `url` into an expansion lead every later round, and
+           a model asked to extract from a record's rendered text can point
+           that field at the record's own linked material — full text for a
+           publication or deposit record, a protocol, statistical analysis plan
+           or consent form for a trial registration — just as easily as at a
+           legitimate page. Dropping it here is what keeps that material unread
+           under the record's metadata-only permission no matter what the model
+           claims about it (#249, #250) — the record's own matched URL is
+           retained as the source itself, not lost by nulling this field. */
         url: participationOnly ? null : work.url,
         contribution:
           !participationOnly && work.contribution && grounded(work.contribution)

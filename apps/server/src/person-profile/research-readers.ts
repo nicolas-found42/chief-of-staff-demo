@@ -77,6 +77,16 @@ export interface SourceReadResult {
    */
   rights: PersonSourceRights | null;
   finalUrl: string;
+  /**
+   * Individuals a professional or institutional record names, by name, with
+   * only their own affiliation strings — never a record-level sponsor or
+   * responsible organization. Undefined for every other route. Identity
+   * resolution reads this instead of searching the whole rendered text for a
+   * known employer, so a trial sponsored by the Profile's employer cannot
+   * corroborate a same-name investigator whose own affiliation conflicts
+   * (review finding on issue #250, PR #295).
+   */
+  namedIndividuals?: { name: string; affiliations: string[] }[];
 }
 
 export interface ReaderPorts {
@@ -1623,8 +1633,12 @@ function renderJson(
      that does not cover it, or a registry's organisation scale into a
      personal-competence claim, and would drop the dates, record version and
      rights a claim on this evidence has to keep (#249, #250). */
-  const structured =
-    renderPublicationRecord(index, parsed) ?? renderInstitutionalRecord(index, parsed);
+  const publication = renderPublicationRecord(index, parsed);
+  /* Only ever computed when the body was not a publication record: the two
+     renderers read the same shapes for different indexes, so a body that
+     matched one never needs to be tried against the other. */
+  const institutional = publication ? null : renderInstitutionalRecord(index, parsed);
+  const structured = publication ?? institutional;
   if (structured)
     return {
       text: structured.text.slice(0, MAX_TEXT),
@@ -1647,6 +1661,7 @@ function renderJson(
       sourceVersion: structured.sourceVersion,
       rights: structured.rights,
       finalUrl: response.url,
+      ...(institutional ? { namedIndividuals: institutional.namedIndividuals } : {}),
     };
   /* An identity or affiliation registry record is rendered the same
      deliberate way: the identifier and affiliations are what a claim can cite

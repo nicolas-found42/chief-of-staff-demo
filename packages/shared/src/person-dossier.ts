@@ -159,6 +159,25 @@ export const PersonSourceDocumentSchema = z.object({
   sourceVersion: z.string().max(200).optional(),
   /** Rights provenance, absent when the route established none (issue #249). */
   rights: PersonSourceRightsSchema.optional(),
+  /**
+   * Individuals a professional or institutional record names, by name, with
+   * only their own affiliation strings the record states for them — never a
+   * record-level sponsor or responsible organization. Absent for every route
+   * that is not an institutional record. Identity resolution reads this
+   * instead of searching the whole rendered text for a known employer, so a
+   * trial sponsored by the Profile's employer cannot corroborate a same-name
+   * investigator whose own affiliation conflicts (review finding on issue
+   * #250, PR #295).
+   */
+  namedIndividuals: z
+    .array(
+      z.object({
+        name: z.string().max(400),
+        affiliations: z.array(z.string().max(400)).max(20),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 /**
  * One passage a claim rests on.
