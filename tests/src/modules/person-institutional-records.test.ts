@@ -518,6 +518,57 @@ test("a registry's repeated whitespace in the named individual's name still reac
   expect((dossier?.claims ?? []).map((claim) => claim.matchConfidence)).toEqual(["high"]);
 });
 
+test("an apostrophe the registry spells as a separator still matches the Profile", async () => {
+  const { dossier } = await runResearch({
+    url: TRIAL_URL,
+    lookup: { fullName: "Maya O'Neil", currentEmployer: "Atlas Institute" },
+    fetch: async (url) =>
+      url.includes("clinicaltrials.gov/api/v2/studies")
+        ? answer(
+            url,
+            200,
+            clinicalTrialsRecord({ name: "Maya O Neil", affiliation: "Atlas Institute" }),
+          )
+        : answer(url, 404, ""),
+  });
+
+  /* Matched, not merely ambiguous: punctuation folds to a separator
+     consistently on both sides, so the individual's own affiliation
+     corroborates the Profile's employer at high confidence. */
+  expect((dossier?.claims ?? []).map((claim) => claim.matchConfidence)).toEqual(["high"]);
+});
+
+test("a record-level mention of the Profile's name without a structured individual match is not attributed", async () => {
+  /* The trial's title and sponsor organisation carry "Maya Chen" (a
+     founder-named institute), but the record's one structured official is a
+     different person. The named-individual structure is the authority on who
+     is in the record: a name occurring only in record-level fields is not a
+     same-name match, so the record must be rejected instead of attributed as
+     merely ambiguous (#250 review, Sourcery PR #295). */
+  const { outcome, sources, dossier } = await runResearch({
+    url: TRIAL_URL,
+    lookup: { fullName: "Maya Chen" },
+    fetch: async (url) =>
+      url.includes("clinicaltrials.gov/api/v2/studies")
+        ? answer(
+            url,
+            200,
+            clinicalTrialsRecord({ name: "Rosa Park", affiliation: null }).replaceAll(
+              "The George Institute",
+              "Maya Chen Institute",
+            ),
+          )
+        : answer(url, 404, ""),
+  });
+
+  expect(dossier?.claims ?? []).toEqual([]);
+  expect(sources).toEqual([]);
+  expect(outcome.attempts.map((attempt) => attempt.code)).toContain("identity-unmatched");
+  expect(
+    outcome.leads.filter((lead) => lead.kind === "url").map((lead) => lead.disposition),
+  ).toEqual(["rejected"]);
+});
+
 test("a record route serving its own application shell instead of data contributes no institutional fact", async () => {
   const { outcome, sources, dossier } = await runResearch({
     url: NPI_URL,

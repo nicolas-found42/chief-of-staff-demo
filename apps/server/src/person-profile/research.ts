@@ -1184,17 +1184,19 @@ export class PersonResearch {
        apostrophe, a trailing honorific period) may be spelled differently
        from the Profile. Both name comparisons — the text-level check here
        and the structural matched-individuals match below — therefore read
-       the same folded form: whitespace collapsed, punctuation dropped, so
-       a formatting difference still reaches the corroboration and ambiguity
-       decisions instead of reading as a different person. An abbreviated
-       middle name is a different name string, not a formatting difference,
+       the same folded form: every punctuation character becomes a
+       separator and whitespace collapses, so the fold draws the same token
+       boundaries whichever side spells `O'Neil` as `O Neil`, and a
+       formatting difference still reaches the corroboration and ambiguity
+       decisions instead of reading as a different person. A differing
+       token sequence (an abbreviated middle name, `ONeil` versus
+       `O Neil`) is a different name string, not a formatting difference,
        and stays unmatched. The rendered entry name itself is kept for
        display and provenance (review finding on issue #250, PR #295). */
     const foldName = (value: string): string =>
       value
         .toLowerCase()
-        .replace(/[-_]+/g, " ")
-        .replace(/[^\p{L}\p{N}\s]/gu, "")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
         .replace(/\s+/g, " ")
         .trim();
     const name = profile.fullName ? foldName(profile.fullName) : null;
@@ -1226,6 +1228,18 @@ export class PersonResearch {
        before the employer loop below: a stated absence of corroboration is
        not the same question as "did this record ever say anything about
        affiliation". */
+    /* The structured individuals are the authority on who is in the record:
+       a name that occurs only in record-level fields — a trial titled after
+       a condition's champion, an institute named for its founder — names the
+       field, not the person, and the Profile is not one of the individuals
+       the record names. That is an unmatched identity, not an ambiguous one
+       (review finding on issue #250, PR #295). */
+    if (matchedIndividuals && matchedIndividuals.length === 0)
+      return {
+        decision: "unmatched",
+        reason:
+          "The document mentions this name, but none of the individuals it names structurally matches the Profile.",
+      };
     if (matchedIndividuals && !matchedIndividuals.some((entry) => entry.affiliations !== null))
       return {
         decision: "probable",
