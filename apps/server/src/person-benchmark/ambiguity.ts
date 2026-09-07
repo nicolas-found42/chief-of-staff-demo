@@ -39,6 +39,8 @@ export type AmbiguityCause = (typeof AMBIGUITY_CAUSES)[number];
 /** Rationale markers written by the judge/evaluator seams. */
 const JUDGE_CALL_FAILURE_RATIONALE = "The judge did not return a usable verdict for this run.";
 const GUARD_DOWNGRADE_MARKER = "does not occur in the dossier";
+/** Written by the judge seam when the quotation is from the named claim's cited passage (issue #235). */
+const CITATION_PASSAGE_MARKER = "cited passage, not the claim statement";
 const EVALUATOR_DOWNGRADE_PREFIX = "Original semantic verdict:";
 /** Literal evaluate.ts writes when incomplete support withholds credit. */
 const SUPPORT_DOWNGRADE_MARKER = "support/usefulness assessment did not complete";
@@ -236,6 +238,22 @@ export function classifyJudgement(
   }
 
   if (judgement.rationale.includes(GUARD_DOWNGRADE_MARKER)) {
+    /* Claim-excerpt-selection verdicts (issue #235) name their own cause: the
+       judge seam detected the quotation in the named claim's cited passage,
+       so no retained citedQuote comparison is needed to decide the mismatch. */
+    if (judgement.claimId !== null && judgement.rationale.includes(CITATION_PASSAGE_MARKER)) {
+      return {
+        ...base,
+        cause: "judge-quoted-citation-passage",
+        basis: [
+          verdictBasis,
+          guardBasis,
+          `rationale carries the claim-excerpt-selection marker "The quotation is from the named claim's cited passage, not the claim statement", ` +
+            `so the judge quoted the claim's cited source passage rather than the claim statement`,
+        ],
+        downstreamFix: DOWNSTREAM_FIX["judge-quoted-citation-passage"],
+      };
+    }
     if (judgement.claimId === null && judgement.evidenceQuote === null) {
       if (person.claimCount === 0) {
         return {
