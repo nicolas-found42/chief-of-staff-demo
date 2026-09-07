@@ -59,10 +59,10 @@ Recovery follows actual cited sources; families overlap. Exclusive means the mat
 
 | Family | Baseline retained / cited | Candidate retained / cited | Baseline recovered / exclusive | Candidate recovered / exclusive |
 | --- | --- | --- | --- | --- |
-| creative-records | 6 / 3 | 2 / 0 | 0 / 0 | 0 / 0 |
-| documents-publishers | 59 / 28 | 34 / 3 | 3 / 3 | 0 / 0 |
-| historical-evidence | 8 / 3 | 5 / 0 | 0 / 0 | 0 / 0 |
-| public-social | 8 / 4 | 4 / 0 | 0 / 0 | 0 / 0 |
-| published-work | 7 / 3 | 4 / 0 | 0 / 0 | 0 / 0 |
-| spoken-evidence | 2 / 1 | 1 / 0 | 0 / 0 | 0 / 0 |
+| creative-records | 6 / 3 | 2 / 0 | unmeasured | unmeasured |
+| documents-publishers | 59 / 28 | 34 / 3 | unmeasured | unmeasured |
+| historical-evidence | 8 / 3 | 5 / 0 | unmeasured | unmeasured |
+| public-social | 8 / 4 | 4 / 0 | unmeasured | unmeasured |
+| published-work | 7 / 3 | 4 / 0 | unmeasured | unmeasured |
+| spoken-evidence | 2 / 1 | 1 / 0 | unmeasured | unmeasured |
 
