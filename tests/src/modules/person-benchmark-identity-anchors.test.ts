@@ -100,3 +100,49 @@ it("says plainly when a report retains no identity or affiliation registry recor
   const rendered = renderReport(report, []);
   expect(rendered).toContain("no identity or affiliation registry record retained");
 });
+
+/* A version the route stated, a route asked that states none, and a report
+   written before anyone asked are three different facts about the evidence.
+   Rendering the last two alike would put a claim about the route into a report
+   that never measured it (#252). */
+it("keeps a stated, an absent and an unmeasured source version apart in the report", () => {
+  const report = fixtureReport();
+  const person = report.people[0];
+  const anchor = (url: string, extra: Record<string, unknown>) => ({
+    id: url,
+    url,
+    hash: `${url}-hash`,
+    upstreamIndex: "orcid.org",
+    cited: true,
+    ...extra,
+  });
+  person.sourceContributions = [
+    fromPartial({
+      family: "identity-affiliation",
+      sources: [
+        anchor("https://orcid.org/0000-0002-1111-1111", { sourceVersion: "modified 2026-09-01" }),
+        anchor("https://orcid.org/0000-0002-2222-2222", { sourceVersion: null }),
+        /* No `sourceVersion` key at all: a report from before the field. */
+        anchor("https://orcid.org/0000-0002-3333-3333", {}),
+      ],
+      claimIds: ["identity"],
+      recoveredFactIds: [],
+      exclusiveRecoveredFactIds: [],
+    }),
+  ];
+
+  const lineFor = (needle: string): string => {
+    const line = renderReport(report, [])
+      .split("\n")
+      .find((candidate) => candidate.includes(needle));
+    if (line === undefined) throw new Error(`no report line for ${needle}`);
+    return line;
+  };
+
+  expect(lineFor("0000-0002-1111-1111")).toContain("modified 2026-09-01");
+  expect(lineFor("0000-0002-2222-2222")).toContain("none stated");
+  expect(lineFor("0000-0002-3333-3333")).toContain("unmeasured");
+  /* And the two are not each other. */
+  expect(lineFor("0000-0002-2222-2222")).not.toContain("unmeasured");
+  expect(lineFor("0000-0002-3333-3333")).not.toContain("none stated");
+});

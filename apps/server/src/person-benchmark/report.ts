@@ -390,6 +390,25 @@ export function compareReports(
   });
 }
 
+/**
+ * How a retained source's version reads in the report.
+ *
+ * Three states, kept apart because they say different things. A version the
+ * route stated is printed. `null` means the route was asked and states none.
+ * Absent means the report was written before the field existed, so nobody
+ * asked — printing that as "none stated" would put a claim about the route
+ * into a report that never measured it (#252).
+ */
+function renderSourceVersion(source: { sourceVersion?: string | null | undefined }): string {
+  const stated = source.sourceVersion;
+  /* Absent and `undefined` alike mean nobody asked: the report predates the
+     field. `Object.hasOwn` distinguishes them from an explicit null but does
+     not narrow the type, so the value is tested directly. */
+  if (stated === undefined) return "unmeasured";
+  if (stated === null || stated === "") return "none stated";
+  return escapeCell(stated);
+}
+
 function contributionTotals(
   people: BenchmarkPersonResult[],
   family: NonNullable<BenchmarkPersonResult["sourceContributions"]>[number]["family"],
@@ -662,7 +681,7 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
     anyIdentityAnchors = true;
     for (const source of anchors.sources)
       lines.push(
-        `| ${person.slug} | ${escapeCell(source.url)} | ${source.upstreamIndex ? escapeCell(source.upstreamIndex) : "—"} | ${source.sourceVersion ? escapeCell(source.sourceVersion) : "unstated"} | ${source.cited ? "yes" : "no"} |`,
+        `| ${person.slug} | ${escapeCell(source.url)} | ${source.upstreamIndex ? escapeCell(source.upstreamIndex) : "—"} | ${renderSourceVersion(source)} | ${source.cited ? "yes" : "no"} |`,
       );
   }
   if (!anyIdentityAnchors)
