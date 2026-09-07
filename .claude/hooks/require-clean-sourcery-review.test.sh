@@ -46,9 +46,18 @@ check allow 'git commit -m "docs: explain gh pr merge; and its gate"' 'quoted in
 check allow 'python3 - <<PY
 s = s.replace(x, "then: gh pr merge 273 --squash")
 PY' 'unquoted inside a heredoc'
+check allow "python3 - <<'PY'
+s = s.replace(x, \"then: gh pr merge 273 --squash\")
+PY" 'a quoted heredoc tag still opens one'
 check allow 'cat > doc.md <<MD
 Merge it with: gh pr merge 273 --squash
 MD' 'a real number inside a heredoc'
+
+# --- a quoted heredoc opener opens nothing, so it hides nothing ---
+check deny 'echo "<<EOF"
+gh pr merge 273 --squash
+EOF' 'a fake heredoc opener cannot hide a merge'
+check deny "echo '<<PY' && gh pr merge 273 --squash" 'a fake opener beside a real merge'
 
 # --- a merge must stand alone, so one check covers one merge ---
 check deny 'git push && gh pr merge 275 --squash' 'a merge riding on another command'

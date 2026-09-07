@@ -30,13 +30,32 @@ deny() {
 executable_text() {
   printf '%s' "$1" |
     awk '
-      function unquoted(line,   out, quote, i, c) {
-        out = ""; quote = ""
-        for (i = 1; i <= length(line); i++) {
+      # One pass: blank the quoted spans, and notice a heredoc opener only where
+      # the shell would — outside them. Reading the raw line for `<<` instead let
+      # a quoted "<<EOF" open a heredoc that was never opened, blanking the real
+      # commands after it until an EOF line, a merge among them included.
+      function scan(line,   out, quote, i, c, rest, tag_text) {
+        out = ""; quote = ""; opener = ""
+        i = 1
+        while (i <= length(line)) {
           c = substr(line, i, 1)
-          if (quote == "") {
-            if (c == "\047" || c == "\"") { quote = c; out = out " " } else { out = out c }
-          } else if (c == quote) { quote = "" }
+          if (quote != "") {
+            if (c == quote) quote = ""
+            i++
+            continue
+          }
+          if (c == "\047" || c == "\"") { quote = c; out = out " "; i++; continue }
+          if (substr(line, i, 2) == "<<") {
+            rest = substr(line, i)
+            if (match(rest, "^<<-?[[:space:]]*[\"\047]?[A-Za-z_][A-Za-z0-9_]*")) {
+              tag_text = substr(rest, RSTART, RLENGTH)
+              sub("^<<-?[[:space:]]*", "", tag_text)
+              gsub("[\"\047]", "", tag_text)
+              opener = tag_text
+            }
+          }
+          out = out c
+          i++
         }
         return out
       }
@@ -49,12 +68,10 @@ executable_text() {
           print ""
           next
         }
-        if (match($0, "<<-?[[:space:]]*[\"\047]?[A-Za-z_][A-Za-z0-9_]*[\"\047]?")) {
-          tag = substr($0, RSTART, RLENGTH)
-          sub("^<<-?[[:space:]]*", "", tag)
-          gsub("[\"\047]", "", tag)
-        }
-        print unquoted($0)
+        opener = ""
+        line_text = scan($0)
+        if (opener != "") tag = opener
+        print line_text
       }
     ' |
     tr ';|&\n' '\n\n\n\n'

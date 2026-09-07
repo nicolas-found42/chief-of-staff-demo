@@ -125,8 +125,9 @@ Two consequences worth expecting:
   commit, and no check that runs *before* a command can stop a push from landing between the two —
   GitHub refusing a mismatched head can, so the hook binds the merge to the head it validated.
 
-`require-clean-sourcery-review.test.sh` beside it is the case matrix, twenty cases over that whole
-distinction. It reaches GitHub for two permanent fixtures, so it is not part of `pnpm run check`.
+`require-clean-sourcery-review.test.sh` beside it is the case matrix, twenty-three cases over that
+whole distinction. It reaches GitHub for two permanent fixtures, so it is not part of
+`pnpm run check`.
 
 Dependabot is the exception: its PRs are configured to merge themselves, below.
 
