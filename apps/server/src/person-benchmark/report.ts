@@ -341,7 +341,6 @@ export function compareReports(
       .join(", ");
   };
   note("support/usefulness assessment", supportProfile(baseline), supportProfile(candidate));
-  note("corpus version", baseline.provenance.corpusVersion, candidate.provenance.corpusVersion);
   /* A changed reference version invalidates the comparison outright: the two
      runs were not answering the same questions. */
   const referenceChanges = [
