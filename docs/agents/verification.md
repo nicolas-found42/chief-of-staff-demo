@@ -8,6 +8,7 @@ supported way to run the app.
 
 | Granularity | Gate | What it proves |
 | --- | --- | --- |
+| Prose only | nothing | Nothing: `*.md` is prettier-ignored (ADR-0026) and no gate reads it |
 | One test file | `pnpm --filter @chief-of-staff-demo/tests exec vitest run tests/src/<path>.test.ts` | The behavior at the seam currently being changed |
 | TypeScript tree | `pnpm run typecheck` | Shared/server/relay builds plus web, tests, and scripts no-emit passes |
 | Staged files | `.git/hooks/pre-commit` via `lint-staged` | Prettier on staged source/config/docs and ESLint on staged TypeScript and JavaScript |
@@ -17,6 +18,15 @@ supported way to run the app.
 | Prompt eval | `pnpm exec tsx scripts/run-debrief-eval-all.mts --models upstage/solar-pro4 --score` | Solar-pro4 debrief extractions on all 20 real fixture transcripts score clean against hand-written goldens |
 | Production image | `docker compose build`, boot, then `GET /api/health` | The pruned runtime image contains a working server and web bundle |
 | Clean checkout | GitHub Actions on pull requests and pushes to `main` | Clean installs, the gates above, coverage, and the production image boot |
+
+### A prose-only change has no gate
+
+A change touching only hand-wrapped Markdown — `CONTEXT.md`, an ADR, anything under `docs/` —
+has nothing for the whole-tree gate to prove: `format:check` runs Prettier over a tree that ignores
+`*.md`, and no test, typecheck or knip pass reads it. Running `pnpm run check` on one shows that
+`main` was already green, which was not in question. Read the rendered diff instead, and confirm
+the hand-wrapping survived: the pre-commit hook passes staged `*.md` to Prettier, which skips them
+per `.prettierignore`, so a reflow is a sign the ignore stopped matching.
 
 ### The `--` trap
 
@@ -40,6 +50,20 @@ The unit coverage gate measures `apps/server/src`, excluding the process bootstr
 test-only e2e seed seam. CI reports the result in its job summary and enforces the lines,
 statements, functions, and branches floors in `tests/vitest.config.ts`. A run that produces no
 coverage report fails the job rather than passing quietly.
+
+### Console output from a probe test
+
+The default reporter swallows `console.log` from a **passing** test, so a throwaway test written to
+print what the current code actually does prints nothing and reads as a clean run.
+`--reporter=verbose` or `--disableConsoleIntercept` surfaces it:
+
+```sh
+pnpm --filter @chief-of-staff-demo/tests exec vitest run \
+  tests/src/<probe>.test.ts --reporter=verbose
+```
+
+`--reporter=basic` is not the flag. Vitest reads the name as a custom reporter module and fails
+with `Failed to load custom Reporter from basic` before a single test runs.
 
 ## Lint and audit evidence
 
