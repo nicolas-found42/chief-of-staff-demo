@@ -86,7 +86,19 @@ export class LeadRegistry {
       .update(`${input.kind}:${normalized}`)
       .digest("hex")
       .slice(0, 32);
-    if (this.leads.has(id)) return null;
+    const recorded = this.leads.get(id);
+    if (recorded) {
+      /* Re-proposing a lead records what it was proposed *for*, even though
+         the lead itself is not registered twice. A checkpoint carries a
+         pending query without the coverage it was aimed at, so a resumed
+         operation would otherwise report that area as one nothing had been
+         aimed at. */
+      if (input.family && !recorded.family) recorded.family = input.family;
+      for (const key of input.coverage ?? [])
+        if (recorded.coverage.length < 20 && !recorded.coverage.includes(key))
+          recorded.coverage.push(key);
+      return null;
+    }
     if (this.seenTargets.has(normalized)) {
       this.leads.set(id, {
         id,
@@ -280,6 +292,19 @@ const PlanSchema = z.object({
 });
 export type ResearchPlan = z.infer<typeof PlanSchema>;
 
+/**
+ * One query expansion derived, and the source family it is aimed at.
+ *
+ * The family is what makes "expansion was attempted where coverage was thin"
+ * a fact in the record rather than an assumption: it travels onto the lead, so
+ * the completion report can say which areas were gone looking for and which
+ * nothing could be aimed at.
+ */
+export interface DerivedQuery {
+  target: string;
+  family?: PersonSourceFamily;
+}
+
 export interface PlanRequest {
   profile: PersonProfile;
   dossier: PersonDossier | null;
@@ -339,26 +364,32 @@ export function deriveLeads(
   profile: PersonProfile,
   dossier: PersonDossier | null,
   unsatisfied: PersonResearchCoverageArea[],
-): { queries: string[]; urls: string[] } {
+): { queries: DerivedQuery[]; urls: string[] } {
   const name = profile.fullName?.trim();
-  const queries: string[] = [];
+  const queries = new Map<string, DerivedQuery>();
+  const push = (target: string, family?: PersonSourceFamily) => {
+    const trimmed = target.slice(0, 200).trim();
+    if (trimmed && !queries.has(trimmed))
+      queries.set(trimmed, { target: trimmed, ...(family ? { family } : {}) });
+  };
   const urls: string[] = [];
-  for (const work of (dossier?.works ?? []).slice(0, 12)) {
-    if (name) queries.push(`"${name}" ${work.title}`.slice(0, 200));
-    if (work.url) urls.push(work.url);
-  }
-  for (const connection of (dossier?.connections ?? []).slice(0, 8))
-    if (name) queries.push(`"${name}" "${connection.counterparty}"`.slice(0, 200));
+  /* The thin areas go first. Everything derived shares one round's query
+     budget, and a coverage area nothing has reached yet is the reason
+     expansion is running at all: crowding its query out behind a dozen
+     follow-ups to work already found would leave the plan unworked. */
   if (name)
     for (const area of unsatisfied)
       if (area.kind === "source-family") {
         const query = FAMILY_QUERIES[area.key as PersonSourceFamily];
-        if (query) queries.push(query(name, profile.currentEmployer ?? ""));
+        if (query) push(query(name, profile.currentEmployer ?? ""), area.key as PersonSourceFamily);
       }
-  return {
-    queries: [...new Set(queries.filter(Boolean))].slice(0, 12),
-    urls: [...new Set(urls)].slice(0, 12),
-  };
+  for (const work of (dossier?.works ?? []).slice(0, 12)) {
+    if (name) push(`"${name}" ${work.title}`);
+    if (work.url) urls.push(work.url);
+  }
+  for (const connection of (dossier?.connections ?? []).slice(0, 8))
+    if (name) push(`"${name}" "${connection.counterparty}"`);
+  return { queries: [...queries.values()].slice(0, 12), urls: [...new Set(urls)].slice(0, 12) };
 }
 
 /**
