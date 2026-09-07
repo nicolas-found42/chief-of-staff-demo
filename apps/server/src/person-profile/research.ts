@@ -1179,8 +1179,26 @@ export class PersonResearch {
           decision: "matched",
           reason: "The document contains the Profile's email address.",
         };
-    const name = profile.fullName?.toLowerCase();
-    if (!name || !folded.includes(name))
+    /* A registry normalizes a person's name for its own records: repeated
+       whitespace collapses and punctuation (a hyphenated given name, an
+       apostrophe, a trailing honorific period) may be spelled differently
+       from the Profile. Both name comparisons — the text-level check here
+       and the structural matched-individuals match below — therefore read
+       the same folded form: whitespace collapsed, punctuation dropped, so
+       a formatting difference still reaches the corroboration and ambiguity
+       decisions instead of reading as a different person. An abbreviated
+       middle name is a different name string, not a formatting difference,
+       and stays unmatched. The rendered entry name itself is kept for
+       display and provenance (review finding on issue #250, PR #295). */
+    const foldName = (value: string): string =>
+      value
+        .toLowerCase()
+        .replace(/[-_]+/g, " ")
+        .replace(/[^\p{L}\p{N}\s]/gu, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const name = profile.fullName ? foldName(profile.fullName) : null;
+    if (!name || !foldName(read.text).includes(name))
       return { decision: "unmatched", reason: "The document does not name this person." };
     const corroborating = [profile.currentEmployer, ...profile.employerHints].filter(
       (value): value is string => !!value,
@@ -1194,7 +1212,7 @@ export class PersonResearch {
        (review finding on issue #250, PR #295). Every other route carries no
        such structure, so the whole rendered text is still searched for it. */
     const matchedIndividuals = read.namedIndividuals
-      ? read.namedIndividuals.filter((entry) => entry.name.toLowerCase() === name)
+      ? read.namedIndividuals.filter((entry) => foldName(entry.name) === name)
       : null;
     /* A record can name this person while its own shape states nothing
        about their affiliation at all — an NPPES specialty (a namesake's

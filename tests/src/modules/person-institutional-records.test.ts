@@ -480,6 +480,44 @@ test("a same-name record on a Profile with no other signal stays ambiguous rathe
   expect(outcome.attempts.map((attempt) => attempt.code)).toContain("ambiguous-attribution");
 });
 
+test("a registry's punctuation in the named individual's name still reaches the match decision", async () => {
+  const { dossier } = await runResearch({
+    url: TRIAL_URL,
+    lookup: { fullName: "Maya Chen", currentEmployer: "Atlas Institute" },
+    fetch: async (url) =>
+      url.includes("clinicaltrials.gov/api/v2/studies")
+        ? answer(
+            url,
+            200,
+            clinicalTrialsRecord({ name: "Maya Chen.", affiliation: "Atlas Institute" }),
+          )
+        : answer(url, 404, ""),
+  });
+
+  /* Matched, not merely ambiguous: the individual's own affiliation
+     corroborates the Profile's employer, so the claim is high-confidence. */
+  expect((dossier?.claims ?? []).map((claim) => claim.matchConfidence)).toEqual(["high"]);
+});
+
+test("a registry's repeated whitespace in the named individual's name still reaches the match decision", async () => {
+  const { dossier } = await runResearch({
+    url: TRIAL_URL,
+    lookup: { fullName: "Maya Chen", currentEmployer: "Atlas Institute" },
+    fetch: async (url) =>
+      url.includes("clinicaltrials.gov/api/v2/studies")
+        ? answer(
+            url,
+            200,
+            clinicalTrialsRecord({ name: "Maya  Chen", affiliation: "Atlas Institute" }),
+          )
+        : answer(url, 404, ""),
+  });
+
+  /* Matched, not merely ambiguous: the individual's own affiliation
+     corroborates the Profile's employer, so the claim is high-confidence. */
+  expect((dossier?.claims ?? []).map((claim) => claim.matchConfidence)).toEqual(["high"]);
+});
+
 test("a record route serving its own application shell instead of data contributes no institutional fact", async () => {
   const { outcome, sources, dossier } = await runResearch({
     url: NPI_URL,
