@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { promisify } from "node:util";
@@ -35,11 +35,12 @@ export interface ScannedPdfExtraction {
 }
 
 /**
- * The OCR port. Production shells out to a system `tesseract` binary (see
- * detectSystemTesseract); tests inject a fake, so CI stays deterministic and
- * needs no binary. The engine reads whole-PDF bytes and answers one string
- * per page, in page order — per-page rasterisation would need a rendering
- * stack the server must not carry.
+ * The OCR port. Production resolves one via detectSystemTesseract (system
+ * pdftoppm + tesseract binaries, both detected at runtime); tests inject a
+ * fake, so CI stays deterministic and needs no binary. The engine reads
+ * whole-PDF bytes and answers one string per page, in page order: the PDF is
+ * rasterised to per-page images with pdftoppm and each image is OCR'd by
+ * tesseract — system binaries only, no npm dependency.
  */
 export interface OcrEngine {
   readonly name: string;
@@ -78,9 +79,8 @@ function pdfTextItems(content: { items: unknown[] }): string {
  * The honest gap for a scanned PDF no available engine can read: it names the
  * unsupported format and carries a reproduction pointer, reusing the
  * ConversionDiagnostic conventions, so the failure is never
- * indistinguishable-from-nothing. Thrown when no engine was passed and when
- * a passed engine fails — a failed OCR run leaves the document unread either
- * way, and the gap says so rather than masking the failure.
+ * Thrown when no engine was passed — an engine that was passed but fails
+ * operationally preserves its own diagnostic classification instead.
  */
 export function scannedPdfGapError(fileName: string, bytes: Buffer): SourceError {
   return new SourceError(
@@ -145,12 +145,12 @@ export async function extractPdfSegments(
   const blank = layer.map((text) => text.length === 0);
   if (blank.every(Boolean)) {
     if (!ocr) throw scannedPdfGapError(fileName, bytes);
-    const segments = ocrSegments(layer.length, await recognizePdf(ocr, fileName, bytes));
+    const segments = ocrSegments(layer.length, await recognizePdf(ocr, bytes, layer.length));
     requireOcrText(segments, bytes);
     return { segments, ocrApplied: true };
   }
   if (blank.some(Boolean) && ocr) {
-    const recognized = await recognizePdf(ocr, fileName, bytes);
+    const recognized = await recognizePdf(ocr, bytes, layer.length);
     return {
       segments: layer.map((text, index) => ({
         page: index + 1,
@@ -170,12 +170,36 @@ export async function extractPdfSegments(
   };
 }
 
-async function recognizePdf(ocr: OcrEngine, fileName: string, bytes: Buffer): Promise<string[]> {
+async function recognizePdf(ocr: OcrEngine, bytes: Buffer, pageCount: number): Promise<string[]> {
+  let recognized: string[];
   try {
-    return await ocr.recognizePdf(bytes);
-  } catch {
-    throw scannedPdfGapError(fileName, bytes);
+    recognized = await ocr.recognizePdf(bytes);
+  } catch (error) {
+    if (error instanceof SourceError) throw error;
+    throw new SourceError(
+      "SOURCE_INVALID",
+      `The OCR engine failed: ${error instanceof Error ? error.message : "unknown error"}.`,
+      {
+        classification: "converter_failure",
+        format: "pdf",
+        bytes: bytes.byteLength,
+        step: "extract_pdf",
+      },
+    );
   }
+  if (recognized.length !== pageCount) {
+    throw new SourceError(
+      "SOURCE_INVALID",
+      `The OCR engine answered ${recognized.length} pages for a ${pageCount}-page PDF; page attribution would drift.`,
+      {
+        classification: "converter_failure",
+        format: "pdf",
+        bytes: bytes.byteLength,
+        step: "extract_pdf",
+      },
+    );
+  }
+  return recognized;
 }
 
 function ocrSegments(pageCount: number, recognized: string[]): PdfPageSegment[] {
@@ -209,43 +233,73 @@ export function renderPdfSegments(segments: PdfPageSegment[]): string {
 
 const runFile = promisify(execFile);
 
-/* Tesseract separates the pages it reads from one PDF with form feeds (and
-   usually ends the output with one); interior blanks are kept so the
-   surviving entries stay aligned with their page numbers. */
-function splitTesseractPages(stdout: string): string[] {
-  const pages = stdout.split("\f").map((page) => normalizeTextLf(page).trim());
-  while (pages.length > 1 && pages[pages.length - 1] === "") pages.pop();
-  return pages;
-}
-
 /**
- * Detect the production OCR adapter at runtime: a system `tesseract` binary
- * on PATH, used only when present. Resolves to null where the binary is
- * absent (notably CI) or unreadable — callers treat null as "no engine" and
- * take the scannedPdfGapError path, so detection never throws and never
- * needs an install. No cloud OCR, no new dependency: one stdio call.
+ * Detect the production OCR adapter at runtime: system `pdftoppm` (poppler)
+ * and `tesseract` binaries on PATH, used only when both are present. Resolves
+ * to null where the binaries are absent (notably CI) or unreadable — callers
+ * treat null as "no engine" and take the scannedPdfGapError path, so detection
+ * never throws and never needs an install. No cloud OCR, no new dependency.
  */
 export async function detectSystemTesseract(): Promise<OcrEngine | null> {
   try {
     await runFile("tesseract", ["--version"], { timeout: 10_000 });
+    await runFile("pdftoppm", ["-v"], { timeout: 10_000 });
   } catch {
     return null;
   }
   return {
     name: "tesseract",
-    async recognizePdf(pdfBytes: Buffer): Promise<string[]> {
-      const dir = mkdtempSync(join(tmpdir(), "scanned-pdf-ocr-"));
-      try {
-        const input = join(dir, "source.pdf");
-        writeFileSync(input, pdfBytes);
-        const { stdout } = await runFile("tesseract", [input, "stdout", "-l", "eng"], {
-          timeout: 120_000,
-          maxBuffer: 64 * 1024 * 1024,
-        });
-        return splitTesseractPages(String(stdout));
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    },
+    recognizePdf: (pdfBytes: Buffer) => rasterizeAndRecognize(pdfBytes, runFile),
   };
+}
+
+/** The process seam the production engine runs through (promisified execFile). */
+type ProcessRunner = (
+  file: string,
+  args: string[],
+  options: { timeout: number; maxBuffer?: number },
+) => Promise<{ stdout: string | Buffer }>;
+
+/**
+ * Rasterise one PDF to per-page images and OCR each in page order, answering
+ * one string per page. Tesseract does not rasterise PDF input, so the pages
+ * are rendered by poppler's pdftoppm first; the images are listed from the
+ * rasteriser's own output directory and ordered by page number, never by
+ * name alone.
+ */
+export async function rasterizeAndRecognize(
+  pdfBytes: Buffer,
+  run: ProcessRunner,
+): Promise<string[]> {
+  const dir = mkdtempSync(join(tmpdir(), "scanned-pdf-ocr-"));
+  try {
+    const source = join(dir, "source.pdf");
+    writeFileSync(source, pdfBytes);
+    const prefix = join(dir, "page");
+    await run("pdftoppm", ["-r", "150", "-png", source, prefix], { timeout: 240_000 });
+    const images = readdirSync(dir)
+      .map((entry: string) => ({ entry, page: /page-(\d+)\.png$/.exec(entry)?.[1] }))
+      .filter((image): image is { entry: string; page: string } => image.page !== undefined)
+      .sort((a, b) => Number(a.page) - Number(b.page))
+      .map((image) => join(dir, image.entry));
+    if (images.length === 0) {
+      throw new SourceError("SOURCE_INVALID", "The PDF rasteriser produced no page images.", {
+        classification: "converter_failure",
+        format: "pdf",
+        bytes: pdfBytes.byteLength,
+        step: "extract_pdf",
+      });
+    }
+    const pages: string[] = [];
+    for (const image of images) {
+      const { stdout } = await run("tesseract", [image, "stdout", "-l", "eng"], {
+        timeout: 120_000,
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      pages.push(normalizeTextLf(String(stdout)).trim());
+    }
+    return pages;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import type { PersonSourceFamily, PersonSourceRights } from "@chief-of-staff-demo/shared";
-import { convertToText } from "../text/convert.js";
+import { convertToText, SourceError } from "../text/convert.js";
+import {
+  detectSystemTesseract,
+  extractPdfSegments,
+  renderPdfSegments,
+  type OcrEngine,
+} from "../text/scanned-documents.js";
 import {
   retryAfterMilliseconds,
   type PublicHttpBytesFetch,
@@ -104,6 +110,7 @@ export interface ReaderPorts {
   recorder: ResearchAttemptRecorder;
   timeoutMs: number;
   profileRevision?: number;
+  systemOcr?: () => Promise<OcrEngine | null>;
 }
 
 interface ReadContext extends ReaderPorts {
@@ -830,6 +837,11 @@ async function tryRender(
   }
 }
 
+let defaultSystemOcrPromise: Promise<OcrEngine | null> | null = null;
+function defaultSystemOcr(): Promise<OcrEngine | null> {
+  defaultSystemOcrPromise ??= detectSystemTesseract();
+  return defaultSystemOcrPromise;
+}
 async function readDocument(
   url: string,
   family: PersonSourceFamily,
@@ -885,7 +897,22 @@ async function readDocument(
   if (inspected) return inspected;
   const name = documentFileName(response.url, response.contentType);
   try {
-    const text = await convertToText(name, response.bytes);
+    let text: string;
+    let ocrApplied = false;
+    if (name.endsWith(".pdf")) {
+      const ocr = context.systemOcr ? await context.systemOcr() : await defaultSystemOcr();
+      const extracted = await extractPdfSegments(name, response.bytes, ocr);
+      text = renderPdfSegments(extracted.segments);
+      ocrApplied = extracted.ocrApplied;
+    } else {
+      text = await convertToText(name, response.bytes);
+    }
+    const isPdf = name.endsWith(".pdf");
+    const provenanceNote = isPdf
+      ? ocrApplied
+        ? "Text extracted from a PDF document; pages without a text layer were read by system OCR."
+        : "Text extracted from a PDF document with a text layer."
+      : `Text extracted from a ${name.split(".").pop() ?? "document"} document.`;
     return {
       text: text.slice(0, MAX_TEXT),
       capturedAt: null,
@@ -898,12 +925,36 @@ async function readDocument(
       publishedAt: null,
       author: null,
       anchors: pageAnchors(text),
-      provenanceNote: `Text extracted from a ${name.split(".").pop() ?? "document"} document.`,
+      provenanceNote,
       sourceVersion: null,
       rights: null,
       finalUrl: response.url,
     };
   } catch (error) {
+    if (error instanceof SourceError && error.diagnostic?.classification === "unsupported_format") {
+      context.recorder.record({
+        stage: "document-parsing",
+        code: "unsupported-format",
+        outcome: "failed",
+        recovery: "stopped",
+        cause: "observed",
+        target: url,
+        targetKind: "document",
+        collector: "document-reader",
+        reason: error.message,
+        attemptOf: context.attemptOf,
+        observed: {
+          contentType: response.contentType,
+          bytes: response.bytes.length,
+          bodyHash: hash(response.bytes),
+          parserLocation: name,
+        },
+        impact: "A retrieved document contributed no text to the dossier.",
+        remediation:
+          "Install system pdftoppm (poppler) and tesseract on PATH, or inject an OCR engine, to read scanned PDFs.",
+      });
+      return unavailable(family, "document-reader", "unsupported", context.snippet, response.url);
+    }
     context.recorder.record({
       stage: "document-parsing",
       code: "parser-failed",

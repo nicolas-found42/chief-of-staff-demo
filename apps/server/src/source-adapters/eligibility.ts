@@ -379,6 +379,17 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
       "Live 2026-09-07: a lookup timestamp answered 302 to the closest capture and then 200 with the publisher's own 1,256-byte document, so the answered address is what dates the evidence. The same request against a URL the archive does not hold answered 404, and a dated capture of a real past-people biography returned 79,935 bytes carrying the retained reference quote.",
   },
   {
+    route: "document-reader-ocr",
+    family: "documents-publishers",
+    terms:
+      "A local system toolchain (pdftoppm and tesseract) reads the retrieved PDF bytes locally; no account, key, payment, or network call is involved.",
+    documentation: "https://tesseract-ocr.github.io/tessdoc/",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "No binary is installed in CI or added by this change: detectSystemTesseract resolves null there and scanned PDFs take the unsupported-format gap path, which the new tests pin. Where the binary exists it is used only when detected at runtime.",
+  },
+  {
     route: "mwmbl",
     family: "general-discovery",
     terms: "Open, non-commercial web index; public API needs no account or key.",

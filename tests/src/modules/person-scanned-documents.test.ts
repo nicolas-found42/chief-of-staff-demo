@@ -1,8 +1,10 @@
+import { writeFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { diagnoseConversionFailure, SourceError } from "../../../apps/server/src/text/convert.js";
 import {
   detectSystemTesseract,
   extractPdfSegments,
+  rasterizeAndRecognize,
   renderPdfSegments,
   scannedPdfGapError,
   type OcrEngine,
@@ -137,6 +139,42 @@ test("a scanned PDF with no OCR engine fails naming the format with a reproducti
   expect(sourceError.diagnostic).toEqual(scannedPdfGapError("scan.pdf", bytes).diagnostic);
 });
 
+test("an engine that fails operationally fails as a converter fault, not as a missing-OCR gap", async () => {
+  const bytes = buildPdf([{ imageOnly: true }]);
+  const brokenEngine: OcrEngine = {
+    name: "broken",
+    recognizePdf: async () => {
+      throw new Error("tesseract timed out after 120000ms");
+    },
+  };
+  const failure = await extractPdfSegments("scan.pdf", bytes, brokenEngine).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(SourceError);
+  const sourceError = failure as SourceError;
+  expect(sourceError.code).toBe("SOURCE_INVALID");
+  expect(sourceError.message).toContain("tesseract timed out");
+  expect(sourceError.diagnostic?.classification).toBe("converter_failure");
+});
+
+test("an engine answering the wrong page count fails instead of shifting OCR text across pages", async () => {
+  const bytes = buildPdf([{ imageOnly: true }, { imageOnly: true }]);
+  const mismatchEngine: OcrEngine = {
+    name: "short",
+    recognizePdf: async () => ["only one page"],
+  };
+  const failure = await extractPdfSegments("scan.pdf", bytes, mismatchEngine).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(SourceError);
+  const sourceError = failure as SourceError;
+  expect(sourceError.code).toBe("SOURCE_INVALID");
+  expect(sourceError.message).toMatch(/1 pages? for a 2-page PDF/i);
+  expect(sourceError.diagnostic?.classification).toBe("converter_failure");
+});
+
 test("an unparseable document keeps its parser location through diagnoseConversionFailure", async () => {
   const bytes = Buffer.from("this is not a PDF at all", "utf8");
   const failure = await extractPdfSegments("broken.pdf", bytes).then(
@@ -160,4 +198,27 @@ test("rendered segments carry page anchors a claim can cite", async () => {
 
 test("no system tesseract here means detection resolves to no engine", async () => {
   await expect(detectSystemTesseract()).resolves.toBeNull();
+});
+
+test("the system engine rasterizes pages first and never hands tesseract a PDF input", async () => {
+  const tesseractInputs: string[] = [];
+  /* Production names page images to the page-count width: twelve pages pad
+     to two digits. The listing order must survive names that sort badly. The
+     fake derives the prefix from the arguments exactly as poppler does, so it
+     writes into the same directory the engine lists. */
+  const pages = await rasterizeAndRecognize(Buffer.from("%PDF-1.4 raster"), async (file, args) => {
+    if (file === "pdftoppm") {
+      const prefix = String(args[args.length - 1]);
+      for (const number of [12, 2, 1, 10, 11, 3, 9, 4, 8, 5, 7, 6]) {
+        writeFileSync(`${prefix}-${String(number).padStart(2, "0")}.png`, Buffer.from("png"));
+      }
+      return { stdout: "" };
+    }
+    tesseractInputs.push(String(args[0]));
+    const match = /page-(\d+)\.png$/.exec(String(args[0]));
+    if (!match) throw new Error(`tesseract was handed a non-image input: ${String(args[0])}`);
+    return { stdout: `page ${String(Number(match[1]))} text\f` };
+  });
+  expect(tesseractInputs.every((input) => input.endsWith(".png"))).toBe(true);
+  expect(pages).toEqual(Array.from({ length: 12 }, (_, index) => `page ${index + 1} text`));
 });
