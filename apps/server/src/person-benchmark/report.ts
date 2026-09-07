@@ -515,6 +515,16 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       ambiguousSupportAssessmentFailed:
         sum.ambiguousSupportAssessmentFailed +
         (entry.completeness.ambiguousSupportAssessmentFailed ?? 0),
+      /* The five judgement verdicts are the whole denominator, so the
+         Completeness bullet states every one of them and the outcomes
+         reconcile against the fact count on the page itself (#271). */
+      missing:
+        sum.missing +
+        entry.completeness.judgements.filter((judgement) => judgement.verdict === "missing").length,
+      contradicted:
+        sum.contradicted +
+        entry.completeness.judgements.filter((judgement) => judgement.verdict === "contradicted")
+          .length,
       critical: sum.critical + entry.factualReliability.criticalFindings,
       overclaims: sum.overclaims + entry.factualReliability.overclaims.length,
       wrongPerson: sum.wrongPerson + entry.factualReliability.wrongPersonAttributions,
@@ -532,6 +542,8 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       partial: 0,
       ambiguous: 0,
       ambiguousSupportAssessmentFailed: 0,
+      missing: 0,
+      contradicted: 0,
       critical: 0,
       overclaims: 0,
       wrongPerson: 0,
@@ -548,7 +560,7 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
     `- **Factual reliability** — ${String(totals.verified)} of ${String(totals.citations)} citations verify against their retained source version; ${String(totals.critical)} critical integrity findings; ${String(totals.overclaims)} judged overclaims, of which ${String(totals.wrongPerson)} are wrong-person attributions.`,
   );
   lines.push(
-    `- **Completeness** — ${String(totals.recovered)} of ${String(totals.facts)} reference facts recovered, ${String(totals.partial)} partially, ${String(totals.ambiguous)} left ambiguous for review, ${String(totals.ambiguousSupportAssessmentFailed)} of them withheld for an incomplete support/usefulness assessment rather than semantic ambiguity.`,
+    `- **Completeness** — ${String(totals.recovered)} of ${String(totals.facts)} reference facts recovered, ${String(totals.partial)} partially, ${String(totals.ambiguous)} left ambiguous for review, ${String(totals.ambiguousSupportAssessmentFailed)} of them withheld for an incomplete support/usefulness assessment rather than semantic ambiguity, ${String(totals.contradicted)} contradicted by the reference, and ${String(totals.missing)} still missing.`,
   );
   lines.push(
     `- **Absolute richness** — ${String(totals.claims)} published claims over ${String(totals.sources)} retained sources; reported beside completeness, never folded into it.`,
