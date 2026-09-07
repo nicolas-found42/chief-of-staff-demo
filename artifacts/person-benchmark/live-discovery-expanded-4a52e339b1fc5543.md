@@ -69,7 +69,7 @@ The JSON report retains matched claim/work IDs and citation URLs, hashes and quo
 - **Factual reliability** — 84 of 84 citations verify against their retained source version; 0 critical integrity findings; 0 judged overclaims, of which 0 are wrong-person attributions.
 - **Completeness** — 0 of 277 reference facts recovered, 0 partially, 275 left ambiguous for review, 2 of them withheld for an incomplete support/usefulness assessment rather than semantic ambiguity, 0 contradicted by the reference, and 2 still missing.
 - **Absolute richness** — 83 published claims over 114 retained sources; reported beside completeness, never folded into it.
-- **Meeting-preparation usefulness** — mean understanding 0.00 of 3, judged with cited evidence.
+- **Meeting-preparation usefulness** — unavailable: no support/usefulness assessment completed, so the run carries no judged usefulness signal.
 - **Operational reliability** — 0 of 30 operations reached their own completion conditions.
 
 ## By group (with denominators)
