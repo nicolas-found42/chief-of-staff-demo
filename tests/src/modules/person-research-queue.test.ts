@@ -395,3 +395,46 @@ test("aged backfill wins fairly while concurrent ticks enforce configured concur
   await first;
   expect(queue.status().jobs.find((job) => job.profileId === meeting.id)?.calls).toBe(0);
 });
+
+test("a save merges a concurrent instance's jobs without resurrecting a removed one", () => {
+  /* One Workspace can carry several queue instances at once — the benchmark
+     researches fixed-document people concurrently (#233) — and each holds the
+     snapshot it loaded. A save merges with the file so neither instance drops
+     the other's jobs, but a removal is a decision: a Profile this instance
+     deleted must not come back from another instance's older snapshot. */
+  const root = mkdtempSync(join(tmpdir(), "research-queue-merge-"));
+  roots.push(root);
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const kept = people.create({ primaryEmail: "kept@example.com" });
+  const dropped = people.create({ primaryEmail: "dropped@example.com" });
+  const research = new PersonResearch({
+    dossiers: new PersonDossierStore(root),
+    search: async () => [],
+    complete: async () => ({}),
+  });
+  const deps = { workspaceDir: root, people, research, enabled: () => true };
+
+  const first = new PersonResearchQueue(deps);
+  const second = new PersonResearchQueue(deps);
+  const third = new PersonResearchQueue(deps);
+  /* All three loaded an empty file before any of them wrote. */
+  first.enqueue(kept.id, "explicit");
+  second.enqueue(dropped.id, "explicit");
+  const onDisk = () =>
+    (
+      JSON.parse(readFileSync(join(root, "person-research.json"), "utf8")) as {
+        jobs: { profileId: string }[];
+      }
+    ).jobs.map((job) => job.profileId);
+  expect(onDisk().sort()).toEqual([kept.id, dropped.id].sort());
+
+  second.remove(dropped.id);
+  expect(onDisk()).toEqual([kept.id]);
+  /* The third instance never saw either job; its save must not restore the
+     removed one from the snapshot it is merging against. */
+  third.configure({ paused: true });
+  expect(onDisk()).toEqual([kept.id]);
+});

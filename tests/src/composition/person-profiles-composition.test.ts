@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ import {
   type PersonProfilesCompositionDeps,
 } from "../../../apps/server/src/person-profile/composition";
 import { modelBoundaryFailure } from "../../../apps/server/src/llm/failure";
+import { PersonResearchStatusSchema } from "@chief-of-staff-demo/shared";
 
 /**
  * The Person Profiles product, composed without a Shell.
@@ -1882,4 +1883,24 @@ it("runs the requested Profile without dispatching an older eligible Profile", a
   const result = await h.people.research.runNow(requested.id);
   expect(result?.profileId).toBe(requested.id);
   expect(h.people.research.outcome(older.id)).toBeNull();
+});
+
+it("keeps both runtimes' research jobs when two compositions share one Workspace", async () => {
+  /* The benchmark researches fixed-document people concurrently over a single
+     workspaceDir (#233), so several composed runtimes persist queue state to
+     the same person-research.json. Both queues load before either writes, so
+     an instance that rewrites only its own snapshot drops the other's jobs
+     and the operation records a later composition reads back. */
+  const first = compose();
+  const second = compose({ workspaceDir: first.root });
+  const a = first.people.research.startFor({ fullName: "Concurrent person A" });
+  const b = second.people.research.startFor({ fullName: "Concurrent person B" });
+  first.people.queue.enqueue(a.id, "explicit");
+  second.people.queue.enqueue(b.id, "explicit");
+  await first.people.research.runNow(a.id);
+  await second.people.research.runNow(b.id);
+  const state = PersonResearchStatusSchema.parse(
+    JSON.parse(readFileSync(join(first.root, "person-research.json"), "utf8")),
+  );
+  expect(state.jobs.map((job) => job.profileId).sort()).toEqual([a.id, b.id].sort());
 });

@@ -29,6 +29,8 @@ export class PersonResearchQueue {
   private readonly file: string;
   private state: PersonResearchStatus;
   private running = new Set<string>();
+  /** Profiles this instance deliberately dropped; never re-adopted on merge. */
+  private readonly removed = new Set<string>();
   private generation = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private pending: Promise<void> | undefined;
@@ -160,6 +162,10 @@ export class PersonResearchQueue {
   }
   remove(profileId: string): void {
     this.state.jobs = this.state.jobs.filter((j) => j.profileId !== profileId);
+    /* A removal is a decision, and the merge on save must not mistake it for
+       a Profile this instance never knew about. Privacy deletion in
+       particular has to survive a concurrent runtime's snapshot. */
+    this.removed.add(profileId);
     this.save();
   }
   start(): void {
@@ -393,9 +399,64 @@ export class PersonResearchQueue {
       for (const job of this.state.jobs) if (job.state === "paused") job.nextAt = this.now();
     }
   }
+  /**
+   * This instance's state merged over what the file already holds.
+   *
+   * Jobs are keyed by profileId and disjoint across instances of one
+   * Workspace by construction — a Profile is researched by one runtime at a
+   * time — so this instance's job wins for every profileId it holds and
+   * every other on-disk job is preserved with its position. A job this
+   * instance removed is the exception: preserving it would undo a deletion,
+   * so a removed profileId is dropped from the disk side too.
+   *
+   * `usedCalls` is a daily diagnostic rather than a gate, so the larger of
+   * the two is kept: it cannot under-report what the Workspace spent, and no
+   * dispatch decision reads it. A disk snapshot from an earlier day is not
+   * carried across the roll, which would resurrect a counter this instance
+   * has already reset. Settings and the day come from this instance, which
+   * is the one that just acted.
+   */
+  private mergeWithDisk(): PersonResearchStatus {
+    if (!existsSync(this.file)) return this.state;
+    let disk: PersonResearchStatus;
+    try {
+      disk = PersonResearchStatusSchema.parse(JSON.parse(readFileSync(this.file, "utf8")));
+    } catch {
+      /* A file this instance cannot read is not a reason to lose the jobs it
+         holds; its own state is still the better record of them. */
+      return this.state;
+    }
+    const own = new Map(this.state.jobs.map((job) => [job.profileId, job]));
+    const jobs: PersonResearchJob[] = [];
+    const merged = new Set<string>();
+    for (const job of disk.jobs) {
+      if (this.removed.has(job.profileId)) continue;
+      jobs.push(own.get(job.profileId) ?? job);
+      merged.add(job.profileId);
+    }
+    for (const job of this.state.jobs) if (!merged.has(job.profileId)) jobs.push(job);
+    return {
+      ...this.state,
+      usedCalls:
+        disk.day === this.state.day
+          ? Math.max(this.state.usedCalls, disk.usedCalls)
+          : this.state.usedCalls,
+      jobs,
+    };
+  }
+  /**
+   * One Workspace can carry several queue instances at once: the benchmark
+   * researches fixed-document people concurrently, and every composed
+   * runtime persists here. Each instance holds the snapshot it loaded, so
+   * rewriting that snapshot wholesale would drop the jobs another instance
+   * has written since. Merging with the file on the way out keeps both.
+   *
+   * Read, merge and rename are one synchronous block with no await between
+   * them, so no other instance in this process can interleave a write.
+   */
   private save(): void {
     mkdirSync(join(this.file, ".."), { recursive: true });
-    writeFileSync(`${this.file}.tmp`, JSON.stringify(this.state));
+    writeFileSync(`${this.file}.tmp`, JSON.stringify(this.mergeWithDisk()));
     renameSync(`${this.file}.tmp`, this.file);
   }
 }
