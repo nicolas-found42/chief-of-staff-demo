@@ -403,10 +403,18 @@ export const BenchmarkSourceContributionSchema = z.object({
         /**
          * The upstream's own version marker for this retained source, when it
          * states one (issue #252), mirroring `PersonSourceDocument.sourceVersion`.
-         * Null means the source's route states no version, never that the
-         * version went unmeasured.
+         *
+         * Three states, and they are not the same thing. A string is the
+         * version the route stated. Null means the route states no version.
+         * Absent means the report was written before this field existed and
+         * the version went unmeasured — which is why this is optional rather
+         * than defaulted: every benchmark report committed before issue #252
+         * omits it on every retained source, and collapsing that into null
+         * would claim those routes declared no version when nobody asked.
+         * Reassessment (#270) and the acceptance comparison (#259) both read
+         * those older artifacts.
          */
-        sourceVersion: z.string().max(200).nullable(),
+        sourceVersion: z.string().max(200).nullable().optional(),
       }),
     )
     .max(10000),
