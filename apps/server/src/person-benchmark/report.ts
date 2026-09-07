@@ -54,6 +54,12 @@ export function summarizeGroups(
         referenceFacts: bucket.reduce((sum, entry) => sum + entry.completeness.referenceFacts, 0),
         recovered: bucket.reduce((sum, entry) => sum + entry.completeness.recovered, 0),
         ambiguous: bucket.reduce((sum, entry) => sum + entry.completeness.ambiguous, 0),
+        /* Carried assessments completed their support phase, so an absent
+           measurement aggregates as zero (#271). */
+        ambiguousSupportAssessmentFailed: bucket.reduce(
+          (sum, entry) => sum + (entry.completeness.ambiguousSupportAssessmentFailed ?? 0),
+          0,
+        ),
         criticalFindings: bucket.reduce(
           (sum, entry) => sum + entry.factualReliability.criticalFindings,
           0,
@@ -457,14 +463,16 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
 
   lines.push("## Per person");
   lines.push("");
+  /* Support-failed is the ambiguous count's withheld-for-support part (#271);
+     reports written before #271 carry no measurement, shown as an em dash. */
   lines.push(
-    "| Person | Industry | Footprint | Recovered / facts | Ambiguous | Critical | Overclaims | Claims | Sources | Families | Conclusion |",
+    "| Person | Industry | Footprint | Recovered / facts | Ambiguous | Support-failed | Critical | Overclaims | Claims | Sources | Families | Conclusion |",
   );
-  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const result of report.people) {
     const person = byPerson.get(result.slug);
     lines.push(
-      `| ${result.slug} | ${person?.industry ?? "?"} | ${person?.footprint ?? "?"} | ${String(result.completeness.recovered)} / ${String(result.completeness.referenceFacts)} | ${String(result.completeness.ambiguous)} | ${String(result.factualReliability.criticalFindings)} | ${String(result.factualReliability.overclaims.length)} | ${String(result.richness.claims)} | ${String(result.richness.sources)} | ${String(result.richness.distinctFamilies)} | ${result.operational.conclusion} |`,
+      `| ${result.slug} | ${person?.industry ?? "?"} | ${person?.footprint ?? "?"} | ${String(result.completeness.recovered)} / ${String(result.completeness.referenceFacts)} | ${String(result.completeness.ambiguous)} | ${String(result.completeness.ambiguousSupportAssessmentFailed ?? "—")} | ${String(result.factualReliability.criticalFindings)} | ${String(result.factualReliability.overclaims.length)} | ${String(result.richness.claims)} | ${String(result.richness.sources)} | ${String(result.richness.distinctFamilies)} | ${result.operational.conclusion} |`,
     );
   }
   lines.push("");
@@ -498,6 +506,9 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       recovered: sum.recovered + entry.completeness.recovered,
       partial: sum.partial + entry.completeness.partial,
       ambiguous: sum.ambiguous + entry.completeness.ambiguous,
+      ambiguousSupportAssessmentFailed:
+        sum.ambiguousSupportAssessmentFailed +
+        (entry.completeness.ambiguousSupportAssessmentFailed ?? 0),
       critical: sum.critical + entry.factualReliability.criticalFindings,
       overclaims: sum.overclaims + entry.factualReliability.overclaims.length,
       wrongPerson: sum.wrongPerson + entry.factualReliability.wrongPersonAttributions,
@@ -514,6 +525,7 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
       recovered: 0,
       partial: 0,
       ambiguous: 0,
+      ambiguousSupportAssessmentFailed: 0,
       critical: 0,
       overclaims: 0,
       wrongPerson: 0,
@@ -530,7 +542,7 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
     `- **Factual reliability** — ${String(totals.verified)} of ${String(totals.citations)} citations verify against their retained source version; ${String(totals.critical)} critical integrity findings; ${String(totals.overclaims)} judged overclaims, of which ${String(totals.wrongPerson)} are wrong-person attributions.`,
   );
   lines.push(
-    `- **Completeness** — ${String(totals.recovered)} of ${String(totals.facts)} reference facts recovered, ${String(totals.partial)} partially, ${String(totals.ambiguous)} left ambiguous for review.`,
+    `- **Completeness** — ${String(totals.recovered)} of ${String(totals.facts)} reference facts recovered, ${String(totals.partial)} partially, ${String(totals.ambiguous)} left ambiguous for review, ${String(totals.ambiguousSupportAssessmentFailed)} of them withheld for an incomplete support/usefulness assessment rather than semantic ambiguity.`,
   );
   lines.push(
     `- **Absolute richness** — ${String(totals.claims)} published claims over ${String(totals.sources)} retained sources; reported beside completeness, never folded into it.`,
@@ -550,12 +562,12 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
   );
   lines.push("");
   lines.push(
-    "| Dimension | Group | People | Recovered / facts | Ambiguous | Critical | Overclaims |",
+    "| Dimension | Group | People | Recovered / facts | Ambiguous | Support-failed | Critical | Overclaims |",
   );
-  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const group of report.groups)
     lines.push(
-      `| ${group.dimension} | ${group.key} | ${String(group.people)} | ${String(group.recovered)} / ${String(group.referenceFacts)} | ${String(group.ambiguous)} | ${String(group.criticalFindings)} | ${String(group.overclaims)} |`,
+      `| ${group.dimension} | ${group.key} | ${String(group.people)} | ${String(group.recovered)} / ${String(group.referenceFacts)} | ${String(group.ambiguous)} | ${String(group.ambiguousSupportAssessmentFailed ?? "—")} | ${String(group.criticalFindings)} | ${String(group.overclaims)} |`,
     );
   lines.push("");
 

@@ -474,6 +474,12 @@ export const BenchmarkPersonResultSchema = z.object({
     partial: z.number().int().nonnegative(),
     missing: z.number().int().nonnegative(),
     ambiguous: z.number().int().nonnegative(),
+    /** #271: how many of those ambiguous verdicts are withheld for an
+     *  incomplete support/usefulness assessment — judge infrastructure, not
+     *  semantic ambiguity. Reports written before #271 carry no measurement;
+     *  a carried assessment always completed its support phase, so
+     *  aggregates read absence as zero. */
+    ambiguousSupportAssessmentFailed: z.number().int().nonnegative().optional(),
     /** Split by whether the app can plausibly acquire the support today. */
     byAcquisition: z.record(
       z.string().max(40),
@@ -590,6 +596,10 @@ export const BenchmarkGroupSummarySchema = z.object({
   referenceFacts: z.number().int().nonnegative(),
   recovered: z.number().int().nonnegative(),
   ambiguous: z.number().int().nonnegative(),
+  /** #271: the withheld-for-support part of the ambiguous count. Reports
+   *  written before #271 carry no measurement; aggregates read absence as
+   *  zero, since a reassessment only carries support-completed assessments. */
+  ambiguousSupportAssessmentFailed: z.number().int().nonnegative().optional(),
   criticalFindings: z.number().int().nonnegative(),
   overclaims: z.number().int().nonnegative(),
 });

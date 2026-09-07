@@ -337,6 +337,7 @@ export async function assessPerson(
     };
   }
 
+  let supportAssessmentFailed = 0;
   const verdicts = judged.judgements.map((judgement) => {
     const supportIncomplete = judged.phases.support.status !== "completed";
     const overclaimed = judged.overclaims.some((finding) => finding.claimId === judgement.claimId);
@@ -354,6 +355,10 @@ export async function assessPerson(
       (judgement.verdict !== "recovered" && judgement.verdict !== "partial")
     )
       return judgement;
+    /* #271: the verdict stays withheld exactly as ADR-0067 wrote it, but the
+       headline counts must not blur an upstream support-phase failure into
+       semantic ambiguity, so the downgrades it caused are counted apart. */
+    if (supportIncomplete) supportAssessmentFailed += 1;
     // Semantic agreement cannot turn a broken evidence record into recovery.
     // Preserve the judge's decision for review before computing every aggregate.
     const reasons = [
@@ -444,6 +449,7 @@ export async function assessPerson(
       partial: counted("partial"),
       missing: counted("missing"),
       ambiguous: counted("ambiguous"),
+      ambiguousSupportAssessmentFailed: supportAssessmentFailed,
       byAcquisition,
       byRequirement,
       judgements: verdicts,
