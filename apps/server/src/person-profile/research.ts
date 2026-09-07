@@ -42,6 +42,7 @@ import {
 import { readPersonSource, type SourceReadResult } from "./research-readers.js";
 import { isPublicationRecordRead } from "./publication-records.js";
 import { isIdentityAnchorRead } from "./identity-anchors.js";
+import { isInstitutionalRecordRead } from "./institutional-records.js";
 import {
   PublicationGate,
   ResearchBudget,
@@ -552,6 +553,7 @@ export class PersonResearch {
             sourceVersion: resumable.sourceVersion ?? null,
             rights: resumable.rights ?? null,
             finalUrl: resumable.url,
+            ...(resumable.namedIndividuals ? { namedIndividuals: resumable.namedIndividuals } : {}),
           };
         } else {
           if (!budget.takeRequest()) return null;
@@ -1177,18 +1179,89 @@ export class PersonResearch {
           decision: "matched",
           reason: "The document contains the Profile's email address.",
         };
-    const name = profile.fullName?.toLowerCase();
-    if (!name || !folded.includes(name))
+    /* A registry normalizes a person's name for its own records: repeated
+       whitespace collapses and punctuation (a hyphenated given name, an
+       apostrophe, a trailing honorific period) may be spelled differently
+       from the Profile. Both name comparisons — the text-level check here
+       and the structural matched-individuals match below — therefore read
+       the same folded form: every punctuation character becomes a
+       separator and whitespace collapses, so the fold draws the same token
+       boundaries whichever side spells `O'Neil` as `O Neil`, and a
+       formatting difference still reaches the corroboration and ambiguity
+       decisions instead of reading as a different person. A differing
+       token sequence (an abbreviated middle name, `ONeil` versus
+       `O Neil`) is a different name string, not a formatting difference,
+       and stays unmatched. The rendered entry name itself is kept for
+       display and provenance (review finding on issue #250, PR #295). */
+    const foldName = (value: string): string =>
+      value
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const name = profile.fullName ? foldName(profile.fullName) : null;
+    if (!name || !foldName(read.text).includes(name))
       return { decision: "unmatched", reason: "The document does not name this person." };
     const corroborating = [profile.currentEmployer, ...profile.employerHints].filter(
       (value): value is string => !!value,
     );
-    for (const employer of corroborating)
-      if (folded.includes(employer.toLowerCase()))
+    /* A professional or institutional record names individuals structurally,
+       each carrying only their own affiliation: a trial's lead sponsor or
+       responsible organization, or an NPPES applicant's registration scale,
+       is the record's, never the named individual's, so an employer that
+       appears only there must never corroborate a same-name match — that is
+       exactly how a namesake with a conflicting affiliation was absorbed
+       (review finding on issue #250, PR #295). Every other route carries no
+       such structure, so the whole rendered text is still searched for it. */
+    const matchedIndividuals = read.namedIndividuals
+      ? read.namedIndividuals.filter((entry) => foldName(entry.name) === name)
+      : null;
+    /* A record can name this person while its own shape states nothing
+       about their affiliation at all — an NPPES specialty (a namesake's
+       taxonomy is not their employer) or an organisation's own name (never
+       its authorized official's) is never a stand-in for one, so
+       `institutional-records.ts` renders `null`, not `[]`, for either.
+       There is nothing here to corroborate *or* refute, so a same-name
+       match stays ambiguous rather than being confirmed by a coincidental
+       employer match, or rejected for lacking one it could never have
+       stated (review finding on issue #250, PR #295). This is checked
+       before the employer loop below: a stated absence of corroboration is
+       not the same question as "did this record ever say anything about
+       affiliation". */
+    /* The structured individuals are the authority on who is in the record:
+       a name that occurs only in record-level fields — a trial titled after
+       a condition's champion, an institute named for its founder — names the
+       field, not the person, and the Profile is not one of the individuals
+       the record names. That is an unmatched identity, not an ambiguous one
+       (review finding on issue #250, PR #295). */
+    if (matchedIndividuals && matchedIndividuals.length === 0)
+      return {
+        decision: "unmatched",
+        reason:
+          "The document mentions this name, but none of the individuals it names structurally matches the Profile.",
+      };
+    if (matchedIndividuals && !matchedIndividuals.some((entry) => entry.affiliations !== null))
+      return {
+        decision: "probable",
+        reason:
+          "This record names the person but its own shape states no affiliation for them, so a same-name match can be neither corroborated nor ruled out.",
+      };
+    const ownAffiliations = matchedIndividuals
+      ? matchedIndividuals.flatMap((entry) =>
+          (entry.affiliations ?? []).map((affiliation) => affiliation.toLowerCase()),
+        )
+      : null;
+    for (const employer of corroborating) {
+      const foldedEmployer = employer.toLowerCase();
+      const corroborates = ownAffiliations
+        ? ownAffiliations.some((affiliation) => affiliation.includes(foldedEmployer))
+        : folded.includes(foldedEmployer);
+      if (corroborates)
         return {
           decision: "matched",
           reason: "The document names this person alongside a known employer.",
         };
+    }
     if (
       corroborating.length === 0 &&
       profile.emails.length === 0 &&
@@ -1239,6 +1312,7 @@ export class PersonResearch {
       ...(read.provenanceNote ? { provenanceNote: read.provenanceNote } : {}),
       ...(read.sourceVersion ? { sourceVersion: read.sourceVersion } : {}),
       ...(read.rights ? { rights: read.rights } : {}),
+      ...(read.namedIndividuals ? { namedIndividuals: read.namedIndividuals } : {}),
     });
     const dossier = this.deps.dossiers.get(profile.id);
     if (!(dossier?.sourceIds ?? []).includes(source.id))
@@ -1389,17 +1463,18 @@ export class PersonResearch {
     }
     const ids = new Set(claims.map((c) => c.id));
     const grounded = (record: { claimIds: string[] }) => record.claimIds.every((id) => ids.has(id));
-    /* A publication or deposit record lists who took part. What any one of
-       them personally did, and who decided what, is not in the record, so the
-       two personal-scope fields cannot rest on this source alone (#249). An
-       identity or affiliation registry record carries the same limit for the
-       same reason: it establishes that an identifier belongs to this person,
-       never that a work or activity it links belongs to them as a verified
-       personal accomplishment (#252). The participation itself survives — as
-       claims, and as the work record they ground — and a source that does
-       state a contribution still carries one on its own work record; the
-       merge never overwrites a recorded contribution with the null written
-       here. */
+    /* Three record kinds carry the same limit for the same reason. A
+       publication or deposit record lists who took part (#249). A professional
+       or institutional record establishes only that the named individual
+       matched it (#250). An identity or affiliation registry record
+       establishes that an identifier belongs to this person, never that a work
+       it links is theirs as a verified personal accomplishment (#252). None of
+       them states what any one person did or decided, so the two
+       personal-scope fields cannot rest on any of these sources alone. The
+       participation itself survives — as claims, and as the work record they
+       ground — and a source that does state a contribution still carries one
+       on its own work record; the merge never overwrites a recorded
+       contribution with the null written here. */
     const participationOnly =
       isPublicationRecordRead({
         acquisition: read.route,
@@ -1408,21 +1483,26 @@ export class PersonResearch {
       isIdentityAnchorRead({
         acquisition: read.route,
         upstreamIndex: read.upstreamIndex,
+      }) ||
+      isInstitutionalRecordRead({
+        acquisition: read.route,
+        upstreamIndex: read.upstreamIndex,
       });
     const works = valid(PersonWorkRecordSchema, partial.works)
       .filter(grounded)
       .map((work) => ({
         ...work,
-        /* A work grounded only in a publication or deposit record carries no
+        /* A work grounded only in one of these records carries no
            independently-crawlable URL of its own: `deriveLeads` turns a
-           published work's `url` into an expansion lead every later round,
-           and a model asked to extract from this record's rendered text can
-           point that field at the record's own linked full text just as
-           easily as at a legitimate page. Dropping it here is what keeps that
-           full text unread under this record's metadata permission no matter
-           what the model claims about it (#249; the same review finding as
-           the sibling record module, PR #295) — the record's own matched URL
-           is retained as the source itself, not lost by nulling this field. */
+           published work's `url` into an expansion lead every later round, and
+           a model asked to extract from a record's rendered text can point
+           that field at the record's own linked material — full text for a
+           publication or deposit record, a protocol, statistical analysis plan
+           or consent form for a trial registration — just as easily as at a
+           legitimate page. Dropping it here is what keeps that material unread
+           under the record's metadata-only permission no matter what the model
+           claims about it (#249, #250) — the record's own matched URL is
+           retained as the source itself, not lost by nulling this field. */
         url: participationOnly ? null : work.url,
         contribution:
           !participationOnly && work.contribution && grounded(work.contribution)

@@ -38,6 +38,11 @@ export const PersonSourceRightsSchema = z.object({
       "datacite-data-file-cc0",
       "openalex-cc0",
       "orcid-public-api",
+      /* A US federal registry and a public trial-registration API (issue #250):
+         both publish structured records for public dissemination, with no
+         licence over the record and no warranty about the person it names. */
+      "nppes-public-registry",
+      "clinicaltrials-public-api",
     ]),
     statement: z.string().max(600),
     /** Where that permission was read; a catalogue label is not a source. */
@@ -58,7 +63,14 @@ export const PersonSourceRightsSchema = z.object({
   materials: z
     .array(
       z.object({
-        material: z.enum(["abstract", "full-text"]),
+        material: z.enum([
+          "abstract",
+          "full-text",
+          /* A trial record's protocol, statistical analysis plan or consent
+             form: linked documents named by a professional or institutional
+             record, never fetched under its metadata permission (#250). */
+          "linked-document",
+        ]),
         disposition: z.enum([
           "retained-under-declared-licence",
           "withheld-no-rights-basis",
@@ -147,6 +159,32 @@ export const PersonSourceDocumentSchema = z.object({
   sourceVersion: z.string().max(200).optional(),
   /** Rights provenance, absent when the route established none (issue #249). */
   rights: PersonSourceRightsSchema.optional(),
+  /**
+   * Individuals a professional or institutional record names, by name, with
+   * only their own affiliation strings the record states for them — never a
+   * record-level sponsor or responsible organization. Absent for every route
+   * that is not an institutional record. Identity resolution reads this
+   * instead of searching the whole rendered text for a known employer, so a
+   * trial sponsored by the Profile's employer cannot corroborate a same-name
+   * investigator whose own affiliation conflicts (review finding on issue
+   * #250, PR #295).
+   *
+   * An entry's `affiliations` is `null`, distinct from `[]`, when the
+   * record's own shape cannot state an affiliation for that person at all —
+   * an NPPES specialty or an organisation's own name is never a stand-in.
+   * Identity resolution reads `null` as "cannot corroborate or refute" and
+   * holds a same-name match ambiguous rather than confirming or rejecting it
+   * (review finding on issue #250, PR #295).
+   */
+  namedIndividuals: z
+    .array(
+      z.object({
+        name: z.string().max(400),
+        affiliations: z.array(z.string().max(400)).max(20).nullable(),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 /**
  * One passage a claim rests on.

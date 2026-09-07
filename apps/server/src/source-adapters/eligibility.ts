@@ -540,24 +540,30 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
   {
     route: "nppes",
     family: "professional-records",
-    terms: "US federal provider registry; the API is public and needs no key.",
+    terms:
+      "US federal provider registry; the API is public and needs no key. CMS's public-dissemination guidance (issue #250, read 2026-09-07) names this API and the NPI Files bulk download as the public routes to the same registry; an NPI record does not validate the licensure, credentials or clinical competence of the person or organization it names.",
     documentation: "https://npiregistry.cms.hhs.gov/api-page",
     cost: "anonymous",
     indexes: ["npiregistry.cms.hhs.gov"],
     status: "in-production",
     probe: "https://npiregistry.cms.hhs.gov/api/?version=2.1&last_name=Smith&state=CA&limit=2",
     expect: json,
+    observed:
+      "Reconfirmed 2026-09-07 (#250): the number= lookup this route reads a record by answers 200 with parseable JSON, individual and organizational alike. The documentation route above (api-page) itself serves only a client-side app shell (an Angular app-root with no server-rendered content) to an anonymous GET, which is the same finding the 2026-09-06 primary-document review recorded; this run reproduced it rather than assuming it still held.",
   },
   {
     route: "clinicaltrials",
     family: "professional-records",
-    terms: "ClinicalTrials.gov API v2 is public and unauthenticated.",
+    terms:
+      "ClinicalTrials.gov API v2 is public and unauthenticated. The registry's site-wide terms (issue #250, read 2026-09-07) describe free public access; current served terms verification remains incomplete because the terms page itself is client-rendered (below).",
     documentation: "https://clinicaltrials.gov/data-api/api",
     cost: "anonymous",
     indexes: ["clinicaltrials.gov"],
     status: "in-production",
     probe: "https://clinicaltrials.gov/api/v2/studies?query.term=oncology&pageSize=2",
     expect: json,
+    observed:
+      "Reconfirmed 2026-09-07 (#250): the studies/{NCT ID} lookup this route reads a record by answers 200 with parseable JSON. Every clinicaltrials.gov informational page this run tried — /about-site/terms-conditions and /data-api/about-api included — served the identical 94,295-byte Angular application shell (156 characters of glossary boilerplate once scripts and styles are stripped) to a direct anonymous GET, reproducing the 2026-09-06 primary-document review's finding rather than assuming it still held. No non-JS route to the terms text was found.",
   },
   {
     route: "nonprofit-explorer",

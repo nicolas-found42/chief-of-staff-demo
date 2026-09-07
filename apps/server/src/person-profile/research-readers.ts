@@ -20,6 +20,7 @@ import {
 } from "./research-diagnostics.js";
 import { renderPublicationRecord } from "./publication-records.js";
 import { renderIdentityAnchor } from "./identity-anchors.js";
+import { registryNonRecordBody, renderInstitutionalRecord } from "./institutional-records.js";
 
 /** Text kept per source. Matches the dossier store's own retention ceiling. */
 const MAX_TEXT = 500_000;
@@ -76,6 +77,23 @@ export interface SourceReadResult {
    */
   rights: PersonSourceRights | null;
   finalUrl: string;
+  /**
+   * Individuals a professional or institutional record names, by name, with
+   * only their own affiliation strings — never a record-level sponsor or
+   * responsible organization. Undefined for every other route. Identity
+   * resolution reads this instead of searching the whole rendered text for a
+   * known employer, so a trial sponsored by the Profile's employer cannot
+   * corroborate a same-name investigator whose own affiliation conflicts
+   * (review finding on issue #250, PR #295).
+   *
+   * An entry's `affiliations` is `null`, distinct from `[]`, when the
+   * record's own shape cannot state an affiliation for that person at all —
+   * an NPPES specialty or an organisation's own name is never a stand-in.
+   * Identity resolution reads `null` as "cannot corroborate or refute" and
+   * holds a same-name match ambiguous rather than confirming or rejecting it
+   * (review finding on issue #250, PR #295).
+   */
+  namedIndividuals?: { name: string; affiliations: string[] | null }[];
 }
 
 export interface ReaderPorts {
@@ -1616,33 +1634,41 @@ function renderJson(
     });
     return unavailable(family, "record-reader", "failed", context.snippet, response.url);
   }
-  /* A publication or deposit record is rendered field by field rather than
-     flattened whole: the flattener would carry the abstract into retained text
-     under a permission that does not cover it, and would drop the dates,
-     record version and rights a claim on this evidence has to keep (#249). */
+  /* A publication or deposit record, and a professional or institutional
+     record, are each rendered field by field rather than flattened whole: the
+     flattener would carry an abstract into retained text under a permission
+     that does not cover it, or a registry's organisation scale into a
+     personal-competence claim, and would drop the dates, record version and
+     rights a claim on this evidence has to keep (#249, #250). */
   const publication = renderPublicationRecord(index, parsed);
-  if (publication)
+  /* Only ever computed when the body was not a publication record: the two
+     renderers read the same shapes for different indexes, so a body that
+     matched one never needs to be tried against the other. */
+  const institutional = publication ? null : renderInstitutionalRecord(index, parsed);
+  const structured = publication ?? institutional;
+  if (structured)
     return {
-      text: publication.text.slice(0, MAX_TEXT),
+      text: structured.text.slice(0, MAX_TEXT),
       /* A record read live carries no capture date: it is the index's current
          answer, not evidence of what it said on some earlier day (#253). */
       capturedAt: null,
-      completeness: publication.text.length > MAX_TEXT ? "partial" : "full",
+      completeness: structured.text.length > MAX_TEXT ? "partial" : "full",
       access: "retrieved",
-      outboundUrls: publication.outboundUrls.slice(0, 200),
+      outboundUrls: structured.outboundUrls.slice(0, 200),
       family,
       route: "record-reader",
       upstreamIndex: index,
-      publishedAt: publication.publishedAt,
+      publishedAt: structured.publishedAt,
       /* The people in the record are its subject, not its author: the index
          published the record, and naming a listed author here would turn
          participation into authorship of the evidence about it. */
       author: null,
-      anchors: publication.anchors,
-      provenanceNote: publication.provenanceNote,
-      sourceVersion: publication.sourceVersion,
-      rights: publication.rights,
+      anchors: structured.anchors,
+      provenanceNote: structured.provenanceNote,
+      sourceVersion: structured.sourceVersion,
+      rights: structured.rights,
       finalUrl: response.url,
+      ...(institutional ? { namedIndividuals: institutional.namedIndividuals } : {}),
     };
   /* An identity or affiliation registry record is rendered the same
      deliberate way: the identifier and affiliations are what a claim can cite
@@ -1667,6 +1693,47 @@ function renderJson(
       rights: identityAnchor.rights,
       finalUrl: response.url,
     };
+  /* A record index with a specialized renderer answers every request with
+     either a record or one of the non-record answers its own conventions
+     define: an error or refusal envelope, an empty result set. Such an
+     answer is never retained as text — it can echo the requested name, and
+     no rights basis, version or attribution would cover it (review finding
+     on issue #250, PR #295) — so the read fails, the way the renderers
+     above refuse a body that is not a record they can render. A body that
+     is merely a record shape the renderer cannot fully read still
+     flattens: that is the normal retention path for records this module
+     has not grown into (#249, #250). */
+  const nonRecord = registryNonRecordBody(index, parsed);
+  if (nonRecord) {
+    const refusal = nonRecord === "registry-error-envelope";
+    context.recorder.record({
+      stage: "access",
+      code: nonRecord,
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: response.url,
+      targetKind: "record",
+      collector: "record-reader",
+      reason: refusal
+        ? `The ${index} record endpoint answered HTTP ${response.status} with its own error envelope rather than a record.`
+        : `The ${index} record endpoint answered: no record for this identifier.`,
+      attemptOf: context.attemptOf,
+      /* Shape only: the answered address, its size and hash. The body's own
+         text is exactly what must not be retained — it can echo the
+         requested name. */
+      observed: {
+        finalUrl: response.url,
+        bytes: response.body.length,
+        bodyHash: hash(response.body),
+      },
+      impact: refusal
+        ? "The record contributed no text."
+        : "The registry holds no record for this identifier.",
+      remediation: `Retry later, then reproduce with: curl -sS '${response.url}'`,
+    });
+    return unavailable(family, "record-reader", "failed", context.snippet, response.url);
+  }
   const text = flattenJson(parsed);
   return {
     text: text.slice(0, MAX_TEXT),

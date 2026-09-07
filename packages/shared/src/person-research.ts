@@ -69,6 +69,15 @@ export const PersonResearchFailureCodeSchema = z.enum([
    * capture: one is a service fault to retry, the other a fact about coverage.
    */
   "archive-error-page",
+  /**
+   * A public record index answered HTTP 2xx with its own error or refusal
+   * envelope rather than a record (issue #250). Like `archive-error-page`,
+   * this is the index declining to serve the read — not a fact about
+   * coverage, which stays `resource-unavailable`. The envelope is never
+   * retained as text: it can echo the requested name, and no rights basis,
+   * version or attribution would cover it.
+   */
+  "registry-error-envelope",
   "robots-excluded",
   // Rendering, parsing and media
   "rendering-failed",
