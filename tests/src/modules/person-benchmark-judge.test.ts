@@ -360,6 +360,10 @@ it("attributes verdicts withheld for an incomplete support assessment separately
      same attribution the per-person record does (#271, CODING_STANDARDS:
      a test asserts the record, not only its summary). */
   for (const group of report.groups) expect(group.ambiguousSupportAssessmentFailed).toBe(1);
+  /* The bullet must reconcile against the fact denominator on the page:
+     the fixture's one fact is ambiguous-withheld, so zero are missing. */
+  expect(readable).toContain("left ambiguous for review, 1 of them withheld");
+  expect(readable).toContain("0 contradicted by the reference, and 0 still missing.");
 });
 
 it("does not attribute a judge's own ambiguity to an incomplete support assessment", async () => {
