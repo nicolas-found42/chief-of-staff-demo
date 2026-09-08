@@ -1839,6 +1839,75 @@ describe("providers", () => {
     expect(Object.keys(properties)).toEqual(["markdown"]);
     expect(properties.tasks).toBeUndefined();
   });
+
+  /* A `maxLength` in the wire schema costs the whole call. Measured on the
+     pinned route with the judge's own support-phase Result Shape: the request
+     the seam sent ran past 45 seconds and came back as an upstream 502, and
+     the same request with `maxLength` removed answered in 4.4 seconds.
+     `maxItems` and the numeric bounds were measured innocent, and
+     `inception/mercury-2.5-preview` and `qwen/qwen3.7-flash` behaved alike, so
+     this is the provider's constrained decoding rather than one model. The
+     bound is not lost: the caller's own Zod schema still rejects an over-long
+     answer, so it moves from decode time to validation time.
+
+     A field the caller actually named `maxLength` is data, not a keyword, and
+     has to survive with its own subschema walked — the case Sourcery caught on
+     PR #304. */
+  it.each(["response_format", "forced_tool_call"] as const)(
+    "drops the maxLength keyword from the %s wire schema without touching names or other bounds",
+    async (binding) => {
+      declarations.push(
+        binding === "forced_tool_call"
+          ? declaring("tools", "tool_choice")
+          : declaring("response_format"),
+      );
+      const answer = { rationale: "ok", scores: [1], maxLength: { note: "n" } };
+      responses.push(
+        binding === "forced_tool_call"
+          ? { sse: sseToolCallCompletion(JSON.stringify(answer)) }
+          : { sse: sseChatCompletion(JSON.stringify(answer)) },
+      );
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: `some/max-length-${binding}`, apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const parsed = await complete({
+        system: "S",
+        user: "U",
+        ...(binding === "forced_tool_call"
+          ? { preferredBinding: "forced_tool_call" as const }
+          : {}),
+        schema: z.strictObject({
+          rationale: z.string().max(2000),
+          scores: z.array(z.number().int().min(0).max(3)).max(60),
+          /* A caller field whose name collides with the keyword. */
+          maxLength: z.strictObject({ note: z.string().max(200) }),
+        }),
+      });
+      expect(parsed).toEqual(answer);
+
+      const body = calls[0].body;
+      const sentSchema = (
+        binding === "forced_tool_call"
+          ? (body.tools as { function: { parameters: unknown } }[])[0].function.parameters
+          : (body.response_format as { json_schema: { schema: unknown } }).json_schema.schema
+      ) as Record<string, Record<string, Record<string, unknown>>>;
+      const properties = sentSchema.properties;
+
+      /* The ceiling is gone from the string it bounded... */
+      expect(properties.rationale.maxLength).toBeUndefined();
+      /* ...and the bounds measured innocent are untouched. */
+      expect(properties.scores.maxItems).toBe(60);
+      expect(properties.scores.items).toMatchObject({ minimum: 0, maximum: 3 });
+      /* The caller's own `maxLength` field survives, and its subschema is
+         still walked rather than skipped. */
+      const namedField = properties.maxLength as unknown as {
+        properties: { note: Record<string, unknown> };
+      };
+      expect(namedField.properties.note.type).toBe("string");
+      expect(namedField.properties.note.maxLength).toBeUndefined();
+    },
+  );
 });
 
 /**
