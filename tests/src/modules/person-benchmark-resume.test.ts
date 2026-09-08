@@ -110,6 +110,48 @@ it("refuses to carry interrupted, failed, or unassessed research", () => {
   }
 });
 
+it("judges the latest assessment per slug: a superseded mismatch no longer refuses", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-resume-"));
+  try {
+    const superseded = artifact((candidate) => {
+      completed(candidate);
+      candidate.assessedAt = "2026-09-08T10:00:00.000Z";
+      candidate.conditions = { ...candidate.conditions!, researchModel: "acme/old" };
+    });
+    const latest = artifact((candidate) => {
+      completed(candidate);
+      candidate.assessedAt = "2026-09-08T12:00:00.000Z";
+    });
+    writeArtifacts(dir, [superseded, latest]);
+    const reuse = loadReusable(dir, CONDITIONS);
+    expect(reuse.eligible.size).toBe(1);
+    expect(reuse.mismatched).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("refuses on the latest assessment alone when it mismatches", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-resume-"));
+  try {
+    const matching = artifact((candidate) => {
+      completed(candidate);
+      candidate.assessedAt = "2026-09-08T10:00:00.000Z";
+    });
+    const latest = artifact((candidate) => {
+      completed(candidate);
+      candidate.assessedAt = "2026-09-08T12:00:00.000Z";
+      candidate.conditions = { ...candidate.conditions!, researchModel: "acme/old" };
+    });
+    writeArtifacts(dir, [matching, latest]);
+    const reuse = loadReusable(dir, CONDITIONS);
+    expect(reuse.eligible.size).toBe(0);
+    expect(reuse.mismatched.map((entry) => entry.field)).toEqual(["researchModel"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 it("reports a conditions mismatch field by field instead of carrying the artifact", () => {
   const dir = mkdtempSync(join(tmpdir(), "benchmark-resume-"));
   try {

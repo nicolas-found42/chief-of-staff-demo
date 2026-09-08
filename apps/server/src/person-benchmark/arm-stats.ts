@@ -67,13 +67,18 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
     group.push(entry);
     byRun.set(entry.report.runId, group);
   }
-  const newest = [...byRun.values()].sort((a, b) =>
-    b[0]!.report.provenance.finishedAt.localeCompare(a[0]!.report.provenance.finishedAt),
-  )[0]!;
-  const foundSorted = newest.sort((a, b) => a.repeat - b.repeat);
+  /* Only completed reports are repeats: an interrupted or failed pass is a
+     partial sample, and counting it as a full repeat biases the arm. */
+  const completed = [...byRun.values()]
+    .sort((a, b) =>
+      b[0]!.report.provenance.finishedAt.localeCompare(a[0]!.report.provenance.finishedAt),
+    )[0]!
+    .sort((a, b) => a.repeat - b.repeat)
+    .filter((entry) => entry.report.execution?.status === "completed");
+  if (completed.length === 0) return null;
 
   const perSlug = new Map<string, { slug: string; scores: number[] }>();
-  for (const { report } of foundSorted)
+  for (const { report } of completed)
     for (const person of report.people) {
       const score = personScore(person);
       if (score === null) continue;
@@ -91,7 +96,7 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
   /* Denominators are a property of the person, not the repeat; the first
      report carrying a slug donates its reference-fact count. */
   const denominators = new Map<string, number>();
-  for (const { report } of foundSorted)
+  for (const { report } of completed)
     for (const person of report.people)
       if (!denominators.has(person.slug))
         denominators.set(person.slug, person.completeness.referenceFacts);
@@ -100,13 +105,13 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
     (sum, person) => sum + person.mean * (denominators.get(person.slug) ?? 0),
     0,
   );
-  const first = foundSorted[0]!.report;
+  const first = completed[0]!.report;
   return BenchmarkArmStatsSchema.parse({
     schemaVersion: 1,
-    runIds: foundSorted.map(({ report }) => report.runId),
+    runIds: completed.map(({ report }) => report.runId),
     mode: first.mode,
     pipeline: first.provenance.pipeline,
-    repeats: foundSorted.length,
+    repeats: completed.length,
     people,
     ci,
     totals: {

@@ -541,8 +541,10 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
     reportStatusDetail: string,
     reportExecution: "completed" | "interrupted",
   ): BenchmarkReport => {
-    /* Computed per call: the partial reads it mid-run, when results grow. */
-    const merged = [...carried, ...results].sort(
+    /* Computed per call: the partial reads it mid-run, when results grow.
+       Carried persons belong to repeat 1's report; later repeats re-sampled
+       the full selection, and prepending carried again would double-count. */
+    const merged = (repeat === 1 ? [...carried, ...results] : results).sort(
       (a, b) => requestedPopulation.indexOf(a.slug) - requestedPopulation.indexOf(b.slug),
     );
     const measuredSlugs = new Set(merged.map((person) => person.slug));

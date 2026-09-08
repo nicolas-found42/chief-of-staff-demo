@@ -605,8 +605,9 @@ export const BenchmarkProvenanceSchema = z
         tokens: z.union([
           z.literal("unavailable"),
           z.object({
-            input: z.number().int().nonnegative(),
-            output: z.number().int().nonnegative(),
+            /* Providers report halves independently; either may be missing. */
+            input: z.number().int().nonnegative().nullable(),
+            output: z.number().int().nonnegative().nullable(),
           }),
         ]),
         /* The provider's own charge, when it names one (OpenRouter does). */

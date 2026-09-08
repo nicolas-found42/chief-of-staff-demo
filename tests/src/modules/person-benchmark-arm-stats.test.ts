@@ -29,6 +29,15 @@ function scoredReport(scores: number[]): BenchmarkReport {
       referenceFacts: 128,
       recovered: Math.round(scores[index] * 128),
     };
+  /* The driver stamps execution on every report it writes; the pre-standard
+     fixture lacks it, so mirror the driver here. */
+  report.execution = {
+    status: "completed",
+    selected: report.selection.requested,
+    evaluated: report.people.length,
+    assessed: report.people.length,
+    scenarioIds: [],
+  };
   return report;
 }
 
@@ -72,6 +81,47 @@ it("pairs repeat reports by their -rN suffix and averages per person", () => {
     expect(stats.repeats).toBe(2);
     expect(stats.people[0].scores).toEqual([0.25, 0.75]);
     expect(stats.people[0].mean).toBeCloseTo(0.5, 10);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("counts only completed reports as repeats: an interrupted repeat stays out", () => {
+  const interrupted = scoredReport([0.5]);
+  interrupted.execution = {
+    status: "interrupted",
+    selected: interrupted.selection.requested,
+    evaluated: 1,
+    assessed: 1,
+    scenarioIds: [],
+  };
+  interrupted.people = [interrupted.people[0]];
+  const dir = armDirectory("interrupted", {
+    [R1]: scoredReport([0.25, 0.75]),
+    [R2]: interrupted,
+  });
+  try {
+    const stats = buildArmStats(dir)!;
+    expect(stats).not.toBeNull();
+    expect(stats.repeats).toBe(1);
+    expect(stats.people.map((person) => person.scores)).toEqual([[0.25], [0.75]]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("returns null when the newest arm holds no completed report", () => {
+  const interrupted = scoredReport([0.5, 0.5]);
+  interrupted.execution = {
+    status: "interrupted",
+    selected: interrupted.selection.requested,
+    evaluated: 2,
+    assessed: 2,
+    scenarioIds: [],
+  };
+  const dir = armDirectory("allinterrupted", { [R1]: interrupted });
+  try {
+    expect(buildArmStats(dir)).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

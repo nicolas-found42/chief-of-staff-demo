@@ -133,6 +133,10 @@ export function loadReusable(directory: string, current: ResumeConditions): Reus
     })
     .filter((artifact): artifact is BenchmarkPersonArtifact => artifact !== null)
     .sort((a, b) => a.assessedAt.localeCompare(b.assessedAt));
-  for (const artifact of found) classify(artifact, current, reuse);
+  /* Latest assessment of a slug wins: an older artifact must not refuse the
+     resume for conditions its successor already satisfies. */
+  const latestBySlug = new Map<string, BenchmarkPersonArtifact>();
+  for (const artifact of found) latestBySlug.set(artifact.result.slug, artifact);
+  for (const artifact of latestBySlug.values()) classify(artifact, current, reuse);
   return reuse;
 }
