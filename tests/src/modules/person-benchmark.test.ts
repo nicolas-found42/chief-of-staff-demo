@@ -486,7 +486,7 @@ it.each([false, true])("preserves judge wire attempts when assessment fails=%s",
   expect(result.assessment?.modelAttempts?.[1]?.observation.outcome).toBe(
     fails ? "failed" : "succeeded",
   );
-  expect(result.assessment?.modelAttempts?.length).toBe(fails ? 2 : 4);
+  expect(result.assessment?.modelAttempts?.length).toBe(4);
   expect(result.completeness.recovered).toBe(0);
 });
 

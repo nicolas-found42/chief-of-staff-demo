@@ -171,7 +171,7 @@ it("rejudges exact persisted research and recomputes reports without changing or
   });
   expect(result.reassessment!.inputCharacters).toBeGreaterThan(0);
   expect(result.provenance).toMatchObject({
-    judgeVersion: "2026-09-06.9",
+    judgeVersion: "2026-09-06.10",
     startedAt: input.report.provenance.startedAt,
   });
   expect(renderReport(result, input.corpus.people)).toContain("no research was repeated");
@@ -260,7 +260,7 @@ it("writes a separate reassessment report through the CLI and preserves failed j
   expect(report.runId).not.toBe(input.report.runId);
   expect(report.status).toBe("failed");
   expect(report.execution?.assessed).toBe(0);
-  expect(report.provenance.judgeVersion).toBe("2026-09-06.9");
+  expect(report.provenance.judgeVersion).toBe("2026-09-06.10");
   expect(report.people[0].operational).toEqual(input.report.people[0].operational);
   expect(files.some((file) => file.endsWith(".operation.json"))).toBe(true);
   expect(readFileSync(input.reportPath, "utf8")).toBe(original);
@@ -428,7 +428,7 @@ it.each(["recovered", "partial"] as const)(
     expect(artifact.result).toEqual(person);
     expect(artifact).toMatchObject({
       runId: report.runId,
-      judgeVersion: "2026-09-06.9",
+      judgeVersion: "2026-09-06.10",
       reassessmentOf: input.report.runId,
     });
     expect(renderReport(report, input.corpus.people)).toContain("Incomplete judge phases");
