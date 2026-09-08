@@ -605,8 +605,9 @@ export const BenchmarkProvenanceSchema = z
         tokens: z.union([
           z.literal("unavailable"),
           z.object({
-            input: z.number().int().nonnegative(),
-            output: z.number().int().nonnegative(),
+            /* Providers report halves independently; either may be missing. */
+            input: z.number().int().nonnegative().nullable(),
+            output: z.number().int().nonnegative().nullable(),
           }),
         ]),
         /* The provider's own charge, when it names one (OpenRouter does). */
@@ -865,9 +866,11 @@ export const BenchmarkArmStatsSchema = z.object({
     recoveredMean: z.number().nonnegative(),
     rate: z.number().min(0).max(1),
   }),
+  /** Included repeat reports whose top-level status recorded person-level
+   *  failures: measured samples, but not clean ones. */
+  partialRepeats: z.number().int().nonnegative().max(20).default(0),
 });
 export type BenchmarkArmStats = z.infer<typeof BenchmarkArmStatsSchema>;
-
 /** Two arms compared on paired per-person differences, with the noise verdict. */
 export const BenchmarkStatsComparisonSchema = z.object({
   schemaVersion: z.literal(1),

@@ -443,19 +443,21 @@ let outputCharacters = 0;
 /* Provider-reported spend, accumulated at the seam. Arms that once died to an
    outage and were re-run from scratch now pay only for what is missing. */
 const usage = {
-  inputTokens: 0,
-  outputTokens: 0,
+  /* Each token half is null until a provider observation reports it: an
+     unobserved half serializes as null (unavailable), never as a fake 0. */
+  inputTokens: null as number | null,
+  outputTokens: null as number | null,
   sawTokens: false,
   costUsd: 0,
   sawCost: false,
 };
 observeModelUsage((observation) => {
   if (observation.inputTokens !== null) {
-    usage.inputTokens += observation.inputTokens;
+    usage.inputTokens = (usage.inputTokens ?? 0) + observation.inputTokens;
     usage.sawTokens = true;
   }
   if (observation.outputTokens !== null) {
-    usage.outputTokens += observation.outputTokens;
+    usage.outputTokens = (usage.outputTokens ?? 0) + observation.outputTokens;
     usage.sawTokens = true;
   }
   if (observation.costUsd !== null) {
@@ -541,8 +543,10 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
     reportStatusDetail: string,
     reportExecution: "completed" | "interrupted",
   ): BenchmarkReport => {
-    /* Computed per call: the partial reads it mid-run, when results grow. */
-    const merged = [...carried, ...results].sort(
+    /* Computed per call: the partial reads it mid-run, when results grow.
+       Carried persons belong to repeat 1's report; later repeats re-sampled
+       the full selection, and prepending carried again would double-count. */
+    const merged = (repeat === 1 ? [...carried, ...results] : results).sort(
       (a, b) => requestedPopulation.indexOf(a.slug) - requestedPopulation.indexOf(b.slug),
     );
     const measuredSlugs = new Set(merged.map((person) => person.slug));

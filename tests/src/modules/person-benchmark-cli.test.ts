@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { BenchmarkReportSchema, BenchmarkPersonArtifactSchema } from "@chief-of-staff-demo/shared";
+import {
+  BenchmarkArmStatsSchema,
+  BenchmarkReportSchema,
+  BenchmarkPersonArtifactSchema,
+  type BenchmarkReport,
+} from "@chief-of-staff-demo/shared";
 import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 
 it("rejects unknown requested people without writing a successful empty report", () => {
@@ -315,10 +320,7 @@ it("retains public evidence without credentials and produces a separately reasse
 
 /* ---- Standardized-arm wiring: resume, repeats, stats, cost (issue #237) ---- */
 
-import {
-  BenchmarkArmStatsSchema,
-  BenchmarkStatsComparisonSchema,
-} from "@chief-of-staff-demo/shared";
+import { BenchmarkStatsComparisonSchema } from "@chief-of-staff-demo/shared";
 
 /** An eligible, conditions-stamped artifact for `achim-steiner` under the mock
  *  provider, so --retry can carry it without spending a model call. */
@@ -406,6 +408,71 @@ it("--retry carries an eligible person and re-runs only the rest", () => {
     expect(report.people.map((person) => person.slug)).toEqual(["achim-steiner", "ana-botin"]);
     expect(report.people[0].assessment!.operationId).toBe("op-carried");
     expect(report.provenance.researchSettings.gitSha).toMatch(/^[0-9a-f]{40}$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("--retry with --repeats 2 records carried people once: later repeats sample everyone fresh", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cli-retry-repeats-"));
+  try {
+    writeFileSync(
+      join(dir, "fixed-documents-expanded-priorarm000000-achim-steiner.person.json"),
+      `${JSON.stringify(eligibleArtifact())}\n`,
+    );
+    const config = join(dir, "config.json");
+    writeFileSync(config, JSON.stringify({ provider: "mock", model: "mock" }));
+    spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--config",
+        config,
+        "--people",
+        "achim-steiner,ana-botin",
+        "--retry",
+        dir,
+        "--repeats",
+        "2",
+        "--out",
+        dir,
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    const read = (suffix: string): BenchmarkReport =>
+      BenchmarkReportSchema.parse(
+        JSON.parse(
+          readFileSync(
+            join(
+              dir,
+              readdirSync(dir).find((file) => file.endsWith(suffix))!,
+            ),
+            "utf8",
+          ),
+        ),
+      );
+    const r1 = read("-r1.json");
+    const r2 = read("-r2.json");
+    for (const report of [r1, r2]) {
+      const slugs = report.people.map((person) => person.slug);
+      expect(new Set(slugs).size).toBe(slugs.length);
+      expect([...slugs].sort()).toEqual(["achim-steiner", "ana-botin"]);
+    }
+    expect(
+      r1.people.find((person) => person.slug === "achim-steiner")!.assessment!.operationId,
+    ).toBe("op-carried");
+    expect(
+      r2.people.find((person) => person.slug === "achim-steiner")!.assessment!.operationId,
+    ).not.toBe("op-carried");
+    const stats = BenchmarkArmStatsSchema.parse(
+      JSON.parse(readFileSync(join(dir, "stats.json"), "utf8")),
+    );
+    expect(stats.people.map((person) => person.scores)).toEqual([
+      [expect.any(Number), expect.any(Number)],
+      [expect.any(Number), expect.any(Number)],
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
