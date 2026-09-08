@@ -14,6 +14,7 @@ import {
   RESULT_SHAPE_BINDINGS,
 } from "@chief-of-staff-demo/shared";
 import {
+  isUpstreamCapacityRefusal,
   modelBoundaryDiagnostic,
   modelBoundaryFailure,
   type AnswerContainer,
@@ -1338,8 +1339,16 @@ async function openAiCompatibleComplete(
     } catch (error) {
       const diagnostic = modelBoundaryDiagnostic(error) ?? null;
       if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic);
+      /* An upstream out of capacity is retried on the same binding: the
+         refusal is about the moment, not about the request, and the route that
+         gave it has not stopped serving (ADR-0066, ADR-0068). The timeout arm
+         stays narrower on purpose — the absolute request ceiling has already
+         spent the deadline a retry would need, so `isUpstreamCapacityRefusal`
+         is asked rather than `isModelCapacityFailure`, whose broader timeout
+         branch would retry exactly that exhausted case. */
       const retryable =
         diagnostic?.classification === "transport_failure" ||
+        isUpstreamCapacityRefusal(error) ||
         (diagnostic?.classification === "request_timeout" &&
           (diagnostic.timeoutMs === STREAM_IDLE_TIMEOUT_MS ||
             diagnostic.timeoutMs === STREAM_SILENT_TIMEOUT_MS));
