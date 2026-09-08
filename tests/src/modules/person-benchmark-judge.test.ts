@@ -1059,3 +1059,186 @@ it.each(["", "   "])(
     expect(result.judgements[0].rationale).not.toContain("Downgraded");
   },
 );
+it("runs one corrected recovery attempt when the first omits a reference fact", async () => {
+  const { person, dossier, sources } = fixture();
+  let recoveryCalls = 0;
+  const result = await judgePerson(
+    async ({ user }) => {
+      const request = JSON.parse(user) as { references?: unknown; rejectedReply?: string };
+      if (!request.references) return SUPPORT_OK;
+      recoveryCalls += 1;
+      if (recoveryCalls === 1) {
+        expect(request.rejectedReply).toBeUndefined();
+        return { judgements: [] };
+      }
+      expect(request.rejectedReply).toContain("omitted or repeated");
+      return {
+        judgements: [
+          {
+            factId: person.facts[0].id,
+            verdict: "missing",
+            evidence: null,
+            claimId: null,
+            rationale: "No dossier claim states it.",
+          },
+        ],
+      };
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(recoveryCalls).toBe(2);
+  expect(result.complete).toBe(true);
+  expect(result.judgements[0]).toMatchObject({ factId: person.facts[0].id, verdict: "missing" });
+});
+
+it("runs one corrected support attempt when findings name unknown claims", async () => {
+  const { person, dossier, sources } = fixture();
+  let supportCalls = 0;
+  const result = await judgePerson(
+    async ({ user }) => {
+      const request = JSON.parse(user) as { references?: unknown; rejectedReply?: string };
+      if (request.references)
+        return {
+          judgements: [
+            {
+              factId: person.facts[0].id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "No dossier claim states it.",
+            },
+          ],
+        };
+      supportCalls += 1;
+      if (supportCalls === 1) {
+        expect(request.rejectedReply).toBeUndefined();
+        return {
+          ...SUPPORT_OK,
+          overclaims: [
+            {
+              claimId: "claim-does-not-exist",
+              citationIndex: null,
+              statement: "Maya designed the scheduler.",
+              kind: "team-output-as-personal",
+              rationale: "Names a claim the dossier does not carry.",
+              matchedUnjustifiedId: null,
+              uncertain: false,
+            },
+          ],
+        };
+      }
+      expect(request.rejectedReply).toContain("unknown claims");
+      return SUPPORT_OK;
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(supportCalls).toBe(2);
+  expect(result.complete).toBe(true);
+  expect(result.phases.support.status).toBe("completed");
+  expect(result.overclaims).toEqual([]);
+});
+
+it("keeps a failed support phase when the corrected attempt is also invalid", async () => {
+  const { person, dossier, sources } = fixture();
+  let supportCalls = 0;
+  const result = await judgePerson(
+    async ({ user }) => {
+      const request = JSON.parse(user) as { references?: unknown };
+      if (request.references)
+        return {
+          judgements: [
+            {
+              factId: person.facts[0].id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "No dossier claim states it.",
+            },
+          ],
+        };
+      supportCalls += 1;
+      return {
+        ...SUPPORT_OK,
+        overclaims: [
+          {
+            claimId: "claim-does-not-exist",
+            citationIndex: null,
+            statement: "Maya designed the scheduler.",
+            kind: "team-output-as-personal",
+            rationale: "Names a claim the dossier does not carry.",
+            matchedUnjustifiedId: null,
+            uncertain: false,
+          },
+        ],
+      };
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(supportCalls).toBe(2);
+  expect(result.complete).toBe(false);
+  expect(result.phases.support.status).toBe("failed");
+  expect(result.phases.support.unresolvedFindings).toHaveLength(1);
+});
+
+it("retries the recovery call once when the first reply fails to parse", async () => {
+  const { person, dossier, sources } = fixture();
+  let recoveryCalls = 0;
+  const result = await judgePerson(
+    async ({ user }) => {
+      const request = JSON.parse(user) as { references?: unknown };
+      if (!request.references) return SUPPORT_OK;
+      recoveryCalls += 1;
+      if (recoveryCalls === 1) throw new Error("The model boundary returned unusable JSON.");
+      return {
+        judgements: [
+          {
+            factId: person.facts[0].id,
+            verdict: "missing",
+            evidence: null,
+            claimId: null,
+            rationale: "No dossier claim states it.",
+          },
+        ],
+      };
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(recoveryCalls).toBe(2);
+  expect(result.complete).toBe(true);
+});
+
+it("runs each judge phase exactly once when both replies are usable", async () => {
+  const { person, dossier, sources } = fixture();
+  let calls = 0;
+  const result = await judgePerson(
+    async ({ user }) => {
+      calls += 1;
+      return user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "missing",
+                evidence: null,
+                claimId: null,
+                rationale: "No dossier claim states it.",
+              },
+            ],
+          }
+        : SUPPORT_OK;
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(calls).toBe(2);
+  expect(result.complete).toBe(true);
+});
