@@ -44,7 +44,14 @@ const CITATION_QUOTE_MIN_LENGTH = 20;
  * fail the phase when they overrun.
  */
 const prose = (maximum: number) =>
-  z.string().transform((value) => Array.from(value).slice(0, maximum).join(""));
+  z.string().transform((value) => {
+    let clipped = "";
+    for (const codePoint of value) {
+      if (clipped.length + codePoint.length > maximum) break;
+      clipped += codePoint;
+    }
+    return clipped;
+  });
 
 const RecoverySchema = z.object({
   judgements: z
