@@ -168,7 +168,84 @@ function wireJsonSchema(source: WireSchema): JsonObject {
   }) as JsonObject;
   /* OpenAI strict json_schema rejects the $schema key zod-to-json-schema adds. */
   delete converted.$schema;
-  return converted;
+  return stripLengthCeilings(converted) as JsonObject;
+}
+
+/**
+ * JSON Schema keywords whose value maps caller-chosen names to subschemas.
+ * Their keys are names, so nothing in them is a keyword to remove.
+ */
+const SCHEMA_NAME_MAPS = new Set([
+  "properties",
+  "patternProperties",
+  "dependentSchemas",
+  "$defs",
+  "definitions",
+]);
+
+/**
+ * Keywords whose value is a subschema, or an array of them. Only these are
+ * walked: every other value is data the caller wrote — `enum`, `const`,
+ * `default`, `examples`, `required` — where a `maxLength` is a literal to
+ * preserve rather than a ceiling to drop.
+ */
+const SCHEMA_VALUED = new Set([
+  "items",
+  "prefixItems",
+  "additionalItems",
+  "additionalProperties",
+  "unevaluatedItems",
+  "unevaluatedProperties",
+  "propertyNames",
+  "contains",
+  "not",
+  "if",
+  "then",
+  "else",
+  "anyOf",
+  "allOf",
+  "oneOf",
+]);
+
+/**
+ * The wire schema without the one keyword that costs the whole call.
+ *
+ * `maxLength` is not ignored by constrained decoding; on the OpenRouter route
+ * it is honoured pathologically. Measured with the judge's own support-phase
+ * Result Shape and a 41k-character request: as the seam sent it, the call ran
+ * past 45 seconds and came back as an HTTP 200 carrying upstream code 502,
+ * which is how 24 of 27 support phases died. The identical request with
+ * `maxLength` removed answered in 4.4 seconds. `maxItems` and the numeric
+ * bounds were measured innocent, and `inception/mercury-2.5-preview` and
+ * `qwen/qwen3.7-flash` behaved alike, so the cost belongs to the provider's
+ * decoder rather than to one model — which is why this strips for every
+ * OpenAI-shaped provider instead of naming a model.
+ *
+ * The ceiling itself is not given up. The caller's own Zod schema still
+ * rejects an over-long answer, so the bound moves from decode time to
+ * validation time and the contract is unchanged.
+ *
+ * Only subschema positions are walked. A `maxLength` sitting in a name map
+ * (`properties`, `patternProperties`) is a caller's field name, and one inside
+ * `enum`, `const` or `default` is a literal value: both are data this must not
+ * touch. Sourcery caught the first on PR #304; the second was the same bug one
+ * position over.
+ */
+function stripLengthCeilings(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripLengthCeilings);
+  if (!isUnknownRecord(node)) return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "maxLength") continue;
+    if (SCHEMA_NAME_MAPS.has(key) && isUnknownRecord(value)) {
+      out[key] = Object.fromEntries(
+        Object.entries(value).map(([name, sub]) => [name, stripLengthCeilings(sub)]),
+      );
+      continue;
+    }
+    out[key] = SCHEMA_VALUED.has(key) ? stripLengthCeilings(value) : value;
+  }
+  return out;
 }
 
 /**
