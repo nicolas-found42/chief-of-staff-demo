@@ -419,9 +419,9 @@ describe("providers", () => {
             ? { fail: new Error("SECRET provider text") }
             : {
                 /* A partial answer and then nothing at all. Keepalives used to
-           stand in for idleness here; since #232 they say the upstream
-           is alive and buffering, which is a different fixture and its
-           own test. This one is the connection going quiet. */
+         stand in for idleness here; since #232 they say the upstream
+         is alive and buffering, which is a different fixture and its
+         own test. This one is the connection going quiet. */
                 sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
@@ -500,19 +500,17 @@ describe("providers", () => {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(await pending).toEqual(RESULT);
       expect(calls).toHaveLength(2);
-      /* Same binding, same body: a capacity refusal says nothing about the
-         Result Shape Binding, so nothing about the request changes.
-
-         Resting and retrying stay disjoint here. `restFailedRoute` rests a
-         repetition loop, an answer overrun, a timeout, or a 429 — never an
-         `upstream_error` — so a capacity refusal rests nothing and the retry
-         carries the routing it started with. Sourcery read the two as
-         interacting on PR #305, which would leave the retry asking OpenRouter
-         to ignore the only route the pinned model has, so the absence of a
-         rest is asserted on its own rather than left to the body comparison. */
+      /* Same binding, new routing: a capacity refusal says nothing about the
+         Result Shape Binding, so nothing about the request changes — but the
+         route that accepted-then-failed rests, so the retry asks OpenRouter
+         to skip it. Measured in the September 2026 assessments: 16 logical
+         calls 502'd on one route and 502'd again on the same-binding retry
+         because `upstream_error` rested nothing. The ADR-0068 bound and the
+         rests-exhausted clear path are what stop the rest from costing the
+         model every route it has. */
+      expect(calls[0].body.provider).toEqual({ sort: "throughput" });
       const retriedProvider = calls[1].body.provider as Record<string, unknown>;
-      expect(retriedProvider.ignore).toBeUndefined();
-      expect(calls[1].body).toEqual(calls[0].body);
+      expect(retriedProvider).toEqual({ sort: "throughput", ignore: ["Novita"] });
       expect(events).toMatchObject([
         { attempt: 1, binding: "forced_tool_call", outcome: "retrying", delayMs: 500 },
         { attempt: 2, binding: "forced_tool_call", outcome: "succeeded" },
@@ -548,6 +546,19 @@ describe("providers", () => {
     }).catch((error: unknown) => modelBoundaryDiagnostic(error));
     expect(failure).toMatchObject({ classification: "upstream_error", upstreamCode: 400 });
     expect(events.filter((event) => event.outcome === "retrying")).toHaveLength(0);
+    /* A 4xx names a fault of the request, not the route: the next call for
+       the same model carries no rest. */
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    await expect(
+      complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls[1].body.provider).toEqual({ sort: "throughput" });
   });
 
   it("openrouter: persistent opted-in idle failures stop after one additional attempt", async () => {
@@ -2744,10 +2755,13 @@ describe("openrouter route rests and the binding ladder", () => {
     ).toHaveLength(1);
   });
 
-  /* A route that names a fault of its own is not a route that cannot serve the
-     call: the upstream answered, said what went wrong, and may well answer the
-     next one. Resting on every failure alike would empty the routing pool. */
-  it("rests nothing when the upstream named its own fault", async () => {
+  /* An accepted-then-failed call says the route cannot serve now, even when
+     the upstream named the fault itself: measured 16 logical calls that 502'd
+     and 502'd again on the retry because `upstream_error` rested nothing.
+     The ADR-0068 bound, the 15-minute expiry and the rests-exhausted clear
+     path are what stop rests from emptying the routing pool — not the absence
+     of a rest. */
+  it("rests the route when the upstream accepted then failed", async () => {
     declarations.push(declaring("temperature"));
     responses.push({
       sse: [
@@ -2771,7 +2785,7 @@ describe("openrouter route rests and the binding ladder", () => {
         schema: ExtractionWireSchema,
       }),
     ).resolves.toEqual(RESULT);
-    expect(routing(1)).toEqual({ sort: "throughput" });
+    expect(routing(1)).toEqual({ sort: "throughput", ignore: ["Novita"] });
   });
 
   /** One stream that names its route and runs past the byte ceiling without repeating. */
