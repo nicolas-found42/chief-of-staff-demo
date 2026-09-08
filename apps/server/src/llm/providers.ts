@@ -1196,10 +1196,11 @@ function restingRoutes(model: string): string[] {
 
 /**
  * Rest the route that served a failed call, where the failure belongs to the
- * route rather than to the request. A stalled stream, a repetition loop and a
- * capacity refusal all say this route cannot serve this call now; a refused
- * binding or an unusable answer shape says the request is wrong, and it would
- * be wrong on every route, so it rests nothing.
+ * route rather than to the request. A stalled stream, a repetition loop, a
+ * capacity refusal and an accepted-then-failed upstream error all say this
+ * route cannot serve this call now; a refused binding, an unusable answer
+ * shape, or an upstream error naming a 4xx fault says the request is wrong,
+ * and it would be wrong on every route, so those rest nothing.
  */
 function restFailedRoute(model: string, diagnostic: ModelBoundaryDiagnostic | null): void {
   const route = diagnostic?.upstreamServer;
@@ -1208,7 +1209,9 @@ function restFailedRoute(model: string, diagnostic: ModelBoundaryDiagnostic | nu
     diagnostic.classification === "repetition_loop" ||
     diagnostic.classification === "answer_overrun" ||
     diagnostic.classification === "request_timeout" ||
-    (diagnostic.classification === "http_error" && diagnostic.status === 429);
+    (diagnostic.classification === "http_error" && diagnostic.status === 429) ||
+    (diagnostic.classification === "upstream_error" &&
+      (diagnostic.upstreamCode === null || diagnostic.upstreamCode >= 500));
   if (!routeFailed) return;
   routeRest.set(routeRestKey(model, route), Date.now() + ROUTE_COOLDOWN_MS);
 }
