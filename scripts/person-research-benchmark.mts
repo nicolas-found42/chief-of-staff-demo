@@ -265,6 +265,15 @@ const reuseOnlyDir = arg("reuse-extraction");
 if (retryDir !== undefined && reuseOnlyDir !== undefined)
   throw new Error("--retry and --reuse-extraction are alternatives; pass one.");
 
+/* After the reuse classification: nothing to run anywhere means the caller
+   asked for a rebuild without research, which the plain flags already do. */
+const requireWork = (toRun: { slug: string }[]) => {
+  if (toRun.length === 0)
+    throw new Error(
+      "Nothing to run: every selected person is already carried. Re-run without --retry/--reuse-extraction to rebuild the report.",
+    );
+};
+
 const configPath = arg("config") ?? "workspace/config.json";
 const settings = new ConfigStore(resolve(configPath), false);
 settings.load();
@@ -395,16 +404,17 @@ if (retryDir !== undefined || reuseOnlyDir !== undefined) {
       `Skipping ${String(reuse.unstamped.length)} artifact(s) without a conditions stamp (pre-dating stamping): ${reuse.unstamped.slice(0, 5).join(", ")}\n`,
     );
   const eligibleSlugs = new Set(reuse.eligible.keys());
+  const nothingLeftAnywhere = (narrowed: { slug: string }[]) =>
+    narrowed.length === 0 && repeats === 1;
   carried = selected
     .filter((person) => eligibleSlugs.has(person.slug))
     .map((person) => reuse.eligible.get(person.slug)!.result);
   /* The report describes the whole requested selection — carried people are
-     real measurements — so only the evaluation loop narrows to the rest. */
+     real measurements — so only the evaluation loop narrows to the rest. A
+     fully carried repeat is legal (a resumed K=2 arm's first repeat): the
+     campaign throws only when no repeat has anything left to run. */
   toRun = selected.filter((person) => !eligibleSlugs.has(person.slug));
-  if (toRun.length === 0)
-    throw new Error(
-      "Nothing to run: every selected person is already carried. Re-run without --retry/--reuse-extraction to rebuild the report.",
-    );
+  if (nothingLeftAnywhere(toRun)) requireWork(toRun);
 }
 
 const configured = configurePipeline(pipeline, readPersonSource);
@@ -621,6 +631,22 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
       coverageGaps: coverageGapTotals(researchOutcomes),
     };
   };
+
+  if (toRun.length === 0 && repeat === 1 && repeats > 1) {
+    /* A resumed K=2 arm whose first repeat is fully carried: record it and
+       spend the fresh sampling where it belongs, on the later repeats. */
+    process.stdout.write(
+      `Repeat ${String(repeat)}: all ${String(selected.length)} people carried from the prior run.\n`,
+    );
+    executionStatus = "completed";
+    const validated = BenchmarkReportSchema.parse(
+      buildReport(status, statusDetail, executionStatus),
+    );
+    writeFileSync(join(outDir, `${stemRepeat}.json`), `${JSON.stringify(validated)}\n`);
+    writeFileSync(join(outDir, `${stemRepeat}.md`), `${renderReport(validated, selected)}\n`);
+    continue;
+  }
+  requireWork(toRun);
 
   const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-collection-"));
   try {
