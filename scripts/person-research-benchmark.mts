@@ -11,7 +11,12 @@ import {
   type PersonResearchOperationOutcome,
 } from "../packages/shared/src/index.js";
 import { ConfigStore } from "../apps/server/src/config.js";
-import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
+import {
+  makeCompleteJson,
+  MAX_RESTING_ROUTES,
+  ROUTE_COOLDOWN_MS,
+  ROUTE_REST_POLICY,
+} from "../apps/server/src/llm/providers.js";
 import { probeSourceEligibility } from "../apps/server/src/source-adapters/eligibility.js";
 import { readPersonSource } from "../apps/server/src/person-profile/research-readers.js";
 import { playwrightBrowserRenderer } from "../apps/server/src/source-adapters/browser.js";
@@ -513,6 +518,13 @@ const report: BenchmarkReport = {
       extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
       extractionRouteSort: "throughput",
       extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+      /* "unset" means no reasoning parameter is sent and provider defaults
+         apply. A reasoning send records its effort here instead. */
+      reasoningEffort: "unset",
+      reasoningExclude: "unset",
+      routeRestPolicy: ROUTE_REST_POLICY,
+      routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,
+      routeRestMaxRoutes: MAX_RESTING_ROUTES,
       planner: mode === "live-discovery" && pipeline === "expanded",
     },
     network: mode === "live-discovery" ? "live" : "fixed-documents",

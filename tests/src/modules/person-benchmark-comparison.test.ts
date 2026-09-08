@@ -103,6 +103,32 @@ it("declares a comparison with no measured pair not comparable", () => {
   expect(comparison.conditionChanges.join("\n")).toContain("no pair");
 });
 
+it("notes research-setting differences as condition changes without flipping comparability", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  baseline.provenance.researchSettings["reasoningEffort"] = "unset";
+  candidate.provenance.researchSettings["reasoningEffort"] = "low";
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.conditionChanges.join("\n")).toContain(
+    "research setting reasoningEffort: unset → low",
+  );
+  /* Settings differences are notes, not verdict inputs: recording a new
+     routing or reasoning condition must never flip comparability by itself. */
+  expect(comparison.comparable).toBe(true);
+});
+
+it("notes settings the baseline predates as absent rather than staying silent", () => {
+  const baseline = assessedReport();
+  const candidate = structuredClone(baseline);
+  delete baseline.provenance.researchSettings["reasoningEffort"];
+  candidate.provenance.researchSettings["reasoningEffort"] = "low";
+  const comparison = compareReports(baseline, candidate);
+  expect(comparison.conditionChanges.join("\n")).toContain(
+    "research setting reasoningEffort: absent → low",
+  );
+  expect(comparison.comparable).toBe(true);
+});
+
 /* Three shipped reports carried a table whose separator row had one cell
    fewer than its header (#271, #282) — markdown consumers rendered the
    columns misaligned and the missing count stayed unread. Within one table

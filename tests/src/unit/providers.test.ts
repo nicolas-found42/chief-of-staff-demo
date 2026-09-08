@@ -419,9 +419,9 @@ describe("providers", () => {
             ? { fail: new Error("SECRET provider text") }
             : {
                 /* A partial answer and then nothing at all. Keepalives used to
-         stand in for idleness here; since #232 they say the upstream
-         is alive and buffering, which is a different fixture and its
-         own test. This one is the connection going quiet. */
+       stand in for idleness here; since #232 they say the upstream
+       is alive and buffering, which is a different fixture and its
+       own test. This one is the connection going quiet. */
                 sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
@@ -513,8 +513,16 @@ describe("providers", () => {
       expect(retriedProvider).toEqual({ sort: "throughput", ignore: ["Novita"] });
       expect(events).toMatchObject([
         { attempt: 1, binding: "forced_tool_call", outcome: "retrying", delayMs: 500 },
-        { attempt: 2, binding: "forced_tool_call", outcome: "succeeded" },
+        {
+          attempt: 2,
+          binding: "forced_tool_call",
+          outcome: "succeeded",
+          providerIgnore: ["Novita"],
+        },
       ]);
+      /* The retrying event reports the routing attempt 1 was sent with — no
+         rest yet — while the success reports attempt 2's rest-skipping route. */
+      expect(events[0]).not.toHaveProperty("providerIgnore");
     } finally {
       vi.useRealTimers();
     }
@@ -550,15 +558,19 @@ describe("providers", () => {
        the same model carries no rest. */
     declarations.push(declaring("tools", "tool_choice"));
     responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const later: ModelAttemptEvent[] = [];
     await expect(
       complete({
         system: "S",
         user: "U",
         schema: ExtractionWireSchema,
         preferredBinding: "forced_tool_call",
+        retry: { onAttempt: (event) => later.push(event) },
       }),
     ).resolves.toEqual(RESULT);
     expect(calls[1].body.provider).toEqual({ sort: "throughput" });
+    expect(later).toHaveLength(1);
+    expect(later[0]).not.toHaveProperty("providerIgnore");
   });
 
   it("openrouter: persistent opted-in idle failures stop after one additional attempt", async () => {

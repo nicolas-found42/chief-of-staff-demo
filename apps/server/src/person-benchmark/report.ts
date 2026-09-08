@@ -314,10 +314,15 @@ export function compareReports(
   );
   note("mode", baseline.mode, candidate.mode);
   note("network", baseline.provenance.network, candidate.provenance.network);
-  for (const [key, value] of Object.entries(baseline.provenance.researchSettings))
+  /* Both sides' keys: a setting recorded only by the newer report (or only
+     by the older one) is still a condition difference, never silence. */
+  for (const key of new Set([
+    ...Object.keys(baseline.provenance.researchSettings),
+    ...Object.keys(candidate.provenance.researchSettings),
+  ]))
     note(
       `research setting ${key}`,
-      String(value),
+      String(baseline.provenance.researchSettings[key] ?? "absent"),
       String(candidate.provenance.researchSettings[key] ?? "absent"),
     );
 
