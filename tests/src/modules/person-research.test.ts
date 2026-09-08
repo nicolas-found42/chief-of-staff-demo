@@ -520,3 +520,184 @@ test("source revisions keep one work identity and dated current facts supersede 
   );
   expect(dossiers.getRevision(person.id, first.revision)?.claims[0].status).toBe("supported");
 });
+
+test("a lead trailing the read batch beyond the selection margin is decided, not carried as pending work", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-registration-"));
+  roots.push(root);
+  const dossiers = new PersonDossierStore(root);
+  const urls = Array.from({ length: 12 }, (_, index) => `https://example.com/page-${index}`);
+  const research = new PersonResearch({
+    dossiers,
+    search: async () =>
+      urls.map((url, rank) => ({
+        url,
+        title: rank < 2 ? "maya@example.com designed the Atlas scheduler." : "Unrelated listing",
+        snippet: rank < 2 ? "Contact maya@example.com." : "",
+      })),
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "Contact maya@example.com. Maya designed the Atlas scheduler.",
+    }),
+    complete: async () => ({
+      fullName: "Maya Chen",
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [
+        {
+          id: "scheduler",
+          section: "work",
+          statement: "Maya designed the Atlas scheduler.",
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [{ sourceId: "source", quote: "Maya designed the Atlas scheduler." }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const outcome = await research.run(
+    person,
+    researchAllowance({ maxModelCalls: 2, maxMilliseconds: 20000, readConcurrency: 1 }),
+  );
+  /* The bundle answered twelve deep. The head is read; the tail — everything
+     the operation's own ranking scores more than the selection margin below
+     the batch — is decided as surpassed rather than carried as work the
+     allowance can never reach, so unresolved leads stop dominating the
+     record (#239). */
+  const urlLeads = outcome.operation.leads.filter((lead) => lead.kind === "url");
+  expect(urlLeads).toHaveLength(12);
+  const rejected = urlLeads.filter((lead) => lead.disposition === "rejected");
+  expect(rejected).toHaveLength(10);
+  for (const lead of rejected) expect(lead.reason).toMatch(/selection margin/);
+  const investigated = urlLeads.filter((lead) => lead.disposition === "investigated");
+  expect(investigated.map((lead) => lead.target)).toEqual([
+    "https://example.com/page-0",
+    "https://example.com/page-1",
+  ]);
+  expect(urlLeads.filter((lead) => lead.disposition === "interrupted")).toHaveLength(0);
+});
+
+test("a lead selection keeps passing over is decided, and the planner is not asked while the batch is already full", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-backlog-"));
+  roots.push(root);
+  const dossiers = new PersonDossierStore(root);
+  const slug = (query: string) =>
+    query
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, 16);
+  let plannerCalls = 0;
+  const planRounds: number[] = [];
+  const research = new PersonResearch({
+    dossiers,
+    search: async (query) =>
+      [0, 1, 2, 3].map((index) => ({
+        url: `https://${slug(query)}.example.com/page-${index}`,
+        title: query,
+        snippet:
+          index < 2
+            ? "maya@example.com Maya Chen designed the Atlas scheduler."
+            : "Maya Chen listing",
+      })),
+    fetch: async (url) => ({
+      url,
+      status: 200,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: "Contact maya@example.com. Maya designed the Atlas scheduler.",
+    }),
+    plan: async (request) => {
+      plannerCalls += 1;
+      /* The round is embedded by planNextLeads in this same process; the
+         payload shape is the planner's own request contract. */
+      const payload = JSON.parse(request.user) as { round: number };
+      planRounds.push(payload.round);
+      return {
+        queries: [`"Maya Chen" planning round ${String(plannerCalls)}`],
+        urls: [
+          {
+            url: `https://planner-${String(plannerCalls)}.example.com/maya`,
+            why: "A specific page worth reading",
+          },
+        ],
+        targetCoverage: ["spoken-evidence"],
+        remainingQuestions: [],
+      };
+    },
+    complete: async () => ({
+      fullName: "Maya Chen",
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [
+        {
+          id: "scheduler",
+          section: "work",
+          statement: "Maya designed the Atlas scheduler.",
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [{ sourceId: "source", quote: "Maya designed the Atlas scheduler." }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ fullName: "Maya Chen", primaryEmail: "maya@example.com" });
+  const outcome = await research.run(
+    person,
+    researchAllowance({ maxModelCalls: 30, maxMilliseconds: 30000, readConcurrency: 1 }),
+  );
+  const urlLeads = outcome.operation.leads.filter((lead) => lead.kind === "url");
+  const rejected = urlLeads.filter((lead) => lead.disposition === "rejected");
+  const retired = rejected.filter((lead) => /selection margin/.test(lead.reason));
+  const interrupted = urlLeads.filter((lead) => lead.disposition === "interrupted");
+  /* Unresolved leads are no longer the dominant outcome: the backlog the
+     operation never got to is decided as surpassed, with the score and the
+     batch floor in the reason (#239). */
+  expect(retired.length).toBeGreaterThan(0);
+  expect(interrupted.length).toBeLessThan(rejected.length);
+  /* The throttle keeps the planner rare while the backlog is deep: without it
+     this scenario's unsatisfied areas would buy a call every round, so a
+     handful of calls over a run this long is the throttled contract, and the
+     first call cannot land on round 1 where the pool already filled the
+     batch (#239). */
+  expect(plannerCalls).toBeLessThanOrEqual(4);
+  expect(planRounds.every((round) => round >= 2)).toBe(true);
+});

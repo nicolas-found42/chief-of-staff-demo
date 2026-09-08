@@ -76,6 +76,8 @@ export function configurePipeline(
         readers: "html, text, documents, feeds, captions, social, records",
         planner: true,
         readConcurrency: 4,
+        leadPolicy:
+          "surpassed backlog retired beyond the selection margin; planner asked only when the pool cannot fill a batch",
       },
     };
   return {
@@ -111,8 +113,8 @@ export function configurePipeline(
             provenanceNote:
               "The incumbent pipeline had no reader for this format; the snippet is all it kept.",
             /* The record behind the version and rights was not retained here,
-               so carrying its provenance onto a search snippet would attach
-               them to text they never described. */
+           so carrying its provenance onto a search snippet would attach
+           them to text they never described. */
             sourceVersion: null,
             rights: null,
           };
@@ -124,6 +126,7 @@ export function configurePipeline(
       readers: "html, text",
       planner: false,
       readConcurrency: 1,
+      leadPolicy: "surpassed backlog retired beyond the selection margin; planner not configured",
       reconstruction:
         "Configured reconstruction of the pre-#228 pipeline, not the pre-#228 binary; identity, extraction prompt/binding selection and per-source retry behavior are today's in both arms.",
     },

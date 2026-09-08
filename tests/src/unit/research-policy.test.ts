@@ -8,6 +8,8 @@ import {
   PublicationGate,
   ResearchBudget,
   evaluateCompletion,
+  plannerIsWorthACall,
+  retireSurpassedLeads,
   selectReadBatch,
 } from "../../../apps/server/src/person-profile/research-policy";
 import { researchAllowance } from "../../../apps/server/src/person-profile/research";
@@ -159,6 +161,33 @@ describe("the collection policy", () => {
       },
     });
     expect(batch[0]?.target).toBe("https://fresh.example/maya-okafor");
+  });
+});
+describe("the backlog retirement policy", () => {
+  it("decides a lead trailing the batch floor by more than the margin", () => {
+    const trailing = lead("https://trailing.example/maya", {
+      id: "trailing",
+      selection: { score: 5.1, relevance: 1, independence: 2, coverageGap: 0 },
+    });
+    const surpassed = retireSurpassedLeads({ deferred: [trailing], batchFloor: 8.4, margin: 2 });
+    expect(surpassed.map((entry) => entry.id)).toEqual(["trailing"]);
+  });
+
+  it("keeps a near-miss lead pending — depth of discovery is never the reason a lead is dropped", () => {
+    const nearMiss = lead("https://near.example/maya", {
+      id: "near",
+      selection: { score: 8.3, relevance: 3, independence: 2, coverageGap: 0 },
+    });
+    expect(retireSurpassedLeads({ deferred: [nearMiss], batchFloor: 8.4, margin: 2 })).toHaveLength(
+      0,
+    );
+  });
+});
+
+describe("the planner throttle", () => {
+  it("spends the call only when the pending pool cannot fill the next batch", () => {
+    expect(plannerIsWorthACall({ pendingUrls: 1, batchSize: 2 })).toBe(true);
+    expect(plannerIsWorthACall({ pendingUrls: 2, batchSize: 2 })).toBe(false);
   });
 });
 

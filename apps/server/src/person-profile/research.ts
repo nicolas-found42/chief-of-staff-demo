@@ -48,6 +48,9 @@ import {
   PublicationGate,
   ResearchBudget,
   evaluateCompletion,
+  plannerIsWorthACall,
+  readBatchSize,
+  retireSurpassedLeads,
   selectReadBatch,
 } from "./research-policy.js";
 
@@ -83,6 +86,20 @@ const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
  * attributable instead of silently faster (#233).
  */
 export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
+
+/**
+ * How far below the round's read batch a deferred lead's score may fall before
+ * the deferral becomes a decision. Selection re-scores the whole pending pool
+ * every round, so a lead deferred this far under the batch floor has, by the
+ * operation's measured ranking, lost its case against the evidence the budget
+ * did read; resolving it `rejected` — with the score and the floor in its
+ * reason — keeps the unresolved tail from dominating the record and from
+ * turning every allowance-limited operation into an interruption (#239). The
+ * committed census the margin is measured against: read-batch scores start at
+ * p10 8.4 where the deferred pool's p90 sits at 6.35, while a near-miss lead
+ * trails its batch by well under a point and stays pending work.
+ */
+const SELECTION_RETIREMENT_MARGIN = 2;
 
 /**
  * The bounds one continuous research operation runs inside.
@@ -448,20 +465,53 @@ export class PersonResearch {
           leads.score(leadId, selection);
         },
       });
+      /* A deferral far enough below the batch becomes a decision: selection
+         re-scored the whole pool this round and the lead trails the batch's
+         own floor by more than the selection margin, so carrying it as
+         pending work would end every allowance-limited operation as an
+         interruption over a queue nothing would ever read (#239). A lead
+         within the margin stays pending — the near-miss band is work the
+         next round reaches once the head above it drains. */
+      const batchFloor = batch.length > 0 ? (batch[batch.length - 1]!.selection?.score ?? 0) : 0;
+      const surpassed = new Set(
+        retireSurpassedLeads({
+          deferred: notRead,
+          batchFloor,
+          margin: SELECTION_RETIREMENT_MARGIN,
+        }).map((entry) => entry.id),
+      );
       for (const deferred of notRead)
-        recorder.record({
-          stage: "selection",
-          code: "selection-deferred",
-          outcome: "skipped",
-          recovery: "none",
-          cause: "observed",
-          target: deferred.target,
-          targetKind: "url",
-          collector: "selection",
-          reason: `Deferred to a later round; selection score ${(deferred.selection?.score ?? 0).toFixed(2)} ranked below the batch.`,
-          impact: "Discovered but not yet read.",
-          remediation: "It stays pending; a later round reads it if the bounds allow.",
-        });
+        if (surpassed.has(deferred.id)) {
+          const reason = `Deferred by selection and trailing the read batch by more than the selection margin (score ${(deferred.selection?.score ?? 0).toFixed(2)} against the batch floor ${batchFloor.toFixed(2)}); the read budget goes to evidence the operation's own ranking prefers.`;
+          leads.resolve(deferred.id, "rejected", reason);
+          recorder.record({
+            stage: "selection",
+            code: "lead-rejected",
+            outcome: "skipped",
+            recovery: "none",
+            cause: "observed",
+            target: deferred.target,
+            targetKind: "url",
+            collector: "selection",
+            reason,
+            impact: "Considered and deliberately not read.",
+            remediation:
+              "Its scores stay on the lead record; a fresh operation starts with no deferral history.",
+          });
+        } else
+          recorder.record({
+            stage: "selection",
+            code: "selection-deferred",
+            outcome: "skipped",
+            recovery: "none",
+            cause: "observed",
+            target: deferred.target,
+            targetKind: "url",
+            collector: "selection",
+            reason: `Deferred to a later round; selection score ${(deferred.selection?.score ?? 0).toFixed(2)} ranked below the batch.`,
+            impact: "Discovered but not yet read.",
+            remediation: "It stays pending; a later round reads it if the bounds allow.",
+          });
 
       const reads: PendingRead[] = batch.map((lead) => {
         const context = leadContext.get(lead.id);
@@ -971,7 +1021,16 @@ export class PersonResearch {
         const added = leads.add({ kind: "url", target: url, origin: "expansion" });
         if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 3 });
       }
-      if (this.deps.plan && unsatisfiedAreas.length > 0 && budget.takeModelCall()) {
+      const pendingUrls = leads.pending().filter((lead) => lead.kind !== "query").length;
+      /* The planner is the operation's scarcest-allowance spend: asked only
+         when the pending pool cannot already fill the next read batch, so a
+         model call buys aims, not a longer queue (#239). */
+      if (
+        this.deps.plan &&
+        unsatisfiedAreas.length > 0 &&
+        plannerIsWorthACall({ pendingUrls, batchSize: readBatchSize(allowance.readConcurrency) }) &&
+        budget.takeModelCall()
+      ) {
         try {
           const plan = await planNextLeads(this.deps.plan, {
             profile,
