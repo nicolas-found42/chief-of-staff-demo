@@ -201,14 +201,20 @@ export function retireSurpassedLeads(input: {
  * Planner throttle: whether expansion has earned a planner model call.
  *
  * The planner exists to aim discovery at coverage the evidence has not
- * reached. When the pending pool already holds a read batch's worth of URLs,
- * the next round is fully loaded and the deterministic derivation still runs,
- * so the call would buy a longer queue rather than better aims — and model
- * calls are the operation's scarcest allowance. Asked only when the pool
- * cannot fill the next batch.
+ * reached. When the pending pool already holds a read batch's worth of
+ * readable leads, the next round is fully loaded and the deterministic
+ * derivation still runs, so the call would buy a longer queue rather than
+ * better aims — and model calls are the operation's scarcest allowance.
+ * Asked only when the pool cannot fill the next batch. The count is every
+ * readable lead — urls, records, media and documents, exactly the pool
+ * `selectReadBatch` draws its candidates from — not urls alone: a pool of
+ * pending documents fills a read batch just as a pool of pending urls does.
  */
-export function plannerIsWorthACall(input: { pendingUrls: number; batchSize: number }): boolean {
-  return input.pendingUrls < input.batchSize;
+export function plannerIsWorthACall(input: {
+  pendingReadable: number;
+  batchSize: number;
+}): boolean {
+  return input.pendingReadable < input.batchSize;
 }
 
 /**

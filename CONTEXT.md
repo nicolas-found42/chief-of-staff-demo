@@ -445,6 +445,13 @@ unfinished work that stopped short of its plan. A later refresh investigates cha
 does not imply that an unfinished investigation was completed.
 _Avoid_: Enrichment pass, daily research allowance, research refresh (for unfinished work)
 
+**Extraction Part**:
+One bounded slice of a retained document — at most 16k characters, at most four per
+document — that a Person Research Operation extracts in its own model call, so each call
+stays small enough for a cheap model to answer reliably. Every part of one document
+contributes to that document's single retained source.
+_Avoid_: Chunk (an implementation word), batch (a read batch is leads, not text slices)
+
 **Research Lead**:
 One thing a Person Research Operation learned it could investigate: a query, a URL, a record, a
 media item or a document, carrying where it came from and where it ended. Completion is defined

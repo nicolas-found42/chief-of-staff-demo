@@ -69,7 +69,7 @@ export function configurePipeline(
       search: createPublicSearch(undefined, undefined, {
         ...(options.searxngUrl !== undefined ? { searxngUrl: options.searxngUrl } : {}),
       }),
-      settings: { profileCalls: 60, profileMilliseconds: 900_000, readConcurrency: 4 },
+      settings: { profileCalls: 180, profileMilliseconds: 900_000, readConcurrency: 4 },
       conditions: {
         providers: "full bundle",
         mergedLimit: 60,
@@ -78,6 +78,11 @@ export function configurePipeline(
         readConcurrency: 4,
         leadPolicy:
           "surpassed backlog retired beyond the selection margin; planner asked only when the pool cannot fill a batch",
+        extractionParts:
+          "documents extracted in parts of at most 16k characters, at most 4 parts per document",
+        smallCallCeiling: "120s absolute ceiling on discovery, extraction-part and planning calls",
+        bindingRecovery:
+          "an answer that fails to parse under response_format steps the binding down; the planner prefers forced tool calls",
       },
     };
   return {

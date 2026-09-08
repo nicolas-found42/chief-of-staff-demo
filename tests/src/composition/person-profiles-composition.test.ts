@@ -47,7 +47,21 @@ function compose(overrides: Partial<PersonProfilesCompositionDeps> = {}): Harnes
   const people = composePersonProfiles({
     workspaceDir: root,
     search: async () => [],
-    complete: () => async () => ({ fullName: null, claims: [] }),
+    /* A schema-valid empty extraction: a shape-invalid answer is a retryable
+       part failure under ADR-0074, so the default mock must answer the
+       dossier schema, not merely resemble it. */
+    complete: () => async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
     confirmedTranscripts: (profileId) => evidence.get(profileId) ?? [],
     transcriptStillConfirmed: (profileId, transcriptId, checksum) =>
       (evidence.get(profileId) ?? []).some(
@@ -1360,7 +1374,9 @@ describe("the Person Profiles composition", () => {
     ]);
     await h.people.queue.tick();
     expect(h.people.queue.status().jobs).toHaveLength(1);
-    expect(h.people.dossiers.get(profile.id)?.sourceIds).toHaveLength(1);
+    /* A schema-valid extraction retains the document twice — before the call
+       (retryable) and at publication — so pin the count only from below. */
+    expect(h.people.dossiers.get(profile.id)!.sourceIds.length).toBeGreaterThan(0);
 
     h.people.profiles.privacyDelete(profile.id, { confirmation: "DELETE PROFILE" });
 
@@ -1439,7 +1455,18 @@ it("broadens empty discovery and retains useful evidence beyond the first readin
         body: `Maya research record ${url.endsWith("/59") ? "including the ocean sensor contribution" : "listing"}.`,
       }),
     },
-    complete: () => async () => ({ fullName: "Maya", employer: null, claims: [] }),
+    complete: () => async () => ({
+      fullName: "Maya",
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
   });
   const profile = h.people.research.startFor({ fullName: "Maya" });
   const outcome = await h.people.research.runNow(profile.id);

@@ -13,6 +13,14 @@ import type { CompleteJson } from "../llm/providers.js";
 import { normalizeQuote } from "./ambiguity.js";
 
 /**
+ * The thinking depth every judge call asks for. Judges are benchmark-only
+ * machinery — the product never runs them — so the cheap system under test
+ * is measured by the strongest reasoning the judge model offers, and
+ * population-scale completeness is measured rather than withheld (ADR-0074).
+ */
+export const JUDGE_REASONING_EFFORT = "high";
+
+/**
  * The judge's own version. A comparison holds it fixed across both runs.
  * `.9` adds the meaning contract of issue #236: paraphrase and cross-language
  * matches are decided rather than parked, and a verdict that names a claim
@@ -150,7 +158,11 @@ async function judgeReply<T extends z.ZodType>(
   ): Promise<JudgeAttempt<z.infer<T>>> => {
     try {
       const parsed = request.schema.parse(
-        await complete({ ...request, user: JSON.stringify(payload) }),
+        await complete({
+          ...request,
+          reasoningEffort: JUDGE_REASONING_EFFORT,
+          user: JSON.stringify(payload),
+        }),
       ) as z.infer<T>;
       const failure = validate(parsed);
       return failure === null ? { usable: true, parsed } : { usable: false, parsed, failure };

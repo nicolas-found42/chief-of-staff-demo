@@ -100,6 +100,7 @@ export const PersonResearchFailureCodeSchema = z.enum([
   "publication-conflict",
   // Recovery bookkeeping
   "retrieval-recovered",
+  "model-call-metrics",
   "unknown-cause",
 ]);
 export type PersonResearchFailureCode = z.infer<typeof PersonResearchFailureCodeSchema>;
@@ -135,6 +136,19 @@ export const PersonResearchObservationSchema = z.object({
   retryAfterMilliseconds: z.number().nonnegative().optional(),
   /** A bounded, sanitized excerpt of what was actually received. */
   excerpt: z.string().max(2000).optional(),
+  /** Wall time of one logical model call, measured by its caller. */
+  modelCallDurationMilliseconds: z.number().nonnegative().optional(),
+  /** Request text characters of one logical model call, measured by its caller. */
+  modelInputCharacters: z.number().nonnegative().optional(),
+  /** Answer characters of one logical model call, measured by its caller. */
+  modelOutputCharacters: z.number().nonnegative().optional(),
+  /** Tokens the wire reported for the succeeded attempt, when it named any. */
+  modelUsageTokens: z
+    .object({
+      input: z.number().nonnegative().nullable(),
+      output: z.number().nonnegative().nullable(),
+    })
+    .optional(),
 });
 export type PersonResearchObservation = z.infer<typeof PersonResearchObservationSchema>;
 

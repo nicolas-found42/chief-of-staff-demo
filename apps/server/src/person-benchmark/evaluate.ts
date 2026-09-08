@@ -306,7 +306,13 @@ export async function assessPerson(
     return evidence.judge({
       ...request,
       retry: {
-        onAttempt: (observation) => modelAttempts.push({ call, subject: person.slug, observation }),
+        onAttempt: (observation) =>
+          modelAttempts.push({
+            call,
+            subject: person.slug,
+            observation,
+            inputCharacters: request.system.length + request.user.length,
+          }),
       },
     });
   };

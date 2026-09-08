@@ -348,8 +348,10 @@ export type PersonDossier = z.infer<typeof PersonDossierSchema>;
 export const PersonResearchSettingsSchema = z.object({
   paused: z.boolean(),
   concurrency: z.number().int().min(1).max(4),
-  /** Model calls one operation may spend before it is bounded. */
-  profileCalls: z.number().int().min(1).max(400).default(60),
+  /** Model calls one operation may spend before it is bounded. The default
+   * carries the small-call rebalance (ADR-0074): extraction reads a document
+   * in bounded parts, so wall clock stays the binding constraint. */
+  profileCalls: z.number().int().min(1).max(400).default(180),
   /** Wall-clock backstop for one operation. */
   profileMilliseconds: z.number().int().min(1000).max(3600000).default(900000),
   /** Sources read at once inside one operation. */

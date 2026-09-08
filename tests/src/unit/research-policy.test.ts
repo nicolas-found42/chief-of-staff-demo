@@ -186,8 +186,12 @@ describe("the backlog retirement policy", () => {
 
 describe("the planner throttle", () => {
   it("spends the call only when the pending pool cannot fill the next batch", () => {
-    expect(plannerIsWorthACall({ pendingUrls: 1, batchSize: 2 })).toBe(true);
-    expect(plannerIsWorthACall({ pendingUrls: 2, batchSize: 2 })).toBe(false);
+    expect(plannerIsWorthACall({ pendingReadable: 1, batchSize: 2 })).toBe(true);
+    expect(plannerIsWorthACall({ pendingReadable: 2, batchSize: 2 })).toBe(false);
+  });
+
+  it("counts every readable lead, not urls alone — documents fill a batch too", () => {
+    expect(plannerIsWorthACall({ pendingReadable: 3, batchSize: 2 })).toBe(false);
   });
 });
 

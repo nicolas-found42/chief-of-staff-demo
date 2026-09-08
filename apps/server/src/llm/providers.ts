@@ -8,6 +8,7 @@ import {
   type ModelBoundaryDiagnostic,
   DEFAULT_OLLAMA_BASE_URL,
   MODEL_REQUEST_TIMEOUT_MS,
+  MODEL_SMALL_REQUEST_TIMEOUT_MS,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
   MODEL_STREAM_MAX_ANSWER_CHARS,
   MODEL_STREAM_SILENT_TIMEOUT_MS,
@@ -52,6 +53,14 @@ export interface CompletionRequest {
     /** Optional lifecycle fence, rechecked after backoff before another request. */
     canRetry?: () => boolean;
   };
+  /**
+   * This call's own absolute ceiling, in place of the seam's 300 s default.
+   * Small structured calls — a bounded slice in, a bounded answer out — run
+   * under `MODEL_SMALL_REQUEST_TIMEOUT_MS` so a slow-drip generation cannot
+   * hold a slice of an operation's budget for five minutes (ADR-0074). The
+   * stream ceilings inside it are unchanged.
+   */
+  absoluteCeilingMs?: number;
   /**
    * Sampling temperature. Omitted → the upstream's own default, exactly as
    * before; extraction Modules set 0 so a transcript yields one extraction,
@@ -113,6 +122,9 @@ export const STREAM_IDLE_TIMEOUT_MS = MODEL_STREAM_IDLE_TIMEOUT_MS;
 /** The most answer one streamed call may deliver. Exported so a test can reach it cheaply. */
 export const STREAM_MAX_ANSWER_CHARS = MODEL_STREAM_MAX_ANSWER_CHARS;
 
+/** The small-call absolute ceiling. Exported so a test can drive it deterministically. */
+export const SMALL_REQUEST_TIMEOUT_MS = MODEL_SMALL_REQUEST_TIMEOUT_MS;
+
 /**
  * An answer that will not finish, however it shows itself: repeating one short
  * unit, or running past the most one call may deliver. Both are the stream
@@ -124,6 +136,9 @@ const RUNAWAY_ANSWER = new Set<string>(["repetition_loop", "answer_overrun"]);
 interface RequestDeadline {
   signal: AbortSignal;
   timeRemaining(): number;
+  /* This call's effective absolute ceiling: the request's own override, or
+     the seam default. Recovery paths name it when a ceiling fires. */
+  absoluteCeilingMs: number;
   /* The seam stamps `attempt`, `binding` and who-answered centrally in
      `withinRequestCeiling`, so recovery paths below name what they tried
      without restating it per call site. */
@@ -504,7 +519,7 @@ async function postJson(
       throw modelBoundaryFailure({
         call,
         classification: "request_timeout",
-        timeoutMs: REQUEST_TIMEOUT_MS,
+        timeoutMs: deadline.absoluteCeilingMs,
       });
     }
     throw modelBoundaryFailure({ call, classification: "transport_failure" });
@@ -576,7 +591,14 @@ async function postSseStream(
       observed.status = response.status;
       deadline.observed({ status: response.status, bodyBytes: 0 });
     } catch (error) {
-      throw requestTimeoutOrTransport(call, deadline.signal, error, observed, firedCeiling);
+      throw requestTimeoutOrTransport(
+        call,
+        deadline.signal,
+        deadline.absoluteCeilingMs,
+        error,
+        observed,
+        firedCeiling,
+      );
     }
     if (response.status < 200 || response.status >= 300) {
       /* Classify exactly like postJson: the refusal body carries the facts. */
@@ -727,7 +749,14 @@ async function postSseStream(
       if (!read.ok) {
         /* The abort's origin names the timeout: the seam's ceiling or the idle
            timer — which, before the first token, is also the first-token cap. */
-        throw requestTimeoutOrTransport(call, deadline.signal, read.error, observed, firedCeiling);
+        throw requestTimeoutOrTransport(
+          call,
+          deadline.signal,
+          deadline.absoluteCeilingMs,
+          read.error,
+          observed,
+          firedCeiling,
+        );
       }
       if (read.chunk.done) break;
       observed.bodyBytes += read.chunk.value.byteLength;
@@ -875,6 +904,7 @@ function reasoningLength(delta: object): number {
 function requestTimeoutOrTransport(
   call: ModelCall,
   ceilingSignal: AbortSignal,
+  absoluteCeilingMs: number,
   error: unknown,
   observed: { status?: number; bodyBytes: number; upstreamServer?: string } = { bodyBytes: 0 },
   firedCeiling: number | null = null,
@@ -884,7 +914,7 @@ function requestTimeoutOrTransport(
       ...observed,
       call,
       classification: "request_timeout",
-      timeoutMs: REQUEST_TIMEOUT_MS,
+      timeoutMs: absoluteCeilingMs,
     });
   }
   if (error instanceof Error && error.name === "AbortError") {
@@ -902,7 +932,7 @@ function requestTimeoutOrTransport(
       ...observed,
       call,
       classification: "request_timeout",
-      timeoutMs: REQUEST_TIMEOUT_MS,
+      timeoutMs: absoluteCeilingMs,
     });
   }
   return modelBoundaryFailure({ ...observed, call, classification: "transport_failure" });
@@ -1675,22 +1705,27 @@ async function openAiCompatibleComplete(
       fireUsage(deadline, call, openAiUsage(reply.payload));
       return readChatResultShape(reply);
     } catch (error) {
-      /* Some upstreams answer `finish_reason: stop` with no tool call at all
-         under a forced named function, doing the task in content instead
-         (measured: gpt-oss-20b, north-mini-code). That answer is unusable at
-         this binding and ordinary at the next one, so it steps down rather
-         than ending the call. */
+      /* Two measured signatures say the answer is unusable at this binding and
+         ordinary at the next one, so either steps down rather than ending the
+         call. Some upstreams answer `finish_reason: stop` with no tool call at
+         all under a forced named function, doing the task in content instead
+         (gpt-oss-20b, north-mini-code) — unusable shape with content
+         populated. And a declared `response_format` whose answer field holds
+         prose did the task in the one field the binding does not constrain
+         (mercury, eight times in one run — #239's addendum): at that binding a
+         non-parsing answer is a binding question, not a dead end. Malformed
+         tool-call arguments at a tool binding are different in kind — the
+         reader's first-call rule already discarded them deliberately — so
+         they keep their report (ADR-0074). */
       const diagnostic = modelBoundaryDiagnostic(error);
       if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic ?? null);
-      if (
-        index < ladder.length - 1 &&
-        !deadline.signal.aborted &&
-        diagnostic?.classification === "unusable_shape" &&
-        /* The measured signature: the task was done, in `content`, while the
-           binding's own field is empty. An answer that is empty everywhere is
-           not going to be better at the next binding, and keeps its report. */
-        diagnostic.populatedFields.some((field) => field.endsWith(".content"))
-      ) {
+      const shapeRecoverable =
+        (diagnostic?.classification === "answer_not_json" && call.binding === "response_format") ||
+        (diagnostic?.classification === "unusable_shape" &&
+          /* An answer that is empty everywhere is not going to be better at
+             the next binding, and keeps its report. */
+          diagnostic.populatedFields.some((field) => field.endsWith(".content")));
+      if (index < ladder.length - 1 && !deadline.signal.aborted && shapeRecoverable) {
         deadline.reportAttempt({
           outcome: "retrying",
           diagnostic,
@@ -2013,11 +2048,12 @@ function initialCall(cfg: LlmConfig): ModelCall {
 
 async function withinRequestCeiling<T>(
   cfg: LlmConfig,
-  retry: CompletionRequest["retry"],
+  request: CompletionRequest,
   work: (deadline: RequestDeadline) => Promise<T>,
 ): Promise<T> {
   const controller = new AbortController();
-  const expiresAt = Date.now() + REQUEST_TIMEOUT_MS;
+  const ceilingMs = request.absoluteCeilingMs ?? REQUEST_TIMEOUT_MS;
+  const expiresAt = Date.now() + ceilingMs;
   let call = initialCall(cfg);
   let attempt = 0;
   let terminalReported = false;
@@ -2025,7 +2061,7 @@ async function withinRequestCeiling<T>(
   const reportAttempt: RequestDeadline["reportAttempt"] = (event) => {
     if (!attempt || terminalReported) return;
     if (event.outcome !== "retrying") terminalReported = true;
-    retry?.onAttempt({
+    request.retry?.onAttempt({
       ...event,
       attempt,
       binding: call.binding,
@@ -2066,7 +2102,7 @@ async function withinRequestCeiling<T>(
         ...observed,
         call,
         classification: "request_timeout",
-        timeoutMs: REQUEST_TIMEOUT_MS,
+        timeoutMs: ceilingMs,
       });
       /* A route that held the whole call and never finished is exactly the
          route the next call should not be given, and this ceiling is the one
@@ -2084,7 +2120,7 @@ async function withinRequestCeiling<T>(
       } catch (error) {
         reject(error instanceof Error ? error : new Error("Model attempt observer failed."));
       }
-    }, REQUEST_TIMEOUT_MS);
+    }, ceilingMs);
   });
   try {
     return await Promise.race([
@@ -2094,13 +2130,14 @@ async function withinRequestCeiling<T>(
         (deadline = {
           signal: controller.signal,
           timeRemaining: () => Math.max(0, expiresAt - Date.now()),
+          absoluteCeilingMs: ceilingMs,
           reportAttempt,
           calling(next) {
             if (controller.signal.aborted)
               throw modelBoundaryFailure({
                 call: next,
                 classification: "request_timeout",
-                timeoutMs: REQUEST_TIMEOUT_MS,
+                timeoutMs: ceilingMs,
               });
             attempt += 1;
             terminalReported = false;
@@ -2155,7 +2192,7 @@ export function makeCompleteJson(cfg: LlmConfig, mockResultPath: string): Comple
         ...request,
         system: request.system + wireNameLegend(compacted.names),
       };
-    const answered = withinRequestCeiling(cfg, request.retry, async (deadline) => {
+    const answered = withinRequestCeiling(cfg, request, async (deadline) => {
       switch (cfg.provider) {
         case "openai":
           return openaiComplete(cfg, request, schema, deadline);

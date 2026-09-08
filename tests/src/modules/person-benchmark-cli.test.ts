@@ -362,6 +362,7 @@ function eligibleArtifact() {
       researchModel: "mock",
       promptVersion: "2026-09-06.4",
       reasoningEffort: "low",
+      judgeReasoningEffort: "high",
     },
     result: person,
   });
