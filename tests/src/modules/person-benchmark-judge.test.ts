@@ -158,6 +158,58 @@ it("assesses recovery and overclaims beyond claim 120 with complete passages and
   );
 });
 
+/** The durable rationale for one reply, asserting the record the run keeps. */
+async function recordedRationale(rationale: string): Promise<string> {
+  const { person, dossier, sources } = fixture();
+  const result = await judgePerson(
+    async ({ user }) =>
+      user.includes('"references":')
+        ? {
+            judgements: [
+              {
+                factId: person.facts[0].id,
+                verdict: "recovered",
+                evidence: dossier.claims[120].statement,
+                claimId: "claim-120",
+                rationale,
+              },
+            ],
+          }
+        : {
+            understanding: 1,
+            remainingQuestions: 0,
+            conversationReadiness: 1,
+            rationale: "Reviewed support.",
+            uncertain: false,
+            overclaims: [],
+          },
+    person,
+    dossier,
+    sources,
+  );
+  expect(result.complete).toBe(true);
+  expect(result.judgements[0].verdict).toBe("recovered");
+  return result.judgements[0].rationale;
+}
+
+it("passes an exact-fit rationale through to the record unchanged", async () => {
+  // 998 ASCII units plus one two-unit emoji: exactly the 1000-unit ceiling.
+  const exact = "x".repeat(998) + String.fromCodePoint(0x1f600);
+  expect(await recordedRationale(exact)).toBe(exact);
+});
+
+it("clips an over-long rationale to the schema ceiling", async () => {
+  const overlong = "Long. " + "y".repeat(1400);
+  expect(await recordedRationale(overlong)).toBe(overlong.slice(0, 1000));
+});
+
+it("drops a whole surrogate pair rather than half when it straddles the ceiling", async () => {
+  const straddling = "x".repeat(999) + `${String.fromCodePoint(0x1f600)} excluded`;
+  const recorded = await recordedRationale(straddling);
+  expect(recorded).toBe("x".repeat(999));
+  expect(recorded).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+});
+
 it("marks a saturated overclaim response incomplete while retaining its findings", async () => {
   const { person, dossier, sources } = fixture();
   const result = await judgePerson(
