@@ -562,7 +562,9 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
         evaluated: merged.map((result) => result.slug),
         skipped,
       },
-      ...(retryDir !== undefined || reuseOnlyDir !== undefined
+      /* The resume split describes the repeat that carried people — later
+         repeats sampled fresh and record nothing carried. */
+      ...(repeat === 1 && (retryDir !== undefined || reuseOnlyDir !== undefined)
         ? {
             resume: {
               carriedPeople: carried.map((person) => person.slug),
