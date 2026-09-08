@@ -106,7 +106,7 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
     runIds: foundSorted.map(({ report }) => report.runId),
     mode: first.mode,
     pipeline: first.provenance.pipeline,
-    repeats: found.length,
+    repeats: foundSorted.length,
     people,
     ci,
     totals: {

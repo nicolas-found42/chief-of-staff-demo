@@ -77,6 +77,33 @@ it("pairs repeat reports by their -rN suffix and averages per person", () => {
   }
 });
 
+it("treats the newest run id as the arm and ignores older runs beside it", () => {
+  const older = scoredReport([0.25, 0.75]);
+  older.runId = "olderaaa00000001";
+  older.provenance.finishedAt = "2026-09-08T08:00:00.000Z";
+  const newer1 = scoredReport([0.5, 0.5]);
+  newer1.runId = "newerbbb00000002";
+  newer1.provenance.finishedAt = "2026-09-08T09:00:00.000Z";
+  const newer2 = scoredReport([0.75, 0.25]);
+  newer2.runId = "newerbbb00000002";
+  newer2.provenance.finishedAt = "2026-09-08T09:30:00.000Z";
+  /* A retried arm writes its fresh run beside the interrupted one: one old
+     single report and two -rN reports of the new run share the directory. */
+  const dir = armDirectory("mixed", {
+    "fixed-documents-expanded-olderrun01.json": older,
+    [R1]: newer1,
+    [R2]: newer2,
+  });
+  try {
+    const stats = buildArmStats(dir)!;
+    expect(stats.repeats).toBe(2);
+    expect(stats.runIds).toEqual(["newerbbb00000002", "newerbbb00000002"]);
+    expect(stats.people[0].scores).toEqual([0.5, 0.75]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 it("skips files that are not arm reports and returns null for a report-less directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "benchmark-armstats-empty-"));
   try {
