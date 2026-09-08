@@ -38,8 +38,10 @@ const CITATION_QUOTE_MIN_LENGTH = 20;
  * stalls on it (#304). The judge is therefore never told the ceiling, so a
  * verbose rationale is an expected reply rather than a malformed one — and
  * rejecting it discarded the whole phase, verdicts included, over prose that
- * carries no matching semantics. `evaluatePerson` already clips a rationale to
- * the same ceiling downstream.
+ * carries no matching semantics. Downstream display clips rationales again at
+ * a looser bound (judgement rationales to 2000 in `evaluatePerson`, the
+ * usefulness rationale to 4000 here), so the schema ceiling governs storage,
+ * not rendering.
  *
  * Only prose is clipped here. `factId`, `claimId`, `evidence` and `statement`
  * are identifiers and verbatim quotations that citation matching reads, so a
@@ -123,6 +125,14 @@ export interface JudgeResult {
  * last parsed reply is returned so already-valid findings are not
  * discarded along with the invalid ones.
  */
+/** One judge attempt: usable, or not with the reason named. A null parsed
+ *  reply only ever pairs with a failure string; the phase record below
+ *  narrows on `parsed === null` instead of masking that with fallbacks. */
+type JudgeAttempt<T> =
+  | { usable: true; parsed: T }
+  | { usable: false; parsed: null; failure: string }
+  | { usable: false; parsed: T; failure: string };
+
 async function judgeReply<T extends z.ZodType>(
   complete: CompleteJson,
   request: {
@@ -134,28 +144,38 @@ async function judgeReply<T extends z.ZodType>(
   user: Record<string, unknown>,
   validate: (parsed: z.infer<T>) => string | null,
   rejection: (failure: string) => string,
-): Promise<{ parsed: z.infer<T> | null; failure: string | null }> {
-  let parsed: z.infer<T> | null = null;
-  let failure: string | null = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+): Promise<{ parsed: null; failure: string } | { parsed: z.infer<T>; failure: string | null }> {
+  const attemptReply = async (
+    payload: Record<string, unknown>,
+  ): Promise<JudgeAttempt<z.infer<T>>> => {
     try {
-      const payload =
-        attempt === 0 ? user : { ...user, rejectedReply: rejection(failure ?? "unusable reply") };
-      const reply = request.schema.parse(
+      const parsed = request.schema.parse(
         await complete({ ...request, user: JSON.stringify(payload) }),
       ) as z.infer<T>;
-      parsed = reply;
-      failure = validate(parsed);
-      if (failure === null) return { parsed, failure: null };
+      const failure = validate(parsed);
+      return failure === null ? { usable: true, parsed } : { usable: false, parsed, failure };
     } catch (error) {
-      /* A throw on the correction attempt must not erase a parsed first
-         reply: the last parsed reply stands, and its own validation failure
-         is the phase's record. Only a throw with nothing parsed — both
-         attempts unusable at the boundary — makes the throw the failure. */
-      if (parsed === null) failure = error instanceof Error ? error.message : String(error);
+      return {
+        usable: false,
+        parsed: null,
+        failure: error instanceof Error ? error.message : String(error),
+      };
     }
-  }
-  return { parsed, failure };
+  };
+
+  const first = await attemptReply(user);
+  if (first.usable) return { parsed: first.parsed, failure: null };
+  const second = await attemptReply({ ...user, rejectedReply: rejection(first.failure) });
+  if (second.usable) return { parsed: second.parsed, failure: null };
+  /* A second unusable reply stands as the phase's record. When the
+     correction attempt threw at the boundary, the last parsed reply stands
+     with its own validation failure; only a throw with nothing parsed — both
+     attempts unusable — makes the last throw's message the failure. */
+  if (second.parsed === null)
+    return first.parsed === null
+      ? { parsed: null, failure: second.failure }
+      : { parsed: first.parsed, failure: first.failure };
+  return { parsed: second.parsed, failure: second.failure };
 }
 
 const SUPPORT_REJECTION =
@@ -221,7 +241,7 @@ export async function judgePerson(
     effectiveTo: fact.effectiveTo,
   }));
 
-  const { parsed: recovery, failure: referenceFailure } = await judgeReply(
+  const recoveryReply = await judgeReply(
     complete,
     {
       schema: RecoverySchema,
@@ -241,8 +261,9 @@ export async function judgePerson(
     (failure) =>
       `Your previous reply was rejected: ${failure} Return exactly one verdict for every factId in the references; do not omit, repeat or invent fact ids.`,
   );
-  if (recovery === null)
-    throw new Error(referenceFailure ?? "The judge returned no usable recovery reply.");
+  if (recoveryReply.parsed === null) throw new Error(recoveryReply.failure);
+  const recovery = recoveryReply.parsed;
+  const referenceFailure = recoveryReply.failure;
 
   const byFact = new Map(recovery.judgements.map((entry) => [entry.factId, entry]));
   const judgements: BenchmarkJudgement[] = person.facts.map((fact) => {
@@ -326,7 +347,7 @@ export async function judgePerson(
         : claim.citations.some((citation) => citation.citationIndex === entry.citationIndex))
     );
   };
-  const { parsed: assessment, failure: assessmentError } = await judgeReply(
+  const assessmentReply = await judgeReply(
     complete,
     {
       schema: AssessmentSchema,
@@ -349,12 +370,11 @@ export async function judgePerson(
     (failure) =>
       `Your previous reply was rejected: ${failure} Every overclaim's claimId must name a dossier claim, its statement must be a verbatim excerpt of that claim's statement text, and its citationIndex must select one of that claim's citations.`,
   );
-  if (assessment === null) {
-    const failure =
-      `Judge support/usefulness assessment failed: ${assessmentError ?? "unknown error"}`.slice(
-        0,
-        2000,
-      );
+  if (assessmentReply.parsed === null) {
+    const failure = `Judge support/usefulness assessment failed: ${assessmentReply.failure}`.slice(
+      0,
+      2000,
+    );
     return {
       complete: false,
       incompleteReason: failure,
@@ -370,6 +390,8 @@ export async function judgePerson(
       },
     };
   }
+
+  const assessment = assessmentReply.parsed;
   const unresolvedFindings: BenchmarkOverclaim[] = assessment.overclaims
     .filter((entry) => !validFinding(entry))
     .map((entry) => ({ ...entry, citedSourceId: null, citedQuote: null, reviewRequired: true }));
