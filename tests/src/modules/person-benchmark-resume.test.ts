@@ -131,6 +131,26 @@ it("judges the latest assessment per slug: a superseded mismatch no longer refus
   }
 });
 
+it("carries the original when the newest artifact is only a reassessment", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-resume-"));
+  try {
+    const original = artifact((candidate) => {
+      completed(candidate);
+      candidate.assessedAt = "2026-09-08T10:00:00.000Z";
+    });
+    const reassessment = artifact((candidate) => {
+      candidate.assessedAt = "2026-09-08T12:00:00.000Z";
+      candidate.reassessmentOf = "priorrun000000";
+    });
+    writeArtifacts(dir, [original, reassessment]);
+    const reuse = loadReusable(dir, CONDITIONS);
+    expect(reuse.eligible.size).toBe(1);
+    expect(reuse.mismatched).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 it("refuses on the latest assessment alone when it mismatches", () => {
   const dir = mkdtempSync(join(tmpdir(), "benchmark-resume-"));
   try {
