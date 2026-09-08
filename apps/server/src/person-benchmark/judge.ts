@@ -28,6 +28,31 @@ export const JUDGE_VERSION = "2026-09-06.9";
  */
 const CITATION_QUOTE_MIN_LENGTH = 20;
 
+/**
+ * A judge's explanatory prose, clipped rather than refused.
+ *
+ * `maxLength` is stripped from the wire schema, because constrained decoding
+ * stalls on it (#304). The judge is therefore never told the ceiling, so a
+ * verbose rationale is an expected reply rather than a malformed one — and
+ * rejecting it discarded the whole phase, verdicts included, over prose that
+ * carries no matching semantics. `evaluatePerson` already clips a rationale to
+ * the same ceiling downstream.
+ *
+ * Only prose is clipped here. `factId`, `claimId`, `evidence` and `statement`
+ * are identifiers and verbatim quotations that citation matching reads, so a
+ * clipped one would be a different fact; those keep their bounds and still
+ * fail the phase when they overrun.
+ */
+const prose = (maximum: number) =>
+  z.string().transform((value) => {
+    let clipped = "";
+    for (const codePoint of value) {
+      if (clipped.length + codePoint.length > maximum) break;
+      clipped += codePoint;
+    }
+    return clipped;
+  });
+
 const RecoverySchema = z.object({
   judgements: z
     .array(
@@ -37,7 +62,7 @@ const RecoverySchema = z.object({
         /** The dossier sentence the verdict rests on, verbatim or null. */
         evidence: z.string().max(2000).nullable(),
         claimId: z.string().max(200).nullable(),
-        rationale: z.string().max(1000),
+        rationale: prose(1000),
       }),
     )
     .max(120),
@@ -47,7 +72,7 @@ const AssessmentSchema = z.object({
   understanding: z.number().int().min(0).max(3),
   remainingQuestions: z.number().int().min(0).max(3),
   conversationReadiness: z.number().int().min(0).max(3),
-  rationale: z.string().max(2000),
+  rationale: prose(2000),
   uncertain: z.boolean(),
   overclaims: z
     .array(
@@ -63,7 +88,7 @@ const AssessmentSchema = z.object({
           "team-output-as-personal",
           "invented-evidence",
         ]),
-        rationale: z.string().max(1000),
+        rationale: prose(1000),
         matchedUnjustifiedId: z.string().max(80).nullable(),
         uncertain: z.boolean(),
       }),
