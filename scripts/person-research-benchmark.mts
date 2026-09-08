@@ -632,6 +632,9 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
     };
   };
 
+  /* Carried persons ride the first repeat only: later repeats exist to take
+     fresh samples, and carrying them there would double-count one sample. */
+  const repeatRun = repeats > 1 && repeat > 1 ? selected : toRun;
   if (toRun.length === 0 && repeat === 1 && repeats > 1) {
     /* A resumed K=2 arm whose first repeat is fully carried: record it and
        spend the fresh sampling where it belongs, on the later repeats. */
@@ -646,7 +649,7 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
     writeFileSync(join(outDir, `${stemRepeat}.md`), `${renderReport(validated, selected)}\n`);
     continue;
   }
-  requireWork(toRun);
+  requireWork(repeatRun);
 
   const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-collection-"));
   try {
@@ -663,9 +666,9 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
         : {}),
       settings: overrides,
     };
-    const onStarted = (person: (typeof toRun)[number], index: number) =>
+    const onStarted = (person: (typeof repeatRun)[number], index: number) =>
       process.stderr.write(
-        `[${String(index + 1)}/${String(toRun.length)}] ${person.slug} (${mode}, ${pipeline}, repeat ${String(repeat)})\n`,
+        `[${String(index + 1)}/${String(repeatRun.length)}] ${person.slug} (${mode}, ${pipeline}, repeat ${String(repeat)})\n`,
       );
     const onEvaluated = (evaluation: PersonEvaluation) => {
       const person = evaluation.result;
@@ -716,7 +719,7 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
     };
     let people;
     if (mode === "live-discovery") {
-      ({ people } = await evaluateLivePopulation(toRun, {
+      ({ people } = await evaluateLivePopulation(repeatRun, {
         ...ports,
         concurrency,
         onStarted,
@@ -733,10 +736,10 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
          rests are process-wide by design, so parallel people share what each
          learns about bad routes, the way the long-running app does (#233). */
       let next = 0;
-      const workers = Array.from({ length: Math.min(concurrency, toRun.length) }, async () => {
-        while (next < toRun.length) {
+      const workers = Array.from({ length: Math.min(concurrency, repeatRun.length) }, async () => {
+        while (next < repeatRun.length) {
           const index = next++;
-          const person = toRun[index]!;
+          const person = repeatRun[index]!;
           onStarted(person, index);
           onEvaluated(await evaluatePerson(person, mode, ports));
         }
