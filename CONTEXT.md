@@ -454,7 +454,9 @@ _Avoid_: Candidate, result, search hit, URL or query (a lead may be any of those
 **Lead Disposition**:
 Where one Research Lead ended and why — investigated, rejected, deduplicated, inaccessible or
 interrupted, each with its own reason — or pending while it still awaits investigation. Reaching
-the end of a query list is not one of them.
+the end of a query list is not one of them. A lead selection passes over round after round is
+not forever pending either: one trailing the read batch beyond the selection margin is rejected
+as surpassed (ADR-0073), with its score and the batch floor in the reason.
 _Avoid_: Status, state, outcome (an operation reaches a conclusion; a lead reaches a disposition)
 
 **Coverage Area**:

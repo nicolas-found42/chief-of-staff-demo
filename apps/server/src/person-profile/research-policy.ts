@@ -112,6 +112,18 @@ export interface ReadBatchSelection {
 }
 
 /**
+ * How many leads one read round works through: two batches' worth, so a
+ * stalled read leaves no reader idle while the next round still re-scores
+ * against what the previous one learned. Both the read batch's cut and the
+ * planner throttle measure against this number — if the two drifted, the
+ * throttle would suppress aims against a batch size selection no longer
+ * honors.
+ */
+export function readBatchSize(readConcurrency: number): number {
+  return Math.max(1, readConcurrency * 2);
+}
+
+/**
  * Collection policy: which of the discovered leads this round reads.
  *
  * Registration order is not the rule any more. Everything discovered is scored
@@ -146,17 +158,57 @@ export function selectReadBatch(input: {
     };
     input.score(lead.id, scoreLead(lead, selection));
   }
-  /* Two batches' worth of leads per round: enough that a stalled read does not
-     leave the readers idle, few enough that a round still re-scores against
-     what the previous one learned. */
   const ranked = [...input.candidates].sort(
     (a, b) => (b.selection?.score ?? 0) - (a.selection?.score ?? 0),
   );
-  const size = Math.max(1, input.readConcurrency * 2);
+  const size = readBatchSize(input.readConcurrency);
   /* The deferred stay in score order too: their records are what a developer
      reads to see which URL was discovered and not retrieved, and the ranking
      is the reason it was not. */
   return { batch: ranked.slice(0, size), deferred: ranked.slice(size) };
+}
+/**
+ * Backlog retirement policy: when a deferral becomes a decision.
+ *
+ * Selection re-scores the whole pending pool every round and reads only the
+ * batch, so while discovery out-runs the read budget the deferred tail grows
+ * faster than any allowance can drain it — #239's committed census records
+ * 31,251 leads across one 30-person run, 89% of them ending `interrupted`,
+ * with the read batch's scores (p10 8.4) starting where the deferred pool's
+ * 90th percentile (6.35) ends. A lead this round deferred that trails the
+ * batch's own floor by more than the selection margin has, by the operation's
+ * measured ranking, lost its case: it is resolved `rejected` with the score
+ * and the floor in its reason, so "rejected" reads as the ranking's verdict,
+ * not a claim that the page is about someone else. A lead within the margin
+ * of the batch — the census margin keeps the near-miss band pending — stays
+ * pending work, and the round's reads reach it once the head above it
+ * drains; depth of discovery is never itself the reason a lead is dropped.
+ */
+export function retireSurpassedLeads(input: {
+  /** The leads selection deferred this round, in score order. */
+  deferred: PersonResearchLead[];
+  /** The read batch's lowest score this round; the margin measures from it. */
+  batchFloor: number;
+  /** How far below the batch a deferral becomes a decision. */
+  margin: number;
+}): PersonResearchLead[] {
+  return input.deferred.filter(
+    (lead) => (lead.selection?.score ?? 0) < input.batchFloor - input.margin,
+  );
+}
+
+/**
+ * Planner throttle: whether expansion has earned a planner model call.
+ *
+ * The planner exists to aim discovery at coverage the evidence has not
+ * reached. When the pending pool already holds a read batch's worth of URLs,
+ * the next round is fully loaded and the deterministic derivation still runs,
+ * so the call would buy a longer queue rather than better aims — and model
+ * calls are the operation's scarcest allowance. Asked only when the pool
+ * cannot fill the next batch.
+ */
+export function plannerIsWorthACall(input: { pendingUrls: number; batchSize: number }): boolean {
+  return input.pendingUrls < input.batchSize;
 }
 
 /**
