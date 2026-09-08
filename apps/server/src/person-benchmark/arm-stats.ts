@@ -67,18 +67,21 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
     group.push(entry);
     byRun.set(entry.report.runId, group);
   }
-  /* Only completed reports are repeats: an interrupted or failed pass is a
-     partial sample, and counting it as a full repeat biases the arm. */
-  const completed = [...byRun.values()]
+  /* A repeat is a pass that covered the whole selection: an interrupted pass
+     is a partial sample and stays out. A pass that finished with person-level
+     failures still measures those persons (failures score as misses), so it
+     counts — but it is surfaced as partial, never silently pooled. */
+  const passes = [...byRun.values()]
     .sort((a, b) =>
       b[0]!.report.provenance.finishedAt.localeCompare(a[0]!.report.provenance.finishedAt),
     )[0]!
     .sort((a, b) => a.repeat - b.repeat)
     .filter((entry) => entry.report.execution?.status === "completed");
-  if (completed.length === 0) return null;
+  if (passes.length === 0) return null;
+  const partialRepeats = passes.filter((entry) => entry.report.status !== "completed").length;
 
   const perSlug = new Map<string, { slug: string; scores: number[] }>();
-  for (const { report } of completed)
+  for (const { report } of passes)
     for (const person of report.people) {
       const score = personScore(person);
       if (score === null) continue;
@@ -96,7 +99,7 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
   /* Denominators are a property of the person, not the repeat; the first
      report carrying a slug donates its reference-fact count. */
   const denominators = new Map<string, number>();
-  for (const { report } of completed)
+  for (const { report } of passes)
     for (const person of report.people)
       if (!denominators.has(person.slug))
         denominators.set(person.slug, person.completeness.referenceFacts);
@@ -105,13 +108,14 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
     (sum, person) => sum + person.mean * (denominators.get(person.slug) ?? 0),
     0,
   );
-  const first = completed[0]!.report;
+  const first = passes[0]!.report;
   return BenchmarkArmStatsSchema.parse({
     schemaVersion: 1,
-    runIds: completed.map(({ report }) => report.runId),
+    runIds: passes.map(({ report }) => report.runId),
     mode: first.mode,
     pipeline: first.provenance.pipeline,
-    repeats: completed.length,
+    repeats: passes.length,
+    partialRepeats,
     people,
     ci,
     totals: {
@@ -128,7 +132,10 @@ export function renderArmStats(stats: BenchmarkArmStats): string {
   const lines = [
     `## Arm statistics (${stats.mode}, ${stats.pipeline})`,
     "",
-    `${String(stats.repeats)} repeat(s), ${String(stats.people.length)} people.`,
+    `${String(stats.repeats)} repeat(s), ${String(stats.people.length)} people.` +
+      (stats.partialRepeats > 0
+        ? ` Warning: ${String(stats.partialRepeats)} of ${String(stats.repeats)} repeat report(s) recorded person-level failures.`
+        : ""),
     `Recovery ${stats.ci.mean.toFixed(4)} (95% CI ${stats.ci.lo.toFixed(4)}–${stats.ci.hi.toFixed(4)}, se ${stats.ci.se.toFixed(4)}).`,
     `Pooled rate ${stats.totals.rate.toFixed(4)} (${String(Math.round(stats.totals.recoveredMean))} of ${String(stats.totals.referenceFacts)} facts).`,
     `A future arm must differ by about ${detectableEffectBar(stats)} to be detectable at n=${String(stats.people.length)} (80% power, 5% significance).`,

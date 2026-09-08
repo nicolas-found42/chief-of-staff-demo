@@ -29,8 +29,10 @@ function scoredReport(scores: number[]): BenchmarkReport {
       referenceFacts: 128,
       recovered: Math.round(scores[index] * 128),
     };
-  /* The driver stamps execution on every report it writes; the pre-standard
-     fixture lacks it, so mirror the driver here. */
+  /* The driver stamps status and execution on every report it writes; the
+     pre-standard fixture is a failed run without execution, so mirror the
+     driver here — tests opt back out explicitly when they need otherwise. */
+  report.status = "completed";
   report.execution = {
     status: "completed",
     selected: report.selection.requested,
@@ -105,6 +107,25 @@ it("counts only completed reports as repeats: an interrupted repeat stays out", 
     expect(stats).not.toBeNull();
     expect(stats.repeats).toBe(1);
     expect(stats.people.map((person) => person.scores)).toEqual([[0.25], [0.75]]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("includes a finished pass with person failures as a repeat, but surfaces it", () => {
+  const failed = scoredReport([0.5, 0.5]);
+  failed.status = "failed";
+  const dir = armDirectory("failed", {
+    [R1]: scoredReport([0.25, 0.75]),
+    [R2]: failed,
+  });
+  try {
+    const stats = buildArmStats(dir)!;
+    expect(stats.repeats).toBe(2);
+    expect(stats.partialRepeats).toBe(1);
+    expect(renderArmStats(stats)).toContain(
+      "Warning: 1 of 2 repeat report(s) recorded person-level failures",
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
