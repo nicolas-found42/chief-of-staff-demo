@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { PersonEvidenceClaims, PersonIdentitySignals } from "@chief-of-staff-demo/shared";
+import { MODEL_SMALL_REQUEST_TIMEOUT_MS } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
 
 const ClaimsSchema = z.strictObject({
@@ -49,6 +50,10 @@ export function createPersonClaimExtractor(
         "If the result is about a different person, return null for every field.",
       ].join("\n"),
       schema: ClaimsSchema,
+      /* One search result is the smallest call in the operation; it runs
+         under the small-call ceiling like every other bounded-slice call
+         (ADR-0074). */
+      absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
     });
     const parsed = ClaimsSchema.parse(raw);
     /* Absent beats null: `claims` is an optional-field record, and the

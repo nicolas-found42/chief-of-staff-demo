@@ -6,6 +6,7 @@ import {
   PersonWorkRecordSchema,
   PersonExpertiseSchema,
   PersonConnectionSchema,
+  MODEL_SMALL_REQUEST_TIMEOUT_MS,
   summarizeResearchAttempts,
   type PersonClaim,
   type PersonDossierContent,
@@ -17,6 +18,7 @@ import {
   type PersonResearchOperationOutcome,
   type PersonSourceDocument,
   type PersonSourceFamily,
+  type ModelAttemptEvent,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
 import { modelBoundaryDiagnostic } from "../llm/failure.js";
@@ -88,6 +90,20 @@ const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
 export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
 
 /**
+ * The most document text one extraction call reads, the most parts one
+ * document is read in, and the total a document contributes. A part is what
+ * keeps each call small enough for a very cheap model to answer reliably:
+ * the whole-document shape (a dossier-sized answer out of one call) is where
+ * cheap models stall and stray (ADR-0074). The total stays at the former
+ * single call's 60k envelope — the shape changes, the volume does not — and
+ * a longer document keeps its tail unread and is retained as `partial`,
+ * exactly as before.
+ */
+const EXTRACTION_MAX_CHARACTERS = 60_000;
+const EXTRACTION_PART_CHARACTERS = 16_000;
+const EXTRACTION_MAX_PARTS = 4;
+
+/**
  * How far below the round's read batch a deferred lead's score may fall before
  * the deferral becomes a decision. Selection re-scores the whole pending pool
  * every round, so a lead deferred this far under the batch floor has, by the
@@ -111,7 +127,7 @@ const SELECTION_RETIREMENT_MARGIN = 2;
  */
 export interface ResearchAllowance {
   scope?: "current" | "full";
-  /** Model calls (extraction and planning) before the operation is bounded. */
+  /** Model calls (extraction parts and planning) before the operation is bounded. */
   maxModelCalls: number;
   /** Network requests (discovery and reading) before the operation is bounded. */
   maxRequests: number;
@@ -136,10 +152,14 @@ export interface ResearchAllowance {
  * The defaults are the continuous operation's own safety bounds, generous
  * enough that reaching one is a real event rather than the usual way research
  * ends. Callers that mean to bound an operation say which bound they mean.
+ * The model-call default carries the small-call rebalance (ADR-0074): each
+ * extraction call reads a bounded part of a document rather than the whole
+ * text, so the allowance that keeps wall clock the binding constraint is
+ * larger in calls and unchanged in seconds.
  */
 export function researchAllowance(overrides: Partial<ResearchAllowance> = {}): ResearchAllowance {
   return {
-    maxModelCalls: 60,
+    maxModelCalls: 180,
     maxRequests: 400,
     maxMilliseconds: 900_000,
     readConcurrency: 4,
@@ -694,15 +714,52 @@ export class PersonResearch {
         pendingSourceId = retained.id;
         checkpoint();
 
-        if (!budget.takeModelCall()) break;
-        let extracted;
-        const extractionAttemptOf = randomUUID();
-        const boundaryObservation = { failureRecorded: false };
-        try {
-          extracted = this.parsePartial(
-            await this.deps.complete({
+        /* Each part is its own logical call and takes its own allowance; a
+           document's cost is the number of parts it actually needed. */
+        /* One document, one to four bounded parts (ADR-0074): each call reads
+           at most 16k characters so a very cheap model can answer reliably. A
+           part failure fails the document — the retained source stays
+           retryable — and the strike count stays per document, so one long
+           document cannot spend the whole tolerance by itself. */
+        const partTexts = extractionParts(read.text);
+        const parts: z.infer<typeof Extraction>[] = [];
+        let documentFailed = false;
+        let documentInterrupted = false;
+        for (const [partIndex, partText] of partTexts.entries()) {
+          if (!budget.takeModelCall()) break;
+          const extractionAttemptOf = randomUUID();
+          const boundaryObservation = { failureRecorded: false };
+          const partStartedAt = Date.now();
+          const partUser = JSON.stringify({
+            researchScope:
+              allowance.scope === "current"
+                ? "Current activity and context only; historical career research is not due."
+                : "Full historical and current research.",
+            person: {
+              name: profile.fullName,
+              emails: profile.emails,
+              employer: profile.currentEmployer,
+              profileUrls: profile.profileUrls,
+            },
+            document: {
+              url: pending.url,
+              title: pending.title,
+              text: partText,
+              part: `${partIndex + 1}/${partTexts.length}`,
+              completeness: read.completeness,
+              format: read.route,
+              provenance: read.provenanceNote,
+              visibility: privateDocument ? "private" : "public",
+              outboundUrls: read.outboundUrls.slice(0, 80),
+            },
+          });
+          let partUsage: ModelAttemptEvent["usage"];
+          let raw: unknown;
+          try {
+            raw = await this.deps.complete({
               schema: Extraction,
               preferredBinding: "forced_tool_call",
+              absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
               retry: {
                 canRetry: () =>
                   Date.now() - started < allowance.maxMilliseconds &&
@@ -710,54 +767,22 @@ export class PersonResearch {
                   (!privateDocument || privateDocument.active()),
                 onAttempt: (event) => {
                   if (event.outcome === "failed") boundaryObservation.failureRecorded = true;
-                  const succeeded = event.outcome === "succeeded";
-                  recorder.record({
+                  if (event.outcome === "succeeded" && event.usage) partUsage = event.usage;
+                  recordModelWireAttempt(recorder, {
                     stage: "extraction",
-                    code: succeeded ? "model-response-received" : "model-boundary-failed",
-                    outcome: succeeded ? (event.attempt > 1 ? "recovered" : "succeeded") : "failed",
-                    recovery:
-                      event.outcome === "retrying"
-                        ? event.delayMs
-                          ? "retry"
-                          : "alternative-route"
-                        : succeeded
-                          ? event.attempt > 1
-                            ? "recovered"
-                            : "none"
-                          : "stopped",
-                    cause: "observed",
-                    target: pending.url,
-                    targetKind: "model",
                     collector: "extraction",
+                    target: pending.url,
                     attemptOf: extractionAttemptOf,
-                    attempt: event.attempt,
-                    configuration: {
-                      binding: event.binding,
-                      provider: event.provider,
-                      model: event.model,
-                      logicalCall: extractionAttemptOf,
-                      wireAttempt: String(event.attempt),
-                      retryDelayMilliseconds: String(event.delayMs),
-                      preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
-                      ...(event.providerIgnore !== undefined
-                        ? { providerIgnore: event.providerIgnore.join(", ") }
-                        : {}),
-                      ...(event.reasoningEffort !== undefined
-                        ? { reasoningEffort: event.reasoningEffort }
-                        : {}),
-                    },
-                    ...(event.diagnostic ? { observed: { modelBoundary: event.diagnostic } } : {}),
-                    ...(event.stoppedReason ? { recoveryStopped: event.stoppedReason } : {}),
-                    reason: succeeded
-                      ? "The model boundary returned JSON; dossier validation and publication follow."
-                      : event.outcome === "retrying"
-                        ? `${event.diagnostic?.classification ?? "Model failure"}; ${event.delayMs ? "retrying the same binding" : "continuing binding recovery"} within the original request deadline.`
-                        : `${event.diagnostic?.classification ?? "Model failure"}; ${event.stoppedReason ?? "no further attempt is permitted"}.`,
-                    impact: succeeded
-                      ? "A model response is available for evidence validation."
-                      : "This wire attempt produced no usable response; its partial output was discarded.",
+                    event,
+                    successReason:
+                      "The model boundary returned JSON; dossier validation and publication follow.",
+                    successImpact: "A model response is available for evidence validation.",
                     remediation:
                       "Inspect the configured model-provider diagnostics and the correlated wire attempts.",
+                    configuration: {
+                      preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+                      extractionPart: `${partIndex + 1}/${partTexts.length}`,
+                    },
                   });
                 },
               },
@@ -774,96 +799,145 @@ export class PersonResearch {
                  against (#232). */
               compactWireNames: true,
               system: EXTRACTION_SYSTEM,
-              user: JSON.stringify({
-                researchScope:
-                  allowance.scope === "current"
-                    ? "Current activity and context only; historical career research is not due."
-                    : "Full historical and current research.",
-                person: {
-                  name: profile.fullName,
-                  emails: profile.emails,
-                  employer: profile.currentEmployer,
-                  profileUrls: profile.profileUrls,
-                },
-                document: {
-                  url: pending.url,
-                  title: pending.title,
-                  text: read.text.slice(0, 60000),
-                  completeness: read.completeness,
-                  format: read.route,
-                  provenance: read.provenanceNote,
-                  visibility: privateDocument ? "private" : "public",
-                  outboundUrls: read.outboundUrls.slice(0, 80),
-                },
-              }),
-            }),
-            read,
-            allowance.scope === "current",
-          );
-        } catch (error) {
-          const zod = error instanceof z.ZodError;
-          const boundary = modelBoundaryDiagnostic(error);
-          if (zod || !boundaryObservation.failureRecorded)
+              user: partUser,
+            });
             recorder.record({
               stage: "extraction",
-              code: zod ? "invalid-result-shape" : "model-boundary-failed",
-              outcome: "failed",
-              recovery: "stopped",
+              code: "model-call-metrics",
+              outcome: "succeeded",
+              recovery: "none",
               cause: "observed",
               target: pending.url,
-              targetKind: zod ? "url" : "model",
+              targetKind: "model",
               collector: "extraction",
+              attemptOf: extractionAttemptOf,
+              attempt: 1,
               configuration: {
+                logicalCall: extractionAttemptOf,
+                extractionPart: `${partIndex + 1}/${partTexts.length}`,
                 preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
               },
-              reason: zod
-                ? `The model's reply did not satisfy the dossier schema: ${error.issues
-                    .map((issue) => `${issue.path.join(".")}: ${issue.code}`)
-                    .join("; ")
-                    .slice(0, 600)}`
-                : `The model boundary failed: ${error instanceof Error ? error.message.slice(0, 600) : "unknown error"}`,
               observed: {
-                ...(!zod && error instanceof Error
-                  ? { modelDiagnostic: error.message.slice(0, 2000) }
+                modelCallDurationMilliseconds: Date.now() - partStartedAt,
+                modelInputCharacters: EXTRACTION_SYSTEM.length + partUser.length,
+                modelOutputCharacters: JSON.stringify(raw).length,
+                ...(partUsage
+                  ? {
+                      modelUsageTokens: {
+                        input: partUsage.inputTokens,
+                        output: partUsage.outputTokens,
+                      },
+                    }
                   : {}),
-                ...(boundary ? { modelBoundary: boundary } : {}),
               },
-              impact: "A retrieved document was retained but produced no claims.",
-              remediation: zod
-                ? "Inspect the retained source and the extraction schema together."
-                : "Check the configured provider and model for the person-research purpose.",
+              reason:
+                "The extraction call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
             });
-          /* A schema-breaking answer is an investigation: the model replied
-             and re-reading the page cannot improve it. A boundary failure is
-             not — the document was retrieved and retained, and only the model
-             call is missing, so the lead stays retryable rather than joining
-             the targets this Profile never fetches again. */
-          leads.resolve(
-            pending.leadId,
-            zod ? "investigated" : "interrupted",
-            zod
-              ? "Retrieved and retained; extraction failed."
-              : "Retrieved and retained; the model boundary failed before extraction.",
-            false,
-          );
-          if (!zod) {
-            consecutiveExtractionFailures += 1;
-            /* A provider that keeps failing is an interruption of the
-               operation; one that failed on this document is a gap in it. */
-            if (consecutiveExtractionFailures >= EXTRACTION_BOUNDARY_FAILURE_TOLERANCE) {
-              interruption = {
-                code: {
-                  code: "model-boundary-failed",
-                  reason: "The configured model provider failed during extraction.",
+            parts.push(
+              prefixExtractionPart(
+                this.parsePartial(raw, read, allowance.scope === "current"),
+                partIndex,
+              ),
+            );
+          } catch (error) {
+            documentFailed = true;
+            const zod = error instanceof z.ZodError;
+            const boundary = modelBoundaryDiagnostic(error);
+            if (zod || !boundaryObservation.failureRecorded)
+              recorder.record({
+                stage: "extraction",
+                code: zod ? "invalid-result-shape" : "model-boundary-failed",
+                outcome: "failed",
+                recovery: "stopped",
+                cause: "observed",
+                target: pending.url,
+                targetKind: zod ? "url" : "model",
+                collector: "extraction",
+                configuration: {
+                  extractionPart: `${partIndex + 1}/${partTexts.length}`,
+                  preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
                 },
-                reason:
-                  "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
-              };
-              break;
+                reason: zod
+                  ? `The model's reply did not satisfy the dossier schema: ${error.issues
+                      .map((issue) => `${issue.path.join(".")}: ${issue.code}`)
+                      .join("; ")
+                      .slice(0, 600)}`
+                  : `The model boundary failed: ${error instanceof Error ? error.message.slice(0, 600) : "unknown error"}`,
+                observed: {
+                  modelCallDurationMilliseconds: Date.now() - partStartedAt,
+                  modelInputCharacters: EXTRACTION_SYSTEM.length + partUser.length,
+                  /* A reply that arrived but failed validation still has its
+                     answer size; a call that never answered has neither. */
+                  ...(raw !== undefined
+                    ? { modelOutputCharacters: JSON.stringify(raw).length }
+                    : {}),
+                  ...(partUsage
+                    ? {
+                        modelUsageTokens: {
+                          input: partUsage.inputTokens,
+                          output: partUsage.outputTokens,
+                        },
+                      }
+                    : {}),
+                  ...(!zod && error instanceof Error
+                    ? { modelDiagnostic: error.message.slice(0, 2000) }
+                    : {}),
+                  ...(boundary ? { modelBoundary: boundary } : {}),
+                },
+                impact: "A retrieved document was retained but produced no claims.",
+                remediation: zod
+                  ? "Inspect the retained source and the extraction schema together."
+                  : "Check the configured provider and model for the person-research purpose.",
+              });
+            /* Any failed part fails the document (ADR-0074): the parts read
+               so far are discarded and the retained source stays retryable,
+               whether the part died at the boundary or answered outside the
+               dossier schema. The strike counts only boundary failures — a
+               schema-breaking reply is the model answering, not the provider
+               failing — and a success anywhere resets the run. */
+            leads.resolve(
+              pending.leadId,
+              "interrupted",
+              zod
+                ? "Retrieved and retained; a part's answer did not satisfy the dossier schema."
+                : "Retrieved and retained; the model boundary failed before extraction.",
+              false,
+            );
+            if (!zod) {
+              consecutiveExtractionFailures += 1;
+              /* A provider that keeps failing is an interruption of the
+                 operation; one that failed on this document is a gap in it. */
+              if (consecutiveExtractionFailures >= EXTRACTION_BOUNDARY_FAILURE_TOLERANCE) {
+                interruption = {
+                  code: {
+                    code: "model-boundary-failed",
+                    reason: "The configured model provider failed during extraction.",
+                  },
+                  reason:
+                    "Model-provider failure interrupted research; retrieved evidence and pending work are retained.",
+                };
+                documentInterrupted = true;
+              }
             }
+            break;
+          }
+        }
+        if (documentInterrupted) break;
+        if (documentFailed) {
+          /* A part that answered is a provider success: the strike counts the
+             document whose extraction failed, and any answered part resets
+             the consecutive run. */
+          if (parts.length > 0) {
+            consecutiveExtractionFailures = 0;
+            extractionSucceeded = true;
           }
           continue;
         }
+        /* Bounded or deactivated mid-document: the parts read so far are
+           discarded and the retained source stays resumable, exactly as a
+           single-call extraction that never ran. */
+        if (parts.length < partTexts.length) break;
+        const extracted = combineExtractionParts(parts);
         consecutiveExtractionFailures = 0;
         extractionSucceeded = true;
         if (!active()) break;
@@ -1021,16 +1095,22 @@ export class PersonResearch {
         const added = leads.add({ kind: "url", target: url, origin: "expansion" });
         if (added) leadContext.set(added.id, { title: url, snippet: "", rank: 3 });
       }
-      const pendingUrls = leads.pending().filter((lead) => lead.kind !== "query").length;
+      const pendingReadable = leads.pending().filter((lead) => lead.kind !== "query").length;
       /* The planner is the operation's scarcest-allowance spend: asked only
          when the pending pool cannot already fill the next read batch, so a
-         model call buys aims, not a longer queue (#239). */
+         model call buys aims, not a longer queue (#239). The count is every
+         readable lead, not urls alone — the batch reads documents too. */
       if (
         this.deps.plan &&
         unsatisfiedAreas.length > 0 &&
-        plannerIsWorthACall({ pendingUrls, batchSize: readBatchSize(allowance.readConcurrency) }) &&
+        plannerIsWorthACall({
+          pendingReadable,
+          batchSize: readBatchSize(allowance.readConcurrency),
+        }) &&
         budget.takeModelCall()
       ) {
+        const planningAttemptOf = randomUUID();
+        const planningFailureRecorded = { value: false };
         try {
           const plan = await planNextLeads(this.deps.plan, {
             profile,
@@ -1038,6 +1118,50 @@ export class PersonResearch {
             unsatisfied: unsatisfiedAreas,
             investigated: leads.investigatedTargets(),
             round: rounds,
+            onAttempt: (event) => {
+              if (event.outcome === "failed") planningFailureRecorded.value = true;
+              recordModelWireAttempt(recorder, {
+                stage: "planning",
+                collector: "planner",
+                target: "research-planning",
+                attemptOf: planningAttemptOf,
+                event,
+                successReason:
+                  "The planning model boundary returned JSON; the plan is filtered into leads.",
+                successImpact: "A model response is available for lead planning.",
+                remediation: "Check the model configured for the research-planning purpose.",
+              });
+            },
+            onMetrics: (metrics) => {
+              recorder.record({
+                stage: "planning",
+                code: "model-call-metrics",
+                outcome: "succeeded",
+                recovery: "none",
+                cause: "observed",
+                target: "research-planning",
+                targetKind: "model",
+                collector: "planner",
+                attemptOf: planningAttemptOf,
+                attempt: 1,
+                configuration: { logicalCall: planningAttemptOf, phase: "planning" },
+                observed: {
+                  modelCallDurationMilliseconds: metrics.durationMilliseconds,
+                  modelInputCharacters: metrics.inputCharacters,
+                  modelOutputCharacters: metrics.outputCharacters,
+                  ...(metrics.usage
+                    ? {
+                        modelUsageTokens: {
+                          input: metrics.usage.input,
+                          output: metrics.usage.output,
+                        },
+                      }
+                    : {}),
+                },
+                reason:
+                  "The planning call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
+              });
+            },
           });
           for (const query of plan.queries)
             leads.add({
@@ -1057,28 +1181,29 @@ export class PersonResearch {
           }
         } catch (error) {
           const boundary = modelBoundaryDiagnostic(error);
-          recorder.record({
-            stage: "planning",
-            code: error instanceof z.ZodError ? "invalid-result-shape" : "model-boundary-failed",
-            outcome: "failed",
-            recovery: "stopped",
-            cause: "observed",
-            target: "research-planning",
-            targetKind: "model",
-            collector: "planner",
-            observed: {
-              ...(boundary
-                ? {
-                    modelDiagnostic:
-                      error instanceof Error ? error.message : "Model boundary failed",
-                    modelBoundary: boundary,
-                  }
-                : {}),
-            },
-            reason: `The planning model did not answer usefully: ${error instanceof Error ? error.message.slice(0, 400) : "unknown error"}.`,
-            impact: "This round expanded from the collected evidence only.",
-            remediation: "Check the model configured for the research-planning purpose.",
-          });
+          if (error instanceof z.ZodError || !planningFailureRecorded.value)
+            recorder.record({
+              stage: "planning",
+              code: error instanceof z.ZodError ? "invalid-result-shape" : "model-boundary-failed",
+              outcome: "failed",
+              recovery: "stopped",
+              cause: "observed",
+              target: "research-planning",
+              targetKind: "model",
+              collector: "planner",
+              observed: {
+                ...(boundary
+                  ? {
+                      modelDiagnostic:
+                        error instanceof Error ? error.message : "Model boundary failed",
+                      modelBoundary: boundary,
+                    }
+                  : {}),
+              },
+              reason: `The planning model did not answer usefully: ${error instanceof Error ? error.message.slice(0, 400) : "unknown error"}.`,
+              impact: "This round expanded from the collected evidence only.",
+              remediation: "Check the model configured for the research-planning purpose.",
+            });
           interruption = {
             code: {
               code: "model-boundary-failed",
@@ -1777,6 +1902,224 @@ export class PersonResearch {
       sections: synthesizeSections(claims),
     };
   }
+}
+
+/**
+ * Splits a document's text into the bounded parts one extraction call reads
+ * (ADR-0074): the same 60k characters the former single call read, now in
+ * fixed windows of at most `EXTRACTION_PART_CHARACTERS`. A fact straddling a
+ * window boundary belongs to the part that states it whole or to neither,
+ * never to both — there is no overlap, and no window is shortened to chase a
+ * paragraph edge, so the parts always cover the whole envelope.
+ */
+function extractionParts(text: string): string[] {
+  const capped = text.slice(0, EXTRACTION_MAX_CHARACTERS);
+  if (capped.length <= EXTRACTION_PART_CHARACTERS) return [capped];
+  const parts: string[] = [];
+  let start = 0;
+  while (start < capped.length && parts.length < EXTRACTION_MAX_PARTS) {
+    const end = Math.min(start + EXTRACTION_PART_CHARACTERS, capped.length);
+    parts.push(capped.slice(start, end));
+    start = end;
+  }
+  return parts.filter((part) => part.trim().length > 0);
+}
+
+/**
+ * One wire attempt of any model call inside the operation, recorded the same
+ * way wherever it happened: the correlation key, the routing and binding it
+ * actually used, and the classification of what the attempt produced.
+ * Callers add only the wording that names their own stage.
+ */
+function recordModelWireAttempt(
+  recorder: ResearchAttemptRecorder,
+  input: {
+    stage: "extraction" | "planning";
+    collector: "extraction" | "planner";
+    target: string;
+    attemptOf: string;
+    event: ModelAttemptEvent;
+    successReason: string;
+    successImpact: string;
+    remediation: string;
+    configuration?: Record<string, string>;
+  },
+): void {
+  const succeeded = input.event.outcome === "succeeded";
+  recorder.record({
+    stage: input.stage,
+    code: succeeded ? "model-response-received" : "model-boundary-failed",
+    outcome: succeeded ? (input.event.attempt > 1 ? "recovered" : "succeeded") : "failed",
+    recovery:
+      input.event.outcome === "retrying"
+        ? input.event.delayMs
+          ? "retry"
+          : "alternative-route"
+        : succeeded
+          ? input.event.attempt > 1
+            ? "recovered"
+            : "none"
+          : "stopped",
+    cause: "observed",
+    target: input.target,
+    targetKind: "model",
+    collector: input.collector,
+    attemptOf: input.attemptOf,
+    attempt: input.event.attempt,
+    configuration: {
+      binding: input.event.binding,
+      provider: input.event.provider,
+      model: input.event.model,
+      logicalCall: input.attemptOf,
+      wireAttempt: String(input.event.attempt),
+      retryDelayMilliseconds: String(input.event.delayMs),
+      ...input.configuration,
+      ...(input.event.providerIgnore !== undefined
+        ? { providerIgnore: input.event.providerIgnore.join(", ") }
+        : {}),
+      ...(input.event.reasoningEffort !== undefined
+        ? { reasoningEffort: input.event.reasoningEffort }
+        : {}),
+    },
+    ...(input.event.diagnostic ? { observed: { modelBoundary: input.event.diagnostic } } : {}),
+    ...(input.event.stoppedReason ? { recoveryStopped: input.event.stoppedReason } : {}),
+    reason: succeeded
+      ? input.successReason
+      : input.event.outcome === "retrying"
+        ? `${input.event.diagnostic?.classification ?? "Model failure"}; ${input.event.delayMs ? "retrying the same binding" : "continuing binding recovery"} within the original request deadline.`
+        : `${input.event.diagnostic?.classification ?? "Model failure"}; ${input.event.stoppedReason ?? "no further attempt is permitted"}.`,
+    impact: succeeded
+      ? input.successImpact
+      : "This wire attempt produced no usable response; its partial output was discarded.",
+    remediation: input.remediation,
+  });
+}
+
+/**
+ * Makes one part's model-invented record ids unique per document, so two
+ * parts of the same source can never collide on a locally-unique id when the
+ * parts combine into one source's extraction.
+ */
+function prefixExtractionPart(
+  content: z.infer<typeof Extraction>,
+  part: number,
+): z.infer<typeof Extraction> {
+  /* The prefix matches the dossier id grammar itself (letters, digits,
+     underscores and hyphens), so a prefixed id stays a valid id. */
+  const id = (value: string): string => `p${part}-${value}`;
+  const idList = (values: string[]): string[] => values.map(id);
+  const grounded = <T extends { claimIds: string[] }>(entry: T): T => ({
+    ...entry,
+    claimIds: idList(entry.claimIds),
+  });
+  return {
+    ...content,
+    claims: content.claims.map((claim) => ({
+      ...claim,
+      id: id(claim.id),
+      supports: idList(claim.supports),
+      supersedes: idList(claim.supersedes),
+    })),
+    works: content.works.map((work) => ({
+      ...work,
+      id: id(work.id),
+      claimIds: idList(work.claimIds),
+      ...(work.contribution ? { contribution: grounded(work.contribution) } : {}),
+      ...(work.teamContribution ? { teamContribution: grounded(work.teamContribution) } : {}),
+      authority: work.authority.map((entry) => ({ ...entry, claimIds: idList(entry.claimIds) })),
+      scale: work.scale.map((entry) => ({ ...entry, claimIds: idList(entry.claimIds) })),
+      constraints: work.constraints.map(grounded),
+      outcomes: work.outcomes.map(grounded),
+    })),
+    expertise: content.expertise.map((entry) => ({
+      ...entry,
+      workIds: idList(entry.workIds),
+      claimIds: idList(entry.claimIds),
+    })),
+    connections: content.connections.map((entry) => ({
+      ...entry,
+      workIds: idList(entry.workIds),
+      claimIds: idList(entry.claimIds),
+    })),
+    sections: content.sections.map((section) => ({
+      ...section,
+      claimIds: idList(section.claimIds),
+    })),
+  };
+}
+
+/**
+ * Combines one document's extracted parts into the extraction that is
+ * published and merged as before. Claims, expertise and connections carry
+ * part-prefixed ids and cannot collide; works deduplicate on the same
+ * identity the dossier merge itself uses, so a work described in two parts
+ * stays one record; sections fold by dossier key.
+ */
+function combineExtractionParts(parts: z.infer<typeof Extraction>[]): z.infer<typeof Extraction> {
+  const first = parts[0]!;
+  const workKey = (work: z.infer<typeof PersonWorkRecordSchema>): string => {
+    const url = work.url ? safeUrl(work.url) : null;
+    if (url && url.pathname !== "/") {
+      url.hash = "";
+      for (const name of [...url.searchParams.keys()])
+        if (name.startsWith("utm_")) url.searchParams.delete(name);
+      return `${work.kind}:${url.toString().replace(/\/$/, "")}`;
+    }
+    return `${work.kind}:${work.title.trim().toLowerCase()}:${work.startedAt ?? ""}:${work.endedAt ?? ""}`;
+  };
+  const dedupeBy = <T>(items: T[], key: (item: T) => string): T[] => {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const itemKey = key(item);
+      if (seen.has(itemKey)) return false;
+      seen.add(itemKey);
+      return true;
+    });
+  };
+  const sections = new Map<
+    string,
+    z.infer<typeof PersonDossierContentSchema>["sections"][number]
+  >();
+  for (const part of parts)
+    for (const section of part.sections) {
+      const previous = sections.get(section.key);
+      sections.set(
+        section.key,
+        previous
+          ? {
+              ...previous,
+              claimIds: [...new Set([...previous.claimIds, ...section.claimIds])].slice(0, 100),
+              gaps: [...new Set([...previous.gaps, ...section.gaps])].slice(0, 30),
+            }
+          : section,
+      );
+    }
+  return {
+    fullName: parts.map((part) => part.fullName).find((value) => value !== null) ?? null,
+    employer: parts.map((part) => part.employer).find((value) => value !== null) ?? null,
+    sourceClass: first.sourceClass,
+    author: parts.map((part) => part.author).find((value) => value !== null) ?? null,
+    publishedAt: parts.map((part) => part.publishedAt).find((value) => value !== null) ?? null,
+    claims: dedupeBy(
+      parts.flatMap((part) => part.claims),
+      (claim) => claim.id,
+    ),
+    works: dedupeBy(
+      parts.flatMap((part) => part.works),
+      workKey,
+    ),
+    /* Expertise records carry no id of their own: the wording and the works
+       that demonstrate it are the identity two parts must agree on. */
+    expertise: dedupeBy(
+      parts.flatMap((part) => part.expertise),
+      (entry) => `${entry.originalWording}:${entry.support}:${entry.workIds.join(",")}`,
+    ),
+    connections: dedupeBy(
+      parts.flatMap((part) => part.connections),
+      (entry) => entry.id,
+    ),
+    sections: [...sections.values()],
+  };
 }
 
 const EXTRACTION_SYSTEM =

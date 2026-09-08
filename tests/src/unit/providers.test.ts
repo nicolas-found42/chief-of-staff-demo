@@ -13,6 +13,7 @@ import {
   resolveReasoningEffort,
   DEFAULT_REASONING_EFFORT,
   REQUEST_TIMEOUT_MS,
+  SMALL_REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
   STREAM_MAX_ANSWER_CHARS,
   STREAM_SILENT_TIMEOUT_MS,
@@ -142,6 +143,12 @@ it("keeps the absolute request ceiling above both stream ceilings", () => {
      alive, is an answer being produced, and has the whole call run too long. */
   expect(STREAM_SILENT_TIMEOUT_MS).toBeGreaterThan(STREAM_IDLE_TIMEOUT_MS);
   expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(STREAM_SILENT_TIMEOUT_MS);
+  /* Small structured calls run under their own, tighter ceiling — above the
+     silent ceiling so a stall is still named as silence, far below the
+     default that fits the old whole-document call sizes (ADR-0074). */
+  expect(SMALL_REQUEST_TIMEOUT_MS).toBe(120_000);
+  expect(SMALL_REQUEST_TIMEOUT_MS).toBeGreaterThan(STREAM_SILENT_TIMEOUT_MS);
+  expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(SMALL_REQUEST_TIMEOUT_MS);
 });
 beforeEach(() => {
   calls.length = 0;
@@ -386,6 +393,77 @@ describe("providers", () => {
       ]);
     },
   );
+
+  it("openrouter: prose under a declared response_format steps to a tool call and recovers", async () => {
+    declarations.push(declaring("response_format", "tools", "tool_choice"));
+    /* The measured mercury signature (#239): the task is done, but in the one
+       field the binding does not constrain, so the answer fails to parse. */
+    responses.push({
+      sse: [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "The person led the team." } }] })}`,
+        "data: [DONE]",
+      ],
+    });
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/prose-response-format", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await expect(
+      complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        retry: { onAttempt: (event) => events.push(event) },
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls).toHaveLength(2);
+    expect(events).toMatchObject([
+      { attempt: 1, outcome: "retrying", diagnostic: { classification: "answer_not_json" } },
+      { attempt: 2, outcome: "succeeded" },
+    ]);
+    expect(calls[0].body).toHaveProperty("response_format");
+    expect(calls[1].body).toHaveProperty("tools");
+  });
+
+  it("a small call expires at its own absolute ceiling and names it", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("tools", "tool_choice"));
+      /* A stream that keeps answering with activity never trips the stream
+         ceilings, so the call's own absolute ceiling is what can end it. */
+      responses.push({
+        sseDrip: {
+          intervalMs: 10_000,
+          lines: Array.from(
+            { length: 40 },
+            () => 'data: {"choices":[{"delta":{"reasoning":"synthetic activity"}}]}',
+          ),
+        },
+      });
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/small-ceiling", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const pending = complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        absoluteCeilingMs: SMALL_REQUEST_TIMEOUT_MS,
+        retry: { onAttempt: () => {} },
+      }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+      await vi.advanceTimersByTimeAsync(SMALL_REQUEST_TIMEOUT_MS - 1);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(await pending).toMatchObject({
+        classification: "request_timeout",
+        timeoutMs: SMALL_REQUEST_TIMEOUT_MS,
+      });
+      expect(calls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("openrouter: reports existing binding recovery without resetting the one-retry allowance", async () => {
     vi.useFakeTimers();

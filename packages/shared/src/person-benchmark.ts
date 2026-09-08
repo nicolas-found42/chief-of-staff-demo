@@ -11,6 +11,8 @@ export const BenchmarkModelAttemptSchema = z.object({
   call: z.number().int().positive(),
   subject: z.string().max(80),
   observation: ModelAttemptEventSchema,
+  /** Request text characters of the logical call this attempt belongs to. */
+  inputCharacters: z.number().nonnegative().optional(),
 });
 export type BenchmarkModelAttempt = z.infer<typeof BenchmarkModelAttemptSchema>;
 
@@ -572,6 +574,10 @@ export const BenchmarkPersonArtifactSchema = z.object({
       researchModel: z.string().max(200),
       promptVersion: z.string().max(40),
       reasoningEffort: z.string().max(20),
+      /** Absent in artifacts stamped before the judge effort became a recipe
+       *   field: an old artifact then classifies as a recipe mismatch, not a
+       *   parse failure. */
+      judgeReasoningEffort: z.string().max(20).optional(),
       seed: z.number().int().optional(),
     })
     .optional(),

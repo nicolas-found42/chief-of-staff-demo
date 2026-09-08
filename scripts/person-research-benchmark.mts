@@ -36,7 +36,10 @@ import {
 import { evaluateCollection } from "../apps/server/src/person-benchmark/collection.js";
 import { composePersonProfiles } from "../apps/server/src/person-profile/composition.js";
 import { EXTRACTION_PREFERRED_MIN_THROUGHPUT } from "../apps/server/src/person-profile/research.js";
-import { JUDGE_VERSION } from "../apps/server/src/person-benchmark/judge.js";
+import {
+  JUDGE_REASONING_EFFORT,
+  JUDGE_VERSION,
+} from "../apps/server/src/person-benchmark/judge.js";
 import { retainEvidence } from "../apps/server/src/person-benchmark/evidence.js";
 import {
   buildArmStats,
@@ -385,6 +388,7 @@ const runConditions: ResumeConditions = {
   researchModel: research.model,
   promptVersion: "2026-09-06.4",
   reasoningEffort: DEFAULT_REASONING_EFFORT,
+  judgeReasoningEffort: JUDGE_REASONING_EFFORT,
   ...(seed !== undefined ? { seed } : {}),
   corpusVersion: corpus.version,
   pipeline,
@@ -606,7 +610,7 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
           ...overrides,
           operationConcurrency: concurrency,
           modelRetryPolicy:
-            "One same-binding idle/transport retry inside the original deadline; extraction and benchmark judges only",
+            "One same-binding idle/transport retry inside the original deadline; extraction, planning and benchmark judges",
           usageAccounting:
             "Logical request text and returned answer characters; excludes retried wire payloads",
           judgeBindingPreference: "forced_tool_call when model-declared; default otherwise",
@@ -616,6 +620,7 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
           /* Requested thinking depth; the seam omits it for models that advertise
            no effort list, so provider defaults apply there. */
           reasoningEffort: DEFAULT_REASONING_EFFORT,
+          judgeReasoningEffort: JUDGE_REASONING_EFFORT,
           reasoningExclude: true,
           routeRestPolicy: ROUTE_REST_POLICY,
           routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,

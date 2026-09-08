@@ -19,6 +19,7 @@ const CONDITIONS = {
   researchModel: "acme/tiny",
   promptVersion: "2026-09-06.4",
   reasoningEffort: "low",
+  judgeReasoningEffort: "high",
   corpusVersion: "41d616ea8dfb1786",
   pipeline: "expanded",
   judgeProvider: "openrouter",

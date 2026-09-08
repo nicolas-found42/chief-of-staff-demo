@@ -23,6 +23,7 @@ export interface ResumeConditions {
   researchModel: string;
   promptVersion: string;
   reasoningEffort: string;
+  judgeReasoningEffort: string;
   seed?: number | undefined;
   /** Arm-defining conditions stamped beside the artifact's own fields. */
   corpusVersion: string;
@@ -56,6 +57,7 @@ const CONDITION_FIELDS = [
   "researchModel",
   "promptVersion",
   "reasoningEffort",
+  "judgeReasoningEffort",
   "seed",
 ] as const;
 

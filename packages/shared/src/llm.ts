@@ -16,6 +16,22 @@ import { ProviderIdSchema, type ProviderId } from "./schemas.js";
 export const MODEL_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
+ * One *small* model call's absolute ceiling — the class of call that moves a
+ * bounded slice: the discovery claim extractor, one extraction part, one
+ * planning call. Judges and any caller that does not opt in keep
+ * `MODEL_REQUEST_TIMEOUT_MS`.
+ *
+ * A call of this class carries at most 16k characters in and a bounded answer
+ * out, and the configured models answer it in seconds, not minutes (mercury
+ * answered the production binding in about one second, #239). The 300 s
+ * default only fits real work at the old call sizes; on the small shapes it
+ * just lets a slow-drip generation hold a slice of an operation's budget for
+ * five minutes. The 90 s silent ceiling still bounds a stalled call inside it
+ * (ADR-0074).
+ */
+export const MODEL_SMALL_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
  * How long one streaming model call may go without a token — measured from the
  * call's start until its first token, then from the last token it produced. The
  * absolute `MODEL_REQUEST_TIMEOUT_MS` ceiling stays above it as a backstop: a

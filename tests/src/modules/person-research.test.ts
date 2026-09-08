@@ -701,3 +701,140 @@ test("a lead selection keeps passing over is decided, and the planner is not ask
   expect(plannerCalls).toBeLessThanOrEqual(4);
   expect(planRounds.every((round) => round >= 2)).toBe(true);
 });
+
+test("a long document is extracted in bounded parts that combine into one source", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-parts-"));
+  roots.push(root);
+  const dossiers = new PersonDossierStore(root);
+  const body = "Contact maya@example.com.\n\nMaya designed the Atlas scheduler.\n\n".repeat(500);
+  const seenParts: string[] = [];
+  const research = new PersonResearch({
+    dossiers,
+    search: async (query) =>
+      query.includes("maya")
+        ? [{ url: "https://example.com/maya", title: "Maya", snippet: "biography" }]
+        : [],
+    fetch: async (url) => ({
+      url,
+      status: url === "https://example.com/maya" ? 200 : 404,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: url === "https://example.com/maya" ? body : "",
+    }),
+    complete: async (request) => {
+      const document = (JSON.parse(request.user) as { document: { part: string } }).document;
+      seenParts.push(document.part);
+      return {
+        fullName: "Maya Chen",
+        employer: null,
+        sourceClass: "primary-artifact",
+        author: null,
+        publishedAt: null,
+        claims: [
+          {
+            id: `claim-${document.part.replace("/", "-")}`,
+            section: "work",
+            statement: `Part ${document.part} states Maya designed the Atlas scheduler.`,
+            status: "supported",
+            nature: "statement",
+            matchConfidence: "high",
+            effectiveFrom: null,
+            effectiveTo: null,
+            citations: [{ sourceId: "source", quote: "Maya designed the Atlas scheduler." }],
+            supports: [],
+            supersedes: [],
+            changeReason: null,
+          },
+        ],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      };
+    },
+  });
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const outcome = await research.run(person, researchAllowance({ maxModelCalls: 8 }));
+  /* Each part is its own call, named as its part of the document. */
+  expect(seenParts).toEqual(["1/2", "2/2"]);
+  /* The parts combine into one source: per-part ids never collide, and both
+     parts' claims are attributed to the single retained document. */
+  const dossier = dossiers.get(person.id)!;
+  const citationSourceIds = new Set(
+    dossier.claims.flatMap((claim) => claim.citations.map((citation) => citation.sourceId)),
+  );
+  expect(citationSourceIds).toHaveLength(1);
+  expect(dossiers.source(person.id, [...citationSourceIds][0])?.text).toBe(body);
+  expect(dossier.claims).toHaveLength(2);
+  expect(new Set(dossier.claims.map((claim) => claim.id))).toHaveLength(2);
+  for (const claim of dossier.claims) expect(claim.statement).toMatch(/^Part \d\/2 states/);
+  expect(outcome.operation.conclusion).toBe("completed");
+  /* The durable per-call record: one metrics row per part, carrying the
+     measured size and duration of that call. */
+  const metrics = outcome.operation.attempts.filter(
+    (attempt) => attempt.code === "model-call-metrics",
+  );
+  expect(metrics).toHaveLength(2);
+  for (const record of metrics) {
+    expect(record.observed?.modelCallDurationMilliseconds).toBeGreaterThanOrEqual(0);
+    expect(record.observed?.modelInputCharacters).toBeGreaterThan(0);
+    expect(record.observed?.modelOutputCharacters).toBeGreaterThan(0);
+  }
+});
+
+test("a part that fails at the model boundary fails the document and keeps the lead retryable", async () => {
+  const root = mkdtempSync(join(tmpdir(), "research-part-failure-"));
+  roots.push(root);
+  const dossiers = new PersonDossierStore(root);
+  const body = "Contact maya@example.com.\n\nMaya designed the Atlas scheduler.\n\n".repeat(500);
+  const research = new PersonResearch({
+    dossiers,
+    search: async (query) =>
+      query.includes("maya")
+        ? [{ url: "https://example.com/maya", title: "Maya", snippet: "biography" }]
+        : [],
+    fetch: async (url) => ({
+      url,
+      status: url === "https://example.com/maya" ? 200 : 404,
+      contentType: "text/plain",
+      etag: null,
+      lastModified: null,
+      retryAfter: null,
+      body: url === "https://example.com/maya" ? body : "",
+    }),
+    complete: async (request) => {
+      if (JSON.parse(request.user).document.part === "2/2")
+        throw new Error("The model provider failed mid-document.");
+      return {
+        fullName: "Maya Chen",
+        employer: null,
+        sourceClass: "primary-artifact",
+        author: null,
+        publishedAt: null,
+        claims: [],
+        works: [],
+        expertise: [],
+        connections: [],
+        sections: [],
+      };
+    },
+  });
+  const people = new WorkspacePersonProfiles({
+    store: new PersonProfileStore(root),
+    lifecycle: [],
+  });
+  const person = people.create({ primaryEmail: "maya@example.com" });
+  const outcome = await research.run(person, researchAllowance({ maxModelCalls: 8 }));
+  /* No partial document is published: the lead stays retryable, and the
+     failure is a per-document strike, not a provider verdict. */
+  const urlLead = outcome.operation.leads.find((lead) => lead.kind === "url")!;
+  expect(urlLead.disposition).toBe("interrupted");
+  expect(dossiers.get(person.id)?.claims ?? []).toHaveLength(0);
+  expect(outcome.operation.conclusion).not.toBe("interrupted");
+});
