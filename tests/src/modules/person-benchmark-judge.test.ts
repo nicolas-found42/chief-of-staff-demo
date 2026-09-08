@@ -1186,6 +1186,53 @@ it("keeps a failed support phase when the corrected attempt is also invalid", as
   expect(result.phases.support.unresolvedFindings).toHaveLength(1);
 });
 
+it("keeps the first reply's validation failure when the correction attempt throws", async () => {
+  const { person, dossier, sources } = fixture();
+  let supportCalls = 0;
+  const result = await judgePerson(
+    async ({ user }) => {
+      const request = JSON.parse(user) as { references?: unknown };
+      if (request.references)
+        return {
+          judgements: [
+            {
+              factId: person.facts[0].id,
+              verdict: "missing",
+              evidence: null,
+              claimId: null,
+              rationale: "No dossier claim states it.",
+            },
+          ],
+        };
+      supportCalls += 1;
+      if (supportCalls === 1)
+        return {
+          ...SUPPORT_OK,
+          overclaims: [
+            {
+              claimId: "claim-does-not-exist",
+              citationIndex: null,
+              statement: "Maya designed the scheduler.",
+              kind: "team-output-as-personal",
+              rationale: "Names a claim the dossier does not carry.",
+              matchedUnjustifiedId: null,
+              uncertain: false,
+            },
+          ],
+        };
+      throw new Error("Controlled correction timeout");
+    },
+    person,
+    dossier,
+    sources,
+  );
+  expect(supportCalls).toBe(2);
+  expect(result.complete).toBe(false);
+  expect(result.phases.support.status).toBe("failed");
+  expect(result.phases.support.failure).toContain("unknown claims");
+  expect(result.phases.support.failure).not.toContain("Controlled correction timeout");
+});
+
 it("retries the recovery call once when the first reply fails to parse", async () => {
   const { person, dossier, sources } = fixture();
   let recoveryCalls = 0;

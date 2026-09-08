@@ -148,8 +148,11 @@ async function judgeReply<T extends z.ZodType>(
       failure = validate(parsed);
       if (failure === null) return { parsed, failure: null };
     } catch (error) {
-      parsed = null;
-      failure = error instanceof Error ? error.message : String(error);
+      /* A throw on the correction attempt must not erase a parsed first
+         reply: the last parsed reply stands, and its own validation failure
+         is the phase's record. Only a throw with nothing parsed — both
+         attempts unusable at the boundary — makes the throw the failure. */
+      if (parsed === null) failure = error instanceof Error ? error.message : String(error);
     }
   }
   return { parsed, failure };
