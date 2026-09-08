@@ -16,6 +16,8 @@ import {
   STREAM_IDLE_TIMEOUT_MS,
   STREAM_MAX_ANSWER_CHARS,
   STREAM_SILENT_TIMEOUT_MS,
+  type ModelUsageObservation,
+  observeModelUsage,
 } from "../../../apps/server/src/llm/providers";
 import { modelBoundaryDiagnostic } from "../../../apps/server/src/llm/failure";
 
@@ -447,9 +449,9 @@ describe("providers", () => {
             ? { fail: new Error("SECRET provider text") }
             : {
                 /* A partial answer and then nothing at all. Keepalives used to
-     stand in for idleness here; since #232 they say the upstream
-     is alive and buffering, which is a different fixture and its
-     own test. This one is the connection going quiet. */
+   stand in for idleness here; since #232 they say the upstream
+   is alive and buffering, which is a different fixture and its
+   own test. This one is the connection going quiet. */
                 sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
@@ -3079,5 +3081,157 @@ describe("openrouter route rests and the binding ladder", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("model usage accounting", () => {
+  function observe(): { seen: ModelUsageObservation[]; done: () => void } {
+    const seen: ModelUsageObservation[] = [];
+    observeModelUsage((observation) => seen.push(observation));
+    return { seen, done: () => observeModelUsage(null) };
+  }
+
+  it("openai: reports tokens and fingerprint from a non-streamed reply", async () => {
+    const payload = chatCompletion(JSON.stringify(RESULT));
+    const choice = (payload.choices as Record<string, unknown>[])[0];
+    choice.system_fingerprint = "fp-1";
+    payload.usage = { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 };
+    responses.push({ body: payload });
+    const { seen, done } = observe();
+    try {
+      const events: ModelAttemptEvent[] = [];
+      const complete = makeCompleteJson(
+        { provider: "openai", model: "gpt-test", apiKey: "oak" },
+        "/nonexistent/mock-result.json",
+      );
+      await complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        retry: { onAttempt: (event) => events.push(event) },
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        provider: "openai",
+        model: "gpt-test",
+        inputTokens: 11,
+        outputTokens: 7,
+        costUsd: null,
+        systemFingerprint: "fp-1",
+      });
+      const succeeded = events.find((event) => event.outcome === "succeeded");
+      expect(succeeded).toMatchObject({
+        systemFingerprint: "fp-1",
+        usage: { inputTokens: 11, outputTokens: 7, costUsd: null },
+      });
+    } finally {
+      done();
+    }
+  });
+
+  it("openrouter: reads usage from the final stream frame", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({
+      sse: [
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, type: "function", function: { name: "save_extraction", arguments: JSON.stringify(RESULT) } }] } }] })}`,
+        `data: ${JSON.stringify({
+          choices: [{ delta: {}, finish_reason: "tool_calls" }],
+          usage: { prompt_tokens: 5, completion_tokens: 3, cost: 0.00012 },
+        })}`,
+        "data: [DONE]",
+      ],
+    });
+    const { seen, done } = observe();
+    try {
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/streamed", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      await complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        inputTokens: 5,
+        outputTokens: 3,
+        costUsd: 0.00012,
+        systemFingerprint: null,
+      });
+    } finally {
+      done();
+    }
+  });
+
+  it("anthropic: reports its own token fields with no cost and no fingerprint", async () => {
+    responses.push({
+      body: {
+        content: [{ type: "tool_use", input: RESULT }],
+        usage: { input_tokens: 9, output_tokens: 4 },
+      },
+    });
+    const { seen, done } = observe();
+    try {
+      const complete = makeCompleteJson(
+        { provider: "anthropic", model: "claude-test", apiKey: "antk" },
+        "/nonexistent/mock-result.json",
+      );
+      await expect(
+        complete({ system: "S", user: "U", schema: ExtractionWireSchema }),
+      ).resolves.toEqual(RESULT);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        provider: "anthropic",
+        inputTokens: 9,
+        outputTokens: 4,
+        costUsd: null,
+        systemFingerprint: null,
+      });
+    } finally {
+      done();
+    }
+  });
+
+  it("stays silent when the wire reports no usage at all", async () => {
+    responses.push({ body: chatCompletion(JSON.stringify(RESULT)) });
+    const { seen, done } = observe();
+    try {
+      const complete = makeCompleteJson(
+        { provider: "openai", model: "gpt-test", apiKey: "oak" },
+        "/nonexistent/mock-result.json",
+      );
+      await complete({ system: "S", user: "U", schema: ExtractionWireSchema });
+      expect(seen).toHaveLength(0);
+    } finally {
+      done();
+    }
+  });
+
+  it("seed rides the openai-family bodies and never anthropic's", async () => {
+    responses.push({ body: chatCompletion(JSON.stringify(RESULT)) });
+    responses.push({ body: chatCompletion(JSON.stringify(RESULT)) });
+    responses.push({
+      body: { content: [{ type: "tool_use", input: RESULT }], usage: {} },
+    });
+    const openai = makeCompleteJson(
+      { provider: "openai", model: "gpt-test", apiKey: "oak" },
+      "/nonexistent/mock-result.json",
+    );
+    await openai({ system: "S", user: "U", schema: ExtractionWireSchema, seed: 7 });
+    expect(calls[0].body.seed).toBe(7);
+    const without = makeCompleteJson(
+      { provider: "openai", model: "gpt-test", apiKey: "oak" },
+      "/nonexistent/mock-result.json",
+    );
+    await without({ system: "S", user: "U", schema: ExtractionWireSchema });
+    expect(calls[1].body).not.toHaveProperty("seed");
+    const anthropic = makeCompleteJson(
+      { provider: "anthropic", model: "claude-test", apiKey: "antk" },
+      "/nonexistent/mock-result.json",
+    );
+    await anthropic({ system: "S", user: "U", schema: ExtractionWireSchema, seed: 7 });
+    expect(calls[2].body).not.toHaveProperty("seed");
   });
 });

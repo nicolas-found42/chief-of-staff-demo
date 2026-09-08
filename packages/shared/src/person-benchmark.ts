@@ -562,6 +562,19 @@ export const BenchmarkPersonArtifactSchema = z.object({
   judgeVersion: z.string().max(40),
   assessedAt: z.string().max(40),
   reassessmentOf: z.string().max(80).optional(),
+  /** Conditions the person ran under, for reuse decisions. Absent means the
+     artifact predates conditions stamping: it cannot prove it is the same
+     run recipe, so a resume refuses to carry it silently. */
+  conditions: z
+    .object({
+      mode: BenchmarkModeSchema,
+      researchProvider: z.string().max(80),
+      researchModel: z.string().max(200),
+      promptVersion: z.string().max(40),
+      reasoningEffort: z.string().max(20),
+      seed: z.number().int().optional(),
+    })
+    .optional(),
   result: BenchmarkPersonResultSchema,
 });
 export type BenchmarkPersonArtifact = z.infer<typeof BenchmarkPersonArtifactSchema>;
@@ -584,19 +597,26 @@ export const BenchmarkProvenanceSchema = z
     judgeProvider: z.string().max(80),
     judgeModel: z.string().max(200),
     judgeVersion: z.string().max(40),
-    promptVersion: z.string().max(40),
-    collectorVersions: z.record(z.string().max(120), z.string().max(40)),
-    researchSettings: z.record(z.string().max(80), z.union([z.string(), z.number(), z.boolean()])),
-    network: z.enum(["live", "fixed-documents", "offline"]),
-    /** Only present when the model boundary actually reported usage. */
     usage: z
       .object({
         inputCharacters: z.number().int().nonnegative(),
         outputCharacters: z.number().int().nonnegative(),
-        tokens: z.literal("unavailable"),
-        cost: z.literal("unavailable"),
+        /* Token counts, when the provider boundary reported them. */
+        tokens: z.union([
+          z.literal("unavailable"),
+          z.object({
+            input: z.number().int().nonnegative(),
+            output: z.number().int().nonnegative(),
+          }),
+        ]),
+        /* The provider's own charge, when it names one (OpenRouter does). */
+        cost: z.union([z.literal("unavailable"), z.number().nonnegative()]),
       })
       .optional(),
+    promptVersion: z.string().max(40),
+    collectorVersions: z.record(z.string().max(120), z.string().max(40)),
+    researchSettings: z.record(z.string().max(80), z.union([z.string(), z.number(), z.boolean()])),
+    network: z.enum(["live", "fixed-documents", "offline"]),
     startedAt: z.string().max(40),
     finishedAt: z.string().max(40),
     host: z.string().max(200),
@@ -723,6 +743,14 @@ export const BenchmarkReportSchema = z.object({
         .max(6),
     })
     .optional(),
+  /** People carried from a prior run by --retry/--reuse-extraction, beside
+     the people this run actually researched. */
+  resume: z
+    .object({
+      carriedPeople: z.array(z.string().max(80)).max(200),
+      retriedPeople: z.array(z.string().max(80)).max(200),
+    })
+    .optional(),
   coverageGaps: z
     .object({
       areas: z.number().int().nonnegative(),
@@ -805,3 +833,66 @@ export const BenchmarkComparisonSchema = z.object({
   verdictDetail: z.string().max(2000),
 });
 export type BenchmarkComparison = z.infer<typeof BenchmarkComparisonSchema>;
+
+/** One arm's interval over per-person mean recovery, from K repeat reports. */
+export const BenchmarkArmStatsSchema = z.object({
+  schemaVersion: z.literal(1),
+  /** One run id per repeat report the arm was built from. */
+  runIds: z.array(z.string().max(80)).min(1).max(20),
+  mode: BenchmarkModeSchema,
+  pipeline: z.enum(["incumbent", "expanded"]),
+  repeats: z.number().int().positive().max(20),
+  people: z
+    .array(
+      z.object({
+        slug: z.string().max(80),
+        /** recovered/referenceFacts, once per repeat. */
+        scores: z.array(z.number().min(0).max(1)).min(1).max(20),
+        mean: z.number().min(0).max(1),
+      }),
+    )
+    .min(2)
+    .max(200),
+  /** Across-person interval over the per-person means. */
+  ci: z.object({
+    mean: z.number(),
+    se: z.number().nonnegative(),
+    lo: z.number(),
+    hi: z.number(),
+  }),
+  totals: z.object({
+    referenceFacts: z.number().int().nonnegative(),
+    recoveredMean: z.number().nonnegative(),
+    rate: z.number().min(0).max(1),
+  }),
+});
+export type BenchmarkArmStats = z.infer<typeof BenchmarkArmStatsSchema>;
+
+/** Two arms compared on paired per-person differences, with the noise verdict. */
+export const BenchmarkStatsComparisonSchema = z.object({
+  schemaVersion: z.literal(1),
+  baseline: z.object({
+    runIds: z.array(z.string().max(80)).min(1).max(20),
+    ci: z.object({ mean: z.number(), lo: z.number(), hi: z.number() }),
+  }),
+  candidate: z.object({
+    runIds: z.array(z.string().max(80)).min(1).max(20),
+    ci: z.object({ mean: z.number(), lo: z.number(), hi: z.number() }),
+  }),
+  sharedPeople: z.number().int().nonnegative(),
+  paired: z.object({
+    mean: z.number(),
+    sd: z.number().nonnegative(),
+    se: z.number().nonnegative(),
+    /** Null when the differences have no spread or the mean is exactly zero —
+     *  JSON cannot carry an infinite z, and a deterministic separation is a
+     *  verdict, not a test statistic. */
+    z: z.number().nullable(),
+    corr: z.number().nullable(),
+  }),
+  /** The smallest true difference this comparison could have distinguished. */
+  mde: z.number().nullable(),
+  verdict: z.enum(["distinguishable", "noise"]),
+  verdictDetail: z.string().max(2000),
+});
+export type BenchmarkStatsComparison = z.infer<typeof BenchmarkStatsComparisonSchema>;

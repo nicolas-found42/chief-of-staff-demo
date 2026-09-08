@@ -59,3 +59,6 @@ previous-session.md
 
 # pnpm's content-addressable store, when a `store-dir` puts it inside the repo.
 .pnpm-store/
+
+# Benchmark judge-response cache: local spend avoidance, never a record.
+/.cache/

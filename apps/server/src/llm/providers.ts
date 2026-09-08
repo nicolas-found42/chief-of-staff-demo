@@ -36,7 +36,7 @@ export interface LlmConfig {
   baseUrl?: string;
 }
 
-interface CompletionRequest {
+export interface CompletionRequest {
   system: string;
   user: string;
   /**
@@ -65,6 +65,12 @@ interface CompletionRequest {
    * Omitted → `DEFAULT_REASONING_EFFORT`.
    */
   reasoningEffort?: string;
+  /**
+   * Best-effort sampling seed, sent only to providers whose wire accepts one
+   * (the OpenAI family). Hosted inference stays non-deterministic even with
+   * a seed; the recorded `systemFingerprint` names the backend that answered.
+   */
+  seed?: number;
   /**
    * The result shape this one call must return. Required, and deliberately so:
    * one Shell seam serves every Module, `strict: true` means the schema sent is
@@ -133,10 +139,112 @@ interface RequestDeadline {
      when no effort level is sent. Assigned once per call beside the
      resolution above; the central stamp reads it like the rest list. */
   reasoningEffort?: string | undefined;
+  /* Assigned by the provider on a succeeded wire response, before the
+     central success report is written, so the succeeded attempt carries the
+     token/cost/fingerprint facts the wire reported. */
+  usage?: ModelUsageObservation | undefined;
   observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
 }
+/** Token, cost and serving-backend facts off one succeeded wire response. */
+export interface ModelUsageObservation {
+  provider: ProviderId;
+  model: string;
+  binding: ResultShapeBinding;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** The provider's own charge in US dollars, when it names one. */
+  costUsd: number | null;
+  systemFingerprint: string | null;
+}
 
-/** One provider answer, kept only as long as it takes to classify or read it. */
+let usageObserver: ((observation: ModelUsageObservation) => void) | null = null;
+
+/**
+ * Subscribe to every succeeded completion's usage facts, or clear the
+ * subscription with null. One subscriber — the benchmark driver — because
+ * the seam serves the whole app, and only a benchmark run wants a per-call
+ * ledger.
+ */
+export function observeModelUsage(
+  observer: ((observation: ModelUsageObservation) => void) | null,
+): void {
+  usageObserver = observer;
+}
+
+function usageInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : null;
+}
+
+function usageDollars(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function usageName(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function usageRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+type UsageFacts = Omit<ModelUsageObservation, "provider" | "model" | "binding"> | null;
+
+/** Attach the observation to the succeeded attempt and the subscriber. */
+function fireUsage(deadline: RequestDeadline, call: ModelCall, facts: UsageFacts): void {
+  if (facts === null) return;
+  const observation: ModelUsageObservation = {
+    provider: call.provider,
+    model: call.model,
+    binding: call.binding,
+    ...facts,
+  };
+  deadline.usage = observation;
+  usageObserver?.(observation);
+}
+
+/** OpenAI-family fields: `usage.prompt_tokens`/`completion_tokens`, OpenRouter's
+ *  `usage.cost`, and the serving backend's fingerprint on the choice or root. */
+function openAiUsage(payload: unknown): UsageFacts {
+  const root = usageRecord(payload);
+  const usage = usageRecord(root?.usage);
+  const choices = isUnknownArray(root?.choices) ? root.choices : [];
+  const choice = usageRecord(choices[0]);
+  const inputTokens = usageInt(usage?.prompt_tokens);
+  const outputTokens = usageInt(usage?.completion_tokens);
+  const costUsd = usageDollars(usage?.cost);
+  const systemFingerprint =
+    usageName(choice?.system_fingerprint) ?? usageName(root?.system_fingerprint);
+  if (
+    inputTokens === null &&
+    outputTokens === null &&
+    costUsd === null &&
+    systemFingerprint === null
+  )
+    return null;
+  return { inputTokens, outputTokens, costUsd, systemFingerprint };
+}
+
+/** Anthropic names its token fields its own way and reports no cost. */
+function anthropicUsage(payload: unknown): UsageFacts {
+  const usage = usageRecord(usageRecord(payload)?.usage);
+  const inputTokens = usageInt(usage?.input_tokens);
+  const outputTokens = usageInt(usage?.output_tokens);
+  if (inputTokens === null && outputTokens === null) return null;
+  return { inputTokens, outputTokens, costUsd: null, systemFingerprint: null };
+}
+
+/** Gemini counts tokens in `usageMetadata` with camelCase names. */
+function geminiUsage(payload: unknown): UsageFacts {
+  const usage = usageRecord(usageRecord(payload)?.usageMetadata);
+  const inputTokens = usageInt(usage?.promptTokenCount);
+  const outputTokens = usageInt(usage?.candidatesTokenCount);
+  if (inputTokens === null && outputTokens === null) return null;
+  return { inputTokens, outputTokens, costUsd: null, systemFingerprint: null };
+}
+
+/** One provider answer over the wire: status line plus body text. */
 interface HttpResponse {
   status: number;
   text: string;
@@ -502,6 +610,13 @@ async function postSseStream(
        rescan the whole answer per token. */
     let contentChecked = 0;
     const seen = { data: false };
+    /* Usage accounting rides the final frame (OpenRouter) or per-frame
+       fingerprint fields; both are recorded, never parsed as answer. Held in
+       an object because closures write them and CFA cannot see that. */
+    const captured: {
+      usage: Record<string, unknown> | null;
+      fingerprint: string | null;
+    } = { usage: null, fingerprint: null };
     /** Fail the attempt once an answer surface repeats itself without finishing. */
     const checkDegenerate = (answer: string, checked: number): number => {
       if (answer.length - checked < REPEAT_CHECK_STEP) return checked;
@@ -544,6 +659,13 @@ async function postSseStream(
         chunk.provider !== ""
       )
         observed.upstreamServer = chunk.provider;
+      const frame = chunk as JsonObject;
+      const usageFrame = usageRecord(frame.usage);
+      if (usageFrame !== null) captured.usage = usageFrame;
+      const fingerprint = usageName(
+        usageRecord(usageRecord(frame.choices)?.[0])?.system_fingerprint,
+      );
+      if (fingerprint !== null) captured.fingerprint = fingerprint;
       if (!("choices" in chunk)) return false;
       const choices = chunk.choices;
       if (!isUnknownArray(choices) || choices.length === 0) return false;
@@ -693,6 +815,10 @@ async function postSseStream(
       status: 200,
       text: JSON.stringify({
         ...(observed.upstreamServer ? { provider: observed.upstreamServer } : {}),
+        ...(captured.usage !== null && Object.keys(captured.usage).length > 0
+          ? { usage: captured.usage }
+          : {}),
+        ...(captured.fingerprint !== null ? { system_fingerprint: captured.fingerprint } : {}),
         choices: [{ index: 0, message, finish_reason: finishReason }],
       }),
     };
@@ -968,7 +1094,6 @@ function readToolUseInput(reply: ModelReply): unknown {
   /* The blocks are an array, so the body itself is the deepest named container. */
   throw unusableShape(reply, { path: "", value: payload });
 }
-
 /** Read `candidates[0].content.parts[0].text` from a Gemini response. */
 function readGeminiText(reply: ModelReply, answer: AnswerContainer): string {
   const content = answer.value;
@@ -1037,6 +1162,9 @@ async function openaiComplete(
     {
       model: cfg.model,
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      /* Best-effort reproducibility: hosted inference stays non-deterministic
+         even with a seed, so the fingerprint is recorded beside it. */
+      ...(request.seed !== undefined ? { seed: request.seed } : {}),
       messages: [
         { role: "system", content: request.system },
         { role: "user", content: request.user },
@@ -1048,7 +1176,9 @@ async function openaiComplete(
     },
     deadline,
   );
-  return readChatResultShape(modelReply(call, response));
+  const reply = modelReply(call, response);
+  fireUsage(deadline, call, openAiUsage(reply.payload));
+  return readChatResultShape(reply);
 }
 
 async function anthropicComplete(
@@ -1078,7 +1208,9 @@ async function anthropicComplete(
     },
     deadline,
   );
-  return readToolUseInput(modelReply(call, response));
+  const reply = modelReply(call, response);
+  fireUsage(deadline, call, anthropicUsage(reply.payload));
+  return readToolUseInput(reply);
 }
 
 async function geminiComplete(
@@ -1103,7 +1235,9 @@ async function geminiComplete(
     },
     deadline,
   );
-  return readGeminiResultShape(modelReply(call, response));
+  const reply = modelReply(call, response);
+  fireUsage(deadline, call, geminiUsage(reply.payload));
+  return readGeminiResultShape(reply);
 }
 
 /**
@@ -1137,6 +1271,10 @@ function chatCompletionBody(
     ],
   };
   if (request.temperature !== undefined) body.temperature = request.temperature;
+  /* Best-effort reproducibility, OpenAI family only: the other wires have no
+     seed parameter, and Anthropic's is a fixed zero by another name. */
+  if (request.seed !== undefined && (cfg.provider === "openai" || cfg.provider === "openrouter"))
+    body.seed = request.seed;
   /* Thinking budget, OpenRouter only: thinking off the wire always, and the
      resolved effort level when the model advertises it. Other providers never
      see this object. */
@@ -1307,7 +1445,7 @@ async function openAiCompatibleComplete(
      declaration covers, then prompt-only. An unknown declaration walks the
      whole ladder from the most deterministic binding down, because a model
      that refuses a JSON Schema may still honour a tool call.
-
+ 
      The walk is over candidates, not over the ladder's own indices: a declared
      `forced_tool_call` used to step to whatever followed it, which skipped
      `response_format` entirely — and `response_format` is the binding measured
@@ -1533,7 +1671,9 @@ async function openAiCompatibleComplete(
       continue;
     }
     try {
-      return readChatResultShape(modelReply(call, response));
+      const reply = modelReply(call, response);
+      fireUsage(deadline, call, openAiUsage(reply.payload));
+      return readChatResultShape(reply);
     } catch (error) {
       /* Some upstreams answer `finish_reason: stop` with no tool call at all
          under a forced named function, doing the task in content instead
@@ -1894,6 +2034,24 @@ async function withinRequestCeiling<T>(
       ...(deadline.providerIgnore !== undefined ? { providerIgnore: deadline.providerIgnore } : {}),
       ...(deadline.reasoningEffort !== undefined
         ? { reasoningEffort: deadline.reasoningEffort }
+        : {}),
+      /* Usage facts describe the wire response of one succeeded attempt; a
+         retrying or failed attempt has none to report. */
+      ...(event.outcome === "succeeded" && deadline.usage !== undefined
+        ? {
+            ...(deadline.usage.systemFingerprint !== null
+              ? { systemFingerprint: deadline.usage.systemFingerprint }
+              : {}),
+            ...(deadline.usage.inputTokens !== null || deadline.usage.outputTokens !== null
+              ? {
+                  usage: {
+                    inputTokens: deadline.usage.inputTokens ?? 0,
+                    outputTokens: deadline.usage.outputTokens ?? 0,
+                    costUsd: deadline.usage.costUsd,
+                  },
+                }
+              : {}),
+          }
         : {}),
     });
   };
