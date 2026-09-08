@@ -173,6 +173,10 @@ export const ModelAttemptEventSchema = z.object({
      auditable per-attempt delta rather than a silent confound. Omitted when
      the attempt carried no rest. */
   providerIgnore: z.array(z.string().max(200)).optional(),
+  /* The thinking depth this wire attempt was actually sent with. Omitted
+     when the attempt sent no effort level (provider default applied) —
+     populated from the reasoning send, never guessed. */
+  reasoningEffort: z.string().max(20).optional(),
   diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
   /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */
   delayMs: z.number().int().nonnegative().max(500),

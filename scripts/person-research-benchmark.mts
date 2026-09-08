@@ -12,6 +12,7 @@ import {
 } from "../packages/shared/src/index.js";
 import { ConfigStore } from "../apps/server/src/config.js";
 import {
+  DEFAULT_REASONING_EFFORT,
   makeCompleteJson,
   MAX_RESTING_ROUTES,
   ROUTE_COOLDOWN_MS,
@@ -518,10 +519,10 @@ const report: BenchmarkReport = {
       extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
       extractionRouteSort: "throughput",
       extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-      /* "unset" means no reasoning parameter is sent and provider defaults
-         apply. A reasoning send records its effort here instead. */
-      reasoningEffort: "unset",
-      reasoningExclude: "unset",
+      /* Requested thinking depth; the seam omits it for models that advertise
+         no effort list, so provider defaults apply there. */
+      reasoningEffort: DEFAULT_REASONING_EFFORT,
+      reasoningExclude: true,
       routeRestPolicy: ROUTE_REST_POLICY,
       routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,
       routeRestMaxRoutes: MAX_RESTING_ROUTES,

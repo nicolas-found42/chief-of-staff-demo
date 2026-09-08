@@ -10,6 +10,8 @@ import {
 } from "@chief-of-staff-demo/shared";
 import {
   makeCompleteJson,
+  resolveReasoningEffort,
+  DEFAULT_REASONING_EFFORT,
   REQUEST_TIMEOUT_MS,
   STREAM_IDLE_TIMEOUT_MS,
   STREAM_MAX_ANSWER_CHARS,
@@ -43,6 +45,8 @@ interface Reply {
 
 const calls: Call[] = [];
 const responses: Reply[] = [];
+/** Replies to the OpenRouter model-catalogue lookup, which shares no queue with completions. */
+const catalogues: Reply[] = [];
 /** Replies to the model-capability lookup, which is a different URL to a completion. */
 const declarations: Reply[] = [];
 const lookups: string[] = [];
@@ -137,15 +141,21 @@ it("keeps the absolute request ceiling above both stream ceilings", () => {
   expect(STREAM_SILENT_TIMEOUT_MS).toBeGreaterThan(STREAM_IDLE_TIMEOUT_MS);
   expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(STREAM_SILENT_TIMEOUT_MS);
 });
-
 beforeEach(() => {
   calls.length = 0;
   responses.length = 0;
+  catalogues.length = 0;
   declarations.length = 0;
   lookups.length = 0;
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof URL ? input.href : typeof input === "string" ? input : input.url;
     const headers = (init?.headers ?? {}) as Record<string, string>;
+    if (url === "https://openrouter.ai/api/v1/models") {
+      /* The catalogue carries no completions: an unlisted model resolves its
+         effort to omitted, exactly as an unreadable catalogue does. */
+      const queued: Reply = catalogues.shift() ?? { status: 200, body: { data: [] } };
+      return queuedResponse(queued, init?.signal);
+    }
     if (url.includes("/endpoints")) {
       lookups.push(url);
       /* No queued declaration means the model's support is unknown, which is
@@ -170,6 +180,24 @@ beforeEach(() => {
 /** An OpenRouter model-capability reply declaring exactly `params`. */
 function declaring(...params: string[]): Reply {
   return { status: 200, body: { data: { endpoints: [{ supported_parameters: params }] } } };
+}
+
+/** An OpenRouter catalogue reply carrying reasoning metadata for `entries`. */
+function reasoningCatalogue(
+  entries: { id: string; efforts?: string[]; mandatory?: boolean }[],
+): Reply {
+  return {
+    status: 200,
+    body: {
+      data: entries.map((entry) => ({
+        id: entry.id,
+        reasoning: {
+          ...(entry.efforts !== undefined ? { supported_efforts: entry.efforts } : {}),
+          ...(entry.mandatory !== undefined ? { mandatory: entry.mandatory } : {}),
+        },
+      })),
+    },
+  };
 }
 
 function toolCallCompletion(args: unknown): Record<string, unknown> {
@@ -419,9 +447,9 @@ describe("providers", () => {
             ? { fail: new Error("SECRET provider text") }
             : {
                 /* A partial answer and then nothing at all. Keepalives used to
-       stand in for idleness here; since #232 they say the upstream
-       is alive and buffering, which is a different fixture and its
-       own test. This one is the connection going quiet. */
+     stand in for idleness here; since #232 they say the upstream
+     is alive and buffering, which is a different fixture and its
+     own test. This one is the connection going quiet. */
                 sseDrip: { intervalMs: 1000, lines: [partial] },
               },
         );
@@ -571,6 +599,101 @@ describe("providers", () => {
     expect(calls[1].body.provider).toEqual({ sort: "throughput" });
     expect(later).toHaveLength(1);
     expect(later[0]).not.toHaveProperty("providerIgnore");
+  });
+
+  /* Thinking budget: exclusion rides every OpenRouter body so reasoning
+     never holds a stream open, and the effort level resolves against the
+     model's advertised list — unlisted models and unreadable catalogues
+     omit it, exactly as before reasoning was sent. */
+  it("openrouter: sends exclude-true and the resolved effort for a listed model", async () => {
+    catalogues.push(
+      reasoningCatalogue([
+        { id: "some/reasoning-listed", efforts: ["high", "medium", "low"], mandatory: true },
+      ]),
+    );
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/reasoning-listed", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await expect(
+      complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+        retry: { onAttempt: (event) => events.push(event) },
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls[0].body.reasoning).toEqual({ exclude: true, effort: "low" });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ outcome: "succeeded", reasoningEffort: "low" });
+    expect(events[0]).not.toHaveProperty("providerIgnore");
+  });
+
+  it("openrouter: sends exclude-true with no effort for an unlisted model", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({ sse: sseToolCallCompletion(JSON.stringify(RESULT)) });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/reasoning-unlisted", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    await expect(
+      complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+        retry: { onAttempt: (event) => events.push(event) },
+      }),
+    ).resolves.toEqual(RESULT);
+    expect(calls[0].body.reasoning).toEqual({ exclude: true });
+    expect(events).toHaveLength(1);
+    expect(events[0]).not.toHaveProperty("reasoningEffort");
+  });
+
+  it("ollama: never sends the reasoning object", async () => {
+    responses.push({ status: 400, body: { error: "json_schema unsupported" } });
+    responses.push({ body: toolCallCompletion(JSON.stringify(RESULT)) });
+    const complete = makeCompleteJson(
+      { provider: "ollama", model: "some/no-reasoning", apiKey: "" },
+      "/nonexistent/mock-result.json",
+    );
+    await expect(
+      complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+      }),
+    ).resolves.toEqual(RESULT);
+    for (const call of calls) expect(call.body).not.toHaveProperty("reasoning");
+  });
+
+  const resolutionCatalogue = new Map<string, { efforts: string[] | null; mandatory: boolean }>([
+    ["some/listed", { efforts: ["high", "medium", "low"], mandatory: true }],
+    ["some/no-efforts", { efforts: null, mandatory: false }],
+    ["some/optional", { efforts: ["low"], mandatory: false }],
+  ]);
+  it.each([
+    ["listed default resolves low", undefined, "some/listed", "low"],
+    ["listed override is honoured", "medium", "some/listed", "medium"],
+    ["optional none sends none", "none", "some/no-efforts", "none"],
+    ["unadvertised efforts send the default", undefined, "some/no-efforts", "low"],
+    ["unknown model omits", undefined, "some/unknown", undefined],
+    ["mandatory none omits", "none", "some/listed", undefined],
+    ["unlisted value omits", "ultra", "some/listed", undefined],
+  ] as const)("resolveReasoningEffort %s", (_label, requested, model, expected) => {
+    expect(resolveReasoningEffort(requested, resolutionCatalogue, model)).toBe(expected);
+  });
+  it("resolveReasoningEffort omits on an unreadable catalogue", () => {
+    expect(resolveReasoningEffort(undefined, null, "some/listed")).toBeUndefined();
+  });
+  it("defaults the thinking depth to low", () => {
+    expect(DEFAULT_REASONING_EFFORT).toBe("low");
   });
 
   it("openrouter: persistent opted-in idle failures stop after one additional attempt", async () => {
@@ -2149,6 +2272,13 @@ describe("model-boundary failures", () => {
               data: { endpoints: [{ supported_parameters: ["response_format"] }] },
             }),
           );
+        /* The stub plays the whole network, and the network now serves a
+           model catalogue: without this branch the catalogue read below would
+           parse the keepalive stream, which never ends. */
+        if (input.endsWith("/models"))
+          return new Response(JSON.stringify({ data: [] }), {
+            headers: { "content-type": "application/json" },
+          });
         return new Response(
           new ReadableStream({
             start(controller) {
@@ -2197,6 +2327,12 @@ describe("model-boundary failures", () => {
               data: { endpoints: [{ supported_parameters: ["response_format"] }] },
             }),
           );
+        /* Same whole-network rule as the keepalive stub above: the catalogue
+           read needs finite JSON, not the fragment stream. */
+        if (input.endsWith("/models"))
+          return new Response(JSON.stringify({ data: [] }), {
+            headers: { "content-type": "application/json" },
+          });
         return new Response(
           new ReadableStream({
             start(controller) {

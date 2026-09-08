@@ -309,6 +309,82 @@ describe("the Person Profiles composition", () => {
     );
   });
 
+  it("records the routing and reasoning each extraction attempt was sent with", async () => {
+    const h = compose({
+      researchTestPorts: {
+        fetch: async (url) => ({
+          url,
+          status: 200,
+          contentType: "text/plain",
+          etag: null,
+          lastModified: null,
+          retryAfter: null,
+          body: `Maya built project ${new URL(url).pathname.slice(1)}.`,
+        }),
+      },
+      complete: () => async (request) => {
+        request.retry?.onAttempt({
+          attempt: 1,
+          binding: "forced_tool_call",
+          provider: "openrouter",
+          model: "test/model",
+          outcome: "succeeded",
+          diagnostic: null,
+          delayMs: 0,
+          stoppedReason: null,
+          providerIgnore: ["Groq"],
+          reasoningEffort: "low",
+        });
+        const { document } = JSON.parse(request.user) as { document: { url: string } };
+        const quote = `Maya built project ${new URL(document.url).pathname.slice(1)}.`;
+        return {
+          fullName: null,
+          employer: null,
+          sourceClass: "primary-artifact",
+          author: null,
+          publishedAt: null,
+          claims: [
+            {
+              id: "work-1",
+              section: "work",
+              statement: quote,
+              status: "supported",
+              nature: "statement",
+              matchConfidence: "high",
+              effectiveFrom: null,
+              effectiveTo: null,
+              citations: [{ sourceId: "source", quote }],
+              supports: [],
+              supersedes: [],
+              changeReason: null,
+            },
+          ],
+          works: [],
+          expertise: [],
+          connections: [],
+          sections: [],
+        };
+      },
+    });
+    const profile = h.people.profiles.create({ profileUrls: ["https://example.com/1"] });
+    await h.people.queue.tick();
+    const outcome = h.people.research.outcome(profile.id)!;
+    expect(outcome.conclusion).toBe("completed");
+    /* The attempt record carries what the wire attempt was sent with, so a
+       rest firing mid-assessment — or a thinking budget resolving per model —
+       stays attributable in a later comparison instead of a silent confound. */
+    expect(outcome.attempts).toContainEqual(
+      expect.objectContaining({
+        stage: "extraction",
+        code: "model-response-received",
+        configuration: expect.objectContaining({
+          providerIgnore: "Groq",
+          reasoningEffort: "low",
+        }),
+      }),
+    );
+  });
+
   /**
    * One document that stalls the configured model is not the same observation
    * as a provider that is down. The operation kept a sixty-call budget and
