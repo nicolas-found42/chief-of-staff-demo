@@ -107,17 +107,36 @@ export function modelBoundaryDiagnostic(error: unknown): ModelBoundaryDiagnostic
   return error instanceof ModelBoundaryError ? error.diagnostic : null;
 }
 
-/** Whether the seam reported a transient capacity condition, without choosing a retry policy. */
-export function isModelCapacityFailure(error: unknown): boolean {
+/**
+ * Whether the upstream said it is out of capacity right now: a 429 from either
+ * side of the seam, or a 502/503/504 the upstream named as its own.
+ *
+ * Kept apart from `isModelCapacityFailure` because the two are asked different
+ * questions. This one is about the upstream's own answer, and it is what a
+ * retry policy may act on: measured on the pinned route, one identical request
+ * sent three times gave a 502, then an answer, then a 502, so the refusal does
+ * not predict the next attempt. A timeout is a different fact — the call
+ * consumed a ceiling rather than being refused — and whether it is worth
+ * repeating depends on which ceiling fired, which only the caller's own
+ * deadline can judge.
+ */
+export function isUpstreamCapacityRefusal(error: unknown): boolean {
   const diagnostic = modelBoundaryDiagnostic(error);
   if (diagnostic === null) return false;
-  if (diagnostic.classification === "request_timeout") return true;
   if (diagnostic.status === 429 || diagnostic.upstreamCode === 429) return true;
   return (
     diagnostic.classification === "upstream_error" &&
     diagnostic.upstreamCode !== null &&
     [502, 503, 504].includes(diagnostic.upstreamCode)
   );
+}
+
+/** Whether the seam reported a transient capacity condition, without choosing a retry policy. */
+export function isModelCapacityFailure(error: unknown): boolean {
+  const diagnostic = modelBoundaryDiagnostic(error);
+  if (diagnostic === null) return false;
+  if (diagnostic.classification === "request_timeout") return true;
+  return isUpstreamCapacityRefusal(error);
 }
 
 function resultShapeDiagnostic(error: unknown): ResultShapeDiagnostic | null {

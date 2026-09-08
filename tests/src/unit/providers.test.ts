@@ -463,6 +463,93 @@ describe("providers", () => {
     },
   );
 
+  /* An upstream out of capacity is a transient condition, not an answer.
+     Measured on the pinned route with one identical request sent three times:
+     FAIL (121.7s, upstream 502), OK (29.7s), FAIL (121.2s). The route that
+     refused had not stopped serving, so the next attempt is worth making —
+     which is what the route-rest test beside this one already says in prose,
+     that such a route "may well answer the next one". ADR-0066 first scoped
+     retries to transport and idle failures because #228's stalling stream was
+     the only failure then in view; this is the same condition Content Scout
+     has retried since it was written. */
+  it("openrouter: an opted-in call retries the same binding after an upstream capacity refusal", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("tools", "tool_choice"));
+      responses.push(
+        {
+          sse: [
+            'data: {"error":{"message":"Upstream error","code":502,"metadata":{"provider_name":"Novita"}}}',
+            "data: [DONE]",
+          ],
+        },
+        { sse: sseToolCallCompletion(JSON.stringify(RESULT)) },
+      );
+      const events: ModelAttemptEvent[] = [];
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/capacity-upstream-502", apiKey: "ork" },
+        "/nonexistent/mock-result.json",
+      );
+      const pending = complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        preferredBinding: "forced_tool_call",
+        retry: { onAttempt: (event) => events.push(event) },
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await pending).toEqual(RESULT);
+      expect(calls).toHaveLength(2);
+      /* Same binding, same body: a capacity refusal says nothing about the
+         Result Shape Binding, so nothing about the request changes.
+
+         Resting and retrying stay disjoint here. `restFailedRoute` rests a
+         repetition loop, an answer overrun, a timeout, or a 429 — never an
+         `upstream_error` — so a capacity refusal rests nothing and the retry
+         carries the routing it started with. Sourcery read the two as
+         interacting on PR #305, which would leave the retry asking OpenRouter
+         to ignore the only route the pinned model has, so the absence of a
+         rest is asserted on its own rather than left to the body comparison. */
+      const retriedProvider = calls[1].body.provider as Record<string, unknown>;
+      expect(retriedProvider.ignore).toBeUndefined();
+      expect(calls[1].body).toEqual(calls[0].body);
+      expect(events).toMatchObject([
+        { attempt: 1, binding: "forced_tool_call", outcome: "retrying", delayMs: 500 },
+        { attempt: 2, binding: "forced_tool_call", outcome: "succeeded" },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /* The widening is to capacity refusals only. An upstream naming a fault of
+     its own would answer the same way next time, so it keeps the old policy —
+     this is the boundary that stops the gate drifting into "retry
+     everything". */
+  it("openrouter: an upstream fault that is not a capacity refusal does not retry", async () => {
+    declarations.push(declaring("tools", "tool_choice"));
+    responses.push({
+      sse: [
+        'data: {"error":{"message":"Bad request","code":400,"metadata":{"provider_name":"Novita"}}}',
+        "data: [DONE]",
+      ],
+    });
+    const events: ModelAttemptEvent[] = [];
+    const complete = makeCompleteJson(
+      { provider: "openrouter", model: "some/non-capacity-upstream-fault", apiKey: "ork" },
+      "/nonexistent/mock-result.json",
+    );
+    const failure = await complete({
+      system: "S",
+      user: "U",
+      schema: ExtractionWireSchema,
+      preferredBinding: "forced_tool_call",
+      retry: { onAttempt: (event) => events.push(event) },
+    }).catch((error: unknown) => modelBoundaryDiagnostic(error));
+    expect(failure).toMatchObject({ classification: "upstream_error", upstreamCode: 400 });
+    expect(events.filter((event) => event.outcome === "retrying")).toHaveLength(0);
+  });
+
   it("openrouter: persistent opted-in idle failures stop after one additional attempt", async () => {
     vi.useFakeTimers();
     try {
