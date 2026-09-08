@@ -177,6 +177,18 @@ export const ModelAttemptEventSchema = z.object({
      when the attempt sent no effort level (provider default applied) —
      populated from the reasoning send, never guessed. */
   reasoningEffort: z.string().max(20).optional(),
+  /* Who served a succeeded attempt, when the wire names it: evidence a route
+     silently swapped mid-arm, which is a condition change no policy sees. */
+  systemFingerprint: z.string().max(200).optional(),
+  /* Token and cost accounting off the succeeded wire response, exactly as
+     the provider reported it. Absent when the provider reported nothing. */
+  usage: z
+    .object({
+      inputTokens: z.number().int().nonnegative().nullable(),
+      outputTokens: z.number().int().nonnegative().nullable(),
+      costUsd: z.number().nonnegative().nullable(),
+    })
+    .optional(),
   diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
   /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */
   delayMs: z.number().int().nonnegative().max(500),

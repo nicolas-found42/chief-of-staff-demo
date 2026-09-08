@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { BenchmarkReportSchema, BenchmarkPersonArtifactSchema } from "@chief-of-staff-demo/shared";
+import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 
 it("rejects unknown requested people without writing a successful empty report", () => {
   const output = mkdtempSync(join(tmpdir(), "benchmark-invalid-selection-"));
@@ -309,5 +310,292 @@ it("retains public evidence without credentials and produces a separately reasse
     );
   } finally {
     rmSync(output, { recursive: true, force: true });
+  }
+});
+
+/* ---- Standardized-arm wiring: resume, repeats, stats, cost (issue #237) ---- */
+
+import {
+  BenchmarkArmStatsSchema,
+  BenchmarkStatsComparisonSchema,
+} from "@chief-of-staff-demo/shared";
+
+/** An eligible, conditions-stamped artifact for `achim-steiner` under the mock
+ *  provider, so --retry can carry it without spending a model call. */
+function eligibleArtifact() {
+  /* Structural conditions (corpus version et al.) must match the corpus the
+     driver actually loads, so stamp from the live corpus, not the fixture. */
+  const corpus = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  );
+  const report = BenchmarkReportSchema.parse(
+    JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            "../../../artifacts/person-benchmark/fixed-documents-expanded-2d0a903133188b6a.json",
+            import.meta.url,
+          ),
+        ),
+        "utf8",
+      ),
+    ),
+  );
+  const person = structuredClone(report.people[0]);
+  person.failure = null;
+  person.operational = { ...person.operational, conclusion: "completed" };
+  person.assessment = { operationId: "op-carried", integrity: "completed", judge: "completed" };
+  return BenchmarkPersonArtifactSchema.parse({
+    schemaVersion: 1,
+    runId: "priorarm000000",
+    corpusVersion: corpus.version,
+    pipeline: "expanded",
+    judgeProvider: "mock",
+    judgeModel: "mock",
+    judgeVersion: "2026-09-06.10",
+    assessedAt: "2026-09-08T09:00:00.000Z",
+    conditions: {
+      mode: "fixed-documents",
+      researchProvider: "mock",
+      researchModel: "mock",
+      promptVersion: "2026-09-06.4",
+      reasoningEffort: "low",
+    },
+    result: person,
+  });
+}
+
+it("--retry carries an eligible person and re-runs only the rest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cli-retry-"));
+  try {
+    writeFileSync(
+      join(dir, "fixed-documents-expanded-priorarm000000-achim-steiner.person.json"),
+      `${JSON.stringify(eligibleArtifact())}\n`,
+    );
+    const config = join(dir, "config.json");
+    writeFileSync(config, JSON.stringify({ provider: "mock", model: "mock" }));
+    spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--config",
+        config,
+        "--people",
+        "achim-steiner,ana-botin",
+        "--retry",
+        dir,
+        "--out",
+        dir,
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    const reportFile = readdirSync(dir).find(
+      (file) =>
+        file.includes("-retry") === false &&
+        /^fixed-documents-expanded-[0-9a-f]+\.json$/.test(file),
+    )!;
+    const report = BenchmarkReportSchema.parse(
+      JSON.parse(readFileSync(join(dir, reportFile), "utf8")),
+    );
+    expect(report.resume).toEqual({
+      carriedPeople: ["achim-steiner"],
+      retriedPeople: ["ana-botin"],
+    });
+    expect(report.people.map((person) => person.slug)).toEqual(["achim-steiner", "ana-botin"]);
+    expect(report.people[0].assessment!.operationId).toBe("op-carried");
+    expect(report.provenance.researchSettings.gitSha).toMatch(/^[0-9a-f]{40}$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("--retry refuses a stamped artifact from a different run recipe", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cli-mismatch-"));
+  try {
+    const artifact = eligibleArtifact();
+    const mixed = {
+      ...artifact,
+      conditions: { ...artifact.conditions!, researchModel: "acme/different" },
+    };
+    writeFileSync(
+      join(dir, "fixed-documents-expanded-priorarm000000-achim-steiner.person.json"),
+      `${JSON.stringify(mixed)}\n`,
+    );
+    const config = join(dir, "config.json");
+    writeFileSync(config, JSON.stringify({ provider: "mock", model: "mock" }));
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--config",
+        config,
+        "--people",
+        "achim-steiner",
+        "--retry",
+        dir,
+        "--out",
+        dir,
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("researchModel");
+    expect(
+      readdirSync(dir).filter(
+        (file) =>
+          file.endsWith(".json") && !file.endsWith(".person.json") && file !== "config.json",
+      ),
+    ).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("--repeats 2 writes one report per repeat plus arm statistics", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cli-repeats-"));
+  try {
+    const config = join(dir, "config.json");
+    writeFileSync(config, JSON.stringify({ provider: "mock", model: "mock" }));
+    spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--config",
+        config,
+        "--people",
+        "achim-steiner,ana-botin",
+        "--repeats",
+        "2",
+        "--out",
+        dir,
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    const repeatReports = readdirSync(dir).filter((file) => /-r[12]\.json$/.test(file));
+    expect(repeatReports).toHaveLength(2);
+    for (const file of repeatReports)
+      expect(
+        BenchmarkReportSchema.parse(JSON.parse(readFileSync(join(dir, file), "utf8"))).provenance
+          .researchSettings.repeats,
+      ).toBe(2);
+    const stats = BenchmarkArmStatsSchema.parse(
+      JSON.parse(readFileSync(join(dir, "stats.json"), "utf8")),
+    );
+    expect(stats.repeats).toBe(2);
+    expect(stats.people.map((person) => person.scores)).toEqual([
+      [expect.any(Number), expect.any(Number)],
+      [expect.any(Number), expect.any(Number)],
+    ]);
+    expect(readFileSync(join(dir, "stats.md"), "utf8")).toContain("95% CI");
+    // A second opinion pass over the same directory reproduces the same stats.
+    const again = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "scripts/person-research-benchmark.mts", "--stats", dir],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    expect(again.stdout).toContain("95% CI");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("--compare-stats pairs two arm statistics files and warns inside the noise band", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cli-compare-stats-"));
+  try {
+    const person = {
+      slug: "achim-steiner",
+      scores: [0.25, 0.75],
+      mean: 0.5,
+    };
+    const arm = (runId: string, mean: number) => ({
+      schemaVersion: 1,
+      runIds: [runId],
+      mode: "fixed-documents",
+      pipeline: "expanded",
+      repeats: 2,
+      people: [person, { slug: "ana-botin", scores: [mean, mean], mean }],
+      ci: { mean, se: 0.1, lo: mean - 0.196, hi: mean + 0.196 },
+      totals: { referenceFacts: 256, recoveredMean: mean * 256, rate: mean },
+    });
+    writeFileSync(join(dir, "baseline.json"), `${JSON.stringify(arm("base0000000", 0.5))}\n`);
+    writeFileSync(join(dir, "candidate.json"), `${JSON.stringify(arm("cand0000000", 0.52))}\n`);
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--compare-stats",
+        join(dir, "baseline.json"),
+        join(dir, "candidate.json"),
+        "--out",
+        dir,
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    expect(result.stdout).toContain("paired");
+    const comparison = BenchmarkStatsComparisonSchema.parse(
+      JSON.parse(readFileSync(join(dir, "stats-comparison.json"), "utf8")),
+    );
+    expect(comparison.sharedPeople).toBe(2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("--seed is recorded and a non-integer seed is rejected", () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cli-seed-"));
+  try {
+    const config = join(dir, "config.json");
+    writeFileSync(config, JSON.stringify({ provider: "mock", model: "mock" }));
+    spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--config",
+        config,
+        "--people",
+        "achim-steiner",
+        "--seed",
+        "7",
+        "--out",
+        dir,
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    const reportFile = readdirSync(dir).find((file) =>
+      /^fixed-documents-expanded-[0-9a-f]+\.json$/.test(file),
+    )!;
+    const report = BenchmarkReportSchema.parse(
+      JSON.parse(readFileSync(join(dir, reportFile), "utf8")),
+    );
+    expect(report.provenance.researchSettings.seed).toBe(7);
+    const bad = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/person-research-benchmark.mts",
+        "--config",
+        config,
+        "--seed",
+        "1.5",
+        "--out",
+        join(dir, "nope"),
+      ],
+      { cwd: fileURLToPath(new URL("../../../", import.meta.url)), encoding: "utf8" },
+    );
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain("--seed must be a non-negative integer");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

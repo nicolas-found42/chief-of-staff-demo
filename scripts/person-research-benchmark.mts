@@ -1,8 +1,10 @@
+import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  BenchmarkArmStatsSchema,
   BenchmarkReportSchema,
   BenchmarkPersonArtifactSchema,
   type BenchmarkPersonResult,
@@ -15,8 +17,10 @@ import {
   DEFAULT_REASONING_EFFORT,
   makeCompleteJson,
   MAX_RESTING_ROUTES,
+  observeModelUsage,
   ROUTE_COOLDOWN_MS,
   ROUTE_REST_POLICY,
+  type CompletionRequest,
 } from "../apps/server/src/llm/providers.js";
 import { probeSourceEligibility } from "../apps/server/src/source-adapters/eligibility.js";
 import { readPersonSource } from "../apps/server/src/person-profile/research-readers.js";
@@ -34,6 +38,14 @@ import { composePersonProfiles } from "../apps/server/src/person-profile/composi
 import { EXTRACTION_PREFERRED_MIN_THROUGHPUT } from "../apps/server/src/person-profile/research.js";
 import { JUDGE_VERSION } from "../apps/server/src/person-benchmark/judge.js";
 import { retainEvidence } from "../apps/server/src/person-benchmark/evidence.js";
+import {
+  buildArmStats,
+  compareArmStats,
+  renderArmStats,
+  renderStatsComparison,
+} from "../apps/server/src/person-benchmark/arm-stats.js";
+import { cachedCompleteJson } from "../apps/server/src/person-benchmark/judge-cache.js";
+import { loadReusable, type ResumeConditions } from "../apps/server/src/person-benchmark/resume.js";
 import { reassessReport } from "../apps/server/src/person-benchmark/reassess.js";
 import { configurePipeline } from "../apps/server/src/person-benchmark/pipelines.js";
 import {
@@ -80,6 +92,16 @@ Options
   --retain-evidence                       Preserve a public evidence snapshot under --out for reassessment.
   --render                                 Allow the bounded anonymous browser route (live mode).
   --compare <baseline.json> <candidate.json>  Compare two saved reports and exit.
+  --repeats <n>                            Fixed-documents only: run the whole selection n times
+                                           and write per-person interval statistics (stats.json/md).
+  --retry <dir>                            Resume an interrupted arm: carry every eligible person
+                                           from dir's artifacts, re-run the rest, write a fresh report.
+  --reuse-extraction <dir>                 Carry eligible people from dir without retry semantics.
+  --seed <n>                               Best-effort sampling seed (OpenAI family), recorded.
+  --max-cost <dollars>                     Abort once the provider-reported cost passes this.
+  --no-cache                               Bypass the judge-response cache.
+  --stats <dir>                            Rebuild stats.json/md from the reports in dir and exit.
+  --compare-stats <a.json> <b.json>        Compare two stats files on paired per-person diffs and exit.
   --reassess <report.json>                  Reassess retained evidence without researching again.
   --evidence-workspace <dir>                Isolated public snapshot with snapshot-manifest.json.
   --reassess-only-failed                   Freeze completed assessments; retry failed assessments only.
@@ -184,6 +206,35 @@ if (comparisonIndex !== -1) {
   process.exit(!comparison.comparable || comparison.verdict === "regressed" ? 1 : 0);
 }
 
+const compareStatsIndex = process.argv.indexOf("--compare-stats");
+if (compareStatsIndex !== -1) {
+  const baselinePath = process.argv[compareStatsIndex + 1];
+  const candidatePath = process.argv[compareStatsIndex + 2];
+  if (!baselinePath || !candidatePath)
+    throw new Error("--compare-stats needs a baseline and a candidate stats.json path.");
+  const baseline = BenchmarkArmStatsSchema.parse(JSON.parse(readFileSync(baselinePath, "utf8")));
+  const candidate = BenchmarkArmStatsSchema.parse(JSON.parse(readFileSync(candidatePath, "utf8")));
+  const comparison = compareArmStats(baseline, candidate);
+  const out = arg("out") ?? "artifacts/person-benchmark";
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, "stats-comparison.json"), `${JSON.stringify(comparison)}\n`);
+  writeFileSync(join(out, "stats-comparison.md"), `${renderStatsComparison(comparison)}\n`);
+  process.stdout.write(`${renderStatsComparison(comparison)}\n`);
+  /* The noise verdict is advice, not a gate: a coin-flip delta is a finding
+     about the design, not a failure of the run. */
+  process.exit(0);
+}
+
+const statsDir = arg("stats");
+if (statsDir !== undefined) {
+  const stats = buildArmStats(statsDir);
+  if (!stats) throw new Error(`No arm reports with measured people in ${statsDir}.`);
+  writeFileSync(join(statsDir, "stats.json"), `${JSON.stringify(stats)}\n`);
+  writeFileSync(join(statsDir, "stats.md"), `${renderArmStats(stats)}\n`);
+  process.stdout.write(`${renderArmStats(stats)}\n`);
+  process.exit(0);
+}
+
 const mode = arg("mode") ?? "fixed-documents";
 if (mode !== "live-discovery" && mode !== "fixed-documents")
   throw new Error("--mode must be live-discovery or fixed-documents.");
@@ -193,6 +244,36 @@ if (pipeline !== "incumbent" && pipeline !== "expanded")
 
 const concurrency = positiveInteger("concurrency", 1);
 if (concurrency > 4) throw new Error("--concurrency must be an integer from 1 to 4.");
+
+const seedArg = arg("seed");
+const seed = seedArg === undefined ? undefined : Number(seedArg);
+if (seed !== undefined && (!Number.isSafeInteger(seed) || seed < 0))
+  throw new Error("--seed must be a non-negative integer.");
+
+const maxCostArg = arg("max-cost");
+const maxCost = maxCostArg === undefined ? undefined : Number(maxCostArg);
+if (maxCost !== undefined && (!Number.isFinite(maxCost) || maxCost <= 0))
+  throw new Error("--max-cost must be a positive number of dollars.");
+
+const repeats = positiveInteger("repeats", 1);
+if (repeats > 20) throw new Error("--repeats must be 1 to 20, the arm-statistics ceiling.");
+if (repeats > 1 && mode === "live-discovery")
+  throw new Error("--repeats above 1 is supported for fixed-documents only.");
+const noCache = flag("no-cache");
+
+const retryDir = arg("retry");
+const reuseOnlyDir = arg("reuse-extraction");
+if (retryDir !== undefined && reuseOnlyDir !== undefined)
+  throw new Error("--retry and --reuse-extraction are alternatives; pass one.");
+
+/* After the reuse classification: nothing to run anywhere means the caller
+   asked for a rebuild without research, which the plain flags already do. */
+const requireWork = (toRun: { slug: string }[]) => {
+  if (toRun.length === 0)
+    throw new Error(
+      "Nothing to run: every selected person is already carried. Re-run without --retry/--reuse-extraction to rebuild the report.",
+    );
+};
 
 const configPath = arg("config") ?? "workspace/config.json";
 const settings = new ConfigStore(resolve(configPath), false);
@@ -295,6 +376,56 @@ const skipped = requestedPopulation
   .filter((slug) => !selected.some((person) => person.slug === slug))
   .map((slug) => ({ slug, reason: "Excluded by --limit." }));
 
+/* The run recipe a carried artifact must prove. promptVersion and the
+   requested reasoning effort are constants of this driver version; the seed
+   rides along only when the caller names one. */
+const runConditions: ResumeConditions = {
+  mode,
+  researchProvider: research.provider,
+  researchModel: research.model,
+  promptVersion: "2026-09-06.4",
+  reasoningEffort: DEFAULT_REASONING_EFFORT,
+  ...(seed !== undefined ? { seed } : {}),
+  corpusVersion: corpus.version,
+  pipeline,
+  judgeProvider: judging.provider,
+  judgeModel: judging.model,
+  judgeVersion: JUDGE_VERSION,
+  referenceVersions: Object.fromEntries(
+    corpus.people.map((person) => [person.slug, person.referenceVersion]),
+  ),
+};
+
+/* Resume: a completed, fully assessed person under a provably identical run
+   recipe is money already spent — carry the result, re-run only the rest. */
+let carried: BenchmarkPersonResult[] = [];
+let toRun: typeof selected = selected;
+if (retryDir !== undefined || reuseOnlyDir !== undefined) {
+  const reuse = loadReusable(resolve(retryDir ?? reuseOnlyDir!), runConditions);
+  if (reuse.mismatched.length > 0) {
+    const first = reuse.mismatched[0]!;
+    throw new Error(
+      `The reuse directory refuses ${reuse.mismatched.length} artifact(s) on conditions: ${first.slug} ran with ${first.field}=${JSON.stringify(first.prior)}; this run has ${first.field}=${JSON.stringify(first.current)}. Arms under different conditions are not one arm.`,
+    );
+  }
+  if (reuse.unstamped.length > 0)
+    process.stderr.write(
+      `Skipping ${String(reuse.unstamped.length)} artifact(s) without a conditions stamp (pre-dating stamping): ${reuse.unstamped.slice(0, 5).join(", ")}\n`,
+    );
+  const eligibleSlugs = new Set(reuse.eligible.keys());
+  const nothingLeftAnywhere = (narrowed: { slug: string }[]) =>
+    narrowed.length === 0 && repeats === 1;
+  carried = selected
+    .filter((person) => eligibleSlugs.has(person.slug))
+    .map((person) => reuse.eligible.get(person.slug)!.result);
+  /* The report describes the whole requested selection — carried people are
+     real measurements — so only the evaluation loop narrows to the rest. A
+     fully carried repeat is legal (a resumed K=2 arm's first repeat): the
+     campaign throws only when no repeat has anything left to run. */
+  toRun = selected.filter((person) => !eligibleSlugs.has(person.slug));
+  if (nothingLeftAnywhere(toRun)) requireWork(toRun);
+}
+
 const configured = configurePipeline(pipeline, readPersonSource);
 const modelFor = (config: ReturnType<ConfigStore["getForPurpose"]>) =>
   makeCompleteJson(
@@ -309,14 +440,48 @@ const modelFor = (config: ReturnType<ConfigStore["getForPurpose"]>) =>
 
 let inputCharacters = 0;
 let outputCharacters = 0;
+/* Provider-reported spend, accumulated at the seam. Arms that once died to an
+   outage and were re-run from scratch now pay only for what is missing. */
+const usage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  sawTokens: false,
+  costUsd: 0,
+  sawCost: false,
+};
+observeModelUsage((observation) => {
+  if (observation.inputTokens !== null) {
+    usage.inputTokens += observation.inputTokens;
+    usage.sawTokens = true;
+  }
+  if (observation.outputTokens !== null) {
+    usage.outputTokens += observation.outputTokens;
+    usage.sawTokens = true;
+  }
+  if (observation.costUsd !== null) {
+    usage.costUsd += observation.costUsd;
+    usage.sawCost = true;
+  }
+});
+
 const measured =
-  (config: ReturnType<ConfigStore["getForPurpose"]>) =>
-  async (request: Parameters<ReturnType<typeof makeCompleteJson>>[0]) => {
-    inputCharacters += request.system.length + request.user.length;
-    const answer = await modelFor(config)(request);
+  (config: ReturnType<ConfigStore["getForPurpose"]>) => async (request: CompletionRequest) => {
+    const full: CompletionRequest = seed !== undefined ? { ...request, seed } : request;
+    inputCharacters += full.system.length + full.user.length;
+    const answer = await modelFor(config)(full);
     outputCharacters += JSON.stringify(answer).length;
     return answer;
   };
+
+const gitSha = (() => {
+  try {
+    return execSync("git rev-parse HEAD", { encoding: "utf8", cwd: process.cwd() }).trim();
+  } catch {
+    /* Outside a git checkout (a downloaded script, a container): record the
+       absence rather than inventing a sha. */
+    return undefined;
+  }
+})();
 
 const startedAt = new Date().toISOString();
 const id = runId(corpus.version, mode, startedAt);
@@ -327,11 +492,6 @@ const stem = `${mode}-${pipeline}-${id}`;
 const results: BenchmarkPersonResult[] = [];
 const researchOutcomes: PersonResearchOperationOutcome[] = [];
 const population: { slug: string; profileId: string }[] = [];
-let collection: BenchmarkCollectionResult[] = [];
-let status: BenchmarkReport["status"] = "completed";
-let statusDetail = "Every selected Benchmark Person was evaluated.";
-let executionStatus: "completed" | "interrupted" = "interrupted";
-let evidenceBundleHash: string | undefined;
 
 const overrides: { profileCalls: number; profileMilliseconds: number; readConcurrency: number } = {
   profileCalls: positiveInteger("profile-calls", configured.settings.profileCalls),
@@ -339,217 +499,343 @@ const overrides: { profileCalls: number; profileMilliseconds: number; readConcur
   readConcurrency: positiveInteger("read-concurrency", configured.settings.readConcurrency),
 };
 
-const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-collection-"));
-try {
-  const ports: EvaluationPorts = {
-    workspaceDir,
-    search: configured.search,
-    complete: () => measured(research),
-    ...(pipeline === "expanded" ? { plan: () => measured(planning) } : {}),
-    judge: measured(judging),
-    ...(configured.seeds ? { seeds: configured.seeds } : {}),
-    ...(configured.readSource ? { readSource: configured.readSource } : {}),
-    ...(flag("render") && mode === "live-discovery" ? { render: playwrightBrowserRenderer() } : {}),
-    settings: overrides,
-  };
-  const onStarted = (person: (typeof selected)[number], index: number) =>
-    process.stderr.write(
-      `[${String(index + 1)}/${String(selected.length)}] ${person.slug} (${mode}, ${pipeline})\n`,
+/* The judge cache is keyed by judge version and repeat, so a judge fix or a
+   K-repeat pass re-samples instead of replaying a stored answer; only the
+   resume of identical questions is free. Local disk, never committed. */
+const judgePort = (repeat: number) =>
+  cachedCompleteJson(measured(judging), {
+    cacheDir: join(".cache", "person-benchmark", "judge"),
+    namespace: `judge-${JUDGE_VERSION}-r${String(repeat)}`,
+    provider: judging.provider,
+    model: judging.model,
+    disabled: noCache,
+  });
+
+const checkCost = () => {
+  if (maxCost !== undefined && usage.sawCost && usage.costUsd > maxCost)
+    throw new Error(
+      `Model cost ceiling exceeded: $${usage.costUsd.toFixed(2)} > $${maxCost.toFixed(2)}. The arm is reported as interrupted; --retry completes it from here.`,
     );
-  const onEvaluated = (evaluation: PersonEvaluation) => {
-    const person = evaluation.result;
-    results.push(evaluation.result);
-    results.sort(
-      (a, b) =>
-        selected.findIndex((person) => person.slug === a.slug) -
-        selected.findIndex((person) => person.slug === b.slug),
+};
+
+let allCompleted = true;
+for (let repeat = 1; repeat <= repeats; repeat++) {
+  /* Each repeat is a whole pass over the selection with fresh sampling, in
+     per-iteration state; the cost ledger is process-wide and never resets —
+     it is real money. */
+  results.length = 0;
+  researchOutcomes.length = 0;
+  population.length = 0;
+  let collection: BenchmarkCollectionResult[] = [];
+  let status: BenchmarkReport["status"] = "completed";
+  let statusDetail = "Every selected Benchmark Person was evaluated.";
+  let executionStatus: "completed" | "interrupted" = "interrupted";
+  let evidenceBundleHash: string | undefined;
+  const stemRepeat = repeats > 1 ? `${stem}-r${String(repeat)}` : stem;
+
+  /* One builder for the final report and for the after-each-person partial:
+     a hard kill mid-repeat still leaves a readable, honest top-level report
+     saying exactly how far the arm got. */
+  const buildReport = (
+    reportStatus: BenchmarkReport["status"],
+    reportStatusDetail: string,
+    reportExecution: "completed" | "interrupted",
+  ): BenchmarkReport => {
+    /* Computed per call: the partial reads it mid-run, when results grow. */
+    const merged = [...carried, ...results].sort(
+      (a, b) => requestedPopulation.indexOf(a.slug) - requestedPopulation.indexOf(b.slug),
     );
-    population.push({ slug: person.slug, profileId: evaluation.profileId });
-    if (evaluation.operation) researchOutcomes.push(evaluation.operation);
-    writeFileSync(
-      join(outDir, `${stem}-${person.slug}.operation.json`),
-      `${JSON.stringify(evaluation.operation)}\n`,
-    );
-    persistPersonArtifact(
-      {
-        schemaVersion: 1,
-        runId: id,
+    const measuredSlugs = new Set(merged.map((person) => person.slug));
+    const groupBasis = corpus.people.filter((person) => measuredSlugs.has(person.slug));
+    return {
+      schemaVersion: 1,
+      runId: id,
+      ...(evidenceBundleHash ? { evidenceBundleHash } : {}),
+      status: reportStatus,
+      statusDetail: reportStatusDetail,
+      execution: {
+        status: reportExecution,
+        selected: selected.map((person) => person.slug),
+        evaluated: merged.length,
+        assessed: merged.filter(
+          (result) =>
+            result.assessment?.operationId &&
+            result.assessment.integrity === "completed" &&
+            result.assessment.judge === "completed",
+        ).length,
+        scenarioIds: corpus.scenarios.map((scenario) => scenario.id),
+      },
+      mode,
+      selection: {
+        requested: requestedPopulation,
+        evaluated: merged.map((result) => result.slug),
+        skipped,
+      },
+      /* The resume split describes the repeat that carried people — later
+         repeats sampled fresh and record nothing carried. */
+      ...(repeat === 1 && (retryDir !== undefined || reuseOnlyDir !== undefined)
+        ? {
+            resume: {
+              carriedPeople: carried.map((person) => person.slug),
+              retriedPeople: results.map((person) => person.slug),
+            },
+          }
+        : {}),
+      provenance: {
         corpusVersion: corpus.version,
+        referenceVersions: Object.fromEntries(
+          selected.map((person) => [person.slug, person.referenceVersion]),
+        ),
         pipeline,
+        researchProvider: research.provider,
+        researchModel: research.model,
+        ...(mode === "live-discovery" && pipeline === "expanded"
+          ? { planningProvider: planning.provider, planningModel: planning.model }
+          : {}),
         judgeProvider: judging.provider,
         judgeModel: judging.model,
         judgeVersion: JUDGE_VERSION,
-        assessedAt: new Date().toISOString(),
-        result: person,
+        promptVersion: "2026-09-06.4",
+        collectorVersions: { "person-research": "2026-09-06" },
+        researchSettings: {
+          ...configured.conditions,
+          ...overrides,
+          operationConcurrency: concurrency,
+          modelRetryPolicy:
+            "One same-binding idle/transport retry inside the original deadline; extraction and benchmark judges only",
+          usageAccounting:
+            "Logical request text and returned answer characters; excludes retried wire payloads",
+          judgeBindingPreference: "forced_tool_call when model-declared; default otherwise",
+          extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
+          extractionRouteSort: "throughput",
+          extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+          /* Requested thinking depth; the seam omits it for models that advertise
+           no effort list, so provider defaults apply there. */
+          reasoningEffort: DEFAULT_REASONING_EFFORT,
+          reasoningExclude: true,
+          routeRestPolicy: ROUTE_REST_POLICY,
+          routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,
+          routeRestMaxRoutes: MAX_RESTING_ROUTES,
+          planner: mode === "live-discovery" && pipeline === "expanded",
+          ...(gitSha !== undefined ? { gitSha } : {}),
+          ...(seed !== undefined ? { seed } : {}),
+          ...(repeats > 1 ? { repeats } : {}),
+        },
+        network: mode === "live-discovery" ? "live" : "fixed-documents",
+        usage: {
+          inputCharacters,
+          outputCharacters,
+          tokens: usage.sawTokens
+            ? { input: usage.inputTokens, output: usage.outputTokens }
+            : "unavailable",
+          cost: usage.sawCost ? Math.round(usage.costUsd * 1_000_000) / 1_000_000 : "unavailable",
+        },
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        host: hostname(),
       },
-      stem,
-      outDir,
-    );
+      people: merged,
+      collection,
+      groups: summarizeGroups(groupBasis, merged),
+      remainingMisses: remainingMisses(groupBasis, merged),
+      leadDispositions: leadDispositionTotals(researchOutcomes),
+      coverageGaps: coverageGapTotals(researchOutcomes),
+    };
   };
-  let people;
-  if (mode === "live-discovery") {
-    ({ people } = await evaluateLivePopulation(selected, {
-      ...ports,
-      concurrency,
-      onStarted,
-      onEvaluated,
-    }));
-  } else {
-    /* Fixed-document mode used to research people serially. Each person runs
-       through its own composition over the shared collection workspace, and
-       every store under it is keyed per profile or per source, so parallel
-       people touch disjoint files; collection scoring reads the workspace
-       only after every worker settles. The one shared file (the research
-       queue snapshot) is loaded per composition and only its throwaway
-       persistence can interleave — nothing mid-run reads it back. Route
-       rests are process-wide by design, so parallel people share what each
-       learns about bad routes, the way the long-running app does (#233). */
-    let next = 0;
-    const workers = Array.from({ length: Math.min(concurrency, selected.length) }, async () => {
-      while (next < selected.length) {
-        const index = next++;
-        const person = selected[index]!;
-        onStarted(person, index);
-        onEvaluated(await evaluatePerson(person, mode, ports));
-      }
-    });
-    /* An output/assessment failure must not strand a sibling's accepted
-       operation mid-write: every worker settles before the first failure
-       surfaces, mirroring the live population path. */
-    const settled = await Promise.allSettled(workers);
-    const failure = settled.find((result) => result.status === "rejected");
-    if (failure?.status === "rejected") throw failure.reason;
-    people = composePersonProfiles({
+
+  /* Carried persons ride the first repeat only: later repeats exist to take
+     fresh samples, and carrying them there would double-count one sample. */
+  const repeatRun = repeats > 1 && repeat > 1 ? selected : toRun;
+  if (toRun.length === 0 && repeat === 1 && repeats > 1) {
+    /* A resumed K=2 arm whose first repeat is fully carried: record it and
+       spend the fresh sampling where it belongs, on the later repeats. */
+    process.stdout.write(
+      `Repeat ${String(repeat)}: all ${String(selected.length)} people carried from the prior run.\n`,
+    );
+    executionStatus = "completed";
+    const validated = BenchmarkReportSchema.parse(
+      buildReport(status, statusDetail, executionStatus),
+    );
+    writeFileSync(join(outDir, `${stemRepeat}.json`), `${JSON.stringify(validated)}\n`);
+    writeFileSync(join(outDir, `${stemRepeat}.md`), `${renderReport(validated, selected)}\n`);
+    continue;
+  }
+  requireWork(repeatRun);
+
+  const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-collection-"));
+  try {
+    const ports: EvaluationPorts = {
       workspaceDir,
       search: configured.search,
       complete: () => measured(research),
-      confirmedTranscripts: () => [],
-      transcriptStillConfirmed: () => false,
-      researchEnabled: () => false,
-    });
-  }
-  collection = await evaluateCollection(people, population, corpus.scenarios, {
-    references: corpus.people,
-    judge: measured(judging),
-  });
-  executionStatus = "completed";
-} catch (error) {
-  /* An interrupted run is reported as interrupted with whatever it completed.
-     It never leaves an earlier successful report standing as this run's. */
-  status = "interrupted";
-  statusDetail = `The run stopped after ${String(results.length)} of ${String(selected.length)} people: ${error instanceof Error ? error.message : "unknown error"}`;
-} finally {
-  try {
-    if (flag("retain-evidence")) {
-      const evidenceDirectory = join(outDir, `${stem}.evidence`);
-      evidenceBundleHash = retainEvidence(
-        workspaceDir,
-        evidenceDirectory,
-        results.flatMap((result) =>
-          result.assessment?.operationId ? [result.assessment.operationId] : [],
-        ),
+      ...(pipeline === "expanded" ? { plan: () => measured(planning) } : {}),
+      judge: judgePort(repeat),
+      ...(configured.seeds ? { seeds: configured.seeds } : {}),
+      ...(configured.readSource ? { readSource: configured.readSource } : {}),
+      ...(flag("render") && mode === "live-discovery"
+        ? { render: playwrightBrowserRenderer() }
+        : {}),
+      settings: overrides,
+    };
+    const onStarted = (person: (typeof repeatRun)[number], index: number) =>
+      process.stderr.write(
+        `[${String(index + 1)}/${String(repeatRun.length)}] ${person.slug} (${mode}, ${pipeline}, repeat ${String(repeat)})\n`,
       );
-      process.stderr.write(`Retained evidence: ${evidenceDirectory}\n`);
+    const onEvaluated = (evaluation: PersonEvaluation) => {
+      const person = evaluation.result;
+      results.push(evaluation.result);
+      results.sort(
+        (a, b) =>
+          selected.findIndex((person) => person.slug === a.slug) -
+          selected.findIndex((person) => person.slug === b.slug),
+      );
+      population.push({ slug: person.slug, profileId: evaluation.profileId });
+      if (evaluation.operation) researchOutcomes.push(evaluation.operation);
+      writeFileSync(
+        join(outDir, `${stemRepeat}-${person.slug}.operation.json`),
+        `${JSON.stringify(evaluation.operation)}\n`,
+      );
+      persistPersonArtifact(
+        {
+          schemaVersion: 1,
+          runId: id,
+          corpusVersion: corpus.version,
+          pipeline,
+          judgeProvider: judging.provider,
+          judgeModel: judging.model,
+          judgeVersion: JUDGE_VERSION,
+          assessedAt: new Date().toISOString(),
+          conditions: runConditions,
+          result: person,
+        },
+        stemRepeat,
+        outDir,
+      );
+      checkCost();
+      /* The partial is overwritten by the next person and finally by the
+         repeat's real report; its interrupted status is the honest record of
+         a run that was still moving when it stopped. */
+      writeFileSync(
+        join(outDir, `${stemRepeat}.json`),
+        `${JSON.stringify(
+          BenchmarkReportSchema.parse(
+            buildReport(
+              "interrupted",
+              `In progress: ${String(results.length + carried.length)} of ${String(selected.length)} people evaluated.`,
+              executionStatus,
+            ),
+          ),
+        )}\n`,
+      );
+    };
+    let people;
+    if (mode === "live-discovery") {
+      ({ people } = await evaluateLivePopulation(repeatRun, {
+        ...ports,
+        concurrency,
+        onStarted,
+        onEvaluated,
+      }));
+    } else {
+      /* Fixed-document mode used to research people serially. Each person runs
+         through its own composition over the shared collection workspace, and
+         every store under it is keyed per profile or per source, so parallel
+         people touch disjoint files; collection scoring reads the workspace
+         only after every worker settles. The one shared file (the research
+         queue snapshot) is loaded per composition and only its throwaway
+         persistence can interleave — nothing mid-run reads it back. Route
+         rests are process-wide by design, so parallel people share what each
+         learns about bad routes, the way the long-running app does (#233). */
+      let next = 0;
+      const workers = Array.from({ length: Math.min(concurrency, repeatRun.length) }, async () => {
+        while (next < repeatRun.length) {
+          const index = next++;
+          const person = repeatRun[index]!;
+          onStarted(person, index);
+          onEvaluated(await evaluatePerson(person, mode, ports));
+        }
+      });
+      /* An output/assessment failure must not strand a sibling's accepted
+         operation mid-write: every worker settles before the first failure
+         surfaces, mirroring the live population path. */
+      const settled = await Promise.allSettled(workers);
+      const failure = settled.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+      people = composePersonProfiles({
+        workspaceDir,
+        search: configured.search,
+        complete: () => measured(research),
+        confirmedTranscripts: () => [],
+        transcriptStillConfirmed: () => false,
+        researchEnabled: () => false,
+      });
     }
+    collection = await evaluateCollection(people, population, corpus.scenarios, {
+      references: corpus.people,
+      judge: judgePort(repeat),
+    });
+    checkCost();
+    executionStatus = "completed";
   } catch (error) {
+    /* An interrupted run is reported as interrupted with whatever it completed.
+       It never leaves an earlier successful report standing as this run's. */
     status = "interrupted";
-    statusDetail = `Evidence snapshot failed: ${error instanceof Error ? error.message : "unknown error"}`;
+    statusDetail = `The run stopped after ${String(results.length)} of ${String(selected.length)} people: ${error instanceof Error ? error.message : "unknown error"}`;
   } finally {
-    rmSync(workspaceDir, { recursive: true, force: true });
+    try {
+      if (flag("retain-evidence")) {
+        const evidenceDirectory = join(outDir, `${stemRepeat}.evidence`);
+        evidenceBundleHash = retainEvidence(
+          workspaceDir,
+          evidenceDirectory,
+          results.flatMap((result) =>
+            result.assessment?.operationId ? [result.assessment.operationId] : [],
+          ),
+        );
+        process.stderr.write(`Retained evidence: ${evidenceDirectory}\n`);
+      }
+    } catch (error) {
+      status = "interrupted";
+      statusDetail = `Evidence snapshot failed: ${error instanceof Error ? error.message : "unknown error"}`;
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  }
+  if (
+    status === "completed" &&
+    (results.some((result) => result.failure !== null) ||
+      collection.some((result) => result.assessmentStatus !== "completed"))
+  ) {
+    status = "failed";
+    statusDetail = `${String(results.filter((result) => result.failure).length)} of ${String(results.length)} people had research or assessment failures; ${String(collection.filter((result) => result.assessmentStatus !== "completed").length)} collection scenarios had assessment failures. These failures remain recorded even when evaluation execution finished.`;
+  }
+  if (status !== "completed") allCompleted = false;
+  /* A ceiling trip or an outage ends the campaign here — pushing on into the
+     next repeat spends money on a run whose execution already stopped. A
+     merely failed arm (semantic failures, execution completed) still
+     sampled its people, so later repeats remain meaningful. */
+  if (status === "interrupted") break;
+
+  const report = buildReport(status, statusDetail, executionStatus);
+  const validated = BenchmarkReportSchema.parse(report);
+  writeFileSync(join(outDir, `${stemRepeat}.json`), `${JSON.stringify(validated)}\n`);
+  writeFileSync(join(outDir, `${stemRepeat}.md`), `${renderReport(validated, selected)}\n`);
+  process.stdout.write(`${renderReport(validated, selected)}\n`);
+  process.stdout.write(
+    `\nWrote ${join(outDir, `${stemRepeat}.json`)} and ${join(outDir, `${stemRepeat}.md`)}\n`,
+  );
+}
+
+if (repeats > 1) {
+  /* The arm's own statistics, read back from the repeat reports just written:
+     the interval, the detectable bar, and the noise verdict live here instead
+     of in a hand-run Python pass. */
+  const stats = buildArmStats(outDir);
+  if (stats) {
+    writeFileSync(join(outDir, "stats.json"), `${JSON.stringify(stats)}\n`);
+    writeFileSync(join(outDir, "stats.md"), `${renderArmStats(stats)}\n`);
+    process.stdout.write(`\n${renderArmStats(stats)}\n`);
   }
 }
-if (
-  status === "completed" &&
-  (results.some((result) => result.failure !== null) ||
-    collection.some((result) => result.assessmentStatus !== "completed"))
-) {
-  status = "failed";
-  statusDetail = `${String(results.filter((result) => result.failure).length)} of ${String(results.length)} people had research or assessment failures; ${String(collection.filter((result) => result.assessmentStatus !== "completed").length)} collection scenarios had assessment failures. These failures remain recorded even when evaluation execution finished.`;
-}
 
-const report: BenchmarkReport = {
-  schemaVersion: 1,
-  runId: id,
-  ...(evidenceBundleHash ? { evidenceBundleHash } : {}),
-  status,
-  statusDetail,
-  execution: {
-    status: executionStatus,
-    selected: selected.map((person) => person.slug),
-    evaluated: results.length,
-    assessed: results.filter(
-      (result) =>
-        result.assessment?.operationId &&
-        result.assessment.integrity === "completed" &&
-        result.assessment.judge === "completed",
-    ).length,
-    scenarioIds: corpus.scenarios.map((scenario) => scenario.id),
-  },
-  mode,
-  selection: {
-    requested: requestedPopulation,
-    evaluated: results.map((result) => result.slug),
-    skipped,
-  },
-  provenance: {
-    corpusVersion: corpus.version,
-    referenceVersions: Object.fromEntries(
-      selected.map((person) => [person.slug, person.referenceVersion]),
-    ),
-    pipeline,
-    researchProvider: research.provider,
-    researchModel: research.model,
-    ...(mode === "live-discovery" && pipeline === "expanded"
-      ? { planningProvider: planning.provider, planningModel: planning.model }
-      : {}),
-    judgeProvider: judging.provider,
-    judgeModel: judging.model,
-    judgeVersion: JUDGE_VERSION,
-    promptVersion: "2026-09-06.4",
-    collectorVersions: { "person-research": "2026-09-06" },
-    researchSettings: {
-      ...configured.conditions,
-      ...overrides,
-      operationConcurrency: concurrency,
-      modelRetryPolicy:
-        "One same-binding idle/transport retry inside the original deadline; extraction and benchmark judges only",
-      usageAccounting:
-        "Logical request text and returned answer characters; excludes retried wire payloads",
-      judgeBindingPreference: "forced_tool_call when model-declared; default otherwise",
-      extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
-      extractionRouteSort: "throughput",
-      extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-      /* Requested thinking depth; the seam omits it for models that advertise
-         no effort list, so provider defaults apply there. */
-      reasoningEffort: DEFAULT_REASONING_EFFORT,
-      reasoningExclude: true,
-      routeRestPolicy: ROUTE_REST_POLICY,
-      routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,
-      routeRestMaxRoutes: MAX_RESTING_ROUTES,
-      planner: mode === "live-discovery" && pipeline === "expanded",
-    },
-    network: mode === "live-discovery" ? "live" : "fixed-documents",
-    usage: {
-      inputCharacters,
-      outputCharacters,
-      tokens: "unavailable",
-      cost: "unavailable",
-    },
-    startedAt,
-    finishedAt: new Date().toISOString(),
-    host: hostname(),
-  },
-  people: results,
-  collection,
-  groups: summarizeGroups(selected, results),
-  remainingMisses: remainingMisses(selected, results),
-  leadDispositions: leadDispositionTotals(researchOutcomes),
-  coverageGaps: coverageGapTotals(researchOutcomes),
-};
-
-const validated = BenchmarkReportSchema.parse(report);
-writeFileSync(join(outDir, `${stem}.json`), `${JSON.stringify(validated)}\n`);
-writeFileSync(join(outDir, `${stem}.md`), `${renderReport(validated, selected)}\n`);
-process.stdout.write(`${renderReport(validated, selected)}\n`);
-process.stdout.write(`\nWrote ${join(outDir, `${stem}.json`)} and ${join(outDir, `${stem}.md`)}\n`);
-process.exit(status === "completed" ? 0 : 1);
+process.exit(allCompleted ? 0 : 1);
