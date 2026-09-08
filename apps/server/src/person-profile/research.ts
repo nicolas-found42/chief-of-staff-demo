@@ -692,6 +692,9 @@ export class PersonResearch {
                       ...(event.providerIgnore !== undefined
                         ? { providerIgnore: event.providerIgnore.join(", ") }
                         : {}),
+                      ...(event.reasoningEffort !== undefined
+                        ? { reasoningEffort: event.reasoningEffort }
+                        : {}),
                     },
                     ...(event.diagnostic ? { observed: { modelBoundary: event.diagnostic } } : {}),
                     ...(event.stoppedReason ? { recoveryStopped: event.stoppedReason } : {}),

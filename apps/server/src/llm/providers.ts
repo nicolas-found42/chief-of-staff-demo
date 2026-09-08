@@ -59,6 +59,13 @@ interface CompletionRequest {
    */
   temperature?: number;
   /**
+   * Requested thinking depth for providers that meter reasoning. Resolved
+   * against the model's advertised efforts at send time: unlisted values,
+   * and `none` on reasoning-mandatory models, are omitted rather than sent.
+   * Omitted → `DEFAULT_REASONING_EFFORT`.
+   */
+  reasoningEffort?: string;
+  /**
    * The result shape this one call must return. Required, and deliberately so:
    * one Shell seam serves every Module, `strict: true` means the schema sent is
    * the schema obeyed, and a default here would hand a Module another Module's
@@ -116,13 +123,17 @@ interface RequestDeadline {
      without restating it per call site. */
   reportAttempt(event: Omit<ModelAttemptEvent, "attempt" | "binding" | "provider" | "model">): void;
   calling(call: ModelCall): void;
-  observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
   /* The rest list sent on the most recently built wire attempt's body, or
      undefined when that attempt carried no rest. The loop assigns it at each
      body build and the central stamp reads it, so every reported attempt —
      including the outer success/failure reports that know no body — carries
      the routing it was actually sent with. */
   providerIgnore?: string[] | undefined;
+  /* The thinking depth this call's wire attempts are sent with, or undefined
+     when no effort level is sent. Assigned once per call beside the
+     resolution above; the central stamp reads it like the rest list. */
+  reasoningEffort?: string | undefined;
+  observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
 }
 
 /** One provider answer, kept only as long as it takes to classify or read it. */
@@ -1112,6 +1123,7 @@ function chatCompletionBody(
   cfg: LlmConfig,
   request: CompletionRequest,
   schema: JsonObject,
+  reasoning: { effort?: string } | null,
 ): JsonObject {
   const body: JsonObject = {
     model: cfg.model,
@@ -1125,6 +1137,14 @@ function chatCompletionBody(
     ],
   };
   if (request.temperature !== undefined) body.temperature = request.temperature;
+  /* Thinking budget, OpenRouter only: thinking off the wire always, and the
+     resolved effort level when the model advertises it. Other providers never
+     see this object. */
+  if (reasoning !== null && cfg.provider === "openrouter")
+    body.reasoning = {
+      exclude: true,
+      ...(reasoning.effort !== undefined ? { effort: reasoning.effort } : {}),
+    };
   if (binding === "response_format") {
     body.response_format = {
       type: "json_schema",
@@ -1304,6 +1324,28 @@ async function openAiCompatibleComplete(
   let restsGivenUp = false;
   let retried = false;
   let recoveryFailure: { error: unknown } | null = null;
+  /* Thinking budget, resolved once per call: reasoning streams are metered
+     output that can outgrow the answer ceilings, so every OpenRouter call
+     asks for the effort it was configured with (default low) while keeping
+     the thinking itself off the wire. Models that advertise no effort list
+     resolve to no effort level — the provider default applies, exactly as
+     before. Other providers are untouched. */
+  const reasoningEffort =
+    cfg.provider === "openrouter"
+      ? resolveReasoningEffort(
+          request.reasoningEffort,
+          await openrouterReasoningCatalogue(cfg, deadline.signal),
+          cfg.model,
+        )
+      : undefined;
+  deadline.reasoningEffort = reasoningEffort;
+  const reasoning: { exclude: true; effort?: string } | null =
+    cfg.provider === "openrouter"
+      ? {
+          exclude: true,
+          ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
+        }
+      : null;
   for (;;) {
     /* Every recovery route crosses this fence, including binding changes and
        cancellation triggered by the observer of the previous attempt. */
@@ -1317,7 +1359,7 @@ async function openAiCompatibleComplete(
       throw recoveryFailure.error;
     }
     const call = modelCall(cfg, ladder[index] ?? "prompt_only");
-    const body = chatCompletionBody(call.binding, cfg, request, schema);
+    const body = chatCompletionBody(call.binding, cfg, request, schema, reasoning);
     /* What this attempt asked routing to skip, so a refusal can be read as the
        rests' doing rather than the binding's. */
     let skippedRoutes: string[] = [];
@@ -1581,6 +1623,86 @@ function refusesBinding(binding: ResultShapeBinding, response: HttpResponse): bo
   return false;
 }
 
+/** What one OpenRouter model says about its own reasoning, if anything. */
+interface ModelReasoning {
+  /** Advertised effort levels, or null when the model advertises none. */
+  efforts: string[] | null;
+  /** When true the model rejects effort "none" outright. */
+  mandatory: boolean;
+}
+
+/** The thinking depth sent when the caller names none. Exported so condition records can cite it. */
+export const DEFAULT_REASONING_EFFORT = "low";
+
+/**
+ * The whole OpenRouter model catalogue's reasoning metadata, one free read
+ * per distinct model per process, shared by concurrent calls through the
+ * cached promise. Keyed per model like the declaration cache. A failed fetch
+ * resolves to an empty catalogue, which resolves every effort to omitted —
+ * today's exact behavior.
+ */
+const openrouterReasoning = new Map<string, Promise<Map<string, ModelReasoning>>>();
+
+function openrouterReasoningCatalogue(
+  cfg: LlmConfig,
+  signal: AbortSignal,
+): Promise<Map<string, ModelReasoning>> {
+  const cached = openrouterReasoning.get(cfg.model);
+  if (cached) return cached;
+  const pending = fetchReasoningCatalogue(signal);
+  openrouterReasoning.set(cfg.model, pending);
+  return pending;
+}
+
+async function fetchReasoningCatalogue(signal: AbortSignal): Promise<Map<string, ModelReasoning>> {
+  const catalogue = new Map<string, ModelReasoning>();
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/models", { signal });
+    if (!response.ok) return catalogue;
+    const payload: unknown = await response.json();
+    if (typeof payload !== "object" || payload === null || !("data" in payload)) return catalogue;
+    if (!isUnknownArray(payload.data)) return catalogue;
+    for (const entry of payload.data) {
+      if (typeof entry !== "object" || entry === null) continue;
+      if (!("id" in entry) || typeof entry.id !== "string" || entry.id === "") continue;
+      let efforts: string[] | null = null;
+      let mandatory = false;
+      if ("reasoning" in entry && typeof entry.reasoning === "object" && entry.reasoning !== null) {
+        const reasoning = entry.reasoning;
+        if ("supported_efforts" in reasoning && isUnknownArray(reasoning.supported_efforts))
+          efforts = reasoning.supported_efforts.filter(
+            (value): value is string => typeof value === "string",
+          );
+        if ("mandatory" in reasoning && reasoning.mandatory === true) mandatory = true;
+      }
+      catalogue.set(entry.id, { efforts, mandatory });
+    }
+  } catch {
+    return catalogue;
+  }
+  return catalogue;
+}
+
+/**
+ * The effort level to actually send, or undefined to send none. Unknown
+ * models and unreadable catalogues resolve to omitted — the provider default
+ * applies, exactly as before reasoning was sent. An advertised list that
+ * lacks the requested level also omits: out-of-list values are undocumented
+ * and map unpredictably. Exported so tests reach the contract directly.
+ */
+export function resolveReasoningEffort(
+  requested: string | undefined,
+  catalogue: Map<string, ModelReasoning> | null,
+  model: string,
+): string | undefined {
+  const effort = requested ?? DEFAULT_REASONING_EFFORT;
+  const metadata = catalogue?.get(model) ?? null;
+  if (metadata === null) return undefined;
+  if (effort === "none" && metadata.mandatory) return undefined;
+  if (metadata.efforts !== null && !metadata.efforts.includes(effort)) return undefined;
+  return effort;
+}
+
 /**
  * What each model declares, for this process's lifetime. `makeCompleteJson` is
  * rebuilt per attempt, so the cache cannot live in its closure. The promise is
@@ -1770,6 +1892,9 @@ async function withinRequestCeiling<T>(
       provider: call.provider,
       model: call.model,
       ...(deadline.providerIgnore !== undefined ? { providerIgnore: deadline.providerIgnore } : {}),
+      ...(deadline.reasoningEffort !== undefined
+        ? { reasoningEffort: deadline.reasoningEffort }
+        : {}),
     });
   };
   let observed: { status?: number; bodyBytes: number; upstreamServer?: string } = {
