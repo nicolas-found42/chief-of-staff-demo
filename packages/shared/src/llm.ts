@@ -168,6 +168,11 @@ export const ModelAttemptEventSchema = z.object({
   provider: ProviderIdSchema,
   model: z.string().max(200),
   outcome: z.enum(["retrying", "succeeded", "failed"]),
+  /* The routing this wire attempt was actually sent with: the rest list
+     riding as `provider.ignore`, so a rest firing mid-assessment is an
+     auditable per-attempt delta rather than a silent confound. Omitted when
+     the attempt carried no rest. */
+  providerIgnore: z.array(z.string().max(200)).optional(),
   diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
   /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */
   delayMs: z.number().int().nonnegative().max(500),

@@ -689,6 +689,9 @@ export class PersonResearch {
                       wireAttempt: String(event.attempt),
                       retryDelayMilliseconds: String(event.delayMs),
                       preferredMinThroughput: `${EXTRACTION_PREFERRED_MIN_THROUGHPUT} tokens/second`,
+                      ...(event.providerIgnore !== undefined
+                        ? { providerIgnore: event.providerIgnore.join(", ") }
+                        : {}),
                     },
                     ...(event.diagnostic ? { observed: { modelBoundary: event.diagnostic } } : {}),
                     ...(event.stoppedReason ? { recoveryStopped: event.stoppedReason } : {}),

@@ -117,6 +117,12 @@ interface RequestDeadline {
   reportAttempt(event: Omit<ModelAttemptEvent, "attempt" | "binding" | "provider" | "model">): void;
   calling(call: ModelCall): void;
   observed(response: { status: number; bodyBytes: number; upstreamServer?: string }): void;
+  /* The rest list sent on the most recently built wire attempt's body, or
+     undefined when that attempt carried no rest. The loop assigns it at each
+     body build and the central stamp reads it, so every reported attempt —
+     including the outer success/failure reports that know no body — carries
+     the routing it was actually sent with. */
+  providerIgnore?: string[] | undefined;
 }
 
 /** One provider answer, kept only as long as it takes to classify or read it. */
@@ -1161,15 +1167,24 @@ function chatCompletionBody(
  */
 const routeRest = new Map<string, number>();
 
-/** How long a route that burned a call rests before it is asked again. */
-const ROUTE_COOLDOWN_MS = 900_000;
+/** How long a route that burned a call rests before it is asked again. Exported for condition records. */
+export const ROUTE_COOLDOWN_MS = 900_000;
 
 /**
  * The most routes that may rest at once, newest first. `provider.ignore`
  * narrows routing, and a model served by few endpoints could be narrowed to
  * none; a bounded list keeps a bad stretch from leaving nowhere to route.
+ * Exported for condition records.
  */
-const MAX_RESTING_ROUTES = 8;
+export const MAX_RESTING_ROUTES = 8;
+
+/**
+ * Descriptor of the `restFailedRoute` predicate below, recorded in benchmark
+ * conditions so a rest-policy change across assessments is a visible condition
+ * diff. Keep in sync with the predicate.
+ */
+export const ROUTE_REST_POLICY =
+  "repetition_loop, answer_overrun, request_timeout, 429 http_error, absent-or-500-plus upstream_error";
 
 /** Rests are per model and route: a route can serve one model well and another badly. */
 function routeRestKey(model: string, route: string): string {
@@ -1333,6 +1348,9 @@ async function openAiCompatibleComplete(
       if (resting.length > 0) provider.ignore = resting;
       body.provider = provider;
       skippedRoutes = resting;
+      deadline.providerIgnore = resting.length > 0 ? [...resting] : undefined;
+    } else {
+      deadline.providerIgnore = undefined;
     }
     let response: HttpResponse;
     try {
@@ -1741,6 +1759,7 @@ async function withinRequestCeiling<T>(
   let call = initialCall(cfg);
   let attempt = 0;
   let terminalReported = false;
+  let deadline: RequestDeadline;
   const reportAttempt: RequestDeadline["reportAttempt"] = (event) => {
     if (!attempt || terminalReported) return;
     if (event.outcome !== "retrying") terminalReported = true;
@@ -1750,6 +1769,7 @@ async function withinRequestCeiling<T>(
       binding: call.binding,
       provider: call.provider,
       model: call.model,
+      ...(deadline.providerIgnore !== undefined ? { providerIgnore: deadline.providerIgnore } : {}),
     });
   };
   let observed: { status?: number; bodyBytes: number; upstreamServer?: string } = {
@@ -1785,26 +1805,30 @@ async function withinRequestCeiling<T>(
   });
   try {
     return await Promise.race([
-      work({
-        signal: controller.signal,
-        timeRemaining: () => Math.max(0, expiresAt - Date.now()),
-        reportAttempt,
-        calling(next) {
-          if (controller.signal.aborted)
-            throw modelBoundaryFailure({
-              call: next,
-              classification: "request_timeout",
-              timeoutMs: REQUEST_TIMEOUT_MS,
-            });
-          attempt += 1;
-          terminalReported = false;
-          call = next;
-          observed = { bodyBytes: 0 };
-        },
-        observed(response) {
-          observed = response;
-        },
-      }).then(
+      work(
+        // Assigned here so the central stamp above reads the routing each
+        // wire attempt was actually sent with.
+        (deadline = {
+          signal: controller.signal,
+          timeRemaining: () => Math.max(0, expiresAt - Date.now()),
+          reportAttempt,
+          calling(next) {
+            if (controller.signal.aborted)
+              throw modelBoundaryFailure({
+                call: next,
+                classification: "request_timeout",
+                timeoutMs: REQUEST_TIMEOUT_MS,
+              });
+            attempt += 1;
+            terminalReported = false;
+            call = next;
+            observed = { bodyBytes: 0 };
+          },
+          observed(response) {
+            observed = response;
+          },
+        }),
+      ).then(
         (value) => {
           reportAttempt({
             outcome: "succeeded",
@@ -1827,7 +1851,7 @@ async function withinRequestCeiling<T>(
       timeout,
     ]);
   } finally {
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
   }
 }
 
