@@ -256,6 +256,7 @@ if (maxCost !== undefined && (!Number.isFinite(maxCost) || maxCost <= 0))
   throw new Error("--max-cost must be a positive number of dollars.");
 
 const repeats = positiveInteger("repeats", 1);
+if (repeats > 20) throw new Error("--repeats must be 1 to 20, the arm-statistics ceiling.");
 if (repeats > 1 && mode === "live-discovery")
   throw new Error("--repeats above 1 is supported for fixed-documents only.");
 const noCache = flag("no-cache");
@@ -385,6 +386,14 @@ const runConditions: ResumeConditions = {
   promptVersion: "2026-09-06.4",
   reasoningEffort: DEFAULT_REASONING_EFFORT,
   ...(seed !== undefined ? { seed } : {}),
+  corpusVersion: corpus.version,
+  pipeline,
+  judgeProvider: judging.provider,
+  judgeModel: judging.model,
+  judgeVersion: JUDGE_VERSION,
+  referenceVersions: Object.fromEntries(
+    corpus.people.map((person) => [person.slug, person.referenceVersion]),
+  ),
 };
 
 /* Resume: a completed, fully assessed person under a provably identical run

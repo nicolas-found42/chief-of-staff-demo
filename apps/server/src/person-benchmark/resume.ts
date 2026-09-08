@@ -24,6 +24,14 @@ export interface ResumeConditions {
   promptVersion: string;
   reasoningEffort: string;
   seed?: number | undefined;
+  /** Arm-defining conditions stamped beside the artifact's own fields. */
+  corpusVersion: string;
+  pipeline: "incumbent" | "expanded";
+  judgeProvider: string;
+  judgeModel: string;
+  judgeVersion: string;
+  /** Per-person reference versions, by slug. */
+  referenceVersions: Record<string, string>;
 }
 
 interface MismatchedConditions {
@@ -42,14 +50,14 @@ export interface ReusableDirectory {
   mismatched: MismatchedConditions[];
 }
 
-const CONDITION_FIELDS: (keyof ResumeConditions)[] = [
+const CONDITION_FIELDS = [
   "mode",
   "researchProvider",
   "researchModel",
   "promptVersion",
   "reasoningEffort",
   "seed",
-];
+] as const;
 
 /** Research finished and both assessments completed: nothing left to buy. */
 function fullyAssessed(artifact: BenchmarkPersonArtifact): boolean {
@@ -70,23 +78,38 @@ function classify(
      original run's own artifact is the reuse source. */
   if (artifact.reassessmentOf !== undefined) return;
   if (!fullyAssessed(artifact)) return;
+  /* The artifact's own top-level fields are conditions too: corpus, pipeline
+     and judge identity are stamped on every artifact, stamped era or not. */
+  const structural: Record<string, unknown> = {
+    corpusVersion: artifact.corpusVersion,
+    pipeline: artifact.pipeline,
+    judgeProvider: artifact.judgeProvider,
+    judgeModel: artifact.judgeModel,
+    judgeVersion: artifact.judgeVersion,
+  };
+  const mismatch = (field: string, prior: unknown, current_: unknown): void => {
+    reuse.mismatched.push({ slug: artifact.result.slug, field, prior, current: current_ });
+  };
+  for (const [field, prior] of Object.entries(structural)) {
+    if (prior !== current[field as keyof ResumeConditions]) {
+      mismatch(field, prior, current[field as keyof ResumeConditions]);
+      return;
+    }
+  }
+  const reference = current.referenceVersions[artifact.result.slug];
+  if (reference !== undefined && artifact.result.referenceVersion !== reference) {
+    mismatch("referenceVersion", artifact.result.referenceVersion, reference);
+    return;
+  }
   if (artifact.conditions === undefined) {
     reuse.unstamped.push(artifact.result.slug);
     return;
   }
-  const differing = CONDITION_FIELDS.filter(
-    (field) => artifact.conditions![field] !== current[field],
-  );
-  if (differing.length > 0) {
-    reuse.mismatched.push(
-      ...differing.map((field) => ({
-        slug: artifact.result.slug,
-        field,
-        prior: artifact.conditions![field],
-        current: current[field],
-      })),
-    );
-    return;
+  for (const field of CONDITION_FIELDS) {
+    if (artifact.conditions[field] !== current[field]) {
+      mismatch(field, artifact.conditions[field], current[field]);
+      return;
+    }
   }
   reuse.eligible.set(artifact.result.slug, artifact);
 }

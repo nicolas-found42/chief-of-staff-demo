@@ -19,6 +19,12 @@ const CONDITIONS = {
   researchModel: "acme/tiny",
   promptVersion: "2026-09-06.4",
   reasoningEffort: "low",
+  corpusVersion: "41d616ea8dfb1786",
+  pipeline: "expanded",
+  judgeProvider: "openrouter",
+  judgeModel: "acme/tiny",
+  judgeVersion: "2026-09-06.10",
+  referenceVersions: {},
 } as const;
 
 /** A valid artifact built from the committed fixture's first person, shaped

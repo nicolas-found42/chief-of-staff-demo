@@ -88,6 +88,26 @@ it("never caches a failed call, so an outage is retried for real", async () => {
   }
 });
 
+it("separates seeds: a different sampling seed never replays another seed's answer", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "benchmark-cache-seed-"));
+  try {
+    const { calls, inner } = countingInner({ verdict: "supported" });
+    const cached = cachedCompleteJson(inner, {
+      cacheDir: dir,
+      namespace: "judge-v1-r1",
+      provider: "openrouter",
+      model: "acme/tiny",
+    });
+    await cached(request({ seed: 7 }));
+    await cached(request({ seed: 7 }));
+    await cached(request({ seed: 8 }));
+    await cached(request());
+    expect(calls.count).toBe(3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 it("keys on the request content: a different dossier or sampling setting misses", async () => {
   const dir = mkdtempSync(join(tmpdir(), "benchmark-cache-key-"));
   try {

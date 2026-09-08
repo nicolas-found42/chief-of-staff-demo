@@ -91,7 +91,7 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
   /* Denominators are a property of the person, not the repeat; the first
      report carrying a slug donates its reference-fact count. */
   const denominators = new Map<string, number>();
-  for (const { report } of found)
+  for (const { report } of foundSorted)
     for (const person of report.people)
       if (!denominators.has(person.slug))
         denominators.set(person.slug, person.completeness.referenceFacts);

@@ -42,6 +42,7 @@ function entryKey(options: CacheOptions, request: CompletionRequest): string {
         request.user,
         request.temperature ?? null,
         request.reasoningEffort ?? null,
+        request.seed ?? null,
         shape,
       ]),
     )

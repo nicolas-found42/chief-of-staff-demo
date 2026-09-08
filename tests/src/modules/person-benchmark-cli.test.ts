@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { BenchmarkReportSchema, BenchmarkPersonArtifactSchema } from "@chief-of-staff-demo/shared";
+import { loadCorpus } from "../../../apps/server/src/person-benchmark/corpus";
 
 it("rejects unknown requested people without writing a successful empty report", () => {
   const output = mkdtempSync(join(tmpdir(), "benchmark-invalid-selection-"));
@@ -322,6 +323,11 @@ import {
 /** An eligible, conditions-stamped artifact for `achim-steiner` under the mock
  *  provider, so --retry can carry it without spending a model call. */
 function eligibleArtifact() {
+  /* Structural conditions (corpus version et al.) must match the corpus the
+     driver actually loads, so stamp from the live corpus, not the fixture. */
+  const corpus = loadCorpus(
+    fileURLToPath(new URL("../../../benchmark/person-research/people", import.meta.url)),
+  );
   const report = BenchmarkReportSchema.parse(
     JSON.parse(
       readFileSync(
@@ -342,7 +348,7 @@ function eligibleArtifact() {
   return BenchmarkPersonArtifactSchema.parse({
     schemaVersion: 1,
     runId: "priorarm000000",
-    corpusVersion: report.provenance.corpusVersion,
+    corpusVersion: corpus.version,
     pipeline: "expanded",
     judgeProvider: "mock",
     judgeModel: "mock",
