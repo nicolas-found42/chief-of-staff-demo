@@ -47,22 +47,33 @@ function readReport(path: string): { report: BenchmarkReport; repeat: number } |
 }
 
 /**
- * Build the arm's statistics from every report in the directory. Reports that
- * share a run stem but differ in their `-rN` suffix are repeats of one arm;
- * anything else is skipped. Null when the directory holds no arm report with
- * at least two measured people — an interval needs an across-person spread
- * to describe.
+ * Build the arm's statistics from the reports of ONE arm in the directory:
+ * the newest run id present — a retried arm writes a fresh run beside the
+ * interrupted one, and the newest finishedAt is the arm that counts.
+ * Reports sharing that run id but differing in their `-rN` suffix are its
+ * repeats; older arms, comparisons and artifacts are skipped. Null when no
+ * arm report has at least two measured people — an interval needs an
+ * across-person spread to describe.
  */
 export function buildArmStats(directory: string): BenchmarkArmStats | null {
   const found = readdirSync(directory)
     .filter((name) => !name.startsWith("stats"))
     .map((name) => readReport(join(directory, name)))
-    .filter((entry): entry is { report: BenchmarkReport; repeat: number } => entry !== null)
-    .sort((a, b) => a.repeat - b.repeat);
+    .filter((entry): entry is { report: BenchmarkReport; repeat: number } => entry !== null);
   if (found.length === 0) return null;
+  const byRun = new Map<string, { report: BenchmarkReport; repeat: number }[]>();
+  for (const entry of found) {
+    const group = byRun.get(entry.report.runId) ?? [];
+    group.push(entry);
+    byRun.set(entry.report.runId, group);
+  }
+  const newest = [...byRun.values()].sort((a, b) =>
+    b[0]!.report.provenance.finishedAt.localeCompare(a[0]!.report.provenance.finishedAt),
+  )[0]!;
+  const foundSorted = newest.sort((a, b) => a.repeat - b.repeat);
 
   const perSlug = new Map<string, { slug: string; scores: number[] }>();
-  for (const { report } of found)
+  for (const { report } of foundSorted)
     for (const person of report.people) {
       const score = personScore(person);
       if (score === null) continue;
@@ -89,10 +100,10 @@ export function buildArmStats(directory: string): BenchmarkArmStats | null {
     (sum, person) => sum + person.mean * (denominators.get(person.slug) ?? 0),
     0,
   );
-  const first = found[0]!.report;
+  const first = foundSorted[0]!.report;
   return BenchmarkArmStatsSchema.parse({
     schemaVersion: 1,
-    runIds: found.map(({ report }) => report.runId),
+    runIds: foundSorted.map(({ report }) => report.runId),
     mode: first.mode,
     pipeline: first.provenance.pipeline,
     repeats: found.length,
@@ -115,7 +126,7 @@ export function renderArmStats(stats: BenchmarkArmStats): string {
     `${String(stats.repeats)} repeat(s), ${String(stats.people.length)} people.`,
     `Recovery ${stats.ci.mean.toFixed(4)} (95% CI ${stats.ci.lo.toFixed(4)}–${stats.ci.hi.toFixed(4)}, se ${stats.ci.se.toFixed(4)}).`,
     `Pooled rate ${stats.totals.rate.toFixed(4)} (${String(Math.round(stats.totals.recoveredMean))} of ${String(stats.totals.referenceFacts)} facts).`,
-    `A future arm must differ by about ${armBar(stats)} to be detectable at n=${String(stats.people.length)} (80% power, 5% significance).`,
+    `A future arm must differ by about ${detectableEffectBar(stats)} to be detectable at n=${String(stats.people.length)} (80% power, 5% significance).`,
     "",
     "| person | repeats | mean |",
     "| --- | --- | --- |",
@@ -127,7 +138,7 @@ export function renderArmStats(stats: BenchmarkArmStats): string {
   return lines.join("\n");
 }
 
-function armBar(stats: BenchmarkArmStats): string {
+function detectableEffectBar(stats: BenchmarkArmStats): string {
   const sd = sampleSD(stats.people.map((person) => person.mean));
   const bar = mde(sd, stats.people.length);
   return bar === null ? "an unmeasurable amount (n < 2)" : `±${bar.toFixed(3)}`;

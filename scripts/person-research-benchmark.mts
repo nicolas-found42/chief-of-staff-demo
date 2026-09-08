@@ -381,6 +381,7 @@ const runConditions: ResumeConditions = {
 /* Resume: a completed, fully assessed person under a provably identical run
    recipe is money already spent — carry the result, re-run only the rest. */
 let carried: BenchmarkPersonResult[] = [];
+let toRun: typeof selected = selected;
 if (retryDir !== undefined || reuseOnlyDir !== undefined) {
   const reuse = loadReusable(resolve(retryDir ?? reuseOnlyDir!), runConditions);
   if (reuse.mismatched.length > 0) {
@@ -397,8 +398,10 @@ if (retryDir !== undefined || reuseOnlyDir !== undefined) {
   carried = selected
     .filter((person) => eligibleSlugs.has(person.slug))
     .map((person) => reuse.eligible.get(person.slug)!.result);
-  selected = selected.filter((person) => !eligibleSlugs.has(person.slug));
-  if (selected.length === 0)
+  /* The report describes the whole requested selection — carried people are
+     real measurements — so only the evaluation loop narrows to the rest. */
+  toRun = selected.filter((person) => !eligibleSlugs.has(person.slug));
+  if (toRun.length === 0)
     throw new Error(
       "Nothing to run: every selected person is already carried. Re-run without --retry/--reuse-extraction to rebuild the report.",
     );
@@ -511,6 +514,114 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
   let evidenceBundleHash: string | undefined;
   const stemRepeat = repeats > 1 ? `${stem}-r${String(repeat)}` : stem;
 
+  /* One builder for the final report and for the after-each-person partial:
+     a hard kill mid-repeat still leaves a readable, honest top-level report
+     saying exactly how far the arm got. */
+  const buildReport = (
+    reportStatus: BenchmarkReport["status"],
+    reportStatusDetail: string,
+    reportExecution: "completed" | "interrupted",
+  ): BenchmarkReport => {
+    /* Computed per call: the partial reads it mid-run, when results grow. */
+    const merged = [...carried, ...results].sort(
+      (a, b) => requestedPopulation.indexOf(a.slug) - requestedPopulation.indexOf(b.slug),
+    );
+    const measuredSlugs = new Set(merged.map((person) => person.slug));
+    const groupBasis = corpus.people.filter((person) => measuredSlugs.has(person.slug));
+    return {
+      schemaVersion: 1,
+      runId: id,
+      ...(evidenceBundleHash ? { evidenceBundleHash } : {}),
+      status: reportStatus,
+      statusDetail: reportStatusDetail,
+      execution: {
+        status: reportExecution,
+        selected: selected.map((person) => person.slug),
+        evaluated: merged.length,
+        assessed: merged.filter(
+          (result) =>
+            result.assessment?.operationId &&
+            result.assessment.integrity === "completed" &&
+            result.assessment.judge === "completed",
+        ).length,
+        scenarioIds: corpus.scenarios.map((scenario) => scenario.id),
+      },
+      mode,
+      selection: {
+        requested: requestedPopulation,
+        evaluated: merged.map((result) => result.slug),
+        skipped,
+      },
+      ...(retryDir !== undefined || reuseOnlyDir !== undefined
+        ? {
+            resume: {
+              carriedPeople: carried.map((person) => person.slug),
+              retriedPeople: results.map((person) => person.slug),
+            },
+          }
+        : {}),
+      provenance: {
+        corpusVersion: corpus.version,
+        referenceVersions: Object.fromEntries(
+          selected.map((person) => [person.slug, person.referenceVersion]),
+        ),
+        pipeline,
+        researchProvider: research.provider,
+        researchModel: research.model,
+        ...(mode === "live-discovery" && pipeline === "expanded"
+          ? { planningProvider: planning.provider, planningModel: planning.model }
+          : {}),
+        judgeProvider: judging.provider,
+        judgeModel: judging.model,
+        judgeVersion: JUDGE_VERSION,
+        promptVersion: "2026-09-06.4",
+        collectorVersions: { "person-research": "2026-09-06" },
+        researchSettings: {
+          ...configured.conditions,
+          ...overrides,
+          operationConcurrency: concurrency,
+          modelRetryPolicy:
+            "One same-binding idle/transport retry inside the original deadline; extraction and benchmark judges only",
+          usageAccounting:
+            "Logical request text and returned answer characters; excludes retried wire payloads",
+          judgeBindingPreference: "forced_tool_call when model-declared; default otherwise",
+          extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
+          extractionRouteSort: "throughput",
+          extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
+          /* Requested thinking depth; the seam omits it for models that advertise
+           no effort list, so provider defaults apply there. */
+          reasoningEffort: DEFAULT_REASONING_EFFORT,
+          reasoningExclude: true,
+          routeRestPolicy: ROUTE_REST_POLICY,
+          routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,
+          routeRestMaxRoutes: MAX_RESTING_ROUTES,
+          planner: mode === "live-discovery" && pipeline === "expanded",
+          ...(gitSha !== undefined ? { gitSha } : {}),
+          ...(seed !== undefined ? { seed } : {}),
+          ...(repeats > 1 ? { repeats } : {}),
+        },
+        network: mode === "live-discovery" ? "live" : "fixed-documents",
+        usage: {
+          inputCharacters,
+          outputCharacters,
+          tokens: usage.sawTokens
+            ? { input: usage.inputTokens, output: usage.outputTokens }
+            : "unavailable",
+          cost: usage.sawCost ? Math.round(usage.costUsd * 1_000_000) / 1_000_000 : "unavailable",
+        },
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        host: hostname(),
+      },
+      people: merged,
+      collection,
+      groups: summarizeGroups(groupBasis, merged),
+      remainingMisses: remainingMisses(groupBasis, merged),
+      leadDispositions: leadDispositionTotals(researchOutcomes),
+      coverageGaps: coverageGapTotals(researchOutcomes),
+    };
+  };
+
   const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-collection-"));
   try {
     const ports: EvaluationPorts = {
@@ -526,9 +637,9 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
         : {}),
       settings: overrides,
     };
-    const onStarted = (person: (typeof selected)[number], index: number) =>
+    const onStarted = (person: (typeof toRun)[number], index: number) =>
       process.stderr.write(
-        `[${String(index + 1)}/${String(selected.length)}] ${person.slug} (${mode}, ${pipeline}, repeat ${String(repeat)})\n`,
+        `[${String(index + 1)}/${String(toRun.length)}] ${person.slug} (${mode}, ${pipeline}, repeat ${String(repeat)})\n`,
       );
     const onEvaluated = (evaluation: PersonEvaluation) => {
       const person = evaluation.result;
@@ -561,10 +672,25 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
         outDir,
       );
       checkCost();
+      /* The partial is overwritten by the next person and finally by the
+         repeat's real report; its interrupted status is the honest record of
+         a run that was still moving when it stopped. */
+      writeFileSync(
+        join(outDir, `${stemRepeat}.json`),
+        `${JSON.stringify(
+          BenchmarkReportSchema.parse(
+            buildReport(
+              "interrupted",
+              `In progress: ${String(results.length + carried.length)} of ${String(selected.length)} people evaluated.`,
+              executionStatus,
+            ),
+          ),
+        )}\n`,
+      );
     };
     let people;
     if (mode === "live-discovery") {
-      ({ people } = await evaluateLivePopulation(selected, {
+      ({ people } = await evaluateLivePopulation(toRun, {
         ...ports,
         concurrency,
         onStarted,
@@ -581,10 +707,10 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
          rests are process-wide by design, so parallel people share what each
          learns about bad routes, the way the long-running app does (#233). */
       let next = 0;
-      const workers = Array.from({ length: Math.min(concurrency, selected.length) }, async () => {
-        while (next < selected.length) {
+      const workers = Array.from({ length: Math.min(concurrency, toRun.length) }, async () => {
+        while (next < toRun.length) {
           const index = next++;
-          const person = selected[index]!;
+          const person = toRun[index]!;
           onStarted(person, index);
           onEvaluated(await evaluatePerson(person, mode, ports));
         }
@@ -644,108 +770,13 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
     statusDetail = `${String(results.filter((result) => result.failure).length)} of ${String(results.length)} people had research or assessment failures; ${String(collection.filter((result) => result.assessmentStatus !== "completed").length)} collection scenarios had assessment failures. These failures remain recorded even when evaluation execution finished.`;
   }
   if (status !== "completed") allCompleted = false;
+  /* A ceiling trip or an outage ends the campaign here — pushing on into the
+     next repeat spends money on a run whose execution already stopped. A
+     merely failed arm (semantic failures, execution completed) still
+     sampled its people, so later repeats remain meaningful. */
+  if (status === "interrupted") break;
 
-  /* Carried results are real measurements from the prior run under the same
-     recipe; the report is the merged arm, ordered by the requested selection. */
-  const merged = [...carried, ...results].sort(
-    (a, b) => requestedPopulation.indexOf(a.slug) - requestedPopulation.indexOf(b.slug),
-  );
-  const measuredSlugs = new Set(merged.map((person) => person.slug));
-  const groupBasis = corpus.people.filter((person) => measuredSlugs.has(person.slug));
-
-  const report: BenchmarkReport = {
-    schemaVersion: 1,
-    runId: id,
-    ...(evidenceBundleHash ? { evidenceBundleHash } : {}),
-    status,
-    statusDetail,
-    execution: {
-      status: executionStatus,
-      selected: selected.map((person) => person.slug),
-      evaluated: results.length,
-      assessed: results.filter(
-        (result) =>
-          result.assessment?.operationId &&
-          result.assessment.integrity === "completed" &&
-          result.assessment.judge === "completed",
-      ).length,
-      scenarioIds: corpus.scenarios.map((scenario) => scenario.id),
-    },
-    mode,
-    selection: {
-      requested: requestedPopulation,
-      evaluated: merged.map((result) => result.slug),
-      skipped,
-    },
-    ...(retryDir !== undefined || reuseOnlyDir !== undefined
-      ? {
-          resume: {
-            carriedPeople: carried.map((person) => person.slug),
-            retriedPeople: results.map((person) => person.slug),
-          },
-        }
-      : {}),
-    provenance: {
-      corpusVersion: corpus.version,
-      referenceVersions: Object.fromEntries(
-        selected.map((person) => [person.slug, person.referenceVersion]),
-      ),
-      pipeline,
-      researchProvider: research.provider,
-      researchModel: research.model,
-      ...(mode === "live-discovery" && pipeline === "expanded"
-        ? { planningProvider: planning.provider, planningModel: planning.model }
-        : {}),
-      judgeProvider: judging.provider,
-      judgeModel: judging.model,
-      judgeVersion: JUDGE_VERSION,
-      promptVersion: "2026-09-06.4",
-      collectorVersions: { "person-research": "2026-09-06" },
-      researchSettings: {
-        ...configured.conditions,
-        ...overrides,
-        operationConcurrency: concurrency,
-        modelRetryPolicy:
-          "One same-binding idle/transport retry inside the original deadline; extraction and benchmark judges only",
-        usageAccounting:
-          "Logical request text and returned answer characters; excludes retried wire payloads",
-        judgeBindingPreference: "forced_tool_call when model-declared; default otherwise",
-        extractionBindingPreference: "forced_tool_call when model-declared; default otherwise",
-        extractionRouteSort: "throughput",
-        extractionRouteThroughputFloorTps: EXTRACTION_PREFERRED_MIN_THROUGHPUT,
-        /* Requested thinking depth; the seam omits it for models that advertise
-           no effort list, so provider defaults apply there. */
-        reasoningEffort: DEFAULT_REASONING_EFFORT,
-        reasoningExclude: true,
-        routeRestPolicy: ROUTE_REST_POLICY,
-        routeRestCooldownSeconds: ROUTE_COOLDOWN_MS / 1000,
-        routeRestMaxRoutes: MAX_RESTING_ROUTES,
-        planner: mode === "live-discovery" && pipeline === "expanded",
-        ...(gitSha !== undefined ? { gitSha } : {}),
-        ...(seed !== undefined ? { seed } : {}),
-        ...(repeats > 1 ? { repeats } : {}),
-      },
-      network: mode === "live-discovery" ? "live" : "fixed-documents",
-      usage: {
-        inputCharacters,
-        outputCharacters,
-        tokens: usage.sawTokens
-          ? { input: usage.inputTokens, output: usage.outputTokens }
-          : "unavailable",
-        cost: usage.sawCost ? Math.round(usage.costUsd * 1_000_000) / 1_000_000 : "unavailable",
-      },
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      host: hostname(),
-    },
-    people: merged,
-    collection,
-    groups: summarizeGroups(groupBasis, merged),
-    remainingMisses: remainingMisses(groupBasis, merged),
-    leadDispositions: leadDispositionTotals(researchOutcomes),
-    coverageGaps: coverageGapTotals(researchOutcomes),
-  };
-
+  const report = buildReport(status, statusDetail, executionStatus);
   const validated = BenchmarkReportSchema.parse(report);
   writeFileSync(join(outDir, `${stemRepeat}.json`), `${JSON.stringify(validated)}\n`);
   writeFileSync(join(outDir, `${stemRepeat}.md`), `${renderReport(validated, selected)}\n`);

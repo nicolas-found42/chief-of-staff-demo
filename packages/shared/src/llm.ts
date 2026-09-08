@@ -184,8 +184,8 @@ export const ModelAttemptEventSchema = z.object({
      the provider reported it. Absent when the provider reported nothing. */
   usage: z
     .object({
-      inputTokens: z.number().int().nonnegative(),
-      outputTokens: z.number().int().nonnegative(),
+      inputTokens: z.number().int().nonnegative().nullable(),
+      outputTokens: z.number().int().nonnegative().nullable(),
       costUsd: z.number().nonnegative().nullable(),
     })
     .optional(),

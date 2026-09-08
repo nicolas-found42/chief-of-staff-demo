@@ -2045,8 +2045,8 @@ async function withinRequestCeiling<T>(
             ...(deadline.usage.inputTokens !== null || deadline.usage.outputTokens !== null
               ? {
                   usage: {
-                    inputTokens: deadline.usage.inputTokens ?? 0,
-                    outputTokens: deadline.usage.outputTokens ?? 0,
+                    inputTokens: deadline.usage.inputTokens,
+                    outputTokens: deadline.usage.outputTokens,
                     costUsd: deadline.usage.costUsd,
                   },
                 }

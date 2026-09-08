@@ -25,7 +25,6 @@ export interface CacheOptions {
 
 interface CacheEntry {
   key: string;
-  storedAt: string;
   answer: unknown;
 }
 
@@ -65,7 +64,7 @@ export function cachedCompleteJson(inner: CompleteJson, options: CacheOptions): 
     const answer = await inner(request);
     try {
       mkdirSync(options.cacheDir, { recursive: true });
-      const entry: CacheEntry = { key, storedAt: new Date().toISOString(), answer };
+      const entry: CacheEntry = { key, answer };
       writeFileSync(path, `${JSON.stringify(entry)}\n`);
     } catch {
       /* An unwritable cache degrades to no cache, never to a failure: the
