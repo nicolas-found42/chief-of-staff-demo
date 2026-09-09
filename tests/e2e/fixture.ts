@@ -1,7 +1,7 @@
 import { test as base, expect } from "@playwright/test";
 import { startHermeticServer } from "./hermetic-server";
 
-/* eslint-disable no-empty-pattern -- Playwright validates at runtime that every
+/* oxlint-disable no-empty-pattern -- Playwright validates at runtime that every
    fixture callback's first argument is a destructuring pattern; these fixtures
    need nothing from it. */
 

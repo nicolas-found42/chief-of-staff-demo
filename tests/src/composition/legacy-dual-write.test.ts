@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import { Visitor, type Program } from "oxc-parser";
+import { parseSource } from "../source-ast.js";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -38,32 +39,29 @@ function filesUnder(dir: string, found: string[] = []): string[] {
   return found;
 }
 
-function parse(path: string): ts.SourceFile {
-  return ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.ESNext, true);
+function parse(path: string): Program {
+  return parseSource(path);
 }
 
 /** Every string the file evaluates, comments and identifiers excluded. */
-function stringLiterals(source: ts.SourceFile): string[] {
+function stringLiterals(source: Program): string[] {
   const found: string[] = [];
-  const visit = (node: ts.Node): void => {
-    if (ts.isStringLiteralLike(node)) found.push(node.text);
-    if (ts.isTemplateExpression(node)) {
-      found.push(node.head.text, ...node.templateSpans.map((span) => span.literal.text));
-    }
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(source, visit);
+  new Visitor({
+    Literal(node) {
+      if (typeof node.value === "string") found.push(node.value);
+    },
+    TemplateElement(node) {
+      found.push(node.value.cooked ?? node.value.raw);
+    },
+  }).visit(source);
   return found;
 }
 
 /** Every module specifier the file imports from. */
-function importedModules(source: ts.SourceFile): string[] {
-  return source.statements
-    .filter(
-      (statement): statement is ts.ImportDeclaration =>
-        ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier),
-    )
-    .map((statement) => (statement.moduleSpecifier as ts.StringLiteral).text);
+function importedModules(source: Program): string[] {
+  return source.body
+    .filter((statement) => statement.type === "ImportDeclaration")
+    .map((statement) => statement.source.value);
 }
 
 /**

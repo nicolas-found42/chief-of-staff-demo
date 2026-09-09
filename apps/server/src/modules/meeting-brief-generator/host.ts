@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- host bridges optional Module deps and ConfigStore that may be absent in tests */
+/* oxlint-disable typescript/no-unnecessary-condition -- host bridges optional Module deps and ConfigStore that may be absent in tests */
 import type { FastifyInstance } from "fastify";
 import {
   MEETING_BRIEF_INTAKE,

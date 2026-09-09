@@ -1338,7 +1338,7 @@ describe("providers", () => {
       calls[0]?.body.tools as { function?: { parameters?: { properties?: object } } }[] | undefined
     )?.[0]?.function?.parameters;
     expect(Object.keys(parameters?.properties ?? {})).toContain("isTranscript");
-    expect((calls[0]?.body.messages as { content: string }[])[0]?.content).toBe("S");
+    expect((calls[0]?.body.messages as { content: string }[] | undefined)?.[0]?.content).toBe("S");
   });
 
   it("openrouter: reconstructs interleaved tool streams by index and selects the first call", async () => {

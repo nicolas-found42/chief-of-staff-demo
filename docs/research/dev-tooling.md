@@ -1,3 +1,7 @@
+> Update, 2026-09-09: the TypeScript and lint recommendations below are historical.
+> The [TypeScript 7 migration](typescript7-migration-2026-09-09.md) replaces the old
+> compiler API and typed ESLint with current native tools. Other sections retain their original context.
+
 # Dev-experience tooling research — 2026-08-25
 
 Question: how to improve DX for this repo (linting, type checking, formatting,

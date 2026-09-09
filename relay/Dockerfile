@@ -1,8 +1,8 @@
 # Minimal opaque relay — ADR-0031, issue://80 + issue://81
 FROM node:22.18.0-bookworm-slim AS build
 WORKDIR /app
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable && corepack prepare pnpm@11.25.0 --activate
+# The bundled Corepack expects pnpm's old JS layout; pnpm 12 ships native launchers.
+RUN npm install --global pnpm@12.3.4
 
 # Resolve the same locked workspace graph that the test and typecheck gates use.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./

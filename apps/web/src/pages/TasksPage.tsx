@@ -930,7 +930,7 @@ export function TasksPage({
       .then(load)
       .catch((err) => setError(errorMessage(err)));
     // The Tasks-open trigger runs once; filter changes only reload the local projection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [client]);
 
   /* Dismissal moves its row out of the pending queue, so focus moves to the

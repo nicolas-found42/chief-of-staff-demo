@@ -224,7 +224,7 @@ async function defaultGoogleCaptionsFetch(
     clientUnknown !== null &&
     typeof clientUnknown === "object" &&
     "listCaptions" in clientUnknown &&
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    // oxlint-disable-next-line typescript/no-unnecessary-type-assertion
     typeof (clientUnknown as { listCaptions: unknown }).listCaptions === "function";
   if (hasListCaptions) {
     const listCaptions = (
@@ -279,7 +279,7 @@ async function defaultGoogleCaptionsFetch(
 }
 function errorStderr(error: unknown): string | null {
   if (error !== null && typeof error === "object" && "stderr" in error) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    // oxlint-disable-next-line typescript/no-unnecessary-type-assertion
     const stderr = (error as { stderr: unknown }).stderr;
     if (typeof stderr === "string" && stderr.trim()) return stderr;
   }

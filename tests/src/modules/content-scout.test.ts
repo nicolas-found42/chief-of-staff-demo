@@ -1378,7 +1378,7 @@ United States only
       url: "https://example.com/feed.xml",
     });
     const archivedTargetId = "archived-target";
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+    // oxlint-disable-next-line typescript/unbound-method
     const originalCollect = adapter.collect;
     adapter.collect = async (input) => {
       const result = await originalCollect(input);
@@ -1416,7 +1416,7 @@ United States only
     });
     host.setSourceTargetState(archived.id, "archived");
     const realArchivedId = archived.id;
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+    // oxlint-disable-next-line typescript/unbound-method
     const priorCollect = adapter.collect;
     adapter.collect = async (input) => {
       const res = await priorCollect(input);

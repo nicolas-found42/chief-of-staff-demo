@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- enrichment helpers deliberately handle nullable provider errors */
+/* oxlint-disable typescript/no-unnecessary-condition -- enrichment helpers deliberately handle nullable provider errors */
 import type {
   HubSpotCompany,
   HubSpotContact,

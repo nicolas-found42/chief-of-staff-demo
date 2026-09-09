@@ -1,4 +1,4 @@
-/* eslint-disable no-control-regex, @typescript-eslint/no-unnecessary-condition -- helpers handle nullable provider errors and sanitization */
+/* oxlint-disable no-control-regex, typescript/no-unnecessary-condition -- helpers handle nullable provider errors and sanitization */
 /**
  * Shared enrichment helpers — deduplicated from enrich.ts and publicIntelligence.ts
  * (sanitizeEvidence, readErrorStatus, readErrorCode, isProviderWideError, deduplicateEvidence)

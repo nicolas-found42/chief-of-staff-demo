@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- module orchestrates optional stage deps and snapshot fields that may be absent on retry */
+/* oxlint-disable typescript/no-unnecessary-condition -- module orchestrates optional stage deps and snapshot fields that may be absent on retry */
 import type {
   MeetingBrief,
   MeetingBriefEvent,

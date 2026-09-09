@@ -194,7 +194,9 @@ describe("single-email policy (issue #163)", () => {
     await host.idle();
 
     expect(runs.detail(runId)?.status).toBe("done");
-    expect((runs.detail(runId)?.result as MeetingBriefRunResult).delivery.status).toBe("sent");
+    expect((runs.detail(runId)?.result as MeetingBriefRunResult | undefined)?.delivery.status).toBe(
+      "sent",
+    );
     expect(fakeGmail.count).toBe(1);
   });
 
