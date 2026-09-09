@@ -1570,10 +1570,13 @@ it("retains a podcast feed and investigates its publisher transcript link", asyn
     profileUrls: ["https://example.com/maya.rss"],
   });
   await h.people.research.runNow(profile.id);
+  /* The transcript link is followed inside the feed read: the feed's source
+     retains the spoken text with transcript provenance, not the description. */
   expect(h.people.research.sources(profile.id)).toContainEqual(
     expect.objectContaining({
-      url: "https://example.com/maya-transcript",
+      url: "https://example.com/maya.rss",
       text: "Maya at Ocean Lab: We built an ocean sensor using recycled materials.",
+      provenanceNote: expect.stringContaining("transcript"),
     }),
   );
 });
