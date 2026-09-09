@@ -160,10 +160,19 @@ export const tasksApi = {
     request<{ deleted: string }>(`/api/tasks/${encodeURIComponent(taskId)}?confirm=true`, {
       method: "DELETE",
     }),
-  actionItems: (query: { state?: ActionItemState; debriefRunId?: string } = {}) => {
+  actionItems: (
+    query: {
+      state?: ActionItemState;
+      debriefRunId?: string;
+      meetingId?: string;
+      source?: "unavailable";
+    } = {},
+  ) => {
     const params = new URLSearchParams();
     if (query.state) params.set("state", query.state);
     if (query.debriefRunId) params.set("debriefRunId", query.debriefRunId);
+    if (query.meetingId) params.set("meetingId", query.meetingId);
+    if (query.source) params.set("source", query.source);
     const suffix = params.size > 0 ? `?${params.toString()}` : "";
     return request<ActionItemIndex>(`/api/action-items${suffix}`);
   },

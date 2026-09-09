@@ -56,6 +56,7 @@ interface MeetingDebriefSeedPayload {
   profiles?: SeedProfile[];
   /** Seed as an already-approved Run, to exercise the duplicate-warning path. */
   approved?: boolean;
+  extraction?: MeetingDebriefExtraction;
 }
 
 export interface MeetingDebriefTestRuntime {
@@ -169,6 +170,7 @@ export function createMeetingDebriefTestRuntime(
     lifecycle: [],
   });
   let nowMs = Date.now();
+  const fixtureExtractions = new Map<string, MeetingDebriefExtraction>();
   const host = new MeetingDebriefHost({
     runs: options.runs,
     catalog: {
@@ -176,6 +178,7 @@ export function createMeetingDebriefTestRuntime(
     },
     identity: options.identity,
     extract: async ({ record, identity }) =>
+      fixtureExtractions.get(record.id) ??
       deterministicDebriefExtraction(record, { mentions: identity.mentions }),
     now: () => new Date(nowMs),
     profiles: workspaceProfileDirectory(people),
@@ -210,6 +213,7 @@ export function createMeetingDebriefTestRuntime(
     },
     async seed(payload: MeetingDebriefSeedPayload): Promise<string> {
       const record = payload.transcript;
+      if (payload.extraction) fixtureExtractions.set(record.id, payload.extraction);
       for (const profile of payload.profiles ?? []) {
         seedProfile(profile);
       }

@@ -637,8 +637,8 @@ The owner's durable resolution of one Relevance Candidate as confirmed, rejected
 _Avoid_: Identity Decision (that one resolves a Transcript Mention), relevance score, confirmation
 
 **Meeting Wizard**:
-The product area that presents Meetings: the day ahead, the week ahead, and one page per Meeting
-carrying that meeting's Meeting Brief before it and its Meeting Debrief afterwards. It is the
+The product area that presents today’s, recent, upcoming and retained past Meetings, and one page
+per Meeting carrying its Meeting Brief before it and its Meeting Debrief afterwards. It is the
 product surface of the Workspace's Meeting record. The prospective and retrospective workflows
 behind it stay separate (ADR-0050); the product area presents them together, it does not merge them.
 _Status_: live
@@ -686,7 +686,7 @@ Debrief is retrospective, extracted from a transcript afterwards), debrief email
 **Daily Briefing**:
 The structured result prepared each morning for the day ahead: what the workspace owner should know
 about the day's Meetings, which open Tasks matter, and which pending Action Items need review. It is
-the Meeting Wizard's front page and the one message the owner receives each day.
+the morning summary the owner receives for the day ahead.
 _Avoid_: Daily digest, morning summary, Meeting Brief (that one prepares a single meeting)
 
 **Weekly Briefing**:

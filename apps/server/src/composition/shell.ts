@@ -1,3 +1,6 @@
+import { DateTime } from "luxon";
+import { registerMeetingReadTestRoutes } from "../meetings/testRuntime.js";
+import { MeetingRead } from "../meetings/read.js";
 import { weeklyMeetingSources } from "../meetings/weekly-sources.js";
 import type { PersonRelationshipRecord } from "@chief-of-staff-demo/shared";
 import { registerPersonDossierApi } from "../api/person-dossiers.js";
@@ -889,6 +892,34 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
     actionItems,
     taskLinking,
     asanaLinking,
+    actionItemContext: (item) => {
+      const meeting = item.source.meetingId ? meetings.get(item.source.meetingId) : null;
+      const transcript = transcriptCatalogStore.readTranscript(item.source.transcriptId);
+      const mention = transcriptIdentityService
+        .reviewFor(item.source.transcriptId)
+        .mentions.find((m) => m.id === item.evidence.responsibleMentionId);
+      const date = transcript?.meetingDate ?? meeting?.startAt ?? "";
+      const localDate =
+        /^\d{4}-\d{2}-\d{2}$/.test(date) || meeting?.dateOnly
+          ? date.slice(0, 10)
+          : (DateTime.fromISO(date, {
+              zone:
+                configStore.getModuleConfig("content-research").timeZone ||
+                Intl.DateTimeFormat().resolvedOptions().timeZone,
+            }).toISODate() ?? date);
+      return {
+        meeting: meeting
+          ? {
+              id: meeting.id,
+              title: meeting.title,
+              date: localDate,
+            }
+          : null,
+        evidence: mention?.provenance.quote
+          ? { quote: mention.provenance.quote, timestamp: mention.provenance.timestamp }
+          : null,
+      };
+    },
     onConfigChanged: async () => {
       meetingBriefProduction?.invalidateGoogleIdentity();
       await meetingBriefProduction?.refreshOwnerIdentity().catch(() => null);
@@ -906,6 +937,20 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
      and the Tasks product, and the Weekly Summary is generated only from
      bounded projections of the latest successful Briefs and Debriefs. */
   weeklyWorkspace.registerRoutes(app);
+  new MeetingRead({
+    canRetry: (meta) =>
+      meta.module === "meeting-brief-generator"
+        ? meetingBrief.canRetryRun(meta.id)
+        : meetingDebrief.canRetryRun(meta.id),
+    meetings,
+    runs,
+    actionItems,
+    transcripts: () => transcriptCatalogStore.listTranscripts(),
+    now: () => meetingBriefTest?.clockNow() ?? new Date(),
+    timezone: () =>
+      configStore.getModuleConfig("content-research").timeZone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }).registerRoutes(app);
 
   /* The Transcript Catalog's intake surface (issue #142): consent, the
      pre-consent inventory, remembered status, and one pass on demand. */
@@ -942,6 +987,13 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
 
   if (meetingBriefTest) {
     registerMeetingBriefTestRoutes(app, meetingBriefTest);
+    if (meetingDebriefTest)
+      registerMeetingReadTestRoutes(app, {
+        meetings,
+        runs,
+        brief: meetingBriefTest,
+        debrief: meetingDebriefTest,
+      });
   }
 
   if (process.env.ENABLE_TEST_SEED === "1") {

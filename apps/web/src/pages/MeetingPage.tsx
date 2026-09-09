@@ -1,7 +1,10 @@
+import { MeetingArtifactStatus } from "../components/MeetingReadRow";
+import { meetingDate } from "../meetingDisplay";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
   Meeting,
+  MeetingDetailView,
   MeetingBriefIndexEntry,
   MeetingDebriefDetail,
   MeetingDebriefIndexEntry,
@@ -58,8 +61,8 @@ function compareBriefEntries(a: MeetingBriefIndexEntry, b: MeetingBriefIndexEntr
  * The Brief tab: the current Meeting Brief for this Meeting, keyed by the
  * Meeting's occurrence key and read from the same Cross-Run index the Brief
  * journey renders. When no Brief exists the tab names which eligibility test
- * failed; a failed preparation renders the error with a retry into the
- * existing prepare endpoint.
+ * failed. The shared read status delegates retries to the owning workflow;
+ * prepare-now is reserved for a scheduled occurrence (#325).
  */
 function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: MeetingsClient }) {
   /* Stable fetcher: the Brief tab reads the module's Cross-Run index. */
@@ -82,13 +85,14 @@ function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: Meetin
     () => index?.cancellations.some((item) => item.occurrenceKey === occurrenceKey) ?? false,
     [index, occurrenceKey],
   );
-  const current = cancelled ? undefined : entries[0];
+  const current =
+    entries.find((entry) => entry.meetingBrief !== null) ?? (cancelled ? undefined : entries[0]);
   const upcoming = useMemo(
     () => index?.upcoming.find((item) => item.occurrenceKey === occurrenceKey),
     [index, occurrenceKey],
   );
 
-  if (meeting.ineligibleReason) {
+  if (meeting.ineligibleReason && !current?.meetingBrief) {
     return <p className="muted">{INELIGIBILITY_LABELS[meeting.ineligibleReason]}</p>;
   }
 
@@ -216,23 +220,7 @@ function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: Meetin
           ) : null}
         </div>
       ) : current ? (
-        <div className="banner banner-error" role="alert">
-          <p>
-            Preparation failed and left no brief.{" "}
-            <Link to={`/runs/${current.runId}`}>Technical details</Link>
-          </p>
-          <button
-            type="button"
-            className="action-button"
-            aria-disabled={busy}
-            onClick={() => {
-              if (busy) return;
-              void prepareNow(occurrenceKey);
-            }}
-          >
-            {busy ? "Retrying…" : "Retry preparation"}
-          </button>
-        </div>
+        <p className="muted">No successful Brief is available from this attempt.</p>
       ) : upcoming ? (
         <div className="card">
           <p className="muted">
@@ -250,22 +238,13 @@ function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: Meetin
           >
             {busy ? "Preparing…" : "Prepare now"}
           </button>
+          <p className="muted">Preparing may send the Brief to the connected owner.</p>
         </div>
       ) : (
-        <div className="card">
-          <p className="muted">No Meeting Brief yet for this meeting.</p>
-          <button
-            type="button"
-            className="action-button"
-            aria-disabled={busy}
-            onClick={() => {
-              if (busy) return;
-              void prepareNow(occurrenceKey);
-            }}
-          >
-            {busy ? "Preparing…" : "Prepare now"}
-          </button>
-        </div>
+        <p className="muted">
+          No Meeting Brief was prepared for this meeting.{" "}
+          <Link to="/meetings/brief">Open the Brief journey</Link>
+        </p>
       )}
     </div>
   );
@@ -347,6 +326,15 @@ function MeetingDebriefTab({
     };
   }, [client, runId, detailAttempt]);
 
+  if (indexError && !indexReady)
+    return (
+      <p role="alert">
+        Debrief status could not be loaded.{" "}
+        <button type="button" onClick={refreshIndex}>
+          Retry loading
+        </button>
+      </p>
+    );
   if (transcripts === null || !indexReady) {
     return (
       <p className="muted" role="status">
@@ -549,16 +537,56 @@ function TranscriptOrphanNotice({
 export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { meetingId } = useParams<{ meetingId: string }>();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [readView, setReadView] = useState<MeetingDetailView | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const readGeneration = useRef(0);
+  const refreshRead = useCallback(async () => {
+    const generation = ++readGeneration.current;
+    if (!meetingId) return;
+    try {
+      const result = await client.meetingRead(meetingId);
+      if (generation !== readGeneration.current) return;
+      setReadView(result);
+      setReadError(null);
+    } catch {
+      if (generation !== readGeneration.current) return;
+      setReadError(
+        "Meeting status could not be refreshed. Previously shown counts may be out of date.",
+      );
+    }
+  }, [client, meetingId]);
+  useEffect(() => {
+    setReadView(null);
+    void refreshRead();
+    const timer = window.setInterval(() => void refreshRead(), 3000);
+    const invalidate = () => {
+      readGeneration.current++;
+    };
+    return () => {
+      invalidate();
+      window.clearInterval(timer);
+    };
+  }, [refreshRead]);
   const [transcripts, setTranscripts] = useState<{ id: string; title: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tabOverride, setTabOverride] = useState<MeetingTab | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedTab = searchParams.get("tab");
+  const tabOverride = selectedTab === "brief" || selectedTab === "debrief" ? selectedTab : null;
+  const setTabOverride = (tab: MeetingTab) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", tab);
+    setSearchParams(params);
+  };
   const [debriefEntries, setDebriefEntries] = useState<MeetingDebriefIndexEntry[] | null>(null);
   const [debriefIndexError, setDebriefIndexError] = useState<string | null>(null);
-  const headingRef = usePageFocus<HTMLHeadingElement>();
+  const headingRef = usePageFocus<HTMLHeadingElement>({ focusOnSearchChange: false });
   useTitle(meeting ? meeting.title : "Meeting");
 
   useEffect(() => {
     if (!meetingId) return;
+    setMeeting(null);
+    setTranscripts(null);
+    setError(null);
     let cancelled = false;
     client
       .meeting(meetingId)
@@ -594,15 +622,21 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
 
   useEffect(() => {
     refreshDebriefIndex();
+    const timer = window.setInterval(refreshDebriefIndex, 3000);
+    return () => window.clearInterval(timer);
   }, [refreshDebriefIndex]);
 
   const debriefEntry = useMemo(() => {
     if (!debriefEntries || !transcripts) return undefined;
+    const selected = debriefEntries.find(
+      (entry) => entry.runId === readView?.meeting.debrief.runId,
+    );
+    if (selected) return selected;
     return pickDebriefEntry(
       debriefEntries,
       transcripts.map((transcript) => transcript.id),
     );
-  }, [debriefEntries, transcripts]);
+  }, [debriefEntries, transcripts, readView?.meeting.debrief.runId]);
   const debriefState = debriefTabState(debriefEntry);
   const defaultTab: MeetingTab =
     meeting && Number.isFinite(Date.parse(meeting.endAt)) && Date.parse(meeting.endAt) <= Date.now()
@@ -663,8 +697,18 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
       <h1 ref={headingRef} tabIndex={-1}>
         {meeting.title}
       </h1>
+      {readError ? <p role="status">{readError}</p> : null}
+      {readView?.partial.map((message) => (
+        <p role="status" key={message}>
+          {message}
+        </p>
+      ))}
       <p className="muted">
-        <time dateTime={meeting.startAt}>{formatMeetingTime(meeting.startAt)}</time>
+        <time dateTime={meeting.startAt}>
+          {readView?.meeting.dateOnly
+            ? `${meetingDate(readView.meeting.localDate)} · Date only`
+            : formatMeetingTime(meeting.startAt)}
+        </time>
         {/* A transcript-derived Meeting has no duration to state, so an end
             equal to its start is silence rather than "9:00 AM — 9:00 AM". */}
         {meeting.endAt !== meeting.startAt ? (
@@ -767,6 +811,30 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
           <TabLabel label="Debrief" state={debriefState} />
         </button>
       </div>
+
+      {readView ? (
+        <>
+          <MeetingArtifactStatus
+            artifact={tab === "brief" ? readView.meeting.brief : readView.meeting.debrief}
+            kind={tab}
+            meetingId={meeting.id}
+            refresh={() => {
+              void refreshRead();
+              refreshDebriefIndex();
+            }}
+            linkReady={false}
+          />
+          <p>
+            {readView.meeting.pendingCount === null ? (
+              "Pending Action Item count unavailable"
+            ) : (
+              <Link to={`/tasks?meetingId=${meeting.id}#action-items`}>
+                Review {readView.meeting.pendingCount} action items
+              </Link>
+            )}
+          </p>
+        </>
+      ) : null}
 
       {tab === "brief" ? (
         <div role="tabpanel" id="meeting-tabpanel-brief" aria-labelledby="meeting-tab-brief">

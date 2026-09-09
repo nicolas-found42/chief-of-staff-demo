@@ -76,4 +76,11 @@ export interface ActionItem {
 /** The Action Item queue as the Tasks product reads it. */
 export interface ActionItemIndex {
   items: ActionItem[];
+  context?: Record<string, ActionItemContext>;
+}
+
+/** Stored provenance resolved at the Tasks read boundary; no external evidence fetch. */
+export interface ActionItemContext {
+  meeting: { id: string; title: string; date: string } | null;
+  evidence: { quote: string; timestamp: string | null } | null;
 }

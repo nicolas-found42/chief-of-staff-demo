@@ -1,5 +1,8 @@
 import type {
   DailyBriefingState,
+  MeetingWorkspaceView,
+  MeetingHistoryView,
+  MeetingDetailView,
   WeeklyWorkspaceView,
   HubSpotSetupCheck,
   HubSpotStatus,
@@ -29,6 +32,10 @@ export interface ProviderPolicyState {
 }
 
 export const meetingsApi = {
+  meetingRead: (meetingId: string) =>
+    request<MeetingDetailView>(`/api/meetings/${encodeURIComponent(meetingId)}/read`),
+  workspace: () => request<MeetingWorkspaceView>("/api/meetings/workspace"),
+  history: (query: string) => request<MeetingHistoryView>(`/api/meetings/history?${query}`),
   hubspotStatus: () => request<HubSpotStatus>("/api/meeting-brief/hubspot/status"),
   hubspotConnect: (token: string) =>
     request<HubSpotStatus>("/api/meeting-brief/hubspot/connect", {

@@ -55,6 +55,7 @@ export interface ApiContext {
   tasks: WorkspaceTasks;
   /** The Action Items a Meeting Debrief proposed, which Tasks presents (issue #177). */
   actionItems: WorkspaceActionItems;
+  actionItemContext?: import("./tasks.js").TasksApiContext["actionItemContext"];
   /** Google Tasks as an optional Task Destination (issue #184). */
   taskLinking: TaskLinking;
   /** Asana as an optional Task Destination (issue #189). Required here like
@@ -300,6 +301,7 @@ export async function registerApi(app: FastifyInstance, ctx: ApiContext): Promis
   registerTasksApi(app, {
     tasks: ctx.tasks,
     actionItems: ctx.actionItems,
+    ...(ctx.actionItemContext ? { actionItemContext: ctx.actionItemContext } : {}),
     linking: ctx.taskLinking,
     asana: ctx.asanaLinking,
     /* The Action Item Policy (issue #181): the Tasks product's own setting,

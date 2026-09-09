@@ -420,3 +420,11 @@ describe("reading the Action Item queue", () => {
     expect(tasks.json<{ tasks: unknown[] }>().tasks).toEqual([]);
   });
 });
+
+it("Meeting-filtered review includes source context and truthful missing evidence", async () => {
+  await debrief();
+  const response = await app.inject("/api/action-items?meetingId=meeting_1&state=pending");
+  const body = response.json();
+  expect(body.items).toHaveLength(1);
+  expect(body.context[body.items[0].id]).toMatchObject({ meeting: null, evidence: null });
+});

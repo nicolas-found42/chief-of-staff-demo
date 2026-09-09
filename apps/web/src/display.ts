@@ -206,24 +206,6 @@ export function formatMeetingTime(iso: string): string {
   });
 }
 
-/**
- * The same calendar shape without a clock, for a date that names a day rather
- * than a moment. Kept beside `formatMeetingTime` so a page never mixes
- * "Fri, Sep 4" with the browser default's "9/4/2026".
- */
-export function formatMeetingDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-  return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 /** The same clock without the date, for the end of a meeting that starts beside it. */
 export function formatMeetingEndTime(iso: string): string {
   const date = new Date(iso);
