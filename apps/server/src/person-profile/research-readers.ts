@@ -161,6 +161,11 @@ export function classifySourceFamily(url: string): PersonSourceFamily {
   }
   if (/(^|\.)(youtube\.com|youtu\.be|vimeo\.com|peertube|tube\.|sepiasearch\.org)/.test(host))
     return "spoken-evidence";
+  /* PeerTube instances live on any domain, so no host pattern covers them;
+     the watch route is the constant. Without this a watch page on an
+     instance host reaches the generic web reader and its captions are never
+     attempted (issue #244). */
+  if (/\/videos\/watch\//.test(path)) return "spoken-evidence";
   if (/podcast|\.rss$|\/feed|anchor\.fm|libsyn|buzzsprout|megaphone\.fm/.test(host + path))
     return "spoken-evidence";
   /* Threads migrated to threads.com (threads.net redirects there, observed
@@ -1268,7 +1273,7 @@ function youtubeVideoId(url: string): string | null {
  */
 async function readSpoken(url: string, context: ReadContext): Promise<SourceReadResult> {
   const videoId = youtubeVideoId(url);
-  if (!videoId) return readWeb(url, "spoken-evidence", context);
+  if (!videoId) return readPeerTubeSpoken(url, context);
   const page = await request(url, context, "caption-reader");
   if (!page || page.status >= 400) {
     if (page)
@@ -1414,6 +1419,248 @@ async function readVideoDescription(
     rights: null,
     finalUrl: page.url,
   };
+}
+
+/**
+ * Spoken evidence from a PeerTube instance, read anonymously.
+ *
+ * The watch page is a script shell, so the captions come from the instance's
+ * own REST listing instead: one anonymous GET lists the caption files and a
+ * second fetches the WebVTT. Publisher captions are preferred over automatic
+ * speech recognition, and the note travels with the text either way. When the
+ * instance lists no captions, the watch page is read as web evidence instead,
+ * which is a description of the video and never a transcript of it.
+ */
+async function readPeerTubeSpoken(url: string, context: ReadContext): Promise<SourceReadResult> {
+  const video = parsePeerTubeWatchUrl(url);
+  /* Not a watch URL after all: read the page as web evidence rather than
+     inventing a caption failure for it. */
+  if (!video) return readWeb(url, "spoken-evidence", context);
+  const listingUrl = `${video.origin}/api/v1/videos/${video.uuid}/captions`;
+  const listing = await request(listingUrl, context, "caption-reader", "application/json");
+  if (!listing || listing.status >= 400) {
+    if (listing)
+      context.recorder.record({
+        stage: "caption-acquisition",
+        code: classifyHttpStatus(listing.status, listing.body, listing.contentType).code,
+        outcome: "failed",
+        recovery: "stopped",
+        cause: "observed",
+        target: listingUrl,
+        targetKind: "media",
+        collector: "caption-reader",
+        reason: `HTTP ${listing.status} for the instance caption listing; the watch page is read instead.`,
+        attemptOf: context.attemptOf,
+        observed: { status: listing.status, finalUrl: listing.url },
+        impact: "Spoken evidence from this video is missing from the dossier.",
+        remediation: `Reproduce with: curl -sS '${listingUrl}'`,
+      });
+    return readWeb(url, "spoken-evidence", context);
+  }
+  const tracks = parsePeerTubeCaptionListing(listing.body, video.origin);
+  if (!tracks.length) {
+    context.recorder.record({
+      stage: "caption-acquisition",
+      code: "captions-missing",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: listingUrl,
+      targetKind: "media",
+      collector: "caption-reader",
+      reason: "The instance lists no caption files for this video.",
+      attemptOf: context.attemptOf,
+      observed: { status: listing.status, finalUrl: listing.url, bytes: listing.body.length },
+      impact: "This video contributed no spoken evidence.",
+      remediation:
+        "Local transcription would be the next route; it is not wired into person research.",
+      recoveryStopped: "No local transcription runtime is available to person research.",
+    });
+    return readWeb(url, "spoken-evidence", context);
+  }
+  /* Publisher captions before automatic speech recognition, then English: an
+     ASR track is usable evidence but a different kind of it, and the note
+     travels with the text so a claim cannot silently upgrade a machine guess
+     to a quotation. */
+  const track =
+    tracks.find((entry) => !entry.auto) ??
+    tracks.find((entry) => entry.language === "en") ??
+    tracks[0]!;
+  if (!track.fileUrl) {
+    context.recorder.record({
+      stage: "caption-acquisition",
+      code: "captions-missing",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: listingUrl,
+      targetKind: "media",
+      collector: "caption-reader",
+      reason: "The instance lists a caption file with no downloadable URL.",
+      attemptOf: context.attemptOf,
+      observed: { status: listing.status, finalUrl: listing.url, bytes: listing.body.length },
+      impact: "A listed caption file did not become text; the watch page is read instead.",
+      remediation: `Reproduce with: curl -sS '${listingUrl}'`,
+    });
+    return readWeb(url, "spoken-evidence", context);
+  }
+  const captions = await request(track.fileUrl, context, "caption-reader", "text/vtt");
+  const emptyBody = !!captions && captions.status < 400 && captions.body.trim() === "";
+  if (!captions || captions.status >= 400 || emptyBody) {
+    context.recorder.record({
+      stage: "caption-acquisition",
+      code: emptyBody ? "captions-missing" : captions ? "http-error" : "transport-failed",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: captions ? "observed" : "unknown",
+      target: track.fileUrl,
+      targetKind: "media",
+      collector: "caption-reader",
+      reason: emptyBody
+        ? "The instance lists a caption file, and the anonymous caption route returned HTTP 200 with an empty body."
+        : captions
+          ? `HTTP ${captions.status} fetching the caption file.`
+          : "The caption file request did not complete.",
+      attemptOf: context.attemptOf,
+      ...(captions
+        ? {
+            observed: {
+              status: captions.status,
+              finalUrl: captions.url,
+              bytes: captions.body.length,
+            },
+          }
+        : {}),
+      impact: "A listed caption file did not become text; the watch page is read instead.",
+      remediation: "Fetch the caption file URL directly to see what the source returns.",
+    });
+    return readWeb(url, "spoken-evidence", context);
+  }
+  const { text, anchors } = parseVtt(captions.body);
+  if (!text.trim()) {
+    context.recorder.record({
+      stage: "caption-acquisition",
+      code: "captions-missing",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: track.fileUrl,
+      targetKind: "media",
+      collector: "caption-reader",
+      reason: "The caption file held no speech cues.",
+      attemptOf: context.attemptOf,
+      observed: { status: captions.status, finalUrl: captions.url, bytes: captions.body.length },
+      impact: "A listed caption file did not become text; the watch page is read instead.",
+      remediation: `Reproduce with: curl -sS '${track.fileUrl}'`,
+    });
+    return readWeb(url, "spoken-evidence", context);
+  }
+  return {
+    text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
+    completeness: text.length > MAX_TEXT ? "partial" : "full",
+    access: "retrieved",
+    outboundUrls: [],
+    family: "spoken-evidence",
+    route: "caption-reader",
+    upstreamIndex: hostOf(url),
+    publishedAt: null,
+    author: null,
+    anchors,
+    provenanceNote: track.auto
+      ? "Automatic speech recognition captions from the hosting PeerTube instance. Timestamps locate speech; they do not identify the speaker."
+      : "Publisher-provided captions from the hosting PeerTube instance. Timestamps locate speech; they do not identify the speaker.",
+    sourceVersion: null,
+    rights: null,
+    finalUrl: url,
+  };
+}
+
+function parsePeerTubeWatchUrl(url: string): { origin: string; uuid: string } | null {
+  try {
+    const parsed = new URL(url);
+    const match = /\/videos\/watch\/([^/?#]+)/.exec(parsed.pathname);
+    if (!match?.[1]) return null;
+    return { origin: parsed.origin, uuid: match[1] };
+  } catch {
+    return null;
+  }
+}
+
+interface PeerTubeCaptionTrack {
+  fileUrl: string | null;
+  auto: boolean;
+  language: string | null;
+}
+
+function parsePeerTubeCaptionListing(body: string, origin: string): PeerTubeCaptionTrack[] {
+  const listing = safeJson(body) as { data?: unknown } | null;
+  const entries = listing && Array.isArray(listing.data) ? listing.data : [];
+  const tracks: PeerTubeCaptionTrack[] = [];
+  for (const raw of entries) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as Record<string, unknown>;
+    const fileUrl =
+      typeof entry.fileUrl === "string"
+        ? entry.fileUrl
+        : typeof entry.captionPath === "string"
+          ? `${origin}${entry.captionPath}`
+          : null;
+    const language =
+      typeof entry.language === "string"
+        ? entry.language
+        : typeof entry.language === "object" && entry.language !== null
+          ? (entry.language as { id?: unknown }).id
+          : null;
+    tracks.push({
+      fileUrl,
+      auto: entry.automaticallyGenerated === true,
+      language: typeof language === "string" ? language : null,
+    });
+  }
+  return tracks;
+}
+
+/**
+ * WebVTT caption cues into retained text with timestamp anchors.
+ *
+ * The header, NOTE/STYLE/REGION blocks and cue identifiers carry no speech
+ * and are skipped; inline `<...>` tags (including `<v Name>` voice labels)
+ * are stripped, so an uploader's voice label can never surface as speaker
+ * identification. Anchors follow the timed-text cadence: the first cue and
+ * every twelfth after it.
+ */
+function parseVtt(body: string): { text: string; anchors: SourceAnchor[] } {
+  const anchors: SourceAnchor[] = [];
+  const parts: string[] = [];
+  let offset = 0;
+  for (const block of body.split(/\r?\n\r?\n/)) {
+    const lines = block.split(/\r?\n/);
+    const stampIndex = lines.findIndex((line) => line.includes("-->"));
+    if (stampIndex < 0) continue;
+    const seconds = vttStartSeconds(lines[stampIndex]!);
+    if (seconds === null) continue;
+    const line = lines
+      .slice(stampIndex + 1)
+      .map((entry) => decodeXml(entry.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ")).trim())
+      .filter((entry) => entry !== "")
+      .join(" ")
+      .trim();
+    if (!line) continue;
+    if (parts.length % 12 === 0) anchors.push({ kind: "timestamp", value: clock(seconds), offset });
+    parts.push(line);
+    offset += line.length + 1;
+  }
+  return { text: parts.join(" "), anchors };
+}
+
+/** The start of a `HH:MM:SS.mmm --> ...` (or `MM:SS.mmm --> ...`) cue header. */
+function vttStartSeconds(header: string): number | null {
+  const match = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})/.exec(header);
+  if (!match) return null;
+  const hours = match[1] === undefined ? 0 : Number(match[1]);
+  const start = hours * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000;
+  return Number.isFinite(start) ? start : null;
 }
 
 function parseCaptionTracks(body: string): { baseUrl: string; asr: boolean }[] {
