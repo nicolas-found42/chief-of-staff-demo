@@ -163,8 +163,10 @@ export function classifySourceFamily(url: string): PersonSourceFamily {
     return "spoken-evidence";
   if (/podcast|\.rss$|\/feed|anchor\.fm|libsyn|buzzsprout|megaphone\.fm/.test(host + path))
     return "spoken-evidence";
+  /* Threads migrated to threads.com (threads.net redirects there, observed
+     2026-09-09, #256); both hosts reach the anonymous social reader below. */
   if (
-    /(^|\.)(bsky\.app|bsky\.social|mastodon\.|fosstodon\.org|hachyderm\.io|linkedin\.com|instagram\.com|threads\.net|x\.com|twitter\.com)/.test(
+    /(^|\.)(bsky\.app|bsky\.social|mastodon\.|fosstodon\.org|hachyderm\.io|linkedin\.com|instagram\.com|threads\.(net|com)|x\.com|twitter\.com)/.test(
       host,
     )
   )
@@ -1459,25 +1461,30 @@ function clock(seconds: number): string {
  * Anonymous reads of public social evidence.
  *
  * Bluesky and Mastodon both publish public timelines over unauthenticated
- * endpoints, so they are read directly. LinkedIn, Instagram, X and Threads do
- * not: the anonymous route is an authentication wall, and this records that as
- * an observed `login-required` gap rather than pretending the person has no
- * public presence there. No session is imported and no wall is bypassed.
+ * endpoints, so they are read directly. LinkedIn, Instagram, X and Threads
+ * are read per request, never per hostname: a response whose body is a login
+ * or challenge shell is recorded as the wall it is — even on a 200 — while a
+ * page that actually renders public content anonymously is retained. No
+ * session is imported and no wall is bypassed.
  */
 async function readSocial(url: string, context: ReadContext): Promise<SourceReadResult> {
   const host = hostOf(url) ?? "";
   if (/bsky\.app|bsky\.social/.test(host)) return readBluesky(url, context);
-  if (/x\.com|twitter\.com|linkedin\.com|instagram\.com|threads\.net/.test(host)) {
+  if (/x\.com|twitter\.com|linkedin\.com|instagram\.com|threads\.(net|com)/.test(host)) {
     const response = await request(url, context, "social-reader");
     const challenge = response ? detectChallenge(response.body, response.contentType) : null;
-    /* A public post page that actually renders anonymously is still worth
-       reading; only a wall is recorded as a wall. */
-    if (response && response.status < 400 && !challenge)
+    /* A public page that actually renders anonymously is still worth reading;
+       only a wall is recorded as a wall. Both checks run on this response,
+       never on the hostname: a 200 carrying a login or challenge shell takes
+       the wall branch below. */
+    const wallMarker = response && !challenge ? detectSocialWallMarker(response.body) : null;
+    if (response && response.status < 400 && !challenge && !wallMarker)
       return readHtml(url, response, "public-social", context);
+    const wall = challenge ?? (wallMarker ? "login-required" : null);
     context.recorder.record({
       stage: "access",
       code:
-        challenge ??
+        wall ??
         (response
           ? classifyHttpStatus(response.status, response.body, response.contentType).code
           : "transport-failed"),
@@ -1487,8 +1494,8 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       target: url,
       targetKind: "url",
       collector: "social-reader",
-      reason: challenge
-        ? `${host} served a ${challenge === "login-required" ? "sign-in" : "challenge"} page to an anonymous reader.`
+      reason: wall
+        ? `${host} served a ${wall === "login-required" ? "sign-in" : "challenge"} page to an anonymous reader.${wallMarker ? ` Login-gating marker observed in this response: "${wallMarker}".` : ""}`
         : `${host} did not return a readable anonymous response.`,
       attemptOf: context.attemptOf,
       ...(response
@@ -1498,6 +1505,7 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
               finalUrl: response.url,
               contentType: response.contentType,
               bytes: response.body.length,
+              bodyHash: hash(response.body),
             },
           }
         : {}),
@@ -1510,6 +1518,32 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
     return unavailable("public-social", "social-reader", "blocked", context.snippet, url);
   }
   return readMastodon(url, context);
+}
+
+/**
+ * Login-gating phrases observed in live anonymous responses (2026-09-09,
+ * #256): Instagram's "show more posts from …", Threads' "log in to see more
+ * …", X's "join the conversation" prompt. Matched against visible text so a
+ * wall split across markup still reads as a wall. LinkedIn's "join to view
+ * profile" is deliberately excluded: LinkedIn serves full public profile
+ * content beside it, so that phrase alone establishes no wall.
+ *
+ * This repeats detectChallenge's cheerio visible-text pipeline rather than
+ * sharing it, and the divergences are deliberate: the full body is scanned
+ * (not the 20KB head, since gating prompts sit deep in these shells),
+ * noscript content is stripped (these shells gate inside it), and text is
+ * lowercased for phrase matching. A future wall-phrase fix likely needs both
+ * sites; keep them in step by hand.
+ */
+function detectSocialWallMarker(body: string): string | null {
+  const document = load(body);
+  document("script, style, template, noscript").remove();
+  const visible = document.root().text().replace(/\s+/g, " ").toLowerCase();
+  const markers = ["show more posts from", "log in to see more", "join the conversation"];
+  for (const marker of markers) {
+    if (visible.includes(marker)) return marker;
+  }
+  return null;
 }
 
 async function readBluesky(url: string, context: ReadContext): Promise<SourceReadResult> {

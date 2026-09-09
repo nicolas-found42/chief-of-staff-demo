@@ -669,6 +669,45 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     exclusion:
       "Excluded by ADR-0072: Terms of Use §2(l) forbids collecting personal information for use separately from the crawl. Research retains full documents and publishes structured personal-data claims, which collapses the distinction between retaining and building a separate store.",
   },
+  {
+    route: "instagram",
+    family: "public-social",
+    terms:
+      "Instagram's robots notice prohibits automated data collection without express written permission; anonymous page loads render profile shells whose posts stay behind a sign-in gate.",
+    documentation: "https://www.instagram.com/robots.txt",
+    cost: "sign-in",
+    status: "excluded",
+    exclusion:
+      "No keyless anonymous read exists. Research records a login-required failure for an Instagram URL rather than importing a session or using a paid proxy.",
+    observed:
+      "Live 2026-09-09 (#256): GET https://www.instagram.com/instagram/ answered 200 text/html (843,163 bytes) with the profile header and bio but no post captions; the body carries the login-gating marker 'Show more posts from instagram'. Recorded as a login-required wall with the observed status, content type, size, final URL and body hash.",
+  },
+  {
+    route: "x",
+    family: "public-social",
+    terms:
+      "X's robots file allows listed public routes to named search-engine crawlers; an anonymous fetch outside those crawlers is served a sign-in prompt rather than the timeline.",
+    documentation: "https://x.com/robots.txt",
+    cost: "sign-in",
+    status: "excluded",
+    exclusion:
+      "No keyless anonymous read exists. Research records a login-required failure for an X URL rather than importing a session or using a paid proxy.",
+    observed:
+      "Live 2026-09-09 (#256): GET https://x.com/X answered 200 text/html (237,236 bytes) whose extractable article text was only the sign-in prompt ('join the conversation'). Recorded as a login-required wall with the observed status, content type, size, final URL and body hash.",
+  },
+  {
+    route: "threads",
+    family: "public-social",
+    terms:
+      "Threads' robots notice prohibits automated data collection without express written permission under Meta's Automated Data Collection Terms; anonymous page loads truncate the timeline behind a sign-in prompt.",
+    documentation: "https://www.threads.com/robots.txt",
+    cost: "sign-in",
+    status: "excluded",
+    exclusion:
+      "No keyless anonymous read exists. Research records a login-required failure for a Threads URL rather than importing a session or using a paid proxy.",
+    observed:
+      "Live 2026-09-09 (#256): threads.net redirects to threads.com; GET https://www.threads.com/@instagram answered 200 text/html (815,699 bytes) with the profile header and a few posts truncated behind 'Log in to see more'. Recorded as a login-required wall with the observed status, content type, size, final URL and body hash.",
+  },
 ];
 
 export interface EligibilityProbeResult {
