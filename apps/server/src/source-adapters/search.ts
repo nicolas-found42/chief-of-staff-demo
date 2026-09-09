@@ -57,12 +57,38 @@ export type PublicSearchDiagnosticEvent = {
   results: number;
   ms: number;
   detail?: string;
+  /**
+   * The soft pass deadline cut this provider before it settled: it
+   * contributed nothing to this pass's merge but keeps running, and a later
+   * event with `late: true` records whether its results still landed.
+   */
+  cut?: boolean;
+  /** This event describes a provider that settled after its pass resolved. */
+  late?: boolean;
 };
 
 export type PublicSearchDiagnostics = (event: PublicSearchDiagnosticEvent) => void;
 
 /** The composite's per-request deadline; slow sources (GDELT, Wayback) override it. */
 const IO_TIMEOUT_MS = 20_000;
+/**
+ * Soft pass deadline (ADR-0076 speed lever): a non-exempt pass resolves its
+ * merge once most providers have settled or this long after the pass
+ * started, whichever comes first. Cut providers keep running in the
+ * background and their results still merge into the shared pool — the
+ * deadline defers slow results by a round, it never drops them. With 11–36
+ * discovery rounds per operation, each round stops paying the slowest
+ * straggler. Recorded in researchSettings conditions; injectable per
+ * instance via `passSoftDeadlineMs` for hermetic tests.
+ */
+export const SEARCH_PASS_SOFT_DEADLINE_MS = 8_000;
+/**
+ * Fraction of the bundle that must settle before a non-exempt pass resolves
+ * early without waiting for the soft deadline. Cooldown-skipped, declined,
+ * and cache-hit providers settle immediately, so this counts finished
+ * provider tasks, not just answered ones.
+ */
+export const SEARCH_PASS_SETTLE_FRACTION = 0.8;
 
 /**
  * The merged result ceiling.
@@ -108,6 +134,16 @@ export function createPublicSearch(
     providerFilter?: (name: string) => boolean;
     /** Override the merged ceiling. Same reason as `providerFilter`. */
     mergedLimit?: number;
+    /**
+     * Override the soft pass deadline for hermetic tests. Production uses
+     * `SEARCH_PASS_SOFT_DEADLINE_MS`.
+     */
+    passSoftDeadlineMs?: number;
+    /**
+     * Override the early-resolve settle fraction for hermetic tests.
+     * Production uses `SEARCH_PASS_SETTLE_FRACTION`.
+     */
+    passSettleFraction?: number;
   } = {},
 ): PublicSearch {
   const bundleOptions: {
@@ -127,6 +163,16 @@ export function createPublicSearch(
   const now = options.now ?? (() => Date.now());
   const cacheTtlMs = options.cacheTtlMs ?? CACHE_TTL_MS;
   const diagnostics = options.diagnostics;
+  const passSoftDeadlineMs = options.passSoftDeadlineMs ?? SEARCH_PASS_SOFT_DEADLINE_MS;
+  const passSettleFraction = options.passSettleFraction ?? SEARCH_PASS_SETTLE_FRACTION;
+  /* Pass serial for the soft-deadline exemption: the instance's first pass is
+    the seed-coverage pass and always waits for every provider. The exemption
+    is per instance, and the benchmark and production compositions share one
+    search across every operation in the run (pipelines.ts constructs it
+    once), so "first" means the run's first pass. Later operations' seed
+    rounds run under the deadline; their cut providers' results still merge
+    into the pool a round later — deferred, never dropped. */
+  let passSerial = 0;
 
   /* State lives per instance: results by exact query, and per-provider
      cooldowns — a refused provider rests instead of being retried, because
@@ -142,6 +188,7 @@ export function createPublicSearch(
     query: string,
     ms: number,
     error: ProviderRefusedError,
+    report: PublicSearchDiagnostics | undefined = diagnostics,
   ): ProviderRefusedError {
     if (error.reason === "rate-limited") {
       cooldownUntil.set(
@@ -151,7 +198,7 @@ export function createPublicSearch(
     } else if (error.reason === "captcha") {
       cooldownUntil.set(provider, now() + CAPTCHA_COOLDOWN_MS);
     }
-    diagnostics?.({
+    report?.({
       provider,
       query,
       outcome: "refused",
@@ -161,15 +208,18 @@ export function createPublicSearch(
     });
     return error;
   }
-
   /** One fan-out over the whole bundle: merge in registration order, dedupe
       by exact URL keeping the first, cap the merge. A provider is "engaged"
       when it answered or refused; cooldown-skipped providers and providers
-      that declined the query count as neither. */
+      that declined the query count as neither. The instance's first pass
+      awaits every provider; later passes resolve the merge on the settle
+      threshold or the soft deadline while cut providers keep running and
+      re-merge late through `onLateMerge`. */
   async function runPass(
     query: string,
     answeredOutcome: "ok" | "expanded",
     intent?: DiscoveryIntent,
+    onLateMerge?: (merged: PublicSearchResult[]) => void,
   ): Promise<{
     merged: PublicSearchResult[];
     answered: number;
@@ -177,24 +227,87 @@ export function createPublicSearch(
     refused: number;
     refusals: string[];
   }> {
+    /* The first pass is exempt so seed coverage is complete. Later passes
+       stop paying the slowest straggler every round: the merge resolves once
+       the settle threshold or the soft deadline is reached, and whatever is
+       still running merges opportunistically afterwards. Nothing is aborted
+       on cut — each provider still answers or hits its own 20s transport
+       deadline (the AbortController in http.ts), because SearchProviderIo
+       carries no signal to cancel through; aborting here would drop results
+       instead of deferring them by a round. */
+    const exempt = passSerial === 0;
+    passSerial += 1;
+    const passStartedAt = now();
+    const settleNeeded = Math.max(1, Math.ceil(providers.length * passSettleFraction));
+    let settled = 0;
+    let earlyResolved = false;
+    let notifySettled: (() => void) | null = null;
+    const settleGate = new Promise<void>((resolve) => {
+      notifySettled = resolve;
+    });
     const refusals: string[] = [];
-    const merged: PublicSearchResult[] = [];
     /* Per-provider slots: the merge runs after the fan-out settles, so results
        land in registration order regardless of which provider answered first —
        the pinned order decides which provider's duplicate survives dedupe. */
     const perProvider: PublicSearchResult[][] = Array.from({ length: providers.length }, () => []);
+    const finished: boolean[] = Array.from({ length: providers.length }, () => false);
     let answered = 0;
     let engaged = 0;
     let refused = 0;
 
     const io: SearchProviderIo = { fetch: fetchText, timeoutMs: IO_TIMEOUT_MS };
+    /* Diagnostics emitted after the early merge describe late arrivals, not
+       pass-time answers. The cut events below bypass this wrapper so the cut
+       itself is recorded promptly even when the provider never lands. */
+    const emit: PublicSearchDiagnostics = (event) => {
+      diagnostics?.(earlyResolved ? { ...event, late: true } : event);
+    };
 
-    await Promise.all(
-      providers.map(async (provider, index) => {
-        const startedAt = now();
+    /* Round-robin across providers rather than draining each in turn: the
+       merge is capped, and taking every result from the first provider before
+       looking at the last one is registration-order truncation wearing a
+       different hat (#228). Registration order still decides ties, so it still
+       decides which provider's duplicate survives dedupe (ADR-0049). The merge
+       is recomputed from the slots for every late arrival, so the pool always
+       reflects every provider that has settled so far. */
+    const mergeProviders = (): PublicSearchResult[] => {
+      const seen = new Map<string, PublicSearchResult>();
+      const merged: PublicSearchResult[] = [];
+      const depth = Math.max(0, ...perProvider.map((found) => found.length));
+      for (let index = 0; index < depth; index += 1) {
+        for (const found of perProvider) {
+          const result = found[index];
+          if (!result) continue;
+          const url = canonicalSourceUrl(result.url);
+          const previous = seen.get(url);
+          if (previous) {
+            previous.discoveryUrls = [
+              ...new Set([
+                ...(previous.discoveryUrls ?? [previous.discoveryUrl ?? previous.url]),
+                result.url,
+              ]),
+            ].slice(0, 100);
+            continue;
+          }
+          const normalized = {
+            ...result,
+            url,
+            discoveryUrls: [result.url],
+            ...(url !== result.url ? { discoveryUrl: result.url } : {}),
+          };
+          seen.set(url, normalized);
+          merged.push(normalized);
+        }
+      }
+      return merged.slice(0, mergedLimit);
+    };
+
+    const tasks = providers.map(async (provider, index) => {
+      const startedAt = now();
+      try {
         const until = cooldownUntil.get(provider.name);
         if (until !== undefined && until > startedAt) {
-          diagnostics?.({
+          emit({
             provider: provider.name,
             query,
             outcome: "cooldown",
@@ -229,12 +342,12 @@ export function createPublicSearch(
           }
           const ms = now() - startedAt;
           if (found.length === 0 && DECLINES_WITHOUT_REQUEST.has(provider.name)) {
-            diagnostics?.({ provider: provider.name, query, outcome: "empty", results: 0, ms });
+            emit({ provider: provider.name, query, outcome: "empty", results: 0, ms });
             return;
           }
           engaged += 1;
           answered += 1;
-          diagnostics?.({
+          emit({
             provider: provider.name,
             query,
             outcome: found.length > 0 ? answeredOutcome : "empty",
@@ -267,46 +380,64 @@ export function createPublicSearch(
             error instanceof ProviderRefusedError
               ? error
               : new ProviderRefusedError("error", String(error)),
+            emit,
           );
           refusals.push(`${provider.name}: ${classified.reason}`);
         }
-      }),
-    );
-    /* Round-robin across providers rather than draining each in turn: the
-       merge is capped, and taking every result from the first provider before
-       looking at the last one is registration-order truncation wearing a
-       different hat (#228). Registration order still decides ties, so it still
-       decides which provider's duplicate survives dedupe (ADR-0049). */
-    const seen = new Map<string, PublicSearchResult>();
-    const depth = Math.max(0, ...perProvider.map((found) => found.length));
-    for (let index = 0; index < depth; index += 1) {
-      for (const found of perProvider) {
-        const result = found[index];
-        if (!result) continue;
-        const url = canonicalSourceUrl(result.url);
-        const previous = seen.get(url);
-        if (previous) {
-          previous.discoveryUrls = [
-            ...new Set([
-              ...(previous.discoveryUrls ?? [previous.discoveryUrl ?? previous.url]),
-              result.url,
-            ]),
-          ].slice(0, 100);
-          continue;
-        }
-        const normalized = {
-          ...result,
-          url,
-          discoveryUrls: [result.url],
-          ...(url !== result.url ? { discoveryUrl: result.url } : {}),
-        };
-        seen.set(url, normalized);
-        merged.push(normalized);
+      } finally {
+        /* Every path counts as settled — cooldown skips and declines as well
+           as answers and refusals — so the threshold never waits on a
+           provider that already decided to sit the query out. */
+        finished[index] = true;
+        settled += 1;
+        if (!exempt && settled >= settleNeeded) notifySettled?.();
+        const slot = perProvider[index];
+        if (earlyResolved && slot !== undefined && slot.length > 0) onLateMerge?.(mergeProviders());
+      }
+    });
+
+    const deadlineTimer = exempt
+      ? undefined
+      : setTimeout(() => notifySettled?.(), passSoftDeadlineMs);
+    if (exempt) {
+      await Promise.all(tasks);
+    } else {
+      await Promise.race([Promise.all(tasks), settleGate]);
+    }
+    clearTimeout(deadlineTimer);
+
+    if (!exempt) {
+      const passMs = now() - passStartedAt;
+      let cut = false;
+      for (const [index, provider] of providers.entries()) {
+        if (finished[index]) continue;
+        cut = true;
+        diagnostics?.({
+          provider: provider.name,
+          query,
+          outcome: "empty",
+          results: 0,
+          ms: passMs,
+          cut: true,
+          detail:
+            "cut by the soft pass deadline; still running in the background, " +
+            "late results merge into the pool on arrival",
+        });
+      }
+      if (cut) {
+        earlyResolved = true;
+        /* Late providers keep running after the early merge is served: observe
+           them so a late throw (for example a diagnostics consumer throwing)
+           never surfaces as an unhandled rejection after delivery. */
+        void Promise.all(tasks).then(
+          () => undefined,
+          () => undefined,
+        );
       }
     }
 
     return {
-      merged: merged.slice(0, mergedLimit),
+      merged: mergeProviders(),
       answered,
       engaged,
       refused,
@@ -331,7 +462,34 @@ export function createPublicSearch(
       cache.delete(cacheKey);
     }
 
-    const pass = await runPass(query, "ok", intent);
+    /* Late providers from any pass of this query keep merging into the shared
+       pool after the early merge is served: the cached entry is patched in
+       place (within the merged ceiling), so a repeat query reads the cut
+       provider's results once they land. Arrivals that land before the entry
+       is written are replayed right after it. Each late merge is cumulative
+       over its pass's settled providers, so replaying only the latest one
+       loses nothing. The served array and the cached entry are the same
+       reference, and late patches grow it in place. */
+    const pendingLate = { results: null as PublicSearchResult[] | null };
+    const patchPool = (fullMerged: PublicSearchResult[]): void => {
+      const entry = cache.get(cacheKey);
+      if (!entry) {
+        pendingLate.results = fullMerged;
+        return;
+      }
+      const seen = new Set(entry.results.map((result) => result.url));
+      for (const result of fullMerged) {
+        if (seen.has(result.url)) continue;
+        if (entry.results.length >= mergedLimit) break;
+        seen.add(result.url);
+        entry.results.push(result);
+      }
+    };
+    const onLateMerge = (fullMerged: PublicSearchResult[]): void => {
+      patchPool(fullMerged);
+    };
+
+    const pass = await runPass(query, "ok", intent, onLateMerge);
     if (pass.engaged > 0 && pass.refused === pass.engaged) {
       /* A search where every provider refused is evidence of nothing at all,
          so it must not read as "the person has no public footprint". */
@@ -361,7 +519,7 @@ export function createPublicSearch(
         .catch(() => [] as string[]);
       const seen = new Set(merged.map((result) => result.url));
       for (const variant of variants) {
-        const expansion = await runPass(variant, "expanded", intent);
+        const expansion = await runPass(variant, "expanded", intent, onLateMerge);
         for (const result of expansion.merged) {
           if (seen.has(result.url)) continue;
           seen.add(result.url);
@@ -375,6 +533,11 @@ export function createPublicSearch(
        public footprint" for an hour after the network recovered. */
     cache.set(cacheKey, { at: now(), results: merged });
     if (cache.size > 500) cache.delete(cache.keys().next().value!);
+    if (pendingLate.results) {
+      const late = pendingLate.results;
+      pendingLate.results = null;
+      patchPool(late);
+    }
     return merged;
   };
 }

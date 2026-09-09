@@ -2,6 +2,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGitHubUsersProvider } from "../../../apps/server/src/source-adapters/providers/github-users";
 import { ProviderRefusedError } from "../../../apps/server/src/source-adapters/providers/types";
 import type { PublicHttpResponse } from "../../../apps/server/src/source-adapters/http";
+import type * as undiciModule from "undici";
+
+/* The curated transports ride undici's own fetch (pooled dispatcher — see
+   http.ts), so these tests intercept at the undici module boundary: the
+   real createHttpFetch guard, header binding and timeout code still run;
+   only the socket layer is faked. */
+const undiciStub = vi.hoisted(() => ({
+  impl: null as
+    null | ((input: string | URL, init?: { headers?: HeadersInit }) => Promise<Response>),
+}));
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof undiciModule>();
+  return {
+    ...actual,
+    /* The cast bridges the stub's narrow init type to undici's full one. */
+    fetch: ((input: string | URL, init?: { headers?: HeadersInit }) => {
+      if (!undiciStub.impl) throw new Error("the undici fetch stub is not installed");
+      return undiciStub.impl(input, init);
+    }) as unknown as typeof actual.fetch,
+  };
+});
 
 const io = {
   timeoutMs: 5_000,
@@ -88,25 +109,22 @@ describe("createGitHubUsersProvider", () => {
     });
     await expect(provider.search("nobody", io)).resolves.toEqual([]);
   });
-  // Ride the real curated transport and stub the global fetch it sits on —
-  // the injected-fetch pattern alone would bypass the header binding that the
-  // live 415 diagnosis hinged on.
+  // Ride the real curated transport and stub the undici fetch module it
+  // sits on — the injected-fetch pattern alone would bypass the header
+  // binding that the live 415 diagnosis hinged on.
   afterEach(() => {
-    vi.unstubAllGlobals();
+    undiciStub.impl = null;
   });
 
   it("binds the GitHub media-type accept to its curated transport", async () => {
     const accepts: (string | undefined)[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_input: string | URL, init?: { headers?: HeadersInit }) => {
-        accepts.push(new Headers(init?.headers).get("accept") ?? undefined);
-        return new Response(JSON.stringify({ items: [] }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }),
-    );
+    undiciStub.impl = async (_input, init) => {
+      accepts.push(new Headers(init?.headers).get("accept") ?? undefined);
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
     const provider = createGitHubUsersProvider();
     await expect(provider.search("nobody", io)).resolves.toEqual([]);
     expect(accepts[0]).toBe("application/vnd.github+json");

@@ -253,7 +253,16 @@ export async function judgePerson(
     effectiveTo: fact.effectiveTo,
   }));
 
-  const recoveryReply = await judgeReply(
+  /* The recovery and support replies are requested concurrently and settled
+     together: both inputs are built from the function arguments, so neither
+     waits on the other. Shapes, bindings, effort, retries and version are
+     unchanged — each phase keeps its own single correction retry inside
+     judgeReply. Invocation order still numbers calls deterministically
+     (recovery first, support second); a phase that needs its retry issues it
+     when its own first reply settles. The per-person judgeWork limiter wraps
+     the whole assessment rather than each call, and the judge cache keys
+     each request separately, so neither serializes nor confuses the two. */
+  const recoveryPromise = judgeReply(
     complete,
     {
       schema: RecoverySchema,
@@ -273,6 +282,42 @@ export async function judgePerson(
     (failure) =>
       `Your previous reply was rejected: ${failure} Return exactly one verdict for every factId in the references; do not omit, repeat or invent fact ids.`,
   );
+  type OverclaimReply = z.infer<typeof AssessmentSchema>["overclaims"][number];
+  const validFinding = (entry: OverclaimReply) => {
+    const claim = claims.find((claim) => claim.id === entry.claimId);
+    return (
+      !!claim &&
+      entry.statement.trim().length > 0 &&
+      claim.statement.includes(entry.statement) &&
+      (entry.citationIndex === null
+        ? claim.citations.length === 0
+        : claim.citations.some((citation) => citation.citationIndex === entry.citationIndex))
+    );
+  };
+  const assessmentPromise = judgeReply(
+    complete,
+    {
+      schema: AssessmentSchema,
+      preferredBinding: "forced_tool_call",
+      temperature: 0,
+      system: SUPPORT_SYSTEM,
+    },
+    {
+      person: person.displayName,
+      identityAnchors: person.identityAnchors,
+      confusableWith: person.confusableWith,
+      unjustifiedConclusions: person.unjustified,
+      dossier: claims,
+      retainedSources: sources.map((source) =>
+        PersonSourceDocumentSchema.omit({ text: true, outboundUrls: true }).parse(source),
+      ),
+    },
+    (parsed) =>
+      parsed.overclaims.some((entry) => !validFinding(entry)) ? SUPPORT_REJECTION : null,
+    (failure) =>
+      `Your previous reply was rejected: ${failure} Every overclaim's claimId must name a dossier claim, its statement must be a verbatim excerpt of that claim's statement text, and its citationIndex must select one of that claim's citations.`,
+  );
+  const [recoveryReply, assessmentReply] = await Promise.all([recoveryPromise, assessmentPromise]);
   if (recoveryReply.parsed === null) throw new Error(recoveryReply.failure);
   const recovery = recoveryReply.parsed;
   const referenceFailure = recoveryReply.failure;
@@ -347,41 +392,6 @@ export async function judgePerson(
     judgements,
     failure: referenceFailure,
   };
-  type OverclaimReply = z.infer<typeof AssessmentSchema>["overclaims"][number];
-  const validFinding = (entry: OverclaimReply) => {
-    const claim = claims.find((claim) => claim.id === entry.claimId);
-    return (
-      !!claim &&
-      entry.statement.trim().length > 0 &&
-      claim.statement.includes(entry.statement) &&
-      (entry.citationIndex === null
-        ? claim.citations.length === 0
-        : claim.citations.some((citation) => citation.citationIndex === entry.citationIndex))
-    );
-  };
-  const assessmentReply = await judgeReply(
-    complete,
-    {
-      schema: AssessmentSchema,
-      preferredBinding: "forced_tool_call",
-      temperature: 0,
-      system: SUPPORT_SYSTEM,
-    },
-    {
-      person: person.displayName,
-      identityAnchors: person.identityAnchors,
-      confusableWith: person.confusableWith,
-      unjustifiedConclusions: person.unjustified,
-      dossier: claims,
-      retainedSources: sources.map((source) =>
-        PersonSourceDocumentSchema.omit({ text: true, outboundUrls: true }).parse(source),
-      ),
-    },
-    (parsed) =>
-      parsed.overclaims.some((entry) => !validFinding(entry)) ? SUPPORT_REJECTION : null,
-    (failure) =>
-      `Your previous reply was rejected: ${failure} Every overclaim's claimId must name a dossier claim, its statement must be a verbatim excerpt of that claim's statement text, and its citationIndex must select one of that claim's citations.`,
-  );
   if (assessmentReply.parsed === null) {
     const failure = `Judge support/usefulness assessment failed: ${assessmentReply.failure}`.slice(
       0,

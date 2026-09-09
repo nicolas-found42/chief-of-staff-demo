@@ -126,7 +126,9 @@ it("starts the next research operation while an earlier judge is blocked", async
   });
   await vi.waitFor(() => expect(started).toEqual([0]));
   gates[0].release();
-  await vi.waitFor(() => expect(judging).toBe(1));
+  /* ADR-0076 overlap: the blocked assessment holds both of its judge calls
+     (recovery and support) at the port, so two are in flight. */
+  await vi.waitFor(() => expect(judging).toBe(2));
   await vi.waitFor(() => expect(started).toEqual([0, 1]));
   gates[1].release();
   await vi.waitFor(() => expect(started).toEqual([0, 1, 2]));

@@ -2,6 +2,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEdgarProvider } from "../../../apps/server/src/source-adapters/providers/edgar";
 import { ProviderRefusedError } from "../../../apps/server/src/source-adapters/providers/types";
 import type { PublicHttpResponse } from "../../../apps/server/src/source-adapters/http";
+import type * as undiciModule from "undici";
+
+/* The curated transports ride undici's own fetch (pooled dispatcher — see
+   http.ts), so these tests intercept at the undici module boundary: the
+   real createHttpFetch guard, header binding and timeout code still run;
+   only the socket layer is faked. */
+const undiciStub = vi.hoisted(() => ({
+  impl: null as
+    null | ((input: string | URL, init?: { headers?: HeadersInit }) => Promise<Response>),
+}));
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof undiciModule>();
+  return {
+    ...actual,
+    /* The cast bridges the stub's narrow init type to undici's full one. */
+    fetch: ((input: string | URL, init?: { headers?: HeadersInit }) => {
+      if (!undiciStub.impl) throw new Error("the undici fetch stub is not installed");
+      return undiciStub.impl(input, init);
+    }) as unknown as typeof actual.fetch,
+  };
+});
 
 const io = {
   timeoutMs: 5_000,
@@ -11,13 +32,14 @@ const io = {
 };
 
 // The declared-contact UA is the provider's whole access model, so these tests
-// ride the real curated transport (createHttpFetch) and stub the global fetch
-// it sits on — the injected-fetch pattern alone would bypass the header binding.
+// ride the real curated transport (createHttpFetch) and stub the undici fetch
+// module it sits on — the injected-fetch pattern alone would bypass the header
+// binding.
 type CapturedRequest = { url: string; userAgent: string | undefined; accept: string | undefined };
 
-function stubGlobalFetch(status: number, body: string) {
+function stubUndiciFetch(status: number, body: string) {
   const captured: CapturedRequest[] = [];
-  const stub = vi.fn(async (input: string | URL, init?: { headers?: HeadersInit }) => {
+  undiciStub.impl = async (input, init) => {
     const headers = new Headers(init?.headers);
     captured.push({
       url: typeof input === "string" ? input : input.toString(),
@@ -28,8 +50,7 @@ function stubGlobalFetch(status: number, body: string) {
       status,
       headers: { "content-type": "application/json" },
     });
-  });
-  vi.stubGlobal("fetch", stub);
+  };
   return captured;
 }
 
@@ -46,12 +67,12 @@ function respondWith(status: number, body: string) {
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  undiciStub.impl = null;
 });
 
 describe("createEdgarProvider", () => {
   it("sends the declared-contact user agent from the contract", async () => {
-    const captured = stubGlobalFetch(200, JSON.stringify({ hits: { hits: [] } }));
+    const captured = stubUndiciFetch(200, JSON.stringify({ hits: { hits: [] } }));
     const provider = createEdgarProvider();
     await provider.search("apple inc", io);
     expect(captured[0]?.url).toBe(
@@ -97,7 +118,7 @@ describe("createEdgarProvider", () => {
   });
 
   it("refuses a 403 as an error — EDGAR 403s generic user agents", async () => {
-    stubGlobalFetch(403, "Access denied");
+    stubUndiciFetch(403, "Access denied");
     const provider = createEdgarProvider();
     const refusal = await provider.search("apple", io).catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(ProviderRefusedError);
