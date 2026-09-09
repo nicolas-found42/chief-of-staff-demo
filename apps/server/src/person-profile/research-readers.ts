@@ -1286,7 +1286,7 @@ async function readFeed(
 async function readFeedTranscript(
   feedUrl: string,
   transcript: { url: string; type: string | null },
-  leads: string[],
+  outboundUrls: string[],
   context: ReadContext,
 ): Promise<SourceReadResult | null> {
   let absolute: string;
@@ -1385,15 +1385,17 @@ async function readFeedTranscript(
     capturedAt: null,
     completeness: text.length > MAX_TEXT ? "partial" : "full",
     access: "retrieved",
-    outboundUrls: leads.filter((entry) => entry !== absolute).slice(0, 200),
+    outboundUrls: outboundUrls.filter((entry) => entry !== absolute).slice(0, 200),
     family: "spoken-evidence",
     route: "feed-reader",
     upstreamIndex: hostOf(feedUrl),
     publishedAt: null,
     author: null,
     anchors,
-    provenanceNote:
-      "Publisher-linked episode transcript from the feed's own transcript URL; timestamps locate speech. The directory listing that located this feed is discovery only, and episode descriptions are not included.",
+    /* The retained source is keyed by the feed URL upstream, so the note
+       carries the followed transcript file: it is the precise pointer a
+       citation grounds on. */
+    provenanceNote: `Publisher-linked episode transcript ${absolute}; timestamps locate speech. The directory listing that located this feed is discovery only, and episode descriptions are not included.`,
     sourceVersion: null,
     rights: null,
     finalUrl: absolute,
@@ -1426,8 +1428,24 @@ function parseFeedTranscript(
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     return parseTranscriptSegments(body) ?? { text: "", anchors: [] };
   }
-  if (kinds.includes("html")) return { text: stripTags(body), anchors: [] };
-  return { text: body.trim(), anchors: [] };
+  /* Plain text and bare stripped HTML have no container to check against, so
+     only sustained speech counts: a one-line error string served as
+     text/plain can never present itself as a transcript. */
+  const text = kinds.includes("html") ? stripTags(body) : body.trim();
+  return isSpeechLikeText(text) ? { text, anchors: [] } : { text: "", anchors: [] };
+}
+
+/**
+ * Minimum speech shape for containerless transcript text: several lines of
+ * sustained prose, not a lone error string.
+ */
+function isSpeechLikeText(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) return false;
+  return text.split(/\s+/).filter(Boolean).length >= 25;
 }
 
 /**
@@ -1437,10 +1455,7 @@ function parseFeedTranscript(
  * numbering every line.
  */
 function parseCueTranscript(body: string): { text: string; anchors: SourceAnchor[]; cues: number } {
-  const anchors: SourceAnchor[] = [];
-  const parts: string[] = [];
-  let offset = 0;
-  let cueIndex = 0;
+  const units: { line: string; start: number | null }[] = [];
   for (const block of body.split(/\r?\n[ \t]*\r?\n/)) {
     const kept: string[] = [];
     let start: number | null = null;
@@ -1462,13 +1477,32 @@ function parseCueTranscript(body: string): { text: string; anchors: SourceAnchor
       .replace(/\s+/g, " ")
       .trim();
     if (!cue) continue;
-    if (start !== null && (cueIndex === 0 || cueIndex % 12 === 0))
-      anchors.push({ kind: "timestamp", value: clock(start), offset });
-    parts.push(cue);
-    offset += cue.length + 1;
-    cueIndex += 1;
+    units.push({ line: cue, start });
   }
-  return { text: parts.join("\n"), anchors: anchors.slice(0, 500), cues: cueIndex };
+  return { ...renderTranscriptUnits(units), cues: units.length };
+}
+
+/**
+ * Shared transcript renderer: one unit per line, with citation anchors on the
+ * opening unit and every twelfth after it, so a citation can locate speech
+ * without numbering every line.
+ */
+function renderTranscriptUnits(units: { line: string; start: number | null }[]): {
+  text: string;
+  anchors: SourceAnchor[];
+} {
+  const anchors: SourceAnchor[] = [];
+  const parts: string[] = [];
+  let offset = 0;
+  let index = 0;
+  for (const unit of units) {
+    if (unit.start !== null && (index === 0 || index % 12 === 0))
+      anchors.push({ kind: "timestamp", value: clock(unit.start), offset });
+    parts.push(unit.line);
+    offset += unit.line.length + 1;
+    index += 1;
+  }
+  return { text: parts.join("\n"), anchors: anchors.slice(0, 500) };
 }
 
 function cueSeconds(value: string): number {
@@ -1489,10 +1523,7 @@ function parseTranscriptSegments(body: string): { text: string; anchors: SourceA
   if (!parsed || typeof parsed !== "object" || !("segments" in parsed)) return null;
   const segments = parsed.segments;
   if (!Array.isArray(segments)) return null;
-  const anchors: SourceAnchor[] = [];
-  const parts: string[] = [];
-  let offset = 0;
-  let segmentIndex = 0;
+  const units: { line: string; start: number | null }[] = [];
   for (const raw of segments) {
     const entry: unknown = raw;
     if (!entry || typeof entry !== "object") continue;
@@ -1500,22 +1531,16 @@ function parseTranscriptSegments(body: string): { text: string; anchors: SourceA
     if (typeof line !== "string" || !line.trim()) continue;
     const speaker = "speaker" in entry ? entry.speaker : undefined;
     const startTime = "startTime" in entry ? entry.startTime : undefined;
-    const speech =
-      typeof speaker === "string" && speaker.trim()
-        ? `${speaker.trim()}: ${line.trim()}`
-        : line.trim();
-    if (
-      typeof startTime === "number" &&
-      Number.isFinite(startTime) &&
-      (segmentIndex === 0 || segmentIndex % 12 === 0)
-    )
-      anchors.push({ kind: "timestamp", value: clock(startTime), offset });
-    parts.push(speech);
-    offset += speech.length + 1;
-    segmentIndex += 1;
+    units.push({
+      line:
+        typeof speaker === "string" && speaker.trim()
+          ? `${speaker.trim()}: ${line.trim()}`
+          : line.trim(),
+      start: typeof startTime === "number" && Number.isFinite(startTime) ? startTime : null,
+    });
   }
-  if (!parts.length) return null;
-  return { text: parts.join("\n"), anchors: anchors.slice(0, 500) };
+  if (!units.length) return null;
+  return renderTranscriptUnits(units);
 }
 
 /* ------------------------------------------------------------------ */

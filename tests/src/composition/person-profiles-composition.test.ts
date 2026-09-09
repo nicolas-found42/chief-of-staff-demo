@@ -1548,7 +1548,12 @@ it("retains a podcast feed and investigates its publisher transcript link", asyn
         retryAfter: null,
         body: url.endsWith(".rss")
           ? '<rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>Maya interviews</title><item><title>Maya on ocean sensors</title><description>Maya explains the work.</description><podcast:transcript url="https://example.com/maya-transcript"/></item></channel></rss>'
-          : "Maya at Ocean Lab: We built an ocean sensor using recycled materials.",
+          : [
+              "Maya at Ocean Lab: We built an ocean sensor using recycled materials.",
+              "Maya at Ocean Lab: The array reports temperature and salinity hourly.",
+              "Maya at Ocean Lab: Fishers along the coast helped us anchor every buoy.",
+              "Maya at Ocean Lab: Open data from the array now feeds the regional model.",
+            ].join("\n"),
       }),
     },
     complete: () => async () => ({
@@ -1571,14 +1576,15 @@ it("retains a podcast feed and investigates its publisher transcript link", asyn
   });
   await h.people.research.runNow(profile.id);
   /* The transcript link is followed inside the feed read: the feed's source
-     retains the spoken text with transcript provenance, not the description. */
-  expect(h.people.research.sources(profile.id)).toContainEqual(
-    expect.objectContaining({
-      url: "https://example.com/maya.rss",
-      text: "Maya at Ocean Lab: We built an ocean sensor using recycled materials.",
-      provenanceNote: expect.stringContaining("transcript"),
-    }),
-  );
+     retains the spoken text with transcript provenance, not the description,
+     and the note names the followed file. */
+  const retained = h.people.research
+    .sources(profile.id)
+    .find((entry) => entry.url === "https://example.com/maya.rss")!;
+  expect(retained.text).toContain("Maya at Ocean Lab: We built an ocean sensor");
+  expect(retained.text).not.toContain("Maya explains the work");
+  expect(retained.provenanceNote).toContain("transcript");
+  expect(retained.provenanceNote).toContain("https://example.com/maya-transcript");
 });
 
 it("reports absent captions without presenting a video description as spoken evidence", async () => {
