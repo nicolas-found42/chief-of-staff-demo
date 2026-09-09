@@ -116,9 +116,11 @@ describe("bluesky reader attribution", () => {
   });
 
   it("retains an authored post's verbatim passage with author and post reference", async () => {
-    /* What recovery of benchmark fact `spatial-apartheid-review`
-       (timnit-gebru.json) looks like at the reader seam: the support quote
-       surfaces with its original author and a stable post reference. */
+    /* Reader-level parse proof behind the composition test "retains an
+       authored Bluesky post as a cited fact with its original author and post
+       reference": the support quote for benchmark fact
+       `spatial-apartheid-review` (timnit-gebru.json) surfaces here with its
+       original author and a stable post reference. */
     const recorder = new ResearchAttemptRecorder("operation-bsky-recovery");
     const result = await readPersonSource(
       "https://bsky.app/profile/timnitgebru.blacksky.app",

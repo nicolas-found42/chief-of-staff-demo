@@ -463,7 +463,7 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     probe: "https://mastodon.social/api/v1/accounts/lookup?acct=Gargron",
     expect: json,
     observed:
-      "Live 2026-09-09 (#255): lookup, statuses and /api/v1/instance/rules all answered 200 anonymously on mastodon.social. The /terms page redirects to /terms-of-service, which serves only a JavaScript app shell to a plain GET with no server-rendered terms text — resolving the previously unverified instance terms: the instance's rules are instead readable anonymously via /api/v1/instance/rules. A reblog nests the original status under `reblog` with empty top-level content, and availability is per instance, recorded per request.",
+      "Live 2026-09-09 (#255): lookup, statuses and /api/v1/instance/rules all answered 200 anonymously on mastodon.social. The /terms page redirects to /terms-of-service, which serves only a JavaScript app shell to a plain GET with no server-rendered terms text — so the ToS text itself stays unverified over a plain GET; what is readable anonymously is the instance's rules via /api/v1/instance/rules, which answers availability, not the ToS. A reblog nests the original status under `reblog` with empty top-level content, and availability is per instance, recorded per request.",
   },
   {
     route: "linkedin",

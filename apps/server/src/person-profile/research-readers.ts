@@ -1559,12 +1559,10 @@ async function readBluesky(url: string, context: ReadContext): Promise<SourceRea
   const lines = (parsed?.feed ?? []).flatMap((entry) => {
     const text = entry.post?.record?.text?.trim();
     if (!text) return [];
-    const author =
-      entry.post?.author?.handle ??
-      entry.post?.author?.did ??
-      "unknown (do not attribute to feed owner)";
+    const authorHandle = entry.post?.author?.handle ?? entry.post?.author?.did;
+    const author = authorHandle ?? "unknown (do not attribute to feed owner)";
     const uri = entry.post?.uri ?? "unknown";
-    const postUrl = bskyPostUrl(author, uri);
+    const postUrl = bskyPostUrl(authorHandle, entry.post?.uri);
     const reference = postUrl ? `${uri} (${postUrl})` : uri;
     const createdAt = entry.post?.record?.createdAt ?? "unknown date";
     /* A quote-post embeds a second post with its own author: the quoting
@@ -2297,8 +2295,8 @@ function hostOf(url: string): string | null {
  * `at://` URI is the stable identifier; the trailing record key plus the
  * post author's handle is the address a reader can open.
  */
-function bskyPostUrl(author: string, uri: string): string | null {
-  if (author.startsWith("unknown") || uri === "unknown") return null;
+function bskyPostUrl(author: string | undefined, uri: string | undefined): string | null {
+  if (!author || !uri) return null;
   const rkey = uri.split("/").pop();
   if (!rkey) return null;
   return `https://bsky.app/profile/${author}/post/${rkey}`;
