@@ -708,6 +708,19 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     observed:
       "Live 2026-09-09 (#256): threads.net redirects to threads.com; GET https://www.threads.com/@instagram answered 200 text/html (815,699 bytes) with the profile header and a few posts truncated behind 'Log in to see more'. Recorded as a login-required wall with the observed status, content type, size, final URL and body hash.",
   },
+  {
+    route: "peertube-captions",
+    family: "spoken-evidence",
+    terms:
+      "Public PeerTube instances expose per-video caption listings and caption files over the unauthenticated REST API.",
+    documentation: "https://docs.joinpeertube.org/api-rest-reference.html",
+    cost: "anonymous",
+    status: "in-production",
+    observed:
+      "Observed 2026-09-09: diler.tube answered the captions listing anonymously (HTTP 200 JSON), served a 43 KB English WebVTT file anonymously, and answers HTTP 200 with an empty listing for videos without captions. Research prefers publisher captions over automatic ones and reads the watch page when no captions exist.",
+    probe: "https://diler.tube/api/v1/videos/5b40975c-a305-4a74-bb16-e344b62dff49/captions",
+    expect: json,
+  },
 ];
 
 export interface EligibilityProbeResult {
