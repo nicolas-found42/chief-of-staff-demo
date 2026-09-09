@@ -1843,6 +1843,8 @@ it("reads an anonymous Mastodon account's dated public statuses", async () => {
               {
                 created_at: "2026-09-01",
                 content: "<p>Maya Chen released the coastal sensor report.</p>",
+                url: "https://mastodon.social/@maya/1",
+                account: { acct: "maya", url: "https://mastodon.social/@maya" },
               },
             ]),
       }),
@@ -1856,7 +1858,9 @@ it("reads an anonymous Mastodon account's dated public statuses", async () => {
   expect(h.people.research.sources(profile.id)).toContainEqual(
     expect.objectContaining({
       acquisition: "mastodon",
-      text: expect.stringContaining("2026-09-01 — Maya Chen released the coastal sensor report."),
+      text: expect.stringContaining(
+        "2026-09-01 — author: maya; status: https://mastodon.social/@maya/1; post — Maya Chen released the coastal sensor report.",
+      ),
       upstreamIndex: "mastodon.social",
     }),
   );

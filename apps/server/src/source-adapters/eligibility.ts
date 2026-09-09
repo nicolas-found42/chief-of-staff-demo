@@ -442,23 +442,28 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
   {
     route: "bluesky",
     family: "public-social",
-    terms: "public.api.bsky.app serves the app view for public data with no authentication.",
-    documentation: "https://docs.bsky.app/docs/advanced-guides/atproto",
+    terms:
+      "public.api.bsky.app serves the app view for public data with no authentication. Authors retain content ownership; there is no public-domain dedication.",
+    documentation: "https://bsky.network/docs/api-directory/",
     cost: "anonymous",
     status: "in-production",
     probe: "https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=climate&limit=2",
     expect: json,
+    observed:
+      "Live 2026-09-09 (#255): the probe and getAuthorFeed both answered 200 anonymously with no credentials. A 40-entry author feed carried 18 reposts, each a reasonRepost wrapper around the original post and its author, and quote-posts nesting the quoted post under embed.record — both retained with original authorship. The API directory explicitly documents unauthenticated public AppView requests at this hostname.",
   },
   {
     route: "mastodon",
     family: "public-social",
     terms:
-      "Public account lookup and public statuses are readable without a token on instances that have not disabled anonymous reads.",
+      "Public account lookup and public statuses are readable without a token on instances that have not disabled anonymous reads. Access and content terms are per instance; no universal post licence exists.",
     documentation: "https://docs.joinmastodon.org/methods/accounts/",
     cost: "anonymous",
     status: "in-production",
     probe: "https://mastodon.social/api/v1/accounts/lookup?acct=Gargron",
     expect: json,
+    observed:
+      "Live 2026-09-09 (#255): lookup, statuses and /api/v1/instance/rules all answered 200 anonymously on mastodon.social. The /terms page redirects to /terms-of-service, which serves only a JavaScript app shell to a plain GET with no server-rendered terms text — resolving the previously unverified instance terms: the instance's rules are instead readable anonymously via /api/v1/instance/rules. A reblog nests the original status under `reblog` with empty top-level content, and availability is per instance, recorded per request.",
   },
   {
     route: "linkedin",

@@ -1541,24 +1541,55 @@ async function readBluesky(url: string, context: ReadContext): Promise<SourceRea
   }
   const parsed = safeJson(response.body) as {
     feed?: {
-      reason?: { $type?: string };
+      reason?: { $type?: string; by?: { handle?: string; did?: string } };
       post?: {
         uri?: string;
         author?: { handle?: string; did?: string };
         record?: { text?: string; createdAt?: string };
+        embed?: {
+          record?: {
+            uri?: string;
+            author?: { handle?: string; did?: string };
+            value?: { text?: string };
+          };
+        };
       };
     }[];
   } | null;
-  const lines = (parsed?.feed ?? [])
-    .map((entry) =>
-      entry.post?.record?.text
-        ? `${entry.post.record.createdAt ?? "unknown date"} — author: ${entry.post.author?.handle ?? entry.post.author?.did ?? "unknown (do not attribute to feed owner)"}; post: ${entry.post.uri ?? "unknown"}; ${entry.reason?.$type?.endsWith("#reasonRepost") ? "repost" : "feed entry"} — ${entry.post.record.text}`
-        : "",
-    )
-    .filter(Boolean);
+  const lines = (parsed?.feed ?? []).flatMap((entry) => {
+    const text = entry.post?.record?.text?.trim();
+    if (!text) return [];
+    const author =
+      entry.post?.author?.handle ??
+      entry.post?.author?.did ??
+      "unknown (do not attribute to feed owner)";
+    const uri = entry.post?.uri ?? "unknown";
+    const postUrl = bskyPostUrl(author, uri);
+    const reference = postUrl ? `${uri} (${postUrl})` : uri;
+    const createdAt = entry.post?.record?.createdAt ?? "unknown date";
+    /* A quote-post embeds a second post with its own author: the quoting
+       text above the embed is the quoter's statement, the embedded text is
+       the quoted author's, and the retained line must not merge the two. */
+    const quote = entry.post?.embed?.record;
+    const quoteAuthor = quote?.author?.handle ?? quote?.author?.did;
+    const quoteText = quote?.value?.text?.trim();
+    const quoteSuffix =
+      quoteAuthor && quote?.uri && quoteText && quoteText !== text
+        ? `; quotes ${quoteAuthor} ${quote.uri}: ${quoteText}`
+        : "";
+    if (entry.reason?.$type?.endsWith("#reasonRepost")) {
+      const repostedBy = entry.reason.by?.handle ?? entry.reason.by?.did ?? "the feed owner";
+      return [
+        `${createdAt} — author: ${author} (original); reposted by ${repostedBy}; post: ${reference}; repost — ${text}${quoteSuffix}`,
+      ];
+    }
+    return [
+      `${createdAt} — author: ${author}; post: ${reference}; feed entry — ${text}${quoteSuffix}`,
+    ];
+  });
   if (!lines.length)
     return unavailable("public-social", "social-reader", "retrieved", context.snippet, url);
-  const text = `Public Bluesky feed for ${handle}; entries retain their own authors\n\n${lines.join("\n\n")}`;
+  const text = `Public Bluesky feed for ${handle}; entries retain their own authors — a repost is the original author's post, not the reposter's statement\n\n${lines.join("\n\n")}`;
   return {
     text: text.slice(0, MAX_TEXT),
     capturedAt: null,
@@ -1572,7 +1603,7 @@ async function readBluesky(url: string, context: ReadContext): Promise<SourceRea
     author: null,
     anchors: [],
     provenanceNote:
-      "The account's own posts. Self-report: a post is not independent verification of itself.",
+      "A Bluesky account feed with per-entry authorship: posts by the account holder are that person's self-report; reposts carry the original author and post reference and are not the reposter's words. A self-statement is not independent verification of itself.",
     sourceVersion: null,
     rights: null,
     finalUrl: url,
@@ -1607,20 +1638,96 @@ async function readMastodon(url: string, context: ReadContext): Promise<SourceRe
     return readWeb(url, "public-social", context);
   }
   const id = (safeJson(account.body) as { id?: string } | null)?.id;
-  if (!id) return readWeb(url, "public-social", context);
-  const statuses = await request(
-    `https://${instance}/api/v1/accounts/${encodeURIComponent(id)}/statuses?limit=40&exclude_replies=true`,
-    context,
-    "social-reader",
-  );
+  if (!id) {
+    context.recorder.record({
+      stage: "access",
+      code: "parser-failed",
+      outcome: "failed",
+      recovery: "alternative-route",
+      cause: "observed",
+      target: lookup,
+      targetKind: "record",
+      collector: "social-reader",
+      reason: "The instance's public account lookup answered without an account id.",
+      attemptOf: context.attemptOf,
+      observed: { status: account.status, finalUrl: account.url },
+      impact: "Falling back to the public profile page for this account.",
+      remediation: `Reproduce with: curl -sS '${lookup}'`,
+    });
+    return readWeb(url, "public-social", context);
+  }
+  const statusesUrl = `https://${instance}/api/v1/accounts/${encodeURIComponent(id)}/statuses?limit=40&exclude_replies=true`;
+  const statuses = await request(statusesUrl, context, "social-reader");
+  if (!statuses || statuses.status >= 400) {
+    /* Public access is per instance and per request: an administrator can
+       withdraw it at any time, so a refused statuses read is recorded with
+       its observed evidence rather than read as an absence of posts. */
+    context.recorder.record({
+      stage: "access",
+      code: statuses
+        ? classifyHttpStatus(statuses.status, statuses.body, statuses.contentType).code
+        : "transport-failed",
+      outcome: "failed",
+      recovery: "alternative-route",
+      cause: statuses ? "observed" : "unknown",
+      target: statusesUrl,
+      targetKind: "record",
+      collector: "social-reader",
+      reason: statuses
+        ? `HTTP ${statuses.status} from this instance's public statuses endpoint.`
+        : "The instance's public statuses endpoint did not answer.",
+      attemptOf: context.attemptOf,
+      ...(statuses
+        ? {
+            observed: {
+              status: statuses.status,
+              finalUrl: statuses.url,
+              contentType: statuses.contentType,
+              bytes: statuses.body.length,
+            },
+          }
+        : {}),
+      impact:
+        "Public posts by this account did not contribute API evidence; falling back to the public profile page.",
+      remediation: `Reproduce with: curl -sS '${statusesUrl}'`,
+    });
+    return readWeb(url, "public-social", context);
+  }
   const posts =
-    (safeJson(statuses?.body ?? "null") as { created_at?: string; content?: string }[] | null) ??
-    [];
-  const lines = posts
-    .map((post) => `${post.created_at ?? "unknown date"} — ${stripTags(post.content ?? "")}`)
-    .filter((line) => line.length > 20);
+    (safeJson(statuses.body) as
+      | {
+          created_at?: string;
+          content?: string;
+          url?: string;
+          account?: { acct?: string; url?: string };
+          reblog?: {
+            created_at?: string;
+            content?: string;
+            url?: string;
+            account?: { acct?: string; url?: string };
+          } | null;
+        }[]
+      | null) ?? [];
+  const lines = posts.flatMap((post) => {
+    /* A reblog nests the original status under `reblog` with an empty
+       top-level content: the original author and status reference travel
+       with the retained text, never the reblogger's identity. */
+    const original = post.reblog ?? null;
+    const source = original ?? post;
+    const text = stripTags(source.content ?? "");
+    if (!text) return [];
+    const author =
+      source.account?.acct ?? source.account?.url ?? "unknown (do not attribute to feed owner)";
+    const reference = source.url ?? "unknown";
+    const createdAt = source.created_at ?? "unknown date";
+    if (original)
+      return [
+        `${createdAt} — author: ${author} (original); reblogged by @${handle}@${instance}; status: ${reference}; reblog — ${text}`,
+      ];
+    return [`${createdAt} — author: ${author}; status: ${reference}; post — ${text}`];
+  });
   if (!lines.length) return readWeb(url, "public-social", context);
-  const text = `Public Mastodon posts by @${handle}@${instance}\n\n${lines.join("\n\n")}`;
+  const text = `Public Mastodon posts by @${handle}@${instance}; entries retain their own authors — a reblog is the original author's post, not the reblogger's statement\n\n${lines.join("\n\n")}`;
   return {
     text: text.slice(0, MAX_TEXT),
     capturedAt: null,
@@ -1631,10 +1738,10 @@ async function readMastodon(url: string, context: ReadContext): Promise<SourceRe
     route: "mastodon",
     upstreamIndex: instance,
     publishedAt: null,
-    author: `@${handle}@${instance}`,
+    author: null,
     anchors: [],
     provenanceNote:
-      "The account's own posts. Self-report: a post is not independent verification of itself.",
+      "A Mastodon account timeline with per-entry authorship: posts by the account holder are that person's self-report; reblogs carry the original author and status reference and are not the reblogger's words. A self-statement is not independent verification of itself.",
     sourceVersion: null,
     rights: null,
     finalUrl: url,
@@ -2183,6 +2290,18 @@ function hostOf(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The citable https address for a retained Bluesky post reference. The
+ * `at://` URI is the stable identifier; the trailing record key plus the
+ * post author's handle is the address a reader can open.
+ */
+function bskyPostUrl(author: string, uri: string): string | null {
+  if (author.startsWith("unknown") || uri === "unknown") return null;
+  const rkey = uri.split("/").pop();
+  if (!rkey) return null;
+  return `https://bsky.app/profile/${author}/post/${rkey}`;
 }
 
 function hash(value: string | Buffer): string {
