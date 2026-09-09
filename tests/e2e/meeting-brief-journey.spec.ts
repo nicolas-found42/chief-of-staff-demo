@@ -111,6 +111,7 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   const idxAfter = (await (await request.get("/api/meeting-brief/index")).json()) as {
     upcoming: unknown[];
     briefs: {
+      runId: string;
       eventVersion: string;
       delivery: unknown;
       meetingBrief: { sourceReferences: string[]; missingEvidence: string[] } | null;
@@ -222,6 +223,7 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
     briefs: {
       eventVersion: string;
       delivery: { status: string } | null;
+      runId: string;
       supersedes: string | null;
     }[];
   };
@@ -263,6 +265,15 @@ test("meeting brief hermetic journey — setup → wake → clock → brief → 
   await expect(
     page.getByRole("link", { name: /https:\/\/example.com\/acme/ }).first(),
   ).toBeVisible();
+  await page.goto(`/runs/${v2Entry!.runId}`);
+  await expect(
+    page.getByText("Earlier version · this link retains the original Brief.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Brief for Revised title", { exact: true })).toBeVisible();
+  await expect(page.getByText("Brief for Final revised title", { exact: true })).toHaveCount(0);
+  await page.goto(`/runs/${v3Entry!.runId}`);
+  await expect(page).toHaveURL(/\/meetings\/[^/?]+\?tab=brief$/);
+  await expect(page.getByText("Brief for Final revised title", { exact: true })).toBeVisible();
 });
 
 test("meeting brief hermetic journey — incomplete provider blocks until cutoff, policy disable, explicit retry delivers", async ({

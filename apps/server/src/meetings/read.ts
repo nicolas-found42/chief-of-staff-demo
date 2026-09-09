@@ -218,15 +218,21 @@ export class MeetingRead {
       artifact.latestAttempt = attempt;
     }
     if (attempt === "failed") {
+      const deliveryFailure =
+        kind === "brief" &&
+        Boolean(latest.result?.meetingBrief) &&
+        latest.meta.failedStage === "deliver";
       const historicalBrief =
         kind === "brief" &&
         (meeting.cancelled ||
           meeting.ineligibleReason !== null ||
           !meeting.occurrenceKey ||
           Date.parse(meeting.startAt) <= now.getTime());
-      artifact.explanation = historicalBrief
-        ? "Brief preparation is no longer available for this past or ineligible meeting."
-        : `${kind === "brief" ? "Brief preparation" : "Debrief extraction"} failed. Try again or check the workflow settings.`;
+      artifact.explanation = deliveryFailure
+        ? "Brief ready. Email delivery failed; the Brief remains readable."
+        : historicalBrief
+          ? "Brief preparation is no longer available for this past or ineligible meeting."
+          : `${kind === "brief" ? "Brief preparation" : "Debrief extraction"} failed. Try again or check the workflow settings.`;
       artifact.retryRunId =
         !historicalBrief && this.deps.canRetry?.(latest.meta) ? latest.meta.id : null;
       if (latest.meta.connectionState && latest.meta.connectionState !== "connected") {

@@ -39,6 +39,7 @@ import {
   stripRestatedDecisions,
   stripUnverifiedRecipientEmails,
 } from "./extraction.js";
+import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
 import { composeExternalDebriefBody } from "./externalBody.js";
 
 export type {
@@ -63,6 +64,7 @@ export type DebriefInput =
 
 export interface MeetingDebriefModuleDeps {
   now?: () => Date;
+  readActionItems?: DebriefActionItemReader;
   catalog: DebriefCatalogReader;
   identity: DebriefIdentityReviewReader;
   /** Deterministic extraction seam (tests, hermetic runtimes). */
@@ -113,6 +115,7 @@ interface DebriefActionItemHandover {
 interface DebriefDraftReceipt {
   version: 1;
   draftId: string;
+  createdAt?: string;
   to: string[];
 }
 
@@ -149,18 +152,19 @@ async function writeApprovalOutputs(
   const debrief = currentDebrief(ctx);
   let draft = readReceipt<DebriefDraftReceipt>(ctx, "draft.json");
   if (draft === null) {
-    const to = [
+    const to = state.email?.to ?? [
       ...state.roster.entries
         .filter((entry) => entry.email !== ownerEmail)
         .map((entry) => entry.email),
       ...state.recipients.additional.map((recipient) => recipient.email),
     ];
     const draftId = await outputs.createDraft({
-      to,
-      subject: `Meeting debrief — ${record.source.fileName}`,
-      body: composeExternalDebriefBody(debrief, state.review.droppedActionItems),
+      to: state.email?.to ?? to,
+      subject: state.email?.subject ?? `Meeting debrief — ${record.source.fileName}`,
+      body:
+        state.email?.body ?? composeExternalDebriefBody(debrief, state.review.droppedActionItems),
     });
-    draft = { version: 1, draftId, to };
+    draft = { version: 1, draftId, to, createdAt: (deps.now?.() ?? new Date()).toISOString() };
     ctx.writeFile("draft.json", `${JSON.stringify(draft, null, 2)}\n`);
     ctx.event("debrief_draft_created", { draftId, recipientCount: to.length });
   }
@@ -384,6 +388,25 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           };
         }
         const owner = gate.ownerEmail();
+        if (
+          state.email &&
+          emailPreview(
+            ctx.runId,
+            record,
+            currentDebrief(ctx),
+            state,
+            owner,
+            emailOptions(ctx.runId, record, currentDebrief(ctx), deps.readActionItems ?? null),
+            state.email.selectedIds,
+          ).revision !== state.email.revision
+        ) {
+          ctx.writeFile("review.json", serializeReviewState({ ...state, request: null }));
+          return {
+            status: "done",
+            summary: "No draft created. Inputs changed; update the email preview.",
+            detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
+          };
+        }
         const approvedAt = state.approval?.approvedAt ?? now().toISOString();
         const locked: MeetingDebriefReviewState = {
           ...state,

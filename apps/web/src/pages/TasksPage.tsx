@@ -1,4 +1,11 @@
-import { meetingDate, proposedDue } from "../meetingDisplay";
+import { ActionItemRow, TaskFields, DuplicateWarning } from "../components/ActionItemReview";
+import {
+  responsibleFromValue,
+  responsibleLabel,
+  listName,
+  formValuesFrom,
+  type TaskFormValues,
+} from "../components/taskReviewFields";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type {
@@ -8,14 +15,12 @@ import type {
   Task,
   TaskDuplicateCandidate,
   TaskList,
-  TaskPriority,
-  TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
 import {
   INBOX_TASK_LIST_ID,
   TASK_GROUPS,
-  TASK_GROUP_LABELS,
   TASK_PRIORITIES,
+  TASK_GROUP_LABELS,
   groupTasks,
 } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
@@ -42,174 +47,6 @@ import { useTitle } from "../useTitle";
  * not accepted work, and this page never lets one quietly become a Task.
  */
 
-/** The owner, nobody, or a confirmed Person Profile, as one select value. */
-const OWNER_VALUE = "owner";
-const NOBODY_VALUE = "";
-
-function responsibleValue(person: TaskResponsiblePerson | null): string {
-  if (person === null) return NOBODY_VALUE;
-  return person.kind === "owner" ? OWNER_VALUE : person.profileId;
-}
-
-function responsibleFromValue(value: string): TaskResponsiblePerson | null {
-  if (value === NOBODY_VALUE) return null;
-  return value === OWNER_VALUE ? { kind: "owner" } : { kind: "person-profile", profileId: value };
-}
-
-function personName(profiles: PersonProfile[], profileId: string): string {
-  return profiles.find((profile) => profile.id === profileId)?.fullName ?? profileId;
-}
-
-function responsibleLabel(person: TaskResponsiblePerson | null, profiles: PersonProfile[]): string {
-  if (person === null) return "Nobody";
-  return person.kind === "owner" ? "You" : personName(profiles, person.profileId);
-}
-
-function listName(lists: TaskList[], listId: string): string {
-  return lists.find((list) => list.id === listId)?.name ?? listId;
-}
-
-/** The fields an expanded Task form edits, as strings the inputs hold. */
-interface TaskFormValues {
-  title: string;
-  notes: string;
-  dueDate: string;
-  priority: TaskPriority;
-  listId: string;
-  responsible: string;
-}
-
-function formValuesFrom(task: Task): TaskFormValues {
-  return {
-    title: task.title,
-    notes: task.notes,
-    dueDate: task.dueDate ?? "",
-    priority: task.priority,
-    listId: task.listId,
-    responsible: responsibleValue(task.responsiblePerson),
-  };
-}
-
-/** The shared field set — the same in Quick Add's expansion and in an edit. */
-function TaskFields({
-  idPrefix,
-  values,
-  lists,
-  profiles,
-  onChange,
-}: {
-  idPrefix: string;
-  values: TaskFormValues;
-  lists: TaskList[];
-  profiles: PersonProfile[];
-  onChange: (values: TaskFormValues) => void;
-}) {
-  const set = <K extends keyof TaskFormValues>(key: K, value: TaskFormValues[K]) =>
-    onChange({ ...values, [key]: value });
-  return (
-    <div className="form-grid">
-      <div className="field">
-        <label htmlFor={`${idPrefix}-notes`}>Notes</label>
-        <textarea
-          id={`${idPrefix}-notes`}
-          rows={3}
-          value={values.notes}
-          onChange={(event) => set("notes", event.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor={`${idPrefix}-due`}>Due date</label>
-        <input
-          id={`${idPrefix}-due`}
-          type="date"
-          value={values.dueDate}
-          onChange={(event) => set("dueDate", event.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor={`${idPrefix}-priority`}>Priority</label>
-        <select
-          id={`${idPrefix}-priority`}
-          value={values.priority}
-          onChange={(event) => set("priority", event.target.value as TaskPriority)}
-        >
-          {TASK_PRIORITIES.map((priority) => (
-            <option key={priority} value={priority}>
-              {priority}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor={`${idPrefix}-list`}>Task List</label>
-        <select
-          id={`${idPrefix}-list`}
-          value={values.listId}
-          onChange={(event) => set("listId", event.target.value)}
-        >
-          {lists.map((list) => (
-            <option key={list.id} value={list.id}>
-              {list.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor={`${idPrefix}-responsible`}>Responsible Person</label>
-        <select
-          id={`${idPrefix}-responsible`}
-          value={values.responsible}
-          onChange={(event) => set("responsible", event.target.value)}
-        >
-          <option value={OWNER_VALUE}>You</option>
-          <option value={NOBODY_VALUE}>Nobody</option>
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profile.fullName ?? profile.id}
-            </option>
-          ))}
-        </select>
-        <p className="field-hint">
-          Responsibility only. Nobody is granted access and nobody is notified.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The Possible duplicate warning (issue #180): the open Tasks a would-be Task
- * would duplicate, each linked. It is advisory by construction — the create
- * and promote routes take no confirmation token — so the form's next submit,
- * the one labeled "anyway", is the whole override mechanism.
- */
-function DuplicateWarning({ duplicates }: { duplicates: Task[] }) {
-  return (
-    <div className="banner banner-warn" role="status">
-      <strong>Possible duplicate.</strong> An open Task already has this title, Responsible Person,
-      and due date:{" "}
-      {duplicates.map((duplicate) => (
-        <details key={duplicate.id}>
-          <summary>Compare: {duplicate.title}</summary>
-          <p>
-            {duplicate.listId === INBOX_TASK_LIST_ID ? "Inbox" : "Task List"} ·{" "}
-            {duplicate.dueDate ? `due ${duplicate.dueDate}` : "no due date"} · {duplicate.status}
-          </p>
-          <p>{duplicate.notes || "No notes."}</p>
-          <p>
-            Responsible Person:{" "}
-            {duplicate.responsiblePerson?.kind === "owner"
-              ? "You"
-              : (duplicate.responsiblePerson?.profileId ?? "Nobody")}
-          </p>
-        </details>
-      ))}
-      . Submit again to create the Task anyway.
-    </div>
-  );
-}
-
-/** The provider a Task's destination names, as the row's sentences read it. */
 function providerName(destination: Task["destination"]): string {
   return destination.provider === "asana" ? "Asana" : "Google Tasks";
 }
@@ -562,193 +399,6 @@ function TaskRow({
  * matches an open Task warns first and stops; submitting again is the owner's
  * decision that the work really is different.
  */
-function ActionItemRow({
-  item,
-  context,
-  today,
-  lists,
-  profiles,
-  busy,
-  checkDuplicates,
-  onPromote,
-  onDismiss,
-}: {
-  item: ActionItem;
-  context: ActionItemContext | undefined;
-  today: string;
-  lists: TaskList[];
-  profiles: PersonProfile[];
-  busy: boolean;
-  checkDuplicates: TasksClient["checkDuplicates"];
-  onPromote: (values: TaskFormValues, completed: boolean) => Promise<boolean>;
-  onDismiss: () => Promise<void>;
-}) {
-  const [reviewing, setReviewing] = useState<"open" | "completed" | null>(null);
-  const [values, setValues] = useState<TaskFormValues>({
-    title: item.proposal.title,
-    notes: item.proposal.notes,
-    dueDate: item.proposal.dueDate ?? "",
-    priority: "none",
-    listId: INBOX_TASK_LIST_ID,
-    responsible: responsibleValue(item.proposal.responsiblePerson),
-  });
-  /* The Possible duplicate warning (issue #180). Its presence is the armed
-     override: the next submit creates the Task, and any edit clears it. */
-  const [duplicates, setDuplicates] = useState<Task[] | null>(null);
-
-  /* Closing the panel drops its transient states with it: reopening is a
-     fresh look at the proposal, not the old warning again. */
-  const closeReview = () => {
-    setReviewing(null);
-    setDuplicates(null);
-  };
-
-  const edit = (next: TaskFormValues) => {
-    setValues(next);
-    setDuplicates(null);
-  };
-
-  async function submitReview() {
-    if (duplicates === null) {
-      try {
-        const check = await checkDuplicates({
-          title: values.title,
-          dueDate: values.dueDate === "" ? null : values.dueDate,
-          responsiblePerson: responsibleFromValue(values.responsible),
-        });
-        if (check.duplicates.length > 0) {
-          setDuplicates(check.duplicates);
-          return;
-        }
-      } catch {
-        /* An unanswerable check is not an objection. The warning is advisory,
-           so when it cannot be produced the promotion proceeds exactly as it
-           did before there was a check at all. */
-      }
-    }
-    setDuplicates(null);
-    void onPromote(values, reviewing === "completed").then((promoted) => {
-      if (promoted) closeReview();
-    });
-  }
-
-  return (
-    /* The anchor a compact surface links a proposal by (issue #192). */
-    <li className="card" id={`action-item-${item.id}`}>
-      <h3>{item.proposal.title}</h3>
-      <p className="muted">
-        Proposed · {proposedDue(item.proposal.dueDate, today)} ·{" "}
-        {item.proposal.responsiblePerson
-          ? responsibleLabel(item.proposal.responsiblePerson, profiles)
-          : "Unassigned"}
-        {item.evidence.responsibleSurfaceName
-          ? ` · named ${item.evidence.responsibleSurfaceName}`
-          : ""}
-      </p>
-      <p className="muted">
-        {context?.meeting ? (
-          <>
-            <Link to={`/meetings/${context.meeting.id}?tab=debrief`}>{context.meeting.title}</Link>{" "}
-            · From {meetingDate(context.meeting.date)}.{" "}
-          </>
-        ) : (
-          "Source Meeting unavailable. "
-        )}
-        <Link to={`/meeting-debrief/${encodeURIComponent(item.source.debriefRunId)}`}>
-          Open full Debrief
-        </Link>
-      </p>
-      <details>
-        <summary>Original evidence</summary>
-        {context?.evidence ? (
-          <>
-            <blockquote>{context.evidence.quote}</blockquote>
-            {context.evidence.timestamp ? <p>At {context.evidence.timestamp}</p> : null}
-          </>
-        ) : (
-          <p>
-            Stored excerpt and timestamp unavailable. Open the full Debrief for the retained
-            extraction.
-          </p>
-        )}
-      </details>
-      {item.state === "promoted" && item.promotedTaskId && (
-        <p className="muted">
-          Promoted. <Link to={`/tasks#task-${item.promotedTaskId}`}>Open the Task</Link>
-        </p>
-      )}
-      {item.state === "pending" && (
-        <div className="toolbar">
-          <button
-            type="button"
-            className="action-button"
-            aria-expanded={reviewing === "open"}
-            onClick={() => (reviewing === "open" ? closeReview() : setReviewing("open"))}
-          >
-            Create Task
-          </button>
-          <button
-            type="button"
-            className="action-button"
-            aria-expanded={reviewing === "completed"}
-            onClick={() => (reviewing === "completed" ? closeReview() : setReviewing("completed"))}
-          >
-            Create completed Task
-          </button>
-          <button
-            type="button"
-            className="action-button"
-            aria-disabled={busy}
-            onClick={() => void onDismiss()}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-      {reviewing && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitReview();
-          }}
-        >
-          <div className="field-row">
-            <label htmlFor={`action-item-${item.id}-title`}>Title</label>
-            <input
-              id={`action-item-${item.id}-title`}
-              value={values.title}
-              autoFocus
-              onChange={(event) => edit({ ...values, title: event.target.value })}
-            />
-          </div>
-          <TaskFields
-            idPrefix={`action-item-${item.id}`}
-            values={values}
-            lists={lists}
-            profiles={profiles}
-            onChange={edit}
-          />
-          {duplicates && <DuplicateWarning duplicates={duplicates} />}
-          <div className="toolbar">
-            <button type="submit" className="action-button primary" aria-disabled={busy}>
-              {reviewing === "completed"
-                ? duplicates
-                  ? "Create completed Task anyway"
-                  : "Create completed Task"
-                : duplicates
-                  ? "Create Task anyway"
-                  : "Create Task"}
-            </button>
-            <button type="button" className="action-button" onClick={closeReview}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-    </li>
-  );
-}
-
 /** One trashed Task, with the two operations only Trash offers. */
 function TrashRow({
   task,
@@ -825,6 +475,9 @@ export function TasksPage({
   useTitle("Tasks");
   const [searchParams] = useSearchParams();
   const meetingId = searchParams.get("meetingId") ?? "";
+  const dueBefore = searchParams.get("dueBefore");
+  const dueFrom = searchParams.get("dueFrom");
+  const dueTo = searchParams.get("dueTo");
   const missingSource = searchParams.get("source") === "unavailable";
   const [actionContext, setActionContext] = useState<Record<string, ActionItemContext>>({});
   const focusRef = usePageFocus<HTMLHeadingElement>({ focusOnSearchChange: false });
@@ -883,7 +536,7 @@ export function TasksPage({
     dueDate: "",
     priority: "none",
     listId: INBOX_TASK_LIST_ID,
-    responsible: OWNER_VALUE,
+    responsible: "owner",
   });
   /* The Possible duplicate warning (issue #180), set when a submit matched an
      open Task. Its presence is also the armed override: the next submit is
@@ -1113,7 +766,7 @@ export function TasksPage({
       dueDate: "",
       priority: "none",
       listId: INBOX_TASK_LIST_ID,
-      responsible: OWNER_VALUE,
+      responsible: "owner",
     });
     quickInput.current?.focus();
   }
@@ -1189,7 +842,13 @@ export function TasksPage({
   );
 
   const openGroups = groupTasks(
-    tasks.filter((task) => task.status === "open"),
+    tasks.filter(
+      (task) =>
+        task.status === "open" &&
+        (!dueBefore || (task.dueDate !== null && task.dueDate < dueBefore)) &&
+        (!dueFrom || (task.dueDate !== null && task.dueDate >= dueFrom)) &&
+        (!dueTo || (task.dueDate !== null && task.dueDate <= dueTo)),
+    ),
     today,
   );
   const openCount = TASK_GROUPS.reduce((total, group) => total + openGroups[group].length, 0);
@@ -1277,7 +936,16 @@ export function TasksPage({
         {quickDuplicates && <DuplicateWarning duplicates={quickDuplicates} />}
       </form>
 
-      <h2>Open</h2>
+      <h2 id="open-tasks">Open</h2>
+      {(dueBefore || dueFrom || dueTo) && (
+        <p>
+          Due dates:{" "}
+          {dueBefore
+            ? `before ${dueBefore}`
+            : `${dueFrom ?? "any start"} through ${dueTo ?? "any end"}`}
+          . <Link to="/tasks#open-tasks">Show all open Tasks</Link>
+        </p>
+      )}
       {/* Grouped by due date in the Workspace timezone, which the server
           resolves and serves: a date-only due date belongs to the owner's own
           day rather than to the browser's. */}

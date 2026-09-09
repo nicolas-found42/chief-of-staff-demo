@@ -1,3 +1,6 @@
+import { debriefPreviewInput } from "../helpers/debrief-preview";
+import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
+import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -169,6 +172,7 @@ function recordingOutputs(): {
 }
 
 interface Harness {
+  actionItems: WorkspaceActionItems;
   runs: Runs;
   host: MeetingDebriefHost;
   people: WorkspacePersonProfiles;
@@ -178,10 +182,15 @@ interface Harness {
 }
 
 let h: Harness;
+let unavailableReview = false;
+let revisedSummary: string | null = null;
 
 beforeEach(() => {
+  unavailableReview = false;
+  revisedSummary = null;
   const workspaceDir = mkdtempSync(join(tmpdir(), "meeting-debrief-outputs-"));
   const runs = openRuns(workspaceDir);
+  const actionItems = new WorkspaceActionItems({ store: new TaskStore(workspaceDir) });
   const people = new WorkspacePersonProfiles({
     store: new PersonProfileStore(workspaceDir),
     lifecycle: [],
@@ -190,10 +199,21 @@ beforeEach(() => {
   const outputs = recordingOutputs();
   identityReview = { mentions: [], decisions: [], organizations: [] };
   const host = new MeetingDebriefHost({
+    materializeActionItems: (input) => {
+      actionItems.materialize(input);
+    },
+    readActionItems: (input) => {
+      if (unavailableReview) throw new Error("Tasks reader unavailable");
+      return actionItems.forExtraction(input);
+    },
     runs,
     catalog: { getTranscript: (id) => catalog.get(id) ?? null },
     identity: { reviewFor: () => identityReview },
-    extract: (input) => Promise.resolve(fakeExtraction(input)),
+    extract: (input) =>
+      Promise.resolve({
+        ...fakeExtraction(input),
+        ...(revisedSummary ? { summary: revisedSummary } : {}),
+      }),
     profiles: workspaceProfileDirectory(people),
     ownerEmail: () => OWNER_EMAIL,
     outputs: { createDraft: outputs.createDraft },
@@ -201,7 +221,7 @@ beforeEach(() => {
   });
   const app = fastify({ logger: false });
   host.routes(app);
-  h = { runs, host, people, catalog, app, outputs };
+  h = { runs, host, people, catalog, app, outputs, actionItems };
 });
 
 function anchoredProfile(fullName: string, email: string): void {
@@ -244,6 +264,7 @@ describe("Meeting Debrief outward writes (#141)", () => {
     const approved = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(approved.statusCode).toBe(200);
     await h.host.idle();
@@ -279,8 +300,12 @@ describe("Meeting Debrief approval outputs — Tasks and retry (#141)", () => {
     return runId;
   }
 
-  function approve(runId: string): Promise<{ statusCode: number }> {
-    return h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
+  async function approve(runId: string): Promise<{ statusCode: number }> {
+    return h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
+    });
   }
 
   it("creates a Gmail draft and no Task at all", async () => {
@@ -326,6 +351,7 @@ describe("Meeting Debrief approval outputs — Tasks and retry (#141)", () => {
     const failed = await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}` });
     const reviewAfter = failed.json<{ review: { draft: unknown; review: unknown } }>().review;
     expect(reviewAfter.draft).toBeNull();
+    expect(failed.json().review.state).toBe("extracted");
     /* The Action Item decisions the owner made are exactly as they were: a
        recipient problem is not allowed to touch accepted work (issue #182). */
     expect(reviewAfter.review).toEqual(reviewBefore.review);
@@ -391,8 +417,12 @@ describe("Meeting Debrief action-item lifecycle (#158)", () => {
     return runId;
   }
 
-  function approve(runId: string): Promise<{ statusCode: number }> {
-    return h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` });
+  async function approve(runId: string): Promise<{ statusCode: number }> {
+    return h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
+    });
   }
 
   it("creates no Task at all when the whole Debrief is published (#182, #199)", async () => {
@@ -419,5 +449,247 @@ describe("Meeting Debrief action-item lifecycle (#158)", () => {
       });
       expect(response.statusCode).toBe(404);
     }
+  });
+});
+
+describe("preview-bound draft creation (#327)", () => {
+  it("previews explicit selections without output and creates exactly the reviewed draft", async () => {
+    anchoredProfile("Owner", OWNER_EMAIL);
+    anchoredProfile("Alice", "alice@example.com");
+    const runId = await startRun(makeRecord());
+    await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: { entries: [{ email: OWNER_EMAIL }, { email: "alice@example.com" }] },
+    });
+    const candidates = await h.app.inject({
+      method: "GET",
+      url: `/api/meeting-debrief/${runId}/email`,
+    });
+    expect(candidates.statusCode).toBe(200);
+    const options = candidates.json().candidates as { id: string; title: string }[];
+    const selected = options.find((candidate) => candidate.title === "Follow up with Alice")!;
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/preview`,
+      payload: { selectedIds: [selected.id] },
+    });
+    expect(response.statusCode).toBe(200);
+    const preview = response.json();
+    expect(preview.body).toContain("Follow up with Alice — Alice");
+    expect(preview.body).not.toContain("Send the release note");
+    expect(preview.body).not.toContain("Close open questions before the next sync");
+    expect(h.outputs.drafts).toEqual([]);
+    const creation = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+      payload: { selectedIds: [selected.id], revision: preview.revision },
+    });
+    expect(creation.statusCode).toBe(200);
+    await h.host.idle();
+    expect(h.outputs.drafts).toEqual([
+      { subject: preview.subject, body: preview.body, to: preview.to },
+    ]);
+  });
+});
+
+describe("canonical email inclusion (#327)", () => {
+  it("uses stable canonical decisions for defaults and labels omitted proposals as earlier", async () => {
+    const runId = await startRun(makeRecord());
+    const items = h.actionItems.list({ debriefRunId: runId });
+    h.actionItems.dismiss(items[0].id);
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/api/meeting-debrief/${runId}/email`,
+    });
+    expect(response.statusCode).toBe(200);
+    const options = response.json();
+    expect(options.unavailableReview).toBe(false);
+    expect(options.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: items[0].id,
+          reviewState: "dismissed",
+          includedByDefault: false,
+          earlier: false,
+        }),
+        expect.objectContaining({
+          id: items[1].id,
+          reviewState: "pending",
+          includedByDefault: true,
+          earlier: false,
+        }),
+      ]),
+    );
+  });
+});
+
+describe("preview concurrency (#327)", () => {
+  it("requires a preview and refuses changed recipients without producing output", async () => {
+    anchoredProfile("Owner", OWNER_EMAIL);
+    anchoredProfile("Alice", "alice@example.com");
+    const runId = await startRun(makeRecord());
+    const roster = (entries: { email: string }[]) =>
+      h.app.inject({
+        method: "POST",
+        url: `/api/meeting-debrief/${runId}/roster`,
+        payload: { entries },
+      });
+    await roster([{ email: OWNER_EMAIL }, { email: "alice@example.com" }]);
+    expect(
+      (await h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve` }))
+        .statusCode,
+    ).toBe(409);
+    const preview = (
+      await h.app.inject({
+        method: "POST",
+        url: `/api/meeting-debrief/${runId}/preview`,
+        payload: { selectedIds: [] },
+      })
+    ).json();
+    await roster([{ email: "alice@example.com" }]);
+    const created = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+      payload: { selectedIds: [], revision: preview.revision },
+    });
+    expect(created.statusCode).toBe(409);
+    expect(created.json().error).toBe("stale-preview");
+    expect(h.outputs.drafts).toEqual([]);
+  });
+});
+
+describe("historical email candidates (#327)", () => {
+  it("retains an omitted earlier proposal for explicit inclusion using its original wording", async () => {
+    const runId = await startRun(makeRecord());
+    h.actionItems.materialize({
+      debriefRunId: runId,
+      transcriptId: makeRecord().id,
+      meetingId: null,
+      actionItems: [
+        {
+          title: "Earlier release commitment",
+          owner: "Alice",
+          ownerProfileId: null,
+          ownerMentionId: null,
+          dueDate: "2026-08-20",
+        },
+      ],
+    });
+    const options = (
+      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}/email` })
+    ).json<import("@chief-of-staff-demo/shared").MeetingDebriefEmailOptions>();
+    const earlier = options.candidates.find(
+      (candidate: { title: string }) => candidate.title === "Earlier release commitment",
+    );
+    expect(earlier).toMatchObject({
+      earlier: true,
+      includedByDefault: false,
+      owner: "Alice",
+      dueDate: "2026-08-20",
+    });
+    const preview = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/preview`,
+      payload: { selectedIds: [earlier!.id] },
+    });
+    expect(preview.json().body).toContain("Earlier release commitment — Alice (due 2026-08-20)");
+    expect(h.outputs.drafts).toEqual([]);
+  });
+});
+
+describe("explicit email choices and concurrent commands (#327)", () => {
+  async function ready() {
+    anchoredProfile("Owner", OWNER_EMAIL);
+    anchoredProfile("Alice", "alice@example.com");
+    const runId = await startRun(makeRecord());
+    await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/roster`,
+      payload: { entries: [{ email: OWNER_EMAIL }, { email: "alice@example.com" }] },
+    });
+    return runId;
+  }
+  it("discloses unavailable review without interpreting it as dismissed, then honors explicit inclusion", async () => {
+    const runId = await ready();
+    unavailableReview = true;
+    const options = (
+      await h.app.inject({ method: "GET", url: `/api/meeting-debrief/${runId}/email` })
+    ).json<import("@chief-of-staff-demo/shared").MeetingDebriefEmailOptions>();
+    expect(options.unavailableReview).toBe(true);
+    expect(options.candidates.every((candidate) => candidate.reviewState === "unavailable")).toBe(
+      true,
+    );
+    const selectedIds = [options.candidates[1].id];
+    const preview = (
+      await h.app.inject({
+        method: "POST",
+        url: `/api/meeting-debrief/${runId}/preview`,
+        payload: { selectedIds },
+      })
+    ).json<import("@chief-of-staff-demo/shared").MeetingDebriefEmailPreview>();
+    expect(preview.unavailableReview).toBe(true);
+    expect(preview.body).toContain("Follow up with Alice");
+    expect(preview.body).not.toContain("Send the release note");
+    expect(
+      (
+        await h.app.inject({
+          method: "POST",
+          url: `/api/meeting-debrief/${runId}/approve`,
+          payload: { selectedIds, revision: preview.revision },
+        })
+      ).statusCode,
+    ).toBe(200);
+    await h.host.idle();
+    expect(h.outputs.drafts).toEqual([
+      { subject: preview.subject, body: preview.body, to: preview.to },
+    ]);
+  });
+  it("rejects a preview after regeneration and preserves explicit compatible choices for the replacement", async () => {
+    const runId = await ready();
+    const input = await debriefPreviewInput(h.app, runId);
+    revisedSummary = "The updated meeting summary.";
+    expect(
+      (
+        await h.app.inject({
+          method: "POST",
+          url: `/api/meeting-debrief/${runId}/regenerate`,
+          payload: { field: "summary" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    await h.host.idle();
+    expect(
+      (
+        await h.app.inject({
+          method: "POST",
+          url: `/api/meeting-debrief/${runId}/approve`,
+          payload: input,
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(h.outputs.drafts).toEqual([]);
+    const replacement = (
+      await h.app.inject({
+        method: "POST",
+        url: `/api/meeting-debrief/${runId}/preview`,
+        payload: { selectedIds: input.selectedIds },
+      })
+    ).json<import("@chief-of-staff-demo/shared").MeetingDebriefEmailPreview>();
+    expect(replacement.selectedIds).toEqual(input.selectedIds);
+    expect(replacement.body).toContain("The updated meeting summary.");
+    expect(replacement.revision).not.toBe(input.revision);
+  });
+  it("reserves one creation when two final submissions arrive together", async () => {
+    const runId = await ready();
+    const payload = await debriefPreviewInput(h.app, runId);
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/approve`, payload }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+    await h.host.idle();
+    expect(h.outputs.drafts).toHaveLength(1);
   });
 });

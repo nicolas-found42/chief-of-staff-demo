@@ -182,3 +182,51 @@
 .wizard-tabs {
   flex-wrap: wrap;
 }
+
+.meeting-reading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.meeting-reading details {
+  margin-block: 0.75rem;
+}
+.meeting-reading summary {
+  cursor: pointer;
+}
+.meeting-reading .card,
+.meeting-reading .field,
+.meeting-reading input,
+.meeting-reading select,
+.meeting-reading textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+.meeting-reading .toolbar {
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .meeting-reading .field-row input,
+  .meeting-reading .field-row select {
+    flex: none;
+  }
+  .meeting-reading .form-grid,
+  .meeting-reading .field-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+.email-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.email-panel input[type="checkbox"] {
+  width: auto;
+}
+.bounded-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

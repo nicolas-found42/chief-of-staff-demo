@@ -119,6 +119,20 @@ export class WorkspaceActionItems {
     return materialized;
   }
 
+  /** Read-only identity join for a consumer of the current extraction. */
+  forExtraction(input: ActionItemMaterialization): {
+    current: (ActionItem | null)[];
+    earlier: ActionItem[];
+  } {
+    const currentItems = this.list({ debriefRunId: input.debriefRunId });
+    const items = input.meetingId ? this.list({ meetingId: input.meetingId }) : currentItems;
+    const ids = input.actionItems.map((proposal) => actionItemId(input.debriefRunId, proposal));
+    return {
+      current: ids.map((id) => currentItems.find((item) => item.id === id) ?? null),
+      earlier: items.filter((item) => !ids.includes(item.id)),
+    };
+  }
+
   /**
    * Stored order, which is materialization order: extraction order inside one
    * Debrief, and chronological across Debriefs because materializing appends.

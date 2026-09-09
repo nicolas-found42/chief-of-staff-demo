@@ -30,15 +30,15 @@ describe("the Shell's connection notice", () => {
 
   it("names Tasks and Gmail, and never a Module's pipeline", () => {
     expect(connectionNotice(status("unconfigured"))).toEqual({
-      text: "Google is not set up, so nothing can be created in Tasks or Gmail.",
+      text: "Google is not set up. Gmail and Google Tasks need a connection; local Tasks remain available.",
       action: "Set up Google",
     });
     expect(connectionNotice(status("disconnected"))).toEqual({
-      text: "Google is not signed in, so nothing can be created in Tasks or Gmail.",
+      text: "Google is not signed in. Gmail and Google Tasks need a connection; local Tasks remain available.",
       action: "Sign in with Google",
     });
     expect(connectionNotice(status("expired"))).toEqual({
-      text: "The saved Google sign-in has expired as expected. Reconnect to keep creating in Tasks or Gmail.",
+      text: "The saved Google sign-in has expired as expected. Reconnect for Gmail and Google Tasks; local Tasks remain available.",
       action: "Reconnect Google",
     });
   });

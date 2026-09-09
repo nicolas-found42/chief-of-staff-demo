@@ -1,3 +1,9 @@
+import { BriefProfileRefresh } from "../modules/meeting-brief/BriefProfileRefresh";
+import { useReadingPosition } from "../useReadingPosition";
+import { MeetingBriefContent } from "../components/MeetingBriefContent";
+import { MeetingDebriefContent } from "../components/MeetingDebriefContent";
+import { ReadingDisclosure } from "../components/ReadingDisclosure";
+import "./meetingWizard.css";
 import { MeetingArtifactStatus } from "../components/MeetingReadRow";
 import { meetingDate } from "../meetingDisplay";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -146,35 +152,10 @@ function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: Meetin
                 occurrence id and the Calendar ETag are diagnostics — they live
                 on the Run detail page, not on a product surface. */}
             Prepared{" "}
-            <time dateTime={current.createdAt}>{formatMeetingTime(current.createdAt)}</time> ·{" "}
-            <Link to={`/meetings/brief/${encodeURIComponent(occurrenceKey)}`}>
-              View in the Brief journey
-            </Link>
+            <time dateTime={current.createdAt}>{formatMeetingTime(current.createdAt)}</time>
           </p>
-          <p>{brief.summary}</p>
-          {brief.guests.length > 0 ? (
-            <div>
-              <h4>Guests</h4>
-              <ul>
-                {brief.guests.map((guest) => (
-                  <li key={guest.email}>
-                    {guest.name ? `${guest.name} — ${guest.email}` : guest.email}{" "}
-                    {guest.role ? `· ${guest.role}` : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {brief.conversationStarters.length > 0 ? (
-            <div>
-              <h4>Conversation starters</h4>
-              <ol>
-                {brief.conversationStarters.map((starter, starterIndex) => (
-                  <li key={starterIndex}>{starter}</li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
+          <BriefProfileRefresh runId={current.runId} client={client} />
+          <MeetingBriefContent brief={brief} versionId={current.runId} />
           <p>
             Delivery:{" "}
             {current.delivery ? (
@@ -196,7 +177,7 @@ function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: Meetin
           ) : null}
           {/* Owner-only send: the server fixes the recipient to the owner;
               this button only resumes the Run's deliver stage. */}
-          {current.delivery?.status !== "sent" ? (
+          {current.delivery?.status === "pending" || current.delivery?.status === "failed" ? (
             <div className="field-row">
               <button
                 type="button"
@@ -243,7 +224,7 @@ function MeetingBriefTab({ meeting, client }: { meeting: Meeting; client: Meetin
       ) : (
         <p className="muted">
           No Meeting Brief was prepared for this meeting.{" "}
-          <Link to="/meetings/brief">Open the Brief journey</Link>
+          <Link to="/meetings/brief">Browse all Briefs</Link>
         </p>
       )}
     </div>
@@ -277,16 +258,13 @@ function pickDebriefEntry(
  * have gone out; an unpublished one is simply the Debrief.
  */
 function debriefTabState(entry: MeetingDebriefIndexEntry | undefined): string | null {
-  return entry?.reviewState === "published" ? "published" : null;
+  return entry?.reviewState === "published" ? "draft created" : null;
 }
 
 /**
- * The Debrief tab: the Meeting Debrief for this Meeting's Transcript,
- * resolved through the existing routes — the Meeting's Transcripts select
- * the Debrief index row, and the row's Run id reads the detail. Renders the
- * effectiveness evidence and coaching advice with a link into the full
- * Debrief journey; without a Transcript the tab names the absence instead
- * of rendering an empty panel.
+ * Keep the full shared reader mounted while status refreshes (#327), so polling
+ * cannot reset an open Task editor or email choices. The owning read projection
+ * selects the retained artifact; this tab only loads it and offers local review.
  */
 function MeetingDebriefTab({
   transcripts,
@@ -311,18 +289,21 @@ function MeetingDebriefTab({
   useEffect(() => {
     if (!runId) return;
     let cancelled = false;
-    setDetail(null);
     setDetailError(null);
-    client
-      .meetingDebriefDetail(runId)
-      .then((result) => {
-        if (!cancelled) setDetail(result);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setDetailError(errorMessage(cause));
-      });
+    const load = () =>
+      client
+        .meetingDebriefDetail(runId)
+        .then((result) => {
+          if (!cancelled) setDetail(result);
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) setDetailError(errorMessage(cause));
+        });
+    void load();
+    const timer = window.setInterval(() => void load(), 3000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [client, runId, detailAttempt]);
 
@@ -350,7 +331,7 @@ function MeetingDebriefTab({
           Meeting debrief is not available yet — no transcript has been matched to this meeting.
         </p>
         <p>
-          <Link to="/meeting-debrief">Open the Meeting Debrief journey</Link>
+          <Link to="/meeting-debrief">Browse transcripts and Debriefs</Link>
         </p>
       </div>
     );
@@ -374,13 +355,13 @@ function MeetingDebriefTab({
           Meeting debrief is not available yet — the matched transcript has no debrief yet.
         </p>
         <p>
-          <Link to="/meeting-debrief">Open the Meeting Debrief journey</Link>
+          <Link to="/meeting-debrief">Browse transcripts and Debriefs</Link>
         </p>
       </div>
     );
   }
 
-  if (detailError) {
+  if (detailError && !detail) {
     return (
       <div className="banner banner-error" role="alert">
         {detailError}{" "}
@@ -391,7 +372,7 @@ function MeetingDebriefTab({
     );
   }
 
-  if (!detail) {
+  if (!detail || detail.runId !== runId) {
     return (
       <p className="muted" role="status">
         Loading debrief…
@@ -403,34 +384,19 @@ function MeetingDebriefTab({
     return (
       <div>
         <p className="muted">No extraction yet — the debrief is {detail.status}.</p>
-        <p>
-          <Link to={`/meeting-debrief/${encodeURIComponent(detail.runId)}`}>Open the debrief</Link>
-        </p>
       </div>
     );
   }
 
   return (
-    <div className="card">
-      <p className="muted">
-        {detail.review?.state === "published" ? (
-          <span className="status-badge status-ok" role="status">
-            Email draft created
-          </span>
-        ) : null}
-      </p>
-      <h3>Summary</h3>
-      <p>{detail.extraction.summary}</p>
-      <h3>Effectiveness evidence</h3>
-      <p>{detail.extraction.effectivenessEvidence}</p>
-      <h3>Coaching advice</h3>
-      <p>{detail.extraction.coachingAdvice}</p>
-      <p>
-        <Link to={`/meeting-debrief/${encodeURIComponent(detail.runId)}`}>
-          Open the full debrief
-        </Link>
-      </p>
-    </div>
+    <MeetingDebriefContent
+      key={detail.runId}
+      detail={detail}
+      client={client}
+      refresh={async () => {
+        setDetail(await client.meetingDebriefDetail(detail.runId));
+      }}
+    />
   );
 }
 
@@ -537,6 +503,7 @@ function TranscriptOrphanNotice({
 export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { meetingId } = useParams<{ meetingId: string }>();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
+  useReadingPosition(meeting !== null);
   const [readView, setReadView] = useState<MeetingDetailView | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const readGeneration = useRef(0);
@@ -665,7 +632,7 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
 
   if (error) {
     return (
-      <div className="page">
+      <div className="page meeting-reading">
         <h1 ref={headingRef} tabIndex={-1}>
           Meeting
         </h1>
@@ -681,7 +648,7 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
 
   if (!meeting) {
     return (
-      <div className="page">
+      <div className="page meeting-reading">
         <h1 ref={headingRef} tabIndex={-1}>
           Meeting
         </h1>
@@ -693,7 +660,7 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
   }
 
   return (
-    <div className="page">
+    <div className="page meeting-reading">
       <h1 ref={headingRef} tabIndex={-1}>
         {meeting.title}
       </h1>
@@ -729,57 +696,61 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
         <p className="muted">{INELIGIBILITY_LABELS[meeting.ineligibleReason]}</p>
       ) : null}
 
-      <section aria-labelledby="meeting-participants-heading">
-        <h2 id="meeting-participants-heading">Participants</h2>
-        {meeting.participants.length === 0 ? (
-          <p className="muted">Calendar listed no participants for this meeting.</p>
-        ) : (
-          /* A roster reads as a list, not as a stack of cards: four
+      <ReadingDisclosure
+        id={`${meeting.id}-metadata`}
+        label={`Participants (${meeting.participants.length}) and transcripts (${transcripts?.length ?? 0})`}
+      >
+        <section aria-labelledby="meeting-participants-heading">
+          <h2 id="meeting-participants-heading">Participants</h2>
+          {meeting.participants.length === 0 ? (
+            <p className="muted">Calendar listed no participants for this meeting.</p>
+          ) : (
+            /* A roster reads as a list, not as a stack of cards: four
              participants used to fill most of the first screen, and each one
              printed its email twice when Calendar gave no display name. */
-          <ul className="roster-list">
-            {meeting.participants.map((participant, index) => (
-              <li key={`${participant.email}::${participant.displayName ?? ""}::${index}`}>
-                {participant.displayName ?? participant.email}
-                <span className="muted">
-                  {/* A transcript-derived participant is a speaker name with no
+            <ul className="roster-list">
+              {meeting.participants.map((participant, index) => (
+                <li key={`${participant.email}::${participant.displayName ?? ""}::${index}`}>
+                  {participant.displayName ?? participant.email}
+                  <span className="muted">
+                    {/* A transcript-derived participant is a speaker name with no
                       address, so the email clause has to disappear entirely
                       rather than leave its separator behind. */}
-                  {participant.displayName && participant.email ? ` · ${participant.email}` : ""}
-                  {` · ${RESPONSE_LABELS[participant.responseStatus]}`}
-                  {participant.organizer ? " · Organizer" : ""}
-                  {participant.self ? " · You" : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      {/* --- transcript-orphan slot (issue #154) — start. This section stays a
+                    {participant.displayName && participant.email ? ` · ${participant.email}` : ""}
+                    {` · ${RESPONSE_LABELS[participant.responseStatus]}`}
+                    {participant.organizer ? " · Organizer" : ""}
+                    {participant.self ? " · You" : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        {/* --- transcript-orphan slot (issue #154) — start. This section stays a
           clearly delimited block so the orphan notice can anchor here; the
           Brief/Debrief tabs below wrap around it without touching it. --- */}
-      <section aria-labelledby="meeting-transcripts-heading">
-        <h2 id="meeting-transcripts-heading">Transcripts</h2>
-        {!transcripts ? (
-          <p className="muted" role="status">
-            Loading transcripts…
-          </p>
-        ) : transcripts.length === 0 ? (
-          <p className="muted">No transcript matched yet.</p>
-        ) : (
-          <ul className="card-list">
-            {transcripts.map((transcript) => (
-              <li key={transcript.id} className="card">
-                <h3>{transcript.title}</h3>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      {meeting.occurrenceKey === null ? (
-        <TranscriptOrphanNotice meetingId={meeting.id} client={client} />
-      ) : null}
-      {/* --- transcript-orphan slot (issue #154) — end --- */}
+        <section aria-labelledby="meeting-transcripts-heading">
+          <h2 id="meeting-transcripts-heading">Transcripts</h2>
+          {!transcripts ? (
+            <p className="muted" role="status">
+              Loading transcripts…
+            </p>
+          ) : transcripts.length === 0 ? (
+            <p className="muted">No transcript matched yet.</p>
+          ) : (
+            <ul className="card-list">
+              {transcripts.map((transcript) => (
+                <li key={transcript.id} className="card">
+                  <h3>{transcript.title}</h3>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        {meeting.occurrenceKey === null ? (
+          <TranscriptOrphanNotice meetingId={meeting.id} client={client} />
+        ) : null}
+      </ReadingDisclosure>
 
       {/* The ARIA tabs pattern, kept whole: exactly one tab is in the tab
           order (roving tabindex) and the arrow keys move between them. The
@@ -828,7 +799,7 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
             {readView.meeting.pendingCount === null ? (
               "Pending Action Item count unavailable"
             ) : (
-              <Link to={`/tasks?meetingId=${meeting.id}#action-items`}>
+              <Link to={`/meetings/${meeting.id}?tab=debrief#action-items`}>
                 Review {readView.meeting.pendingCount} action items
               </Link>
             )}
@@ -836,6 +807,16 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
         </>
       ) : null}
 
+      {readView &&
+        (tab === "brief" ? readView.meeting.brief : readView.meeting.debrief).status !== "ready" &&
+        (tab === "brief" ? readView.meeting.debrief : readView.meeting.brief).status ===
+          "ready" && (
+          <p>
+            <Link to={`/meetings/${meeting.id}?tab=${tab === "brief" ? "debrief" : "brief"}`}>
+              Read the available {tab === "brief" ? "Debrief" : "Brief"}
+            </Link>
+          </p>
+        )}
       {tab === "brief" ? (
         <div role="tabpanel" id="meeting-tabpanel-brief" aria-labelledby="meeting-tab-brief">
           <MeetingBriefTab meeting={meeting} client={client} />

@@ -17,6 +17,8 @@ export interface StaticServingOptions {
  */
 function looksLikeAsset(pathname: string): boolean {
   if (pathname.startsWith("/assets/")) return true;
+  // Saved Brief occurrence routes contain ISO timestamps, including .000Z.
+  if (/^\/meetings\/brief\/[^/]+$/.test(pathname)) return false;
   const lastSegment = pathname.slice(pathname.lastIndexOf("/") + 1);
   return /\.[A-Za-z0-9]+$/.test(lastSegment);
 }

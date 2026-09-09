@@ -26,11 +26,12 @@ type HermeticServer = { stop(): Promise<void> };
 let current: { file: string; server: HermeticServer } | null = null;
 
 export const test = base.extend<
-  { baseURL: string; hermeticServer: HermeticServer },
+  { baseURL: string; hermeticServer: HermeticServer; freshWorkspace: boolean },
   { hermeticServerTeardown: void }
 >({
   /* Every spec gets this worker's origin without touching @playwright/test. */
   baseURL: serverOrigin,
+  freshWorkspace: [false, { option: true }],
   hermeticServerTeardown: [
     async ({}, use) => {
       await use(undefined);
@@ -42,8 +43,8 @@ export const test = base.extend<
     { scope: "worker", auto: true },
   ],
   hermeticServer: [
-    async ({}, use, testInfo) => {
-      if (current && current.file !== testInfo.file) {
+    async ({ freshWorkspace }, use, testInfo) => {
+      if (current && (current.file !== testInfo.file || freshWorkspace)) {
         await current.server.stop();
         current = null;
       }

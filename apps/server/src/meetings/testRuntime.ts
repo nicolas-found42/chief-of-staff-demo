@@ -87,7 +87,10 @@ export function registerMeetingReadTestRoutes(
       const extraction: MeetingDebriefExtraction = {
         version: 1,
         summary: `We agreed on the September ${n} plan.`,
-        decisions: [],
+        decisions: Array.from({ length: n === 5 ? 8 : 1 }, (_, i) => ({
+          statement: `Proceed with plan ${n}, decision ${i + 1}.`,
+          evidence: `The participants agreed on decision ${i + 1}.`,
+        })),
         actionItems: Array.from({ length: n === 5 ? 11 : 9 }, (_, item) => ({
           title: `Follow up tomorrow ${n}-${item}`,
           owner: item % 2 ? "Bob" : null,

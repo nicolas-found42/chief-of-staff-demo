@@ -22,6 +22,7 @@ export function parseReviewState(raw: string | null): MeetingDebriefReviewState 
     if (!Array.isArray(parsed.review.droppedActionItems)) {
       parsed.review.droppedActionItems = [];
     }
+    parsed.email ??= null;
     return parsed;
   } catch {
     return null;
@@ -39,6 +40,7 @@ export function initialReviewState(
   return {
     version: 1,
     runId,
+    email: null,
     roster: {
       status: "unconfirmed",
       confirmedAt: null,

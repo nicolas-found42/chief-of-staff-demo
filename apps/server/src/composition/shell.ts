@@ -698,6 +698,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
           identity: transcriptIdentityService,
           ownerEmail: () => ownerOnboarding.outwardOwnerEmail(),
           materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
+          readActionItems: (input) => taskProduct.actionItems.forExtraction(input),
           log: (message) => console.log(`[meeting-debrief] ${message}`),
         })
       : null;
@@ -724,6 +725,7 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
          Issue #181: the Action Item Policy then decides whether any of them
          are obvious enough to become Tasks without review. */
       materializeActionItems: (handover) => materializeActionItemsUnderPolicy(handover),
+      readActionItems: (input) => taskProduct.actionItems.forExtraction(input),
       log: (message) => console.log(`[meeting-debrief] ${message}`),
     }).host;
 

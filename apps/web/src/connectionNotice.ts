@@ -10,8 +10,8 @@ import type { GoogleStatus } from "@chief-of-staff-demo/shared";
  * The wording names Tasks and Gmail but never a Module's pipeline. The string
  * this replaced — "runs will extract tasks but have nowhere to put them" —
  * described Transcript's stages, which is the Module leaking into a Shell
- * concern; Tasks and Gmail are Google surfaces, and the connection is the
- * Shell's only route to them.
+ * concern. Google Tasks and Gmail need this connection; canonical local Tasks
+ * remain usable without it, including inline Meeting review (issue #327).
  */
 export interface ConnectionNotice {
   text: string;
@@ -89,17 +89,17 @@ export function connectionNotice(status: GoogleStatus | null): ConnectionNotice 
   switch (status.state) {
     case "unconfigured":
       return {
-        text: "Google is not set up, so nothing can be created in Tasks or Gmail.",
+        text: "Google is not set up. Gmail and Google Tasks need a connection; local Tasks remain available.",
         action: "Set up Google",
       };
     case "disconnected":
       return {
-        text: "Google is not signed in, so nothing can be created in Tasks or Gmail.",
+        text: "Google is not signed in. Gmail and Google Tasks need a connection; local Tasks remain available.",
         action: "Sign in with Google",
       };
     case "expired":
       return {
-        text: "The saved Google sign-in has expired as expected. Reconnect to keep creating in Tasks or Gmail.",
+        text: "The saved Google sign-in has expired as expected. Reconnect for Gmail and Google Tasks; local Tasks remain available.",
         action: "Reconnect Google",
       };
     case "connected": {

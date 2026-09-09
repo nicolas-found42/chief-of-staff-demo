@@ -11,6 +11,8 @@ import type {
   MeetingBriefIndex,
   MeetingBriefPersonProfileReadModel,
   MeetingDebriefDetail,
+  MeetingDebriefEmailOptions,
+  MeetingDebriefEmailPreview,
   MeetingDebriefField,
   MeetingDebriefIndex,
   MeetingDebriefRecipient,
@@ -143,9 +145,25 @@ export const meetingsApi = {
       `/api/meeting-debrief/${encodeURIComponent(runId)}/recipients/${encodeURIComponent(profileId)}`,
       { method: "DELETE" },
     ),
-  meetingDebriefApprove: (runId: string) =>
+  meetingDebriefEmailOptions: (runId: string) =>
+    request<MeetingDebriefEmailOptions>(`/api/meeting-debrief/${encodeURIComponent(runId)}/email`),
+  meetingDebriefEmailPreview: (runId: string, selectedIds: string[]) =>
+    request<MeetingDebriefEmailPreview>(
+      `/api/meeting-debrief/${encodeURIComponent(runId)}/preview`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ selectedIds }),
+      },
+    ),
+  meetingDebriefApprove: (
+    runId: string,
+    preview?: Pick<MeetingDebriefEmailPreview, "selectedIds" | "revision">,
+  ) =>
     request<{ resumed: boolean }>(`/api/meeting-debrief/${encodeURIComponent(runId)}/approve`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(preview),
     }),
   meetingDebriefRedo: (runId: string) =>
     request<{ runId: string }>(`/api/meeting-debrief/${encodeURIComponent(runId)}/redo`, {
