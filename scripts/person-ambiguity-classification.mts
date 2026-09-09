@@ -8,8 +8,8 @@ import {
   AMBIGUITY_CAUSES,
   classifyPerson,
   summarizeAssignments,
+  toClassifiablePerson,
   type AmbiguityAssignment,
-  type ClassifiablePerson,
 } from "../apps/server/src/person-benchmark/ambiguity.js";
 
 /**
@@ -130,30 +130,7 @@ for (let index = 0; index < reportPaths.length; index += 1) {
   let ambiguous = 0;
   for (const person of report.people) {
     facts += person.completeness.judgements.length;
-    const assessment = person.assessment;
-    if (!assessment) throw new Error(`Report person ${person.slug} has no assessment.`);
-    const phases = assessment.phases;
-    if (!phases) throw new Error(`Report person ${person.slug} has no judge phases.`);
-    const classifiable: ClassifiablePerson = {
-      slug: person.slug,
-      claimCount: person.richness.claims,
-      referenceFailure: phases.reference.failure,
-      supportStatus: phases.support.status,
-      supportFailure: phases.support.failure,
-      unresolved: (phases.support.unresolvedFindings ?? []).map((entry) => ({
-        claimId: entry.claimId,
-        citedQuote: entry.citedQuote,
-      })),
-      overclaims: person.factualReliability.overclaims.map((entry) => ({
-        claimId: entry.claimId,
-        citedQuote: entry.citedQuote,
-      })),
-      integritySubjects: person.factualReliability.integrityFindings.map((entry) => entry.subject),
-      sourceContributionClaims: (person.sourceContributions ?? []).flatMap((contribution) =>
-        contribution.claimIds.map((claimId) => ({ claimId, family: contribution.family })),
-      ),
-      judgements: person.completeness.judgements.map((judgement) => ({ ...judgement })),
-    };
+    const classifiable = toClassifiablePerson(person);
     const personAssignments = classifyPerson(population, classifiable, (slug, factId) => {
       const statement = corpusStatements.get(`${slug}/${factId}`);
       if (statement !== undefined) return statement;

@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "description": "Prompt-eval cohorts for the issue-#236 paraphrase/cross-language contract (issue #270). Each group runs as one live recovery call. Retained cases pair a corpus reference statement with a verbatim dossier excerpt from run 6e82a760755b66a5 (judge 2026-09-06.9, inception/mercury-2.5-preview); the excerpt stands in for its claim, so the gate is decided-vs-parked, not exact-verdict replay. Control cases are synthetic and labeled as such.",
+  "corpusVersion": "14bca86ee0b97d28",
+  "retainedRunId": "6e82a760755b66a5",
+  "retainedReport": "artifacts/person-benchmark/fixed-documents-expanded-6e82a760755b66a5.json",
+  "groups": [
+    {
+      "id": "cross-language",
+      "person": "Anders Danielsson",
+      "why": "English reference statements against Swedish dossier claims: the judge must decide across the language gap, never park on it.",
+      "references": [
+        {
+          "factId": "skanska-ceo",
+          "statement": "Anders Danielsson took office as president and chief executive of Skanska on 1 January 2018.",
+          "effectiveFrom": "2018-01-01",
+          "effectiveTo": null
+        },
+        {
+          "factId": "prior-role",
+          "statement": "Before becoming chief executive he was deputy chief executive responsible for Skanska's construction units in the United States and for its infrastructure development.",
+          "effectiveFrom": null,
+          "effectiveTo": "2017"
+        },
+        {
+          "factId": "joined-1991",
+          "statement": "He was employed at Skanska in 1991 after graduating from the KTH Royal Institute of Technology.",
+          "effectiveFrom": "1991",
+          "effectiveTo": null
+        },
+        {
+          "factId": "sweden-head",
+          "statement": "He became head of Skanska's Swedish business in 2008 and joined group management in 2013 with responsibility for the Nordics, the United Kingdom and the United States.",
+          "effectiveFrom": "2008",
+          "effectiveTo": "2013"
+        },
+        {
+          "factId": "subsidiary-ceo",
+          "statement": "He has been chief executive of Skanska Norge and Skanska Sverige as well as deputy chief executive of Skanska AB.",
+          "effectiveFrom": null,
+          "effectiveTo": null
+        },
+        {
+          "factId": "profitability-focus",
+          "statement": "Svenska Dagbladet's 2017 report on his appointment was headlined on his strong profitability focus, and a companion piece asked how Skanska would come through the crisis.",
+          "effectiveFrom": "2017-12-07",
+          "effectiveTo": null
+        }
+      ],
+      "claims": [
+        {
+          "id": "b913c8365a8210e760a8e514b8e3df2f",
+          "statement": "verkställande direktör och koncernchef för Skanska"
+        },
+        {
+          "id": "ce088838da6be4c5c2c2c1685fa30af7",
+          "statement": "vice VD med ansvar för Skanskas byggenheter i USA och Skanskas infrastrukturutveckling"
+        },
+        {
+          "id": "9ec4ce9851a77670c3275866d9c308a2",
+          "statement": "anställdes på Skanska 1991"
+        },
+        {
+          "id": "a203a483eea41a2273ba09c7213467ed",
+          "statement": "2008 blev han Sverigechef"
+        },
+        {
+          "id": "e80cae3d06a215f34b7613d4f5f2cbcf",
+          "statement": "VD för Skanska Norge och Skanska Sverige"
+        },
+        {
+          "id": "923248a83fd30aba2ac424f157978f5c",
+          "statement": "Har starkt lönsamhetsfokus"
+        }
+      ],
+      "expect": {
+        "skanska-ceo": ["recovered", "partial"],
+        "prior-role": ["recovered", "partial"],
+        "joined-1991": ["recovered", "partial"],
+        "sweden-head": ["recovered", "partial"],
+        "subsidiary-ceo": ["recovered", "partial"],
+        "profitability-focus": ["recovered", "partial"]
+      },
+      "retainedVerdicts": {
+        "skanska-ceo": "recovered",
+        "prior-role": "partial",
+        "joined-1991": "partial",
+        "sweden-head": "partial",
+        "subsidiary-ceo": "partial",
+        "profitability-focus": "partial"
+      },
+      "corpusSlug": "anders-danielsson"
+    },
+    {
+      "id": "paraphrase-sally",
+      "person": "Sally Kornbluth",
+      "why": "Same-language rewordings: reordered dates, expanded institution names, and dropped subordinate clauses must still decide.",
+      "references": [
+        {
+          "factId": "mit-president",
+          "statement": "Sally Kornbluth became the 18th president of MIT in January 2023.",
+          "effectiveFrom": "2023-01-01",
+          "effectiveTo": null
+        },
+        {
+          "factId": "duke-provost",
+          "statement": "She was provost of Duke University from 1 July 2014 to 31 December 2022.",
+          "effectiveFrom": "2014-07-01",
+          "effectiveTo": "2022-12-31"
+        },
+        {
+          "factId": "research-area",
+          "statement": "Her research concerns cell growth and programmed cell death, including how cancer cells evade apoptosis and the role of caspase-2 in regulating the length of female fertility in vertebrates.",
+          "effectiveFrom": null,
+          "effectiveTo": null
+        }
+      ],
+      "claims": [
+        {
+          "id": "79d04f66534cba3125b42f63ef81ddc8",
+          "statement": "Sally Kornbluth is the 18th President of the Massachusetts Institute of Technology since January 2023."
+        },
+        {
+          "id": "fef90b17dd5fc2a265904be36642b05f",
+          "statement": "She served as provost of Duke University from July 2014 to December 2022."
+        },
+        {
+          "id": "281cc3668c401fb8531958e9ba5e6639",
+          "statement": "Her research focuses on cell growth and programmed cell death and how cancer cells evade apoptosis."
+        }
+      ],
+      "expect": {
+        "mit-president": ["recovered", "partial"],
+        "duke-provost": ["recovered", "partial"],
+        "research-area": ["recovered", "partial"]
+      },
+      "retainedVerdicts": {
+        "mit-president": "recovered",
+        "duke-provost": "recovered",
+        "research-area": "partial"
+      },
+      "corpusSlug": "sally-kornbluth"
+    },
+    {
+      "id": "paraphrase-kristalina",
+      "person": "Kristalina Georgieva",
+      "why": "Heavier paraphrases: renamed institutions, reframed roles, and claims that add context beyond the reference.",
+      "references": [
+        {
+          "factId": "imf-md",
+          "statement": "Kristalina Georgieva has served as the 12th Managing Director of the International Monetary Fund since 1 October 2019, the first person from an emerging market economy to lead the institution.",
+          "effectiveFrom": "2019-10-01",
+          "effectiveTo": null
+        },
+        {
+          "factId": "world-bank-ceo",
+          "statement": "She was Chief Executive of the World Bank Group from 2 January 2017 to 1 October 2019, a post established for her and abolished afterwards, and acting President of the World Bank Group from 1 February to 8 April 2019.",
+          "effectiveFrom": "2017-01-02",
+          "effectiveTo": "2019-10-01"
+        },
+        {
+          "factId": "ec-budget",
+          "statement": "As European Commissioner for Budget and Human Resources from 1 November 2014 to 31 December 2016 she managed the EU's budget and staff through the aftermath of the Eurozone debt crisis.",
+          "effectiveFrom": "2014-11-01",
+          "effectiveTo": "2016-12-31"
+        },
+        {
+          "factId": "education",
+          "statement": "Her BA, MA and PhD are all from the University of National and World Economy in Sofia.",
+          "effectiveFrom": null,
+          "effectiveTo": null
+        }
+      ],
+      "claims": [
+        {
+          "id": "dd24a37b9e3c66f6ef954730415955d4",
+          "statement": "Georgieva has served as the 12th managing director of the International Monetary Fund since 1 October 2019."
+        },
+        {
+          "id": "022695494cf0ce0416595dc06343d0c6",
+          "statement": "Georgieva served as the first chief executive officer of the World Bank from 2 January 2017 to 1 October 2019."
+        },
+        {
+          "id": "9ccfc621b3752e2fbe78218244b8ac92",
+          "statement": "She managed the EU's budget and staff through the aftermath of the Eurozone debt crisis and during the 2015 refugee crisis."
+        },
+        {
+          "id": "ffb70d739e5a341fda3b3dbec4d28f01",
+          "statement": "Georgieva holds a PhD in economics and an MA in Political Economy and Sociology from the Karl Marx Higher Institute of Economics (now called University of National and World Economy) in Sofia."
+        }
+      ],
+      "expect": {
+        "imf-md": ["recovered", "partial"],
+        "world-bank-ceo": ["recovered", "partial"],
+        "ec-budget": ["recovered", "partial"],
+        "education": ["recovered", "partial"]
+      },
+      "retainedVerdicts": {
+        "imf-md": "partial",
+        "world-bank-ceo": "partial",
+        "ec-budget": "partial",
+        "education": "partial"
+      },
+      "corpusSlug": "kristalina-georgieva"
+    },
+    {
+      "id": "controls",
+      "person": "Control Cohort",
+      "why": "Synthetic guard controls: a broadening must not recover, an unaddressed fact must stay missing, and genuinely unsettled evidence must stay ambiguous.",
+      "references": [
+        {
+          "factId": "control-broadening",
+          "statement": "Sally Kornbluth served as provost of Duke University in 2020.",
+          "effectiveFrom": "2020-01-01",
+          "effectiveTo": "2020-12-31"
+        },
+        {
+          "factId": "control-missing",
+          "statement": "Anders Danielsson took office as president and chief executive of Skanska on 1 January 2018.",
+          "effectiveFrom": "2018-01-01",
+          "effectiveTo": null
+        },
+        {
+          "factId": "control-genuine",
+          "statement": "Maya Chen became chief executive of Atlas in March 2021.",
+          "effectiveFrom": "2021-03-01",
+          "effectiveTo": null
+        }
+      ],
+      "claims": [
+        {
+          "id": "control-broadening-claim",
+          "statement": "She served as provost of Duke University from July 2014 to December 2022."
+        },
+        {
+          "id": "control-ambiguous-a",
+          "statement": "Maya Chen joined Atlas in early 2021."
+        },
+        {
+          "id": "control-ambiguous-b",
+          "statement": "Atlas announced fresh leadership in March 2021, naming an outsider as chief executive."
+        }
+      ],
+      "expect": {
+        "control-broadening": ["missing"],
+        "control-missing": ["missing"],
+        "control-genuine": ["ambiguous"]
+      },
+      "retainedVerdicts": null,
+      "corpusSlug": "achim-steiner"
+    }
+  ]
+}

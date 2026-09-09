@@ -22,7 +22,7 @@ import {
 import { archivedCaptureDate, type readPersonSource } from "../person-profile/research-readers.js";
 import { isolatedLookup } from "./corpus.js";
 import { checkIntegrity, criticalCount } from "./integrity.js";
-import { judgePerson } from "./judge.js";
+import { judgePerson, type JudgeContract } from "./judge.js";
 import { sourceContributions } from "./source-contributions.js";
 
 /**
@@ -315,6 +315,7 @@ export async function assessPerson(
     elapsedMilliseconds: number;
     failure?: string | null;
   },
+  contract?: JudgeContract,
 ): Promise<BenchmarkPersonResult> {
   const { dossier, sources, operation } = evidence;
   let failure =
@@ -344,7 +345,7 @@ export async function assessPerson(
     });
   };
   try {
-    judged = await judgePerson(observedJudge, person, dossier, sources);
+    judged = await judgePerson(observedJudge, person, dossier, sources, contract);
     judgeCompleted = judged.complete;
     if (!judgeCompleted) failure ??= judged.incompleteReason ?? "Judge assessment was incomplete.";
   } catch (error) {
