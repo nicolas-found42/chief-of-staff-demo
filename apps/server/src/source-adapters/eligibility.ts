@@ -717,7 +717,7 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     cost: "anonymous",
     status: "in-production",
     observed:
-      "Observed 2026-09-09: diler.tube and videohaven.com answered the captions listing anonymously (HTTP 200 JSON); diler.tube served a 43 KB English WebVTT file anonymously, and videos without captions answer HTTP 200 with an empty listing. Research prefers publisher captions over automatic ones and reads the watch page when no captions exist.",
+      "Observed 2026-09-09: diler.tube answered the captions listing anonymously (HTTP 200 JSON), served a 43 KB English WebVTT file anonymously, and answers HTTP 200 with an empty listing for videos without captions. Research prefers publisher captions over automatic ones and reads the watch page when no captions exist.",
     probe: "https://diler.tube/api/v1/videos/5b40975c-a305-4a74-bb16-e344b62dff49/captions",
     expect: json,
   },

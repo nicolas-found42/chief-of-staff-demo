@@ -16,10 +16,11 @@ import {
  *   gap and only a format-faithful control exercises the retention path.
  * - diler.tube (a public PeerTube instance) answers the captions listing and
  *   serves the WebVTT file anonymously. The VTT below is a verbatim excerpt
- *   of Hilary Cottam's TED talk captions captured live; the retained passage
- *   supports the authored `agency-fragmentation` reference fact in
- *   benchmark/person-research/people/hilary-cottam.json (the same talk, on
- *   the crisis-family support system failing families).
+ *   of Hilary Cottam's TED talk captions captured live; the retained
+ *   73-services passage is the spoken statement behind the authored
+ *   `agency-fragmentation` reference fact's "more than 70 different
+ *   agencies" framing in benchmark/person-research/people/hilary-cottam.json
+ *   (73 > 70, same talk, same fragmented-support claim).
  */
 
 const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
@@ -58,7 +59,8 @@ const PEERTUBE_AUTO_FILE =
 const PEERTUBE_MANUAL_FILE = "https://diler.tube/lazy-static/video-captions/manual-en.vtt";
 
 /* Verbatim excerpt of the live-captured WebVTT (diler.tube, 2026-09-09):
-   header, the opening cues, then the cost-of-the-system passage. */
+   header, the opening cues, the 73-services passage, then the
+   cost-of-the-system passage. */
 const cottamVtt = `WEBVTT
 
 00:12.500 --> 00:14.460
@@ -96,6 +98,21 @@ the playground's pretty desolate and never used.
 
 00:46.740 --> 00:49.640
 And inside Ella's house, the tension is palpable
+
+01:29.460 --> 01:30.620
+But when I met Ella,
+
+01:31.000 --> 01:34.460
+there were 73 different services on offer for her and her family
+
+01:34.460 --> 01:35.620
+in the city where she lives.
+
+01:36.160 --> 01:39.900
+73 different services run out of 24 departments in one city.
+
+01:40.420 --> 01:43.120
+And Ella and her partners and her children were known to most of them.
 
 02:59.260 --> 03:03.040
 Well, the first thing I learned is that cost is a really slippery concept,
@@ -228,9 +245,10 @@ test("a PeerTube caption file retains real speech supporting the authored talk c
     }),
   );
 
-  /* Verbatim speech from Cottam's talk, the same talk the authored
-     `agency-fragmentation` reference fact draws on: the crisis-family
-     support system absorbing money without touching the family. */
+  /* Verbatim speech from Cottam's talk stating the claim behind the authored
+     `agency-fragmentation` reference fact: 73 different services run out of
+     24 departments for one family is the spoken form of the description's
+     "more than 70 different agencies" framing. */
   expect(result).toMatchObject({
     access: "retrieved",
     completeness: "full",
@@ -244,13 +262,17 @@ test("a PeerTube caption file retains real speech supporting the authored talk c
   expect(result.text).toContain(
     "not one penny of this money actually touches Ella's family in a way that makes a difference",
   );
+  expect(result.text).toContain(
+    "there were 73 different services on offer for her and her family in the city where she lives",
+  );
+  expect(result.text).toContain("73 different services run out of 24 departments in one city");
   /* Timestamp anchors survive into the retained evidence; nothing presents a
      timestamp — or a voice label — as speaker identification. */
   expect(result.anchors).toHaveLength(2);
   expect(result.anchors[0]).toEqual({ kind: "timestamp", value: "00:12", offset: 0 });
-  expect(result.anchors[1]?.value).toBe("02:59");
+  expect(result.anchors[1]?.value).toBe("01:29");
   expect(result.text.slice(result.anchors[1]?.offset ?? 0)).toMatch(
-    /^Well, the first thing I learned/,
+    /^But when I met Ella, there were 73 different services/,
   );
   expect(result.anchors.every((anchor) => anchor.kind === "timestamp")).toBe(true);
   expect(recorder.all()).toHaveLength(0);
@@ -309,6 +331,30 @@ test("a PeerTube video with no caption files records the gap and reads the page"
     collector: "caption-reader",
   });
   expect(gaps[0]?.reason).toContain("lists no caption files");
+});
+
+test("a PeerTube caption file answering an empty body records the gap and falls back", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-spoken-peertube-empty");
+  const result = await readPersonSource(
+    PEERTUBE_WATCH,
+    "",
+    ports(recorder, async (url) => {
+      if (url.includes("/api/v1/videos/"))
+        return response(url, 200, "application/json", peertubeListing([autoTrack]));
+      if (url.includes("lazy-static/video-captions")) return response(url, 200, "text/vtt", "");
+      /* Watch-page stand-in: the fallback retains page text, never a transcript. */
+      return response(url, 200, "text/plain", "A talk about relationships.");
+    }),
+  );
+
+  expect(result).toMatchObject({
+    access: "retrieved",
+    route: "text-reader",
+    text: "A talk about relationships.",
+  });
+  const gaps = recorder.all().filter((attempt) => attempt.code === "captions-missing");
+  expect(gaps).toHaveLength(1);
+  expect(gaps[0]?.reason).toContain("HTTP 200 with an empty body");
 });
 
 test("a PeerTube listing entry without a file URL records what was observed", async () => {
