@@ -163,6 +163,17 @@ describe("Source HTTP pooled dispatch", () => {
     expect(failure.message).toBe("This operation was aborted");
   });
 
+  it("propagates a DNS failure as a fetch error instead of crashing", async () => {
+    /* autoSelectFamily asks the resolver for the all:true address list; a
+       resolver error arriving with no address list used to throw a TypeError
+       from inside the connect callback and take the process down (live arm,
+       2026-09-09). It must surface as an ordinary fetch failure. */
+    const { fetchText } = isolatedFetch();
+    await expect(
+      fetchText("https://pooled-lookup-dns-failure.invalid/", { timeoutMs: 5_000 }),
+    ).rejects.toThrow();
+  });
+
   it("still blocks non-public targets before any socket opens", async () => {
     const origin = await startOrigin("hello");
     const { fetchText } = isolatedFetch(true);
