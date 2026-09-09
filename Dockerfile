@@ -47,7 +47,7 @@ RUN apt-get update \
   && cmake --build /tmp/whisper-build --config Release --target whisper-cli --parallel 2
 
 # This release tag pins Playwright's Chromium revision and its system libraries.
-FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e AS runtime
+FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 AS runtime
 ARG YT_DLP_VERSION=2025.08.22
 ARG YOUTUBE_TRANSCRIPT_API_VERSION=1.2.2
 ARG INSTALOADER_VERSION=4.14.2
@@ -73,7 +73,7 @@ RUN apt-get update \
   "instaloader==${INSTALOADER_VERSION}" \
   "youtube-transcript-api==${YOUTUBE_TRANSCRIPT_API_VERSION}" \
   "yt-dlp==${YT_DLP_VERSION}" \
-  && chromium_path="$(find /ms-playwright -type f \( -path '*/chrome-linux/chrome' -o -path '*/chrome-linux64/chrome' \) | head -n 1)" \
+  && chromium_path="$(find /ms-playwright -type f \( -path '*/chrome-linux/chrome' -o -path '*/chrome-linux64/chrome' -o -path '*/chrome-linux-arm64/chrome' \) | head -n 1)" \
   && test -n "$chromium_path" \
   && ln -s "$chromium_path" /usr/local/bin/chromium \
   && rm -rf /var/lib/apt/lists/*
@@ -97,7 +97,7 @@ COPY --from=build /app/apps/web/dist apps/web/dist
 
 # Hermetic runtime smoke checks: command boundaries only, with no social-network calls.
 RUN chromium --version \
-  | grep -F "151.0.7922.34" \
+  | grep -F "153.0.8010.12" \
   && printf '%s\n' '<!doctype html><html><body><h1>browser-render-probe</h1></body></html>' > /tmp/browser-render-probe.html \
   && chromium --headless --no-sandbox --disable-gpu --dump-dom "file:///tmp/browser-render-probe.html" 2>/dev/null | grep -F "browser-render-probe" \
   && rm -f /tmp/browser-render-probe.html \

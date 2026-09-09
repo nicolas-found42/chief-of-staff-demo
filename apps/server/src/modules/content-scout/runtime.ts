@@ -26,8 +26,8 @@ const DEFINITIONS: RuntimeDefinition[] = [
     category: "browser",
     command: "chromium",
     args: ["--version"],
-    pinnedVersion: "151.0.7922.34",
-    expectedVersionFragment: "151.0.7922.34",
+    pinnedVersion: "153.0.8010.12",
+    expectedVersionFragment: "153.0.8010.12",
     requiredBy: ["Website JavaScript fallback"],
   },
   {

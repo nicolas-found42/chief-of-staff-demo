@@ -1283,7 +1283,7 @@ describe("Content Scout frontier contracts", () => {
   it("smoke-checks each production command boundary once without a live source call", async () => {
     const calls: string[] = [];
     const outputByCommand = new Map([
-      ["chromium --version", "Chromium 151.0.7922.34"],
+      ["chromium --version", "Chromium 153.0.8010.12"],
       ["python3 --version", "Python 3.12.3"],
       [
         "python3 -c import importlib.metadata; print(importlib.metadata.version('youtube-transcript-api'))",

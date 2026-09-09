@@ -20,10 +20,10 @@
     "luxon": "^3.7.2",
     "mammoth": "^1.12.2",
     "pdfjs-dist": "^6.3.289",
+    "playwright-core": "^1.63.0",
     "rss-parser": "^3.13.0",
-    "playwright-core": "^1.62.1",
-    "zod-to-json-schema": "^3.25.2",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "tsx": "^4.23.13"
