@@ -504,6 +504,9 @@ An evaluation of retained Person Research evidence against fixed references and 
 A complete assessment covers reference recovery, support and usefulness; reference verdicts are
 not credited until support/usefulness assessment completes and evidence guards pass.
 _Avoid_: Research completion, overall person score
+**Acceptance pair**:
+The frozen corpus plus judge configuration an incumbent/expanded comparison holds fixed: corpus `14bca86ee0b97d28` with judge `z-ai/glm-5.3-flash` at `2026-09-06.10`, prompt `2026-09-06.4`, collector `person-research 2026-09-06` (ADR-0079). A run's provenance records the pair alongside the pipeline reconstruction it ran.
+_Avoid_: Model pin (that covers research models too), baseline (that names the incumbent arm, not the frozen conditions)
 
 **Person Research Failure**:
 A recorded inability to complete a particular part of researching a person, identifying the failed

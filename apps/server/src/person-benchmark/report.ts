@@ -550,6 +550,22 @@ function contributionTotals(
   };
 }
 
+/* The usage row reports what the model boundary actually supplied: character
+   counts always, provider token halves and charge only when observed. An
+   unobserved half serializes as null, never as a fake 0. */
+function measuredUsage(usage: NonNullable<BenchmarkReport["provenance"]["usage"]>): string {
+  const characters = `${String(usage.inputCharacters)} input characters, ${String(usage.outputCharacters)} output characters`;
+  const tokens =
+    usage.tokens === "unavailable"
+      ? "tokens unavailable from the model boundary"
+      : `tokens ${usage.tokens.input === null ? "unavailable" : String(usage.tokens.input)} in / ${usage.tokens.output === null ? "unavailable" : String(usage.tokens.output)} out`;
+  const cost =
+    usage.cost === "unavailable"
+      ? "cost unavailable from the model boundary"
+      : `cost $${String(usage.cost)}`;
+  return `${characters}; ${tokens}; ${cost}`;
+}
+
 /** The readable report. Deliberately plain: it is read in a terminal and in a diff. */
 export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[]): string {
   const byPerson = new Map(people.map((person) => [person.slug, person]));
@@ -607,7 +623,7 @@ export function renderReport(report: BenchmarkReport, people: BenchmarkPerson[])
     [
       "Measured usage",
       report.provenance.usage
-        ? `${String(report.provenance.usage.inputCharacters)} input characters, ${String(report.provenance.usage.outputCharacters)} output characters; tokens and cost unavailable from the model boundary`
+        ? measuredUsage(report.provenance.usage)
         : "unavailable from the model boundary",
     ],
   ];
