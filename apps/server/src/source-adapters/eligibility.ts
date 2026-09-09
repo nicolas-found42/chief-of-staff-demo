@@ -740,6 +740,17 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     observed:
       "Live 2026-09-09 (#245): the Apple directory answered anonymously with a publisher feedUrl, the publisher feed answered 200 to the transport's identifying UA carrying podcast:transcript links, and the linked SRT answered 200 (113,799 bytes) with cue timestamps. A second directory feed carried no transcript tag at all, which retains descriptions instead.",
   },
+  {
+    route: "local-transcription",
+    family: "spoken-evidence",
+    terms:
+      "Local transcription would acquire spoken audio (yt-dlp with ffmpeg) and transcribe it on the host with whisper-cli; no account, key, payment, or sign-in is involved.",
+    documentation: "https://github.com/ggml-org/whisper.cpp",
+    cost: "anonymous",
+    status: "unavailable",
+    exclusion:
+      "Observed 2026-09-09: person research performs no audio acquisition or subprocess transcription — its readers are bounded anonymous GETs — and no usable transcription runtime is provisioned. This host carries yt-dlp and ffmpeg but no whisper-cli and no model weights; the runtime image ships whisper-cli (whisper-cpp v1.7.6) with no model file provisioned at /usr/local/share/whisper-cpp-model.bin. Caption failures fall back to the publisher's description and record transcription-failed with these requirements (issue #246).",
+  },
 ];
 
 export interface EligibilityProbeResult {

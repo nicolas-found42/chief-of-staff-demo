@@ -84,6 +84,14 @@ export interface SourceReadResult {
    * established no rights basis at all — which is not the same as free.
    */
   rights: PersonSourceRights | null;
+  /**
+   * Why this read produced no usable text, set only where the reader knows a
+   * cause more specific than the access value. The operation resolves the
+   * lead with it, so a caption failure names the unavailable transcription
+   * runtime instead of collapsing into a generic unreadable-page reason
+   * (issue #246). Undefined wherever the retained text speaks for itself.
+   */
+  failureReason?: string;
   finalUrl: string;
   /**
    * Individuals a professional or institutional record names, by name, with
@@ -1547,6 +1555,74 @@ function parseTranscriptSegments(body: string): { text: string; anchors: SourceA
 /* Spoken evidence                                                      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * What supplying local transcription would take (issue #246, outcome B).
+ *
+ * Person research readers are bounded anonymous GETs: no audio acquisition,
+ * no subprocess, no transcription budget. The runtime image ships whisper-cli
+ * (whisper-cpp v1.7.6) with yt-dlp and ffmpeg, but no whisper model weights
+ * are provisioned (the `/usr/local/share/whisper-cpp-model.bin` path the
+ * content-scout transcriber references is absent), so even the existing media
+ * runtime cannot transcribe today. This text is the actionable half of every
+ * caption-failure diagnostic below.
+ */
+const TRANSCRIPTION_REQUIREMENTS =
+  "Supplying it takes a wired local-transcription route: audio acquisition " +
+  "(yt-dlp 2025.08.22 + ffmpeg 6.1.1) with whisper-cli (whisper-cpp v1.7.6) " +
+  "and provisioned model weights at /usr/local/share/whisper-cpp-model.bin. " +
+  "Person research has no such route, and no model weights are provisioned.";
+
+/**
+ * Name the missing transcript-generation capability as its own failure,
+ * separate from the caption-acquisition record that precedes it: the former
+ * is a fact about the video (no publisher captions), the latter a fact about
+ * this pipeline (nothing on the host can generate a transcript). Reuses the
+ * existing `transcription-failed` code; no new vocabulary.
+ */
+function recordTranscriptionUnavailable(
+  context: ReadContext,
+  target: string,
+  reason: string,
+  observed?: { status: number; finalUrl: string; bytes: number },
+): void {
+  context.recorder.record({
+    stage: "transcription",
+    code: "transcription-failed",
+    outcome: "failed",
+    recovery: "stopped",
+    cause: "observed",
+    target,
+    targetKind: "media",
+    collector: "caption-reader",
+    reason,
+    attemptOf: context.attemptOf,
+    ...(observed ? { observed } : {}),
+    impact: "Spoken audio without publisher captions contributed no transcript.",
+    remediation: TRANSCRIPTION_REQUIREMENTS,
+    recoveryStopped: "No local transcription runtime is available to person research.",
+  });
+}
+
+/**
+ * Carry a caption failure's specific reason onto a watch-page fallback that
+ * produced no usable text, so the lead record and the coverage plan name the
+ * transcription gap instead of a generic unreadable page. A fallback that
+ * retained text, or that already carries a more specific reason, is left
+ * alone: the retained text speaks for itself.
+ */
+function withSpokenFailureReason(
+  fallback: SourceReadResult,
+  failureReason: string | undefined,
+): SourceReadResult {
+  if (
+    failureReason &&
+    (fallback.access !== "retrieved" || !fallback.text.trim()) &&
+    !fallback.failureReason
+  )
+    fallback.failureReason = failureReason;
+  return fallback;
+}
+
 function isVideoPage(url: string): boolean {
   return /youtube\.com\/watch|youtu\.be\/|\/videos\/watch\//.test(url);
 }
@@ -1612,7 +1688,18 @@ async function readSpoken(url: string, context: ReadContext): Promise<SourceRead
         "Local transcription would be the next route; it is not wired into person research.",
       recoveryStopped: "No local transcription runtime is available to person research.",
     });
-    return readVideoDescription(url, page, context);
+    recordTranscriptionUnavailable(
+      context,
+      url,
+      "The video page lists no caption tracks, and no local transcription runtime is wired into person research to generate a transcript instead.",
+      { status: page.status, finalUrl: page.url, bytes: page.body.length },
+    );
+    return readVideoDescription(
+      url,
+      page,
+      context,
+      `The video page lists no caption tracks and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`,
+    );
   }
   /* Publisher captions before automatic speech recognition: an ASR track is
      usable evidence but a different kind of it, and the note travels with the
@@ -1661,10 +1748,52 @@ async function readSpoken(url: string, context: ReadContext): Promise<SourceRead
           }
         : {}),
     });
-    return readVideoDescription(url, page, context);
+    if (emptyBody)
+      recordTranscriptionUnavailable(
+        context,
+        track.baseUrl,
+        "The anonymous timed-text route returned HTTP 200 with an empty body, and no local transcription runtime is wired into person research to generate a transcript instead.",
+        { status: captions.status, finalUrl: captions.url, bytes: captions.body.length },
+      );
+    return readVideoDescription(
+      url,
+      page,
+      context,
+      emptyBody
+        ? `The listed caption track returned HTTP 200 with an empty body and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`
+        : undefined,
+    );
   }
   const { text, anchors } = parseTimedText(captions.body);
-  if (!text.trim()) return readVideoDescription(url, page, context);
+  if (!text.trim()) {
+    context.recorder.record({
+      stage: "caption-acquisition",
+      code: "captions-missing",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: track.baseUrl,
+      targetKind: "media",
+      collector: "caption-reader",
+      reason: "The caption track held no speech cues.",
+      attemptOf: context.attemptOf,
+      observed: { status: captions.status, finalUrl: captions.url, bytes: captions.body.length },
+      impact: "A listed caption track did not become text; the description was used instead.",
+      remediation: "Fetch the track URL directly to see what the source returns.",
+    });
+    recordTranscriptionUnavailable(
+      context,
+      track.baseUrl,
+      "The caption track held no speech cues, and no local transcription runtime is wired into person research to generate a transcript instead.",
+      { status: captions.status, finalUrl: captions.url, bytes: captions.body.length },
+    );
+    return readVideoDescription(
+      url,
+      page,
+      context,
+      `The listed caption track held no speech cues and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`,
+    );
+  }
   return {
     text: text.slice(0, MAX_TEXT),
     capturedAt: null,
@@ -1690,6 +1819,7 @@ async function readVideoDescription(
   url: string,
   page: PublicHttpResponse,
   context: ReadContext,
+  unavailableReason?: string,
 ): Promise<SourceReadResult> {
   const description = /"shortDescription":"((?:[^"\\]|\\.)*)"/.exec(page.body)?.[1];
   const title = /"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/.exec(page.body)?.[1];
@@ -1699,7 +1829,12 @@ async function readVideoDescription(
     .join("\n\n")
     .trim();
   if (!text)
-    return unavailable("spoken-evidence", "caption-reader", "failed", context.snippet, url);
+    return unavailableReason
+      ? {
+          ...unavailable("spoken-evidence", "caption-reader", "failed", context.snippet, url),
+          failureReason: unavailableReason,
+        }
+      : unavailable("spoken-evidence", "caption-reader", "failed", context.snippet, url);
   return {
     text: text.slice(0, MAX_TEXT),
     capturedAt: null,
@@ -1775,7 +1910,16 @@ async function readPeerTubeSpoken(url: string, context: ReadContext): Promise<So
         "Local transcription would be the next route; it is not wired into person research.",
       recoveryStopped: "No local transcription runtime is available to person research.",
     });
-    return readWeb(url, "spoken-evidence", context);
+    recordTranscriptionUnavailable(
+      context,
+      listingUrl,
+      "The instance lists no caption files for this video, and no local transcription runtime is wired into person research to generate a transcript instead.",
+      { status: listing.status, finalUrl: listing.url, bytes: listing.body.length },
+    );
+    return withSpokenFailureReason(
+      await readWeb(url, "spoken-evidence", context),
+      `The instance lists no caption files for this video and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`,
+    );
   }
   /* Publisher captions before automatic speech recognition, then English: an
      ASR track is usable evidence but a different kind of it, and the note
@@ -1801,7 +1945,16 @@ async function readPeerTubeSpoken(url: string, context: ReadContext): Promise<So
       impact: "A listed caption file did not become text; the watch page is read instead.",
       remediation: `Reproduce with: curl -sS '${listingUrl}'`,
     });
-    return readWeb(url, "spoken-evidence", context);
+    recordTranscriptionUnavailable(
+      context,
+      listingUrl,
+      "The instance lists a caption file with no downloadable URL, and no local transcription runtime is wired into person research to generate a transcript instead.",
+      { status: listing.status, finalUrl: listing.url, bytes: listing.body.length },
+    );
+    return withSpokenFailureReason(
+      await readWeb(url, "spoken-evidence", context),
+      `The instance lists a caption file with no downloadable URL and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`,
+    );
   }
   const captions = await request(track.fileUrl, context, "caption-reader", "text/vtt");
   const emptyBody = !!captions && captions.status < 400 && captions.body.trim() === "";
@@ -1833,7 +1986,19 @@ async function readPeerTubeSpoken(url: string, context: ReadContext): Promise<So
       impact: "A listed caption file did not become text; the watch page is read instead.",
       remediation: "Fetch the caption file URL directly to see what the source returns.",
     });
-    return readWeb(url, "spoken-evidence", context);
+    if (emptyBody)
+      recordTranscriptionUnavailable(
+        context,
+        track.fileUrl,
+        "The instance lists a caption file, and the anonymous caption route returned HTTP 200 with an empty body, and no local transcription runtime is wired into person research to generate a transcript instead.",
+        { status: captions.status, finalUrl: captions.url, bytes: captions.body.length },
+      );
+    return withSpokenFailureReason(
+      await readWeb(url, "spoken-evidence", context),
+      emptyBody
+        ? `The listed caption file returned HTTP 200 with an empty body and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`
+        : undefined,
+    );
   }
   const { text, anchors } = parseVtt(captions.body);
   if (!text.trim()) {
@@ -1852,7 +2017,16 @@ async function readPeerTubeSpoken(url: string, context: ReadContext): Promise<So
       impact: "A listed caption file did not become text; the watch page is read instead.",
       remediation: `Reproduce with: curl -sS '${track.fileUrl}'`,
     });
-    return readWeb(url, "spoken-evidence", context);
+    recordTranscriptionUnavailable(
+      context,
+      track.fileUrl,
+      "The caption file held no speech cues, and no local transcription runtime is wired into person research to generate a transcript instead.",
+      { status: captions.status, finalUrl: captions.url, bytes: captions.body.length },
+    );
+    return withSpokenFailureReason(
+      await readWeb(url, "spoken-evidence", context),
+      `The listed caption file held no speech cues and no local transcription runtime is available to person research. ${TRANSCRIPTION_REQUIREMENTS}`,
+    );
   }
   return {
     text: text.slice(0, MAX_TEXT),

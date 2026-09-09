@@ -20,7 +20,7 @@ const COLLECTOR_VERSIONS = {
   "text-reader": "2026-09-06",
   "document-reader": "2026-09-06",
   "feed-reader": "2026-09-06",
-  "caption-reader": "2026-09-06",
+  "caption-reader": "2026-09-09",
   "social-reader": "2026-09-06",
   "record-reader": "2026-09-06",
   "archive-reader": "2026-09-06",

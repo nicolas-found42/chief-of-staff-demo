@@ -57,6 +57,47 @@ export function buildCoveragePlan(): PersonResearchCoverageArea[] {
   ];
 }
 
+/**
+ * Gap lines for a source-family area that retained no evidence (issue #246).
+ *
+ * An investigated family simply contributed nothing. An inaccessible one names
+ * the blocked reads aimed at it — by the lead's own family/coverage, or, where
+ * the lead carries none, by the family its URL would be read as — so the plan
+ * says why the family is empty rather than merely that it is. Falls back to
+ * the standing generic line when no blocked lead aimed at the family.
+ */
+export function describeFamilyShortfall(
+  family: PersonSourceFamily,
+  state: PersonResearchCoverageArea["state"],
+  leads: LeadRegistry,
+): string[] {
+  /* Reads blocked on the way in are named whether or not queries also went
+     out: an investigated family whose only direct read named the missing
+     transcription runtime says both — the queries found nothing, and the read
+     says what it would take. */
+  const blocked =
+    state === "satisfied"
+      ? []
+      : leads
+          .all()
+          .filter(
+            (lead) =>
+              lead.disposition === "inaccessible" &&
+              (lead.family === family ||
+                lead.coverage.includes(family) ||
+                (lead.kind === "url" && classifySourceFamily(lead.target) === family)),
+          )
+          .slice(0, 3)
+          .map((lead) => `Could not read ${lead.target}: ${lead.reason}`);
+  if (state === "inaccessible")
+    return blocked.length
+      ? blocked
+      : ["No query or source in this operation could be aimed at this family."];
+  return blocked.length
+    ? ["No source in this family contributed evidence in this operation.", ...blocked]
+    : ["No source in this family contributed evidence in this operation."];
+}
+
 export interface LeadInput {
   kind: PersonResearchLead["kind"];
   target: string;
