@@ -55,8 +55,15 @@ explicitly conditional in the research. The implementation uses exact reuse and
 transparent deterministic ranking first. Model changes, shorter timeouts and
 relaxed completion thresholds are not part of this change.
 
-Local verification on 2026-09-09: `pnpm run check` passed 208 files and 2,388
+Local verification of `c9cf65d` on 2026-09-09: `pnpm run check` passed 208 files and 2,388
 tests plus static checks; Playwright passed 82/82. Coverage passed the existing
 floors: statements 85.39%, branches 75.02%, functions 87.91%, lines 87.71%.
 These checks establish implementation behavior; they are not a measured live
 speedup or a new 30-person acceptance result.
+
+The review follow-up removes a redundant raw-URL check during canonical resume,
+makes the organization-result continuation explicit, latches a reached provider
+outage against late successes, and retains only the best passage candidates
+while scanning. The full local check passes 2,391 tests after these regressions.
+The live smoke run starts at `c9cf65d`; it is a fresh operation, and the follow-up
+preserves its passage-selection and failure-policy semantics.

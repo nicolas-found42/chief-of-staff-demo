@@ -15,20 +15,21 @@ export function extractionPassages(text: string, profile: PersonProfile) {
   for (let offset = 0; offset < text.length; offset += size) {
     const value = text.slice(offset, offset + size);
     const folded = value.toLowerCase();
-    passages.push({
+    const passage = {
       text: value,
       offset,
       score: signals.filter((signal) => folded.includes(signal)).length,
-    });
+    };
+    if (text.length <= 60000 || offset === 0) passages.push(passage);
+    else {
+      // Only the best three non-opening candidates remain live. Scanning
+      // another source window cannot grow retained candidate memory.
+      const best = [...passages.slice(1), passage]
+        .sort((a, b) => b.score - a.score || a.offset - b.offset)
+        .slice(0, 3);
+      passages.splice(1, passages.length - 1, ...best);
+    }
   }
-  if (text.length <= 60000) return passages;
-  // Keep opening context and rank the rest. Equal scores retain source order.
-  // Never concatenate disjoint excerpts into an invented continuous passage.
-  return [
-    passages[0]!,
-    ...passages
-      .slice(1)
-      .sort((a, b) => b.score - a.score || a.offset - b.offset)
-      .slice(0, 3),
-  ].sort((a, b) => a.offset - b.offset);
+  // Restore document order; disjoint slices never masquerade as continuous text.
+  return passages.sort((a, b) => a.offset - b.offset);
 }

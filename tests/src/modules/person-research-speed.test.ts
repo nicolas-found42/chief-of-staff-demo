@@ -14,8 +14,109 @@ import { WorkspacePersonProfiles } from "../../../apps/server/src/person-profile
 import { PersonProfileStore } from "../../../apps/server/src/person-profile/store.js";
 import { SourceScheduler } from "../../../apps/server/src/person-profile/source-scheduler.js";
 import { extractionPassages } from "../../../apps/server/src/person-profile/extraction-passages.js";
+import { ExtractionHealth } from "../../../apps/server/src/person-profile/research-policy.js";
 
 const roots: string[] = [];
+
+it("latches an outage at three consecutive failures even if a concurrent call later succeeds", () => {
+  const health = new ExtractionHealth(3);
+  expect(health.failure()).toBe(false);
+  expect(health.failure()).toBe(false);
+  expect(health.failure()).toBe(true);
+  health.success();
+  expect(health.interrupted).toBe(true);
+  const recovered = new ExtractionHealth(3);
+  recovered.failure();
+  recovered.failure();
+  recovered.success();
+  expect(recovered.failure()).toBe(false);
+  expect(recovered.neverAnswered).toBe(false);
+});
+
+it("registers person results after an organization result in the same response", async () => {
+  const { dossiers, person } = fixture();
+  const fetched: string[] = [];
+  const research = new PersonResearch({
+    dossiers,
+    seeds: () => ["Maya"],
+    search: async () => [
+      {
+        url: "https://ror.org/123",
+        title: "Organization",
+        snippet: "",
+        entityType: "organization",
+      },
+      {
+        url: "https://example.com/maya",
+        title: "Maya",
+        snippet: "maya@example.com",
+        entityType: "person",
+      },
+    ],
+    readSource: async (url) => {
+      fetched.push(url);
+      return read(url);
+    },
+    complete: async () => empty,
+  });
+  await research.run(person, researchAllowance());
+  expect(fetched).toEqual(["https://example.com/maya"]);
+});
+
+it("resumes a legacy retained tracking alias when the pending lead names its canonical destination", async () => {
+  const { dossiers, person } = fixture();
+  const target = "https://example.com/maya";
+  const source = dossiers.retainSource({
+    url: `https://www.bing.com/news/apiclick.aspx?url=${encodeURIComponent(target)}&tid=old`,
+    text: "maya@example.com retained biography",
+    title: "Maya",
+    author: null,
+    publishedAt: null,
+    retrievedAt: new Date().toISOString(),
+    family: "example.com",
+    sourceClass: "unclassified",
+    visibility: "public",
+    acquisition: "html",
+    completeness: "full",
+    access: "retrieved",
+    extractionCoverage: "unattempted",
+  });
+  dossiers.publish(person.id, 0, {
+    claims: [],
+    works: [],
+    expertise: [],
+    connections: [],
+    sections: [],
+    sourceIds: [source.id],
+  });
+  const fetch = vi.fn(async (url: string) => read(url));
+  let saved: PersonResearchCheckpoint | undefined;
+  const research = new PersonResearch({
+    dossiers,
+    search: async () => [],
+    readSource: fetch,
+    complete: async () => empty,
+  });
+  await research.run(
+    person,
+    researchAllowance({
+      checkpoint: {
+        queries: [],
+        pass: 0,
+        results: [{ url: target, title: "Maya", snippet: "" }],
+        direct: [],
+        visited: [],
+        linked: [],
+        pendingSourceId: source.id,
+      },
+      saveCheckpoint: (checkpoint) => {
+        saved = checkpoint;
+      },
+    }),
+  );
+  expect(fetch).not.toHaveBeenCalled();
+  expect(saved?.pendingSourceIds).toEqual([]);
+});
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });

@@ -6,6 +6,36 @@ import type {
 import { scoreLead, type SelectionContext } from "./research-plan.js";
 import type { ResearchAllowance } from "./research.js";
 
+/** Synchronous completion-order observations with an irreversible outage latch. */
+export class ExtractionHealth {
+  private consecutiveFailures = 0;
+  private answered = false;
+  private stopped = false;
+
+  constructor(private readonly tolerance: number) {}
+
+  failure(): boolean {
+    this.consecutiveFailures += 1;
+    this.stopped ||= this.consecutiveFailures >= this.tolerance;
+    return this.stopped;
+  }
+
+  success(): void {
+    this.answered = true;
+    // An in-flight success can demonstrate recovery before the threshold,
+    // but cannot revoke an interruption already established by other calls.
+    if (!this.stopped) this.consecutiveFailures = 0;
+  }
+
+  get neverAnswered(): boolean {
+    return this.consecutiveFailures > 0 && !this.answered;
+  }
+
+  get interrupted(): boolean {
+    return this.stopped;
+  }
+}
+
 /**
  * The four policies one continuous research operation runs under.
  *

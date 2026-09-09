@@ -53,6 +53,7 @@ import { isCreativeRecordRead } from "./creative-records.js";
 import {
   PublicationGate,
   ResearchBudget,
+  ExtractionHealth,
   evaluateCompletion,
   plannerIsWorthACall,
   readBatchSize,
@@ -275,7 +276,7 @@ export class PersonResearch {
     /* Extraction calls that failed at the model boundary since the last one
        that succeeded, and whether any succeeded at all in this operation.
        Together they separate a stalled request from a failing provider. */
-    const extractionHealth = { failures: 0, succeeded: false };
+    const extractionHealth = new ExtractionHealth(EXTRACTION_BOUNDARY_FAILURE_TOLERANCE);
     /* The document a previous operation retained but never finished
        extracting. Reusing it is what makes a restart resume rather than
        re-crawl (#212). */
@@ -444,7 +445,7 @@ export class PersonResearch {
                     remediation: "Try a differently phrased query or another source family.",
                   }),
             });
-            results.forEach((result, rank) => {
+            for (const [rank, result] of results.entries()) {
               const added = leads.add({
                 kind: "url",
                 target: result.url,
@@ -460,7 +461,7 @@ export class PersonResearch {
                   "rejected",
                   "Organization lookup result; it cannot establish this person's employment or identity.",
                 );
-                return;
+                continue;
               }
               if (added)
                 leadContext.set(added.id, {
@@ -468,7 +469,7 @@ export class PersonResearch {
                   snippet: result.snippet,
                   rank,
                 });
-            });
+            }
             leads.resolve(
               lead.id,
               "investigated",
@@ -639,7 +640,7 @@ export class PersonResearch {
             rights: null,
             finalUrl: pending.url,
           };
-        } else if (resumable && resumable.url === pending.url) {
+        } else if (resumable) {
           /* A retained document from an interrupted operation is resumed
              rather than re-fetched: the extraction failed, the retrieval did
              not, and paying for it twice is how a restart loses a source. */
@@ -955,10 +956,9 @@ export class PersonResearch {
               false,
             );
             if (!zod) {
-              extractionHealth.failures += 1;
               /* A provider that keeps failing is an interruption of the
                  operation; one that failed on this document is a gap in it. */
-              if (extractionHealth.failures >= EXTRACTION_BOUNDARY_FAILURE_TOLERANCE) {
+              if (extractionHealth.failure()) {
                 interruption = {
                   code: {
                     code: "model-boundary-failed",
@@ -979,8 +979,7 @@ export class PersonResearch {
              document whose extraction failed, and any answered part resets
              the consecutive run. */
           if (parts.length > 0) {
-            extractionHealth.failures = 0;
-            extractionHealth.succeeded = true;
+            extractionHealth.success();
           }
           return;
         }
@@ -989,8 +988,7 @@ export class PersonResearch {
            single-call extraction that never ran. */
         if (parts.length < partTexts.length) return;
         const extracted = combineExtractionParts(parts);
-        extractionHealth.failures = 0;
-        extractionHealth.succeeded = true;
+        extractionHealth.success();
         if (!active()) return;
         if (privateDocument && !privateDocument.active()) {
           leads.resolve(
@@ -1405,7 +1403,7 @@ export class PersonResearch {
     /* Tolerating a stalled request must not let an operation that never got a
        single extraction through report anything but an interruption: with no
        success to reset against, every failure it saw was the provider's. */
-    if (!interruption && extractionHealth.failures > 0 && !extractionHealth.succeeded)
+    if (!interruption && extractionHealth.neverAnswered)
       interruption = {
         code: {
           code: "model-boundary-failed",
