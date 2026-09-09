@@ -104,8 +104,27 @@ function pooledLookup(lookup: CacheableLookup): LookupFunction {
       ...(family === undefined ? {} : { family }),
     };
     if (options.all === true) {
+      /* CacheableLookup calls back an error with no address list (ENOTFOUND
+         and friends), and a successful `all` lookup's entries can be absent
+         when the cache entry expired between the two callback paths — spread
+         only what is actually an array, or the TypeError thrown here would
+         crash the process from inside the connect path (live arm, 2026-09-09). */
       lookup.lookup(hostname, { ...base, all: true as const }, (error, result) => {
-        callback(error, [...result], result[0]?.family);
+        /* Their declared callback type promises the address list on every
+           path, but a resolver failure arrives with none (observed in the
+           live arm 2026-09-09) — spreading it crashed the process from
+           inside the connect path. An errored lookup is passed through
+           untouched; only a resolved one is spread. */
+        if (error) {
+          callback(error, [], undefined);
+          return;
+        }
+        let family: number | undefined;
+        for (const address of result) {
+          family = address.family;
+          break;
+        }
+        callback(error, [...result], family);
       });
     } else {
       lookup.lookup(hostname, base, (error, address, family) => {
