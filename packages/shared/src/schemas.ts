@@ -1,5 +1,7 @@
 import type { TranscriptCatalogStatus } from "./transcript.js";
-import { z } from "zod";
+// Keep the v3 schema contract for persisted data and zod-to-json-schema.
+// Zod 4 ships this compatibility entry point; its root export changes semantics.
+import { z } from "zod/v3";
 import { YoutubeChannelSchema } from "./youtube.js";
 import { ACTION_ITEM_POLICIES } from "./task.js";
 

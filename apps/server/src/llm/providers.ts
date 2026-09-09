@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { ZodType, ZodTypeDef } from "zod";
+import type { ZodType, ZodTypeDef } from "zod/v3";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   type ProviderId,

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   CONTENT_RESEARCH_MODULE_ID,
   CONTENT_RESEARCH_MODULE_VERSION,

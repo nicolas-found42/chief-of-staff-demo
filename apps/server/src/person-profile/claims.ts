@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { PersonEvidenceClaims, PersonIdentitySignals } from "@chief-of-staff-demo/shared";
 import { MODEL_SMALL_REQUEST_TIMEOUT_MS } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";

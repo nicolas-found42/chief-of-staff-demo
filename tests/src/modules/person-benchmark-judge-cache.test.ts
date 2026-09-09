@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { expect, it } from "vitest";
 import { cachedCompleteJson } from "../../../apps/server/src/person-benchmark/judge-cache.js";
 import type { CompletionRequest } from "../../../apps/server/src/llm/providers.js";

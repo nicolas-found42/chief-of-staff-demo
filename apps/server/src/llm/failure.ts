@@ -6,7 +6,7 @@ import {
   type ResultShapeDiagnostic,
   type ResultShapeBinding,
 } from "@chief-of-staff-demo/shared";
-import type { ZodIssue, ZodType, ZodTypeDef } from "zod";
+import type { ZodIssue, ZodType, ZodTypeDef } from "zod/v3";
 
 /** Which model the Shell was calling, and how it asked for the Result Shape. */
 export interface ModelCall {

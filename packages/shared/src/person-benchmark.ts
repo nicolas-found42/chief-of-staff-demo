@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import { ModelAttemptEventSchema } from "./llm.js";
 import {
   PERSON_SOURCE_FAMILIES,

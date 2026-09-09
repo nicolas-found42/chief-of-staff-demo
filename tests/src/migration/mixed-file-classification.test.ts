@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { ConfigSchema } from "@chief-of-staff-demo/shared";
 import { previewWorkspaceMigration } from "../../../apps/server/src/migration/workspace";
 

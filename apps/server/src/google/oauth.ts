@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import type { OAuth2Client } from "googleapis-common";
 import type { AppConfig } from "@chief-of-staff-demo/shared";
 
 /** The Google Tasks scope, requested only when the owner enables that surface. */
@@ -42,7 +41,8 @@ export function redirectUriForPort(port: number): string {
   return `http://localhost:${port}/api/google/callback`;
 }
 /** Authorized Google API client used by every google/* module. */
-export type GoogleAuth = OAuth2Client;
+// Follow the auth-library version used by the client we actually construct.
+export type GoogleAuth = InstanceType<typeof google.auth.OAuth2>;
 export function buildGoogleAuth(config: AppConfig, port: number): GoogleAuth {
   const client = new google.auth.OAuth2(
     config.google.clientId,

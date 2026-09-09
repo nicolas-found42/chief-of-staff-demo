@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import { PersonSourceDocumentSchema } from "@chief-of-staff-demo/shared";
 import type {
   BenchmarkJudgement,

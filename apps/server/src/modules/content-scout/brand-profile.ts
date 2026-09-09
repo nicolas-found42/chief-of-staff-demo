@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import type {
