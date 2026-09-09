@@ -5,8 +5,8 @@ WORKDIR /app
 
 # pnpm is the workspace manager (pnpm-lock.yaml); pin the version the dev loop
 # uses so the image resolves the same tree.
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable && corepack prepare pnpm@11.25.0 --activate
+# The bundled Corepack expects pnpm's old JS layout; pnpm 12 ships native launchers.
+RUN npm install --global pnpm@12.3.4
 
 # Manifests first, so `pnpm install` is only re-run when dependencies change.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./

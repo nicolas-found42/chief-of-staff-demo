@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, no-useless-assignment */
+/* oxlint-disable typescript/no-explicit-any, typescript/no-unsafe-call, no-useless-assignment */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

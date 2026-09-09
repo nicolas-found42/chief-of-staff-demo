@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import { parseSource } from "../source-ast.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { composeShell, type Shell } from "../../../apps/server/src/composition/shell";
 
@@ -307,14 +307,16 @@ function declaredStores(dir = SERVER_SRC, found: string[] = []): string[] {
       continue;
     }
     if (!path.endsWith(".ts")) continue;
-    const source = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.ESNext);
-    for (const statement of source.statements) {
+    const source = parseSource(path);
+    for (const statement of source.body) {
       if (
-        ts.isClassDeclaration(statement) &&
-        statement.name?.text.endsWith("Store") &&
-        statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
-      ) {
-        found.push(statement.name.text);
+        statement.type !== "ExportNamedDeclaration" &&
+        statement.type !== "ExportDefaultDeclaration"
+      )
+        continue;
+      const declaration = statement.declaration;
+      if (declaration?.type === "ClassDeclaration" && declaration.id?.name.endsWith("Store")) {
+        found.push(declaration.id.name);
       }
     }
   }

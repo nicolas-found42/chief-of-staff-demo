@@ -12,9 +12,9 @@ updates:
       dev-tooling:
         patterns:
           - "@types/*"
-          - "eslint*"
-          - "@eslint/*"
-          - typescript-eslint
+          - typescript
+          - "oxlint*"
+          - oxc-parser
           - prettier*
           - vitest
           - "@vitest/*"

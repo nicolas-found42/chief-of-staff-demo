@@ -63,7 +63,7 @@ async function standardsReview(diff, changedFiles) {
   void readText("AGENTS.md");
   void readText("CONTEXT.md");
   void readText("docs/agents/verification.md");
-  void readText("eslint.config.js");
+  void readText(".oxlintrc.json");
   try {
     if (
       diff.includes("google-auth-library") &&

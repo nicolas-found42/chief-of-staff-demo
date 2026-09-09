@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import type { Program } from "oxc-parser";
+import { parseSource } from "../source-ast.js";
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v3";
 import { ConfigSchema } from "@chief-of-staff-demo/shared";
@@ -183,19 +184,30 @@ const RELAY_STATE_FILE = fileURLToPath(
 );
 
 /** One value per declared member, recursing into an interface an array element names. */
-function populateInterface(source: ts.SourceFile, name: string): Record<string, unknown> {
-  const declaration = source.statements.find(
-    (statement): statement is ts.InterfaceDeclaration =>
-      ts.isInterfaceDeclaration(statement) && statement.name.text === name,
-  );
-  if (!declaration) throw new Error(`interface ${name} not found in ${source.fileName}`);
+function populateInterface(source: Program, text: string, name: string): Record<string, unknown> {
+  const declaration = source.body
+    .map((statement) =>
+      statement.type === "ExportNamedDeclaration" ? statement.declaration : statement,
+    )
+    .find(
+      (statement) => statement?.type === "TSInterfaceDeclaration" && statement.id.name === name,
+    );
+  if (declaration?.type !== "TSInterfaceDeclaration")
+    throw new Error(`interface ${name} not found in ${RELAY_STATE_FILE}`);
   const out: Record<string, unknown> = {};
-  for (const member of declaration.members) {
-    if (!ts.isPropertySignature(member) || !member.type) continue;
-    const key = member.name.getText(source);
+  for (const member of declaration.body.body) {
+    if (member.type !== "TSPropertySignature" || !member.typeAnnotation) continue;
+    const key = text.slice(member.key.start, member.key.end);
+    const type = member.typeAnnotation.typeAnnotation;
     out[key] =
-      ts.isArrayTypeNode(member.type) && ts.isTypeReferenceNode(member.type.elementType)
-        ? [populateInterface(source, member.type.elementType.typeName.getText(source))]
+      type.type === "TSArrayType" && type.elementType.type === "TSTypeReference"
+        ? [
+            populateInterface(
+              source,
+              text,
+              text.slice(type.elementType.typeName.start, type.elementType.typeName.end),
+            ),
+          ]
         : `generated-${key.toLowerCase()}`;
   }
   return out;
@@ -203,13 +215,9 @@ function populateInterface(source: ts.SourceFile, name: string): Record<string, 
 
 describe("relay.json classification covers RelayWorkspace (#119, ADR-0046)", () => {
   it("classifies every field the relay's durable state declares", () => {
-    const source = ts.createSourceFile(
-      RELAY_STATE_FILE,
-      readFileSync(RELAY_STATE_FILE, "utf8"),
-      ts.ScriptTarget.ESNext,
-      true,
-    );
-    const relay = populateInterface(source, "RelayWorkspace");
+    const text = readFileSync(RELAY_STATE_FILE, "utf8");
+    const source = parseSource(RELAY_STATE_FILE, text);
+    const relay = populateInterface(source, text, "RelayWorkspace");
     /* Non-vacuous: the walker read the interface rather than an empty file, and
        reached the channel registration nested inside it. */
     expect(Object.keys(relay)).toContain("secret");

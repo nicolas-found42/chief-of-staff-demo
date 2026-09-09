@@ -245,7 +245,9 @@ describe("Meeting Brief delivery rechecks pinned Person Profiles", () => {
     await host.idle();
 
     expect(runs.detail(runId)).toMatchObject({ status: "failed", failedStage: "deliver" });
-    expect((runs.detail(runId)?.result as MeetingBriefRunResult).delivery.status).toBe("failed");
+    expect((runs.detail(runId)?.result as MeetingBriefRunResult | undefined)?.delivery.status).toBe(
+      "failed",
+    );
     expect(runs.detail(runId)?.events).toContainEqual(
       expect.objectContaining({
         type: "brief_delivery_blocked",

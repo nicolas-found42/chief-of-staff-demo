@@ -72,7 +72,7 @@ function PrototypeSwitcherInner({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [index]);
 
   const label = variants[index]!;

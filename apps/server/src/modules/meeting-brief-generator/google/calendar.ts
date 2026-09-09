@@ -199,7 +199,7 @@ function mapGoogleEvent(calendarId: string, event: calendar_v3.Schema$Event): Ca
   if (isCancelled) {
     const occurrenceId = originalStart ?? start ?? eventId ?? "";
     const startAt = start ?? originalStart ?? "";
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- sparse tombstone fallback handles nullable end
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- sparse tombstone fallback handles nullable end
     const endAt = end ?? startAt ?? "";
     if (!eventId || !occurrenceId) return null;
     // For sparse tombstones, startAt/endAt may be empty; reconciliation will remove by eventId

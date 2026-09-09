@@ -310,7 +310,7 @@ describe("fixture event → one Run at due time via real Runner/Runs/Workspace (
 
     const retried = retryRuns.detail(runId);
     expect(retried?.status).toBe("done");
-    expect((retried?.result as MeetingBriefRunResult).eventVersion).toBe("v1");
+    expect((retried?.result as MeetingBriefRunResult | undefined)?.eventVersion).toBe("v1");
     expect(enrichAttempts).toBe(2);
   });
 

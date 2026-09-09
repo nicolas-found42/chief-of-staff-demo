@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars -- test fixtures use any for fakes */
+/* oxlint-disable typescript/no-explicit-any, typescript/no-unused-vars -- test fixtures use any for fakes */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

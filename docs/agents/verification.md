@@ -11,7 +11,7 @@ supported way to run the app.
 | Prose only | nothing | Nothing: `*.md` is prettier-ignored (ADR-0026) and no gate reads it |
 | One test file | `pnpm --filter @chief-of-staff-demo/tests exec vitest run tests/src/<path>.test.ts` | The behavior at the seam currently being changed |
 | TypeScript tree | `pnpm run typecheck` | Shared/server/relay builds plus web, tests, and scripts no-emit passes |
-| Staged files | `.git/hooks/pre-commit` via `lint-staged` | Prettier on staged source/config/docs and ESLint on staged TypeScript and JavaScript |
+| Staged files | `.git/hooks/pre-commit` via `lint-staged` | Prettier on staged source/config/docs and Oxlint on staged TypeScript and JavaScript |
 | Whole tree | `pnpm run check` | Typecheck, lint, formatting, knip, and all unit tests |
 | Unit coverage | `pnpm run test:coverage` | Server unit tests with the same coverage floors used by CI |
 | App behavior | `pnpm run check:all` | The whole-tree gate plus the Playwright suite |
@@ -67,10 +67,14 @@ with `Failed to load custom Reporter from basic` before a single test runs.
 
 ## Lint and audit evidence
 
-Full-tree typed lint runs one workspace per process to bound memory, followed by a pass over
-remaining files. It deliberately runs without ESLint's file cache: an imported type can change a
-caller's lint result without changing that caller's bytes. Keep the authoritative lint gate fresh;
-TypeScript incremental state and Prettier's formatting cache are separate mechanisms.
+Full-tree lint uses Oxlint and its TypeScript 7 type-aware engine. The gate runs without a
+result cache: an imported type can change a caller's lint result without changing that caller's
+bytes. `.oxlintrc.json` retains the typed rules, React rules, and ADR import boundaries. The
+Google-auth syntax restriction uses `oxlint-plugin-eslint` because Oxlint has no native equivalent.
+
+`pnpm run lint:verify` probes both accepted code and deliberate policy violations in an isolated
+temporary tree. It proves the Google auth boundary, web/server imports, React rules, dropped
+promises, unnecessary conditions, and scoped suppressions. It runs within the full lint gate.
 
 The pre-commit hook covers staged TS/TSX/MTS/CTS and JS/MJS/CJS. Its narrow check does not replace
 full-tree lint before pushing. Markdown and YAML remain hand-formatted per the existing policy.

@@ -14,7 +14,7 @@
         "scripts/run-canaries.mjs",
         "scripts/task-cutover.mts",
       ],
-      "project": ["*.{js,mjs,mts,ts}", "scripts/**/*.{js,mjs,mts,ts}"],
+      "project": ["scripts/**/*.{js,mjs,mts,ts}"],
     },
     "apps/server": {
       "project": ["src/**/*.ts"],
