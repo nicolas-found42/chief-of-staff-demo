@@ -223,6 +223,7 @@ export function createMeetingBriefTestRuntime(
     gmailDelivery,
     hubSpotConnection,
     workspaceDir: options.workspaceDir,
+    clockNow: () => new Date(now),
     setNow(value: Date) {
       now = new Date(value);
     },
@@ -246,6 +247,7 @@ export interface MeetingBriefTestRuntime {
   gmailDelivery: FakeGmailDeliveryProvider;
   hubSpotConnection: HubSpotConnection;
   workspaceDir: string;
+  clockNow(): Date;
   setNow(value: Date): void;
   advance(ms: number): Date;
   upsertEvent(event: MeetingBriefEvent): void;

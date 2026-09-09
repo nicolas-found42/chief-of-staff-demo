@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   ActionItemIndex,
+  ActionItem,
+  ActionItemContext,
   ActionItemPolicy,
   ActionItemState,
   TaskCreateInput,
@@ -32,6 +34,7 @@ export interface TasksApiContext {
   tasks: WorkspaceTasks;
   /** The Action Items a Meeting Debrief proposed, read here and owned there. */
   actionItems: WorkspaceActionItems;
+  actionItemContext?: (item: ActionItem) => ActionItemContext;
   /**
    * Google Tasks as an optional Task Destination. Absent when the Workspace
    * composes no Google connection at all, and every Task route below still
@@ -708,6 +711,7 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       debriefRunId?: string;
       transcriptId?: string;
       meetingId?: string;
+      source?: string;
     };
     const filter: ActionItemQuery = {
       ...(ACTION_ITEM_STATES.includes(query.state as ActionItemState)
@@ -717,7 +721,23 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
       ...(query.transcriptId ? { transcriptId: query.transcriptId } : {}),
       ...(query.meetingId ? { meetingId: query.meetingId } : {}),
     };
-    const index: ActionItemIndex = { items: ctx.actionItems.list(filter) };
+    const items = ctx.actionItems.list(filter);
+    const index: ActionItemIndex = {
+      items,
+      context: Object.fromEntries(
+        items.map((item) => {
+          let context: ActionItemContext = { meeting: null, evidence: null };
+          try {
+            context = ctx.actionItemContext?.(item) ?? context;
+          } catch {
+            /* The proposal stays reviewable when its source is unavailable. */
+          }
+          return [item.id, context];
+        }),
+      ),
+    };
+    if (query.source === "unavailable")
+      index.items = index.items.filter((item) => index.context?.[item.id]?.meeting === null);
     return index;
   });
 

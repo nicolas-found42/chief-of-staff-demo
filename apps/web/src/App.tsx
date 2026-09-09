@@ -1,3 +1,4 @@
+import { MeetingsHistoryPage } from "./pages/MeetingsHistoryPage";
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { AllRunsPage } from "./pages/AllRunsPage";
@@ -233,6 +234,7 @@ export function App() {
       journey; Brief and Debrief lifecycle state stays separate. The
       legacy /meeting-brief product route is gone — not-found. */}
           <Route path="/meetings" element={<MeetingsOverviewPage />} />
+          <Route path="/meetings/history" element={<MeetingsHistoryPage />} />
           <Route path="/meetings/weekly" element={<MeetingsWeeklyPage />} />
           <Route path="/meetings/:meetingId" element={<MeetingPage />} />
           <Route path="/meetings/brief" element={<MeetingBriefPage />} />

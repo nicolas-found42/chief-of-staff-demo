@@ -40,16 +40,22 @@ export function useIsLoadedEntry(): boolean {
  * its heading has to wait for the run to load and must not be re-focused by the
  * 3s poll — and shares useIsLoadedEntry so the two cannot drift apart.
  */
-export function usePageFocus<T extends HTMLElement>() {
+export function usePageFocus<T extends HTMLElement>({
+  focusOnSearchChange = true,
+}: { focusOnSearchChange?: boolean } = {}) {
   const ref = useRef<T>(null);
-  const { key } = useLocation();
+  const { key, pathname } = useLocation();
+  const previousPath = useRef<string | null>(null);
   const loaded = useIsLoadedEntry();
   useEffect(() => {
+    const samePath = previousPath.current === pathname;
+    previousPath.current = pathname;
+    if (!focusOnSearchChange && samePath) return;
     if (!loaded) {
       ref.current?.focus();
     }
     // `key` stays in the deps: moving between two navigated entries leaves
     // `loaded` false throughout, and each arrival still needs its heading.
-  }, [key, loaded]);
+  }, [key, loaded, pathname, focusOnSearchChange]);
   return ref;
 }

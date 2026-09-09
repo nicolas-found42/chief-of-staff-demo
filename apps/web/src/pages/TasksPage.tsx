@@ -1,7 +1,9 @@
+import { meetingDate, proposedDue } from "../meetingDisplay";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type {
   ActionItem,
+  ActionItemContext,
   PersonProfile,
   Task,
   TaskDuplicateCandidate,
@@ -562,6 +564,8 @@ function TaskRow({
  */
 function ActionItemRow({
   item,
+  context,
+  today,
   lists,
   profiles,
   busy,
@@ -570,6 +574,8 @@ function ActionItemRow({
   onDismiss,
 }: {
   item: ActionItem;
+  context: ActionItemContext | undefined;
+  today: string;
   lists: TaskList[];
   profiles: PersonProfile[];
   busy: boolean;
@@ -631,18 +637,41 @@ function ActionItemRow({
     <li className="card" id={`action-item-${item.id}`}>
       <h3>{item.proposal.title}</h3>
       <p className="muted">
-        Proposed · {item.proposal.dueDate ? `due ${item.proposal.dueDate}` : "no due date"} ·{" "}
-        {responsibleLabel(item.proposal.responsiblePerson, profiles)}
+        Proposed · {proposedDue(item.proposal.dueDate, today)} ·{" "}
+        {item.proposal.responsiblePerson
+          ? responsibleLabel(item.proposal.responsiblePerson, profiles)
+          : "Unassigned"}
         {item.evidence.responsibleSurfaceName
           ? ` · named ${item.evidence.responsibleSurfaceName}`
           : ""}
       </p>
       <p className="muted">
-        From a Meeting Debrief.{" "}
+        {context?.meeting ? (
+          <>
+            <Link to={`/meetings/${context.meeting.id}?tab=debrief`}>{context.meeting.title}</Link>{" "}
+            · From {meetingDate(context.meeting.date)}.{" "}
+          </>
+        ) : (
+          "Source Meeting unavailable. "
+        )}
         <Link to={`/meeting-debrief/${encodeURIComponent(item.source.debriefRunId)}`}>
           Open full Debrief
         </Link>
       </p>
+      <details>
+        <summary>Original evidence</summary>
+        {context?.evidence ? (
+          <>
+            <blockquote>{context.evidence.quote}</blockquote>
+            {context.evidence.timestamp ? <p>At {context.evidence.timestamp}</p> : null}
+          </>
+        ) : (
+          <p>
+            Stored excerpt and timestamp unavailable. Open the full Debrief for the retained
+            extraction.
+          </p>
+        )}
+      </details>
       {item.state === "promoted" && item.promotedTaskId && (
         <p className="muted">
           Promoted. <Link to={`/tasks#task-${item.promotedTaskId}`}>Open the Task</Link>
@@ -794,7 +823,11 @@ export function TasksPage({
   people?: PeopleClient;
 }) {
   useTitle("Tasks");
-  const focusRef = usePageFocus<HTMLHeadingElement>();
+  const [searchParams] = useSearchParams();
+  const meetingId = searchParams.get("meetingId") ?? "";
+  const missingSource = searchParams.get("source") === "unavailable";
+  const [actionContext, setActionContext] = useState<Record<string, ActionItemContext>>({});
+  const focusRef = usePageFocus<HTMLHeadingElement>({ focusOnSearchChange: false });
   const [tasks, setTasks] = useState<Task[]>([]);
   const [trash, setTrash] = useState<Task[]>([]);
   const [unavailableSources, setUnavailableSources] = useState<string[]>([]);
@@ -879,17 +912,40 @@ export function TasksPage({
         ...(filters.linked ? { linked: filters.linked === "linked" } : {}),
       }),
       client.tasks({ trashed: true }),
-      client.actionItems({ state: "pending" }),
-      client.actionItems({ state: "dismissed" }),
+      client.actionItems({
+        state: "pending",
+        ...(meetingId ? { meetingId } : {}),
+        ...(missingSource ? { source: "unavailable" as const } : {}),
+      }),
+      client.actionItems({
+        state: "dismissed",
+        ...(meetingId ? { meetingId } : {}),
+        ...(missingSource ? { source: "unavailable" as const } : {}),
+      }),
     ]);
     setTasks(index.tasks);
     setLists(index.lists);
     setToday(index.today);
     setUnavailableSources(index.unavailableSources);
     setTrash(trashed.tasks);
+    setActionContext({ ...queue.context, ...dismissedQueue.context });
     setPending(queue.items);
     setDismissed(dismissedQueue.items);
-  }, [client, filters]);
+  }, [client, filters, meetingId, missingSource]);
+
+  useEffect(() => {
+    const refresh = () => {
+      void load().catch(() =>
+        setError("Work could not be refreshed; previously shown records may be out of date."),
+      );
+    };
+    const timer = window.setInterval(refresh, 3000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [load]);
 
   useEffect(() => {
     let live = true;
@@ -1320,6 +1376,21 @@ export function TasksPage({
       )}
 
       <h2 id="action-items">Action Items</h2>
+      {missingSource ? (
+        <p>
+          Showing proposals without an available source Meeting.{" "}
+          <Link to="/tasks#action-items">Clear source filter</Link>
+        </p>
+      ) : null}
+      {meetingId ? (
+        <p>
+          Showing proposals from one Meeting.{" "}
+          <Link to={`/meetings/${encodeURIComponent(meetingId)}?tab=debrief`}>
+            Back to its Debrief
+          </Link>{" "}
+          · <Link to="/tasks#action-items">Clear Meeting filter</Link>
+        </p>
+      ) : null}
       <p className="muted">
         Commitments a Meeting Debrief proposed. A proposal is not a Task, and nothing here has been
         accepted.
@@ -1344,6 +1415,8 @@ export function TasksPage({
           <ActionItemRow
             key={item.id}
             item={item}
+            context={actionContext[item.id]}
+            today={today}
             lists={lists}
             profiles={profiles}
             busy={busy}

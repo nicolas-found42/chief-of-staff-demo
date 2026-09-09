@@ -1,9 +1,9 @@
 import { NavLink } from "react-router-dom";
 
 /**
- * Meeting Wizard's two internal tabs (issue #194). Route-backed rather than
+ * Meeting Wizard's Today, This week, and History navigation (issues #194, #325). Route-backed rather than
  * component state: Today lives at `/meetings` and This week at
- * `/meetings/weekly`, so each is directly navigable, survives a refresh, and
+ * `/meetings/weekly`, and History at `/meetings/history`, so each is directly navigable, survives a refresh, and
  * answers to Back and Forward like any other page.
  *
  * `aria-current="page"` marks the tab in use, which is what a screen reader
@@ -13,6 +13,7 @@ import { NavLink } from "react-router-dom";
 const TABS = [
   { to: "/meetings", label: "Today" },
   { to: "/meetings/weekly", label: "This week" },
+  { to: "/meetings/history", label: "History" },
 ];
 
 export function MeetingWizardTabs() {

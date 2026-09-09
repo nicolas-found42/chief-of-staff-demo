@@ -321,13 +321,24 @@ export class MeetingBriefHost implements HostedModule {
     this.runner = new Runner({ runs: deps.runs, module, now: this.now, log: deps.log });
   }
 
-  async retryRun(id: string): Promise<RunMeta> {
-    const detail = this.deps.runs.detail(id);
-    const requiresRegeneration = detail?.events.some(
-      (event) =>
-        event.type === "brief_delivery_blocked" &&
-        event.detail?.reason === "person_profile_refresh_required",
+  private requiresProfileRegeneration(id: string): boolean {
+    return (
+      this.deps.runs
+        .detail(id)
+        ?.events.some(
+          (event) =>
+            event.type === "brief_delivery_blocked" &&
+            event.detail?.reason === "person_profile_refresh_required",
+        ) ?? false
     );
+  }
+
+  canRetryRun(id: string): boolean {
+    return !this.requiresProfileRegeneration(id) && this.runner.canRetryRun(id);
+  }
+
+  async retryRun(id: string): Promise<RunMeta> {
+    const requiresRegeneration = this.requiresProfileRegeneration(id);
     if (requiresRegeneration) {
       this.deps.runs.open(id)?.appendEvent("retry_refused", {
         condition: "profile_refresh_requires_new_run",

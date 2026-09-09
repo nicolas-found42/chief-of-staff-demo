@@ -123,8 +123,8 @@ test("meeting history — collected back to the oldest Transcript, the home says
 
   // The home states where history begins; the old Meeting is not today's.
   await page.goto("/meetings");
-  await expect(page.getByText(/Meeting history begins/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Old planning" })).toHaveCount(0);
+  await expect(page.getByText(/Recorded meeting history begins/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Old planning", exact: true })).toBeVisible();
 });
 
 test("meeting wizard journey — home lists today's Meetings from the store, Brief journey, legacy surface gone", async ({
@@ -224,6 +224,13 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
     upcoming: { occurrenceKey: string }[];
   };
   expect(idxAfter.upcoming.some((u) => u.occurrenceKey.startsWith("evt_wizard_2"))).toBe(true);
+
+  // A later failed revision must not hide the last usable Brief on its Meeting page.
+  await request.post("/api/test/meetings/failed-brief", {
+    data: { occurrenceKey: `evt_wizard_1::${internalEvent.occurrenceId as string}` },
+  });
+  await page.goto(`/meetings/${internal.id}?tab=brief`);
+  await expect(page.getByText("Brief for Internal planning", { exact: true })).toBeVisible();
 
   // The legacy product route answers not-found; the legacy adapter API is gone.
   await page.goto("/meeting-brief");
@@ -359,7 +366,7 @@ test("meeting wizard tabs — Today and This week are routes, and survive refres
   await expect(page.getByRole("heading", { level: 1, name: "Meeting Wizard" })).toBeVisible();
 });
 
-test("meeting wizard Today — the Day Spine metric strip, and the restraint around it", async ({
+test("meeting wizard Today — Meetings lead the page before contextual work", async ({
   page,
   request,
 }) => {
@@ -374,58 +381,66 @@ test("meeting wizard Today — the Day Spine metric strip, and the restraint aro
 
   await page.goto("/meetings");
 
-  // The day's shape in five figures, in the order the day is read, each one a
-  // link to the surface that owns it (issue #193).
-  const strip = page.locator("ul.work-metrics");
-  await expect(strip).toBeVisible();
-  await expect(strip.locator("li.work-metric")).toHaveCount(5);
-  await expect(strip.locator(".work-metric-label")).toHaveText([
-    "Today",
-    "This week",
-    "Pending",
-    "Open",
-    "Overdue",
-  ]);
-  for (const [label, href] of [
-    ["Today", "/meetings"],
-    ["This week", "/meetings/weekly"],
-    ["Pending", "/tasks#action-items"],
-    ["Open", "/tasks"],
-    ["Overdue", "/tasks"],
-  ] as const) {
-    await expect(
-      strip.locator("li.work-metric").filter({ hasText: label }).getByRole("link"),
-    ).toHaveAttribute("href", href);
-  }
-  // The figures are real, not decoration: one more overdue Task moves the
-  // Overdue figure by exactly one. Asserted as a delta because the hermetic
-  // server is shared across specs, so no absolute count is this test's to own.
-  const overdue = strip
-    .locator("li.work-metric")
-    .filter({ hasText: "Overdue" })
-    .locator(".work-metric-value");
-  const before = Number(await overdue.textContent());
-  expect(Number.isInteger(before)).toBe(true);
-  expect(
-    (
-      await request.post("/api/tasks", {
-        data: { title: "Overdue spine work", dueDate: "2020-01-01" },
-      })
-    ).ok(),
-  ).toBe(true);
-  await page.reload();
-  await expect(overdue).toHaveText(String(before + 1));
-
-  // Canonical Tasks and pending Action Items stay two headed groups, never one
-  // merged queue.
-  await expect(page.getByRole("heading", { name: /^Tasks \(/ })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: /^Action Items awaiting review \(/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent meetings", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Upcoming", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your work", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View meeting history", exact: true })).toBeVisible();
+  await expect(page.locator("ul.work-metrics")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open the Brief journey", exact: true })).toHaveCount(
+    0,
+  );
 
   // Quiet Rail restraint: no prototype-only switch and no admin Run concepts
   // reach the production Meeting Wizard surface.
   await expect(page.getByRole("radiogroup", { name: /prototype/i })).toHaveCount(0);
   await expect(page.getByText(/prototype/i)).toHaveCount(0);
   await expect(page.getByRole("link", { name: /^Runs$/ })).toHaveCount(0);
+});
+
+test("meeting history and artifact tabs retain their URLs through reload and Back", async ({
+  page,
+  request,
+}) => {
+  const response = await request.get("/api/meetings/list");
+  const { meetings } = (await response.json()) as { meetings: { id: string; title: string }[] };
+  const meeting = meetings.find((m) => m.title === "Old planning");
+  if (!meeting) throw new Error("Historical fixture missing");
+  await page.goto("/meetings/history?search=Old%20planning&from=2020-01-01");
+  await expect(page.getByRole("heading", { level: 1, name: "Meeting history" })).toBeVisible();
+  await page.getByRole("link", { name: meeting.title, exact: true }).click();
+  await page.getByRole("tab", { name: "Brief", exact: true }).click();
+  await expect(page).toHaveURL(/tab=brief/);
+  await page.reload();
+  await expect(page.getByRole("tab", { name: "Brief", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("tab", { name: "Debrief", exact: true }).click();
+  await expect(page).toHaveURL(/tab=debrief/);
+  await page.goBack();
+  await expect(page.getByRole("tab", { name: "Brief", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.goBack();
+  await page.goBack();
+  await expect(page.getByLabel("Search meetings")).toHaveValue("Old planning");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue("2020-01-01");
+  await page.goto(`/meetings/${meeting.id}?tab=unknown`);
+  await expect(page.getByRole("tab", { name: "Debrief", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("tab", { name: "Debrief", exact: true }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "Brief", exact: true })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Brief", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.reload();
+  await expect(page.getByRole("tab", { name: "Brief", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });

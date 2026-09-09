@@ -230,6 +230,10 @@ export class MeetingDebriefHost implements HostedModule {
   stop(): void {
     this.runner.stopRecoveryLoop();
   }
+  canRetryRun(id: string): boolean {
+    return this.runner.canRetryRun(id);
+  }
+
   retryRun(id: string): Promise<RunMeta> {
     return this.runner.retryRun(id);
   }

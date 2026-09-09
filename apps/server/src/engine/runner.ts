@@ -95,6 +95,13 @@ export class Runner<Input> {
    * Module's; carrying it out — the reset, the discards, the reopen — is the
    * Shell's, because none of it happens inside a Stage.
    */
+  canRetryRun(id: string): boolean {
+    const meta = this.deps.runs.open(id)?.read();
+    return Boolean(
+      meta && meta.status === "failed" && meta.failedStage && this.deps.module.planRetry(meta),
+    );
+  }
+
   async retryRun(id: string): Promise<RunMeta> {
     const run = this.deps.runs.open(id);
     if (!run) {

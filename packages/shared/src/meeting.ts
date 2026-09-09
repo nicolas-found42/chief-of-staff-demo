@@ -43,6 +43,8 @@ export interface Meeting {
   title: string;
   startAt: string;
   endAt: string;
+  /** Whether only the recorded calendar date is known; absent on legacy records. */
+  dateOnly?: boolean;
   participants: MeetingParticipant[];
   /** Calendar reported the occurrence cancelled. The record survives it. */
   cancelled: boolean;
@@ -57,4 +59,66 @@ export interface MeetingIndex {
   meetings: Meeting[];
   /** Oldest start the Workspace holds, so a surface can say where history begins. */
   historyBeginsAt: string | null;
+}
+
+/** Artifact availability is derived, never persisted on a Meeting. */
+export interface MeetingArtifact {
+  status:
+    "ready" | "queued" | "processing" | "failed" | "missing" | "no-transcript" | "unavailable";
+  runId: string | null;
+  latestAttempt: "queued" | "processing" | "failed" | null;
+  summary: string | null;
+  retryRunId: string | null;
+  explanation: string | null;
+  remedy: string | null;
+}
+export interface MeetingReadRow extends Meeting {
+  localDate: string;
+  dateOnly: boolean;
+  group: "completed" | "in-progress" | "upcoming";
+  brief: MeetingArtifact;
+  debrief: MeetingArtifact;
+  pendingCount: number | null;
+}
+export interface MeetingProposalGroup {
+  meetingId: string | null;
+  title: string;
+  date: string | null;
+  count: number;
+  items: import("./action-item.js").ActionItem[];
+}
+export interface MeetingWorkspaceView {
+  localToday: string;
+  timezone: string;
+  today: MeetingReadRow[];
+  recent: MeetingReadRow[];
+  upcoming: MeetingReadRow[];
+  upcomingFrom: string;
+  upcomingTo: string;
+  historyBeginsAt: string | null;
+  proposals: {
+    total: number;
+    meetingCount: number;
+    missingSourceCount: number;
+    groups: MeetingProposalGroup[];
+  } | null;
+  partial: string[];
+}
+export interface MeetingHistoryView {
+  meetings: MeetingReadRow[];
+  total: number;
+  retainedTotal: number;
+  page: number;
+  pageSize: number;
+  historyBeginsAt: string | null;
+  localToday: string;
+  timezone: string;
+  partial: string[];
+}
+
+export interface MeetingDetailView {
+  meeting: MeetingReadRow;
+  localToday: string;
+  timezone: string;
+  partial: string[];
 }
