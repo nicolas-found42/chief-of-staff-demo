@@ -1,8 +1,7 @@
 # Pull request workflow
 
-Every change to `main` goes `branch → PR → squash merge`. Two gates stand in front of it: four
-green CI checks, which a ruleset enforces, and a clean Sourcery review body, which nothing enforces
-but the rule. `main` takes no direct push, no force-push and no deletion.
+Every change to `main` goes `branch → PR → squash merge`. The ruleset requires four
+green CI checks. `main` takes no direct push, no force-push and no deletion.
 
 This is the outbound workflow. Triaging _inbound_ PRs from outside contributors is a separate flag
 in `issue-tracker.md`, currently off.
@@ -14,13 +13,13 @@ git switch -c <type>/<slug>     # branch before the first commit
 pnpm run check                  # green locally first
 git push -u origin HEAD
 gh pr create --fill             # --title/--body for anything worth reading
-gh pr comment <n> --body "@sourcery-ai review"
 gh pr checks <n> --watch        # the four required checks
-gh pr merge <n> --squash        # once the checks are green and the review body is clean
+gh pr view <n> --json headRefOid --jq .headRefOid
+gh pr merge <n> --squash --match-head-commit <head>
 ```
 
-Both gates are read before the merge, so the last step is `--squash` on a PR you have just read.
-`--auto` is the wrong ending here: see "Why not `--auto`" below.
+Read the diff and confirm all four required checks passed for the current head before merging.
+Bind the merge to that SHA with `--match-head-commit` so a concurrent push requires a fresh check.
 
 Done means **merged and green**. A PR left open is unfinished work; say so rather than reporting
 the task complete.
@@ -43,8 +42,7 @@ then `git push --force-with-lease` on the feature branch.
 
 Four required checks, all from `.github/workflows/ci.yml`: `check` (typecheck, lint, format,
 knip), `test` (unit plus the four coverage floors), `e2e` (Playwright), `image` (Docker boot).
-`canary.yml` is scheduled and diagnostic — deliberately not a gate. `Sourcery review` reports here
-too and is **not** required; it is the second gate's check, not this gate's fifth.
+`canary.yml` is scheduled and diagnostic — deliberately not a gate.
 
 The required list lives in the ruleset, which no file in the repo records. Read it live:
 
@@ -71,73 +69,13 @@ Both standard fixes were tried on 2026-09-05 and are closed. Treat the question 
 
 The window opens only with two PRs in flight. One PR at a time keeps it shut.
 
-## The Sourcery gate
-
-The second gate is **Sourcery's review body for the head commit, carrying no `Blocking findings:`
-line**. Read it before every merge:
-
-```bash
-gh pr view <n> --json headRefOid --jq .headRefOid
-gh api repos/nicolas-found42/chief-of-staff-demo/pulls/<n>/reviews \
-  --jq '[.[] | select(.commit_id == "<head>")] | last | .body'
-```
-
-Three things make it easy to read the wrong signal:
-
-- **The check and the body are independent.** `Sourcery review` reports success while the body
-  still carries a blocking finding. The body is the gate.
-- **The review lags the push.** One review per push cycle, and the newest may still cover the
-  previous commit — match its `commit_id` against `headRefOid`. Sourcery does not re-review a push
-  by itself: comment `@sourcery-ai review` after pushing and expect it 1-4 minutes later.
-- **`Needs a human reviewer` is Sourcery's standing impact note, not a finding.** A clean review
-  says "I've reviewed your changes and they look great!" and carries no `Blocking findings:` line.
-
-A pure rebase keeps its review. `git range-diff <old-base>..<old-head> <new-base>..<new-head>`
-printing `=` for every commit proves the reviewed content is unchanged.
-
-Treat a finding as a real defect until it is disproved. Where its suggested fix does not fit, reply
-with the reason and move the work to a tracked issue.
-
-### Why not `--auto`
-
-`gh pr merge --auto` merges on the **required** checks, and Sourcery is not one of them, so it
-lands the PR the moment the four go green — giving away the point at which the review body would
-have been read. On PR #273 (2026-09-07) it merged a defect Sourcery had already found, and the fix
-went out as #274 seven minutes later.
-
-`.claude/hooks/require-clean-sourcery-review.sh`, wired to `PreToolUse` in
-`.claude/settings.json`, refuses the merge for an agent: `--auto`, a head with no Sourcery review,
-and a review carrying blocking findings each come back as a denial naming the reason. It fails
-closed on a merge it cannot check, and stays quiet on a command that only carries the text of one.
-
-Telling a merge from the text of one is most of the hook, so it is worth knowing how it decides.
-Text a shell would never execute is blanked first — heredoc bodies, then quoted spans — and what
-is left is split on the shell's own separators, where a segment *starting* with the call (leading
-environment assignments included) is an invocation. So a grep for the call, a document explaining
-it and a pull request body quoting it all pass.
-
-Two consequences worth expecting:
-
-- **The merge stands alone in its command.** `git push && gh pr merge <n>` is refused, because one
-  check cannot vouch for two invocations, and a second merge behind the first would ride in
-  unchecked. Run the push and the merge as separate commands.
-- **The allowed merge comes back carrying `--match-head-commit`.** The review was read at one
-  commit, and no check that runs *before* a command can stop a push from landing between the two —
-  GitHub refusing a mismatched head can, so the hook binds the merge to the head it validated.
-
-`require-clean-sourcery-review.test.sh` beside it is the case matrix, twenty-three cases over that
-whole distinction. It reaches GitHub for two permanent fixtures, so it is not part of
-`pnpm run check`.
-
-Dependabot is the exception: its PRs are configured to merge themselves, below.
-
 ## Agent authority
 
 Pre-authorized, no prompt:
 
 - Branch, commit, `git push` a feature branch, `--force-with-lease` on one
 - `gh pr create`, `gh pr edit`, `gh pr comment`
-- `gh pr merge <n> --squash` on a PR whose CI is green and whose Sourcery review body is clean
+- `gh pr merge <n> --squash` with `--match-head-commit` on a PR whose four required CI checks are green
 
 Ask first, every time:
 

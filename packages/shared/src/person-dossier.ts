@@ -120,6 +120,11 @@ export const PersonSourceDocumentSchema = z.object({
     .optional(),
   visibility: z.enum(["public", "private"]),
   extractionCoverage: z.enum(["unattempted", "partial", "full"]).optional(),
+  /** Exact original-text ranges read by extraction; omitted ranges remain available in text. */
+  extractionRanges: z
+    .array(z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }))
+    .max(4)
+    .optional(),
   completeness: z.enum(["full", "partial", "snippet", "unavailable"]),
   access: z.enum(["retrieved", "blocked", "failed", "unsupported"]),
   acquisition: text,
@@ -382,6 +387,8 @@ export const PersonResearchCheckpointSchema = z.object({
   visited: z.array(z.string().max(4000)),
   linked: z.array(z.string().max(4000)),
   pendingSourceId: id.optional(),
+  /** Every retained document awaiting extraction; legacy singular checkpoints still resume. */
+  pendingSourceIds: z.array(id).max(10000).optional(),
   /** Distinct source versions already retained in this operation across restarts. */
   retainedSourceIds: z.array(z.string().length(64)).max(10000).optional(),
 });

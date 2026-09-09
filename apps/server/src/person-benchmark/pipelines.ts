@@ -1,3 +1,4 @@
+import { loadRorIndex } from "../source-adapters/ror-index.js";
 import type { PersonProfile } from "@chief-of-staff-demo/shared";
 import { createPublicSearch, type PublicSearch } from "../source-adapters/search.js";
 import type { readPersonSource } from "../person-profile/research-readers.js";
@@ -64,22 +65,37 @@ export function configurePipeline(
   reader: typeof readPersonSource,
   options: { searxngUrl?: string } = {},
 ): PipelineConfiguration {
+  const rorIndex = process.env.PERSON_RESEARCH_ROR_DATA
+    ? loadRorIndex(process.env.PERSON_RESEARCH_ROR_DATA)
+    : undefined;
+  const throughputConditions = {
+    scheduling:
+      "as-ready reads; 8 readers globally, 2 per host (1 after slow/failing reads); 4 model documents globally",
+    sourceReuse:
+      "canonical Bing destinations; exact source versions coalesced per identity revision and operation",
+    discoveryIntent:
+      "native ORCID name, known-organization ROR and artist-name queries; typed results",
+    benchmarkQueues: "independent bounded research and judge workers",
+    rorDataVersion: rorIndex?.version ?? "network",
+  };
   if (pipeline === "expanded")
     return {
       search: createPublicSearch(undefined, undefined, {
+        ...(rorIndex ? { rorIndex } : {}),
         ...(options.searxngUrl !== undefined ? { searxngUrl: options.searxngUrl } : {}),
       }),
       settings: { profileCalls: 180, profileMilliseconds: 900_000, readConcurrency: 4 },
       conditions: {
+        ...throughputConditions,
         providers: "full bundle",
         mergedLimit: 60,
         readers: "html, text, documents, feeds, captions, social, records",
         planner: true,
         readConcurrency: 4,
         leadPolicy:
-          "surpassed backlog retired beyond the selection margin; planner asked only when the pool cannot fill a batch",
+          "surpassed backlog retired beyond the selection margin; yield/latency ranking; planner explores unchanged evidence/coverage up to quietRounds times",
         extractionParts:
-          "documents extracted in parts of at most 16k characters, at most 4 parts per document",
+          "at most four 16k parts (60k total); longer sources retain opening context plus ranked 15k windows with original offsets",
         smallCallCeiling: "120s absolute ceiling on discovery, extraction-part and planning calls",
         bindingRecovery:
           "an answer that fails to parse under response_format steps the binding down; the planner prefers forced tool calls",
@@ -87,6 +103,7 @@ export function configurePipeline(
     };
   return {
     search: createPublicSearch(undefined, undefined, {
+      ...(rorIndex ? { rorIndex } : {}),
       providerFilter: (name) => INCUMBENT_PROVIDERS.has(name),
       mergedLimit: INCUMBENT_MERGED_LIMIT,
       ...(options.searxngUrl !== undefined ? { searxngUrl: options.searxngUrl } : {}),
@@ -126,6 +143,7 @@ export function configurePipeline(
     },
     settings: { profileCalls: 12, profileMilliseconds: 120_000, readConcurrency: 1 },
     conditions: {
+      ...throughputConditions,
       providers: `${String(INCUMBENT_PROVIDERS.size)} pre-expansion providers`,
       mergedLimit: INCUMBENT_MERGED_LIMIT,
       readers: "html, text",

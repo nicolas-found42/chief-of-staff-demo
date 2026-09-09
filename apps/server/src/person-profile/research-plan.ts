@@ -11,6 +11,7 @@ import {
   type PersonSourceFamily,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
+import { canonicalSourceUrl } from "../source-adapters/source-identity.js";
 import { classifySourceFamily } from "./research-readers.js";
 
 /** The dossier sections research plans to cover, in the dossier's own order. */
@@ -62,6 +63,9 @@ export interface LeadInput {
   origin: PersonResearchLead["origin"];
   family?: PersonSourceFamily;
   coverage?: string[];
+  discoveryUrl?: string;
+  discoveryUrls?: string[];
+  upstreamIndex?: string;
 }
 
 /**
@@ -76,6 +80,7 @@ export interface LeadInput {
 export class LeadRegistry {
   private readonly leads = new Map<string, PersonResearchLead>();
   private readonly seenTargets = new Set<string>();
+  private readonly aliases = new Map<string, string>();
 
   constructor(alreadyVisited: Iterable<string> = []) {
     for (const target of alreadyVisited) this.seenTargets.add(normalizeTarget(target));
@@ -88,8 +93,18 @@ export class LeadRegistry {
       .update(`${input.kind}:${normalized}`)
       .digest("hex")
       .slice(0, 32);
-    const recorded = this.leads.get(id);
+    const recorded = this.leads.get(this.aliases.get(normalized) ?? id);
+    const discovered = [
+      ...new Set([
+        ...(input.discoveryUrls ?? []),
+        ...(input.discoveryUrl ? [input.discoveryUrl] : []),
+      ]),
+    ].slice(0, 100);
     if (recorded) {
+      if (discovered.length)
+        recorded.discoveryUrls = [
+          ...new Set([...(recorded.discoveryUrls ?? []), ...discovered]),
+        ].slice(0, 100);
       /* Re-proposing a lead still awaiting investigation records what it was
          proposed *for*, even though the lead itself is not registered twice: a
          checkpoint carries a pending query without the coverage it was aimed
@@ -115,7 +130,9 @@ export class LeadRegistry {
       this.leads.set(id, {
         id,
         kind: input.kind,
-        target: input.target,
+        target: input.kind === "url" ? canonicalSourceUrl(input.target) : input.target,
+        ...(discovered.length ? { discoveryUrls: discovered } : {}),
+        ...(input.upstreamIndex ? { upstreamIndex: input.upstreamIndex } : {}),
         origin: input.origin,
         ...(family ? { family } : {}),
         coverage: input.coverage ?? [],
@@ -128,7 +145,9 @@ export class LeadRegistry {
     const lead: PersonResearchLead = {
       id,
       kind: input.kind,
-      target: input.target,
+      target: input.kind === "url" ? canonicalSourceUrl(input.target) : input.target,
+      ...(discovered.length ? { discoveryUrls: discovered } : {}),
+      ...(input.upstreamIndex ? { upstreamIndex: input.upstreamIndex } : {}),
       origin: input.origin,
       ...(family ? { family } : {}),
       coverage: input.coverage ?? [],
@@ -138,6 +157,14 @@ export class LeadRegistry {
     };
     this.leads.set(id, lead);
     return lead;
+  }
+
+  observeRedirect(id: string, destination: string): void {
+    const lead = this.leads.get(id);
+    if (!lead) return;
+    const target = normalizeTarget(destination);
+    lead.resolvedUrl = target;
+    this.aliases.set(target, id);
   }
 
   pending(): PersonResearchLead[] {
@@ -162,8 +189,10 @@ export class LeadRegistry {
     /* Investigated, unreachable and rejected all mean "do not fetch this
        again": an owner's detachment and a wrong-person page are as final as a
        successful read, and re-crawling either wastes the next operation. */
-    if (disposition !== "interrupted" && disposition !== "deduplicated")
+    if (disposition !== "interrupted" && disposition !== "deduplicated") {
       this.seenTargets.add(normalizeTarget(lead.target));
+      if (lead.resolvedUrl) this.seenTargets.add(normalizeTarget(lead.resolvedUrl));
+    }
   }
 
   score(id: string, selection: NonNullable<PersonResearchLead["selection"]>): void {
@@ -213,11 +242,8 @@ export class LeadRegistry {
 
 function normalizeTarget(value: string): string {
   try {
-    const url = new URL(value);
-    url.hash = "";
-    for (const key of [...url.searchParams.keys()])
-      if (/^(utm_|fbclid$|gclid$|ref$)/i.test(key)) url.searchParams.delete(key);
-    return `${url.origin}${url.pathname.replace(/\/$/, "")}${url.search}`.toLowerCase();
+    new URL(value);
+    return canonicalSourceUrl(value);
   } catch {
     return value.trim().toLowerCase();
   }
@@ -259,6 +285,7 @@ export interface SelectionContext {
   /** Coverage areas not yet satisfied, keyed by area key. */
   unsatisfied: Set<string>;
   /** Discovery rank, lowest first, from the query that produced the lead. */
+  sourcePerformance?: Map<string, { reads: number; useful: number; milliseconds: number }>;
   rank: number;
   title: string;
   snippet: string;
@@ -295,18 +322,32 @@ export function scoreLead(
 
   const host = hostOf(lead.target);
   const seenHost = host ? (context.readHosts.get(host) ?? 0) : 0;
-  const seenIndex = lead.family ? (context.readIndexes.get(lead.family) ?? 0) : 0;
+  const seenIndex = lead.upstreamIndex ? (context.readIndexes.get(lead.upstreamIndex) ?? 0) : 0;
   const independence = 2 / (1 + seenHost) + 1 / (1 + seenIndex);
 
   const familyArea = lead.family && context.unsatisfied.has(lead.family) ? 1.5 : 0;
   const sectionAreas = lead.coverage.filter((key) => context.unsatisfied.has(key)).length * 0.5;
   const coverageGap = familyArea + sectionAreas;
 
+  const performance = host ? context.sourcePerformance?.get(host) : undefined;
+  // A bounded adjustment keeps relevance dominant and leaves unseen sources
+  // neutral. Yield counts novel supported evidence, never raw claim volume.
+  const efficiency = performance
+    ? Math.max(
+        0.5,
+        Math.min(
+          1.25,
+          (0.75 + performance.useful / performance.reads) /
+            (1 + performance.milliseconds / performance.reads / 30000),
+        ),
+      )
+    : 1;
   return {
-    score: relevance * 2 + independence + coverageGap,
+    score: (relevance * 2 + independence + coverageGap) * efficiency,
     relevance,
     independence,
     coverageGap,
+    efficiency,
   };
 }
 

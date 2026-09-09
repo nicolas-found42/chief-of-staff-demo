@@ -107,6 +107,7 @@ Options
   --compare-stats <a.json> <b.json>        Compare two stats files on paired per-person diffs and exit.
   --reassess <report.json>                  Reassess retained evidence without researching again.
   --evidence-workspace <dir>                Isolated public snapshot with snapshot-manifest.json.
+  --timeline-minutes <list>                With --reassess, assess publication snapshots (e.g. 1,2,3,5,15).
   --reassess-only-failed                   Freeze completed assessments; retry failed assessments only.
   --lineage-root <dir>                     Bounded report directory for first reassessment ancestry.
   --probe-sources                          Probe every source route's anonymous access and exit.
@@ -129,8 +130,8 @@ function arg(name: string): string | undefined {
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
 /* Machine-read benchmark artifacts persist minified: one JSON document per line keeps a
-   30-person run's committed diff small enough for review tooling to fetch (Sourcery cannot
-   fetch diffs over 20k lines), and the .md report stays the human-readable record. (#237) */
+   30-person run's committed diff compact for review tooling, while the .md report stays
+   the human-readable record. (#237) */
 function persistPersonArtifact(value: unknown, stem: string, out: string): void {
   const artifact = BenchmarkPersonArtifactSchema.parse(value);
   mkdirSync(out, { recursive: true });
@@ -315,6 +316,25 @@ if (reassessmentPath) {
     reportPath: reassessmentPath,
     evidenceWorkspace,
     onlyFailed: flag("reassess-only-failed"),
+    ...(arg("timeline-minutes")
+      ? { timelineMinutes: arg("timeline-minutes")!.split(",").map(Number) }
+      : {}),
+    onTimeline: (slug, points, provenance) => {
+      const out = arg("out") ?? "artifacts/person-benchmark";
+      mkdirSync(out, { recursive: true });
+      writeFileSync(
+        join(out, `timeline-${Date.now()}-${slug}.json`),
+        JSON.stringify({
+          kind: "publication-timeline",
+          ...provenance,
+          originalReport: reassessmentPath,
+          judgeProvider: judging.provider,
+          judgeModel: judging.model,
+          points,
+        }) + "\n",
+        { flag: "wx" },
+      );
+    },
     ...(arg("lineage-root") ? { lineageRoot: arg("lineage-root")! } : {}),
     outputDirectory: resolve(arg("out") ?? "artifacts/person-benchmark"),
     corpus,
@@ -354,6 +374,7 @@ if (reassessmentPath) {
 }
 if (flag("reassess-only-failed") || flag("lineage-root"))
   throw new Error("--reassess-only-failed and --lineage-root require --reassess.");
+if (flag("timeline-minutes")) throw new Error("--timeline-minutes requires --reassess.");
 if (flag("evidence-workspace")) throw new Error("--evidence-workspace requires --reassess.");
 
 const requested = (arg("people") ?? "")

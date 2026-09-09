@@ -155,6 +155,22 @@ async function fixture() {
   };
 }
 
+it("assesses timed revisions without rewriting the original operation verdict", async () => {
+  const input = await fixture();
+  const timelines: { minute: number; revision: number | null }[][] = [];
+  const result = await reassessReport({
+    ...input,
+    timelineMinutes: [1, 2, 3, 5, 15],
+    onTimeline: (_, points) => {
+      timelines.push(points);
+    },
+  });
+  expect(timelines).toHaveLength(1);
+  expect(timelines[0].map((point) => point.minute)).toEqual([1, 2, 3, 5, 15]);
+  expect(timelines[0].every((point) => point.revision !== null)).toBe(true);
+  expect(result.people[0].operational).toEqual(input.evaluation.result.operational);
+});
+
 it("rejudges exact persisted research and recomputes reports without changing original evidence or outcomes", async () => {
   const input = await fixture();
   const original = readFileSync(input.reportPath, "utf8");
