@@ -1434,6 +1434,156 @@ it("preserves a repost's actual author and post identity in retained social evid
   expect(text).not.toContain("Public Bluesky posts by maya.example");
 });
 
+it("retains an authored Bluesky post as a cited fact with its original author and post reference", async () => {
+  /* Benchmark corpus fact `spatial-apartheid-review`
+     (benchmark/person-research/people/timnit-gebru.json, read-only): the quote
+     below is that fact's verbatim support. This test proves the whole retention
+     path — reader attribution, source filing, claim citation — carries the
+     original author and post reference into the published dossier. */
+  const url = "https://bsky.app/profile/timnitgebru.blacksky.app";
+  const quote =
+    'Literally, the (extremely famous) journal sent it to white South African reviewers who pointed out all these "papers" written by white South Africans DURING apartheid, that we failed to cite.';
+  const statement =
+    "On 5 September 2026 Gebru stated that a prominent journal sent her co-authored spatial-apartheid paper to white South African reviewers who faulted it for not citing apartheid-era papers.";
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (target) => ({
+        url: target,
+        status: 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: JSON.stringify({
+          feed: [
+            {
+              post: {
+                uri: "at://did:plc:gebru/app.bsky.feed.post/spatial1",
+                author: { did: "did:plc:gebru", handle: "timnitgebru.blacksky.app" },
+                record: { text: quote, createdAt: "2026-09-05T01:43:02.434Z" },
+              },
+            },
+          ],
+        }),
+      }),
+    },
+    complete: () => async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "self-report",
+      author: "timnitgebru.blacksky.app",
+      publishedAt: "2026-09-05T01:43:02.434Z",
+      claims: [
+        {
+          id: "spatial-apartheid-review",
+          section: "context",
+          statement,
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: "2026-09-05",
+          effectiveTo: null,
+          citations: [{ sourceId: "source", quote }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const profile = h.people.research.startFor({ fullName: "Timnit Gebru", profileUrls: [url] });
+  await h.people.research.runNow(profile.id);
+  const dossier = h.people.dossiers.get(profile.id)!;
+  expect(dossier.claims.map((claim) => claim.statement)).toContain(statement);
+  const claim = dossier.claims.find((entry) => entry.statement === statement)!;
+  /* A self-statement is cited as claimed, never as supported. */
+  expect(claim.status).toBe("claimed");
+  const source = h.people.dossiers.source(profile.id, claim.citations[0].sourceId)!;
+  expect(source).toMatchObject({
+    url,
+    acquisition: "bluesky",
+    attribution: "self-report",
+    author: "timnitgebru.blacksky.app",
+  });
+  expect(source.text).toContain("author: timnitgebru.blacksky.app");
+  expect(source.text).toContain("at://did:plc:gebru/app.bsky.feed.post/spatial1");
+  expect(source.text).toContain("https://bsky.app/profile/timnitgebru.blacksky.app/post/spatial1");
+  expect(claim.citations[0].quote).toBe(quote);
+});
+
+it("files a person's own Mastodon post as self-report cited as claimed, not supported", async () => {
+  const url = "https://mastodon.social/@maya";
+  const post = "Maya Chen released the coastal sensor report.";
+  const statement = "Maya Chen states she released the coastal sensor report.";
+  const h = compose({
+    researchTestPorts: {
+      fetch: async (target) => ({
+        url: target,
+        status: 200,
+        contentType: "application/json",
+        etag: null,
+        lastModified: null,
+        retryAfter: null,
+        body: target.includes("/lookup?")
+          ? '{"id":"123"}'
+          : JSON.stringify([
+              {
+                created_at: "2026-09-01T00:00:00Z",
+                content: `<p>${post}</p>`,
+                url: "https://mastodon.social/@maya/1",
+                account: { acct: "maya", url: "https://mastodon.social/@maya" },
+                reblog: null,
+              },
+            ]),
+      }),
+    },
+    complete: () => async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "self-report",
+      author: "maya",
+      publishedAt: null,
+      claims: [
+        {
+          id: "sensor-report",
+          section: "work",
+          statement,
+          status: "supported",
+          nature: "statement",
+          matchConfidence: "high",
+          effectiveFrom: null,
+          effectiveTo: null,
+          citations: [{ sourceId: "source", quote: post }],
+          supports: [],
+          supersedes: [],
+          changeReason: null,
+        },
+      ],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+  });
+  const profile = h.people.research.startFor({ fullName: "Maya Chen", profileUrls: [url] });
+  await h.people.research.runNow(profile.id);
+  const dossier = h.people.dossiers.get(profile.id)!;
+  expect(dossier.claims.map((claim) => claim.statement)).toContain(statement);
+  const claim = dossier.claims.find((entry) => entry.statement === statement)!;
+  /* The pipeline visibly downgraded the model's supported: retention and
+     citation both mark this a self-statement, not independent verification. */
+  expect(claim.status).toBe("claimed");
+  const source = h.people.dossiers.source(profile.id, claim.citations[0].sourceId)!;
+  expect(source).toMatchObject({ attribution: "self-report", acquisition: "mastodon" });
+  expect(source.text).toContain(
+    "author: maya; status: https://mastodon.social/@maya/1; post — Maya Chen released the coastal sensor report.",
+  );
+});
+
 it("broadens empty discovery and retains useful evidence beyond the first reading batch", async () => {
   const h = compose({
     search: async (query) =>
@@ -1852,6 +2002,8 @@ it("reads an anonymous Mastodon account's dated public statuses", async () => {
               {
                 created_at: "2026-09-01",
                 content: "<p>Maya Chen released the coastal sensor report.</p>",
+                url: "https://mastodon.social/@maya/1",
+                account: { acct: "maya", url: "https://mastodon.social/@maya" },
               },
             ]),
       }),
@@ -1865,7 +2017,9 @@ it("reads an anonymous Mastodon account's dated public statuses", async () => {
   expect(h.people.research.sources(profile.id)).toContainEqual(
     expect.objectContaining({
       acquisition: "mastodon",
-      text: expect.stringContaining("2026-09-01 — Maya Chen released the coastal sensor report."),
+      text: expect.stringContaining(
+        "2026-09-01 — author: maya; status: https://mastodon.social/@maya/1; post — Maya Chen released the coastal sensor report.",
+      ),
       upstreamIndex: "mastodon.social",
     }),
   );
