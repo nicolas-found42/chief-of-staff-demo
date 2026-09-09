@@ -209,6 +209,9 @@ export const PersonResearchLeadSchema = z.object({
   id: z.string().max(64),
   kind: z.enum(["query", "url", "record", "media", "document"]),
   target: z.string().max(4000),
+  resolvedUrl: z.string().max(4000).optional(),
+  discoveryUrls: z.array(z.string().max(4000)).max(100).optional(),
+  upstreamIndex: z.string().max(200).optional(),
   /** Where the lead came from: seed, a read document, or the planner. */
   origin: z.enum(["seed", "discovery", "document-link", "planner", "expansion"]),
   /** The source family this lead would exercise, when known. */
@@ -234,6 +237,7 @@ export const PersonResearchLeadSchema = z.object({
       relevance: z.number().finite(),
       independence: z.number().finite(),
       coverageGap: z.number().finite(),
+      efficiency: z.number().finite().optional(),
     })
     .optional(),
 });

@@ -1,3 +1,5 @@
+import { assessTimeline } from "./timeline.js";
+import { PersonDossierStore } from "../person-profile/dossier-store.js";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -50,6 +52,12 @@ export async function reassessReport(input: {
   judgeProvider: string;
   judgeModel: string;
   onlyFailed?: boolean;
+  timelineMinutes?: number[];
+  onTimeline?: (
+    slug: string,
+    points: Awaited<ReturnType<typeof assessTimeline>>,
+    provenance: { runId: string; evidenceBundleHash: string; judgeVersion: string },
+  ) => void;
   lineageRoot?: string;
   outputDirectory?: string;
   onPerson?: (artifact: BenchmarkPersonArtifact, operation: PersonResearchOperationOutcome) => void;
@@ -250,6 +258,30 @@ export async function reassessReport(input: {
             scenario.assessmentStatus === "completed"
           )
             carriedScenarios.set(scenario.scenarioId, structuredClone(scenario));
+      }
+    }
+    if (input.timelineMinutes?.length) {
+      const store = new PersonDossierStore(workspaceDir);
+      for (const entry of evidence) {
+        const revisions = [];
+        for (let revision = 1; revision <= (entry.dossier?.revision ?? 0); revision += 1) {
+          const dossier = store.getRevision(entry.operation.profileId, revision);
+          if (dossier) revisions.push(dossier);
+        }
+        const points = await assessTimeline({
+          person: entry.person,
+          mode: original.mode,
+          startedAt: entry.operation.startedAt,
+          revisions,
+          sources: entry.sources,
+          minutes: input.timelineMinutes,
+          judge: input.judge,
+        });
+        input.onTimeline?.(entry.person.slug, points, {
+          runId: original.runId,
+          evidenceBundleHash: bundleHash,
+          judgeVersion: JUDGE_VERSION,
+        });
       }
     }
     const retriedPeople: string[] = [];

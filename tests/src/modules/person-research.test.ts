@@ -590,7 +590,9 @@ test("a lead trailing the read batch beyond the selection margin is decided, not
   const rejected = urlLeads.filter((lead) => lead.disposition === "rejected");
   expect(rejected).toHaveLength(10);
   for (const lead of rejected) expect(lead.reason).toMatch(/selection margin/);
-  const investigated = urlLeads.filter((lead) => lead.disposition === "investigated");
+  const investigated = urlLeads.filter((lead) =>
+    ["investigated", "deduplicated"].includes(lead.disposition),
+  );
   expect(investigated.map((lead) => lead.target)).toEqual([
     "https://example.com/page-0",
     "https://example.com/page-1",

@@ -52,7 +52,7 @@ describe("Source Adapter discovery", () => {
       body: `<div class="result"><a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Farticle">Example article</a><span class="result__snippet">A useful public result.</span></div>`,
     }));
 
-    await expect(search("example")).resolves.toEqual([
+    await expect(search("example")).resolves.toMatchObject([
       {
         title: "Example article",
         url: "https://example.com/article",
@@ -72,7 +72,7 @@ describe("Source Adapter discovery", () => {
       body: `<html><head><link rel="alternate" type="application/rss+xml" href="/feed.xml" title="Example feed"></head></html>`,
     }));
 
-    await expect(discoverFeeds("https://example.com/")).resolves.toEqual([
+    await expect(discoverFeeds("https://example.com/")).resolves.toMatchObject([
       { url: "https://example.com/feed.xml", title: "Example feed" },
     ]);
   });

@@ -141,6 +141,7 @@ export function selectReadBatch(input: {
   context: (leadId: string, target: string) => { title: string; snippet: string; rank: number };
   readHosts: Map<string, number>;
   readIndexes: Map<string, number>;
+  sourcePerformance?: SelectionContext["sourcePerformance"];
   readConcurrency: number;
   /** Records the score against the lead, so a deferral keeps its reason. */
   score: (leadId: string, selection: NonNullable<PersonResearchLead["selection"]>) => void;
@@ -152,6 +153,7 @@ export function selectReadBatch(input: {
       readHosts: input.readHosts,
       readIndexes: input.readIndexes,
       unsatisfied: input.unsatisfied,
+      ...(input.sourcePerformance ? { sourcePerformance: input.sourcePerformance } : {}),
       rank: context.rank,
       title: context.title,
       snippet: context.snippet,

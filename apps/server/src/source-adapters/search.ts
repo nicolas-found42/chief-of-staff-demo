@@ -1,3 +1,5 @@
+import { loadRorIndex } from "./ror-index.js";
+import { canonicalSourceUrl } from "./source-identity.js";
 import { publicHttpFetch, type PublicHttpFetch } from "./http.js";
 import { defaultProviders } from "./providers/index.js";
 import { fetchSuggestions } from "./providers/suggest.js";
@@ -7,6 +9,12 @@ export interface PublicSearchResult {
   title: string;
   url: string;
   snippet: string;
+  /** Original index and discovered URL remain available after canonicalization. */
+  upstreamIndex?: string;
+  sourceVersion?: string;
+  discoveryUrl?: string;
+  discoveryUrls?: string[];
+  entityType?: "person" | "organization" | "artifact" | "page";
 }
 
 /**
@@ -17,7 +25,17 @@ export interface PublicSearchResult {
  * ask it for public evidence about one person. The question asked is the
  * caller's, never this seam's.
  */
-export type PublicSearch = (query: string) => Promise<PublicSearchResult[]>;
+interface DiscoveryIntent {
+  fullName?: string | null;
+  organizations?: string[];
+  emails?: string[];
+  coverage?: string[];
+  language?: string;
+}
+export type PublicSearch = (
+  query: string,
+  intent?: DiscoveryIntent,
+) => Promise<PublicSearchResult[]>;
 
 /** The search route refused to answer — distinct from answering with nothing. */
 export class PublicSearchUnavailableError extends Error {
@@ -75,6 +93,9 @@ export function createPublicSearch(
   endpoint?: (query: string) => string,
   options: {
     diagnostics?: PublicSearchDiagnostics;
+    /** Optional explicit local ROR dump; absent uses the anonymous network route. */
+    rorDataPath?: string;
+    rorIndex?: ReturnType<typeof loadRorIndex>;
     searxngUrl?: string;
     now?: () => number;
     cacheTtlMs?: number;
@@ -100,6 +121,8 @@ export function createPublicSearch(
   const providers = options.providerFilter
     ? defaultProviders(bundleOptions).filter((provider) => options.providerFilter!(provider.name))
     : defaultProviders(bundleOptions);
+  const rorPath = options.rorDataPath ?? process.env.PERSON_RESEARCH_ROR_DATA;
+  const rorIndex = options.rorIndex ?? (rorPath ? loadRorIndex(rorPath) : null);
   const mergedLimit = options.mergedLimit ?? MERGED_LIMIT;
   const now = options.now ?? (() => Date.now());
   const cacheTtlMs = options.cacheTtlMs ?? CACHE_TTL_MS;
@@ -111,6 +134,8 @@ export function createPublicSearch(
   const cache = new Map<string, { at: number; results: PublicSearchResult[] }>();
   const cooldownUntil = new Map<string, number>();
   const expandedQueries = new Set<string>();
+  const providerCache = new Map<string, { at: number; results: PublicSearchResult[] }>();
+  const inFlight = new Map<string, Promise<PublicSearchResult[]>>();
 
   function refuse(
     provider: string,
@@ -144,6 +169,7 @@ export function createPublicSearch(
   async function runPass(
     query: string,
     answeredOutcome: "ok" | "expanded",
+    intent?: DiscoveryIntent,
   ): Promise<{
     merged: PublicSearchResult[];
     answered: number;
@@ -179,7 +205,28 @@ export function createPublicSearch(
           return;
         }
         try {
-          const found = await provider.search(query, io);
+          const nativeQuery = providerQuery(provider.name, query, intent);
+          if (nativeQuery === null) return;
+          const key = JSON.stringify([provider.name, nativeQuery]);
+          const cached = providerCache.get(key);
+          let found: PublicSearchResult[];
+          if (cached && now() - cached.at < cacheTtlMs) found = cached.results;
+          else {
+            let work = inFlight.get(key);
+            if (!work) {
+              const local = provider.name === "ror" ? rorIndex?.lookup(nativeQuery) : null;
+              work = local ? Promise.resolve(local) : provider.search(nativeQuery, io);
+              inFlight.set(key, work);
+            }
+            try {
+              found = await work;
+              providerCache.set(key, { at: now(), results: found });
+              if (providerCache.size > 2000)
+                providerCache.delete(providerCache.keys().next().value!);
+            } finally {
+              if (inFlight.get(key) === work) inFlight.delete(key);
+            }
+          }
           const ms = now() - startedAt;
           if (found.length === 0 && DECLINES_WITHOUT_REQUEST.has(provider.name)) {
             diagnostics?.({ provider: provider.name, query, outcome: "empty", results: 0, ms });
@@ -194,7 +241,18 @@ export function createPublicSearch(
             results: found.length,
             ms,
           });
-          perProvider[index] = found;
+          perProvider[index] = found.map((result) => ({
+            ...result,
+            upstreamIndex: provider.name,
+            entityType:
+              provider.name === "ror"
+                ? "organization"
+                : provider.name === "orcid"
+                  ? "person"
+                  : provider.name === "artic"
+                    ? "artifact"
+                    : "page",
+          }));
         } catch (error) {
           const ms = now() - startedAt;
           /* Any throw that is not a refusal is a broken provider, not a
@@ -219,14 +277,31 @@ export function createPublicSearch(
        looking at the last one is registration-order truncation wearing a
        different hat (#228). Registration order still decides ties, so it still
        decides which provider's duplicate survives dedupe (ADR-0049). */
-    const seen = new Set<string>();
+    const seen = new Map<string, PublicSearchResult>();
     const depth = Math.max(0, ...perProvider.map((found) => found.length));
     for (let index = 0; index < depth; index += 1) {
       for (const found of perProvider) {
         const result = found[index];
-        if (!result || seen.has(result.url)) continue;
-        seen.add(result.url);
-        merged.push(result);
+        if (!result) continue;
+        const url = canonicalSourceUrl(result.url);
+        const previous = seen.get(url);
+        if (previous) {
+          previous.discoveryUrls = [
+            ...new Set([
+              ...(previous.discoveryUrls ?? [previous.discoveryUrl ?? previous.url]),
+              result.url,
+            ]),
+          ].slice(0, 100);
+          continue;
+        }
+        const normalized = {
+          ...result,
+          url,
+          discoveryUrls: [result.url],
+          ...(url !== result.url ? { discoveryUrl: result.url } : {}),
+        };
+        seen.set(url, normalized);
+        merged.push(normalized);
       }
     }
 
@@ -239,8 +314,9 @@ export function createPublicSearch(
     };
   }
 
-  return async (query) => {
-    const cached = cache.get(query);
+  return async (query, intent) => {
+    const cacheKey = JSON.stringify([query, intent]);
+    const cached = cache.get(cacheKey);
     if (cached) {
       if (now() - cached.at < cacheTtlMs) {
         diagnostics?.({
@@ -252,10 +328,10 @@ export function createPublicSearch(
         });
         return cached.results;
       }
-      cache.delete(query);
+      cache.delete(cacheKey);
     }
 
-    const pass = await runPass(query, "ok");
+    const pass = await runPass(query, "ok", intent);
     if (pass.engaged > 0 && pass.refused === pass.engaged) {
       /* A search where every provider refused is evidence of nothing at all,
          so it must not read as "the person has no public footprint". */
@@ -285,7 +361,7 @@ export function createPublicSearch(
         .catch(() => [] as string[]);
       const seen = new Set(merged.map((result) => result.url));
       for (const variant of variants) {
-        const expansion = await runPass(variant, "expanded");
+        const expansion = await runPass(variant, "expanded", intent);
         for (const result of expansion.merged) {
           if (seen.has(result.url)) continue;
           seen.add(result.url);
@@ -297,7 +373,25 @@ export function createPublicSearch(
 
     /* Only successes are cached — a refusal cached here would report "no
        public footprint" for an hour after the network recovered. */
-    cache.set(query, { at: now(), results: merged });
+    cache.set(cacheKey, { at: now(), results: merged });
+    if (cache.size > 500) cache.delete(cache.keys().next().value!);
     return merged;
   };
+}
+
+/** Native entity queries avoid interpreting biography prose as a registry lookup. */
+function providerQuery(provider: string, query: string, intent?: DiscoveryIntent): string | null {
+  if (!intent) return query;
+  const name = intent.fullName?.trim();
+  if (provider === "ror") return intent.organizations?.find((name) => name.trim())?.trim() ?? null;
+  if (provider === "artic") return name ?? null;
+  if (provider !== "orcid") return query;
+  if (!name) return null;
+  const quote = (value: string) => `"${value.replace(/[\\"]/g, " ")}"`;
+  const words = name.split(/\s+/);
+  const fields =
+    words.length > 1
+      ? `(given-names:${quote(words.slice(0, -1).join(" "))} AND family-name:${quote(words.at(-1)!)}) OR `
+      : "";
+  return `${fields}credit-name:${quote(name)}`;
 }

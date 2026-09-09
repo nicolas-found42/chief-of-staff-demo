@@ -15,6 +15,9 @@ services:
       # Seeds the SearXNG address the same way (ADR-0049); a value stored in
       # the Workspace's config wins over this default.
       SEARXNG_URL: http://searxng:8080
+      # Optional installed ROR JSON dump; use a container path inside the
+      # existing Workspace mount, e.g. /app/workspace/ror-data.json.
+      PERSON_RESEARCH_ROR_DATA: ${PERSON_RESEARCH_ROR_DATA:-}
     healthcheck:
       test:
         [

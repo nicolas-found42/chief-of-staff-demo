@@ -1,3 +1,7 @@
+import { extractionPassages } from "./extraction-passages.js";
+import { SourceScheduler } from "./source-scheduler.js";
+import { WorkLimiter } from "./work-limiter.js";
+import { canonicalSourceUrl } from "../source-adapters/source-identity.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod/v3";
 import {
@@ -88,20 +92,6 @@ const EXTRACTION_BOUNDARY_FAILURE_TOLERANCE = 3;
  * attributable instead of silently faster (#233).
  */
 export const EXTRACTION_PREFERRED_MIN_THROUGHPUT = 50;
-
-/**
- * The most document text one extraction call reads, the most parts one
- * document is read in, and the total a document contributes. A part is what
- * keeps each call small enough for a very cheap model to answer reliably:
- * the whole-document shape (a dossier-sized answer out of one call) is where
- * cheap models stall and stray (ADR-0074). The total stays at the former
- * single call's 60k envelope — the shape changes, the volume does not — and
- * a longer document keeps its tail unread and is retained as `partial`,
- * exactly as before.
- */
-const EXTRACTION_MAX_CHARACTERS = 60_000;
-const EXTRACTION_PART_CHARACTERS = 16_000;
-const EXTRACTION_MAX_PARTS = 4;
 
 /**
  * How far below the round's read batch a deferred lead's score may fall before
@@ -213,6 +203,8 @@ interface PendingRead {
  * or hits a safety bound, both of which it reports as such.
  */
 export class PersonResearch {
+  private readonly modelWork = new WorkLimiter(4);
+  private readonly sourceWork = new SourceScheduler();
   constructor(
     private readonly deps: {
       dossiers: PersonDossierStore;
@@ -222,6 +214,8 @@ export class PersonResearch {
       fetchBytes?: PublicHttpBytesFetch;
       render?: BrowserRenderer;
       complete: CompleteJson;
+      /** Resolve configured model bindings once so exact reuse cannot cross a model change. */
+      operationModels?: () => { complete: CompleteJson; plan?: CompleteJson };
       /** The planning model. Absent means deterministic planning only. */
       plan?: CompleteJson;
       /**
@@ -246,6 +240,10 @@ export class PersonResearch {
   ) {}
 
   async run(profile: PersonProfile, allowance: ResearchAllowance): Promise<ResearchOutcome> {
+    const models = this.deps.operationModels?.() ?? {
+      complete: this.deps.complete,
+      plan: this.deps.plan,
+    };
     const now = this.deps.now ?? (() => new Date());
     const operationId = allowance.checkpoint?.operationId ?? randomUUID();
     const recorder = new ResearchAttemptRecorder(operationId, now);
@@ -254,8 +252,11 @@ export class PersonResearch {
     const coverage = buildCoveragePlan();
     const leads = new LeadRegistry(allowance.checkpoint?.visited ?? []);
     const linked = new Set<string>(allowance.checkpoint?.linked ?? []);
-    const rejected = new Set(this.deps.dossiers.rejectedEntries(profile.id));
-    const rejectionRevision = JSON.stringify([...rejected].sort());
+    const rejectedEntries = [...new Set(this.deps.dossiers.rejectedEntries(profile.id))];
+    const rejected = new Set(
+      rejectedEntries.flatMap((entry) => [entry, canonicalSourceUrl(entry)]),
+    );
+    const rejectionRevision = JSON.stringify(rejectedEntries.sort());
     const readHosts = new Map<string, number>();
     const readIndexes = new Map<string, number>();
     const leadContext = new Map<string, { title: string; snippet: string; rank: number }>();
@@ -267,18 +268,22 @@ export class PersonResearch {
       code: PersonResearchOperationOutcome["interruption"];
       reason: string;
     } | null = null;
-    let pendingSourceId = allowance.checkpoint?.pendingSourceId;
+    const pendingSourceIds = new Set(
+      allowance.checkpoint?.pendingSourceIds ??
+        (allowance.checkpoint?.pendingSourceId ? [allowance.checkpoint.pendingSourceId] : []),
+    );
     /* Extraction calls that failed at the model boundary since the last one
        that succeeded, and whether any succeeded at all in this operation.
        Together they separate a stalled request from a failing provider. */
-    let consecutiveExtractionFailures = 0;
-    let extractionSucceeded = false;
+    const extractionHealth = { failures: 0, succeeded: false };
     /* The document a previous operation retained but never finished
        extracting. Reusing it is what makes a restart resume rather than
        re-crawl (#212). */
-    const resumable = pendingSourceId
-      ? this.deps.dossiers.source(profile.id, pendingSourceId)
-      : null;
+    const resumableSources = new Map<string, PersonSourceDocument>();
+    for (const id of pendingSourceIds) {
+      const source = this.deps.dossiers.source(profile.id, id);
+      if (source) resumableSources.set(canonicalSourceUrl(source.url), source);
+    }
     const factualUpdates: Parameters<WorkspacePersonProfiles["acceptResearchFacts"]>[2] = [];
 
     /* Lifecycle fence. A standing identity decision changing mid-operation is
@@ -312,6 +317,14 @@ export class PersonResearch {
        each can be asked without driving a whole operation. */
     const budget = new ResearchBudget(allowance, { active });
     const gate = new PublicationGate();
+    const sourceLocks = new Map<string, WorkLimiter>();
+    const extractedVersions = new Set<string>();
+    const planningContexts = new Map<string, number>();
+    const supportedStatements = new Set<string>();
+    const sourcePerformance = new Map<
+      string,
+      { reads: number; useful: number; milliseconds: number }
+    >();
 
     const privateDocuments = this.deps.privateDocuments?.(profile) ?? [];
     const privateByUrl = new Map(
@@ -367,9 +380,14 @@ export class PersonResearch {
         visited: leads.investigatedTargets(),
         retainedSourceIds: [...retainedSourceIds],
         linked: [...linked],
-        ...(pendingSourceId ? { pendingSourceId } : {}),
+        pendingSourceIds: [...pendingSourceIds],
+        ...(pendingSourceIds.size ? { pendingSourceId: [...pendingSourceIds][0] } : {}),
       });
     };
+    for (const source of resumableSources.values()) {
+      const lead = leads.add({ kind: "url", target: source.url, origin: "discovery" });
+      if (lead) leadContext.set(lead.id, { title: source.title, snippet: "", rank: 0 });
+    }
     checkpoint();
 
     let quiet = 0;
@@ -381,7 +399,7 @@ export class PersonResearch {
     let expansions = 0;
     while (active() && budget.within()) {
       rounds += 1;
-      let producedEvidence = false;
+      const roundProgress = { producedEvidence: false };
 
       /* 1. Discovery. Queries run together, so one slow provider bundle does
             not decide how long the round takes. */
@@ -397,7 +415,14 @@ export class PersonResearch {
           const attemptOf = recorder.correlate(lead.target);
           const at = Date.now();
           try {
-            const results = await this.deps.search(lead.target);
+            const results = await this.deps.search(lead.target, {
+              fullName: profile.fullName,
+              organizations: [profile.currentEmployer, ...profile.employerHints].filter(
+                (name): name is string => !!name,
+              ),
+              emails: profile.emails,
+              coverage: lead.coverage,
+            });
             recorder.record({
               stage: "discovery",
               code: results.length ? "retrieval-recovered" : "discovery-empty",
@@ -423,9 +448,20 @@ export class PersonResearch {
               const added = leads.add({
                 kind: "url",
                 target: result.url,
+                discoveryUrl: result.discoveryUrl ?? result.url,
+                ...(result.discoveryUrls ? { discoveryUrls: result.discoveryUrls } : {}),
+                ...(result.upstreamIndex ? { upstreamIndex: result.upstreamIndex } : {}),
                 origin: "discovery",
                 coverage: [],
               });
+              if (added && result.entityType === "organization") {
+                leads.resolve(
+                  added.id,
+                  "rejected",
+                  "Organization lookup result; it cannot establish this person's employment or identity.",
+                );
+                return;
+              }
               if (added)
                 leadContext.set(added.id, {
                   title: result.title,
@@ -480,6 +516,7 @@ export class PersonResearch {
           leadContext.get(leadId) ?? { title: target, snippet: "", rank: 20 },
         readHosts,
         readIndexes,
+        sourcePerformance,
         readConcurrency: allowance.readConcurrency,
         score: (leadId, selection) => {
           leads.score(leadId, selection);
@@ -547,7 +584,9 @@ export class PersonResearch {
 
       /* 3. Reading, in parallel. A source waiting out a `Retry-After` no
             longer stops every other source for this person. */
-      const outcomes = await mapLimit(reads, allowance.readConcurrency, async (pending) => {
+      const readOne = async (pending: PendingRead) => {
+        const readStarted = Date.now();
+        const resumable = resumableSources.get(canonicalSourceUrl(pending.url));
         if (!active()) return null;
         if (rejected.has(pending.url)) {
           leads.resolve(
@@ -637,23 +676,33 @@ export class PersonResearch {
             profileRevision: profile.revision,
           });
         }
-        return { pending, read, privateDocument };
-      });
+        if (read.access === "retrieved") leads.observeRedirect(pending.leadId, read.finalUrl);
+        return { pending, read, privateDocument, readMilliseconds: Date.now() - readStarted };
+      };
 
-      for (const entry of outcomes) {
-        if (!entry || !active()) break;
+      const processRead = async (entry: Awaited<ReturnType<typeof readOne>>) => {
+        if (!entry || !active()) return;
         const { pending, read, privateDocument } = entry;
+        if (rejected.has(canonicalSourceUrl(read.finalUrl))) {
+          leads.resolve(
+            pending.leadId,
+            "rejected",
+            "The owner rejected the resolved source destination.",
+          );
+          return;
+        }
         const host = hostOf(read.finalUrl) ?? hostOf(pending.url);
         if (host) readHosts.set(host, (readHosts.get(host) ?? 0) + 1);
-        if (read.upstreamIndex)
-          readIndexes.set(read.upstreamIndex, (readIndexes.get(read.upstreamIndex) ?? 0) + 1);
+        const upstreamIndex = leads.get(pending.leadId)?.upstreamIndex ?? read.upstreamIndex;
+        if (upstreamIndex)
+          readIndexes.set(upstreamIndex, (readIndexes.get(upstreamIndex) ?? 0) + 1);
         if (read.access !== "retrieved" || !read.text.trim()) {
           leads.resolve(
             pending.leadId,
             "inaccessible",
             `Reading produced no usable text (${read.access}).`,
           );
-          continue;
+          return;
         }
 
         /* Identity before attribution. A model's assertion cannot establish
@@ -682,7 +731,7 @@ export class PersonResearch {
             remediation:
               "Add an identity signal (employer, profile URL, email) to the Profile, or confirm the source manually.",
           });
-          continue;
+          return;
         }
         const matchStrength = identity.decision;
         if (matchStrength === "probable")
@@ -709,9 +758,9 @@ export class PersonResearch {
           if (!active() || (privateDocument && !privateDocument.active())) return null;
           return this.retain(profile, pending, read, privateDocument?.transcriptId, "unattempted");
         });
-        if (!retained) break;
+        if (!retained) return;
         retainedSourceIds.add(retained.id);
-        pendingSourceId = retained.id;
+        pendingSourceIds.add(retained.id);
         checkpoint();
 
         /* Each part is its own logical call and takes its own allowance; a
@@ -721,7 +770,8 @@ export class PersonResearch {
            part failure fails the document — the retained source stays
            retryable — and the strike count stays per document, so one long
            document cannot spend the whole tolerance by itself. */
-        const partTexts = extractionParts(read.text);
+        const passages = extractionPassages(read.text, profile);
+        const partTexts = passages.map((passage) => passage.text);
         const parts: z.infer<typeof Extraction>[] = [];
         let documentFailed = false;
         let documentInterrupted = false;
@@ -745,6 +795,7 @@ export class PersonResearch {
               url: pending.url,
               title: pending.title,
               text: partText,
+              sourceOffset: passages[partIndex]!.offset,
               part: `${partIndex + 1}/${partTexts.length}`,
               completeness: read.completeness,
               format: read.route,
@@ -756,7 +807,7 @@ export class PersonResearch {
           let partUsage: ModelAttemptEvent["usage"];
           let raw: unknown;
           try {
-            raw = await this.deps.complete({
+            raw = await models.complete({
               schema: Extraction,
               preferredBinding: "forced_tool_call",
               absoluteCeilingMs: MODEL_SMALL_REQUEST_TIMEOUT_MS,
@@ -904,10 +955,10 @@ export class PersonResearch {
               false,
             );
             if (!zod) {
-              consecutiveExtractionFailures += 1;
+              extractionHealth.failures += 1;
               /* A provider that keeps failing is an interruption of the
                  operation; one that failed on this document is a gap in it. */
-              if (consecutiveExtractionFailures >= EXTRACTION_BOUNDARY_FAILURE_TOLERANCE) {
+              if (extractionHealth.failures >= EXTRACTION_BOUNDARY_FAILURE_TOLERANCE) {
                 interruption = {
                   code: {
                     code: "model-boundary-failed",
@@ -922,32 +973,32 @@ export class PersonResearch {
             break;
           }
         }
-        if (documentInterrupted) break;
+        if (documentInterrupted) return;
         if (documentFailed) {
           /* A part that answered is a provider success: the strike counts the
              document whose extraction failed, and any answered part resets
              the consecutive run. */
           if (parts.length > 0) {
-            consecutiveExtractionFailures = 0;
-            extractionSucceeded = true;
+            extractionHealth.failures = 0;
+            extractionHealth.succeeded = true;
           }
-          continue;
+          return;
         }
         /* Bounded or deactivated mid-document: the parts read so far are
            discarded and the retained source stays resumable, exactly as a
            single-call extraction that never ran. */
-        if (parts.length < partTexts.length) break;
+        if (parts.length < partTexts.length) return;
         const extracted = combineExtractionParts(parts);
-        consecutiveExtractionFailures = 0;
-        extractionSucceeded = true;
-        if (!active()) break;
+        extractionHealth.failures = 0;
+        extractionHealth.succeeded = true;
+        if (!active()) return;
         if (privateDocument && !privateDocument.active()) {
           leads.resolve(
             pending.leadId,
             "rejected",
             "The Transcript stopped being confirmed during extraction.",
           );
-          continue;
+          return;
         }
 
         const published = await gate.publish(async () => {
@@ -996,19 +1047,33 @@ export class PersonResearch {
         });
         if (!published) {
           leads.resolve(pending.leadId, "investigated", "Extraction was not publishable.", false);
-          continue;
+          return;
         }
         const { source, content } = published;
 
         claimsPublished += content.claims.length;
-        producedEvidence ||= content.claims.length > 0;
+        let novelClaims = 0;
+        for (const claim of content.claims) {
+          if (claim.status !== "supported" || !claim.citations.length) continue;
+          const key = JSON.stringify([
+            claim.section,
+            claim.statement.trim().toLowerCase(),
+            claim.effectiveFrom,
+            claim.effectiveTo,
+          ]);
+          if (!supportedStatements.has(key)) {
+            roundProgress.producedEvidence = true;
+            novelClaims += 1;
+          }
+          supportedStatements.add(key);
+        }
         leads.resolve(
           pending.leadId,
           "investigated",
           content.claims.length
             ? `Retained and extracted ${String(content.claims.length)} grounded claims.`
             : "Retained; no grounded claims about this person were extracted.",
-          content.claims.length > 0,
+          novelClaims > 0,
         );
         if (!content.claims.length)
           recorder.record({
@@ -1070,9 +1135,95 @@ export class PersonResearch {
             const added = leads.add({ kind: "url", target: work.url, origin: "document-link" });
             if (added) leadContext.set(added.id, { title: work.title, snippet: "", rank: 0 });
           }
-        pendingSourceId = undefined;
+        // A legacy checkpoint may name the older source-id format. Clear all
+        // retained versions of this resumed URL once its extraction publishes.
+        for (const id of pendingSourceIds) {
+          const pendingSource = this.deps.dossiers.source(profile.id, id);
+          if (
+            id === retained.id ||
+            (pendingSource &&
+              canonicalSourceUrl(pendingSource.url) === canonicalSourceUrl(pending.url))
+          )
+            pendingSourceIds.delete(id);
+        }
         checkpoint();
-      }
+      };
+      // The finite read batch bounds the handoff queue. Ready reads begin extraction
+      // immediately; model capacity is shared across all people in this composition.
+      await mapLimit(reads, readBatchSize(allowance.readConcurrency), async (pending) => {
+        const entry = await this.sourceWork.run(
+          pending.url,
+          operationId,
+          allowance.readConcurrency,
+          () => readOne(pending),
+          (value) => value?.read.access === "retrieved",
+        );
+        if (!entry || !active()) return;
+        // Text equality alone is insufficient for dated or private evidence. These
+        // fields participate in extraction and attribution, so they version reuse.
+        const key = createHash("sha256")
+          .update(
+            JSON.stringify({
+              text: entry.read.text,
+              capturedAt: entry.read.capturedAt,
+              sourceVersion: entry.read.sourceVersion,
+              publishedAt: entry.read.publishedAt,
+              author: entry.read.author,
+              route: entry.read.route,
+              anchors: entry.read.anchors,
+              completeness: entry.read.completeness,
+              provenance: entry.read.provenanceNote,
+              outboundUrls: entry.read.outboundUrls,
+              title: entry.pending.title,
+              rights: entry.read.rights,
+              namedIndividuals: entry.read.namedIndividuals,
+              family: entry.read.family,
+              identity: this.decideIdentity(
+                profile,
+                entry.read,
+                entry.pending.url,
+                linked,
+                !!entry.privateDocument,
+              ),
+              privateTranscriptId: entry.pending.privateTranscriptId,
+            }),
+          )
+          .digest("hex");
+        const lock = sourceLocks.get(key) ?? new WorkLimiter(1);
+        sourceLocks.set(key, lock);
+        await lock.run(async () => {
+          if (!active()) return;
+          if (extractedVersions.has(key)) {
+            leads.resolve(
+              pending.leadId,
+              "deduplicated",
+              "An identical source version was already extracted for this identity revision; copies do not add independent corroboration.",
+            );
+            checkpoint();
+            return;
+          }
+          const succeeded = await this.modelWork.run(async () => {
+            const extractionStarted = Date.now();
+            await processRead(entry);
+            const host = hostOf(entry.read.finalUrl) ?? hostOf(pending.url);
+            if (host) {
+              const previous = sourcePerformance.get(host) ?? {
+                reads: 0,
+                useful: 0,
+                milliseconds: 0,
+              };
+              sourcePerformance.set(host, {
+                reads: previous.reads + 1,
+                useful: previous.useful + (leads.get(pending.leadId)?.yieldedEvidence ? 1 : 0),
+                milliseconds:
+                  previous.milliseconds + entry.readMilliseconds + Date.now() - extractionStarted,
+              });
+            }
+            return leads.get(pending.leadId)?.disposition === "investigated";
+          });
+          if (succeeded) extractedVersions.add(key);
+        });
+      });
 
       this.updateCoverage(coverage, profile, leads, expansions);
       if (!active() || !budget.within()) break;
@@ -1100,8 +1251,15 @@ export class PersonResearch {
          when the pending pool cannot already fill the next read batch, so a
          model call buys aims, not a longer queue (#239). The count is every
          readable lead, not urls alone — the batch reads documents too. */
+      const planningContext = JSON.stringify([
+        [...supportedStatements].sort(),
+        unsatisfiedAreas.map((area) => [area.key, area.state]),
+      ]);
+      // Two attempts per unchanged evidence/coverage context preserve exploration
+      // without buying endless new spellings of the same unproductive search.
       if (
-        this.deps.plan &&
+        models.plan &&
+        (planningContexts.get(planningContext) ?? 0) < allowance.quietRounds &&
         unsatisfiedAreas.length > 0 &&
         plannerIsWorthACall({
           pendingReadable,
@@ -1112,57 +1270,61 @@ export class PersonResearch {
         const planningAttemptOf = randomUUID();
         const planningFailureRecorded = { value: false };
         try {
-          const plan = await planNextLeads(this.deps.plan, {
-            profile,
-            dossier,
-            unsatisfied: unsatisfiedAreas,
-            investigated: leads.investigatedTargets(),
-            round: rounds,
-            onAttempt: (event) => {
-              if (event.outcome === "failed") planningFailureRecorded.value = true;
-              recordModelWireAttempt(recorder, {
-                stage: "planning",
-                collector: "planner",
-                target: "research-planning",
-                attemptOf: planningAttemptOf,
-                event,
-                successReason:
-                  "The planning model boundary returned JSON; the plan is filtered into leads.",
-                successImpact: "A model response is available for lead planning.",
-                remediation: "Check the model configured for the research-planning purpose.",
-              });
+          const plan = await planNextLeads(
+            (request) => this.modelWork.run(() => models.plan!(request)),
+            {
+              profile,
+              dossier,
+              unsatisfied: unsatisfiedAreas,
+              investigated: leads.investigatedTargets(),
+              round: rounds,
+              onAttempt: (event) => {
+                if (event.outcome === "failed") planningFailureRecorded.value = true;
+                recordModelWireAttempt(recorder, {
+                  stage: "planning",
+                  collector: "planner",
+                  target: "research-planning",
+                  attemptOf: planningAttemptOf,
+                  event,
+                  successReason:
+                    "The planning model boundary returned JSON; the plan is filtered into leads.",
+                  successImpact: "A model response is available for lead planning.",
+                  remediation: "Check the model configured for the research-planning purpose.",
+                });
+              },
+              onMetrics: (metrics) => {
+                recorder.record({
+                  stage: "planning",
+                  code: "model-call-metrics",
+                  outcome: "succeeded",
+                  recovery: "none",
+                  cause: "observed",
+                  target: "research-planning",
+                  targetKind: "model",
+                  collector: "planner",
+                  attemptOf: planningAttemptOf,
+                  attempt: 1,
+                  configuration: { logicalCall: planningAttemptOf, phase: "planning" },
+                  observed: {
+                    modelCallDurationMilliseconds: metrics.durationMilliseconds,
+                    modelInputCharacters: metrics.inputCharacters,
+                    modelOutputCharacters: metrics.outputCharacters,
+                    ...(metrics.usage
+                      ? {
+                          modelUsageTokens: {
+                            input: metrics.usage.input,
+                            output: metrics.usage.output,
+                          },
+                        }
+                      : {}),
+                  },
+                  reason:
+                    "The planning call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
+                });
+              },
             },
-            onMetrics: (metrics) => {
-              recorder.record({
-                stage: "planning",
-                code: "model-call-metrics",
-                outcome: "succeeded",
-                recovery: "none",
-                cause: "observed",
-                target: "research-planning",
-                targetKind: "model",
-                collector: "planner",
-                attemptOf: planningAttemptOf,
-                attempt: 1,
-                configuration: { logicalCall: planningAttemptOf, phase: "planning" },
-                observed: {
-                  modelCallDurationMilliseconds: metrics.durationMilliseconds,
-                  modelInputCharacters: metrics.inputCharacters,
-                  modelOutputCharacters: metrics.outputCharacters,
-                  ...(metrics.usage
-                    ? {
-                        modelUsageTokens: {
-                          input: metrics.usage.input,
-                          output: metrics.usage.output,
-                        },
-                      }
-                    : {}),
-                },
-                reason:
-                  "The planning call completed; its size and duration are recorded for call-shape attribution (ADR-0074).",
-              });
-            },
-          });
+          );
+          planningContexts.set(planningContext, (planningContexts.get(planningContext) ?? 0) + 1);
           for (const query of plan.queries)
             leads.add({
               kind: "query",
@@ -1216,7 +1378,7 @@ export class PersonResearch {
       }
       expansions += 1;
       const grew = leads.pending().length > before;
-      quiet = producedEvidence || grew ? 0 : quiet + 1;
+      quiet = roundProgress.producedEvidence || grew ? 0 : quiet + 1;
       checkpoint();
       /* 5. Completion. Every pending lead accounted for, and expansion has
             stopped producing anything new for `quietRounds` consecutive
@@ -1243,7 +1405,7 @@ export class PersonResearch {
     /* Tolerating a stalled request must not let an operation that never got a
        single extraction through report anything but an interruption: with no
        success to reset against, every failure it saw was the provider's. */
-    if (!interruption && consecutiveExtractionFailures > 0 && !extractionSucceeded)
+    if (!interruption && extractionHealth.failures > 0 && !extractionHealth.succeeded)
       interruption = {
         code: {
           code: "model-boundary-failed",
@@ -1357,7 +1519,7 @@ export class PersonResearch {
     if (isPrivate) return { decision: "matched", reason: "A confirmed Workspace Transcript." };
     const folded = read.text.toLowerCase();
     if (
-      linked.has(url) ||
+      [...linked].some((entry) => canonicalSourceUrl(entry) === canonicalSourceUrl(url)) ||
       profile.profileUrls.some((entry) => entry.replace(/\/$/, "") === url.replace(/\/$/, ""))
     )
       return {
@@ -1497,6 +1659,14 @@ export class PersonResearch {
       ...(transcriptId ? { transcriptId } : {}),
       acquisition: read.route,
       extractionCoverage,
+      ...(extractionCoverage !== "unattempted"
+        ? {
+            extractionRanges: extractionPassages(read.text, profile).map((passage) => ({
+              start: passage.offset,
+              end: passage.offset + passage.text.length,
+            })),
+          }
+        : {}),
       evidenceFamily: transcriptId ? "workspace" : read.family,
       ...(read.upstreamIndex ? { upstreamIndex: read.upstreamIndex } : {}),
       ...(read.anchors.length ? { anchors: read.anchors.slice(0, 500) } : {}),
@@ -1905,27 +2075,6 @@ export class PersonResearch {
 }
 
 /**
- * Splits a document's text into the bounded parts one extraction call reads
- * (ADR-0074): the same 60k characters the former single call read, now in
- * fixed windows of at most `EXTRACTION_PART_CHARACTERS`. A fact straddling a
- * window boundary belongs to the part that states it whole or to neither,
- * never to both — there is no overlap, and no window is shortened to chase a
- * paragraph edge, so the parts always cover the whole envelope.
- */
-function extractionParts(text: string): string[] {
-  const capped = text.slice(0, EXTRACTION_MAX_CHARACTERS);
-  if (capped.length <= EXTRACTION_PART_CHARACTERS) return [capped];
-  const parts: string[] = [];
-  let start = 0;
-  while (start < capped.length && parts.length < EXTRACTION_MAX_PARTS) {
-    const end = Math.min(start + EXTRACTION_PART_CHARACTERS, capped.length);
-    parts.push(capped.slice(start, end));
-    start = end;
-  }
-  return parts.filter((part) => part.trim().length > 0);
-}
-
-/**
  * One wire attempt of any model call inside the operation, recorded the same
  * way wherever it happened: the correlation key, the routing and binding it
  * actually used, and the classification of what the attempt produced.
@@ -2202,6 +2351,8 @@ async function mapLimit<T, R>(
       results[index] = await work(items[index]!);
     }
   });
-  await Promise.all(workers);
+  const settled = await Promise.allSettled(workers);
+  const failed = settled.find((entry) => entry.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
   return results;
 }

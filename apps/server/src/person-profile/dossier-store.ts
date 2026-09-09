@@ -77,6 +77,18 @@ export class PersonDossierStore {
           family,
           input.attribution,
           input.extractionCoverage,
+          input.capturedAt,
+          input.sourceVersion,
+          input.publishedAt,
+          input.author,
+          input.extractionRanges,
+          input.title,
+          input.rights,
+          input.anchors,
+          input.namedIndividuals,
+          input.provenanceNote,
+          input.outboundUrls,
+          input.acquisition,
         ]),
       )
       .digest("hex");

@@ -218,6 +218,13 @@ export function composePersonProfiles(
     people: profiles,
     search: deps.search,
     complete: (request) => deps.complete()(request),
+    operationModels: () => {
+      const plan = deps.researchTestPorts?.plan ?? deps.plan?.();
+      return {
+        complete: deps.researchTestPorts?.complete ?? deps.complete(),
+        ...(plan ? { plan } : {}),
+      };
+    },
     /* The planner runs on its own configured purpose, so a Workspace can give
        planning a different model from extraction without either becoming the
        other's fallback. When no planner is configured the operation expands

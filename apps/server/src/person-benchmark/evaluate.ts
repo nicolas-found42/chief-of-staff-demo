@@ -1,3 +1,5 @@
+import { canonicalSourceUrl } from "../source-adapters/source-identity.js";
+import { WorkLimiter } from "../person-profile/work-limiter.js";
 import { createHash } from "node:crypto";
 import {
   BENCHMARK_DOSSIER_REQUIREMENTS,
@@ -81,7 +83,9 @@ function fixedDocumentPorts(person: BenchmarkPerson): {
     return results;
   };
   const readSource: typeof readPersonSource = async (url, snippet) => {
-    const document = documents.find((entry) => entry.url === url);
+    const document = documents.find(
+      (entry) => canonicalSourceUrl(entry.url) === canonicalSourceUrl(url),
+    );
     if (!document)
       return {
         text: snippet,
@@ -218,26 +222,36 @@ export async function evaluateLivePopulation(
     throw new Error("Selected Benchmark People resolved to duplicate canonical Profiles.");
   const evaluations: PersonEvaluation[] = new Array<PersonEvaluation>(selected.length);
   let next = 0;
+  const judgeWork = new WorkLimiter(ports.concurrency);
+  const assessments: Promise<void>[] = [];
   const workers = Array.from({ length: Math.min(ports.concurrency, selected.length) }, async () => {
     while (next < selected.length) {
       const index = next++;
       const person = selected[index]!;
       ports.onStarted?.(person, index);
-      const evaluation = await evaluateInComposition(
+      const assess = await researchInComposition(
         person,
         "live-discovery",
         ports,
         people,
         profiles[index]!.id,
       );
-      evaluations[index] = evaluation;
-      ports.onEvaluated?.(evaluation, index);
+      const assessment = judgeWork.run(async () => {
+        const evaluation = await assess();
+        evaluations[index] = evaluation;
+        ports.onEvaluated?.(evaluation, index);
+      });
+      // Attach a rejection handler immediately; all outcomes are checked below,
+      // after both queues drain, before callers may remove the workspace.
+      void assessment.catch(() => {});
+      assessments.push(assessment);
     }
   });
   // An output/assessment failure must not let the CLI delete a workspace while
   // another accepted operation still has I/O or publication in flight.
   const settled = await Promise.allSettled(workers);
-  const failure = settled.find((result) => result.status === "rejected");
+  const judged = await Promise.allSettled(assessments);
+  const failure = [...settled, ...judged].find((result) => result.status === "rejected");
   if (failure?.status === "rejected") throw failure.reason;
   return { people, evaluations };
 }
@@ -249,6 +263,16 @@ async function evaluateInComposition(
   people: PersonProfilesComposition,
   profileId: string,
 ): Promise<PersonEvaluation> {
+  return (await researchInComposition(person, mode, ports, people, profileId))();
+}
+
+async function researchInComposition(
+  person: BenchmarkPerson,
+  mode: BenchmarkMode,
+  ports: EvaluationPorts,
+  people: PersonProfilesComposition,
+  profileId: string,
+): Promise<() => Promise<PersonEvaluation>> {
   const startedAt = Date.now();
   let failure: string | null = null;
   let operation: PersonResearchOperationOutcome | null = null;
@@ -263,7 +287,7 @@ async function evaluateInComposition(
 
   const dossier = people.research.dossier(profileId, "private");
   const sources = people.research.sources(profileId);
-  const result = await assessPerson(person, mode, {
+  const evidence = {
     dossier,
     sources,
     publicProjection: people.research.dossier(profileId, "public"),
@@ -271,8 +295,11 @@ async function evaluateInComposition(
     judge: ports.judge,
     elapsedMilliseconds: Date.now() - startedAt,
     failure,
-  });
-  return { result, operation, profileId };
+  };
+  return async () => {
+    const result = await assessPerson(person, mode, evidence);
+    return { result, operation, profileId };
+  };
 }
 
 /** Assess retained production evidence without initiating research. */

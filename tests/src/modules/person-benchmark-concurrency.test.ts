@@ -108,6 +108,33 @@ function fixture() {
   return { selected, ports, gates, started, maximumActive: () => maximumActive };
 }
 
+it("starts the next research operation while an earlier judge is blocked", async () => {
+  const { selected, ports, gates, started } = fixture();
+  let releaseJudge!: () => void;
+  const judgeGate = new Promise<void>((resolve) => {
+    releaseJudge = resolve;
+  });
+  let judging = 0;
+  const pending = evaluateLivePopulation(selected, {
+    ...ports,
+    concurrency: 1,
+    judge: async (request) => {
+      judging += 1;
+      await judgeGate;
+      return ports.judge(request);
+    },
+  });
+  await vi.waitFor(() => expect(started).toEqual([0]));
+  gates[0].release();
+  await vi.waitFor(() => expect(judging).toBe(1));
+  await vi.waitFor(() => expect(started).toEqual([0, 1]));
+  gates[1].release();
+  await vi.waitFor(() => expect(started).toEqual([0, 1, 2]));
+  gates[2].release();
+  releaseJudge();
+  expect((await pending).evaluations).toHaveLength(3);
+});
+
 it("runs two real operations concurrently, keeps the third queued, and returns selection order", async () => {
   const fixtureData = fixture();
   const { selected, ports, gates, started } = fixtureData;

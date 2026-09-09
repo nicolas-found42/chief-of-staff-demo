@@ -204,7 +204,7 @@ describe("the PublicSearch composite", () => {
     ]);
     const search = createPublicSearch(fetch);
 
-    await expect(search("ada lovelace")).resolves.toEqual([
+    await expect(search("ada lovelace")).resolves.toMatchObject([
       {
         title: "Ada Lovelace",
         url: "https://en.wikipedia.org/wiki/Ada_Lovelace",
@@ -250,7 +250,7 @@ describe("the PublicSearch composite", () => {
     const { events, diagnostics } = captureDiagnostics();
     const search = createPublicSearch(fetch, undefined, { diagnostics });
 
-    await expect(search("ada lovelace")).resolves.toEqual([
+    await expect(search("ada lovelace")).resolves.toMatchObject([
       {
         title: "Ada Lovelace biography",
         url: "https://en.wikipedia.org/wiki/Ada_Lovelace",
@@ -292,7 +292,7 @@ describe("the PublicSearch composite", () => {
     ]);
     const search = createPublicSearch(fetch);
 
-    await expect(search("ada lovelace")).resolves.toEqual([
+    await expect(search("ada lovelace")).resolves.toMatchObject([
       {
         title: "Ada Lovelace",
         url: "https://en.wikipedia.org/wiki/Ada_Lovelace",
@@ -308,7 +308,7 @@ describe("the PublicSearch composite", () => {
     ]);
     const search = createPublicSearch(fetch);
 
-    await expect(search("ada lovelace")).resolves.toEqual([]);
+    await expect(search("ada lovelace")).resolves.toMatchObject([]);
     expect(calls.filter((url) => isSuggestUrl(url))).toHaveLength(3);
     expect(calls.some((url) => url.includes("ada%20lovelace%20biography"))).toBe(false);
   });
@@ -530,7 +530,7 @@ describe("the PublicSearch composite", () => {
 
     // Registration order is duckduckgo → marginalia → wikipedia → bing-news →
     // gdelt; both later duplicates of the ddg URL lose to the first copy.
-    await expect(search("merge")).resolves.toEqual([
+    await expect(search("merge")).resolves.toMatchObject([
       { title: "From ddg", url: sharedUrl, snippet: "ddg snippet" },
       { title: "Merge page", url: "https://en.wikipedia.org/wiki/Merge", snippet: "" },
       { title: "Bing item", url: "https://example.com/bing", snippet: "bing snippet" },
@@ -615,7 +615,7 @@ describe("the PublicSearch composite", () => {
     ]);
     const search = createPublicSearch(fetch);
 
-    await expect(search("ada lovelace")).resolves.toEqual([
+    await expect(search("ada lovelace")).resolves.toMatchObject([
       {
         title: "Ada Lovelace",
         url: "https://en.wikipedia.org/wiki/Ada_Lovelace",
@@ -654,7 +654,7 @@ describe("the PublicSearch composite", () => {
       (query) => `https://ddg.test/search?q=${encodeURIComponent(query)}`,
     );
 
-    await expect(search("custom query")).resolves.toEqual([
+    await expect(search("custom query")).resolves.toMatchObject([
       {
         title: "From custom endpoint",
         url: "https://example.com/custom",
