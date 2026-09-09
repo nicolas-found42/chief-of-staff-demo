@@ -1,3 +1,4 @@
+import { debriefPreviewInput } from "../helpers/debrief-preview";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -122,6 +123,7 @@ function makeHarness(HostCtor: typeof MeetingDebriefHost = MeetingDebriefHost): 
      deterministic construction of the gate flip between the two adapters. */
   const ownerFlip = { armed: false, calls: 0 };
   const host = new HostCtor({
+    outputs: { createDraft: async () => "review-test-draft" },
     runs,
     catalog: {
       getTranscript: (id) => catalog.get(id) ?? null,
@@ -677,6 +679,7 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     const refused = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(refused.statusCode).toBe(409);
     expect(refused.json().error).toBe("approval-blocked");
@@ -710,6 +713,7 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     const refused = await ownerless.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(ownerless.app, runId),
     });
     expect(refused.json().blockers).toContain("owner-identity-unconfirmed");
   });
@@ -728,6 +732,7 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     const approved = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(approved.statusCode).toBe(200);
     await h.host.idle();
@@ -779,6 +784,7 @@ describe("Meeting Debrief approval gate and lock (#140, spec #450/452)", () => {
     const approveLocked = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(approveLocked.statusCode).toBe(409);
 
@@ -898,6 +904,7 @@ describe("Meeting Debrief redo (#140, spec #453)", () => {
     const approved = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(approved.statusCode).toBe(200);
     await h.host.idle();
@@ -999,10 +1006,12 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     // The gate flips between the route's synchronous check (open) and the
     // Module Stage's durable re-assertion (closed): the refusal happens
     // inside the Run, after the route already said yes.
+    const previewInput = await debriefPreviewInput(h.app, runId);
     h.ownerFlip.armed = true;
     const approved = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: previewInput,
     });
     expect(approved.statusCode).toBe(200);
     await h.host.idle();
@@ -1025,6 +1034,7 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     const retried = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(retried.statusCode).toBe(200);
     await h.host.idle();
@@ -1078,6 +1088,7 @@ describe("Meeting Debrief review corrections (#140 review round)", () => {
     const approve = await flaky.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/approve`,
+      payload: await debriefPreviewInput(h.app, runId),
     });
     expect(approve.statusCode).toBe(409);
     expect(approve.json().error).toBe("run-not-resumable");

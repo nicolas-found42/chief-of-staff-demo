@@ -163,7 +163,7 @@ test("the Shell says Google is not set up on every page, and not on Settings", a
     // Shell vocabulary: Tasks and Gmail are Google surfaces, where the old
     // string named Transcript's own pipeline stages.
     await expect(shellBanner, `banner on ${path}`).toContainText(
-      "Google is not set up, so nothing can be created in Tasks or Gmail.",
+      "Google is not set up. Gmail and Google Tasks need a connection; local Tasks remain available.",
     );
     // The footer is the other piece of Shell chrome on every page, and it has
     // to name the one shipped exception to draft-only (ADR-0034) or it tells

@@ -40,6 +40,7 @@ export interface MeetingDebriefProductionRuntimeOptions {
    * product owns them.
    */
   materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
+  readActionItems?: MeetingDebriefHostDeps["readActionItems"];
   /**
    * Staleness hand-off to the Brief side (issue #162): fired after a review
    * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
@@ -66,6 +67,7 @@ export function createMeetingDebriefProductionRuntime(
   const catalogStore = new TranscriptCatalogStore(options.workspaceDir);
   const host = new MeetingDebriefHost({
     runs: options.runs,
+    ...(options.readActionItems ? { readActionItems: options.readActionItems } : {}),
     catalog: {
       getTranscript: (transcriptId) => catalogStore.readTranscript(transcriptId),
     },

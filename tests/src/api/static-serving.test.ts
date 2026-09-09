@@ -60,6 +60,7 @@ describe("static serving — a miss means different things for assets, client ro
     const server = await serve();
     for (const url of [
       "/settings",
+      "/meetings/brief/evt_1%3A%3A2026-09-09T15%3A00%3A00.000Z",
       "/runs/run_20260829-062332_1d82d47c",
       "/meeting-brief?tab=live",
     ]) {

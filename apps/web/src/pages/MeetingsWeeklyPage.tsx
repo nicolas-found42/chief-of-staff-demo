@@ -207,6 +207,28 @@ export function MeetingsWeeklyPage({ client = meetingsApi }: { client?: Meetings
   useTitle("This week");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [view, setView] = useState<WeeklyWorkspaceView | null>(null);
+  const [meetingNames, setMeetingNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let live = true;
+    void client
+      .meetings()
+      .then((result) => {
+        if (live)
+          setMeetingNames(
+            Object.fromEntries(result.meetings.map((meeting) => [meeting.id, meeting.title])),
+          );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [client]);
+  const pendingGroups = new Map<string | null, ActionItem[]>();
+  for (const item of view?.pending ?? []) {
+    const key = item.source.meetingId;
+    pendingGroups.set(key, [...(pendingGroups.get(key) ?? []), item]);
+  }
+
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -317,38 +339,87 @@ export function MeetingsWeeklyPage({ client = meetingsApi }: { client?: Meetings
             );
           })}
 
+          <h2>Workspace-wide work</h2>
+          <p className="muted">
+            Tasks and Action Items across the workspace, including earlier Meetings.
+          </p>
           <Section
             ordinal="04"
             id="weekly-overdue-heading"
             heading="Overdue Tasks"
             count={plural(view.overdue.length, "Task")}
             empty="Nothing is overdue."
-            rows={view.overdue.map((task) => (
+            rows={view.overdue.slice(0, 5).map((task) => (
               <TaskLine key={task.id} task={task} today={view.today} />
             ))}
           />
 
+          <p>
+            <Link to={`/tasks?dueBefore=${view.today}#open-tasks`}>
+              View all {view.overdue.length} overdue Tasks
+            </Link>
+          </p>
           <Section
             ordinal="05"
             id="weekly-due-heading"
             heading="Due this week"
             count={plural(view.dueThisWeek.length, "Task")}
             empty="No open Task is due before Sunday."
-            rows={view.dueThisWeek.map((task) => (
+            rows={view.dueThisWeek.slice(0, 5).map((task) => (
               <TaskLine key={task.id} task={task} today={view.today} />
             ))}
           />
 
-          <Section
-            ordinal="06"
-            id="weekly-pending-heading"
-            heading="Action Items awaiting review"
-            count={plural(view.pending.length, "Action Item")}
-            empty="Nothing is waiting on a decision."
-            rows={view.pending.map((item) => (
-              <ActionItemLine key={item.id} item={item} />
-            ))}
-          />
+          <p>
+            <Link to={`/tasks?dueFrom=${view.today}&dueTo=${view.weekEnd}#open-tasks`}>
+              View all {view.dueThisWeek.length} Tasks due this week
+            </Link>
+          </p>
+          <section className="wizard-section" aria-labelledby="weekly-pending-heading">
+            <h2 id="weekly-pending-heading">Action Items awaiting review</h2>
+            <p className="muted">
+              {plural(view.pending.length, "Action Item")} from {pendingGroups.size} source-Meeting
+              groups
+            </p>
+            {view.pending.length === 0 ? (
+              <p className="wizard-empty">Nothing is waiting on a decision.</p>
+            ) : (
+              [...pendingGroups].slice(0, 3).map(([meetingId, items]) => (
+                <div key={meetingId ?? "unavailable"}>
+                  <h3>
+                    {meetingId ? (
+                      <Link to={`/meetings/${meetingId}?tab=debrief#action-items`}>
+                        {meetingNames[meetingId] ?? "Source Meeting"}
+                      </Link>
+                    ) : (
+                      "Source Meeting unavailable"
+                    )}
+                  </h3>
+                  <ul className="wizard-ledger">
+                    {items.slice(0, 3).map((item) => (
+                      <ActionItemLine key={item.id} item={item} />
+                    ))}
+                  </ul>
+                  <p>
+                    <Link
+                      to={
+                        meetingId
+                          ? `/tasks?meetingId=${meetingId}#action-items`
+                          : "/tasks?source=unavailable#action-items"
+                      }
+                    >
+                      View all {items.length} pending Action Items from this source
+                    </Link>
+                  </p>
+                </div>
+              ))
+            )}
+            <p>
+              <Link to="/tasks#action-items">
+                View all {view.pending.length} pending Action Items
+              </Link>
+            </p>
+          </section>
         </>
       )}
     </div>

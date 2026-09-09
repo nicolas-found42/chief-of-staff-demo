@@ -99,7 +99,9 @@ export function MeetingReadRow({
   return (
     <li className="wizard-line meeting-read-row">
       <div className="meeting-row-heading">
-        <Link to={`/meetings/${meeting.id}`}>{meeting.title}</Link>
+        <Link id={`meeting-link-${meeting.id}`} to={`/meetings/${meeting.id}`}>
+          {meeting.title}
+        </Link>
         <span>
           {meeting.cancelled
             ? "Cancelled"

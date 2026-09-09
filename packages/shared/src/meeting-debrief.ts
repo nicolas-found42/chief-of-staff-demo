@@ -81,6 +81,8 @@ export type MeetingDebriefApprovalBlocker =
  */
 export interface MeetingDebriefReviewState {
   version: 1;
+  /** Missing on historical records; only an explicit preview supplies this snapshot. */
+  email?: MeetingDebriefEmailPreview | null;
   runId: string;
   roster: {
     status: "unconfirmed" | "confirmed";
@@ -111,12 +113,14 @@ export interface MeetingDebriefReviewView {
    */
   state: "extracted" | "published";
   approvedAt: string | null;
+  /** Locked reviewed output retained for retry after a provider failure. */
+  email?: MeetingDebriefEmailPreview | null;
   /**
    * The Gmail draft this Debrief created, or null when none exists (issue
    * #182). A draft, never a sent message: `url` opens it in Gmail for the
    * owner to finish and send themselves.
    */
-  draft: { draftId: string; url: string; recipientCount: number } | null;
+  draft: { draftId: string; url: string; recipientCount: number; createdAt?: string } | null;
   roster: {
     status: "unconfirmed" | "confirmed";
     confirmedAt: string | null;
@@ -294,4 +298,31 @@ export interface MeetingDebriefDetail {
   reviewReadiness: MeetingDebriefReviewReadiness;
   /** The review workflow's view; null before the Run holds a review record. */
   review: MeetingDebriefReviewView | null;
+}
+
+/** Email inclusion is independent of canonical Task review. */
+export interface MeetingDebriefEmailCandidate {
+  id: string;
+  title: string;
+  owner: string | null;
+  dueDate: string | null;
+  earlier: boolean;
+  reviewState: "pending" | "promoted" | "dismissed" | "unavailable";
+  includedByDefault: boolean;
+}
+
+export interface MeetingDebriefEmailOptions {
+  candidates: MeetingDebriefEmailCandidate[];
+  unavailableReview: boolean;
+}
+
+/** Exact server-composed draft and binding to the inputs the owner reviewed. */
+export interface MeetingDebriefEmailPreview {
+  version: 1;
+  subject: string;
+  body: string;
+  to: string[];
+  selectedIds: string[];
+  revision: string;
+  unavailableReview: boolean;
 }

@@ -231,6 +231,12 @@ test("meeting wizard journey — home lists today's Meetings from the store, Bri
   });
   await page.goto(`/meetings/${internal.id}?tab=brief`);
   await expect(page.getByText("Brief for Internal planning", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sources", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Companies", exact: true })).toBeVisible();
+  await page.goto(
+    `/meetings/brief/${encodeURIComponent(`evt_wizard_1::${internalEvent.occurrenceId as string}`)}`,
+  );
+  await expect(page).toHaveURL(new RegExp(`/meetings/${internal.id}\\?tab=brief`));
 
   // The legacy product route answers not-found; the legacy adapter API is gone.
   await page.goto("/meeting-brief");
@@ -299,6 +305,7 @@ test("meeting page — shows the Transcript matched to its Meeting (issue #153)"
 
   await page.goto(`/meetings/${linked.id}`);
   await expect(page.getByRole("heading", { level: 1, name: summary })).toBeVisible();
+  await page.getByText(/Participants \(.*\) and transcripts/).click();
   await expect(page.getByRole("heading", { name: "Transcripts" })).toBeVisible();
   await expect(page.getByRole("heading", { name: fileName })).toBeVisible();
 });

@@ -1,3 +1,4 @@
+import { useReadingPosition } from "../useReadingPosition";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { MeetingHistoryView } from "@chief-of-staff-demo/shared";
@@ -30,6 +31,7 @@ export function MeetingsHistoryPage() {
     [query],
   );
   const [view, setView] = useState<MeetingHistoryView | null>(null);
+  useReadingPosition(view !== null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
   const load = useCallback(async () => {

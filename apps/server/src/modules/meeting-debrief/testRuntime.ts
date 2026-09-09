@@ -1,3 +1,4 @@
+import type { DebriefDraft } from "./deps.js";
 import type {
   IdentityDecision,
   MeetingDebriefExtraction,
@@ -33,6 +34,7 @@ export interface MeetingDebriefTestRuntimeOptions {
    */
   /** Where extracted proposals become durable Workspace Action Items (issue #177). */
   materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
+  readActionItems?: MeetingDebriefHostDeps["readActionItems"];
   log?: (message: string) => void;
 }
 
@@ -60,6 +62,9 @@ interface MeetingDebriefSeedPayload {
 }
 
 export interface MeetingDebriefTestRuntime {
+  drafts: DebriefDraft[];
+  failNextDraft(): void;
+  setExtraction(transcriptId: string, extraction: MeetingDebriefExtraction): void;
   host: MeetingDebriefHost;
   /** Writes the immutable artifact + identity state, then hands the record to
    *  the host at the exact seam the Catalog calls on mining completion. */
@@ -170,9 +175,22 @@ export function createMeetingDebriefTestRuntime(
     lifecycle: [],
   });
   let nowMs = Date.now();
+  const drafts: DebriefDraft[] = [];
+  let failNextDraft = false;
   const fixtureExtractions = new Map<string, MeetingDebriefExtraction>();
   const host = new MeetingDebriefHost({
+    outputs: {
+      createDraft: async (draft) => {
+        if (failNextDraft) {
+          failNextDraft = false;
+          throw new Error("Gmail is temporarily unavailable");
+        }
+        drafts.push(draft);
+        return `hermetic_draft_${drafts.length}`;
+      },
+    },
     runs: options.runs,
+    ...(options.readActionItems ? { readActionItems: options.readActionItems } : {}),
     catalog: {
       getTranscript: (transcriptId) => catalogStore.readTranscript(transcriptId),
     },
@@ -204,6 +222,13 @@ export function createMeetingDebriefTestRuntime(
 
   return {
     host,
+    drafts,
+    failNextDraft() {
+      failNextDraft = true;
+    },
+    setExtraction(transcriptId, extraction) {
+      fixtureExtractions.set(transcriptId, extraction);
+    },
     setNow(value: Date) {
       nowMs = value.getTime();
     },
@@ -249,6 +274,16 @@ export function registerMeetingDebriefTestRoutes(
   app: FastifyInstance,
   runtime: MeetingDebriefTestRuntime,
 ): void {
+  app.post("/api/test/meeting-debrief/fail-next-draft", async () => {
+    runtime.failNextDraft();
+    return { ok: true };
+  });
+  app.post("/api/test/meeting-debrief/extraction", async (request) => {
+    const body = request.body as { transcriptId: string; extraction: MeetingDebriefExtraction };
+    runtime.setExtraction(body.transcriptId, body.extraction);
+    return { ok: true };
+  });
+  app.get("/api/test/meeting-debrief/drafts", async () => ({ drafts: runtime.drafts }));
   app.post("/api/test/meeting-debrief/seed", async (request, reply) => {
     const payload = request.body as MeetingDebriefSeedPayload;
     if (!payload.transcript.id) {

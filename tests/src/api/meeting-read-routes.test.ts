@@ -418,3 +418,39 @@ test("source-Meeting proposal groups put the later conversation first within the
   expect(view.proposals?.groups.map((group) => group.title)).toEqual(["Afternoon", "Morning"]);
   await app.close();
 });
+
+test("a readable Brief distinguishes failed email delivery from failed preparation", async () => {
+  const { app, meetings, runs } = setup();
+  meetings.upsertFromCalendar({
+    occurrenceKey: "delivery",
+    calendarEventId: "delivery",
+    occurrenceId: "delivery",
+    title: "Prepared Meeting",
+    startAt: "2026-09-09T19:00:00Z",
+    endAt: "2026-09-09T20:00:00Z",
+    participants: [],
+    cancelled: false,
+    ineligibleReason: null,
+  });
+  const run = runs.create({
+    module: "meeting-brief-generator",
+    moduleVersion: 1,
+    intake: "test",
+    sourceUrl: null,
+    externalId: "delivery",
+  });
+  run.writeArtifact(
+    "result.json",
+    JSON.stringify({
+      meetingBrief: { summary: "The full Brief is ready." },
+      delivery: { status: "failed" },
+    }),
+  );
+  run.failed("deliver", "provider unavailable", "private diagnostic");
+  const view = (await app.inject("/api/meetings/workspace")).json<MeetingWorkspaceView>();
+  expect(view.today[0].brief).toMatchObject({
+    status: "ready",
+    explanation: "Brief ready. Email delivery failed; the Brief remains readable.",
+  });
+  await app.close();
+});

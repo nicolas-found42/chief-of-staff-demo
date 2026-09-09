@@ -1,3 +1,4 @@
+import { useReadingPosition } from "../useReadingPosition";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { MeetingWorkspaceView, TaskOverview } from "@chief-of-staff-demo/shared";
@@ -20,6 +21,7 @@ export function MeetingsOverviewPage({
   useTitle("Meeting Wizard");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [view, setView] = useState<MeetingWorkspaceView | null>(null);
+  useReadingPosition(view !== null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [work, setWork] = useState<TaskOverview | null>(null);

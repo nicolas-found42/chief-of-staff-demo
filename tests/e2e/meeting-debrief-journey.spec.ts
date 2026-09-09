@@ -148,24 +148,23 @@ test("meeting debrief hermetic journey — seed → list → detail → unlinked
     page.getByText("We decided to ship the billing fix on Friday").first(),
   ).toBeVisible();
   await expect(page.getByText("billing fix follow-up").first()).toBeVisible();
-  await expect(page.getByText("(confirmed Profile)").first()).toBeVisible();
-  await expect(page.getByText(/due 2026-08-17/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Roster confirmation", exact: true })).toHaveCount(
+    0,
+  );
+
+  await expect(page.getByText(/Proposed due Aug 17, 2026/)).toBeVisible();
   await expect(page.getByText("Is the rollout on track?")).toBeVisible();
+  await page.getByText("Meeting effectiveness and coaching", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Effectiveness evidence" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Coaching advice" })).toBeVisible();
-  /* The occurrence key is a diagnostic, not a fact about the meeting — the
-     page says whether Calendar prefilled the roster, and the key lives on the
-     Run detail page. */
+  await page.getByRole("button", { name: "Create email draft", exact: true }).click();
+  await expect(page.getByLabel("Attendee email 1")).toHaveValue("alice@example.com");
+  await page.getByRole("button", { name: "Preview and create", exact: true }).click();
   await expect(
-    page.getByText("Prefilled from the meeting's calendar attendees, and waiting to be confirmed."),
+    page.getByText("Confirm attendees in the previous step.", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Confirm the roster to create the email draft.")).toBeVisible();
-  await expect(page.getByText("Extracted").first()).toBeVisible();
-  // The gate's refusal surface, whatever the shared server's owner state is:
-  // journey 1 guarantees only the unconfirmed roster, so assert that blocker
-  // rather than one that depends on other specs' onboarding state.
-  await expect(page.getByText("Creating the email draft needs:")).toBeVisible();
-  await expect(page.getByText("The attendee roster is not confirmed yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByText("Transcript and identity details", { exact: true }).click();
   await expect(page.getByText("Alice — Profile")).toBeVisible();
   /* Unresolved mentions are grouped by name and counted, not listed once per
      span with an "awaiting review" suffix nothing could ever act on. */
@@ -307,60 +306,32 @@ test("meeting debrief review journey — regenerate, roster, recipients, approva
   await waitForStatus(request, seeded.runId, "done");
 
   await page.goto(`/meeting-debrief/${encodeURIComponent(seeded.runId)}`);
-  await expect(page.getByText("Extracted").first()).toBeVisible();
-
-  // 1. Whole-field regeneration: the rejected value is invisible to the model,
-  //    and the audited regenerate Stage lands on the Run's timeline.
-  await page.getByRole("button", { name: "Regenerate summary" }).click();
-  await expect(page.getByText("Working…")).toBeHidden();
-  await expect(page.getByText("Extracted").first()).toBeVisible();
-  const run = (await (
-    await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
-  ).json()) as { review: { state: string } };
-  /* Extraction is finished work: the only state left is whether the gated
-     outward writes have gone out. */
-  expect(run.review.state).toBe("extracted");
-  const regenerated = (await (
-    await request.get(`/api/runs/${encodeURIComponent(seeded.runId)}`)
-  ).json()) as { events: Array<{ type: string }> };
-  expect(regenerated.events.filter((event) => event.type === "debrief_regenerated")).toHaveLength(
-    1,
-  );
-
-  // 2. The extracted action items are a record of the meeting, not a queue:
-  //    the decisions on them are taken against canonical Action Items with
-  //    stable identities, in Tasks (issue #199).
-  await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Tasks", exact: true }).first()).toBeVisible();
-
-  // 3. Confirm the roster through the Calendar seam; the owner is excluded.
-  await page
-    .getByLabel("Roster — one attendee per comma, as “Name <email>” or “email”")
-    .fill(`Alice <alice@example.com>, Bob <bob@example.com>, Owner <${OWNER_EMAIL}>`);
-  await page.getByRole("button", { name: "Confirm roster" }).click();
-  await expect(page.getByText("Roster confirmed")).toBeVisible();
+  await expect(page.getByText(/Debrief ready/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Regenerate Summary", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm regeneration", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Summary updated" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(1);
+  await page.getByRole("button", { name: "Create email draft", exact: true }).click();
+  await page.getByRole("button", { name: "Add attendee", exact: true }).click();
+  await page.getByLabel("Attendee name 3").fill("Owner");
+  await page.getByLabel("Attendee email 3").fill(OWNER_EMAIL);
+  await page.getByRole("button", { name: "Confirm attendees", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Attendees confirmed" })).toBeVisible();
+  await page.getByLabel("Find a Person Profile").fill("Carol");
+  await page.getByRole("button", { name: "Search profiles", exact: true }).click();
+  await page.getByRole("button", { name: "Add recipient", exact: true }).click();
+  await page.getByRole("button", { name: "Preview and create", exact: true }).click();
+  await page.getByRole("button", { name: "Update preview", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Email body", exact: true })).toBeVisible();
+  await expect(page.getByText("carol@example.com", { exact: false }).last()).toBeVisible();
+  const previewBody = await page.getByLabel("Email body preview").innerText();
+  expect((await request.post("/api/test/meeting-debrief/fail-next-draft")).ok()).toBe(true);
+  await page.getByRole("button", { name: "Create draft in Gmail", exact: true }).click();
   await expect(
-    page.getByText("alice@example.com — automatic (confirmed attendee)").first(),
+    page.getByRole("button", { name: "Retry draft creation", exact: true }),
   ).toBeVisible();
-
-  // 4. A linked roster binds Calendar shells, so the gate opens: the
-  //    approval section shows the Approve button and no blockers.
-  await expect(page.getByRole("heading", { name: "Email draft" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create email draft" })).toBeVisible();
-  await expect(page.getByText("Approval is blocked until:")).toBeHidden();
-
-  // 5. Add a suggested non-attendee recipient through an explicit,
-  //    verified Profile selection.
-  await page.getByLabel("Search Person Profiles to add a recipient").fill("Carol");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: /Add as recipient/ }).click();
-  await expect(
-    page.getByText("carol@example.com — added (confirmed Profile with verified email)"),
-  ).toBeVisible();
-
-  // 6. Approve: the Run locks, and every mutation seam refuses. Approval is
-  //    verified through the API before anything is built on top of it.
-  await page.getByRole("button", { name: "Create email draft" }).click();
+  await expect(page.getByLabel("Email body preview")).toHaveText(previewBody);
+  await page.getByRole("button", { name: "Retry draft creation", exact: true }).click();
   await waitForStatus(request, seeded.runId, "done");
   await expect
     .poll(async () => {
@@ -370,11 +341,15 @@ test("meeting debrief review journey — regenerate, roster, recipients, approva
       return detail.review?.state;
     })
     .toBe("published");
-  await expect(page.getByText(/Email draft created/).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open draft in Gmail", exact: true })).toBeVisible();
+  const drafts: { drafts: { body: string }[] } = await (
+    await request.get("/api/test/meeting-debrief/drafts")
+  ).json();
+  expect(drafts.drafts.at(-1)?.body).toBe(previewBody);
   /* A draft, never a sent message. The Gmail link itself needs a real draft
      receipt, which this hermetic server has no outward surface to create —
      the module test at that seam is where the link is proven. */
-  await expect(page.getByText(/nothing has been sent/).first()).toBeVisible();
+  await expect(page.getByText(/Nothing has been sent/).first()).toBeVisible();
   const approvedDetail = (await (
     await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
   ).json()) as {
@@ -397,7 +372,7 @@ test("meeting debrief review journey — regenerate, roster, recipients, approva
   //    The redo Run is identified through the API — the one Run of this
   //    transcript that is not the approved original — never by diffing the
   //    whole index, which other journeys' Runs also populate.
-  await page.getByRole("button", { name: /Redo \(start a new debrief\)/i }).click();
+  await page.getByRole("button", { name: "Start a new Debrief", exact: true }).click();
   let redoRunId: string | null = null;
   await expect
     .poll(async () => {
@@ -424,7 +399,8 @@ test("meeting debrief review journey — regenerate, roster, recipients, approva
       return detail.review?.duplicateWarning?.approvedRunId ?? null;
     })
     .toBe(seeded.runId);
-  await page.goto(`/meeting-debrief/${encodeURIComponent(redoRunId!)}`);
+  await expect(page).toHaveURL(new RegExp(`/meeting-debrief/${encodeURIComponent(redoRunId!)}$`));
+  await page.getByRole("button", { name: "Create email draft", exact: true }).click();
   await expect(page.getByText(/Duplicate output warning/)).toBeVisible();
   await expect(page.getByText(new RegExp(seeded.runId))).toBeVisible();
   const redoRun = (await (
@@ -461,16 +437,17 @@ test("meeting debrief journey — a Debrief never expires, and publishing stays 
   // Confirming a typed roster with no verified Profile shows the blocker
   // the approval gate refuses on.
   await page.goto(`/meeting-debrief/${encodeURIComponent(unlinked.runId)}`);
-  await page
-    .getByLabel("Roster — one attendee per comma, as “Name <email>” or “email”")
-    .fill("Dana <dana@example.com>");
-  await page.getByRole("button", { name: "Confirm roster" }).click();
+  await page.getByRole("button", { name: "Create email draft", exact: true }).click();
+  await page.getByRole("button", { name: "Add attendee", exact: true }).click();
+  await page.getByLabel("Attendee name 1").fill("Dana");
+  await page.getByLabel("Attendee email 1").fill("dana@example.com");
+  await page.getByRole("button", { name: "Confirm attendees", exact: true }).click();
+  await page.getByRole("button", { name: "Preview and create", exact: true }).click();
   await expect(
-    page.getByText(
-      "dana@example.com has no Person Profile with a verified (Calendar-anchored) email.",
-    ),
+    page.getByRole("link", { name: "Verify the attendee's Person Profile email", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create email draft" })).toBeHidden();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   /* Time passing takes nothing away. A Debrief used to skip itself after
      thirty unreviewed days, which meant work the owner had not got to was
@@ -486,7 +463,7 @@ test("meeting debrief journey — a Debrief never expires, and publishing stays 
   await expect(row.getByText(/^Ready/)).toBeVisible();
 
   await page.getByRole("link", { name: /Expiry notes/ }).click();
-  await expect(page.getByText("Extracted").first()).toBeVisible();
+  await expect(page.getByText(/Debrief ready/).first()).toBeVisible();
   /* Still there, in full: nothing was taken away by the clock. */
   await expect(
     page.getByText("We agreed to revisit the pricing page", { exact: false }).first(),

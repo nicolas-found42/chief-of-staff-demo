@@ -1,3 +1,4 @@
+import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
 import type { FastifyInstance } from "fastify";
 import type {
   MeetingDebriefDetail,
@@ -44,6 +45,7 @@ export type { DebriefIdentityReview } from "./deps.js";
 export type { DebriefProfileDirectory } from "./profiles.js";
 
 export interface MeetingDebriefHostDeps {
+  readActionItems?: DebriefActionItemReader;
   /** Constructed once by the Shell: the run directory has one owner. */
   runs: Runs;
   catalog: DebriefCatalogReader;
@@ -152,6 +154,7 @@ export class MeetingDebriefHost implements HostedModule {
   readonly version = MEETING_DEBRIEF_MODULE_VERSION;
   private readonly runner: Runner<DebriefInput>;
   private readonly runs: Runs;
+  private readonly readActionItems: DebriefActionItemReader | null;
   private readonly catalog: DebriefCatalogReader;
   private readonly identity: DebriefIdentityReviewReader;
   private readonly gate: DebriefApprovalGateDeps;
@@ -164,6 +167,7 @@ export class MeetingDebriefHost implements HostedModule {
 
   constructor(deps: MeetingDebriefHostDeps) {
     this.runs = deps.runs;
+    this.readActionItems = deps.readActionItems ?? null;
     this.catalog = deps.catalog;
     this.identity = deps.identity;
     this.profiles = deps.profiles ?? null;
@@ -185,6 +189,7 @@ export class MeetingDebriefHost implements HostedModule {
         ...(deps.getCompleteJson ? { getCompleteJson: deps.getCompleteJson } : {}),
         ...(deps.getLlmInfo ? { getLlmInfo: deps.getLlmInfo } : {}),
         gate: this.gate,
+        ...(deps.readActionItems ? { readActionItems: deps.readActionItems } : {}),
         ...(deps.outputs ? { outputs: deps.outputs } : {}),
         ...(deps.materializeActionItems
           ? { materializeActionItems: deps.materializeActionItems }
@@ -386,9 +391,6 @@ export class MeetingDebriefHost implements HostedModule {
    * outward writes have gone out. Extraction no longer waits for anybody, so
    * there is nothing else to report here.
    */
-  private reviewStateOf(state: MeetingDebriefReviewState | null): "published" | null {
-    return state?.approval ? "published" : null;
-  }
 
   /** The approved sibling of a not-yet-approved Run, if one exists. */
   private duplicateWarningFor(
@@ -416,10 +418,11 @@ export class MeetingDebriefHost implements HostedModule {
     const raw = run.readArtifact("draft.json");
     if (!raw) return null;
     try {
-      const receipt = JSON.parse(raw) as { draftId?: unknown; to?: unknown };
+      const receipt = JSON.parse(raw) as { draftId?: unknown; to?: unknown; createdAt?: unknown };
       if (typeof receipt.draftId !== "string") return null;
       return {
         draftId: receipt.draftId,
+        ...(typeof receipt.createdAt === "string" ? { createdAt: receipt.createdAt } : {}),
         url: `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(receipt.draftId)}`,
         recipientCount: Array.isArray(receipt.to) ? receipt.to.length : 0,
       };
@@ -435,7 +438,7 @@ export class MeetingDebriefHost implements HostedModule {
     state: MeetingDebriefReviewState,
     extraction: MeetingDebriefExtraction | null,
   ): Promise<MeetingDebriefReviewView> {
-    const stateName = this.reviewStateOf(state) ?? "extracted";
+    const stateName = this.draftFor(run) ? "published" : "extracted";
     const owner = this.gate.ownerEmail();
     const automaticRecipients = state.roster.entries
       .filter(
@@ -450,6 +453,7 @@ export class MeetingDebriefHost implements HostedModule {
     return {
       state: stateName,
       approvedAt: state.approval?.approvedAt ?? null,
+      email: state.email ?? null,
       draft: this.draftFor(run),
       roster: {
         status: state.roster.status,
@@ -510,7 +514,7 @@ export class MeetingDebriefHost implements HostedModule {
           ? "ready"
           : "needs_roster"
         : "no_extraction",
-      reviewState: this.reviewStateOf(state),
+      reviewState: this.draftFor(run) ? "published" : null,
       rosterConfirmed: state?.roster.status === "confirmed",
       recipientCount: automaticCount + (state?.recipients.additional.length ?? 0),
     };
@@ -764,6 +768,49 @@ export class MeetingDebriefHost implements HostedModule {
       return { recipients: remaining };
     });
 
+    app.get("/api/meeting-debrief/:runId/email", async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const run = this.runs.open(runId);
+      const result = parseRunResult(run?.readArtifact("result.json") ?? null);
+      const detail = result ? { extraction: result.debrief } : null;
+      const record = result ? this.catalog.getTranscript(result.transcriptId) : null;
+      if (!detail?.extraction || !record)
+        return reply.code(404).send({ error: "debrief-unavailable" });
+      return emailOptions(runId, record, detail.extraction, this.readActionItems);
+    });
+    app.post("/api/meeting-debrief/:runId/preview", async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const found = this.reviewable(runId);
+      const run = this.runs.open(runId);
+      const result = parseRunResult(run?.readArtifact("result.json") ?? null);
+      const detail = result ? { extraction: result.debrief } : null;
+      const record = result ? this.catalog.getTranscript(result.transcriptId) : null;
+      const body = request.body as { selectedIds?: unknown } | undefined;
+      if (!found || !detail?.extraction || !record)
+        return reply.code(409).send({ error: "run-not-reviewable" });
+      if (
+        !Array.isArray(body?.selectedIds) ||
+        !body.selectedIds.every((id: unknown) => typeof id === "string")
+      )
+        return reply.code(400).send({ error: "invalid-email-selection" });
+      try {
+        return emailPreview(
+          runId,
+          record,
+          detail.extraction,
+          found.state,
+          this.gate.ownerEmail(),
+          emailOptions(runId, record, detail.extraction, this.readActionItems),
+          body.selectedIds,
+        );
+      } catch (error) {
+        return reply.code(409).send({
+          error: "email-selection-changed",
+          message: error instanceof Error ? error.message : "Refresh the preview.",
+        });
+      }
+    });
+
     app.post("/api/meeting-debrief/:runId/approve", async (request, reply) => {
       const { runId } = request.params as { runId: string };
       const found = this.reviewable(runId);
@@ -771,10 +818,52 @@ export class MeetingDebriefHost implements HostedModule {
         reply.code(409).send({ error: "run-not-reviewable" });
         return;
       }
-      const blockers = approvalBlockers(found.state, this.gate);
+      const owner = this.gate.ownerEmail();
+      const blockers = approvalBlockers(found.state, { ...this.gate, ownerEmail: () => owner });
       if (blockers.length > 0) {
         reply.code(409).send({ error: "approval-blocked", blockers });
         return;
+      }
+      const body = request.body as { revision?: unknown; selectedIds?: unknown } | undefined;
+      if (typeof body?.revision !== "string")
+        return reply.code(409).send({
+          error: "preview-required",
+          message: "Review an email preview before creating the draft.",
+        });
+      {
+        const result = parseRunResult(found.run.readArtifact("result.json"));
+        const detail = result ? { extraction: result.debrief } : null;
+        const record = result ? this.catalog.getTranscript(result.transcriptId) : null;
+        if (
+          !detail?.extraction ||
+          !record ||
+          !Array.isArray(body.selectedIds) ||
+          !body.selectedIds.every((id: unknown) => typeof id === "string")
+        )
+          return reply.code(400).send({ error: "invalid-preview" });
+        try {
+          const preview = emailPreview(
+            runId,
+            record,
+            detail.extraction,
+            found.state,
+            owner,
+            emailOptions(runId, record, detail.extraction, this.readActionItems),
+            body.selectedIds,
+          );
+          if (preview.revision !== body.revision)
+            return reply.code(409).send({
+              error: "stale-preview",
+              message:
+                "The content or recipients changed. Update the preview before creating the draft.",
+            });
+          found.state.email = preview;
+        } catch {
+          return reply.code(409).send({
+            error: "stale-preview",
+            message: "Update the preview and review your selections.",
+          });
+        }
       }
       found.state.request = { kind: "approve" };
       this.writeState(found.run, found.state);

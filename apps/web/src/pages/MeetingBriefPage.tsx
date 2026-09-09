@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import type { MeetingBriefIndexEntry } from "@chief-of-staff-demo/shared";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { runsApi } from "../clients/workspace";
@@ -51,6 +51,7 @@ function DeliveryBadge({ delivery }: { delivery: MeetingBriefIndexEntry["deliver
 
 export function MeetingBriefPage({ client = meetingsApi }: { client?: MeetingsClient }) {
   const { occurrenceKey } = useParams();
+  const navigate = useNavigate();
   const headingRef = usePageFocus<HTMLHeadingElement>();
   useTitle("Meeting Brief");
   const [sendRunId, setSendRunId] = useState<string | null>(null);
@@ -77,6 +78,11 @@ export function MeetingBriefPage({ client = meetingsApi }: { client?: MeetingsCl
       .meetings()
       .then((meetings) => {
         if (!live) return;
+        const owning = occurrenceKey
+          ? meetings.meetings.find((meeting) => meeting.occurrenceKey === occurrenceKey)
+          : null;
+        if (owning)
+          void navigate(`/meetings/${encodeURIComponent(owning.id)}?tab=brief`, { replace: true });
         setMeetingsByKey(
           new Map(
             meetings.meetings
@@ -94,7 +100,7 @@ export function MeetingBriefPage({ client = meetingsApi }: { client?: MeetingsCl
     return () => {
       live = false;
     };
-  }, [client]);
+  }, [client, occurrenceKey, navigate]);
 
   const groups = useMemo(() => {
     if (!index) return new Map<string, MeetingBriefIndexEntry[]>();

@@ -169,7 +169,7 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
     .first();
   await expect(proposal).toBeVisible();
   await expect(proposal.getByText(/^Proposed ·/)).toBeVisible();
-  await expect(proposal.getByRole("link", { name: "Open full Debrief" })).toHaveAttribute(
+  await expect(proposal.getByRole("link", { name: "Open source Debrief" })).toHaveAttribute(
     "href",
     `/meeting-debrief/${runId}`,
   );
@@ -304,7 +304,7 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
   expect(dismissResponse.ok()).toBe(true);
 
   await page.goto(`/meeting-debrief/${runId}`);
-  await expect(page.getByRole("heading", { name: "Action Item history" })).toBeVisible();
+  await page.getByText("Reviewed Action Items (1)", { exact: true }).click();
   const historyRow = page
     .getByRole("listitem")
     .filter({ hasText: "archive rotation" })
@@ -315,7 +315,7 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
     page
       .getByRole("listitem")
       .filter({ hasText: "archive rotation" })
-      .filter({ has: page.getByRole("link", { name: "Review in Tasks" }) }),
+      .filter({ has: page.getByRole("button", { name: "Create Task", exact: true }) }),
   ).toBeVisible();
 
   await page.goto("/tasks");
