@@ -42,6 +42,7 @@ import {
   LeadRegistry,
   buildCoveragePlan,
   deriveLeads,
+  describeFamilyShortfall,
   planNextLeads,
   seedQueries,
 } from "./research-plan.js";
@@ -701,7 +702,7 @@ export class PersonResearch {
           leads.resolve(
             pending.leadId,
             "inaccessible",
-            `Reading produced no usable text (${read.access}).`,
+            read.failureReason ?? `Reading produced no usable text (${read.access}).`,
           );
           return;
         }
@@ -1756,9 +1757,7 @@ export class PersonResearch {
         area.gaps =
           familySources.length || area.state === "satisfied"
             ? []
-            : area.state === "inaccessible"
-              ? ["No query or source in this operation could be aimed at this family."]
-              : ["No source in this family contributed evidence in this operation."];
+            : describeFamilyShortfall(area.key as PersonSourceFamily, area.state, leads);
       }
     }
   }
