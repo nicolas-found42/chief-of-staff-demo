@@ -71,22 +71,31 @@ export function describeFamilyShortfall(
   state: PersonResearchCoverageArea["state"],
   leads: LeadRegistry,
 ): string[] {
-  if (state !== "inaccessible")
-    return ["No source in this family contributed evidence in this operation."];
-  const blocked = leads
-    .all()
-    .filter(
-      (lead) =>
-        lead.disposition === "inaccessible" &&
-        (lead.family === family ||
-          lead.coverage.includes(family) ||
-          (lead.kind === "url" && classifySourceFamily(lead.target) === family)),
-    )
-    .slice(0, 3)
-    .map((lead) => `Could not read ${lead.target}: ${lead.reason}`);
+  /* Reads blocked on the way in are named whether or not queries also went
+     out: an investigated family whose only direct read named the missing
+     transcription runtime says both — the queries found nothing, and the read
+     says what it would take. */
+  const blocked =
+    state === "satisfied"
+      ? []
+      : leads
+          .all()
+          .filter(
+            (lead) =>
+              lead.disposition === "inaccessible" &&
+              (lead.family === family ||
+                lead.coverage.includes(family) ||
+                (lead.kind === "url" && classifySourceFamily(lead.target) === family)),
+          )
+          .slice(0, 3)
+          .map((lead) => `Could not read ${lead.target}: ${lead.reason}`);
+  if (state === "inaccessible")
+    return blocked.length
+      ? blocked
+      : ["No query or source in this operation could be aimed at this family."];
   return blocked.length
-    ? blocked
-    : ["No query or source in this operation could be aimed at this family."];
+    ? ["No source in this family contributed evidence in this operation.", ...blocked]
+    : ["No source in this family contributed evidence in this operation."];
 }
 
 export interface LeadInput {

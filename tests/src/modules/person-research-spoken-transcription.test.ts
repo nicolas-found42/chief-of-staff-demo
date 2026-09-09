@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
+import { composePersonProfiles } from "../../../apps/server/src/person-profile/composition.js";
 import { ResearchAttemptRecorder } from "../../../apps/server/src/person-profile/research-diagnostics.js";
 import {
   readPersonSource,
@@ -24,6 +28,11 @@ import { SOURCE_ELIGIBILITY } from "../../../apps/server/src/source-adapters/eli
  * lead record and the coverage plan, and the spoken-evidence family gap names
  * its blocked reads instead of going quiet.
  */
+
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 const ports = (recorder: ResearchAttemptRecorder, fetch: ReaderPorts["fetch"]): ReaderPorts =>
   fromPartial({ fetch, recorder, timeoutMs: 1000 });
@@ -51,6 +60,7 @@ const youtubeWatchPageWithoutDescription = (tracks: string) =>
   `<html><head><title>Untitled</title></head><body>{"captionTracks":[${tracks}]}</body></html>`;
 
 const PEERTUBE_WATCH = "https://diler.tube/videos/watch/5b40975c-a305-4a74-bb16-e344b62dff49";
+const PEERTUBE_MANUAL_FILE = "https://diler.tube/lazy-static/video-captions/manual-en.vtt";
 
 const peertubeListing = (data: unknown) =>
   JSON.stringify({ total: Array.isArray(data) ? data.length : 0, data });
@@ -180,6 +190,20 @@ test("an investigated spoken-evidence family reports no evidence without alarm",
   expect(gaps).toEqual(["No source in this family contributed evidence in this operation."]);
 });
 
+test("an investigated family with blocked reads names them alongside the verdict", () => {
+  const leads = new LeadRegistry();
+  const added = leads.add({ kind: "url", target: YOUTUBE_WATCH, origin: "discovery" })!;
+  leads.resolve(
+    added.id,
+    "inaccessible",
+    "The video page lists no caption tracks and no local transcription runtime is available to person research.",
+  );
+
+  const gaps = describeFamilyShortfall("spoken-evidence", "investigated", leads);
+  expect(gaps[0]).toBe("No source in this family contributed evidence in this operation.");
+  expect(gaps.some((gap) => gap.includes("no local transcription runtime"))).toBe(true);
+});
+
 test("an inaccessible spoken-evidence family with no blocked reads stays generic", () => {
   const gaps = describeFamilyShortfall("spoken-evidence", "inaccessible", new LeadRegistry());
   expect(gaps).toEqual(["No query or source in this operation could be aimed at this family."]);
@@ -224,4 +248,178 @@ test("the local-transcription route is declared unavailable with its requirement
   });
   expect(entry?.exclusion).toContain("whisper-cli");
   expect(entry?.exclusion).toContain("/usr/local/share/whisper-cpp-model.bin");
+});
+
+test("a listed YouTube track with no speech cues records both gaps", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-spoken-transcription-youtube-silent");
+  const result = await readPersonSource(
+    YOUTUBE_WATCH,
+    "",
+    ports(recorder, async (url) =>
+      response(
+        url,
+        200,
+        url.includes("timedtext") ? "text/xml" : "text/html",
+        url.includes("timedtext")
+          ? '<?xml version="1.0" encoding="utf-8" ?><transcript></transcript>'
+          : youtubeWatchPage(`{"baseUrl":"${YOUTUBE_TRACK}","languageCode":"en"}`),
+      ),
+    ),
+  );
+
+  expect(result).toMatchObject({
+    access: "retrieved",
+    provenanceNote:
+      "Publisher-written video description only; no caption track was available for this video.",
+  });
+  const captions = recorder.all().filter((attempt) => attempt.code === "captions-missing");
+  expect(captions).toHaveLength(1);
+  expect(captions[0]?.reason).toContain("held no speech cues");
+  const transcription = transcriptionFailures(recorder);
+  expect(transcription).toHaveLength(1);
+  expect(transcription[0]).toMatchObject({ stage: "transcription", target: YOUTUBE_TRACK });
+});
+
+test("a PeerTube listing entry without a file URL records the runtime gap", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-spoken-transcription-peertube-no-url");
+  const result = await readPersonSource(
+    PEERTUBE_WATCH,
+    "",
+    ports(recorder, async (url) => {
+      if (url.includes("/api/v1/videos/"))
+        return response(
+          url,
+          200,
+          "application/json",
+          peertubeListing([{ language: { id: "en", label: "English" } }]),
+        );
+      return response(url, 404, "text/plain", "Not found");
+    }),
+  );
+
+  expect(result).toMatchObject({ access: "failed", family: "spoken-evidence" });
+  expect(result.failureReason).toContain("no downloadable URL");
+  expect(result.failureReason).toContain("whisper-cli");
+  const transcription = transcriptionFailures(recorder);
+  expect(transcription).toHaveLength(1);
+  expect(transcription[0]).toMatchObject({ stage: "transcription" });
+});
+
+test("a PeerTube caption file that will not fetch stays a transport gap, not a runtime gap", async () => {
+  const recorder = new ResearchAttemptRecorder(
+    "operation-spoken-transcription-peertube-unreachable",
+  );
+  const result = await readPersonSource(
+    PEERTUBE_WATCH,
+    "",
+    ports(recorder, async (url) => {
+      if (url.includes("/api/v1/videos/"))
+        return response(
+          url,
+          200,
+          "application/json",
+          peertubeListing([
+            {
+              language: { id: "en", label: "English" },
+              automaticallyGenerated: false,
+              fileUrl: PEERTUBE_MANUAL_FILE,
+            },
+          ]),
+        );
+      return response(url, 404, "text/plain", "Not found");
+    }),
+  );
+
+  /* The listing proves captions exist, so retrying the file is the next route:
+     the failure stays a transport record and claims no runtime gap. */
+  expect(result).toMatchObject({ access: "failed", family: "spoken-evidence" });
+  expect(result.failureReason).toBeUndefined();
+  expect(transcriptionFailures(recorder)).toHaveLength(0);
+  const fetch = recorder
+    .all()
+    .filter((attempt) => attempt.code === "http-error" || attempt.code === "transport-failed");
+  expect(fetch.length).toBeGreaterThan(0);
+});
+
+test("a PeerTube caption file with no speech cues records the runtime gap", async () => {
+  const recorder = new ResearchAttemptRecorder("operation-spoken-transcription-peertube-silent");
+  const result = await readPersonSource(
+    PEERTUBE_WATCH,
+    "",
+    ports(recorder, async (url) => {
+      if (url.includes("/api/v1/videos/"))
+        return response(
+          url,
+          200,
+          "application/json",
+          peertubeListing([
+            {
+              language: { id: "en", label: "English" },
+              automaticallyGenerated: false,
+              fileUrl: PEERTUBE_MANUAL_FILE,
+            },
+          ]),
+        );
+      if (url === PEERTUBE_MANUAL_FILE)
+        return response(url, 200, "text/vtt", "WEBVTT\n\nNOTE no speech here\n");
+      return response(url, 404, "text/plain", "Not found");
+    }),
+  );
+
+  expect(result).toMatchObject({ access: "failed", family: "spoken-evidence" });
+  const captions = recorder.all().filter((attempt) => attempt.code === "captions-missing");
+  expect(captions).toHaveLength(1);
+  expect(captions[0]?.reason).toContain("held no speech cues");
+  expect(result.failureReason).toContain("held no speech cues");
+  expect(result.failureReason).toContain("whisper-cli");
+  expect(transcriptionFailures(recorder)).toHaveLength(1);
+});
+
+test("an operation over a captionless video renders the spoken gap in its coverage plan", async () => {
+  const root = mkdtempSync(join(tmpdir(), "person-research-transcription-"));
+  roots.push(root);
+  const people = composePersonProfiles({
+    workspaceDir: root,
+    search: async () => [],
+    confirmedTranscripts: () => [],
+    transcriptStillConfirmed: () => false,
+    researchEnabled: () => true,
+    upcomingParticipantEmails: () => [],
+    complete: () => async () => ({
+      fullName: null,
+      employer: null,
+      sourceClass: "primary-artifact",
+      author: null,
+      publishedAt: null,
+      claims: [],
+      works: [],
+      expertise: [],
+      connections: [],
+      sections: [],
+    }),
+    researchTestPorts: {
+      fetch: async (url) => response(url, 200, "text/html", youtubeWatchPageWithoutDescription("")),
+    },
+  });
+  const profile = people.research.startFor({
+    fullName: "Maya",
+    profileUrls: [YOUTUBE_WATCH],
+  });
+  const outcome = await people.research.runNow(profile.id);
+
+  /* Reader: the transcript-generation gap is a named failure. */
+  expect(outcome?.attempts).toContainEqual(
+    expect.objectContaining({ stage: "transcription", code: "transcription-failed" }),
+  );
+  /* Lead: the unreadable spoken page resolves with the specific reason. */
+  const lead = outcome?.leads.find((candidate) => candidate.target.includes("youtube.com"));
+  expect(lead?.disposition).toBe("inaccessible");
+  expect(lead?.reason).toContain("no local transcription runtime");
+  /* Coverage: the spoken-evidence area carries that reason in its gap. */
+  const area = outcome?.coverage.find((candidate) => candidate.key === "spoken-evidence");
+  /* The seed discovery queries genuinely worked the family (interview / talk
+     seeds ran and found nothing), so investigated is the honest verdict here;
+     either investigated or inaccessible carries the blocked read's reason. */
+  expect(["investigated", "inaccessible"]).toContain(area?.state);
+  expect(area?.gaps.some((gap) => gap.includes("no local transcription runtime"))).toBe(true);
 });
