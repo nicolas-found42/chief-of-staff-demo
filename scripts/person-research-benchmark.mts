@@ -130,8 +130,8 @@ function arg(name: string): string | undefined {
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
 /* Machine-read benchmark artifacts persist minified: one JSON document per line keeps a
-   30-person run's committed diff small enough for review tooling to fetch (Sourcery cannot
-   fetch diffs over 20k lines), and the .md report stays the human-readable record. (#237) */
+   30-person run's committed diff compact for review tooling, while the .md report stays
+   the human-readable record. (#237) */
 function persistPersonArtifact(value: unknown, stem: string, out: string): void {
   const artifact = BenchmarkPersonArtifactSchema.parse(value);
   mkdirSync(out, { recursive: true });
