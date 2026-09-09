@@ -9,14 +9,20 @@ import {
   BenchmarkReportSchema,
   BenchmarkPersonArtifactSchema,
   PersonResearchOperationOutcomeSchema,
+  type BenchmarkPerson,
   type BenchmarkPersonResult,
   type BenchmarkCollectionResult,
   type BenchmarkReport,
   type BenchmarkPersonArtifact,
+  type PersonDossier,
   type PersonResearchOperationOutcome,
+  type PersonSourceDocument,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../llm/providers.js";
-import { composePersonProfiles } from "../person-profile/composition.js";
+import {
+  composePersonProfiles,
+  type PersonProfilesComposition,
+} from "../person-profile/composition.js";
 import type { BenchmarkCorpus } from "./corpus.js";
 import { assessPerson, runId } from "./evaluate.js";
 import { evaluateCollection } from "./collection.js";
@@ -24,7 +30,12 @@ import { JUDGE_VERSION } from "./judge.js";
 import { remainingMisses, summarizeGroups } from "./report.js";
 
 import { copyEvidence } from "./evidence.js";
-import { readBenchmarkReport, reportLineage, safeReportPath } from "./lineage.js";
+import {
+  readBenchmarkReport,
+  reportLineage,
+  safeReportPath,
+  type SavedBenchmarkReport,
+} from "./lineage.js";
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const read = (path: string): unknown => {
@@ -43,25 +54,51 @@ const same = (a: string[], b: string[]) =>
   new Set(b).size === b.length &&
   a.every((value) => b.includes(value));
 
-/** Reassess a complete retained population. All evidence checks precede every judge call. */
-export async function reassessReport(input: {
+/** One retained person's verified evidence, ready for re-judging. */
+interface ReassessmentEvidenceEntry {
+  person: BenchmarkPerson;
+  previous: BenchmarkPersonResult;
+  operation: PersonResearchOperationOutcome;
+  dossier: PersonDossier | null;
+  publicProjection: PersonDossier | null;
+  sources: PersonSourceDocument[];
+}
+
+/** A retained population whose evidence passed every check, ready for re-judging. */
+export interface ReassessmentEvidence {
+  saved: SavedBenchmarkReport;
+  lineage: { root: string; reports: SavedBenchmarkReport[] };
+  selected: string[];
+  original: BenchmarkReport;
+  references: BenchmarkPerson[];
+  evidence: ReassessmentEvidenceEntry[];
+  /** Composed profiles over the caller's workspace dir; valid until cleanup. */
+  profiles: PersonProfilesComposition;
+  population: { slug: string; profileId: string }[];
+  bundleHash: string;
+  manifestText: string;
+}
+
+/**
+ * Load and verify a retained population for re-judging. Shared by
+ * reassessReport and the issue-#270 contract differential: every
+ * attestation, manifest and dossier check runs here, before any judge call.
+ * The caller owns `workspaceDir` (creation and cleanup); nothing here calls
+ * a model.
+ */
+export async function loadReassessmentEvidence(input: {
   reportPath: string;
   evidenceWorkspace: string;
   corpus: BenchmarkCorpus;
-  judge: CompleteJson;
   judgeProvider: string;
   judgeModel: string;
-  onlyFailed?: boolean;
-  timelineMinutes?: number[];
-  onTimeline?: (
-    slug: string,
-    points: Awaited<ReturnType<typeof assessTimeline>>,
-    provenance: { runId: string; evidenceBundleHash: string; judgeVersion: string },
-  ) => void;
-  lineageRoot?: string;
-  outputDirectory?: string;
-  onPerson?: (artifact: BenchmarkPersonArtifact, operation: PersonResearchOperationOutcome) => void;
-}): Promise<BenchmarkReport> {
+  onlyFailed?: boolean | undefined;
+  lineageRoot?: string | undefined;
+  outputDirectory?: string | undefined;
+  workspaceDir: string;
+}): Promise<ReassessmentEvidence> {
+  const workspaceDir = input.workspaceDir;
+
   const saved = readBenchmarkReport(input.reportPath);
   const original = saved.report;
   const lineage = reportLineage(saved, input.lineageRoot);
@@ -128,97 +165,149 @@ export async function reassessReport(input: {
     )
   )
     throw new Error("Reassessment collection scenarios differ from the original selection.");
-
+  const bundleHash = copyEvidence(input.evidenceWorkspace, workspaceDir);
+  if (original.evidenceBundleHash && original.evidenceBundleHash !== bundleHash)
+    throw new Error("Reassessment evidence bundle does not match its attestation.");
+  const manifestText = readFileSync(join(workspaceDir, "snapshot-manifest.json"), "utf8");
+  const manifest = z
+    .object({ completedOperationIds: z.array(z.string().min(1).max(64)).max(200) })
+    .parse(JSON.parse(manifestText));
+  const queue = z
+    .object({
+      jobs: z.array(
+        z.object({
+          profileId: z.string(),
+          operation: PersonResearchOperationOutcomeSchema.nullable().optional(),
+        }),
+      ),
+    })
+    .parse(read(join(workspaceDir, "person-research.json")));
+  const unavailable = async (): Promise<never> => {
+    throw new Error("Research I/O is unavailable during reassessment.");
+  };
+  const people = composePersonProfiles({
+    workspaceDir,
+    search: unavailable,
+    complete: () => unavailable,
+    confirmedTranscripts: () => [],
+    transcriptStillConfirmed: () => false,
+    researchEnabled: () => false,
+  });
+  const evidence = references.map((person) => {
+    const previous = fullResearch.report.people.find((result) => result.slug === person.slug)!;
+    const operationPath = join(
+      dirname(fullResearch.path),
+      `${basename(fullResearch.path, ".json")}-${person.slug}.operation.json`,
+    );
+    const operation = PersonResearchOperationOutcomeSchema.parse(read(operationPath));
+    if (!/^[a-zA-Z0-9_-]{1,160}$/.test(operation.profileId))
+      throw new Error(`Invalid reassessment profile identity: ${person.slug}`);
+    const stored = queue.jobs.find((job) => job.profileId === operation.profileId)?.operation;
+    if (
+      previous.assessment?.operationId !== operation.operationId ||
+      !manifest.completedOperationIds.includes(operation.operationId) ||
+      !stored ||
+      JSON.stringify(stored) !== JSON.stringify(operation)
+    )
+      throw new Error(`Reassessment operation/manifest mismatch: ${person.slug}`);
+    if (
+      previous.mode !== original.mode ||
+      previous.operational.conclusion !== operation.conclusion ||
+      previous.operational.rounds !== operation.rounds ||
+      previous.operational.requests !== operation.requests ||
+      previous.operational.modelCalls !== operation.modelCalls ||
+      previous.operational.sourcesRetained !== operation.sourcesRetained
+    )
+      throw new Error(`Reassessment original operational outcome mismatch: ${person.slug}`);
+    const profile = people.profiles.get(operation.profileId);
+    if (!profile || profile.archivedAt)
+      throw new Error(`Reassessment profile unavailable: ${person.slug}`);
+    const dossier = people.research.dossier(operation.profileId, "private");
+    const publicProjection = people.research.dossier(operation.profileId, "public");
+    const sources = people.research.sources(operation.profileId);
+    if (
+      (dossier?.revision ?? 0) !== (operation.publishedDossierRevision ?? 0) ||
+      (dossier?.claims.length ?? 0) !== previous.richness.claims ||
+      sources.length !== previous.richness.sources ||
+      dossier?.sourceIds.some((id) => !sources.some((source) => source.id === id))
+    )
+      throw new Error(`Reassessment dossier/source population mismatch: ${person.slug}`);
+    if (JSON.stringify(dossier) !== JSON.stringify(publicProjection))
+      throw new Error(`Reassessment refuses private dossier evidence: ${person.slug}`);
+    return { person, previous, operation, dossier, publicProjection, sources };
+  });
+  const population = evidence.map((entry) => ({
+    slug: entry.person.slug,
+    profileId: entry.operation.profileId,
+  }));
+  if (
+    !same(
+      population.map((entry) => entry.profileId),
+      people.profiles
+        .search()
+        .filter((profile) => !profile.archivedAt)
+        .map((profile) => profile.id),
+    )
+  )
+    throw new Error(
+      "Reassessment workspace population differs from the selected report population.",
+    );
+  return {
+    saved,
+    lineage,
+    selected,
+    original,
+    references,
+    evidence,
+    profiles: people,
+    population,
+    bundleHash,
+    manifestText,
+  };
+}
+/** Reassess a complete retained population. All evidence checks precede every judge call. */
+export async function reassessReport(input: {
+  reportPath: string;
+  evidenceWorkspace: string;
+  corpus: BenchmarkCorpus;
+  judge: CompleteJson;
+  judgeProvider: string;
+  judgeModel: string;
+  onlyFailed?: boolean;
+  timelineMinutes?: number[];
+  onTimeline?: (
+    slug: string,
+    points: Awaited<ReturnType<typeof assessTimeline>>,
+    provenance: { runId: string; evidenceBundleHash: string; judgeVersion: string },
+  ) => void;
+  lineageRoot?: string;
+  outputDirectory?: string;
+  onPerson?: (artifact: BenchmarkPersonArtifact, operation: PersonResearchOperationOutcome) => void;
+}): Promise<BenchmarkReport> {
   const workspaceDir = mkdtempSync(join(tmpdir(), "person-benchmark-reassessment-"));
   try {
-    const bundleHash = copyEvidence(input.evidenceWorkspace, workspaceDir);
-    if (original.evidenceBundleHash && original.evidenceBundleHash !== bundleHash)
-      throw new Error("Reassessment evidence bundle does not match its attestation.");
-    const manifestText = readFileSync(join(workspaceDir, "snapshot-manifest.json"), "utf8");
-    const manifest = z
-      .object({ completedOperationIds: z.array(z.string().min(1).max(64)).max(200) })
-      .parse(JSON.parse(manifestText));
-    const queue = z
-      .object({
-        jobs: z.array(
-          z.object({
-            profileId: z.string(),
-            operation: PersonResearchOperationOutcomeSchema.nullable().optional(),
-          }),
-        ),
-      })
-      .parse(read(join(workspaceDir, "person-research.json")));
-    const unavailable = async (): Promise<never> => {
-      throw new Error("Research I/O is unavailable during reassessment.");
-    };
-    const people = composePersonProfiles({
+    const {
+      saved,
+      lineage,
+      selected,
+      original,
+      references,
+      evidence,
+      profiles,
+      population,
+      bundleHash,
+      manifestText,
+    } = await loadReassessmentEvidence({
+      reportPath: input.reportPath,
+      evidenceWorkspace: input.evidenceWorkspace,
+      corpus: input.corpus,
+      judgeProvider: input.judgeProvider,
+      judgeModel: input.judgeModel,
+      onlyFailed: input.onlyFailed,
+      lineageRoot: input.lineageRoot,
+      outputDirectory: input.outputDirectory,
       workspaceDir,
-      search: unavailable,
-      complete: () => unavailable,
-      confirmedTranscripts: () => [],
-      transcriptStillConfirmed: () => false,
-      researchEnabled: () => false,
     });
-    const evidence = references.map((person) => {
-      const previous = fullResearch.report.people.find((result) => result.slug === person.slug)!;
-      const operationPath = join(
-        dirname(fullResearch.path),
-        `${basename(fullResearch.path, ".json")}-${person.slug}.operation.json`,
-      );
-      const operation = PersonResearchOperationOutcomeSchema.parse(read(operationPath));
-      if (!/^[a-zA-Z0-9_-]{1,160}$/.test(operation.profileId))
-        throw new Error(`Invalid reassessment profile identity: ${person.slug}`);
-      const stored = queue.jobs.find((job) => job.profileId === operation.profileId)?.operation;
-      if (
-        previous.assessment?.operationId !== operation.operationId ||
-        !manifest.completedOperationIds.includes(operation.operationId) ||
-        !stored ||
-        JSON.stringify(stored) !== JSON.stringify(operation)
-      )
-        throw new Error(`Reassessment operation/manifest mismatch: ${person.slug}`);
-      if (
-        previous.mode !== original.mode ||
-        previous.operational.conclusion !== operation.conclusion ||
-        previous.operational.rounds !== operation.rounds ||
-        previous.operational.requests !== operation.requests ||
-        previous.operational.modelCalls !== operation.modelCalls ||
-        previous.operational.sourcesRetained !== operation.sourcesRetained
-      )
-        throw new Error(`Reassessment original operational outcome mismatch: ${person.slug}`);
-      const profile = people.profiles.get(operation.profileId);
-      if (!profile || profile.archivedAt)
-        throw new Error(`Reassessment profile unavailable: ${person.slug}`);
-      const dossier = people.research.dossier(operation.profileId, "private");
-      const publicProjection = people.research.dossier(operation.profileId, "public");
-      const sources = people.research.sources(operation.profileId);
-      if (
-        (dossier?.revision ?? 0) !== (operation.publishedDossierRevision ?? 0) ||
-        (dossier?.claims.length ?? 0) !== previous.richness.claims ||
-        sources.length !== previous.richness.sources ||
-        dossier?.sourceIds.some((id) => !sources.some((source) => source.id === id))
-      )
-        throw new Error(`Reassessment dossier/source population mismatch: ${person.slug}`);
-      if (JSON.stringify(dossier) !== JSON.stringify(publicProjection))
-        throw new Error(`Reassessment refuses private dossier evidence: ${person.slug}`);
-      return { person, previous, operation, dossier, publicProjection, sources };
-    });
-    const population = evidence.map((entry) => ({
-      slug: entry.person.slug,
-      profileId: entry.operation.profileId,
-    }));
-    if (
-      !same(
-        population.map((entry) => entry.profileId),
-        people.profiles
-          .search()
-          .filter((profile) => !profile.archivedAt)
-          .map((profile) => profile.id),
-      )
-    )
-      throw new Error(
-        "Reassessment workspace population differs from the selected report population.",
-      );
-
     const carriedPeople = new Map<string, BenchmarkPersonResult>();
     const carriedScenarios = new Map<string, BenchmarkCollectionResult>();
     if (input.onlyFailed) {
@@ -334,7 +423,7 @@ export async function reassessReport(input: {
           entry.operation,
         );
       }
-      collection = await evaluateCollection(people, population, input.corpus.scenarios, {
+      collection = await evaluateCollection(profiles, population, input.corpus.scenarios, {
         references,
         judge,
         carried: carriedScenarios,

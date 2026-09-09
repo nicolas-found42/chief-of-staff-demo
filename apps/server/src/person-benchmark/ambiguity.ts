@@ -1,3 +1,5 @@
+import type { BenchmarkPersonResult } from "@chief-of-staff-demo/shared";
+
 /**
  * Deterministic classification of ambiguous semantic verdicts (issue #234).
  *
@@ -78,6 +80,37 @@ export interface ClassifiablePerson {
     claimId: string | null;
     rationale: string;
   }[];
+}
+/**
+ * Adapt a retained person result to the classifier's narrow view. Issue #270
+ * reuses this adapter for both differential arms, so the before and after
+ * classifications cannot drift apart from the #234 record.
+ */
+export function toClassifiablePerson(person: BenchmarkPersonResult): ClassifiablePerson {
+  const assessment = person.assessment;
+  if (!assessment) throw new Error(`Report person ${person.slug} has no assessment.`);
+  const phases = assessment.phases;
+  if (!phases) throw new Error(`Report person ${person.slug} has no judge phases.`);
+  return {
+    slug: person.slug,
+    claimCount: person.richness.claims,
+    referenceFailure: phases.reference.failure,
+    supportStatus: phases.support.status,
+    supportFailure: phases.support.failure,
+    unresolved: (phases.support.unresolvedFindings ?? []).map((entry) => ({
+      claimId: entry.claimId,
+      citedQuote: entry.citedQuote,
+    })),
+    overclaims: person.factualReliability.overclaims.map((entry) => ({
+      claimId: entry.claimId,
+      citedQuote: entry.citedQuote,
+    })),
+    integritySubjects: person.factualReliability.integrityFindings.map((entry) => entry.subject),
+    sourceContributionClaims: (person.sourceContributions ?? []).flatMap((contribution) =>
+      contribution.claimIds.map((claimId) => ({ claimId, family: contribution.family })),
+    ),
+    judgements: person.completeness.judgements.map((judgement) => ({ ...judgement })),
+  };
 }
 
 export interface AmbiguityAssignment {

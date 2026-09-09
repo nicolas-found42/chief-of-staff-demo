@@ -40,6 +40,7 @@ tests/fixtures/debrief-golden/
 /artifacts/person-benchmark/*/
 !/artifacts/person-benchmark/diagnostics-2026-09-06/
 !/artifacts/person-benchmark/ambiguity-classification-2026-09-06/
+!/artifacts/person-benchmark/differentials/
 
 # Session handover notes. Local planning artifacts, same reasoning as `.scratch/`.
 previous-session.md
