@@ -24,6 +24,14 @@ import {
 } from "../apps/server/src/llm/providers.js";
 import { probeSourceEligibility } from "../apps/server/src/source-adapters/eligibility.js";
 import { readPersonSource } from "../apps/server/src/person-profile/research-readers.js";
+import {
+  SOURCE_HTTP_CONNECT_TIMEOUT_MS,
+  SOURCE_HTTP_KEEP_ALIVE_TIMEOUT_MS,
+} from "../apps/server/src/source-adapters/http.js";
+import {
+  SEARCH_PASS_SETTLE_FRACTION,
+  SEARCH_PASS_SOFT_DEADLINE_MS,
+} from "../apps/server/src/source-adapters/search.js";
 import { playwrightBrowserRenderer } from "../apps/server/src/source-adapters/browser.js";
 import { loadCorpus, requirementCoverage } from "../apps/server/src/person-benchmark/corpus.js";
 import {
@@ -627,6 +635,18 @@ for (let repeat = 1; repeat <= repeats; repeat++) {
         promptVersion: "2026-09-06.4",
         collectorVersions: { "person-research": "2026-09-06" },
         researchSettings: {
+          /* ADR-0076 machinery: the values are the exported production
+             constants, recorded so every arm names the machinery it ran on. */
+          searchPassSoftDeadlineMs: SEARCH_PASS_SOFT_DEADLINE_MS,
+          searchPassSettleFraction: SEARCH_PASS_SETTLE_FRACTION,
+          searchFirstPassExempt: "per search instance; the run shares one",
+          sourceHttpKeepAliveTimeoutMs: SOURCE_HTTP_KEEP_ALIVE_TIMEOUT_MS,
+          sourceHttpConnectTimeoutMs: SOURCE_HTTP_CONNECT_TIMEOUT_MS,
+          sourceHttpDispatcher: "shared undici Agent with TTL-honoring DNS cache",
+          htmlParseGate:
+            "isProbablyReaderable pre-gate, fail-open; harvest after gate, before parse",
+          judgeCallOverlap: "recovery and support assessed concurrently",
+          extractionInputSlimming: "refuted by probe (r=0.110); not adopted",
           ...configured.conditions,
           ...overrides,
           operationConcurrency: concurrency,

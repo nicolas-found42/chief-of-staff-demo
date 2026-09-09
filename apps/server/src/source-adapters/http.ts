@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
+import CacheableLookup from "cacheable-lookup";
+import { Agent, fetch as undiciFetch, type Dispatcher } from "undici";
 
 export interface PublicHttpResponse {
   url: string;
@@ -75,6 +77,76 @@ export function assertPublicHttpUrl(value: string): URL {
 }
 
 /**
+ * Connection-pool tuning for the collection transports below. Values follow
+ * the production spelling proven by pnpm/gemini-cli/promptfoo (keep-alive
+ * timeouts plus `connect.autoSelectFamily`); exported so the benchmark
+ * conditions rows can name them.
+ */
+export const SOURCE_HTTP_KEEP_ALIVE_TIMEOUT_MS = 30_000;
+const SOURCE_HTTP_KEEP_ALIVE_MAX_TIMEOUT_MS = 600_000;
+export const SOURCE_HTTP_CONNECT_TIMEOUT_MS = 10_000;
+
+/** The pooling dispatcher behind `createSourceHttpDispatcher`. */
+export type SourceHttpDispatcher = Agent;
+
+/**
+ * Adapts a TTL-honoring `CacheableLookup` to the `LookupFunction` shape
+ * `net.connect` expects. The overloads do not line up directly (numeric and
+ * `"IPv4"`/`"IPv6"` families, plus the `all: true` Happy-Eyeballs form that
+ * `autoSelectFamily` requests), so the narrows below are the contract, not
+ * ceremony: unknown families fall back to family-agnostic resolution.
+ */
+function pooledLookup(lookup: CacheableLookup): LookupFunction {
+  return (hostname, options, callback) => {
+    const family = options.family === 4 || options.family === 6 ? options.family : undefined;
+    const base: { hints?: number; family?: 4 | 6 } = {
+      ...(typeof options.hints === "number" ? { hints: options.hints } : {}),
+      ...(family === undefined ? {} : { family }),
+    };
+    if (options.all === true) {
+      lookup.lookup(hostname, { ...base, all: true as const }, (error, result) => {
+        callback(error, [...result], result[0]?.family);
+      });
+    } else {
+      lookup.lookup(hostname, base, (error, address, family) => {
+        callback(error, address, family);
+      });
+    }
+  };
+}
+
+/**
+ * A pooling dispatcher for collection fetches. The hundreds of requests per
+ * operation reuse keep-alive sockets instead of paying TCP+TLS setup per
+ * host, and a TTL-honoring DNS cache replaces the per-request `getaddrinfo`
+ * Node performs when no cache exists. Each call returns an isolated instance
+ * so tests never share the process singleton; production transports share one
+ * via `sharedSourceHttpDispatcher`.
+ */
+export function createSourceHttpDispatcher(): SourceHttpDispatcher {
+  const lookup = new CacheableLookup();
+  return new Agent({
+    keepAliveTimeout: SOURCE_HTTP_KEEP_ALIVE_TIMEOUT_MS,
+    keepAliveMaxTimeout: SOURCE_HTTP_KEEP_ALIVE_MAX_TIMEOUT_MS,
+    // Undici's default; stated so the no-pipelining choice reads as deliberate.
+    pipelining: 1,
+    connect: {
+      timeout: SOURCE_HTTP_CONNECT_TIMEOUT_MS,
+      autoSelectFamily: true,
+      lookup: pooledLookup(lookup),
+    },
+  });
+}
+
+let sharedDispatcher: SourceHttpDispatcher | undefined;
+
+/** The process-wide pooling dispatcher behind the default transports. */
+function sharedSourceHttpDispatcher(): SourceHttpDispatcher {
+  sharedDispatcher ??= createSourceHttpDispatcher();
+  return sharedDispatcher;
+}
+
+/**
  * The transports public collection and search fetch through. The default is
  * the guarded, 20-second, shared-UA fetch everything used while there was one
  * route; the options exist because the provider bundle (ADR-0049) needs
@@ -84,10 +156,20 @@ export function assertPublicHttpUrl(value: string): URL {
  * still override the deadline through `timeoutMs`.
  */
 export function createHttpFetch(
-  options: { timeoutMs?: number; headers?: Record<string, string>; guarded?: boolean } = {},
+  options: {
+    timeoutMs?: number;
+    headers?: Record<string, string>;
+    guarded?: boolean;
+    /**
+     * Pooling dispatcher for the request. Defaults to the shared process
+     * singleton; tests pass an isolated `createSourceHttpDispatcher()` agent.
+     */
+    dispatcher?: Dispatcher;
+  } = {},
 ): PublicHttpFetch {
   const defaultTimeoutMs = options.timeoutMs ?? 20_000;
   const guarded = options.guarded ?? true;
+  const dispatcher = options.dispatcher ?? sharedSourceHttpDispatcher();
   return async (value, perCall = {}) => {
     const url = guarded ? assertPublicHttpUrl(value) : new URL(value);
     const controller = new AbortController();
@@ -102,7 +184,17 @@ export function createHttpFetch(
       if (perCall.accept) headers.accept = perCall.accept;
       if (perCall.etag) headers["if-none-match"] = perCall.etag;
       if (perCall.lastModified) headers["if-modified-since"] = perCall.lastModified;
-      const response = await fetch(url, {
+      /* The collection transports call undici's own fetch export, not the
+         global: attaching an npm-undici Agent as a per-request `dispatcher`
+         on the global fetch fails with `invalid onRequestStart method` on
+         runtimes whose built-in undici is a different major (Node 22 CI,
+         2026-09-09). Undici's fetch and Agent from one module instance
+         share the handler contract, so pooling works everywhere. Only
+         these transports import undici's fetch — model calls stay on the
+         global fetch with the default agent, and no global dispatcher is
+         swapped. Tests intercept at the undici module boundary; the
+         transport's guard, headers and timeout code still run. */
+      const response = await undiciFetch(url, {
         ...(perCall.method !== undefined ? { method: perCall.method } : {}),
         ...(perCall.body !== undefined ? { body: perCall.body } : {}),
         headers: perCall.body
@@ -111,6 +203,7 @@ export function createHttpFetch(
         redirect: "follow",
         signal: controller.signal,
         credentials: "omit",
+        dispatcher,
       });
       const body = await response.text();
       if (body.length > 5_000_000) {
@@ -155,15 +248,16 @@ export type PublicHttpBytesFetch = (
  * URL guard, same anonymous credentials-omitted request, same 5 MB ceiling.
  */
 function createHttpBytesFetch(
-  options: { timeoutMs?: number; headers?: Record<string, string> } = {},
+  options: { timeoutMs?: number; headers?: Record<string, string>; dispatcher?: Dispatcher } = {},
 ): PublicHttpBytesFetch {
   const defaultTimeoutMs = options.timeoutMs ?? 20_000;
+  const dispatcher = options.dispatcher ?? sharedSourceHttpDispatcher();
   return async (value, perCall = {}) => {
     const url = assertPublicHttpUrl(value);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), perCall.timeoutMs ?? defaultTimeoutMs);
     try {
-      const response = await fetch(url, {
+      const response = await undiciFetch(url, {
         headers: {
           accept: perCall.accept ?? "application/pdf, application/octet-stream, */*;q=0.8",
           "user-agent": "Found42-Content-Scout/1.0 (+public-source-monitor)",
@@ -172,6 +266,8 @@ function createHttpBytesFetch(
         redirect: "follow",
         signal: controller.signal,
         credentials: "omit",
+        // Same pooled dispatcher as the text transport; see the note there.
+        dispatcher,
       });
       const bytes = Buffer.from(await response.arrayBuffer());
       if (bytes.byteLength > 5_000_000)

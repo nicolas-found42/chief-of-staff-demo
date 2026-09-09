@@ -13,6 +13,30 @@ import {
   RECORD_ROUTE_INDEXES,
   WAYBACK_CAPTURE_ROUTE,
 } from "../../../apps/server/src/person-profile/research-readers";
+import type * as undiciModule from "undici";
+
+/* The curated transports ride undici's own fetch (pooled dispatcher — see
+  impl: null as null | ((
+    input: string | URL,
+    init?: { headers?: HeadersInit; credentials?: RequestCredentials },
+  ) => Promise<Response>),
+   real createHttpFetch guard, header binding and timeout code still run;
+   only the socket layer is faked. */
+const undiciStub = vi.hoisted(() => ({
+  impl: null as
+    null | ((input: string | URL, init?: { headers?: HeadersInit }) => Promise<Response>),
+}));
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof undiciModule>();
+  return {
+    ...actual,
+    /* The cast bridges the stub's narrow init type to undici's full one. */
+    fetch: ((input: string | URL, init?: { headers?: HeadersInit }) => {
+      if (!undiciStub.impl) throw new Error("the undici fetch stub is not installed");
+      return undiciStub.impl(input, init);
+    }) as unknown as typeof actual.fetch,
+  };
+});
 
 /**
  * The whole configured research source collection, checked against #228's one
@@ -52,13 +76,16 @@ const CREDENTIAL_HEADERS = [
   "proxy-authorization",
 ];
 
-/** A stub for the global `fetch`, so curated per-provider transports are visible. */
+/** A stub for undici's fetch, so curated per-provider transports are visible. */
 function captureRequests(answer: () => Response | Promise<Response>): {
   calls: { url: string; headers: Record<string, string>; credentials: string | undefined }[];
 } {
   const calls: { url: string; headers: Record<string, string>; credentials: string | undefined }[] =
     [];
-  vi.stubGlobal("fetch", async (input: URL | string, init?: RequestInit) => {
+  undiciStub.impl = async (
+    input: string | URL,
+    init?: { headers?: HeadersInit; credentials?: RequestCredentials },
+  ) => {
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries((init?.headers ?? {}) as Record<string, string>))
       headers[name.toLowerCase()] = value;
@@ -68,7 +95,7 @@ function captureRequests(answer: () => Response | Promise<Response>): {
       credentials: init?.credentials,
     });
     return answer();
-  });
+  };
   return { calls };
 }
 
@@ -76,7 +103,7 @@ const emptyJson = () =>
   new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  undiciStub.impl = null;
 });
 
 describe("the configured research source collection", () => {
@@ -160,7 +187,6 @@ describe("the configured research source collection", () => {
       "Ada Lovelace",
     ).catch(() => undefined);
     const reachedWhenHealthy = declaredHosts(healthy.calls);
-    vi.unstubAllGlobals();
 
     /* Now refuse every anonymous route the way a wall would. Nothing may
        escalate: no keyed endpoint, no paid proxy, no second host at all. */

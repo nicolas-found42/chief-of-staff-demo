@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { load } from "cheerio";
 import { JSDOM } from "jsdom";
-import { Readability } from "@mozilla/readability";
+import { isProbablyReaderable, Readability } from "@mozilla/readability";
 import type { PersonSourceFamily, PersonSourceRights } from "@chief-of-staff-demo/shared";
 import { convertToText, SourceError } from "../text/convert.js";
 import {
@@ -735,6 +736,75 @@ async function readRetrieved(
   return unavailable(family, "document-reader", "unsupported", context.snippet, response.url);
 }
 
+/** The sliver of `Element` the readability gate's visibility/score checks touch. */
+interface ReaderableGateNode {
+  className: string;
+  id: string;
+  textContent: string;
+  style: undefined;
+  hasAttribute: (name: string) => boolean;
+  getAttribute: (name: string) => string | null;
+  matches: (selector: string) => boolean;
+  parentNode: unknown;
+}
+
+/** The sliver of `Document` the readability gate queries: two selector scans. */
+interface ReaderableGateDocument {
+  querySelectorAll: (selector: string) => ReaderableGateNode[];
+}
+
+/**
+ * Fast readability pre-check over a cheerio document, without constructing a
+ * JSDOM. `isProbablyReaderable` needs `querySelectorAll` plus per-node
+ * `className`/`matches`/`textContent`, which Readability's own lightweight
+ * `JSDOMParser` does not implement — so the gate runs on the one DOM already
+ * in the dependency closure that does (cheerio, via `detectChallenge`'s use).
+ * htmlparser2 is lenient like a browser. The gate runs with zeroed score
+ * thresholds — a page passes if it has any text-bearing p, pre, or article
+ * — so it can only skip pages whose full parse would yield nothing from
+ * those elements anyway (shells, galleries, API bodies). The defaults
+ * (minScore 20, minContentLength 140) reject single-short-paragraph pages
+ * the full parse retains, so a readable one-paragraph biography would
+ * vanish; the zeroed tuning cannot drop text the old path kept. Borderline
+ * disagreement is still measured on the gate-negative diagnostic's body
+ * hash, not assumed. Never throws: a gate failure fails open to the full
+ * parse rather than dropping a page.
+ */
+function probablyReaderable(body: string): { readable: boolean; gateMs: number } {
+  const startedAt = Date.now();
+  try {
+    const $ = load(body);
+    const candidates = $("p, pre, article").toArray();
+    const wrap = (element: (typeof candidates)[number]): ReaderableGateNode => ({
+      className: element.attribs["class"] ?? "",
+      id: element.attribs["id"] ?? "",
+      textContent: $(element).text(),
+      style: undefined,
+      hasAttribute: (name: string) => element.attribs[name] !== undefined,
+      getAttribute: (name: string) => element.attribs[name] ?? null,
+      matches: (selector: string) => $(element).is(selector),
+      parentNode: element.parent ?? null,
+    });
+    const gate: ReaderableGateDocument = {
+      /* Element selectors only ever match elements; the cast recovers the
+         element type the generic selector overload erases. */
+      querySelectorAll: (selector: string) =>
+        ($(selector).toArray() as (typeof candidates)[number][]).map(wrap),
+    };
+    /* The shim implements exactly the surface the gate touches; the cast is
+       the seam between that surface and the DOM type the gate declares. */
+    return {
+      readable: isProbablyReaderable(gate as unknown as Document, {
+        minScore: 0,
+        minContentLength: 0,
+      }),
+      gateMs: Date.now() - startedAt,
+    };
+  } catch {
+    return { readable: true, gateMs: Date.now() - startedAt };
+  }
+}
+
 async function readHtml(
   url: string,
   response: PublicHttpResponse,
@@ -742,9 +812,65 @@ async function readHtml(
   context: ReadContext,
 ): Promise<SourceReadResult> {
   const challenge = detectChallenge(response.body, response.contentType);
+  /* Fast gate before the expensive parse: pages the readability check itself
+     rejects skip JSDOM construction, anchor harvest, and Readability, and take
+     the same document-empty outcome the empty-text path below produces — with
+     the gate verdict on the record so the A/B arm can replay body hashes and
+     measure the false-negative rate instead of assuming it. */
+  const gate = probablyReaderable(response.body);
+  if (!gate.readable) {
+    context.recorder.record({
+      stage: challenge ? "access" : "rendering",
+      code: challenge ?? "document-empty",
+      outcome: "failed",
+      recovery: context.render ? "alternative-route" : "stopped",
+      cause: "observed",
+      target: url,
+      targetKind: "url",
+      collector: "html-reader",
+      /* The verdict rides on the reason because the observation schema has no
+         gate field: readable=false is the decision, parseMs the timing probe. */
+      reason: `${
+        challenge
+          ? `A ${challenge === "login-required" ? "sign-in" : "bot-challenge"} page was served instead of the article.`
+          : "The page carried no readable article text."
+      } Parse gate: readable=false (parseMs=${gate.gateMs}, ${response.body.length} bytes); JSDOM construction, anchor harvest, and Readability skipped.`,
+      attemptOf: context.attemptOf,
+      observed: {
+        status: response.status,
+        finalUrl: response.url,
+        contentType: response.contentType,
+        bytes: response.body.length,
+        bodyHash: hash(response.body),
+      },
+      impact: "No readable text reached extraction from this page.",
+      remediation: challenge
+        ? "This route is not anonymously readable; record it as a source gap."
+        : "Check whether the article is client-rendered and needs the browser route.",
+    });
+    const rendered = await tryRender(url, family, context);
+    if (rendered) return rendered;
+    return unavailable(
+      family,
+      "html-reader",
+      challenge ? "blocked" : "failed",
+      context.snippet,
+      response.url,
+    );
+  }
+  /* DOM-parse timing probe for the linkedom A/B decision: JSDOM construction
+     milliseconds, recorded additively on the failure record below. Successes
+     record nothing today, so there is no attempt to attach it to there. */
+  const parseStartedAt = Date.now();
   const dom = new JSDOM(response.body, { url: response.url });
+  const domParseMs = Date.now() - parseStartedAt;
   try {
     const document = dom.window.document;
+    /* Outbound harvest before Readability.parse(): parse() moves the nodes it
+       consumes into a detached container, so harvesting after it drops
+       in-article links. This stays behind the gate — gate-negative pages skip
+       JSDOM, harvest, and parse entirely — and gate-positive pages keep
+       today's exact outbound URLs. */
     const outboundUrls = [
       ...new Set(
         [...document.querySelectorAll("a[href]")].flatMap((link) => {
@@ -773,9 +899,13 @@ async function readHtml(
         target: url,
         targetKind: "url",
         collector: "html-reader",
-        reason: challenge
-          ? `A ${challenge === "login-required" ? "sign-in" : "bot-challenge"} page was served instead of the article.`
-          : "The page parsed but carried no article text.",
+        /* Gate verdict plus the DOM-parse timing probe, on the reason for the
+           same schema reason as the gate-negative path above. */
+        reason: `${
+          challenge
+            ? `A ${challenge === "login-required" ? "sign-in" : "bot-challenge"} page was served instead of the article.`
+            : "The page parsed but carried no article text."
+        } Parse gate: readable=true (parseMs=${domParseMs} DOM parse).`,
         attemptOf: context.attemptOf,
         observed: {
           status: response.status,
@@ -1999,6 +2129,7 @@ async function request(
       lastError = error;
       const { code, reason } = classifyTransportError(error);
       const retrying = attempt < 3;
+      const transportWaitMs = Math.min(4_000, 500 * 2 ** attempt);
       context.recorder.record({
         stage: "transport",
         code,
@@ -2015,7 +2146,7 @@ async function request(
         ...(retrying ? {} : { recoveryStopped: "The retry budget for this request is spent." }),
       });
       if (!retrying) return null;
-      await sleep(Math.min(4_000, 500 * 2 ** attempt));
+      await sleep(transportWaitMs);
     }
   }
   return lastError ? null : null;

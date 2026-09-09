@@ -475,18 +475,30 @@ it.each([false, true])("preserves judge wire attempts when assessment fails=%s",
     },
   });
   expect(result.assessment?.judge).toBe(fails ? "failed" : "completed");
-  expect(result.assessment?.modelAttempts?.[0]).toMatchObject({
-    call: 1,
-    subject: person.slug,
-    observation: {
-      outcome: "retrying",
-      diagnostic: { classification: "request_timeout", bodyBytes: 11 },
-    },
-  });
-  expect(result.assessment?.modelAttempts?.[1]?.observation.outcome).toBe(
-    fails ? "failed" : "succeeded",
+  const attempts = result.assessment?.modelAttempts ?? [];
+  expect(attempts.every((attempt) => attempt.subject === person.slug)).toBe(true);
+  /* Concurrent judging (ADR-0076) requests support even when the recovery
+     call fails, so a double failure records both branches' first and
+     correction attempts: eight wire attempts across four calls, where the
+     old sequential short-circuit recorded one branch's four. On success
+     each branch answers in one call (two registrations), and each call
+     keeps one retrying registration and one terminal one. */
+  expect(attempts).toHaveLength(fails ? 8 : 4);
+  expect(new Set(attempts.map((attempt) => attempt.call))).toEqual(
+    new Set(fails ? [1, 2, 3, 4] : [1, 2]),
   );
-  expect(result.assessment?.modelAttempts?.length).toBe(4);
+  expect(attempts.filter((attempt) => attempt.observation.outcome === "retrying")).toHaveLength(
+    fails ? 4 : 2,
+  );
+  expect(
+    attempts
+      .filter((attempt) => attempt.observation.outcome === "retrying")
+      .every(
+        (attempt) =>
+          (attempt.observation.diagnostic as { classification?: string } | null)?.classification ===
+          "request_timeout",
+      ),
+  ).toBe(true);
   expect(result.completeness.recovered).toBe(0);
 });
 
