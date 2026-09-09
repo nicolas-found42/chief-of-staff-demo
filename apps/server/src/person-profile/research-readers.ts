@@ -1477,10 +1477,10 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
        only a wall is recorded as a wall. Both checks run on this response,
        never on the hostname: a 200 carrying a login or challenge shell takes
        the wall branch below. */
-    const gated = response && !challenge ? detectSocialWall(response.body) : null;
-    if (response && response.status < 400 && !challenge && !gated)
+    const wallMarker = response && !challenge ? detectSocialWallMarker(response.body) : null;
+    if (response && response.status < 400 && !challenge && !wallMarker)
       return readHtml(url, response, "public-social", context);
-    const wall = challenge ?? (gated ? "login-required" : null);
+    const wall = challenge ?? (wallMarker ? "login-required" : null);
     context.recorder.record({
       stage: "access",
       code:
@@ -1495,7 +1495,7 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
       targetKind: "url",
       collector: "social-reader",
       reason: wall
-        ? `${host} served a ${wall === "login-required" ? "sign-in" : "challenge"} page to an anonymous reader.${gated ? ` Login-gating marker observed in this response: "${gated}".` : ""}`
+        ? `${host} served a ${wall === "login-required" ? "sign-in" : "challenge"} page to an anonymous reader.${wallMarker ? ` Login-gating marker observed in this response: "${wallMarker}".` : ""}`
         : `${host} did not return a readable anonymous response.`,
       attemptOf: context.attemptOf,
       ...(response
@@ -1527,8 +1527,15 @@ async function readSocial(url: string, context: ReadContext): Promise<SourceRead
  * wall split across markup still reads as a wall. LinkedIn's "join to view
  * profile" is deliberately excluded: LinkedIn serves full public profile
  * content beside it, so that phrase alone establishes no wall.
+ *
+ * This repeats detectChallenge's cheerio visible-text pipeline rather than
+ * sharing it, and the divergences are deliberate: the full body is scanned
+ * (not the 20KB head, since gating prompts sit deep in these shells),
+ * noscript content is stripped (these shells gate inside it), and text is
+ * lowercased for phrase matching. A future wall-phrase fix likely needs both
+ * sites; keep them in step by hand.
  */
-function detectSocialWall(body: string): string | null {
+function detectSocialWallMarker(body: string): string | null {
   const document = load(body);
   document("script, style, template, noscript").remove();
   const visible = document.root().text().replace(/\s+/g, " ").toLowerCase();
