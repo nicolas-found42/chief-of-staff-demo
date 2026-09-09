@@ -721,6 +721,20 @@ export const SOURCE_ELIGIBILITY: SourceEligibility[] = [
     probe: "https://diler.tube/api/v1/videos/5b40975c-a305-4a74-bb16-e344b62dff49/captions",
     expect: json,
   },
+  {
+    route: "feed-reader",
+    family: "spoken-evidence",
+    terms:
+      "Publisher RSS/Atom feeds and the transcript files their own podcast-namespace tags link to are retrieved by a plain anonymous GET; no key, account, payment or sign-in. The feed's episode descriptions are publisher show notes, not the spoken evidence, and are never retained as transcripts.",
+    documentation:
+      "https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md#transcript",
+    cost: "anonymous",
+    status: "in-production",
+    probe: "https://mp3s.nashownotes.com/PC20-269-Captions.srt",
+    expect: (body) => body.includes("-->"),
+    observed:
+      "Live 2026-09-09 (#245): the Apple directory answered anonymously with a publisher feedUrl, the publisher feed answered 200 to the transport's identifying UA carrying podcast:transcript links, and the linked SRT answered 200 (113,799 bytes) with cue timestamps. A second directory feed carried no transcript tag at all, which retains descriptions instead.",
+  },
 ];
 
 export interface EligibilityProbeResult {

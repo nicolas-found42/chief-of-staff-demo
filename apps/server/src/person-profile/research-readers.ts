@@ -1182,6 +1182,7 @@ async function readFeed(
     const items = [...document.querySelectorAll("item, entry")].slice(0, 40);
     const lines: string[] = [];
     const outboundUrls: string[] = [];
+    const transcripts: { url: string; type: string | null }[] = [];
     const title = document.querySelector("channel > title, feed > title")?.textContent.trim();
     if (title) lines.push(`Feed: ${title}`);
     for (const item of items) {
@@ -1196,10 +1197,22 @@ async function readFeed(
         "";
       if (link) outboundUrls.push(link);
       /* Podcast namespaces publish a transcript URL beside the episode; it is
-         the difference between a show note and the spoken evidence itself. */
+         the difference between a show note and the spoken evidence itself, so
+         the first one is followed below while every one stays a lead. */
       for (const transcript of item.querySelectorAll("[url]")) {
         const href = transcript.getAttribute("url");
-        if (href && /transcript/i.test(transcript.nodeName)) outboundUrls.push(href);
+        if (href && /transcript/i.test(transcript.nodeName)) {
+          outboundUrls.push(href);
+          transcripts.push({ url: href, type: transcript.getAttribute("type") });
+        }
+      }
+      for (const candidate of item.querySelectorAll("link[rel]")) {
+        const rel = candidate.getAttribute("rel") ?? "";
+        const href = candidate.getAttribute("href") ?? "";
+        if (href && /transcript/i.test(rel)) {
+          outboundUrls.push(href);
+          transcripts.push({ url: href, type: candidate.getAttribute("type") });
+        }
       }
       lines.push(`${date} — ${itemTitle}\n${description}`.trim());
     }
@@ -1220,6 +1233,18 @@ async function readFeed(
         remediation: "Check the feed URL directly; it may be a redirect stub.",
       });
       return unavailable(family, "feed-reader", "failed", context.snippet, response.url);
+    }
+    /* A linked transcript is the episode's own spoken evidence: follow the
+       first one and retain its text. When no link exists, or the linked file
+       cannot become text, the descriptions below stay the fallback. */
+    if (transcripts.length > 0) {
+      const spoken = await readFeedTranscript(
+        response.url,
+        transcripts[0]!,
+        [...new Set(outboundUrls)],
+        context,
+      );
+      if (spoken) return spoken;
     }
     const text = lines.join("\n\n");
     return {
@@ -1242,6 +1267,280 @@ async function readFeed(
   } finally {
     dom.window.close();
   }
+}
+
+/**
+ * Follow one feed-linked episode transcript and retain its text.
+ *
+ * The podcast namespace's transcript tag carries the publisher's own file
+ * beside the episode, and that file — not the episode description — is the
+ * spoken evidence a claim can ground on. Only timestamp or section structure
+ * the format provides is kept as citation anchors. The directory entry that
+ * located this feed is discovery only: rights stay null (no declared licence
+ * basis in the feed) and the provenance note names the feed's own URL, never
+ * the directory.
+ *
+ * Null means "no transcript text": the caller falls back to the feed's
+ * descriptions, and the reason is already on the attempt record.
+ */
+async function readFeedTranscript(
+  feedUrl: string,
+  transcript: { url: string; type: string | null },
+  outboundUrls: string[],
+  context: ReadContext,
+): Promise<SourceReadResult | null> {
+  let absolute: string;
+  try {
+    absolute = new URL(transcript.url, feedUrl).toString();
+  } catch {
+    context.recorder.record({
+      stage: "transcription",
+      code: "transcription-failed",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: transcript.url.slice(0, 4000),
+      targetKind: "document",
+      collector: "feed-reader",
+      reason: "The feed links a transcript URL that is not a retrievable address.",
+      attemptOf: context.attemptOf,
+      observed: { finalUrl: feedUrl },
+      impact:
+        "The episode's spoken evidence is missing; the feed's descriptions were retained instead.",
+      remediation:
+        "Inspect the feed's transcript tag directly; its url attribute may be relative to nothing.",
+    });
+    return null;
+  }
+  const answer = await request(absolute, context, "feed-reader");
+  if (!answer || answer.status >= 400) {
+    context.recorder.record({
+      stage: "transcription",
+      code: answer ? "http-error" : "transport-failed",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: answer ? "observed" : "unknown",
+      target: absolute,
+      targetKind: "document",
+      collector: "feed-reader",
+      reason: answer
+        ? `HTTP ${answer.status} fetching the feed's linked transcript.`
+        : "The linked transcript request did not complete.",
+      attemptOf: context.attemptOf,
+      ...(answer
+        ? { observed: { status: answer.status, finalUrl: answer.url, bytes: answer.body.length } }
+        : {}),
+      impact:
+        "The episode's spoken evidence is missing; the feed's descriptions were retained instead.",
+      remediation: `Reproduce with: curl -sS -D- -o/dev/null '${absolute}'`,
+    });
+    return null;
+  }
+  const challenge = detectChallenge(answer.body, answer.contentType);
+  if (challenge) {
+    context.recorder.record({
+      stage: "access",
+      code: challenge,
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: absolute,
+      targetKind: "document",
+      collector: "feed-reader",
+      reason:
+        "The linked transcript URL answered with a sign-in or challenge page, not a transcript.",
+      attemptOf: context.attemptOf,
+      observed: { status: answer.status, finalUrl: answer.url, bytes: answer.body.length },
+      impact:
+        "The episode's spoken evidence is missing; the feed's descriptions were retained instead.",
+      remediation:
+        "No keyless anonymous route exists past this wall; keep it as a recorded source gap.",
+      recoveryStopped:
+        "Signing in, importing a session or using a paid proxy is out of scope for data acquisition.",
+    });
+    return null;
+  }
+  const { text, anchors } = parseFeedTranscript(answer.body, answer.contentType, transcript.type);
+  if (!text.trim()) {
+    context.recorder.record({
+      stage: "transcription",
+      code: "transcription-failed",
+      outcome: "failed",
+      recovery: "stopped",
+      cause: "observed",
+      target: absolute,
+      targetKind: "document",
+      collector: "feed-reader",
+      reason: "The linked transcript answered but carried no usable text.",
+      attemptOf: context.attemptOf,
+      observed: { status: answer.status, finalUrl: answer.url, bytes: answer.body.length },
+      impact:
+        "The episode's spoken evidence is missing; the feed's descriptions were retained instead.",
+      remediation: "Fetch the transcript URL directly to see what the publisher serves there.",
+    });
+    return null;
+  }
+  return {
+    text: text.slice(0, MAX_TEXT),
+    capturedAt: null,
+    completeness: text.length > MAX_TEXT ? "partial" : "full",
+    access: "retrieved",
+    outboundUrls: outboundUrls.filter((entry) => entry !== absolute).slice(0, 200),
+    family: "spoken-evidence",
+    route: "feed-reader",
+    upstreamIndex: hostOf(feedUrl),
+    publishedAt: null,
+    author: null,
+    anchors,
+    /* The retained source is keyed by the feed URL upstream, so the note
+       carries the followed transcript file: it is the precise pointer a
+       citation grounds on. */
+    provenanceNote: `Publisher-linked episode transcript ${absolute}; timestamps locate speech. The directory listing that located this feed is discovery only, and episode descriptions are not included.`,
+    sourceVersion: null,
+    rights: null,
+    finalUrl: absolute,
+  };
+}
+
+/**
+ * Render a publisher transcript file into quotable text plus anchors.
+ *
+ * The declared tag type and the served content type both lie often enough to
+ * matter (one observed host serves SRT as application/octet-stream), so the
+ * container is sniffed before it is trusted: JSON segments, WebVTT/SRT cues,
+ * HTML, then plain text. A declared or sniffed container that parses to
+ * nothing is an envelope, not speech, and becomes empty rather than text.
+ */
+function parseFeedTranscript(
+  body: string,
+  contentType: string | null,
+  declaredType: string | null,
+): { text: string; anchors: SourceAnchor[] } {
+  const kinds = `${declaredType ?? ""} ${contentType ?? ""}`.toLowerCase();
+  const head = body.slice(0, 4000);
+  if (kinds.includes("json")) return parseTranscriptSegments(body) ?? { text: "", anchors: [] };
+  if (kinds.includes("vtt") || kinds.includes("srt") || /-->/.test(head)) {
+    const cues = parseCueTranscript(body);
+    if (cues.cues > 0) return cues;
+    return { text: "", anchors: [] };
+  }
+  const trimmed = body.trimStart();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return parseTranscriptSegments(body) ?? { text: "", anchors: [] };
+  }
+  /* Plain text and bare stripped HTML have no container to check against, so
+     only sustained speech counts: a one-line error string served as
+     text/plain can never present itself as a transcript. */
+  const text = kinds.includes("html") ? stripTags(body) : body.trim();
+  return isSpeechLikeText(text) ? { text, anchors: [] } : { text: "", anchors: [] };
+}
+
+/**
+ * Minimum speech shape for containerless transcript text: several lines of
+ * sustained prose, not a lone error string.
+ */
+function isSpeechLikeText(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) return false;
+  return text.split(/\s+/).filter(Boolean).length >= 25;
+}
+
+/**
+ * One generic cue renderer for WebVTT and SRT: cue numbers, timestamp lines
+ * and headers are structure, the rest is speech. Anchors mark the opening cue
+ * and every twelfth after it, so a citation can locate speech without
+ * numbering every line.
+ */
+function parseCueTranscript(body: string): { text: string; anchors: SourceAnchor[]; cues: number } {
+  const units: { line: string; start: number | null }[] = [];
+  for (const block of body.split(/\r?\n[ \t]*\r?\n/)) {
+    const kept: string[] = [];
+    let start: number | null = null;
+    for (const raw of block.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const arrow = /(\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3})\s*-->/.exec(line);
+      if (arrow) {
+        if (start === null) start = cueSeconds(arrow[1]!);
+        continue;
+      }
+      if (/^(webvtt|note\b)/i.test(line)) continue;
+      if (/^\d+$/.test(line) && kept.length === 0) continue;
+      kept.push(line);
+    }
+    const cue = kept
+      .join(" ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cue) continue;
+    units.push({ line: cue, start });
+  }
+  return { ...renderTranscriptUnits(units), cues: units.length };
+}
+
+/**
+ * Shared transcript renderer: one unit per line, with citation anchors on the
+ * opening unit and every twelfth after it, so a citation can locate speech
+ * without numbering every line.
+ */
+function renderTranscriptUnits(units: { line: string; start: number | null }[]): {
+  text: string;
+  anchors: SourceAnchor[];
+} {
+  const anchors: SourceAnchor[] = [];
+  const parts: string[] = [];
+  let offset = 0;
+  let index = 0;
+  for (const unit of units) {
+    if (unit.start !== null && (index === 0 || index % 12 === 0))
+      anchors.push({ kind: "timestamp", value: clock(unit.start), offset });
+    parts.push(unit.line);
+    offset += unit.line.length + 1;
+    index += 1;
+  }
+  return { text: parts.join("\n"), anchors: anchors.slice(0, 500) };
+}
+
+function cueSeconds(value: string): number {
+  const chunks = value.replace(",", ".").split(":").map(Number);
+  if (chunks.some((chunk) => !Number.isFinite(chunk))) return 0;
+  let total = 0;
+  for (const chunk of chunks) total = total * 60 + chunk;
+  return total;
+}
+
+/**
+ * The podcast namespace's JSON transcript: segments with startTime, an
+ * optional speaker, and body text. Speakers travel with their lines because a
+ * quotation without its speaker misattributes speech.
+ */
+function parseTranscriptSegments(body: string): { text: string; anchors: SourceAnchor[] } | null {
+  const parsed = safeJson(body);
+  if (!parsed || typeof parsed !== "object" || !("segments" in parsed)) return null;
+  const segments = parsed.segments;
+  if (!Array.isArray(segments)) return null;
+  const units: { line: string; start: number | null }[] = [];
+  for (const raw of segments) {
+    const entry: unknown = raw;
+    if (!entry || typeof entry !== "object") continue;
+    const line = "body" in entry ? entry.body : undefined;
+    if (typeof line !== "string" || !line.trim()) continue;
+    const speaker = "speaker" in entry ? entry.speaker : undefined;
+    const startTime = "startTime" in entry ? entry.startTime : undefined;
+    units.push({
+      line:
+        typeof speaker === "string" && speaker.trim()
+          ? `${speaker.trim()}: ${line.trim()}`
+          : line.trim(),
+      start: typeof startTime === "number" && Number.isFinite(startTime) ? startTime : null,
+    });
+  }
+  if (!units.length) return null;
+  return renderTranscriptUnits(units);
 }
 
 /* ------------------------------------------------------------------ */
