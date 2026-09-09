@@ -134,7 +134,7 @@ importers:
         specifier: ^1.82.0
         version: 1.82.0
       oxlint-tsgolint:
-        specifier: ^7.0.2001
+        specifier: 7.0.2001
         version: 7.0.2001
       prettier:
         specifier: ^3.9.6
@@ -146,7 +146,7 @@ importers:
         specifier: ^4.23.13
         version: 4.23.13
       typescript:
-        specifier: ^7.0.2
+        specifier: 7.0.2
         version: 7.0.2
 
   apps/server:
@@ -229,7 +229,7 @@ importers:
         specifier: ^6.1.1
         version: 6.1.1(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
       typescript:
-        specifier: ^7.0.2
+        specifier: 7.0.2
         version: 7.0.2
       vite:
         specifier: ^8.2.2
@@ -254,7 +254,7 @@ importers:
         specifier: ^26.5.0
         version: 26.5.0
       typescript:
-        specifier: ^7.0.2
+        specifier: 7.0.2
         version: 7.0.2
 
   tests:

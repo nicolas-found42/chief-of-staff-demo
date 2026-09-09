@@ -3,7 +3,8 @@
 The Shell, Modules, shared package, relay, web app, tests, and scripts now compile or
 receive type checks with TypeScript **7.0.2**. All three direct TypeScript declarations
 (root, web, relay) use that release. The dependency tree contains no TypeScript 6
-compiler or compatibility package. The package manager is pinned to **pnpm 12.3.4**
+compiler or compatibility package. The compiler and its matching typed-lint engine
+are pinned exactly; future updates go through the same validation gates. The package manager is pinned to **pnpm 12.3.4**
 in the root manifest, CI, and both Docker builds. The build images install pnpm with
 npm because their bundled Corepack expects the older `bin/pnpm.cjs` layout; pnpm 12
 publishes native launchers at different paths. This was reproduced during the image build.
