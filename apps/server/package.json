@@ -15,7 +15,6 @@
     "cheerio": "^1.2.0",
     "fastify": "^5.12.3",
     "googleapis": "^178.0.0",
-    "googleapis-common": "^9.0.4",
     "jsdom": "^30.0.1",
     "jszip": "^3.10.1",
     "luxon": "^3.7.2",
@@ -23,7 +22,7 @@
     "pdfjs-dist": "^6.3.289",
     "rss-parser": "^3.13.0",
     "playwright-core": "^1.62.1",
-    "zod-to-json-schema": "^3.23.1",
+    "zod-to-json-schema": "^3.25.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {

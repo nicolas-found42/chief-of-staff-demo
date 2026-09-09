@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, no-control-regex -- compose validates LLM output shape and sanitizes evidence control characters */
-import { z } from "zod";
+import { z } from "zod/v3";
 import type {
   MeetingBrief,
   MeetingBriefEnrichmentSection,

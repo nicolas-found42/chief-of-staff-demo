@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteJson } from "../engine/atomic.js";
 import type { WeeklySummaryState } from "@chief-of-staff-demo/shared";
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { CompleteJson } from "../llm/providers.js";
 import { DateTime } from "luxon";
 import type { FastifyInstance } from "fastify";

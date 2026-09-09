@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { CompleteJson } from "../../../llm/providers.js";
 import type { MeetingBriefEnrichmentProviders } from "./enrich.js";
 

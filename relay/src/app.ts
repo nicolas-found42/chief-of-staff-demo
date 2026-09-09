@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { RelayStore, type MessageRecord } from "./store.js";
 
 /**

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 
 /**
  * YouTube Trends: the Module's own shapes. Here beside the transcript Module's

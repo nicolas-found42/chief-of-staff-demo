@@ -1,6 +1,6 @@
 /** Meeting Debrief — Module-owned types (issues #139/#140, spec #117, ADR-0037/0038). */
 
-import { z } from "zod";
+import { z } from "zod/v3";
 
 export const MEETING_DEBRIEF_MODULE_ID = "meeting-debrief" as const;
 export const MEETING_DEBRIEF_MODULE_VERSION = 2 as const;

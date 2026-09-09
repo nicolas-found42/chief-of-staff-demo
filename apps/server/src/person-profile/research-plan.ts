@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   MODEL_SMALL_REQUEST_TIMEOUT_MS,
   PERSON_SOURCE_FAMILIES,

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { TranscriptRecord } from "@chief-of-staff-demo/shared";
 import { meetingFileNameMeta } from "../text/meetingFileName.js";
 

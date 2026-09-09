@@ -30,7 +30,7 @@
       "project": ["src/**/*.{ts,tsx}", "e2e/**/*.{ts,mjs}"],
       // googleapis is a test double seam: the unit specs vi.mock it, but the
       // mock only binds when the tests workspace resolves the same module.
-      "ignoreDependencies": ["googleapis", "googleapis-common"],
+      "ignoreDependencies": ["googleapis"],
     },
     "relay": {
       "entry": ["src/server.ts"],

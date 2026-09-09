@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 
 /** Content-free authorization and receipt for the canonical Tasks cutover. */
 const count = z.number().int().nonnegative();
