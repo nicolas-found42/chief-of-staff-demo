@@ -295,14 +295,17 @@ describe("durability", () => {
     expect(runs.list().runs.map((listed) => listed.id)).toEqual([run.id]);
   });
 
-  it("refuses a metadata record whose status is not one this build knows", () => {
-    const path = join(workspaceDir, "runs", run.id, "meta.json");
-    const meta = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    writeFileSync(path, JSON.stringify({ ...meta, status: "zombie" }), "utf8");
+  it.each(["zombie", "constructor", "toString", "__proto__"])(
+    "refuses unknown metadata status %s",
+    (status) => {
+      const path = join(workspaceDir, "runs", run.id, "meta.json");
+      const meta = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      writeFileSync(path, JSON.stringify({ ...meta, status }), "utf8");
 
-    expect(() => runs.detail(run.id)).toThrow(RunStoreCorruptionError);
-    expect(runs.list().runs).toEqual([]);
-  });
+      expect(() => runs.detail(run.id)).toThrow(RunStoreCorruptionError);
+      expect(runs.list().runs).toEqual([]);
+    },
+  );
 
   it("refuses an artifact it cannot publish, leaving the committed one in place", () => {
     run.writeArtifact("result.json", '{"kept":true}');

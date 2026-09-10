@@ -93,6 +93,22 @@ it("refuses a bundle from a later build instead of rewriting it", () => {
   expect(bundleOf(workspace)).toEqual(future);
 });
 
+it.each([
+  { format: "2" },
+  { format: 0 },
+  { format: 1.5 },
+  { generation: "3" },
+  { generation: -1 },
+  { generation: 1.5 },
+])("refuses malformed version metadata %j without replacing the bundle", (metadata) => {
+  const { workspace, store } = canonicalWorkspace();
+  const damaged = { ...bundleOf(workspace), ...metadata };
+  const bytes = JSON.stringify(damaged);
+  writeFileSync(join(workspace, "tasks/state.json"), bytes);
+  expect(() => new WorkspaceTasks({ store }).create({ title: "Refused" })).toThrow();
+  expect(readFileSync(join(workspace, "tasks/state.json"), "utf8")).toBe(bytes);
+});
+
 it("refuses to publish when the records directory cannot be written", () => {
   const { workspace, store } = canonicalWorkspace();
   const tasks = new WorkspaceTasks({ store });

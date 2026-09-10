@@ -143,7 +143,7 @@ function isRunMeta(value: unknown): value is RunMeta {
     typeof candidate.createdAt === "string" &&
     typeof candidate.attempts === "number" &&
     typeof candidate.status === "string" &&
-    candidate.status in RUN_STATUSES
+    Object.hasOwn(RUN_STATUSES, candidate.status)
   );
 }
 

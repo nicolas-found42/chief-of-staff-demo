@@ -128,14 +128,27 @@ export class TaskStore {
     /* A bundle written before the format was stamped is version 1; anything
        newer than this build understands is refused rather than read as if the
        fields it added were absent. */
-    const format = "format" in parsed && typeof parsed.format === "number" ? parsed.format : 1;
+    const format = "format" in parsed ? parsed.format : 1;
+    const generation = "generation" in parsed ? parsed.generation : 0;
+    if (
+      typeof format !== "number" ||
+      !Number.isSafeInteger(format) ||
+      format < 1 ||
+      typeof generation !== "number" ||
+      !Number.isSafeInteger(generation) ||
+      generation < 0
+    ) {
+      throw new TaskStoreCorruptionError(
+        this.snapshotFile,
+        "the canonical version metadata is invalid",
+      );
+    }
     if (format > BUNDLE_FORMAT) {
       throw new TaskStoreFormatError(this.snapshotFile, format);
     }
     return {
       format,
-      generation:
-        "generation" in parsed && typeof parsed.generation === "number" ? parsed.generation : 0,
+      generation,
       tasks: parsed.tasks,
       lists: parsed.lists,
       actionItems: parsed.actionItems,

@@ -28,6 +28,13 @@ Every Shell-owned record commit goes through `apps/server/src/engine/commit.ts`:
   the same path for callers that must hold a decision across an `await`; competing
   writers of one record queue, and a nested write of the record already inside the
   section is refused rather than deadlocked.
+- **One writable application process per mount.** The production launcher holds
+  a kernel advisory lock on `.writer.lock` before composing the application.
+  A competing launcher exits without starting Node. The descriptor survives exec
+  and the kernel releases it on process death; no timeout can admit a second
+  writer while a slow first process still runs. Never unlink the lock file while
+  an app may be running. Offline maintenance still requires quiescing writers;
+  arbitrary programs and older images that bypass the launcher are unsupported.
 - **Corruption is refused, not narrowed.** A record that exists and cannot be read as
   what it claims to be raises a typed integrity error. A truncated final line in an
   append-only log is the one damaged shape a crash explains, because the record's
@@ -51,3 +58,14 @@ conflict frequency that ordinary use makes unacceptable; or recovery whose compl
 grows with independent durable units. Uneconomic long-source checking is a separate
 measured trigger for selective context, not for storage. None of these is asserted
 today, and none is excluded.
+
+The resumed #354 review corrected initially missed defects before merge:
+unrelated callers arriving during an async update must queue rather than be
+mistaken for re-entry; ordinary async writes must use that same queue; separate writer instances share coordination and
+synchronous writers refuse an active async owner; malformed
+stored format/generation fields must be refused rather than coerced to legacy
+defaults; and a Run status must be an own key of the supported status map.
+Public writer/store/Run regressions cover each case. Actual process kills around
+artifact writes, renames and readback preserve complete bytes through two
+recoveries. These checks establish storage behavior, not Debrief completion or
+semantic accuracy, which retain their separate acceptance contracts.

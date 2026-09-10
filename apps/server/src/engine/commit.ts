@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   mkdirSync,
   promises as fs,
@@ -7,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 /**
  * The Shell's commit protocol for Workspace records (#354, ADR-0086).
@@ -63,30 +64,40 @@ export interface WorkspaceWriter {
   replace(path: string, guard: { expectedGeneration: number }, next: unknown): Promise<string>;
 }
 
-export function createWorkspaceWriter(): WorkspaceWriter {
-  const chains = new Map<string, Promise<unknown>>();
-  const held = new Set<string>();
+// Factories are convenient for consumers, but a second consumer must not create
+// a second authority for the same record inside the supported single process.
+const chains = new Map<string, Promise<unknown>>();
+const held = new AsyncLocalStorage<ReadonlySet<string>>();
+const active = new Set<string>();
 
+export function createWorkspaceWriter(): WorkspaceWriter {
   /**
    * One critical section per path. A second writer of the same record waits for
    * the first; a nested write of the record already inside the section is a
    * programming error, not a deadlock to wait out.
    */
   function serialize<T>(path: string, operation: () => Promise<T>): Promise<T> {
-    if (held.has(path)) {
+    path = resolve(path);
+    if (held.getStore()?.has(path)) {
       return Promise.reject(
         new WorkspaceIntegrityError(`Workspace record ${path} is already being written`),
       );
     }
     const previous = chains.get(path) ?? Promise.resolve();
-    const run = previous.then(async () => {
-      held.add(path);
-      try {
-        return await operation();
-      } finally {
-        held.delete(path);
-      }
-    });
+    // Only the caller's async ancestry identifies re-entry. A global held set
+    // mistakes an unrelated caller arriving during an await for a nested write.
+    const ancestry = new Set(held.getStore());
+    ancestry.add(path);
+    const run = previous.then(() =>
+      held.run(ancestry, async () => {
+        active.add(path);
+        try {
+          return await operation();
+        } finally {
+          active.delete(path);
+        }
+      }),
+    );
     const tail = run.catch(() => undefined);
     chains.set(path, tail);
     void tail.then(() => {
@@ -119,11 +130,12 @@ export function createWorkspaceWriter(): WorkspaceWriter {
 
   return {
     async writeJson(path, value) {
-      return commit(path, Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8"));
+      const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+      return serialize(path, () => commit(path, bytes));
     },
 
     async writeFile(path, contents) {
-      return commit(path, Buffer.from(contents, "utf8"));
+      return serialize(path, () => commit(path, Buffer.from(contents, "utf8")));
     },
 
     async writeImmutable(path, contents) {
@@ -204,6 +216,11 @@ export function writeJsonVerifiedSync(path: string, value: unknown): string {
 
 /** Commit text bytes synchronously, verified the same way. */
 export function writeFileVerifiedSync(path: string, contents: string): string {
+  // A synchronous store cannot wait for an async owner. Refuse before any
+  // effects so its caller can retry from current state instead of losing edits.
+  if (active.has(resolve(path))) {
+    throw new WorkspaceIntegrityError(`Workspace record ${path} is already being written`);
+  }
   const bytes = Buffer.from(contents, "utf8");
   mkdirSync(dirname(path), { recursive: true });
   const temporary = join(

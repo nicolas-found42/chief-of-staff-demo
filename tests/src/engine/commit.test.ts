@@ -10,6 +10,7 @@ import {
   WorkspaceIntegrityError,
   createWorkspaceWriter,
   readJsonRecord,
+  writeJsonVerifiedSync,
 } from "../../../apps/server/src/engine/commit";
 
 const roots: string[] = [];
@@ -130,6 +131,86 @@ it("serializes competing updates of one record and reads inside each turn", asyn
   };
   await Promise.all([increment(), increment(), increment()]);
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ generation: 3, count: 3 });
+});
+
+it("queues an update arriving while another caller awaits inside the same record", async () => {
+  const writer = createWorkspaceWriter();
+  const path = join(scratch(), "record.json");
+  await writer.writeJson(path, { count: 0 });
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const first = writer.update(path, async () => {
+    entered.resolve();
+    await release.promise;
+    return { count: 1 };
+  });
+  await entered.promise;
+  const second = writer.update(path, (current) => ({
+    count: (current as { count: number }).count + 1,
+  }));
+  const results = Promise.all([first, second]);
+  release.resolve();
+  await results;
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ count: 2 });
+});
+
+it("shares coordination across writer instances for the same Workspace record", async () => {
+  const path = join(scratch(), "record.json");
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const first = createWorkspaceWriter().update(path, async () => {
+    entered.resolve();
+    await release.promise;
+    return { count: 1 };
+  });
+  await entered.promise;
+  const second = createWorkspaceWriter().update(path, (current) => ({
+    count: ((current as { count: number } | null)?.count ?? 0) + 1,
+  }));
+  const results = Promise.all([first, second]);
+  await delay(20);
+  release.resolve();
+  await results;
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ count: 2 });
+});
+
+it("refuses a synchronous write while an async update owns that record", async () => {
+  const path = join(scratch(), "record.json");
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const first = createWorkspaceWriter().update(path, async () => {
+    entered.resolve();
+    await release.promise;
+    return { title: "coordinated" };
+  });
+  await entered.promise;
+  try {
+    expect(() => writeJsonVerifiedSync(path, { title: "bypass" })).toThrow(WorkspaceIntegrityError);
+  } finally {
+    release.resolve();
+    await first;
+  }
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ title: "coordinated" });
+});
+
+it("queues an ordinary write behind an in-flight update", async () => {
+  const writer = createWorkspaceWriter();
+  const path = join(scratch(), "record.json");
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const first = writer.update(path, async () => {
+    entered.resolve();
+    await release.promise;
+    return { title: "earlier" };
+  });
+  await entered.promise;
+  const second = writer.writeJson(path, { title: "later" });
+  const results = Promise.all([first, second]);
+  // Allow the ordinary write to reach its commit before releasing the update.
+  await delay(20);
+  release.resolve();
+  await results;
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ title: "later" });
 });
 
 it("rejects a stale expected generation instead of overwriting the newer record", async () => {
