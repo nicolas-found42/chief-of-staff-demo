@@ -46,7 +46,8 @@ export class TaskValidationError extends Error {
       | "link-not-missing"
       | "action-item-not-found"
       | "action-item-already-promoted"
-      | "action-item-dismissed",
+      | "action-item-dismissed"
+      | "action-item-recovery-conflict",
     message: string,
   ) {
     super(message);

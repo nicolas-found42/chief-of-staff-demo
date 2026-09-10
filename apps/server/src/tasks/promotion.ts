@@ -77,14 +77,35 @@ export function promoteActionItem(
      a Task whose source names this Action Item and an Action Item still
      pending. Adopting that Task is what makes the retry safe: the two files
      cannot commit as one, so the recovery is to recognize the half that did. */
-  const orphan = deps.tasks
+  const orphans = deps.tasks
     .list({ trashed: false })
     .concat(deps.tasks.list({ trashed: true }))
-    .find((candidate) => candidate.source?.actionItemId === item.id);
+    .filter((candidate) => candidate.source?.actionItemId === item.id);
+  if (orphans.length > 1) {
+    throw new TaskValidationError(
+      "action-item-recovery-conflict",
+      "Multiple Tasks refer to this Action Item. Resolve the conflicting history before promotion.",
+    );
+  }
+  const orphan = orphans[0];
   if (orphan) {
-    if (input.completed === true && orphan.status !== "completed") deps.tasks.complete(orphan.id);
+    /* The Action Item ID alone cannot resolve contradictory legacy lineage.
+       Keep both records untouched so recovery never invents acceptance (#352). */
+    if (
+      orphan.source?.kind !== "action-item" ||
+      orphan.source.debriefRunId !== item.source.debriefRunId ||
+      orphan.source.transcriptId !== item.source.transcriptId ||
+      orphan.source.meetingId !== item.source.meetingId
+    ) {
+      throw new TaskValidationError(
+        "action-item-recovery-conflict",
+        "The existing Task has conflicting source history. Resolve it before promotion.",
+      );
+    }
+    /* Recovery repairs the relationship, not accepted work. A retry body is
+       not authority to complete or edit the existing Task (#352). */
     return {
-      task: deps.tasks.get(orphan.id) ?? orphan,
+      task: orphan,
       actionItem: deps.actionItems.recordPromotion(item.id, orphan.id),
       created: false,
     };

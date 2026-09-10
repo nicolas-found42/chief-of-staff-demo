@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type {
   MeetingDebriefActionItem,
   MeetingDebriefReviewState,
@@ -257,21 +257,29 @@ describe("migrating legacy Debrief review", () => {
     expect(task.completedAt).not.toBeNull();
   });
 
-  it("resumes a crash after Task creation before applying legacy Done", () => {
-    legacyRun({ actionItems: [proposal()], completed: [0] });
-    const crash = vi.spyOn(tasks, "complete").mockImplementationOnce(() => {
-      throw new Error("power loss");
+  it("preserves an existing Task and legacy Done evidence after interrupted migration", () => {
+    const run = legacyRun({ actionItems: [proposal()], completed: [0] });
+    /* Model the durable legacy boundary through Workspace services: accepted
+       work exists but its Action Item relationship was never recorded. */
+    const [item] = actionItems.materialize({
+      debriefRunId: run.id,
+      transcriptId: "drive_fileA_r1",
+      meetingId: null,
+      actionItems: [proposal()],
     });
-    expect(migrate).toThrow("power loss");
-    crash.mockRestore();
+    const accepted = tasks.create(
+      { title: "Owner's current accepted work" },
+      { kind: "action-item", actionItemId: item.id, ...item.source },
+    );
+    const review = run.readArtifact("review.json");
     const store = new TaskStore(workspaceDir);
     tasks = new WorkspaceTasks({ store, now: () => NOW });
     actionItems = new WorkspaceActionItems({ store, now: () => NOW });
     runs = openRuns(workspaceDir);
-    migrate();
-    migrate();
-    expect(tasks.list()).toHaveLength(1);
-    expect(tasks.list()[0].status).toBe("completed");
+    expect(migrate().completedTasks).toBe(0);
+    expect(migrate().completedTasks).toBe(0);
+    expect(tasks.list()).toEqual([accepted]);
+    expect(run.readArtifact("review.json")).toBe(review);
     expect(actionItems.list()[0].promotedTaskId).toBe(tasks.list()[0].id);
   });
 
