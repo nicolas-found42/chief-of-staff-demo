@@ -105,10 +105,16 @@ export function migrateLegacyActionReview(
          and carrying it across is issue #188's job — it needs the External
          Task Link this migration deliberately does not create. */
       if (!done.has(index) || receipted.has(index)) continue;
-      promoteActionItem({ tasks: deps.tasks, actionItems: deps.actionItems }, item.id, {
-        completed: true,
-      });
-      result.completedTasks += 1;
+      const promotion = promoteActionItem(
+        { tasks: deps.tasks, actionItems: deps.actionItems },
+        item.id,
+        {
+          completed: true,
+        },
+      );
+      /* An adopted legacy Task keeps its current state (#352). Do not report
+         an open recovery as a completed Task or a retry as new work. */
+      if (promotion.created && promotion.task.status === "completed") result.completedTasks += 1;
     }
   }
   if (result.runs > 0) {

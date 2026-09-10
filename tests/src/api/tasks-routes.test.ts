@@ -765,6 +765,115 @@ describe("promoting one reviewed Action Item", () => {
     expect((await index()).tasks).toHaveLength(1);
   });
 
+  it.each(["open", "completed", "trashed"])(
+    "recovers an edited %s legacy Task without applying a changed retry decision",
+    async (state) => {
+      const item = materialize();
+      const tasks = new WorkspaceTasks({ store, now: () => clock });
+      const accepted = tasks.create(
+        { title: "Accepted pricing follow-up", notes: "Owner's accepted instructions" },
+        {
+          kind: "action-item",
+          actionItemId: item.id,
+          debriefRunId: item.source.debriefRunId,
+          transcriptId: item.source.transcriptId,
+          meetingId: item.source.meetingId,
+        },
+      );
+      await app.inject({
+        method: "PATCH",
+        url: `/api/tasks/${accepted.id}`,
+        payload: { title: "Owner's later edit" },
+      });
+      if (state === "completed") {
+        await app.inject({ method: "POST", url: `/api/tasks/${accepted.id}/complete` });
+      }
+      if (state === "trashed") {
+        await app.inject({ method: "POST", url: `/api/tasks/${accepted.id}/trash` });
+      }
+      const before = tasks.get(accepted.id);
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await app.close();
+        app = compose();
+        await app.ready();
+        const retry = await app.inject({
+          method: "POST",
+          url: `/api/action-items/${item.id}/promote`,
+          payload: { completed: true, title: "Different retry", notes: "Different notes" },
+        });
+        expect(retry.statusCode).toBe(200);
+        expect(retry.json<{ task: Task }>().task).toEqual(before);
+        expect(tasks.get(accepted.id)).toEqual(before);
+        expect(retry.json<{ actionItem: ActionItem }>().actionItem).toMatchObject({
+          state: "promoted",
+          promotedTaskId: accepted.id,
+        });
+      }
+    },
+  );
+
+  it("refuses ambiguous legacy recovery without choosing one of two accepted Tasks", async () => {
+    const item = materialize();
+    const tasks = new WorkspaceTasks({ store, now: () => clock });
+    const source = {
+      kind: "action-item" as const,
+      actionItemId: item.id,
+      debriefRunId: item.source.debriefRunId,
+      transcriptId: item.source.transcriptId,
+      meetingId: item.source.meetingId,
+    };
+    const first = tasks.create({ title: "First accepted Task" }, source);
+    const second = tasks.create({ title: "Second accepted Task" }, source);
+    await app.inject({ method: "POST", url: `/api/tasks/${second.id}/trash` });
+    const before = [tasks.get(first.id), tasks.get(second.id)];
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await app.close();
+      app = compose();
+      await app.ready();
+      const retry = await app.inject({
+        method: "POST",
+        url: `/api/action-items/${item.id}/promote`,
+        payload: { completed: true },
+      });
+      expect(retry.statusCode).toBe(409);
+      expect(retry.json()).toMatchObject({ error: "action-item-recovery-conflict" });
+      expect([tasks.get(first.id), tasks.get(second.id)]).toEqual(before);
+      const queue = await app.inject({ method: "GET", url: "/api/action-items" });
+      expect(queue.json<{ items: ActionItem[] }>().items).toEqual([item]);
+    }
+  });
+
+  it.each(["debriefRunId", "transcriptId", "meetingId"] as const)(
+    "refuses legacy recovery with contradictory %s history",
+    async (field) => {
+      const item = materialize();
+      const tasks = new WorkspaceTasks({ store, now: () => clock });
+      const orphan = tasks.create(
+        { title: "Accepted work" },
+        {
+          kind: "action-item",
+          actionItemId: item.id,
+          debriefRunId: item.source.debriefRunId,
+          transcriptId: item.source.transcriptId,
+          meetingId: item.source.meetingId,
+          [field]: "contradictory-history",
+        },
+      );
+      const retry = await app.inject({
+        method: "POST",
+        url: `/api/action-items/${item.id}/promote`,
+        payload: {},
+      });
+      expect(retry.statusCode).toBe(409);
+      expect(retry.json()).toMatchObject({ error: "action-item-recovery-conflict" });
+      expect(tasks.get(orphan.id)).toEqual(orphan);
+      const queue = await app.inject({ method: "GET", url: "/api/action-items" });
+      expect(queue.json<{ items: ActionItem[] }>().items).toEqual([item]);
+    },
+  );
+
   it("keeps the Action Item promoted after its Task is trashed and deleted", async () => {
     const item = materialize();
     const promoted = await app.inject({
