@@ -3,7 +3,9 @@ import type {
   ActionItemIndex,
   ActionItem,
   ActionItemContext,
+  ActionItemDisposition,
   ActionItemPolicy,
+  ActionItemProposal,
   ActionItemState,
   TaskCreateInput,
   TaskDestination,
@@ -136,6 +138,47 @@ const NO_DESTINATION = {
  * Action Items are readable but never writable through this namespace: they
  * are proposals until a decision is made, and they are not Tasks.
  */
+/** The relationships to earlier work this Workspace records (#355). */
+const DISPOSITIONS: Record<ActionItemDisposition, true> = {
+  unresolved: true,
+  "distinct-new-work": true,
+  "new-commitment": true,
+  "evidence-of-historical": true,
+};
+
+function isDisposition(value: unknown): value is ActionItemDisposition {
+  return typeof value === "string" && Object.hasOwn(DISPOSITIONS, value);
+}
+
+/**
+ * One proposal revision's content, read off a request body. Every field is
+ * required: a correction states the whole proposal, so a field left out of
+ * the request cannot quietly inherit the content being corrected.
+ */
+function requireProposal(value: unknown): ActionItemProposal {
+  const invalid = (): never => {
+    throw new TaskValidationError(
+      "action-item-revision-not-found",
+      "A corrected proposal needs a title, notes, a due date or null, and a responsible person or null.",
+    );
+  };
+  if (typeof value !== "object" || value === null) return invalid();
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.title !== "string" ||
+    typeof candidate.notes !== "string" ||
+    (candidate.dueDate !== null && typeof candidate.dueDate !== "string") ||
+    (candidate.responsiblePerson !== null && typeof candidate.responsiblePerson !== "object")
+  )
+    return invalid();
+  return {
+    title: candidate.title,
+    notes: candidate.notes,
+    dueDate: candidate.dueDate,
+    responsiblePerson: candidate.responsiblePerson as ActionItemProposal["responsiblePerson"],
+  };
+}
+
 export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): void {
   const tasks = ctx.tasks;
 
@@ -277,8 +320,12 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
 
   app.patch("/api/tasks/:taskId", async (request: FastifyRequest, reply: FastifyReply) => {
     const { taskId } = request.params as { taskId: string };
+    /* `expectedVersion` is the edit's own concurrency guard (#355) rather than
+       a field of the Task, so it is taken out of the body before the update
+       reads what the owner changed. */
+    const { expectedVersion, ...body } = (request.body ?? {}) as Record<string, unknown>;
     try {
-      tasks.update(taskId, request.body ?? {});
+      tasks.update(taskId, body, versionGuard(expectedVersion));
       if (ctx.linking) return await ctx.linking.pushContent(taskId);
       return tasks.get(taskId);
     } catch (error) {
@@ -768,6 +815,169 @@ export function registerTasksApi(app: FastifyInstance, ctx: TasksApiContext): vo
         );
         reply.code(result.created ? 201 : 200);
         return { task: result.task, actionItem: result.actionItem };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /**
+   * The version a command was decided against, when the caller supplied one.
+   * Absent means the caller is not claiming to have read a particular
+   * version, which is the ordinary single-owner case.
+   */
+  function versionGuard(value: unknown): { expectedVersion?: number } {
+    return typeof value === "number" ? { expectedVersion: value } : {};
+  }
+
+  /**
+   * Record a correction to a pending proposal (issue #355). The previous
+   * revision stays exactly as it was and the correction arrives unreviewed,
+   * so nothing is promoted from content the owner has not selected.
+   */
+  app.post(
+    "/api/action-items/:actionItemId/correct-proposal",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { actionItemId } = request.params as { actionItemId: string };
+      const body = (request.body ?? {}) as { content?: unknown; expectedVersion?: unknown };
+      try {
+        return {
+          actionItem: ctx.actionItems.correctProposal(
+            actionItemId,
+            requireProposal(body.content),
+            versionGuard(body.expectedVersion),
+          ),
+        };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /** Choose the proposal revision promotion accepts (issue #355). */
+  app.post(
+    "/api/action-items/:actionItemId/select-proposal",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { actionItemId } = request.params as { actionItemId: string };
+      const body = (request.body ?? {}) as { revision?: unknown; expectedVersion?: unknown };
+      try {
+        if (typeof body.revision !== "number") {
+          throw new TaskValidationError(
+            "action-item-revision-not-found",
+            "Selecting a proposal needs the revision to select.",
+          );
+        }
+        return {
+          actionItem: ctx.actionItems.selectProposal(
+            actionItemId,
+            body.revision,
+            versionGuard(body.expectedVersion),
+          ),
+        };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /**
+   * Record what this proposal means next to the work the Workspace already
+   * holds (issue #355). The extraction offers candidates; this is the owner
+   * deciding, and `evidence-of-historical` makes the record evidence about
+   * another one rather than work of its own.
+   */
+  app.post(
+    "/api/action-items/:actionItemId/reconcile",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { actionItemId } = request.params as { actionItemId: string };
+      const body = (request.body ?? {}) as {
+        disposition?: unknown;
+        targetActionItemId?: unknown;
+        expectedVersion?: unknown;
+      };
+      try {
+        if (!isDisposition(body.disposition)) {
+          throw new TaskValidationError(
+            "action-item-reconciliation-invalid",
+            "That is not a relationship this Workspace records.",
+          );
+        }
+        return {
+          actionItem: ctx.actionItems.reconcile(actionItemId, body.disposition, {
+            ...versionGuard(body.expectedVersion),
+            ...(typeof body.targetActionItemId === "string"
+              ? { targetActionItemId: body.targetActionItemId }
+              : {}),
+          }),
+        };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /**
+   * Suggest a change to a Task this Action Item already created (issue #355).
+   * Never an edit: it records the fields and the Task version they were
+   * computed against, and only the owner's own Task edit applies them.
+   */
+  app.post(
+    "/api/action-items/:actionItemId/amendments",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { actionItemId } = request.params as { actionItemId: string };
+      const body = (request.body ?? {}) as {
+        taskId?: unknown;
+        fields?: unknown;
+        observedTaskVersion?: unknown;
+        expectedVersion?: unknown;
+      };
+      try {
+        if (
+          typeof body.taskId !== "string" ||
+          typeof body.observedTaskVersion !== "number" ||
+          typeof body.fields !== "object" ||
+          body.fields === null
+        ) {
+          throw new TaskValidationError(
+            "action-item-amendment-invalid",
+            "A Task amendment suggestion needs the Task, the version it was read at and the fields it would change.",
+          );
+        }
+        const actionItem = ctx.actionItems.suggestAmendment(
+          actionItemId,
+          {
+            taskId: body.taskId,
+            fields: body.fields,
+            observedTaskVersion: body.observedTaskVersion,
+          },
+          versionGuard(body.expectedVersion),
+        );
+        reply.code(201);
+        return { actionItem };
+      } catch (error) {
+        return refuse(reply, error);
+      }
+    },
+  );
+
+  /** Record that the owner applied a suggestion through their own Task edit, or declined it. */
+  app.post(
+    "/api/action-items/amendments/:amendmentId/resolve",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { amendmentId } = request.params as { amendmentId: string };
+      const body = (request.body ?? {}) as { status?: unknown; taskVersion?: unknown };
+      try {
+        if (body.status !== "applied" && body.status !== "declined") {
+          throw new TaskValidationError(
+            "action-item-amendment-invalid",
+            "A Task amendment is either applied or declined.",
+          );
+        }
+        return {
+          actionItem: ctx.actionItems.resolveAmendment(amendmentId, body.status, {
+            ...(typeof body.taskVersion === "number" ? { taskVersion: body.taskVersion } : {}),
+          }),
+        };
       } catch (error) {
         return refuse(reply, error);
       }
