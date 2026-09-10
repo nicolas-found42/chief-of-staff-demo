@@ -11,6 +11,7 @@ function task(fields: Partial<Task> & { id: string }): Task {
   return {
     title: fields.id,
     notes: "",
+    version: 1,
     status: "open",
     dueDate: null,
     priority: "none",

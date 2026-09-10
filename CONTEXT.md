@@ -67,8 +67,34 @@ _Avoid_: Duplicate block, merge, Task Link Conflict (that one is competing state
 
 **Action Item**:
 One proposed commitment extracted into a Meeting Debrief for the workspace owner to review. It may
-be pending, promoted to an open or completed Task, or dismissed without creating a Task.
+be pending, promoted to an open or completed Task, dismissed without creating a Task, or retained
+as reconciled history after the owner links it to an existing Action Item.
 _Avoid_: Task, suggestion (alone), proposed Task
+
+**Action Item Proposal Revision**:
+One preserved version of the proposed content of an Action Item. A correction remains distinct
+from the owner's review decision and from any Task already accepted from it.
+_Avoid_: Task revision, extraction revision (that describes an extraction, not one proposal)
+
+**Action Item Source Observation**:
+One preserved occurrence of evidence for a proposed commitment in a particular Transcript revision.
+Several observations may support one Action Item, and shared wording alone does not make them one commitment.
+_Avoid_: Action Item, Transcript Mention (that concerns a mentioned entity)
+
+**Action Item Reconciliation**:
+The determination of how a newly extracted proposal relates to existing Action Items and accepted
+work. An unresolved relationship is a review question, not a decision to merge or change a Task.
+_Avoid_: Identity Decision (that resolves a Transcript Mention), Possible duplicate (that warns on Task creation)
+
+**Task Amendment Proposal**:
+An explicit suggestion to change accepted Task content based on new evidence. It is not a Task
+edit or permission to change the Task's completion state.
+_Avoid_: Task update, automatic correction
+
+**Task Acceptance**:
+The recorded owner or authorized policy decision that creates a Task from one selected Action Item
+proposal and its accepted content. Later Task edits and recovery do not make that decision anew.
+_Avoid_: Task delivery, proposal preparation, Identity Decision
 
 **External Task Link**:
 The relationship between one Task and its representation in an external task system such as Google

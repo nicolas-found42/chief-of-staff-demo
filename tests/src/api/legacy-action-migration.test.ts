@@ -13,6 +13,7 @@ import {
   MEETING_DEBRIEF_MODULE_VERSION,
 } from "@chief-of-staff-demo/shared";
 import { openRuns, type RunHandle, type Runs } from "../../../apps/server/src/runs";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
@@ -298,9 +299,9 @@ describe("migrating legacy Debrief review", () => {
     expect(tasks.list().map((task) => [task.title, task.status])).toEqual([
       ["Done work", "completed"],
     ]);
-    expect(actionItems.list().find((item) => item.proposal.title === "Dismissed work")?.state).toBe(
-      "dismissed",
-    );
+    expect(
+      actionItems.list().find((item) => actionItemProposal(item).title === "Dismissed work")?.state,
+    ).toBe("dismissed");
     const before = actionItems.list();
     migrate();
     expect(actionItems.list()).toEqual(before);

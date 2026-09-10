@@ -10,6 +10,7 @@ import type {
   MeetingDebriefActionItem,
   Task,
 } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { registerTasksApi } from "../../../apps/server/src/api/tasks";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
@@ -170,9 +171,9 @@ describe("Automatically create my Tasks", () => {
       debriefRunId: "run_2",
     });
 
-    expect(items.find((item) => item.proposal.title === "Book the follow-up session")?.state).toBe(
-      "pending",
-    );
+    expect(
+      items.find((item) => actionItemProposal(item).title === "Book the follow-up session")?.state,
+    ).toBe("pending");
     expect(tasks.list({}).map((task) => task.title)).toEqual(["Follow up on the billing fix"]);
   });
 

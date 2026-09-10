@@ -8,6 +8,7 @@ import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import type { AppConfig, ConfirmedOwnerReference, ModelPurpose } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { ConfigStore } from "../config.js";
 import { registerApi } from "../api/router.js";
 import { registerStaticServing } from "../api/static.js";
@@ -860,19 +861,19 @@ export async function composeShell(options: ShellOptions): Promise<Shell> {
             href: "/tasks",
             detail: task.status,
           });
-      for (const item of actionItems.list())
-        if (
-          item.proposal.responsiblePerson?.kind === "person-profile" &&
-          item.proposal.responsiblePerson.profileId === profileId
-        )
-          records.push({
-            kind: "action-item",
-            id: item.id,
-            title: item.proposal.title,
-            date: item.proposal.dueDate,
-            href: "/tasks",
-            detail: item.state,
-          });
+      for (const item of actionItems.list()) {
+        const proposal = actionItemProposal(item);
+        const responsible = proposal.responsiblePerson;
+        if (responsible?.kind !== "person-profile" || responsible.profileId !== profileId) continue;
+        records.push({
+          kind: "action-item",
+          id: item.id,
+          title: proposal.title,
+          date: proposal.dueDate,
+          href: "/tasks",
+          detail: item.state,
+        });
+      }
       return records;
     },
   });

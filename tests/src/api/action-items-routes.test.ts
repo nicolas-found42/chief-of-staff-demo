@@ -12,6 +12,7 @@ import type {
   TranscriptMention,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { registerTasksApi } from "../../../apps/server/src/api/tasks";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
@@ -36,6 +37,13 @@ let actionItems: WorkspaceActionItems;
 let proposed: MeetingDebriefActionItem[];
 /** The Catalog review state the Debrief resolves owners against; set per test. */
 let identityReview: { mentions: TranscriptMention[]; decisions: IdentityDecision[] };
+
+/** The selected proposal of the queued item with that title. */
+function proposalOf(byTitle: Map<string, ActionItem>, title: string) {
+  const item = byTitle.get(title);
+  if (!item) throw new Error(`No queued Action Item titled ${title}`);
+  return actionItemProposal(item);
+}
 
 function record(overrides: Partial<TranscriptRecord> = {}): TranscriptRecord {
   return {
@@ -228,7 +236,8 @@ describe("materializing Action Items from a Debrief", () => {
     proposed = [{ ...proposal(), handoff }];
     await debrief();
     const [item] = await queue();
-    expect(item).toMatchObject({ handoff, proposal: { responsiblePerson: null } });
+    expect(item).toMatchObject({ handoff });
+    expect(actionItemProposal(item).responsiblePerson).toBeNull();
     const response = await app.inject({
       method: "POST",
       url: `/api/action-items/${item.id}/promote`,
@@ -259,16 +268,16 @@ describe("materializing Action Items from a Debrief", () => {
       },
       extractionRevision: 1,
       evidence: { responsibleMentionId: "m_alice", responsibleSurfaceName: "Alice" },
-      proposal: {
-        title: "Follow up on the billing fix",
-        notes: "",
-        dueDate: "2026-08-22",
-        responsiblePerson: null,
-      },
       state: "pending",
       promotedTaskId: null,
       decidedAt: null,
       createdAt: "2026-09-04T09:00:00.000Z",
+    });
+    expect(actionItemProposal(items[0])).toEqual({
+      title: "Follow up on the billing fix",
+      notes: "",
+      dueDate: "2026-08-22",
+      responsiblePerson: null,
     });
   });
 
@@ -286,15 +295,15 @@ describe("materializing Action Items from a Debrief", () => {
 
     await debrief();
 
-    const byTitle = new Map((await queue()).map((item) => [item.proposal.title, item]));
-    expect(byTitle.get("Follow up on the billing fix")?.proposal.responsiblePerson).toEqual({
+    const byTitle = new Map((await queue()).map((item) => [actionItemProposal(item).title, item]));
+    expect(proposalOf(byTitle, "Follow up on the billing fix").responsiblePerson).toEqual({
       kind: "owner",
     });
-    expect(byTitle.get("Bob's item")?.proposal.responsiblePerson).toEqual({
+    expect(proposalOf(byTitle, "Bob's item").responsiblePerson).toEqual({
       kind: "person-profile",
       profileId: "profile_bob",
     });
-    expect(byTitle.get("Nobody's item")?.proposal.responsiblePerson).toBeNull();
+    expect(proposalOf(byTitle, "Nobody's item").responsiblePerson).toBeNull();
   });
 
   it("stages a regenerated proposal beside the decisions already made", async () => {
@@ -316,11 +325,8 @@ describe("materializing Action Items from a Debrief", () => {
     /* The proposal that came back unchanged is the same record it was — a
        regeneration reconciles, it does not replace. */
     expect(after[0]).toEqual(first[0]);
-    expect(after[1]).toMatchObject({
-      proposal: { title: "Book the follow-up session" },
-      extractionRevision: 2,
-      state: "pending",
-    });
+    expect(after[1]).toMatchObject({ extractionRevision: 2, state: "pending" });
+    expect(actionItemProposal(after[1]).title).toBe("Book the follow-up session");
   });
   it("preserves a dismissed decision across regeneration and stages the newcomer", async () => {
     const runId = await debrief();
@@ -345,7 +351,7 @@ describe("materializing Action Items from a Debrief", () => {
       extractionRevision: 1,
     });
     expect(
-      after.find((item) => item.proposal.title === "Book the follow-up session"),
+      after.find((item) => actionItemProposal(item).title === "Book the follow-up session"),
     ).toMatchObject({
       state: "pending",
       extractionRevision: 2,
@@ -378,7 +384,7 @@ describe("materializing Action Items from a Debrief", () => {
       promotedTaskId: taskId,
     });
     expect(
-      after.find((item) => item.proposal.title === "Book the follow-up session"),
+      after.find((item) => actionItemProposal(item).title === "Book the follow-up session"),
     ).toMatchObject({
       state: "pending",
     });

@@ -82,6 +82,12 @@ const REFUSAL_STATUS: Record<TaskValidationError["code"], number> = {
   "action-item-already-promoted": 409,
   "action-item-dismissed": 409,
   "action-item-recovery-conflict": 409,
+  "action-item-version-conflict": 409,
+  "action-item-not-promotable": 409,
+  "action-item-revision-not-found": 404,
+  "action-item-reconciliation-invalid": 409,
+  "action-item-amendment-invalid": 409,
+  "task-version-conflict": 409,
   /* 428: the request is well-formed and the Task is deletable — what is
      missing is the person saying so. */
   "confirmation-required": 428,

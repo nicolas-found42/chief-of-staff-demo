@@ -1,13 +1,35 @@
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type {
   ActionItem,
+  ActionItemAmendmentSuggestion,
+  ActionItemDecisionKind,
+  ActionItemDecisionRecord,
+  ActionItemDisposition,
+  ActionItemMaterializationMapping,
+  ActionItemOccurrence,
+  ActionItemProposal,
+  ActionItemProposalRevision,
+  ActionItemReconciliation,
   ActionItemState,
+  ActionItemVersions,
   MeetingDebriefActionItem,
   TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
+import {
+  actionItemProposal,
+  handoffNotes,
+  latestProposalRevision,
+} from "@chief-of-staff-demo/shared";
 import type { TaskStore } from "./store.js";
-import { handoffNotes } from "@chief-of-staff-demo/shared";
-import { TaskValidationError } from "./tasks.js";
+import {
+  MaterializationIntegrityError,
+  materializationKey,
+  outputEntryId,
+  payloadChecksum,
+  type CheckedEntryPayload,
+  type CheckedOutputEntry,
+} from "./materialization.js";
+import { TaskValidationError, type TaskValidationErrorCode } from "./tasks.js";
 
 /** One extraction's proposed commitments, as the Meeting Debrief hands them over. */
 export interface ActionItemMaterialization {
@@ -15,7 +37,15 @@ export interface ActionItemMaterialization {
   transcriptId: string;
   /** The Meeting the Transcript belongs to; null until one is placed. */
   meetingId: string | null;
+  /** The immutable source revision the extraction read, when it is known. */
+  transcriptObservedRevision?: number | null;
+  transcriptChecksum?: string | null;
   actionItems: MeetingDebriefActionItem[];
+  /**
+   * The extraction pipeline's own candidate ids, aligned with `actionItems`.
+   * Local accounting: they identify a checked entry, never a Workspace record.
+   */
+  candidateAliases?: (string | null)[];
 }
 
 /** What an Action Item query narrows on. Everything is optional. */
@@ -24,6 +54,14 @@ export interface ActionItemQuery {
   debriefRunId?: string;
   transcriptId?: string;
   meetingId?: string;
+}
+
+/** One command's expected record version (#355). A stale command is refused. */
+export interface ActionItemCommand {
+  /** The `version` the caller read. Omitted means "whatever is current". */
+  expectedVersion?: number;
+  /** Who is deciding. This Workspace has one trusted local user. */
+  actor?: string;
 }
 
 export interface WorkspaceActionItemsDeps {
@@ -39,14 +77,20 @@ export interface WorkspaceActionItemsDeps {
 }
 
 /**
- * The Workspace's Action Items (ADR-0053, issue #177).
+ * The Workspace's Action Items (ADR-0053/0080, issues #177/#355).
  *
  * A Meeting Debrief produces these; it does not own them. Materialization is
- * the one write the Debrief performs here, and it is idempotent: an Action
- * Item's identity is derived from its Debrief Run and the proposal's own
- * content, so re-running the same extraction returns the same records — with
- * whatever review decisions they already carry — rather than duplicating them,
- * and reordering the extracted array changes nothing at all.
+ * the one write the Debrief performs here, and it is exact: each checked
+ * output entry materializes under a versioned key, the key's mapping is
+ * persisted beside the record, and a replay of that key returns the record it
+ * already allocated — whatever has happened to it since. Reordering the
+ * extracted array changes nothing, and two obligations that look identical are
+ * still two records.
+ *
+ * Every other write is an owner command: it binds the record version it was
+ * shown, appends to the decision history instead of rewriting it, and refuses
+ * rather than guessing when a correction, a reconciliation or another command
+ * has moved the record on.
  */
 export class WorkspaceActionItems {
   private readonly store: TaskStore;
@@ -60,82 +104,112 @@ export class WorkspaceActionItems {
   }
 
   /**
-   * Record one Action Item per proposed commitment. Items already held for
-   * this Debrief Run are left exactly as they are, so a retry cannot rewrite a
-   * decision or reset a proposal the owner has been reviewing.
-   *
-   * The extraction revision counts the extractions of this Run that produced
-   * something new: the first materialization is revision 1, and a
-   * re-materialization that proposes nothing unseen keeps that number.
+   * Record one Action Item per checked output entry. An entry already mapped
+   * for this Debrief Run returns the record it allocated — with whatever
+   * review decisions it carries — instead of a duplicate, and an entry whose
+   * key exists with different bytes is an integrity failure rather than a
+   * silent overwrite.
    */
   materialize(input: ActionItemMaterialization): ActionItem[] {
     const stored = this.store.readActionItems();
-    const held = new Map(
-      stored
-        .filter((item) => item.source.debriefRunId === input.debriefRunId)
-        .map((i) => [i.id, i]),
+    const mappings = this.store.readActionItemMappings();
+    const byKey = new Map(mappings.map((mapping) => [mapping.key, mapping]));
+    const byId = new Map(stored.map((item) => [item.id, item]));
+    const entries = input.actionItems.map((proposed, index) =>
+      this.checkedEntry(
+        proposed,
+        this.occurrenceOf(proposed),
+        input.candidateAliases?.[index] ?? null,
+      ),
     );
-    const revision = nextRevision([...held.values()], input);
+    const revision = nextRevision(
+      stored.filter((item) => item.source.debriefRunId === input.debriefRunId),
+      entries,
+      input,
+      byKey,
+    );
     const at = this.now().toISOString();
     const materialized: ActionItem[] = [];
     const added: ActionItem[] = [];
-    for (const proposed of input.actionItems) {
-      const id = actionItemId(input.debriefRunId, proposed);
-      const existing = held.get(id);
+    const appendedMappings: ActionItemMaterializationMapping[] = [];
+    entries.forEach((entry, index) => {
+      const entryId = outputEntryId(entries, index);
+      const key = materializationKey(input.debriefRunId, entryId);
+      const checksum = payloadChecksum(entry.payload);
+      const existing = byKey.get(key);
       if (existing) {
-        materialized.push(existing);
-        continue;
+        if (existing.payloadChecksum !== checksum) {
+          throw new MaterializationIntegrityError(
+            key,
+            `entry ${entryId} was checked as ${existing.payloadChecksum} and is now ${checksum}`,
+          );
+        }
+        const item = byId.get(existing.actionItemId);
+        if (!item) {
+          throw new MaterializationIntegrityError(
+            key,
+            `mapping points at Action Item ${existing.actionItemId}, which is not in the Workspace`,
+          );
+        }
+        materialized.push(item);
+        return;
       }
-      const item: ActionItem = {
+      const id = allocateActionItemId();
+      const item = this.newActionItem({
         id,
-        ...(proposed.handoff ? { handoff: proposed.handoff } : {}),
-        source: {
-          debriefRunId: input.debriefRunId,
-          transcriptId: input.transcriptId,
-          meetingId: input.meetingId,
-        },
-        extractionRevision: revision,
-        evidence: {
-          responsibleMentionId: proposed.ownerMentionId,
-          responsibleSurfaceName: proposed.owner,
-        },
-        proposal: {
-          title: proposed.title,
-          notes: proposed.handoff ? handoffNotes(proposed.handoff) : "",
-          dueDate: proposed.dueDate,
-          responsiblePerson:
-            proposed.handoff &&
-            (proposed.handoff.responsibility.names.length !== 1 ||
-              proposed.handoff.responsibility.basis === "unknown")
-              ? null
-              : this.proposedResponsiblePerson(proposed.ownerProfileId),
-        },
-        state: "pending",
-        promotedTaskId: null,
-        createdAt: at,
-        updatedAt: at,
-        decidedAt: null,
-      };
-      /* Two proposals with the same title, owner and due date are one
-         commitment stated twice, and share one identity by construction. */
-      if (added.some((candidate) => candidate.id === id)) continue;
+        input,
+        entry,
+        entryId,
+        key,
+        revision,
+        at,
+        candidates: this.reconciliationCandidates(stored, input, entry.payload),
+      });
       added.push(item);
+      appendedMappings.push({
+        key,
+        debriefRunId: input.debriefRunId,
+        outputEntryId: entryId,
+        candidateAlias: entry.candidateAlias,
+        payloadChecksum: checksum,
+        actionItemId: id,
+        proposalRevision: 1,
+        allocatedAt: at,
+      });
       materialized.push(item);
-    }
-    if (added.length > 0) this.store.writeActionItems([...stored, ...added]);
+    });
+    if (added.length > 0)
+      this.store.writeActionItems([...stored, ...added], [...mappings, ...appendedMappings]);
     return materialized;
   }
 
-  /** Read-only identity join for a consumer of the current extraction. */
+  /**
+   * Read-only join between one extraction's checked entries and the records
+   * they materialized. The join is the persisted mapping — never a hash of the
+   * content, which would change the moment an owner edits a proposal.
+   */
   forExtraction(input: ActionItemMaterialization): {
     current: (ActionItem | null)[];
     earlier: ActionItem[];
   } {
     const currentItems = this.list({ debriefRunId: input.debriefRunId });
     const items = input.meetingId ? this.list({ meetingId: input.meetingId }) : currentItems;
-    const ids = input.actionItems.map((proposal) => actionItemId(input.debriefRunId, proposal));
+    const byKey = new Map(
+      this.store.readActionItemMappings().map((mapping) => [mapping.key, mapping.actionItemId]),
+    );
+    const entries = input.actionItems.map((proposed, index) =>
+      this.checkedEntry(
+        proposed,
+        this.occurrenceOf(proposed),
+        input.candidateAliases?.[index] ?? null,
+      ),
+    );
+    const ids = entries.map((_, index) =>
+      byKey.get(materializationKey(input.debriefRunId, outputEntryId(entries, index))),
+    );
+    const current = ids.map((id) => currentItems.find((item) => item.id === id) ?? null);
     return {
-      current: ids.map((id) => currentItems.find((item) => item.id === id) ?? null),
+      current,
       earlier: items.filter((item) => !ids.includes(item.id)),
     };
   }
@@ -158,32 +232,44 @@ export class WorkspaceActionItems {
       );
   }
 
+  get(actionItemId: string): ActionItem | null {
+    return this.store.readActionItems().find((item) => item.id === actionItemId) ?? null;
+  }
+
   /**
-   * Record that this Action Item became that Task. The one write outside
-   * materialization, and deliberately narrow: the proposal, the evidence and
+   * Record that this Action Item became that Task. The one write outside a
+   * review command, and deliberately narrow: the proposal, the evidence and
    * the source are untouched, so the queue keeps saying what the meeting said
    * while the Task goes on to say whatever the owner makes of it.
    *
    * Promotion is one-way. Nothing here unpromotes, because a decision the
    * owner made is history rather than a toggle.
    */
-  recordPromotion(actionItemId: string, taskId: string): ActionItem {
-    const stored = this.store.readActionItems();
-    const current = stored.find((item) => item.id === actionItemId);
-    if (!current) {
-      throw new Error(`No Action Item with id ${actionItemId}`);
-    }
-    if (current.state === "promoted") return current;
-    const at = this.now().toISOString();
-    const next: ActionItem = {
-      ...current,
-      state: "promoted",
-      promotedTaskId: taskId,
-      updatedAt: at,
-      decidedAt: at,
-    };
-    this.store.writeActionItems(stored.map((item) => (item.id === actionItemId ? next : item)));
-    return next;
+  recordPromotion(
+    actionItemId: string,
+    taskId: string,
+    versions: { taskVersion: number | null } = { taskVersion: null },
+    command: ActionItemCommand = {},
+  ): ActionItem {
+    return this.transition(
+      actionItemId,
+      command,
+      (current, at, version) => ({
+        ...current,
+        state: "promoted",
+        promotedTaskId: taskId,
+        updatedAt: at,
+        decidedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision("promote", at, command.actor ?? OWNER, current, version, {
+            taskId,
+            taskVersion: versions.taskVersion,
+          }),
+        ],
+      }),
+      { alreadyPromoted: true },
+    );
   }
 
   /**
@@ -193,36 +279,333 @@ export class WorkspaceActionItems {
    * rather than a second decision. A promoted Action Item is history and
    * cannot be dismissed.
    */
-  dismiss(actionItemId: string): ActionItem {
-    return this.decide(
-      actionItemId,
-      "dismissed",
-      "That Action Item was already promoted and cannot be dismissed.",
-    );
+  dismiss(actionItemId: string, command: ActionItemCommand = {}): ActionItem {
+    return this.decide(actionItemId, "dismissed", command, "dismiss");
   }
 
   /**
    * Return one dismissed Action Item to pending (issue #179). This is both the
    * temporary Undo after a dismissal and the later restore from Debrief
    * history: the record keeps its identity, source, revision and proposal, and
-   * only the decision is cleared. Idempotent while pending; a promoted Action
-   * Item cannot be unpromoted.
+   * only the decision is cleared. The history keeps the dismissal, so a restore
+   * is visible as a later decision rather than an erasure. Idempotent while
+   * pending; a promoted Action Item cannot be unpromoted.
    */
-  restore(actionItemId: string): ActionItem {
-    return this.decide(
+  restore(actionItemId: string, command: ActionItemCommand = {}): ActionItem {
+    return this.decide(actionItemId, "pending", command, "restore");
+  }
+
+  /**
+   * Select the proposal revision this Action Item should be reviewed and
+   * promoted as (#355). A correction raises the latest revision; until the
+   * owner selects one, promotion is refused — a reviewed draft never silently
+   * picks up content that arrived after the review.
+   */
+  selectProposal(
+    actionItemId: string,
+    revision: number,
+    command: ActionItemCommand = {},
+  ): ActionItem {
+    return this.transition(actionItemId, command, (current, at, version) => {
+      const chosen = current.proposalRevisions.find((entry) => entry.revision === revision);
+      if (!chosen) {
+        throw new TaskValidationError(
+          "action-item-revision-not-found",
+          `That Action Item has no proposal revision ${revision}.`,
+        );
+      }
+      if (current.selectedRevision === revision && current.reviewedThrough >= revision) return null;
+      return {
+        ...current,
+        selectedRevision: revision,
+        reviewedThrough: latestProposalRevision(current),
+        updatedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision("select-proposal", at, command.actor ?? OWNER, current, version),
+        ],
+      };
+    });
+  }
+
+  /**
+   * Record a correction to the proposal (#355). The previous revision stays
+   * exactly as it was, and the new one is presented as unreviewed: the owner
+   * selects it, or keeps the previous content, before anything is promoted.
+   */
+  correctProposal(
+    actionItemId: string,
+    content: ActionItemProposal,
+    command: ActionItemCommand = {},
+  ): ActionItem {
+    return this.transition(actionItemId, command, (current, at, version) => {
+      const previous = latestProposalRevision(current);
+      const revision: ActionItemProposalRevision = {
+        revision: previous + 1,
+        content,
+        origin: { kind: "owner-correction", correctedRevision: previous },
+        extractionRevision: current.extractionRevision,
+        createdAt: at,
+      };
+      return {
+        ...current,
+        proposalRevisions: [...current.proposalRevisions, revision],
+        updatedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision("correct-proposal", at, command.actor ?? OWNER, current, version),
+        ],
+      };
+    });
+  }
+
+  /**
+   * Record what this Action Item's proposal means next to the work already
+   * held (#355). The extraction never decides that for the owner: it records
+   * the earlier records it considered, and the owner chooses. Choosing
+   * `evidence-of-historical` makes this record evidence about the target — it
+   * keeps its own identity and history, and is not promotable — and refuses to
+   * close a cycle of records pointing at each other.
+   */
+  reconcile(
+    actionItemId: string,
+    disposition: ActionItemDisposition,
+    options: ActionItemCommand & { targetActionItemId?: string | null } = {},
+  ): ActionItem {
+    return this.transition(actionItemId, options, (current, at, version) => {
+      const target = options.targetActionItemId ?? null;
+      if (current.reconciliation && sameReconciliation(current.reconciliation, disposition, target))
+        return null;
+      if (disposition === "evidence-of-historical") {
+        if (target === null || target === actionItemId) {
+          throw new TaskValidationError(
+            "action-item-reconciliation-invalid",
+            "Attaching evidence needs a different Action Item to attach it to.",
+          );
+        }
+        const held = this.get(target);
+        if (!held) {
+          throw new TaskValidationError(
+            "action-item-reconciliation-invalid",
+            `No Action Item with id ${target}`,
+          );
+        }
+        if (held.reconciledInto !== null) {
+          throw new TaskValidationError(
+            "action-item-reconciliation-invalid",
+            "That Action Item is itself evidence about another one; attaching evidence to it would close a cycle.",
+          );
+        }
+      }
+      const reconciliation: ActionItemReconciliation = {
+        id: `reconciliation_${randomUUID()}`,
+        proposalRevision: current.selectedRevision,
+        debriefRunId: current.source.debriefRunId,
+        disposition,
+        targetActionItemId: disposition === "evidence-of-historical" ? target : null,
+        candidateActionItemIds: current.reconciliation?.candidateActionItemIds ?? [],
+        decidedBy: "owner",
+        decidedAt: at,
+        versions: {
+          actionItemVersion: version,
+          proposalRevision: current.selectedRevision,
+          taskId: current.promotedTaskId,
+          taskVersion: null,
+        },
+      };
+      return {
+        ...current,
+        reconciliation,
+        reconciledInto: reconciliation.targetActionItemId,
+        updatedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision("reconcile", at, options.actor ?? OWNER, current, version, {
+            taskId: current.promotedTaskId,
+          }),
+        ],
+      };
+    });
+  }
+
+  /**
+   * Suggest a change to an already promoted Task (#355). Never an edit: the
+   * suggestion records the field-level differences and the Task version they
+   * were computed against, and applying them is the owner's own Task edit.
+   */
+  suggestAmendment(
+    actionItemId: string,
+    suggestion: {
+      taskId: string;
+      fields: Partial<ActionItemProposal>;
+      observedTaskVersion: number;
+    },
+    command: ActionItemCommand = {},
+  ): ActionItem {
+    return this.transition(actionItemId, command, (current, at, version) => {
+      if (current.promotedTaskId === null || current.promotedTaskId !== suggestion.taskId) {
+        throw new TaskValidationError(
+          "action-item-amendment-invalid",
+          "A Task amendment can only be suggested by the Action Item that created that Task.",
+        );
+      }
+      if (Object.keys(suggestion.fields).length === 0) {
+        throw new TaskValidationError(
+          "action-item-amendment-invalid",
+          "A Task amendment suggestion has to name at least one field.",
+        );
+      }
+      const amendment: ActionItemAmendmentSuggestion = {
+        id: `amendment_${randomUUID()}`,
+        taskId: suggestion.taskId,
+        proposalRevision: current.selectedRevision,
+        fields: suggestion.fields,
+        observedTaskVersion: suggestion.observedTaskVersion,
+        status: "suggested",
+        createdAt: at,
+        resolvedAt: null,
+      };
+      return {
+        ...current,
+        amendments: [...current.amendments, amendment],
+        updatedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision("suggest-amendment", at, command.actor ?? OWNER, current, version, {
+            taskId: suggestion.taskId,
+            taskVersion: suggestion.observedTaskVersion,
+          }),
+        ],
+      };
+    });
+  }
+
+  /**
+   * Record that a suggestion was applied through the owner's Task edit, or
+   * declined. The suggestion keeps the versions it was made against either
+   * way; only its outcome changes.
+   */
+  resolveAmendment(
+    amendmentId: string,
+    status: "applied" | "declined",
+    command: ActionItemCommand & { taskVersion?: number | null } = {},
+  ): ActionItem {
+    const holder = this.store
+      .readActionItems()
+      .find((item) => item.amendments.some((amendment) => amendment.id === amendmentId));
+    if (!holder) {
+      throw new TaskValidationError("action-item-not-found", `No Task amendment ${amendmentId}`);
+    }
+    return this.transition(holder.id, command, (current, at, version) => {
+      const amendment = current.amendments.find((entry) => entry.id === amendmentId);
+      if (!amendment) {
+        throw new TaskValidationError("action-item-not-found", `No Task amendment ${amendmentId}`);
+      }
+      if (amendment.status === status) return null;
+      return {
+        ...current,
+        amendments: current.amendments.map((entry) =>
+          entry.id === amendmentId ? { ...entry, status, resolvedAt: at } : entry,
+        ),
+        updatedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision(
+            status === "applied" ? "apply-amendment" : "decline-amendment",
+            at,
+            command.actor ?? OWNER,
+            current,
+            version,
+            { taskId: amendment.taskId, taskVersion: command.taskVersion ?? null },
+          ),
+        ],
+      };
+    });
+  }
+
+  /**
+   * Whether this record may become a Task right now, and why not when it may
+   * not. The promotion command and the review surface read the same answer.
+   */
+  promotionRefusal(item: ActionItem): { code: TaskValidationErrorCode; message: string } | null {
+    if (item.state === "dismissed") {
+      return {
+        code: "action-item-dismissed",
+        message: "That Action Item was dismissed. Restore it to pending before creating a Task.",
+      };
+    }
+    if (item.reconciledInto !== null) {
+      return {
+        code: "action-item-not-promotable",
+        message:
+          "That Action Item records evidence about earlier work. Attach it there instead of creating a Task.",
+      };
+    }
+    if (item.reconciliation?.disposition === "unresolved") {
+      return {
+        code: "action-item-not-promotable",
+        message:
+          "That Action Item may repeat work this Workspace already holds. Resolve the relationship before creating a Task.",
+      };
+    }
+    if (item.reviewedThrough < latestProposalRevision(item)) {
+      return {
+        code: "action-item-not-promotable",
+        message:
+          "That proposal was corrected after it was reviewed. Select the revision to promote before creating a Task.",
+      };
+    }
+    return null;
+  }
+
+  private decide(
+    actionItemId: string,
+    to: "pending" | "dismissed",
+    command: ActionItemCommand,
+    kind: ActionItemDecisionKind,
+  ): ActionItem {
+    return this.transition(
       actionItemId,
-      "pending",
-      "That Action Item was already promoted and cannot be restored to pending.",
+      command,
+      (current, at, version) => {
+        if (current.state === to) return null;
+        if (current.state === "promoted") {
+          throw new TaskValidationError(
+            "action-item-already-promoted",
+            to === "dismissed"
+              ? "That Action Item was already promoted and cannot be dismissed."
+              : "That Action Item was already promoted and cannot be restored to pending.",
+          );
+        }
+        return {
+          ...current,
+          state: to,
+          updatedAt: at,
+          decidedAt: to === "dismissed" ? at : null,
+          decisions: [
+            ...current.decisions,
+            decision(kind, at, command.actor ?? OWNER, current, version, {
+              taskId: current.promotedTaskId,
+            }),
+          ],
+        };
+      },
+      { alreadyPromoted: true },
     );
   }
 
   /**
-   * Move one Action Item between the two undecided states. Dismissal records
-   * the decision time; restoration clears it. Already there is the same answer
-   * rather than a second decision, and a promoted Action Item is history that
-   * neither direction may rewrite.
+   * One command's critical section: read the current record, refuse a stale
+   * command, apply the change and commit it with the version advanced. A
+   * change that would be a no-op returns the record unchanged, which is what
+   * makes a repeated command idempotent instead of a second decision.
    */
-  private decide(actionItemId: string, to: "pending" | "dismissed", refused: string): ActionItem {
+  private transition(
+    actionItemId: string,
+    command: ActionItemCommand,
+    change: (current: ActionItem, at: string, version: number) => ActionItem | null,
+    options: { alreadyPromoted?: boolean } = {},
+  ): ActionItem {
     const stored = this.store.readActionItems();
     const current = stored.find((item) => item.id === actionItemId);
     if (!current) {
@@ -231,23 +614,200 @@ export class WorkspaceActionItems {
         `No Action Item with id ${actionItemId}`,
       );
     }
-    if (current.state === to) return current;
-    if (current.state === "promoted") {
-      throw new TaskValidationError("action-item-already-promoted", refused);
+    if (command.expectedVersion !== undefined && command.expectedVersion !== current.version) {
+      throw new TaskValidationError(
+        "action-item-version-conflict",
+        `That Action Item changed since you read it (expected version ${command.expectedVersion}, current ${current.version}). Reload it and review the change.`,
+      );
+    }
+    if (options.alreadyPromoted && current.state === "promoted") {
+      throw new TaskValidationError(
+        "action-item-already-promoted",
+        "That Action Item was already promoted; its decision is history.",
+      );
     }
     const at = this.now().toISOString();
-    const next: ActionItem = {
-      ...current,
-      state: to,
-      updatedAt: at,
-      decidedAt: to === "dismissed" ? at : null,
-    };
-    this.store.writeActionItems(stored.map((item) => (item.id === actionItemId ? next : item)));
-    return next;
+    const version = current.version + 1;
+    const next = change(current, at, version);
+    if (next === null) return current;
+    const committed: ActionItem = { ...next, version };
+    this.store.writeActionItems(
+      stored.map((item) => (item.id === actionItemId ? committed : item)),
+    );
+    return committed;
   }
 
-  get(actionItemId: string): ActionItem | null {
-    return this.store.readActionItems().find((item) => item.id === actionItemId) ?? null;
+  /** One checked output entry: its content and where the extraction saw it. */
+  private checkedEntry(
+    proposed: MeetingDebriefActionItem,
+    occurrence: ActionItemOccurrence,
+    candidateAlias: string | null,
+  ): CheckedOutputEntry {
+    const multipleResponsibility =
+      proposed.handoff &&
+      (proposed.handoff.responsibility.names.length !== 1 ||
+        proposed.handoff.responsibility.basis === "unknown");
+    const payload: CheckedEntryPayload = {
+      title: proposed.title,
+      owner: proposed.owner,
+      ownerMentionId: proposed.ownerMentionId,
+      ownerProfileId: proposed.ownerProfileId,
+      dueDate: proposed.dueDate,
+      notes: proposed.handoff ? handoffNotes(proposed.handoff) : "",
+      responsiblePerson: multipleResponsibility
+        ? null
+        : this.proposedResponsiblePerson(proposed.ownerProfileId),
+      occurrence,
+      handoff: proposed.handoff ?? null,
+    };
+    return { candidateAlias, payload };
+  }
+
+  /**
+   * Where one checked obligation sat in the immutable source. The locator
+   * distinguishes repeated identical quotations, which a quotation alone
+   * cannot; nothing here is a claim that two quotes mean the same thing.
+   */
+  private occurrenceOf(proposed: MeetingDebriefActionItem): ActionItemOccurrence {
+    const evidence = proposed.handoff?.evidence[0];
+    if (!evidence) {
+      /* No quotation to locate it by. The position in the checked array is
+         deliberately not used: it would make reordering the model's output
+         rename the obligation. Two entries left indistinguishable here are
+         separated by their ordinal among identical payloads instead. */
+      return { locator: "unlocated", timestamp: null, quote: null };
+    }
+    const identical = (proposed.handoff?.evidence ?? []).filter(
+      (candidate) =>
+        candidate.quote === evidence.quote && candidate.timestamp === evidence.timestamp,
+    );
+    const ordinal = identical.indexOf(evidence) + 1;
+    return {
+      locator: `${evidence.timestamp ?? "no-timestamp"}#${ordinal}`,
+      timestamp: evidence.timestamp,
+      quote: evidence.quote,
+    };
+  }
+
+  private newActionItem(input: {
+    id: string;
+    input: ActionItemMaterialization;
+    entry: CheckedOutputEntry;
+    entryId: string;
+    key: string;
+    revision: number;
+    at: string;
+    candidates: string[];
+  }): ActionItem {
+    const { payload } = input.entry;
+    const origin: ActionItemProposalRevision["origin"] = {
+      kind: "extraction",
+      debriefRunId: input.input.debriefRunId,
+      transcriptId: input.input.transcriptId,
+      meetingId: input.input.meetingId,
+      materializationKey: input.key,
+      outputEntryId: input.entryId,
+      candidateAlias: input.entry.candidateAlias,
+    };
+    const candidateAliases =
+      input.entry.candidateAlias === null ? [] : [input.entry.candidateAlias];
+    return {
+      /* The checked handoff travels with the record: the review surface reads
+         its execution detail, and automatic promotion reads its commitment and
+         responsibility basis to decline what only the owner can judge. */
+      ...(payload.handoff ? { handoff: payload.handoff } : {}),
+      id: input.id,
+      source: {
+        debriefRunId: input.input.debriefRunId,
+        transcriptId: input.input.transcriptId,
+        meetingId: input.input.meetingId,
+      },
+      extractionRevision: input.revision,
+      evidence: {
+        responsibleMentionId: payload.ownerMentionId,
+        responsibleSurfaceName: payload.owner,
+      },
+      proposalRevisions: [
+        {
+          revision: 1,
+          content: {
+            title: payload.title,
+            notes: payload.notes,
+            dueDate: payload.dueDate,
+            responsiblePerson: payload.responsiblePerson,
+          },
+          origin,
+          extractionRevision: input.revision,
+          createdAt: input.at,
+        },
+      ],
+      selectedRevision: 1,
+      reviewedThrough: 1,
+      observations: [
+        {
+          id: `observation_${randomUUID()}`,
+          proposalRevision: 1,
+          transcriptId: input.input.transcriptId,
+          transcriptObservedRevision: input.input.transcriptObservedRevision ?? null,
+          transcriptChecksum: input.input.transcriptChecksum ?? null,
+          occurrence: payload.occurrence,
+          artifactId: input.input.debriefRunId,
+          outputEntryId: input.entryId,
+          candidateAliases,
+          notedAt: input.at,
+        },
+      ],
+      decisions: [],
+      reconciliation:
+        input.candidates.length === 0
+          ? null
+          : {
+              id: `reconciliation_${randomUUID()}`,
+              proposalRevision: 1,
+              debriefRunId: input.input.debriefRunId,
+              disposition: "unresolved",
+              targetActionItemId: null,
+              candidateActionItemIds: input.candidates,
+              decidedBy: "extraction",
+              decidedAt: input.at,
+              versions: {
+                actionItemVersion: 1,
+                proposalRevision: 1,
+                taskId: null,
+                taskVersion: null,
+              },
+            },
+      reconciledInto: null,
+      amendments: [],
+      version: 1,
+      state: "pending",
+      promotedTaskId: null,
+      createdAt: input.at,
+      updatedAt: input.at,
+      decidedAt: null,
+    };
+  }
+
+  /**
+   * The earlier Action Items this checked entry may be about: same Transcript,
+   * same normalized title. A candidate is a question for the owner, never a
+   * merge — no fuzzy score, no shared meeting and no model confidence decides
+   * that two records are one obligation.
+   */
+  private reconciliationCandidates(
+    stored: ActionItem[],
+    input: ActionItemMaterialization,
+    payload: CheckedEntryPayload,
+  ): string[] {
+    const title = normalize(payload.title);
+    return stored
+      .filter(
+        (item) =>
+          item.source.transcriptId === input.transcriptId &&
+          item.source.debriefRunId !== input.debriefRunId &&
+          normalize(actionItemProposal(item).title) === title,
+      )
+      .map((item) => item.id);
   }
 
   private proposedResponsiblePerson(profileId: string | null): TaskResponsiblePerson | null {
@@ -258,6 +818,40 @@ export class WorkspaceActionItems {
   }
 }
 
+/** The one local user this Workspace has; recorded with every decision. */
+const OWNER = "owner";
+
+function decision(
+  kind: ActionItemDecisionKind,
+  at: string,
+  actor: string,
+  current: ActionItem,
+  version: number,
+  task: { taskId?: string | null; taskVersion?: number | null } = {},
+): ActionItemDecisionRecord {
+  const versions: ActionItemVersions = {
+    actionItemVersion: version,
+    proposalRevision: current.selectedRevision,
+    taskId: task.taskId ?? null,
+    taskVersion: task.taskVersion ?? null,
+  };
+  return { at, actor, kind, proposalRevision: current.selectedRevision, versions };
+}
+
+function sameReconciliation(
+  current: ActionItemReconciliation,
+  disposition: ActionItemDisposition,
+  target: string | null,
+): boolean {
+  if (current.disposition !== disposition) return false;
+  return disposition === "evidence-of-historical" ? current.targetActionItemId === target : true;
+}
+
+/** An opaque Workspace identity. Allocated once; nothing derives it. */
+function allocateActionItemId(): string {
+  return `ai_${randomUUID().replaceAll("-", "")}`;
+}
+
 /** An unset filter matches everything; a set one has to be equal. */
 function matches<T>(expected: T | undefined, actual: T): boolean {
   return expected === undefined || expected === actual;
@@ -265,33 +859,22 @@ function matches<T>(expected: T | undefined, actual: T): boolean {
 
 /**
  * The revision this materialization writes. A Run with nothing held is on its
- * first extraction; otherwise a proposal nobody has seen means a new revision,
- * and a re-run of the same extraction means the one already recorded.
+ * first extraction; otherwise an entry nobody has materialized means a new
+ * revision, and a re-run of the same checked output means the one already
+ * recorded.
  */
-function nextRevision(held: ActionItem[], input: ActionItemMaterialization): number {
+function nextRevision(
+  held: ActionItem[],
+  entries: CheckedOutputEntry[],
+  input: ActionItemMaterialization,
+  byKey: Map<string, ActionItemMaterializationMapping>,
+): number {
   if (held.length === 0) return 1;
-  const known = new Set(held.map((item) => item.id));
   const highest = held.reduce((max, item) => Math.max(max, item.extractionRevision), 1);
-  const unseen = input.actionItems.some(
-    (proposed) => !known.has(actionItemId(input.debriefRunId, proposed)),
+  const unseen = entries.some(
+    (_, index) => !byKey.has(materializationKey(input.debriefRunId, outputEntryId(entries, index))),
   );
   return unseen ? highest + 1 : highest;
-}
-
-/**
- * Identity from content, not from position: the Debrief Run plus the
- * normalized title, inferred owner and due date. Reordering the model's output
- * produces the same ids, which is the whole reason review decisions survive
- * regeneration.
- */
-function actionItemId(debriefRunId: string, proposed: MeetingDebriefActionItem): string {
-  const material = [
-    debriefRunId,
-    normalize(proposed.title),
-    normalize(proposed.owner ?? ""),
-    proposed.dueDate ?? "",
-  ].join("\u0000");
-  return `action_item_${createHash("sha256").update(material).digest("hex").slice(0, 16)}`;
 }
 
 function normalize(value: string): string {

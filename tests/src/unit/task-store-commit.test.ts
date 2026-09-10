@@ -54,7 +54,7 @@ it("stamps the canonical bundle with its format and a generation each write adva
   new WorkspaceTasks({ store }).create({ title: "First" });
 
   const first = bundleOf(workspace);
-  expect(first.format).toBe(2);
+  expect(first.format).toBe(3);
   expect(first.generation).toBe(2);
   expect(store.readGeneration()).toBe(2);
 
@@ -75,7 +75,7 @@ it("readers accept a bundle written before the format existed", () => {
   expect(store.readTasks().map((task) => task.title)).toEqual(["Carried forward"]);
 
   new WorkspaceTasks({ store }).create({ title: "Stamped" });
-  expect(bundleOf(workspace).format).toBe(2);
+  expect(bundleOf(workspace).format).toBe(3);
   expect(bundleOf(workspace).generation).toBe(1);
 });
 

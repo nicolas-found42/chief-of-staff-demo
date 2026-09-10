@@ -1,5 +1,6 @@
 import { operationalHandoff } from "../src/helpers/operational-handoff";
 import type { ActionItemIndex } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { test, expect } from "./fixture";
 import { confirmMeetingOwner } from "./meeting-owner-fixture";
 
@@ -21,14 +22,14 @@ test("Home shows only the canonical approval count and review stays on the sourc
   });
   await expect(indicator).toBeVisible();
   for (const item of index.items)
-    await expect(page.getByText(item.proposal.title, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(actionItemProposal(item).title, { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Create Task", exact: true })).toHaveCount(0);
   await indicator.click();
   await expect(page).toHaveURL(/\/meetings/);
   await page.goto("/tasks");
   await expect(page.getByRole("button", { name: "Create Task", exact: true })).toHaveCount(0);
   for (const item of index.items)
-    await expect(page.getByText(item.proposal.title, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(actionItemProposal(item).title, { exact: true })).toHaveCount(0);
   const item = index.items.find(
     (entry: { source: { meetingId: string | null } }) => entry.source.meetingId,
   )!;
@@ -70,13 +71,13 @@ test("unavailable source context retains source-scoped canonical review", async 
   ).toBeVisible();
   const actions = page.getByRole("region", { name: "Action Items", exact: true });
   await expect(
-    actions.getByRole("heading", { name: items[0].proposal.title, exact: true }),
+    actions.getByRole("heading", { name: actionItemProposal(items[0]).title, exact: true }),
   ).toBeVisible();
   await actions.getByRole("button", { name: "Dismiss", exact: true }).first().click();
   await expect(actions.getByRole("button", { name: "Undo", exact: true })).toBeFocused();
   await actions.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(
-    actions.getByRole("heading", { name: items[0].proposal.title, exact: true }),
+    actions.getByRole("heading", { name: actionItemProposal(items[0]).title, exact: true }),
   ).toBeVisible();
 });
 
@@ -95,7 +96,7 @@ test("execution details distinguish inferred criteria and preserve keyboard focu
         commitment: "inferred",
         purpose: "Make the rollout verifiable",
       };
-      item.proposal.notes =
+      actionItemProposal(item).notes =
         "Completion [inferred] A recorded successful rollout\nMissing input [inferred]: Deployment access. Suggested retrieval: Ask the deployment administrator";
     }
     await route.fulfill({ response, json: data });
@@ -164,7 +165,9 @@ test("legacy proposal anchors lead directly to the source Meeting", async ({ pag
   )!;
   await page.goto(`/tasks#action-item-${item.id}`);
   await expect(page).toHaveURL(new RegExp(`/meetings/${item.source.meetingId}`));
-  await expect(page.getByRole("heading", { name: item.proposal.title, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: actionItemProposal(item).title, exact: true }),
+  ).toBeVisible();
   await request.post(`/api/action-items/${item.id}/dismiss`);
   await page.goto(`/tasks#action-item-${item.id}`);
   await expect(page.locator(`#action-item-${item.id}`)).toBeVisible();

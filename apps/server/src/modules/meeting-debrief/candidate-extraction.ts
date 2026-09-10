@@ -152,9 +152,20 @@ export interface CandidateExtractionOptions {
 }
 
 /** Source-scoped discovery, total candidate accounting and deterministic final assembly. */
+/**
+ * A finished extraction and the checked candidate ids its output entries came
+ * from, in output order. The ids are local accounting — never Workspace
+ * identities — and they are what the materialization seam records as the
+ * provenance of each Action Item.
+ */
+export interface CheckedExtraction {
+  extraction: MeetingDebriefExtraction;
+  checkedAliases: string[];
+}
+
 export async function extractDebriefCandidates(
   options: CandidateExtractionOptions,
-): Promise<MeetingDebriefExtraction> {
+): Promise<CheckedExtraction> {
   const { record, identity, complete, capture } = options;
   const base = buildDebriefMessages(record, identity);
   // Select immutable source spans instead of asking a model to transcribe them
@@ -1130,5 +1141,10 @@ Read the entire source and classify each proposed decision independently. Return
     retainedIds: retained.map((candidate) => candidate.id),
     dispositions: reconciliation.dispositions,
   });
-  return normalized;
+  /* The checked candidate ids travel with the extraction: they are the
+     extraction's own accounting for its output entries, which is what lets the
+     Workspace record which checked entry an Action Item came from without ever
+     treating that alias as an identity itself. */
+  const checkedAliases: string[] = retained.map((candidate) => candidate.id);
+  return { extraction: normalized, checkedAliases };
 }

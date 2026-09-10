@@ -17,7 +17,11 @@ import type {
   TaskList,
   TaskPriority,
 } from "@chief-of-staff-demo/shared";
-import { INBOX_TASK_LIST_ID, TASK_PRIORITIES } from "@chief-of-staff-demo/shared";
+import {
+  actionItemProposal,
+  INBOX_TASK_LIST_ID,
+  TASK_PRIORITIES,
+} from "@chief-of-staff-demo/shared";
 import { meetingDate, proposedDue } from "../meetingDisplay";
 import type { TasksClient } from "../clients/tasks";
 
@@ -192,12 +196,12 @@ export function ActionItemRow({
   const submitting = useRef(false);
   const [values, setValues] = useState<TaskFormValues>(
     saved?.values ?? {
-      title: item.proposal.title,
-      notes: item.proposal.notes,
-      dueDate: item.proposal.dueDate ?? "",
+      title: actionItemProposal(item).title,
+      notes: actionItemProposal(item).notes,
+      dueDate: actionItemProposal(item).dueDate ?? "",
       priority: "none",
       listId: INBOX_TASK_LIST_ID,
-      responsible: responsibleValue(item.proposal.responsiblePerson),
+      responsible: responsibleValue(actionItemProposal(item).responsiblePerson),
     },
   );
   useEffect(() => {
@@ -261,7 +265,7 @@ export function ActionItemRow({
   return (
     /* The anchor a compact surface links a proposal by (issue #192). */
     <li className="card" id={`action-item-${item.id}`}>
-      <h3>{item.proposal.title}</h3>
+      <h3>{actionItemProposal(item).title}</h3>
       {isNew && <span aria-label="New proposal">New proposal</span>}
       {item.handoff && (
         <>
@@ -271,16 +275,16 @@ export function ActionItemRow({
           <p>{item.handoff.purpose}</p>
           <ReadingDisclosure id={`${item.id}-execution`} label="Execution details">
             <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {item.proposal.notes}
+              {actionItemProposal(item).notes}
             </p>
           </ReadingDisclosure>
         </>
       )}
 
       <p className="muted">
-        Proposed · {proposedDue(item.proposal.dueDate, today)} ·{" "}
-        {item.proposal.responsiblePerson
-          ? responsibleLabel(item.proposal.responsiblePerson, profiles)
+        Proposed · {proposedDue(actionItemProposal(item).dueDate, today)} ·{" "}
+        {actionItemProposal(item).responsiblePerson
+          ? responsibleLabel(actionItemProposal(item).responsiblePerson, profiles)
           : "Unassigned"}
         {item.evidence.responsibleSurfaceName
           ? ` · named ${item.evidence.responsibleSurfaceName}`

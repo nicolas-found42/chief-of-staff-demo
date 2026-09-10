@@ -1,10 +1,11 @@
 import {
-  TASK_COMPACT_LIMIT,
-  compareTasks,
+  actionItemProposal,
   taskGroupOf,
+  compareTasks,
   type DailyBriefingActionItem,
   type DailyBriefingTask,
   type DailyBriefingWork,
+  TASK_COMPACT_LIMIT,
 } from "@chief-of-staff-demo/shared";
 import type { WorkspaceActionItems } from "./action-items.js";
 import type { WorkspaceTasks } from "./tasks.js";
@@ -42,8 +43,8 @@ export function buildDailyBriefingWork(deps: BriefingWorkDeps): DailyBriefingWor
   const pending = deps.actionItems.list({ state: "pending" });
   const proposals: DailyBriefingActionItem[] = pending.map((item) => ({
     actionItemId: item.id,
-    title: item.proposal.title,
-    dueDate: item.proposal.dueDate,
+    title: actionItemProposal(item).title,
+    dueDate: actionItemProposal(item).dueDate,
     meetingId: item.source.meetingId,
   }));
   return {

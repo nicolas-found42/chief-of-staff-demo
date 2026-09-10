@@ -1,5 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import type { ActionItemIndex } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { expect, test } from "./fixture";
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"];
@@ -187,11 +189,11 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
   expect(tasks.tasks.map((task) => task.title)).not.toContain("own the pricing page rewrite");
 
   // Legacy individual anchors resolve through the canonical source context.
-  const queue = (await (await request.get("/api/action-items?state=pending")).json()) as {
-    items: Array<{ id: string; proposal: { title: string } }>;
-  };
+  const queue = (await (
+    await request.get("/api/action-items?state=pending")
+  ).json()) as ActionItemIndex;
   const pending = queue.items.find((item) =>
-    /own the pricing page rewrite/i.test(item.proposal.title),
+    /own the pricing page rewrite/i.test(actionItemProposal(item).title),
   );
   expect(pending, "the seeded Debrief proposed the rewrite").toBeDefined();
   const anchor = page.locator(`#action-item-${pending!.id}`);
@@ -280,10 +282,10 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
     tasks: Array<{ title: string }>;
   };
   expect(tasks.tasks.map((task) => task.title)).not.toContain("I will own the archive rotation.");
-  const dismissed = (await (await request.get("/api/action-items?state=dismissed")).json()) as {
-    items: Array<{ proposal: { title: string } }>;
-  };
-  expect(dismissed.items.map((item) => item.proposal.title)).toContain(
+  const dismissed = (await (
+    await request.get("/api/action-items?state=dismissed")
+  ).json()) as ActionItemIndex;
+  expect(dismissed.items.map((item) => actionItemProposal(item).title)).toContain(
     "I will own the archive rotation.",
   );
 
@@ -390,12 +392,14 @@ test("tasks journey — a possible duplicate warns, and the owner can still deci
     return index.tasks;
   };
 
-  const queue = (await (await request.get("/api/action-items?state=pending")).json()) as {
-    items: Array<{ proposal: { title: string } }>;
-  };
-  const proposed = queue.items.find((one) => /certificate renewal/i.test(one.proposal.title));
+  const queue = (await (
+    await request.get("/api/action-items?state=pending")
+  ).json()) as ActionItemIndex;
+  const proposed = queue.items.find((one) =>
+    /certificate renewal/i.test(actionItemProposal(one).title),
+  );
   expect(proposed, "the seeded Debrief proposed the renewal").toBeDefined();
-  const title = proposed!.proposal.title;
+  const title = actionItemProposal(proposed!).title;
 
   await page.goto("/tasks");
 

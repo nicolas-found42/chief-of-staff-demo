@@ -22,6 +22,36 @@ import {
 import type { TaskStore } from "./store.js";
 
 /** A refused Task operation, named by a stable code the surfaces render. */
+export type TaskValidationErrorCode =
+  | "invalid-title"
+  | "invalid-notes"
+  | "invalid-list-name"
+  | "invalid-due-date"
+  | "invalid-priority"
+  | "invalid-responsible-person"
+  | "invalid-destination"
+  | "invalid-token"
+  | "task-list-not-found"
+  | "task-list-not-empty"
+  | "inbox-is-permanent"
+  | "task-not-found"
+  | "task-not-in-trash"
+  | "link-not-drifted"
+  | "link-not-conflicted"
+  | "confirmation-required"
+  | "task-already-linked"
+  | "task-not-linked"
+  | "link-not-missing"
+  | "action-item-not-found"
+  | "action-item-already-promoted"
+  | "action-item-dismissed"
+  | "action-item-recovery-conflict"
+  | "action-item-version-conflict"
+  | "action-item-not-promotable"
+  | "action-item-revision-not-found"
+  | "action-item-reconciliation-invalid"
+  | "action-item-amendment-invalid";
+
 export class TaskValidationError extends Error {
   constructor(
     public readonly code:
@@ -47,7 +77,13 @@ export class TaskValidationError extends Error {
       | "action-item-not-found"
       | "action-item-already-promoted"
       | "action-item-dismissed"
-      | "action-item-recovery-conflict",
+      | "action-item-recovery-conflict"
+      | "action-item-version-conflict"
+      | "action-item-not-promotable"
+      | "action-item-revision-not-found"
+      | "action-item-reconciliation-invalid"
+      | "action-item-amendment-invalid"
+      | "task-version-conflict",
     message: string,
   ) {
     super(message);
@@ -342,6 +378,7 @@ export class WorkspaceTasks {
       updatedAt: at,
       completedAt: null,
       deletedAt: null,
+      version: 1,
     };
     this.store.writeTasks([...this.store.readTasks(), task]);
     return task;
@@ -352,7 +389,8 @@ export class WorkspaceTasks {
    * are untouched by construction: accepted work evolves independently of
    * whatever proposed it, and an edit is never a replacement.
    */
-  update(taskId: string, input: TaskUpdateInput): Task {
+  update(taskId: string, input: TaskUpdateInput, command: { expectedVersion?: number } = {}): Task {
+    this.requireExpectedVersion(taskId, command.expectedVersion);
     return this.edit(taskId, (task) => {
       const next: Task = { ...task };
       if (input.title !== undefined) next.title = requireTitle(input.title);
@@ -376,7 +414,8 @@ export class WorkspaceTasks {
   }
 
   /** Idempotent: completing a completed Task keeps its original completion time. */
-  complete(taskId: string): Task {
+  complete(taskId: string, command: { expectedVersion?: number } = {}): Task {
+    this.requireExpectedVersion(taskId, command.expectedVersion);
     return this.edit(taskId, (task) =>
       task.status === "completed"
         ? task
@@ -501,6 +540,11 @@ export class WorkspaceTasks {
 
   // ---------------------------------------------------------------------------
 
+  /**
+   * One Task's critical section: read the current record, apply the change and
+   * commit it with the version advanced. A change that would be a no-op keeps
+   * the record — and its version — exactly as it is.
+   */
   private edit(taskId: string, change: (task: Task) => Task): Task {
     const tasks = this.store.readTasks();
     const current = tasks.find((task) => task.id === taskId);
@@ -509,9 +553,32 @@ export class WorkspaceTasks {
     }
     const changed = change(current);
     if (changed === current) return current;
-    const next: Task = { ...changed, updatedAt: this.now().toISOString() };
+    const next: Task = {
+      ...changed,
+      updatedAt: this.now().toISOString(),
+      version: current.version + 1,
+    };
     this.store.writeTasks(tasks.map((task) => (task.id === taskId ? next : task)));
     return next;
+  }
+
+  /**
+   * Refuse a command that was shown an older Task (#355). The version is the
+   * record's own, so an edit that arrived after the review cannot be
+   * overwritten by a decision taken before it.
+   */
+  private requireExpectedVersion(taskId: string, expected: number | undefined): void {
+    if (expected === undefined) return;
+    const current = this.store.readTasks().find((task) => task.id === taskId);
+    if (!current) {
+      throw new TaskValidationError("task-not-found", `No Task with id ${taskId}`);
+    }
+    if (current.version !== expected) {
+      throw new TaskValidationError(
+        "task-version-conflict",
+        `That Task changed since you read it (expected version ${expected}, current ${current.version}). Reload it and review the change.`,
+      );
+    }
   }
 
   /**

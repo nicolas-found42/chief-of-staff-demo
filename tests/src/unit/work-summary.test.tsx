@@ -35,7 +35,13 @@ function overview(partial: Partial<TaskOverview> = {}): TaskOverview {
       { id: "task_1", title: "Send the pricing sheet", dueDate: "2026-09-04", priority: "high" },
     ],
     actionItems: [
-      { id: "ai_1", proposal: { title: "Draft the rollout note", dueDate: "2026-09-08" } },
+      {
+        id: "ai_1",
+        selectedRevision: 1,
+        proposalRevisions: [
+          { revision: 1, content: { title: "Draft the rollout note", dueDate: "2026-09-08" } },
+        ],
+      },
     ],
     ...partial,
   });

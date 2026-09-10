@@ -179,6 +179,12 @@ export interface TaskSource {
 }
 
 export interface Task {
+  /**
+   * Monotonic per Task. Every edit advances it, so a command that was shown an
+   * older version can be refused instead of overwriting a change it never saw
+   * (#355). Records written before the field existed read as version 1.
+   */
+  version: number;
   /** Workspace identity. Stable across every edit, and never derived from position. */
   id: string;
   title: string;
