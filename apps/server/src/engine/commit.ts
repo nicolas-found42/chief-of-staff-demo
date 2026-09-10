@@ -168,7 +168,7 @@ export function createWorkspaceWriter(): WorkspaceWriter {
     async replace(path, guard, next) {
       return serialize(path, async () => {
         const current = await readParsedOrNull(path);
-        const generation = generationOf(current);
+        const generation = generationOf(path, current);
         if (generation !== guard.expectedGeneration) {
           throw new ExpectedVersionConflictError(path, guard.expectedGeneration, generation);
         }
@@ -243,11 +243,23 @@ export function writeFileVerifiedSync(path: string, contents: string): string {
   return createHash("sha256").update(published).digest("hex");
 }
 
-/** The record's own generation, absent meaning the first one. */
-function generationOf(record: unknown): number {
+/**
+ * The record's own generation. Absent means the first one, because records
+ * written before generations existed carry none. A `generation` that is present
+ * but is not a version is refused rather than read as the first: coercing it
+ * would let a caller holding generation 0 overwrite a damaged record whose real
+ * position it never saw, which is the loss the guard exists to prevent
+ * (ADR-0086).
+ */
+function generationOf(path: string, record: unknown): number {
   if (typeof record !== "object" || record === null || !("generation" in record)) return 0;
   const value: unknown = record.generation;
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new WorkspaceIntegrityError(
+      `Workspace record ${path} carries a generation that is not a version`,
+    );
+  }
+  return value;
 }
 
 async function readOrNull(path: string): Promise<string | null> {

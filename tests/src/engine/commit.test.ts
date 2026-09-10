@@ -279,3 +279,18 @@ it("counts a checksum for the bytes it committed", async () => {
   expect(sha256).toBe(createHash("sha256").update("payload").digest("hex"));
   expect(existsSync(path)).toBe(true);
 });
+
+it("refuses a stored generation that is not a version rather than reading it as the first", async () => {
+  const writer = createWorkspaceWriter();
+  const path = join(scratch(), "record.json");
+  writeFileSync(
+    path,
+    `${JSON.stringify({ generation: "4", title: "damaged" }, null, 2)}\n`,
+    "utf8",
+  );
+
+  await expect(
+    writer.replace(path, { expectedGeneration: 0 }, { generation: 1, title: "overwriting" }),
+  ).rejects.toThrow(WorkspaceIntegrityError);
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ generation: "4", title: "damaged" });
+});
