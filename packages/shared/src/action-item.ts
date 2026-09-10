@@ -19,8 +19,8 @@
  *   an extraction read, and where in it the obligation sat. Two identical
  *   quotations are two observations, distinguished by their locator.
  * - `decisions`: who decided what, against which record versions.
- * - `reconciliation`: the recorded relationship to earlier work, or the
- *   explicit statement that none was decided.
+ * - `reconciliations`: every recorded relationship to earlier work, appended
+ *   rather than replaced, so a changed decision keeps the one it changed.
  * - `amendments`: suggested changes to an already promoted Task, which only
  *   the owner's own Task edit can apply.
  */
@@ -172,7 +172,7 @@ export interface ActionItemReconciliation {
   targetActionItemId: string | null;
   /** Earlier Action Items the extraction considered, for the owner to choose from. */
   candidateActionItemIds: string[];
-  decidedBy: "owner" | "extraction" | "exact-lineage";
+  decidedBy: "owner" | "extraction";
   decidedAt: string;
   versions: ActionItemVersions;
 }
@@ -243,8 +243,13 @@ export interface ActionItem {
   reviewedThrough: number;
   observations: ActionItemSourceObservation[];
   decisions: ActionItemDecisionRecord[];
-  /** The recorded relationship to earlier work; null while none was needed. */
-  reconciliation: ActionItemReconciliation | null;
+  /**
+   * Every relationship to earlier work that was recorded, oldest first. A
+   * later decision is appended: the owner deciding a proposal is separate
+   * work and then that it is the same work again is two decisions, and the
+   * first one is what the second one changed.
+   */
+  reconciliations: ActionItemReconciliation[];
   /**
    * Set when this record exists only as evidence about another one: it points
    * at the record it is evidence for and is not promotable.
@@ -310,6 +315,11 @@ export function actionItemProposal(item: ActionItem): ActionItemProposal {
   return revision?.content ?? item.proposalRevisions[0]!.content;
 }
 
+/** The relationship that stands now, or null while none was recorded. */
+export function currentReconciliation(item: ActionItem): ActionItemReconciliation | null {
+  return item.reconciliations.at(-1) ?? null;
+}
+
 /** The newest revision. Higher than `reviewedThrough` while a correction waits. */
 export function latestProposalRevision(item: ActionItem): number {
   return item.proposalRevisions.reduce((max, entry) => Math.max(max, entry.revision), 0);
@@ -330,7 +340,7 @@ export function promotable(item: ActionItem): boolean {
   return (
     item.state === "pending" &&
     item.reconciledInto === null &&
-    item.reconciliation?.disposition !== "unresolved" &&
+    currentReconciliation(item)?.disposition !== "unresolved" &&
     !selectionPending(item)
   );
 }

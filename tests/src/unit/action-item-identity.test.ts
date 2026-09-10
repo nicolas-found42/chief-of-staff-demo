@@ -7,7 +7,7 @@ import type {
   ActionItemProposal,
   MeetingDebriefActionItem,
 } from "@chief-of-staff-demo/shared";
-import { actionItemProposal, promotable } from "@chief-of-staff-demo/shared";
+import { actionItemProposal, currentReconciliation, promotable } from "@chief-of-staff-demo/shared";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
 import { MaterializationIntegrityError } from "../../../apps/server/src/tasks/materialization";
@@ -397,4 +397,46 @@ it("reads a Task written before versions existed as the first version", () => {
   expect(tasks[0].id).toBe("task_legacy_1");
   expect(tasks[0].version).toBe(1);
   expect(tasks[0].deletedAt).toBeNull();
+});
+
+it("keeps every reconciliation the owner recorded, not only the latest", () => {
+  const { actionItems } = workspace();
+  const [item] = actionItems.materialize(extraction([proposed()]));
+
+  actionItems.reconcile(item.id, "distinct-new-work");
+  const after = actionItems.reconcile(item.id, "new-commitment");
+
+  expect(after.reconciliations.map((one) => one.disposition)).toEqual([
+    "distinct-new-work",
+    "new-commitment",
+  ]);
+  expect(currentReconciliation(after)?.disposition).toBe("new-commitment");
+});
+
+it("records attaching evidence as what it was", () => {
+  const { actionItems } = workspace();
+  const [earlier, later] = actionItems.materialize(
+    extraction([proposed(), proposed({ title: "Send Bob the rollout plan", owner: "Bob" })]),
+  );
+
+  const evidence = actionItems.reconcile(later.id, "evidence-of-historical", {
+    targetActionItemId: earlier.id,
+  });
+
+  expect(evidence.decisions.map((one) => one.kind)).toEqual(["attach-evidence"]);
+  expect(evidence.decisions[0].versions.actionItemVersion).toBe(evidence.version);
+});
+
+it("writes the decision history a review surface reads back", () => {
+  const { actionItems, deps } = acceptedWorkspace();
+  const [item] = actionItems.materialize(extraction([proposed()]));
+  actionItems.correctProposal(item.id, content({ title: "Corrected wording" }));
+  actionItems.selectProposal(item.id, 2);
+  promoteActionItem(deps, item.id, {});
+
+  expect(actionItems.get(item.id)?.decisions.map((one) => one.kind)).toEqual([
+    "correct-proposal",
+    "select-proposal",
+    "promote",
+  ]);
 });

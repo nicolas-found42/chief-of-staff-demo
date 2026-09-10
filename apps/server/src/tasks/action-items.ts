@@ -17,6 +17,7 @@ import type {
 } from "@chief-of-staff-demo/shared";
 import {
   actionItemProposal,
+  currentReconciliation,
   handoffNotes,
   latestProposalRevision,
 } from "@chief-of-staff-demo/shared";
@@ -362,8 +363,8 @@ export class WorkspaceActionItems {
   ): ActionItem {
     return this.transition(actionItemId, options, (current, at, version) => {
       const target = options.targetActionItemId ?? null;
-      if (current.reconciliation && sameReconciliation(current.reconciliation, disposition, target))
-        return null;
+      const standing = currentReconciliation(current);
+      if (standing && sameReconciliation(standing, disposition, target)) return null;
       if (disposition === "evidence-of-historical") {
         if (target === null || target === actionItemId) {
           throw new TaskValidationError(
@@ -391,7 +392,7 @@ export class WorkspaceActionItems {
         debriefRunId: current.source.debriefRunId,
         disposition,
         targetActionItemId: disposition === "evidence-of-historical" ? target : null,
-        candidateActionItemIds: current.reconciliation?.candidateActionItemIds ?? [],
+        candidateActionItemIds: standing?.candidateActionItemIds ?? [],
         decidedBy: "owner",
         decidedAt: at,
         versions: {
@@ -403,14 +404,22 @@ export class WorkspaceActionItems {
       };
       return {
         ...current,
-        reconciliation,
+        reconciliations: [...current.reconciliations, reconciliation],
         reconciledInto: reconciliation.targetActionItemId,
         updatedAt: at,
         decisions: [
           ...current.decisions,
-          decision("reconcile", at, options.actor ?? OWNER, current, version, {
-            taskId: current.promotedTaskId,
-          }),
+          decision(
+            /* Attaching evidence is its own decision, not a relabelling: the
+               history has to say the owner made this record evidence about
+               another one rather than merely recording a relationship. */
+            disposition === "evidence-of-historical" ? "attach-evidence" : "reconcile",
+            at,
+            options.actor ?? OWNER,
+            current,
+            version,
+            { taskId: current.promotedTaskId },
+          ),
         ],
       };
     });
@@ -529,7 +538,7 @@ export class WorkspaceActionItems {
           "That Action Item records evidence about earlier work. Attach it there instead of creating a Task.",
       };
     }
-    if (item.reconciliation?.disposition === "unresolved") {
+    if (currentReconciliation(item)?.disposition === "unresolved") {
       return {
         code: "action-item-not-promotable",
         message:
@@ -747,25 +756,27 @@ export class WorkspaceActionItems {
         },
       ],
       decisions: [],
-      reconciliation:
+      reconciliations:
         input.candidates.length === 0
-          ? null
-          : {
-              id: `reconciliation_${randomUUID()}`,
-              proposalRevision: 1,
-              debriefRunId: input.input.debriefRunId,
-              disposition: "unresolved",
-              targetActionItemId: null,
-              candidateActionItemIds: input.candidates,
-              decidedBy: "extraction",
-              decidedAt: input.at,
-              versions: {
-                actionItemVersion: 1,
+          ? []
+          : [
+              {
+                id: `reconciliation_${randomUUID()}`,
                 proposalRevision: 1,
-                taskId: null,
-                taskVersion: null,
+                debriefRunId: input.input.debriefRunId,
+                disposition: "unresolved",
+                targetActionItemId: null,
+                candidateActionItemIds: input.candidates,
+                decidedBy: "extraction",
+                decidedAt: input.at,
+                versions: {
+                  actionItemVersion: 1,
+                  proposalRevision: 1,
+                  taskId: null,
+                  taskVersion: null,
+                },
               },
-            },
+            ],
       reconciledInto: null,
       amendments: [],
       version: 1,

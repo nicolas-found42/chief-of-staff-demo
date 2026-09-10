@@ -32,7 +32,7 @@ type AddedByProposalRevisions =
   | "reviewedThrough"
   | "observations"
   | "decisions"
-  | "reconciliation"
+  | "reconciliations"
   | "reconciledInto"
   | "amendments"
   | "version";
@@ -302,7 +302,7 @@ function normalizeActionItem(stored: StoredActionItem): ActionItem {
       reviewedThrough: rest.reviewedThrough ?? rest.selectedRevision ?? 1,
       observations: rest.observations ?? [],
       decisions: rest.decisions ?? [],
-      reconciliation: rest.reconciliation ?? null,
+      reconciliations: rest.reconciliations ?? [],
       reconciledInto: rest.reconciledInto ?? null,
       amendments: rest.amendments ?? [],
       version: rest.version ?? 1,
@@ -342,7 +342,7 @@ function normalizeActionItem(stored: StoredActionItem): ActionItem {
       },
     ],
     decisions: rest.decisions ?? [],
-    reconciliation: rest.reconciliation ?? null,
+    reconciliations: rest.reconciliations ?? [],
     reconciledInto: rest.reconciledInto ?? null,
     amendments: rest.amendments ?? [],
     version: rest.version ?? 1,
