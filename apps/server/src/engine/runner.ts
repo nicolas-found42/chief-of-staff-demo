@@ -1,4 +1,4 @@
-import type { RunMeta } from "@chief-of-staff-demo/shared";
+import type { RunDetail, RunMeta } from "@chief-of-staff-demo/shared";
 import type { NewRun, RunHandle, Runs } from "../runs.js";
 import { modelDiagnosticEventDetail } from "../llm/failure.js";
 import { errorMessage } from "./failure.js";
@@ -222,7 +222,15 @@ export class Runner<Input> {
       if (meta.status !== "pending" && meta.status !== "running") {
         continue;
       }
-      const detail = this.deps.runs.detail(meta.id);
+      /* A damaged timeline is refused by the run store rather than rendered, so
+         one broken Run must not stop the rest of the sweep: it stays pending
+         and the owner sees the integrity failure when they open it. */
+      let detail: RunDetail | null;
+      try {
+        detail = this.deps.runs.detail(meta.id);
+      } catch {
+        continue;
+      }
       const state: RecoveryState = {
         ...meta,
         events: detail?.events ?? [],

@@ -94,6 +94,7 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/server/package.json apps/server/
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY --from=build /app/apps/web/dist apps/web/dist
+COPY scripts/start-workspace.py /usr/local/share/content-scout/start-workspace.py
 
 # Hermetic runtime smoke checks: command boundaries only, with no social-network calls.
 RUN chromium --version \
@@ -113,4 +114,4 @@ RUN mkdir -p /app/workspace && chown -R pwuser:pwuser /app/workspace
 USER pwuser
 VOLUME ["/app/workspace"]
 EXPOSE 4317
-CMD ["node", "apps/server/dist/main.js"]
+CMD ["python3", "/usr/local/share/content-scout/start-workspace.py", "node", "apps/server/dist/main.js"]

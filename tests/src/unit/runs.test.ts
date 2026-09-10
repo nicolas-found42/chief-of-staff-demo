@@ -1,9 +1,14 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { RunEvent } from "@chief-of-staff-demo/shared";
-import { openRuns, type RunHandle, type Runs } from "../../../apps/server/src/runs";
+import {
+  RunStoreCorruptionError,
+  openRuns,
+  type RunHandle,
+  type Runs,
+} from "../../../apps/server/src/runs";
 
 let workspaceDir: string;
 let runs: Runs;
@@ -273,6 +278,47 @@ describe("durability", () => {
     const listed = runs.list().runs;
     expect(listed).toHaveLength(1);
     expect(listed[0].id).toBe(run.id);
+  });
+
+  it("refuses an interior damaged event instead of rendering a timeline with a hole", () => {
+    run.started("extract");
+    run.failed("extract", "boom", "Extraction failed.");
+    const path = join(workspaceDir, "runs", run.id, "events.jsonl");
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.splice(1, 0, '{"at":"2026-08-19T00:00');
+    writeFileSync(path, lines.join("\n"), "utf8");
+
+    expect(() => runs.detail(run.id)).toThrow(RunStoreCorruptionError);
+    expect(() => runs.detail(run.id)).toThrow("is damaged at line 2");
+    // The list reads meta alone, so one damaged timeline cannot hide the Run
+    // from the page that opens it.
+    expect(runs.list().runs.map((listed) => listed.id)).toEqual([run.id]);
+  });
+
+  it.each(["zombie", "constructor", "toString", "__proto__"])(
+    "refuses unknown metadata status %s",
+    (status) => {
+      const path = join(workspaceDir, "runs", run.id, "meta.json");
+      const meta = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      writeFileSync(path, JSON.stringify({ ...meta, status }), "utf8");
+
+      expect(() => runs.detail(run.id)).toThrow(RunStoreCorruptionError);
+      expect(runs.list().runs).toEqual([]);
+    },
+  );
+
+  it("refuses an artifact it cannot publish, leaving the committed one in place", () => {
+    run.writeArtifact("result.json", '{"kept":true}');
+    const dir = join(workspaceDir, "runs", run.id);
+    chmodSync(dir, 0o500);
+    try {
+      expect(() => run.writeArtifact("result.json", '{"refused":true}')).toThrow(/EACCES|EPERM/);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+
+    expect(run.readArtifact("result.json")).toBe('{"kept":true}');
+    expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("tolerates a torn final line in the event log", () => {

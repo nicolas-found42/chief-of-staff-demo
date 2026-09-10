@@ -2,7 +2,19 @@ import { TaskCutoverReceiptSchema } from "@chief-of-staff-demo/shared";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ActionItem, Task, TaskList, TaskCutoverReceipt } from "@chief-of-staff-demo/shared";
-import { atomicWriteJson } from "../engine/atomic.js";
+import { writeJsonVerifiedSync } from "../engine/commit.js";
+
+/** The canonical bundle version this build writes and the newest it can read. */
+const BUNDLE_FORMAT = 2;
+
+interface Bundle {
+  format: number;
+  generation: number;
+  tasks: Task[];
+  lists: TaskList[];
+  actionItems: ActionItem[];
+  receipt: TaskCutoverReceipt;
+}
 
 /**
  * The Tasks product area's file-backed Workspace state (ADR-0058): Tasks, the
@@ -72,40 +84,86 @@ export class TaskStore {
     return this.bundle()?.receipt ?? null;
   }
 
+  /**
+   * The canonical record's own version (#354). Every write bumps it, so a
+   * caller that held an older one can be refused instead of overwriting a
+   * change it never saw.
+   */
+  readGeneration(): number {
+    return this.bundle()?.generation ?? 0;
+  }
+
   /** One atomic publication: readers observe either all old records or all migrated records. */
   publishCutover(
     records: { tasks: Task[]; lists: TaskList[]; actionItems: ActionItem[] },
     receipt: TaskCutoverReceipt,
   ): void {
-    atomicWriteJson(this.snapshotFile, { ...records, receipt });
+    writeJsonVerifiedSync(this.snapshotFile, this.nextBundle({ ...records, receipt }));
   }
 
-  private bundle(): {
-    tasks: Task[];
-    lists: TaskList[];
-    actionItems: ActionItem[];
-    receipt: TaskCutoverReceipt;
-  } | null {
+  private bundle(): Bundle | null {
     if (!existsSync(this.snapshotFile)) return null;
+    let parsed: unknown;
     try {
-      const value = JSON.parse(readFileSync(this.snapshotFile, "utf8")) as ReturnType<
-        TaskStore["bundle"]
-      >;
-      if (
-        !value ||
-        !Array.isArray(value.tasks) ||
-        !value.tasks.every(isTask) ||
-        !Array.isArray(value.lists) ||
-        !value.lists.every(isTaskList) ||
-        !Array.isArray(value.actionItems) ||
-        !value.actionItems.every(isActionItem) ||
-        !TaskCutoverReceiptSchema.safeParse(value.receipt).success
-      )
-        throw new Error("invalid snapshot");
-      return value;
+      parsed = JSON.parse(readFileSync(this.snapshotFile, "utf8"));
     } catch {
       throw new TaskStoreCorruptionError(this.snapshotFile, "the canonical snapshot is unreadable");
     }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("tasks" in parsed) ||
+      !Array.isArray(parsed.tasks) ||
+      !parsed.tasks.every(isTask) ||
+      !("lists" in parsed) ||
+      !Array.isArray(parsed.lists) ||
+      !parsed.lists.every(isTaskList) ||
+      !("actionItems" in parsed) ||
+      !Array.isArray(parsed.actionItems) ||
+      !parsed.actionItems.every(isActionItem) ||
+      !("receipt" in parsed) ||
+      !TaskCutoverReceiptSchema.safeParse(parsed.receipt).success
+    )
+      throw new TaskStoreCorruptionError(this.snapshotFile, "the canonical snapshot is unreadable");
+    /* A bundle written before the format was stamped is version 1; anything
+       newer than this build understands is refused rather than read as if the
+       fields it added were absent. */
+    const format = "format" in parsed ? parsed.format : 1;
+    const generation = "generation" in parsed ? parsed.generation : 0;
+    if (
+      typeof format !== "number" ||
+      !Number.isSafeInteger(format) ||
+      format < 1 ||
+      typeof generation !== "number" ||
+      !Number.isSafeInteger(generation) ||
+      generation < 0
+    ) {
+      throw new TaskStoreCorruptionError(
+        this.snapshotFile,
+        "the canonical version metadata is invalid",
+      );
+    }
+    if (format > BUNDLE_FORMAT) {
+      throw new TaskStoreFormatError(this.snapshotFile, format);
+    }
+    return {
+      format,
+      generation,
+      tasks: parsed.tasks,
+      lists: parsed.lists,
+      actionItems: parsed.actionItems,
+      // Checked by the schema above; the field and the record agree here.
+      receipt: parsed.receipt as TaskCutoverReceipt,
+    };
+  }
+
+  /**
+   * The canonical bundle as this build writes it: the current format stamped on
+   * and the generation advanced, so a reader can tell this commit from the one
+   * before it and a later build's records are never silently reinterpreted.
+   */
+  private nextBundle(next: Omit<Bundle, "format" | "generation">): Bundle {
+    return { ...next, format: BUNDLE_FORMAT, generation: this.readGeneration() + 1 };
   }
 
   private write(
@@ -114,8 +172,9 @@ export class TaskStore {
     records: Task[] | TaskList[] | ActionItem[],
   ): void {
     const bundle = this.bundle();
-    if (bundle) atomicWriteJson(this.snapshotFile, { ...bundle, [key]: records });
-    else atomicWriteJson(path, records);
+    if (bundle)
+      writeJsonVerifiedSync(this.snapshotFile, this.nextBundle({ ...bundle, [key]: records }));
+    else writeJsonVerifiedSync(path, records);
   }
 
   private read<T>(path: string, record: string, guard: (value: unknown) => value is T): T[] {
@@ -162,6 +221,19 @@ export class TaskStoreCorruptionError extends Error {
   ) {
     super(`Workspace Tasks are unreadable: ${detail}`);
     this.name = "TaskStoreCorruptionError";
+  }
+}
+
+/** A canonical bundle from a later build, which this one must not rewrite. */
+export class TaskStoreFormatError extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly format: number,
+  ) {
+    super(
+      `Workspace Tasks are unreadable: the canonical snapshot uses format ${format}, newer than this build supports`,
+    );
+    this.name = "TaskStoreFormatError";
   }
 }
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -419,6 +419,28 @@ describe("durable resume", () => {
 
     expect(runs.detail(pending.id)!.status).toBe("done");
     expect(runs.detail(running.id)!.status).toBe("done");
+
+    // A third Run whose timeline is damaged must not stop the sweep: it stays
+    // pending with its integrity failure intact while the others recover.
+    const damaged = runs.create({ module: "fake", moduleVersion: 2, ...record });
+    damaged.started("only");
+    const logPath = join(workspaceDir, "runs", damaged.id, "events.jsonl");
+    const lines = readFileSync(logPath, "utf8").split("\n");
+    lines.splice(1, 0, '{"at":"2026-08-19T00:00');
+    writeFileSync(logPath, lines.join("\n"), "utf8");
+    const sweeper = new Runner({
+      runs: openRuns(workspaceDir),
+      module: fakeModule({
+        planRecovery(meta) {
+          return meta.status === "pending" || meta.status === "running"
+            ? { fromStage: "only", reason: "orphaned_fake_run", input: {} }
+            : null;
+        },
+      }),
+    });
+    expect(await sweeper.recoverRuns()).toBe(0);
+    expect(() => runs.detail(damaged.id)).toThrow("is damaged at line 2");
+    expect(runs.list().runs.map((listed) => listed.id)).toContain(damaged.id);
     expect(
       runs.detail(running.id)!.events.find((event) => event.type === "run_recovered")?.detail,
     ).toEqual({

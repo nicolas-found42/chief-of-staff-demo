@@ -14,7 +14,7 @@ import { openRuns } from "../../../apps/server/src/runs";
 import { TranscriptCatalogStore } from "../../../apps/server/src/transcript-catalog/store";
 import { WorkspaceMeetings } from "../../../apps/server/src/meetings/store";
 import { MeetingBriefHost } from "../../../apps/server/src/modules/meeting-brief-generator/host";
-import { atomicWriteJson } from "../../../apps/server/src/engine/atomic";
+import { writeJsonVerifiedSync } from "../../../apps/server/src/engine/commit";
 
 /**
  * The one backward read of Calendar (issue #152): from the oldest Transcript's
@@ -369,7 +369,7 @@ describe("the history mark (issue #152)", () => {
       from: OLDEST,
     });
 
-    atomicWriteJson(join(workspaceDir, "meetings", "history.json"), { collectedAt: 3 });
+    writeJsonVerifiedSync(join(workspaceDir, "meetings", "history.json"), { collectedAt: 3 });
     expect(meetings.historyMark()).toBeNull();
   });
 });

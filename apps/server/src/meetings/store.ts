@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Meeting, MeetingIndex, MeetingParticipant } from "@chief-of-staff-demo/shared";
-import { atomicWriteJson } from "../engine/atomic.js";
+import { writeJsonVerifiedSync } from "../engine/commit.js";
 
 /**
  * A date-only `YYYY-MM-DD` anchored at midday UTC, so the calendar day it
@@ -80,7 +80,7 @@ export class WorkspaceMeetings {
 
   writeHistoryMark(mark: MeetingHistoryMark): void {
     mkdirSync(this.dirPath, { recursive: true });
-    atomicWriteJson(this.historyPath, mark);
+    writeJsonVerifiedSync(this.historyPath, mark);
   }
 
   /**
@@ -120,7 +120,7 @@ export class WorkspaceMeetings {
     const next = existing
       ? meetings.map((current) => (current.id === meeting.id ? meeting : current))
       : [...meetings, meeting];
-    atomicWriteJson(this.filePath, next);
+    writeJsonVerifiedSync(this.filePath, next);
     notifyWorkspaceChange(join(this.dirPath, ".."));
     return meeting;
   }
@@ -168,7 +168,7 @@ export class WorkspaceMeetings {
       createdAt: at,
       updatedAt: at,
     };
-    atomicWriteJson(this.filePath, [...meetings, meeting]);
+    writeJsonVerifiedSync(this.filePath, [...meetings, meeting]);
     notifyWorkspaceChange(join(this.dirPath, ".."));
     return meeting;
   }
@@ -181,7 +181,7 @@ export class WorkspaceMeetings {
     const meetings = this.read();
     const next = meetings.filter((meeting) => meeting.id !== id);
     if (next.length === meetings.length) return false;
-    atomicWriteJson(this.filePath, next);
+    writeJsonVerifiedSync(this.filePath, next);
     notifyWorkspaceChange(join(this.dirPath, ".."));
     return true;
   }
