@@ -26,10 +26,11 @@ pnpm exec tsx scripts/workspace-backup.mts capture \
 The command checks running Docker writable mounts and open host handles before
 and after copying. Unknown handles or inspection errors refuse the operation.
 Known read-only Docker virtualization handles are recorded and permitted. A
-running container whose recorded mount source does not exist on the host is a
-Docker-managed volume stored inside the VM; it cannot be the Workspace, so it is
-recorded in `unresolvedContainerMounts` instead of being resolved. Any other
-inspection error, unexplained handle or work-Workspace writer refuses the capture.
+running container whose recorded mount source the host cannot resolve — a
+Docker-managed volume stored inside the VM, or a path behind a root-only ancestor
+— is recorded in `unresolvedContainerMounts` instead of being resolved: the
+Workspace itself resolves, so such a source is neither the Workspace nor a parent
+of it. An unexplained handle or a resolvable Workspace writer refuses the capture.
 This inspection assumes the supported single-app deployment; it is not a lock
 against arbitrary host programs that might open files later. Disable external
 supervisors that restart stopped writers, and do not run migrations or host writers

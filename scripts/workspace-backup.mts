@@ -348,8 +348,11 @@ function assertQuiescent(workspace: string): {
 function existingPath(path: string): string | null {
   try {
     return realpathSync(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
+  } catch {
+    // A Docker-managed volume lives inside the VM, and a root-only ancestor
+    // denies the host lookup; either way the Workspace itself resolves (its
+    // bytes are being copied), so a source the host cannot resolve is neither
+    // the Workspace nor a parent of it. The probe records it instead.
+    return null;
   }
 }

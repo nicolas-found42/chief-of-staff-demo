@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,24 +116,43 @@ it("records known read-only Docker handles instead of refusing them", () => {
   }
 });
 
-it("permits a running container whose mounted host path does not exist", () => {
+it.each([
+  /* Docker's own volume store: absent on macOS, root-only on Linux, so the
+     host lookup fails either way. */
+  ["a Docker volume path", () => "/var/lib/docker/volumes/synthetic-volume/_data"],
+  ["a path that is not there", (root: string) => join(root, "absent", "nested")],
+  [
+    "a path under a root-only ancestor",
+    (root: string) => {
+      const locked = join(root, "locked");
+      mkdirSync(locked);
+      chmodSync(locked, 0o000);
+      return join(locked, "volume");
+    },
+  ],
+])("records a running container whose mounted host path %s cannot be resolved", (_, source) => {
   const root = mkdtempSync(join(tmpdir(), "backup-command-volume-"));
   try {
     const repository = join(root, "repo");
     const workspace = join(root, "workspace");
     for (const path of [repository, workspace]) mkdirSync(path);
     initRepository(repository);
-    const volume = "/var/lib/docker/volumes/synthetic-volume/_data";
+    const mount = source(root);
     const bin = fakeRuntime(root, {
-      running: [{ Id: "sibling", Mounts: [{ Source: volume, RW: true }] }],
+      running: [{ Id: "sibling", Mounts: [{ Source: mount, RW: true }] }],
     });
     const destination = join(root, "capture");
     const capture = runBackup(["capture", workspace, destination, repository, "app"], bin);
     expect(capture.stderr).toBe("");
     expect(capture.status).toBe(0);
     for (const probe of captureProbes(destination))
-      expect(probe.unresolvedContainerMounts).toEqual([volume]);
+      expect(probe.unresolvedContainerMounts).toEqual([mount]);
   } finally {
+    try {
+      chmodSync(join(root, "locked"), 0o700);
+    } catch {
+      // Only the root-only-ancestor case creates it; cleanup must not assert.
+    }
     rmSync(root, { recursive: true, force: true });
   }
 });
