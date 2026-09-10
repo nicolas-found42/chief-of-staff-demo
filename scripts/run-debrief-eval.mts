@@ -1,108 +1,81 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import {
-  actionItemEvidence,
-  buildDebriefMessages,
-  clampDueDates,
-  dropActionItemEvidence,
-  stripFulfilledActionItems,
-} from "../apps/server/src/modules/meeting-debrief/extraction.js";
+/** Sequential candidate-accounting evaluation; same extraction path as the host. */
+import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
+import { extractDebriefCandidates } from "../apps/server/src/modules/meeting-debrief/candidate-extraction.js";
 import { makeCompleteJson } from "../apps/server/src/llm/providers.js";
-import { MeetingDebriefExtractionSchema } from "../packages/shared/src/meeting-debrief.js";
+import { modelDiagnosticEventDetail } from "../apps/server/src/llm/failure.js";
 import type { TranscriptRecord } from "../packages/shared/src/transcript.js";
+import type { ModelAttemptEvent } from "../packages/shared/src/llm.js";
 
-const OUT = process.argv[3] ?? "/tmp/debrief-runs";
-const files = process.argv.slice(4);
-if (files.length === 0) {
-  console.error("usage: tsx scripts/run-debrief-eval.mts <model> <outdir> <files...>");
-  process.exit(1);
-}
 const model = process.argv[2];
-if (!model) {
-  console.error("usage: tsx scripts/run-debrief-eval.mts <model> <outdir> <files...>");
-  process.exit(1);
-}
+const out = process.argv[3] ?? "/tmp/debrief-runs";
+const files = process.argv.slice(4);
+if (!model || !files.length)
+  throw new Error("usage: tsx scripts/run-debrief-eval.mts <model> <outdir> <files...>");
 const apiKey = process.env.OPENROUTER_API_KEY;
-if (!apiKey) {
-  console.error("OPENROUTER_API_KEY missing");
-  process.exit(1);
-}
-await mkdir(OUT, { recursive: true });
+if (!apiKey) throw new Error("OPENROUTER_API_KEY missing");
+await mkdir(out, { recursive: true });
 const complete = makeCompleteJson({ provider: "openrouter", model, apiKey }, "");
-
 for (const file of files) {
   const name = file.split("/").pop()!;
-  console.log(`=== ${name} ===`);
-  const text = await readFile(file, "utf8");
-  // crude meeting date from filename
-  const m = name.match(/(\d{4}-\d{2}-\d{2})/);
+  const output = `${out}/${name}.debrief.json`;
+  const errorFile = `${out}/${name}.error.json`;
   const record = {
-    id: `eval-${name}`,
-    source: { fileName: name },
-    ingestedAt: new Date().toISOString(),
-    normalizedText: text,
-    meetingDate: m?.[1] ?? null,
-    occurrence: null,
-    speakers: [],
+    normalizedText: await readFile(file, "utf8"),
+    meetingDate: name.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
     roster: [],
+    occurrence: null,
   } as unknown as TranscriptRecord;
-  const messages = buildDebriefMessages(record, { mentions: [], decisions: [], organizations: [] });
-  console.log(
-    `system prompt chars: ${messages.system.length}, user chars: ${messages.user.length}`,
-  );
-  const t0 = Date.now();
+  const began = Date.now();
+  let modelRaw: unknown;
+  const events: ModelAttemptEvent[] = [];
   try {
-    const raw = await complete({
-      system: messages.system,
-      user: messages.user,
-      schema: messages.schema,
-      temperature: 0,
+    const raw = await extractDebriefCandidates({
+      record,
+      identity: { mentions: [], decisions: [], organizations: [] },
+      complete,
+      retry: { onAttempt: (event) => events.push(event) },
+      capture: (stage, value) => {
+        writeFileSync(`${output}.candidate-${stage}.json`, JSON.stringify(value, null, 2));
+        if (stage === "assembled") modelRaw = value;
+      },
     });
-    const ms = Date.now() - t0;
-    const checked = MeetingDebriefExtractionSchema.safeParse(dropActionItemEvidence(raw));
-    const parsed = checked.success
-      ? {
-          success: true as const,
-          data: stripFulfilledActionItems(
-            clampDueDates(checked.data, record),
-            actionItemEvidence(raw),
-            record,
-          ),
-        }
-      : checked;
-    const outFile = `${OUT}/${name}.debrief.json`;
     await writeFile(
-      outFile,
+      output,
       JSON.stringify(
         {
           model,
-          ms,
-          valid: parsed.success,
-          /* What the production pipeline would store: post-clamp. */
-          raw: parsed.success ? parsed.data : raw,
-          modelRaw: raw,
+          ms: Date.now() - began,
+          valid: true,
+          raw,
+          modelRaw,
+          events,
+          strategy: "candidate-accounting-v12",
         },
         null,
         2,
       ),
     );
-    if (!parsed.success) {
-      console.log(
-        `INVALID after ${ms}ms:`,
-        JSON.stringify(parsed.error.issues.slice(0, 5), null, 2),
-      );
-    } else {
-      const d = parsed.data;
-      console.log(
-        `OK ${ms}ms summary=${d.summary.length}ch decisions=${d.decisions.length} actions=${d.actionItems.length} questions=${d.openQuestions.length} recipients=${d.suggestedRecipients.length}`,
-      );
-      for (const a of d.actionItems)
-        console.log(`  - [${a.owner ?? "?"}] ${a.title} due=${a.dueDate ?? "-"}`);
-    }
+    await rm(errorFile, { force: true });
+    console.log(`${name}: OK ${raw.actionItems.length} actions, ${Date.now() - began}ms`);
   } catch (error) {
-    console.log(`ERROR after ${Date.now() - t0}ms:`, errorMessage(error));
+    await rm(output, { force: true });
+    await writeFile(
+      errorFile,
+      JSON.stringify(
+        {
+          model,
+          ms: Date.now() - began,
+          valid: false,
+          events,
+          error: error instanceof Error ? error.message : "Extraction failed",
+          diagnostic: modelDiagnosticEventDetail(error),
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(`${name}: FAILED (see retained diagnostic)`);
+    process.exitCode = 1;
   }
-}
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`.slice(0, 2000);
-  return String(error).slice(0, 2000);
 }

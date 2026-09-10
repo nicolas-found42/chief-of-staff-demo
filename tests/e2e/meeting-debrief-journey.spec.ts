@@ -310,7 +310,8 @@ test("meeting debrief review journey — regenerate, roster, recipients, approva
   await page.getByRole("button", { name: "Regenerate Summary", exact: true }).click();
   await page.getByRole("button", { name: "Confirm regeneration", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Summary updated" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Review on source Meeting" })).toBeVisible();
   await page.getByRole("button", { name: "Create email draft", exact: true }).click();
   await page.getByRole("button", { name: "Add attendee", exact: true }).click();
   await page.getByLabel("Attendee name 3").fill("Owner");

@@ -1,3 +1,6 @@
+import { handoffNotes } from "@chief-of-staff-demo/shared";
+import { proposedDue } from "../meetingDisplay";
+import { Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import type { MeetingDebriefDetail, MeetingDebriefField } from "@chief-of-staff-demo/shared";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
@@ -19,11 +22,13 @@ const labels: Record<MeetingDebriefField, string> = {
 export function MeetingDebriefContent({
   detail,
   earlierVersion = false,
+  reviewOnMeeting = false,
   refresh,
   client = meetingsApi,
 }: {
   detail: MeetingDebriefDetail;
   earlierVersion?: boolean;
+  reviewOnMeeting?: boolean;
   refresh: () => Promise<void>;
   client?: MeetingsClient;
 }) {
@@ -176,13 +181,44 @@ export function MeetingDebriefContent({
         )}{" "}
         {regenerate("decisions")}
       </section>
-      <MeetingActionItems
-        revealRequest={actionJump}
-        onCount={setActionCount}
-        meetingId={earlierVersion ? null : detail.meetingId}
-        runId={detail.runId}
-        regeneration={regenerate("actionItems")}
-      />
+      {reviewOnMeeting ? (
+        <section id="action-items" aria-labelledby="historical-actions-heading">
+          <h3 id="historical-actions-heading">Action Items</h3>
+          <p>Original extracted proposals · current review state is on the source Meeting.</p>
+          <ul>
+            {extraction.actionItems.map((item, index) => (
+              <li key={index}>
+                <p>
+                  {item.title} · {item.owner ?? "Unassigned"}
+                </p>
+                <p>{proposedDue(item.dueDate, new Date().toISOString().slice(0, 10))}</p>
+                {item.handoff && (
+                  <ReadingDisclosure
+                    id={`${detail.runId}-${index}-handoff`}
+                    label="Execution details"
+                  >
+                    <p style={{ whiteSpace: "pre-wrap" }}>{handoffNotes(item.handoff)}</p>
+                  </ReadingDisclosure>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Review proposals with their source Meeting. Existing decisions and Tasks are retained.
+          </p>
+          <Link to={`/meetings/recovery/${encodeURIComponent(detail.runId)}`}>
+            Review on source Meeting
+          </Link>
+        </section>
+      ) : (
+        <MeetingActionItems
+          revealRequest={actionJump}
+          onCount={setActionCount}
+          meetingId={earlierVersion ? null : detail.meetingId}
+          runId={detail.runId}
+          regeneration={regenerate("actionItems")}
+        />
+      )}
       <section tabIndex={-1} id="debrief-questions" aria-labelledby="debrief-questions-heading">
         <h3 id="debrief-questions-heading">Open questions</h3>
         {extraction.openQuestions.length === 0 ? (

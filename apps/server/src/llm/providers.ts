@@ -61,6 +61,9 @@ export interface CompletionRequest {
    * stream ceilings inside it are unchanged.
    */
   absoluteCeilingMs?: number;
+  /** Streaming providers only. Omitted phases retain the compatible defaults.
+   * Keepalives count as wire traffic; content, reasoning and tool arguments as progress. */
+  streamTimeouts?: { wireIdleMs?: number; firstProgressMs?: number; progressMs?: number };
   /**
    * Sampling temperature. Omitted → the upstream's own default, exactly as
    * before; extraction Modules set 0 so a transcript yields one extraction,
@@ -139,6 +142,7 @@ interface RequestDeadline {
   /* This call's effective absolute ceiling: the request's own override, or
      the seam default. Recovery paths name it when a ceiling fires. */
   absoluteCeilingMs: number;
+  streamTimeouts: { wireIdleMs: number; firstProgressMs: number; progressMs: number };
   /* The seam stamps `attempt`, `binding` and who-answered centrally in
      `withinRequestCeiling`, so recovery paths below name what they tried
      without restating it per call site. */
@@ -261,6 +265,7 @@ function geminiUsage(payload: unknown): UsageFacts {
 
 /** One provider answer over the wire: status line plus body text. */
 interface HttpResponse {
+  retryAfterMs?: number | undefined;
   status: number;
   text: string;
 }
@@ -513,7 +518,11 @@ async function postJson(
       body: JSON.stringify(body),
       signal: deadline.signal,
     });
-    return { status: response.status, text: await response.text() };
+    return {
+      status: response.status,
+      text: await response.text(),
+      retryAfterMs: retryAfterDelay(response.headers),
+    };
   } catch (error) {
     if (isRequestTimeout(error)) {
       throw modelBoundaryFailure({
@@ -551,28 +560,32 @@ async function postSseStream(
   deadline.signal.addEventListener("abort", onOuterAbort, { once: true });
   /* Two questions, two ceilings. `connection` asks whether the upstream is
      still there at all and is reset by any byte; `progress` asks whether it is
-     producing an answer and is reset only by answer tokens. A buffering
+     producing an answer and is reset by content, tool arguments or reasoning activity. A buffering
      upstream keeps the first alive with keepalives while it generates, which
      is why the first alone used to abort work that was succeeding (#232). */
   let connectionTimer: ReturnType<typeof setTimeout> | undefined;
   let progressTimer: ReturnType<typeof setTimeout> | undefined;
   let firedCeiling: number | null = null;
+  let progressed = false;
+  const limits = deadline.streamTimeouts;
   const armConnection = (): void => {
     clearTimeout(connectionTimer);
     connectionTimer = setTimeout(() => {
-      firedCeiling ??= STREAM_IDLE_TIMEOUT_MS;
+      firedCeiling ??= limits.wireIdleMs;
       idle.abort();
-    }, STREAM_IDLE_TIMEOUT_MS);
+    }, limits.wireIdleMs);
   };
-  const armIdle = (): void => {
+  const armIdle = (progress = true): void => {
+    progressed ||= progress;
     armConnection();
     clearTimeout(progressTimer);
+    const progressMs = progressed ? limits.progressMs : limits.firstProgressMs;
     progressTimer = setTimeout(() => {
-      firedCeiling ??= STREAM_SILENT_TIMEOUT_MS;
+      firedCeiling ??= progressMs;
       idle.abort();
-    }, STREAM_SILENT_TIMEOUT_MS);
+    }, progressMs);
   };
-  armIdle();
+  armIdle(false);
   /* `upstreamServer` is observation, not control: OpenRouter names the route
      serving this call on every chunk, and a stalled stream otherwise leaves no
      trace of which of a model's many upstreams was answering (#232). */
@@ -602,7 +615,11 @@ async function postSseStream(
     }
     if (response.status < 200 || response.status >= 300) {
       /* Classify exactly like postJson: the refusal body carries the facts. */
-      return { status: response.status, text: await response.text() };
+      return {
+        status: response.status,
+        text: await response.text(),
+        retryAfterMs: retryAfterDelay(response.headers),
+      };
     }
     const reader = response.body?.getReader();
     if (!reader) {
@@ -1563,10 +1580,15 @@ async function openAiCompatibleComplete(
       deadline.providerIgnore = undefined;
     }
     let response: HttpResponse;
+    let serverDelay: number | undefined;
     try {
       response = await (stream
         ? postSseStream(call, url, headers, body, deadline)
         : postJson(call, url, headers, body, deadline));
+      if ([429, 502, 503, 504].includes(response.status)) {
+        serverDelay = response.retryAfterMs;
+        parseProviderPayload(call, response);
+      }
     } catch (error) {
       const diagnostic = modelBoundaryDiagnostic(error) ?? null;
       if (cfg.provider === "openrouter") restFailedRoute(cfg.model, diagnostic);
@@ -1580,17 +1602,23 @@ async function openAiCompatibleComplete(
       const retryable =
         diagnostic?.classification === "transport_failure" ||
         isUpstreamCapacityRefusal(error) ||
+        (diagnostic?.classification === "http_error" &&
+          [502, 503, 504].includes(diagnostic.status ?? 0)) ||
         (diagnostic?.classification === "request_timeout" &&
-          (diagnostic.timeoutMs === STREAM_IDLE_TIMEOUT_MS ||
-            diagnostic.timeoutMs === STREAM_SILENT_TIMEOUT_MS));
+          Object.values(deadline.streamTimeouts).includes(diagnostic.timeoutMs ?? -1));
       if (request.retry && retryable) {
+        const retryWindowMs = Math.min(
+          deadline.streamTimeouts.wireIdleMs,
+          deadline.streamTimeouts.firstProgressMs,
+        );
+        const delayMs = serverDelay ?? Math.round(500 * (0.75 + Math.random() * 0.25));
         let stoppedReason = deadline.signal.aborted
           ? "The original request deadline expired."
           : request.retry.canRetry?.() === false
             ? "Retry cancelled by caller."
             : retried
               ? "The one additional same-binding retry was exhausted."
-              : deadline.timeRemaining() < STREAM_IDLE_TIMEOUT_MS + 500
+              : deadline.timeRemaining() < retryWindowMs + delayMs
                 ? "Insufficient original deadline for backoff and another idle window."
                 : null;
         if (!stoppedReason) {
@@ -1598,15 +1626,15 @@ async function openAiCompatibleComplete(
           deadline.reportAttempt({
             outcome: "retrying",
             diagnostic,
-            delayMs: 500,
+            delayMs,
             stoppedReason: null,
           });
-          await retryBackoff(deadline.signal);
+          await retryBackoff(deadline.signal, delayMs);
           stoppedReason = deadline.signal.aborted
             ? "The original request deadline expired."
             : request.retry.canRetry?.() === false
               ? "Retry cancelled by caller."
-              : deadline.timeRemaining() < STREAM_IDLE_TIMEOUT_MS
+              : deadline.timeRemaining() < retryWindowMs
                 ? "Insufficient original deadline for another idle window."
                 : null;
           if (!stoppedReason) {
@@ -1741,8 +1769,27 @@ async function openAiCompatibleComplete(
   }
 }
 
+/** HTTP hints are lower bounds: never shorten a valid server-directed wait. */
+function retryAfterDelay(headers: Headers): number | undefined {
+  const millis = headers.get("retry-after-ms");
+  if (
+    millis !== null &&
+    millis.trim() !== "" &&
+    Number.isFinite(Number(millis)) &&
+    Number(millis) >= 0
+  )
+    return Math.ceil(Number(millis));
+  const value = headers.get("retry-after");
+  if (value === null || value.trim() === "") return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds))
+    return seconds >= 0 && Number.isFinite(seconds * 1000) ? Math.ceil(seconds * 1000) : undefined;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
 /** Backoff shares the request's deadline and cannot keep an aborted call alive. */
-async function retryBackoff(signal: AbortSignal): Promise<void> {
+async function retryBackoff(signal: AbortSignal, delayMs: number): Promise<void> {
   if (signal.aborted) return;
   await new Promise<void>((resolve) => {
     const finish = () => {
@@ -1750,7 +1797,7 @@ async function retryBackoff(signal: AbortSignal): Promise<void> {
       signal.removeEventListener("abort", finish);
       resolve();
     };
-    const timer = setTimeout(finish, 500);
+    const timer = setTimeout(finish, delayMs);
     signal.addEventListener("abort", finish, { once: true });
   });
 }
@@ -2053,7 +2100,7 @@ async function withinRequestCeiling<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const ceilingMs = request.absoluteCeilingMs ?? REQUEST_TIMEOUT_MS;
-  const expiresAt = Date.now() + ceilingMs;
+  const expiresAt = performance.now() + ceilingMs;
   let call = initialCall(cfg);
   let attempt = 0;
   let terminalReported = false;
@@ -2129,8 +2176,13 @@ async function withinRequestCeiling<T>(
         // wire attempt was actually sent with.
         (deadline = {
           signal: controller.signal,
-          timeRemaining: () => Math.max(0, expiresAt - Date.now()),
+          timeRemaining: () => Math.max(0, expiresAt - performance.now()),
           absoluteCeilingMs: ceilingMs,
+          streamTimeouts: {
+            wireIdleMs: request.streamTimeouts?.wireIdleMs ?? STREAM_IDLE_TIMEOUT_MS,
+            firstProgressMs: request.streamTimeouts?.firstProgressMs ?? STREAM_SILENT_TIMEOUT_MS,
+            progressMs: request.streamTimeouts?.progressMs ?? STREAM_SILENT_TIMEOUT_MS,
+          },
           reportAttempt,
           calling(next) {
             if (controller.signal.aborted)

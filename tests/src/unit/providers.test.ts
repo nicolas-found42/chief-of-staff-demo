@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod/v3";
 import {
   ExtractionWireSchema,
+  ModelAttemptEventSchema,
   type ModelBoundaryDiagnostic,
   type ModelAttemptEvent,
 } from "@chief-of-staff-demo/shared";
@@ -35,6 +36,7 @@ interface Call {
  * is a transport that never reached the provider at all.
  */
 interface Reply {
+  headers?: Record<string, string>;
   status?: number;
   body?: unknown;
   text?: string;
@@ -133,7 +135,7 @@ async function queuedResponse(queued: Reply, signal?: AbortSignal | null): Promi
   }
   return new Response(queued.text ?? JSON.stringify(queued.body), {
     status: queued.status ?? 200,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...queued.headers },
   });
 }
 
@@ -151,6 +153,7 @@ it("keeps the absolute request ceiling above both stream ceilings", () => {
   expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(SMALL_REQUEST_TIMEOUT_MS);
 });
 beforeEach(() => {
+  vi.spyOn(Math, "random").mockReturnValue(1);
   calls.length = 0;
   responses.length = 0;
   catalogues.length = 0;
@@ -774,6 +777,113 @@ describe("providers", () => {
   });
   it("defaults the thinking depth to low", () => {
     expect(DEFAULT_REASONING_EFFORT).toBe("low");
+  });
+
+  it("honors server retry delay for transient HTTP refusal inside the original deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("response_format"));
+      responses.push(
+        {
+          status: 429,
+          headers: { "retry-after": "2" },
+          body: { error: { code: 429, message: "Busy" } },
+        },
+        { sse: sseChatCompletion(JSON.stringify(RESULT)) },
+      );
+      const events: ModelAttemptEvent[] = [];
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/server-delay", apiKey: "test" },
+        "/nonexistent",
+      );
+      const result = complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        retry: { onAttempt: (event) => events.push(event) },
+      }).catch(modelBoundaryDiagnostic);
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(calls).toHaveLength(1);
+      expect(events[0]).toMatchObject({ outcome: "retrying", delayMs: 2000 });
+      expect(ModelAttemptEventSchema.safeParse(events[0]).success).toBe(true);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(await result).toEqual(RESULT);
+      expect(calls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["120", "Wed, 09 Sep 2026 12:02:00 GMT"])(
+    "does not shorten an unbudgetable Retry-After %s",
+    async (hint) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-09T12:00:00Z"));
+      try {
+        declarations.push(declaring("response_format"));
+        responses.push({
+          status: 503,
+          headers: { "retry-after": hint },
+          body: { error: { code: 503, message: "Busy" } },
+        });
+        const events: ModelAttemptEvent[] = [];
+        const complete = makeCompleteJson(
+          { provider: "openrouter", model: "some/long-server-delay", apiKey: "test" },
+          "/nonexistent",
+        );
+        const result = complete({
+          system: "S",
+          user: "U",
+          schema: ExtractionWireSchema,
+          absoluteCeilingMs: 60000,
+          retry: { onAttempt: (event) => events.push(event) },
+        }).catch(modelBoundaryDiagnostic);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(await result).toMatchObject({ classification: "http_error", status: 503 });
+        expect(calls).toHaveLength(1);
+        expect(events.at(-1)?.stoppedReason).toContain("Insufficient original deadline");
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("separates first-progress allowance from an established stream's stalled-progress allowance", async () => {
+    vi.useFakeTimers();
+    try {
+      declarations.push(declaring("response_format"));
+      responses.push({
+        sseDrip: {
+          intervalMs: 2000,
+          lines: [
+            ": ping",
+            ": ping",
+            'data: {"choices":[{"delta":{"content":"{"}}]}',
+            ": ping",
+            ": ping",
+            ": ping",
+          ],
+        },
+      });
+      const complete = makeCompleteJson(
+        { provider: "openrouter", model: "some/phase-timeouts", apiKey: "test" },
+        "/nonexistent",
+      );
+      let observed: unknown;
+      void complete({
+        system: "S",
+        user: "U",
+        schema: ExtractionWireSchema,
+        streamTimeouts: { firstProgressMs: 10000, progressMs: 3000 },
+      }).catch((error) => {
+        observed = modelBoundaryDiagnostic(error);
+      });
+      await vi.advanceTimersByTimeAsync(9001);
+      expect(observed).toMatchObject({ classification: "request_timeout", timeoutMs: 3000 });
+      expect(calls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("openrouter: persistent opted-in idle failures stop after one additional attempt", async () => {

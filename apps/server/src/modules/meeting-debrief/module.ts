@@ -7,10 +7,9 @@ import type {
 import {
   MEETING_DEBRIEF_MODULE_ID,
   MEETING_DEBRIEF_MODULE_VERSION,
-  MeetingDebriefExtractionSchema,
 } from "@chief-of-staff-demo/shared";
 import type { CompleteJson } from "../../llm/providers.js";
-import { modelDiagnosticEventDetail, parseResultShape } from "../../llm/failure.js";
+import { modelDiagnosticEventDetail } from "../../llm/failure.js";
 import { errorMessage } from "../../engine/failure.js";
 import type { RunOutcome } from "../../runs.js";
 import type { RunContext, ShellModule } from "../../engine/module.js";
@@ -29,17 +28,9 @@ import {
   serializeReviewState,
   type DebriefApprovalGateDeps,
 } from "./review.js";
-import {
-  actionItemEvidence,
-  buildDebriefMessages,
-  clampDueDates,
-  dropActionItemEvidence,
-  resolveActionItemOwners,
-  stripFulfilledActionItems,
-  stripRestatedDecisions,
-  stripUnverifiedRecipientEmails,
-} from "./extraction.js";
+import { resolveActionItemOwners, stripUnverifiedRecipientEmails } from "./extraction.js";
 import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
+import { extractDebriefCandidates } from "./candidate-extraction.js";
 import { composeExternalDebriefBody } from "./externalBody.js";
 
 export type {
@@ -47,8 +38,6 @@ export type {
   DebriefExtractInput,
   DebriefIdentityReviewReader,
 } from "./deps.js";
-
-const MAX_EXTRACT_ATTEMPTS = 3;
 
 /**
  * The Module's input. `fresh` comes from the Catalog's mining hand-off,
@@ -182,56 +171,52 @@ async function extractWithModel(
   record: TranscriptRecord,
   identity: DebriefIdentityReview,
   deps: MeetingDebriefModuleDeps,
+  useCheckpoints: boolean,
 ): Promise<MeetingDebriefExtraction> {
   if (!deps.getCompleteJson) {
     throw new Error("Meeting Debrief extraction provider is unavailable");
   }
-  const messages = buildDebriefMessages(record, identity);
-  let lastFailure: unknown = null;
-  let parsed: MeetingDebriefExtraction | null = null;
-  for (let round = 1; round <= MAX_EXTRACT_ATTEMPTS; round++) {
-    const attempt = ctx.attempt();
-    const llm = deps.getLlmInfo?.() ?? { provider: "unknown", model: "unknown" };
-    ctx.event("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
-    try {
-      const raw = await deps.getCompleteJson()({
-        system: messages.system,
-        user: messages.user,
-        schema: messages.schema,
-        temperature: 0,
-      });
-      parsed = stripRestatedDecisions(
-        stripFulfilledActionItems(
-          clampDueDates(
-            parseResultShape(
-              "MeetingDebriefExtraction",
-              MeetingDebriefExtractionSchema,
-              dropActionItemEvidence(raw),
-            ),
-            record,
-          ),
-          actionItemEvidence(raw),
-          record,
-        ),
-      );
-      ctx.event("extract_ok", { attempt });
-      break;
-    } catch (error) {
-      ctx.event("extract_error", {
-        attempt,
-        error: errorMessage(error),
-        ...modelDiagnosticEventDetail(error),
-      });
-      lastFailure = error;
-    }
+  const attempt = ctx.attempt();
+  const llm = deps.getLlmInfo?.() ?? { provider: "unknown", model: "unknown" };
+  ctx.event("extract_attempt", { attempt, provider: llm.provider, model: llm.model });
+  try {
+    const parsed = await extractDebriefCandidates({
+      record,
+      identity,
+      complete: deps.getCompleteJson(),
+      ...(useCheckpoints
+        ? {
+            checkpoint: {
+              scope: JSON.stringify(llm),
+              read: (key: string): unknown => {
+                const saved = ctx.readFile(`debrief-checkpoint-${key}.json`);
+                if (saved === null) return undefined;
+                try {
+                  return JSON.parse(saved) as unknown;
+                } catch {
+                  return undefined;
+                }
+              },
+              write: (key: string, value: unknown) =>
+                ctx.writeFile(`debrief-checkpoint-${key}.json`, JSON.stringify(value)),
+            },
+          }
+        : {}),
+      progress: (event) => ctx.event("debrief_extraction_progress", event),
+      retry: { onAttempt: (event) => ctx.event("model_attempt", { ...event }) },
+      capture: (name, value) =>
+        ctx.writeFile(`candidate-${attempt}-${name}.json`, JSON.stringify(value, null, 2)),
+    });
+    ctx.event("extract_ok", { attempt });
+    return parsed;
+  } catch (error) {
+    ctx.event("extract_error", {
+      attempt,
+      error: errorMessage(error),
+      ...modelDiagnosticEventDetail(error),
+    });
+    throw error;
   }
-  if (!parsed) {
-    if (Object.keys(modelDiagnosticEventDetail(lastFailure)).length > 0) {
-      throw lastFailure;
-    }
-    throw new Error(`extraction failed after ${MAX_EXTRACT_ATTEMPTS} attempts`);
-  }
-  return parsed;
 }
 
 /** The current stored debrief, for merging a regenerated field into. */
@@ -262,11 +247,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
   const extract = async (
     ctx: RunContext,
     record: TranscriptRecord,
+    useCheckpoints = true,
   ): Promise<MeetingDebriefExtraction> => {
     const identity = deps.identity.reviewFor(record.id);
     const debrief = deps.extract
       ? await deps.extract({ record, identity })
-      : await extractWithModel(ctx, record, identity, deps);
+      : await extractWithModel(ctx, record, identity, deps, useCheckpoints);
     const resolved = resolveActionItemOwners(debrief, deps.identity.reviewFor(record.id));
     return stripUnverifiedRecipientEmails(resolved, record);
   };
@@ -324,7 +310,7 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       // sees exactly what every other generation saw — the immutable record
       // and the Catalog's review state. The replaced value is not an input.
       const merged = await ctx.stage("regenerate", async () => {
-        const debrief = await extract(ctx, record);
+        const debrief = await extract(ctx, record, false);
         const merged = mergeRegeneratedField(currentDebrief(ctx), request.field, debrief);
         storeResult(ctx, merged, transcriptId);
         /* A regeneration is an extraction, so its proposals reach the queue

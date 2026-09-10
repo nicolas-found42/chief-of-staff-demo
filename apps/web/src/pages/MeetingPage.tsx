@@ -796,7 +796,13 @@ export function MeetingPage({ client = meetingsApi }: { client?: MeetingsClient 
             linkReady={false}
           />
           <p>
-            {readView.meeting.pendingCount === null ? (
+            {readView.meeting.pendingCount === 0 &&
+            ["queued", "processing"].includes(readView.meeting.debrief.status) ? (
+              <span role="status">Extracting action items…</span>
+            ) : readView.meeting.pendingCount === 0 &&
+              readView.meeting.debrief.status === "failed" ? (
+              "Action items unavailable — debrief extraction failed."
+            ) : readView.meeting.pendingCount === null ? (
               "Pending Action Item count unavailable"
             ) : (
               <Link to={`/meetings/${meeting.id}?tab=debrief#action-items`}>

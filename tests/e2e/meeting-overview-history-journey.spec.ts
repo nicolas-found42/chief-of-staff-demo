@@ -22,9 +22,7 @@ test("recent results and contextual review survive a failed Brief and a later fa
   await expect(today).toContainText("Brief failed");
   await expect(today).not.toContainText("47");
   await expect(recent.getByRole("link", { name: "Debrief ready", exact: true })).toHaveCount(5);
-  await expect(
-    page.getByText("47 pending action items from 5 meetings", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("Awaiting approval (47)", { exact: true })).toBeVisible();
   await page.route(`**/api/runs/${fixture.briefRunId}/retry`, (route) =>
     route.fulfill({ status: 503, json: { error: "retry unavailable" } }),
   );
@@ -46,8 +44,12 @@ test("recent results and contextual review survive a failed Brief and a later fa
   await expect(page.getByText("We agreed on the September 5 plan.", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Action Items", exact: true })).toBeVisible();
   await page.goto("/meetings");
-  await page.getByRole("link", { name: "Review 11 action items", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tasks\\?meetingId=${latest.id}#action-items`));
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "September 5 planning · 11 pending" })
+    .getByRole("link", { name: "Review on source Meeting" })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/meetings/${latest.id}\\?tab=debrief#action-items`));
   await expect(page.getByText(/From Sep 5, 2026/).first()).toBeVisible();
   await expect(page.getByText(/Proposed due Sep 6, 2026 — in the past/).first()).toBeVisible();
   const proposal = page
@@ -58,19 +60,18 @@ test("recent results and contextual review survive a failed Brief and a later fa
   await expect(proposal).toContainText("Stored excerpt and timestamp unavailable");
   await proposal.getByRole("button", { name: "Dismiss", exact: true }).click();
   await page.goto("/meetings");
-  await expect(
-    page.getByText("46 pending action items from 5 meetings", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "Review 10 action items", exact: true }).click();
+  await expect(page.getByText("Awaiting approval (46)", { exact: true })).toBeVisible();
   await page
-    .getByRole("region", { name: "Dismissed", exact: true })
-    .getByRole("button", { name: "Restore to pending", exact: true })
+    .getByRole("listitem")
+    .filter({ hasText: "September 5 planning · 10 pending" })
+    .getByRole("link", { name: "Review on source Meeting" })
     .click();
+  await page.getByText("Reviewed Action Items (1)", { exact: true }).click();
+  await page.getByRole("button", { name: "Restore to pending", exact: true }).click();
   await page.goto("/meetings");
-  await expect(
-    page.getByText("47 pending action items from 5 meetings", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("Awaiting approval (47)", { exact: true })).toBeVisible();
   await page.goto(`/tasks?meetingId=${fixture.recent[3].id}#action-items`);
+  await page.getByRole("link", { name: "Review on source Meeting", exact: true }).click();
   const withEvidence = page
     .getByRole("listitem")
     .filter({ has: page.getByRole("heading", { name: "Follow up tomorrow 4-1", exact: true }) });
@@ -250,7 +251,7 @@ test("current specialist Debrief link resolves to its owning Meeting", async ({
   await expect(page.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
 });
 
-test("weekly work previews show bounded rows, full totals and working filtered links", async ({
+test("weekly work keeps accepted Task previews and complete Meeting approval navigation", async ({
   page,
   request,
 }) => {
@@ -276,8 +277,9 @@ test("weekly work previews show bounded rows, full totals and working filtered l
   await expect(overdue.getByRole("listitem")).toHaveCount(5);
   await expect(page.getByText("Workspace-wide work", { exact: true })).toBeVisible();
   const pending = page.getByRole("region", { name: "Action Items awaiting review", exact: true });
-  await expect(pending.getByRole("heading", { level: 3 })).toHaveCount(3);
-  await expect(pending.getByRole("listitem")).toHaveCount(9);
+  await expect(pending).toContainText("Awaiting approval (47)");
+  await expect(pending.getByRole("listitem")).toHaveCount(5);
+  await expect(pending.getByRole("button", { name: "Create Task", exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "View all 7 overdue Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Weekly overdue 6", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Weekly due 0", exact: true })).toHaveCount(0);
@@ -396,14 +398,6 @@ test("earlier Debrief links retain their exact version and current links resolve
         ).status,
     )
     .toBe("done");
-  const { promise: releaseRead, resolve: release } = Promise.withResolvers<void>();
-  let delayed = false;
-  await page.route(`**/api/action-items?meetingId=${latest.id}`, async (route) => {
-    delayed = true;
-    const response = await route.fetch();
-    await releaseRead;
-    await route.fulfill({ response });
-  });
   await page.goto(`/meeting-debrief/${latest.runId}`);
   await expect(
     page.getByText("Earlier version · this link retains the original Debrief.", { exact: true }),
@@ -411,16 +405,9 @@ test("earlier Debrief links retain their exact version and current links resolve
   await expect(page.getByText("We agreed on the September 5 plan.", { exact: true })).toBeVisible();
   await expect(page.getByText("Revised September 5 summary.", { exact: true })).toHaveCount(0);
   const actions = page.getByRole("region", { name: "Action Items", exact: true });
-  await expect(actions).toContainText("11 pending · 0 reviewed");
-  expect(delayed).toBe(true);
-  const returned = page.waitForResponse((response) =>
-    response.url().includes(`/api/action-items?meetingId=${latest.id}`),
-  );
-  release();
-  await (await returned).finished();
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-  expect(await actions.textContent()).toContain("11 pending · 0 reviewed");
-  await page.unroute(`**/api/action-items?meetingId=${latest.id}`);
+  await expect(actions).toContainText("Original extracted proposals");
+  await expect(actions.getByRole("button", { name: "Create Task", exact: true })).toHaveCount(0);
+  await expect(actions.getByRole("link", { name: "Review on source Meeting" })).toBeVisible();
 
   await page.goto(`/meeting-debrief/${next.runId}`);
   await expect(page).toHaveURL(new RegExp(`/meetings/${latest.id}\\?tab=debrief`));

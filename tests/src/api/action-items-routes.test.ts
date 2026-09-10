@@ -190,6 +190,60 @@ async function queue(query = ""): Promise<ActionItem[]> {
 }
 
 describe("materializing Action Items from a Debrief", () => {
+  it("preserves execution context and shared responsibility through canonical promotion", async () => {
+    const handoff = {
+      version: 1 as const,
+      commitment: "explicit" as const,
+      purpose: "Make the rollout verifiable",
+      responsibility: {
+        names: ["Alice", "Bob"],
+        basis: "explicit" as const,
+        reason: "We will do this together",
+      },
+      completionCriteria: [{ text: "A recorded successful rollout", basis: "inferred" as const }],
+      requiredInputs: ["Rollout plan"],
+      missingInputs: [
+        {
+          information: "Deployment access",
+          obtainBy: "Ask the deployment administrator",
+          basis: "inferred" as const,
+        },
+      ],
+      dependencies: [
+        {
+          actionTitle: "Approve the rollout plan",
+          condition: "Only after approval",
+          basis: "explicit" as const,
+        },
+      ],
+      timing: {
+        kind: "deadline" as const,
+        stated: "After approval",
+        referenceDate: "2026-08-17",
+        reasoning: "A trigger, not a deadline",
+      },
+      evidence: [{ quote: "We will do this together", speaker: "Alice", timestamp: "01:12" }],
+      statusReasoning: "The rollout is still outstanding",
+    };
+    proposed = [{ ...proposal(), handoff }];
+    await debrief();
+    const [item] = await queue();
+    expect(item).toMatchObject({ handoff, proposal: { responsiblePerson: null } });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/action-items/${item.id}/promote`,
+      payload: {},
+    });
+    expect(response.statusCode).toBe(201);
+    const task = response.json<{ task: { notes: string; source: { actionItemId: string } } }>()
+      .task;
+    expect(task.notes).toContain("Make the rollout verifiable");
+    expect(task.notes).toContain("[inferred] A recorded successful rollout");
+    expect(task.notes).toContain("Ask the deployment administrator");
+    expect(task.notes).toContain("We will do this together");
+    expect(task.source.actionItemId).toBe(item.id);
+  });
+
   it("records one Action Item per proposed commitment, retaining its whole source", async () => {
     proposed = [proposal(), proposal({ title: "Send Bob the rollout plan", owner: "Bob" })];
 

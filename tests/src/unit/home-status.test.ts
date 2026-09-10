@@ -265,3 +265,28 @@ describe("Home's attention rail", () => {
     expect(rows.some((row) => /google/i.test(`${row.text} ${row.cta}`))).toBe(false);
   });
 });
+
+it("does not expose proposal text through Home's secondary meeting activity or attention feed", () => {
+  const status = homeStatus(
+    [
+      {
+        ...run("finished", "done"),
+        module: "meeting-debrief",
+        summary: "Pending: send the secret pricing proposal",
+      },
+      {
+        ...run("waiting", "blocked"),
+        module: "meeting-debrief",
+        wait: {
+          reason: "Approve the secret pricing proposal",
+          requestedAt: "2026-09-09T00:00:00Z",
+          stage: "review",
+          timeout: { kind: "none" },
+        },
+      },
+    ],
+    REAL,
+    false,
+  );
+  expect(JSON.stringify(status)).not.toContain("secret pricing proposal");
+});

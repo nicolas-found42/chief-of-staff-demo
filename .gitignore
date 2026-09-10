@@ -63,3 +63,17 @@ previous-session.md
 
 # Benchmark judge-response cache: local spend avoidance, never a record.
 /.cache/
+
+# Private Meeting Debrief investigation data and reports. The public repository
+# retains the implementation and synthetic regressions; source transcripts,
+# model requests/replies, and reports quoting those meetings stay on this machine.
+/tests/fixtures/operational-handoff/*
+!/tests/fixtures/operational-handoff/README.md
+/docs/research/candidate-accounting-*.md
+/docs/research/extraction-*.md
+/docs/research/extraction-audit-2026-09-10-*/
+/docs/research/mercury-timeouts-*/
+/docs/research/mercury-timeouts-and-retries-*.md
+/docs/research/operational-handoff-*.md
+/docs/research/operational-handoff-evaluation-*/
+/docs/specs/operational-handoff-and-meeting-approval-plan.md

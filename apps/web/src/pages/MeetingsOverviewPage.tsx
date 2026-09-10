@@ -1,3 +1,4 @@
+import { ProposalMeetingNavigation } from "../components/ProposalMeetingNavigation";
 import { useReadingPosition } from "../useReadingPosition";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -6,7 +7,7 @@ import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { tasksApi, type TasksClient } from "../clients/tasks";
 import { MeetingWizardTabs } from "../components/MeetingWizardTabs";
 import { MeetingReadRow } from "../components/MeetingReadRow";
-import { meetingDate, proposedDue } from "../meetingDisplay";
+import { meetingDate } from "../meetingDisplay";
 import { usePageFocus } from "../usePageFocus";
 import { useTitle } from "../useTitle";
 import "./meetingWizard.css";
@@ -164,80 +165,10 @@ export function MeetingsOverviewPage({
           </span>
           <h2 id="wizard-work-heading">Your work</h2>
         </div>
-        <h3>Workspace review backlog</h3>
-        {view?.proposals ? (
-          <>
-            <p>
-              {view.proposals.total} pending action items from {view.proposals.meetingCount}{" "}
-              meetings
-              {view.proposals.missingSourceCount
-                ? ` · ${view.proposals.missingSourceCount} without an available source Meeting`
-                : ""}
-            </p>
-            {view.proposals.total === 0 ? <p>No pending proposals.</p> : null}
-            {view.proposals.groups.map((group) => (
-              <section className="proposal-group" key={group.meetingId ?? "unavailable"}>
-                <h4>
-                  {group.meetingId ? (
-                    <Link to={`/meetings/${group.meetingId}`}>{group.title}</Link>
-                  ) : (
-                    group.title
-                  )}
-                </h4>
-                <p>
-                  {group.date
-                    ? `From ${meetingDate(group.date)}`
-                    : "Source Meeting date unavailable"}{" "}
-                  · {group.count} pending
-                </p>
-                <ul>
-                  {group.items.map((item) => (
-                    <li key={item.id}>
-                      <p>{item.proposal.title}</p>
-                      <p className="muted">
-                        {item.proposal.responsiblePerson
-                          ? item.proposal.responsiblePerson.kind === "owner"
-                            ? "You"
-                            : (item.evidence.responsibleSurfaceName ??
-                              "Assigned Responsible Person")
-                          : "Unassigned"}
-                        {item.evidence.responsibleSurfaceName && !item.proposal.responsiblePerson
-                          ? ` · Proposed name: ${item.evidence.responsibleSurfaceName}`
-                          : ""}{" "}
-                        · {proposedDue(item.proposal.dueDate, view.localToday)}
-                        {group.date && group.meetingId ? (
-                          <>
-                            {" "}
-                            ·{" "}
-                            <Link to={`/meetings/${group.meetingId}?tab=debrief`}>
-                              From {meetingDate(group.date)}
-                            </Link>
-                          </>
-                        ) : (
-                          ""
-                        )}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  to={
-                    group.meetingId
-                      ? `/tasks?meetingId=${encodeURIComponent(group.meetingId)}#action-items`
-                      : "/tasks#action-items"
-                  }
-                >
-                  Review {group.count} action items
-                </Link>
-              </section>
-            ))}
-            <p>
-              <Link to="/tasks#action-items">Review all pending action items</Link>
-            </p>
-          </>
-        ) : (
-          <p role="status">Proposal counts unavailable.</p>
-        )}
+        <div id="awaiting-approval">
+          <h3>Meetings awaiting approval</h3>
+          <ProposalMeetingNavigation />
+        </div>
         <h3>
           Tasks
           {work && !workError ? ` (${work.counts.open} open · ${work.counts.overdue} overdue)` : ""}
