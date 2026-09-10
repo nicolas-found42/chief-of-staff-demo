@@ -344,3 +344,57 @@ it("allocates no second record when a materialization was interrupted after its 
   expect(again.map((one) => one.id)).toEqual([first.id]);
   expect(actionItems.list()).toHaveLength(1);
 });
+
+it("keeps a legacy promoted decision and its Task relationship", () => {
+  const item = only(
+    legacyWorkspace({
+      state: "promoted",
+      promotedTaskId: "task_legacy_1",
+      decidedAt: "2026-09-05T09:00:00.000Z",
+    }).readActionItems(),
+  );
+
+  expect(item.state).toBe("promoted");
+  expect(item.promotedTaskId).toBe("task_legacy_1");
+  expect(item.decidedAt).toBe("2026-09-05T09:00:00.000Z");
+  expect(promotable(item)).toBe(false);
+  expect(item.amendments).toEqual([]);
+});
+
+it("reads a Task written before versions existed as the first version", () => {
+  const root = mkdtempSync(join(tmpdir(), "cos-action-item-identity-"));
+  roots.push(root);
+  mkdirSync(join(root, "tasks"), { recursive: true });
+  writeFileSync(
+    join(root, "tasks/tasks.json"),
+    `${JSON.stringify(
+      [
+        {
+          id: "task_legacy_1",
+          title: "Accepted before versions",
+          notes: "",
+          status: "open",
+          dueDate: null,
+          priority: "none",
+          listId: "inbox",
+          responsiblePerson: { kind: "owner" },
+          destination: { provider: "local" },
+          source: null,
+          createdAt: "2026-09-04T09:00:00.000Z",
+          updatedAt: "2026-09-04T09:00:00.000Z",
+          completedAt: null,
+        },
+      ],
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const tasks = new TaskStore(root).readTasks();
+
+  expect(tasks).toHaveLength(1);
+  expect(tasks[0].id).toBe("task_legacy_1");
+  expect(tasks[0].version).toBe(1);
+  expect(tasks[0].deletedAt).toBeNull();
+});
