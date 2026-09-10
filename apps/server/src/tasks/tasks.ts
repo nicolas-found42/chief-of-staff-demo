@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type {
+  ActionItem,
   ExternalTaskLink,
   Task,
   TaskCreateInput,
@@ -353,6 +354,18 @@ export class WorkspaceTasks {
    * of, and no route lets a request name a source of its own.
    */
   create(input: TaskCreateInput, source: TaskSource | null = null): Task {
+    const task = this.prepare(input, source);
+    this.store.writeTasks([...this.store.readTasks(), task]);
+    return task;
+  }
+
+  /**
+   * The Task a creation would commit, validated but not written (#355). The
+   * acceptance of an Action Item commits the Task and the Action Item's own
+   * decision in one publication, so it needs the record before the write
+   * rather than after it.
+   */
+  prepare(input: TaskCreateInput, source: TaskSource | null = null): Task {
     const title = requireTitle(input.title);
     const listId = input.listId ?? INBOX_TASK_LIST_ID;
     const list = this.getList(listId);
@@ -380,8 +393,23 @@ export class WorkspaceTasks {
       deletedAt: null,
       version: 1,
     };
-    this.store.writeTasks([...this.store.readTasks(), task]);
     return task;
+  }
+
+  /**
+   * Commit one accepted Task and the Action Items whose decision accepted it
+   * together. On the canonical bundle that is a single record and therefore a
+   * single commit: a Task that exists while its Action Item still reads
+   * pending is the orphan the recovery path has to clean up afterwards.
+   */
+  commitAcceptance(task: Task, actionItems: ActionItem[]): Task {
+    this.store.commitAcceptance([...this.store.readTasks(), task], actionItems);
+    return task;
+  }
+
+  /** The same Task, completed at this Workspace's clock. */
+  completedNow(task: Task): Task {
+    return { ...task, status: "completed", completedAt: this.now().toISOString() };
   }
 
   /**

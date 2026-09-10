@@ -262,6 +262,38 @@ export class WorkspaceActionItems {
   }
 
   /**
+   * The records that recording this promotion would commit, without
+   * committing them (#355). The Task acceptance writes them alongside the
+   * Task itself, in one publication.
+   */
+  stagePromotion(
+    actionItemId: string,
+    taskId: string,
+    versions: { taskVersion: number | null },
+    command: ActionItemCommand = {},
+  ): { committed: ActionItem; all: ActionItem[] | null } {
+    return this.stage(
+      actionItemId,
+      command,
+      (current, at, version) => ({
+        ...current,
+        state: "promoted",
+        promotedTaskId: taskId,
+        updatedAt: at,
+        decidedAt: at,
+        decisions: [
+          ...current.decisions,
+          decision("promote", at, command.actor ?? OWNER, current, version, {
+            taskId,
+            taskVersion: versions.taskVersion,
+          }),
+        ],
+      }),
+      { alreadyPromoted: true },
+    );
+  }
+
+  /**
    * Dismiss one pending Action Item (issue #179). Immediate and local-only:
    * no Task is created and no provider is reached — the proposal simply stops
    * being pending. Idempotent, so a double-clicked Dismiss is the same answer
@@ -603,6 +635,22 @@ export class WorkspaceActionItems {
     change: (current: ActionItem, at: string, version: number) => ActionItem | null,
     options: { alreadyPromoted?: boolean } = {},
   ): ActionItem {
+    const { committed, all } = this.stage(actionItemId, command, change, options);
+    if (all !== null) this.store.writeActionItems(all);
+    return committed;
+  }
+
+  /**
+   * The records a command would commit, without committing them (#355). Task
+   * acceptance needs the updated Action Item before the write, so that the
+   * Task and the decision that accepted it reach the Workspace together.
+   */
+  private stage(
+    actionItemId: string,
+    command: ActionItemCommand,
+    change: (current: ActionItem, at: string, version: number) => ActionItem | null,
+    options: { alreadyPromoted?: boolean } = {},
+  ): { committed: ActionItem; all: ActionItem[] | null } {
     const stored = this.store.readActionItems();
     const current = stored.find((item) => item.id === actionItemId);
     if (!current) {
@@ -626,12 +674,14 @@ export class WorkspaceActionItems {
     const at = this.now().toISOString();
     const version = current.version + 1;
     const next = change(current, at, version);
-    if (next === null) return current;
+    /* `all: null` is "nothing to write": an idempotent command is the same
+       answer, not a second commit that advances the record's version. */
+    if (next === null) return { committed: current, all: null };
     const committed: ActionItem = { ...next, version };
-    this.store.writeActionItems(
-      stored.map((item) => (item.id === actionItemId ? committed : item)),
-    );
-    return committed;
+    return {
+      committed,
+      all: stored.map((item) => (item.id === actionItemId ? committed : item)),
+    };
   }
 
   /** One checked output entry: its content and where the extraction saw it. */

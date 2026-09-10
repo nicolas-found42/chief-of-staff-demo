@@ -251,6 +251,30 @@ function acceptedWorkspace() {
   return { store, tasks, actionItems, deps: { tasks, actionItems } };
 }
 
+/** Put the Workspace on the canonical bundle, the way the cutover does. */
+function publishCanonical(store: TaskStore): void {
+  store.publishCutover(
+    { tasks: store.readTasks(), lists: [], actionItems: store.readActionItems() },
+    {
+      kind: "canonical-tasks",
+      workspace: "isolated",
+      fingerprint: "0".repeat(64),
+      counts: {
+        legacyRuns: 0,
+        receipts: 0,
+        tasks: 0,
+        actionItems: 0,
+        taskLists: 0,
+        tasksToCreate: 0,
+        actionItemsToCreate: 0,
+      },
+      authenticationPreserved: true,
+      historicalRunsPreserved: true,
+      completedAt: "2026-09-10T00:00:00.000Z",
+    },
+  );
+}
+
 it("suggests a change to an accepted Task without touching the Task", () => {
   const { tasks, actionItems, deps } = acceptedWorkspace();
   const [item] = actionItems.materialize(extraction([proposed()]));
@@ -439,4 +463,35 @@ it("writes the decision history a review surface reads back", () => {
     "select-proposal",
     "promote",
   ]);
+});
+
+it("commits the Task and the Action Item's acceptance in one canonical generation", () => {
+  const { store, actionItems, deps } = acceptedWorkspace();
+  publishCanonical(store);
+  const [item] = actionItems.materialize(extraction([proposed()]));
+  const before = store.readGeneration();
+
+  const { task } = promoteActionItem(deps, item.id, {});
+
+  /* One generation, not two: a Task that exists while the Action Item still
+     says pending is the orphan the recovery path exists to clean up, and the
+     canonical bundle can hold both in a single commit. */
+  expect(store.readGeneration()).toBe(before + 1);
+  expect(store.readTasks().map((one) => one.id)).toEqual([task.id]);
+  expect(store.readActionItems()[0].promotedTaskId).toBe(task.id);
+  expect(store.readActionItems()[0].state).toBe("promoted");
+});
+
+it("commits a completed acceptance in one canonical generation too", () => {
+  const { store, actionItems, deps } = acceptedWorkspace();
+  publishCanonical(store);
+  const [item] = actionItems.materialize(extraction([proposed()]));
+  const before = store.readGeneration();
+
+  const { task } = promoteActionItem(deps, item.id, { completed: true });
+
+  expect(store.readGeneration()).toBe(before + 1);
+  expect(store.readTasks()[0].status).toBe("completed");
+  expect(store.readTasks()[0].completedAt).not.toBeNull();
+  expect(store.readActionItems()[0].promotedTaskId).toBe(task.id);
 });

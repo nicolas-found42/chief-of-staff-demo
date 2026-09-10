@@ -126,6 +126,24 @@ export class TaskStore {
     this.write("actionItems", this.actionItemsFile, items);
   }
 
+  /**
+   * Commit Tasks and Action Items as one change (#355). On the canonical
+   * bundle both live in one record, so accepting a proposal is a single
+   * commit and there is no interval in which the Task exists and the
+   * decision that created it does not. A Workspace still on the per-record
+   * files gets two commits and keeps relying on orphan adoption (#352),
+   * which is the interval this cannot close there.
+   */
+  commitAcceptance(tasks: Task[], actionItems: ActionItem[]): void {
+    const bundle = this.bundle();
+    if (bundle) {
+      writeJsonVerifiedSync(this.snapshotFile, this.nextBundle({ ...bundle, tasks, actionItems }));
+      return;
+    }
+    writeJsonVerifiedSync(this.tasksFile, tasks);
+    writeJsonVerifiedSync(this.actionItemsFile, actionItems);
+  }
+
   cutoverReceipt(): TaskCutoverReceipt | null {
     return this.bundle()?.receipt ?? null;
   }

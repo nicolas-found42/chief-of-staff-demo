@@ -137,7 +137,7 @@ export function promoteActionItem(
       created: false,
     };
   }
-  const task = deps.tasks.create(
+  const prepared = deps.tasks.prepare(
     {
       title: input.title ?? actionItemProposal(item).title,
       notes: input.notes ?? actionItemProposal(item).notes,
@@ -158,14 +158,18 @@ export function promoteActionItem(
       meetingId: item.source.meetingId,
     },
   );
-  if (input.completed === true) {
-    deps.tasks.complete(task.id);
-  }
-  const actionItem = deps.actionItems.recordPromotion(
+  /* The meeting's work may already be done, and a Task created open and then
+     completed is two states the Workspace never needs to have held. */
+  const task = input.completed === true ? deps.tasks.completedNow(prepared) : prepared;
+  /* One publication (#355): the accepted Task, its initial state and the
+     Action Item's own decision reach the Workspace together, so there is no
+     interval in which the Task exists and nothing says who accepted it. */
+  const staged = deps.actionItems.stagePromotion(
     item.id,
     task.id,
     { taskVersion: task.version },
     { ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }) },
   );
-  return { task: deps.tasks.get(task.id) ?? task, actionItem, created: true };
+  deps.tasks.commitAcceptance(task, staged.all ?? deps.actionItems.list());
+  return { task: deps.tasks.get(task.id) ?? task, actionItem: staged.committed, created: true };
 }
