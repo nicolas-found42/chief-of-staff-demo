@@ -111,6 +111,14 @@ function isEligible(deps: AutoPromotionDeps, item: ActionItem): boolean {
   /* A decision already made — promoted or dismissed — is not automation's to
      revisit; a retry of this same materialization simply finds it made. */
   if (item.state !== "pending") return false;
+  if (
+    item.handoff &&
+    (item.handoff.commitment !== "explicit" ||
+      item.handoff.responsibility.basis !== "explicit" ||
+      item.handoff.responsibility.names.length !== 1 ||
+      item.handoff.evidence.length === 0)
+  )
+    return false;
   /* Only the first extraction's own proposals. A revision beyond the first is
      something the model said the second time around. */
   if (item.extractionRevision !== 1) return false;

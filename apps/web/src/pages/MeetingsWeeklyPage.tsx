@@ -1,11 +1,7 @@
+import { ProposalMeetingNavigation } from "../components/ProposalMeetingNavigation";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type {
-  ActionItem,
-  Task,
-  WeeklyMeeting,
-  WeeklyWorkspaceView,
-} from "@chief-of-staff-demo/shared";
+import type { Task, WeeklyMeeting, WeeklyWorkspaceView } from "@chief-of-staff-demo/shared";
 import { errorMessage } from "../client";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { MeetingWizardTabs } from "../components/MeetingWizardTabs";
@@ -76,17 +72,6 @@ function TaskLine({ task, today }: { task: Task; today: string }) {
         <span className="muted">Open</span>
       )}
       <span className="wizard-time">{task.dueDate ?? "No due date"}</span>
-    </li>
-  );
-}
-
-function ActionItemLine({ item }: { item: ActionItem }) {
-  return (
-    <li className="wizard-line">
-      <Link to={`/tasks#action-item-${item.id}`}>{item.proposal.title}</Link>
-      <span className="wizard-leader" aria-hidden="true" />
-      <span className="muted">Awaiting review</span>
-      <span className="wizard-time">{item.proposal.dueDate ?? "No proposed date"}</span>
     </li>
   );
 }
@@ -207,28 +192,6 @@ export function MeetingsWeeklyPage({ client = meetingsApi }: { client?: Meetings
   useTitle("This week");
   const headingRef = usePageFocus<HTMLHeadingElement>();
   const [view, setView] = useState<WeeklyWorkspaceView | null>(null);
-  const [meetingNames, setMeetingNames] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let live = true;
-    void client
-      .meetings()
-      .then((result) => {
-        if (live)
-          setMeetingNames(
-            Object.fromEntries(result.meetings.map((meeting) => [meeting.id, meeting.title])),
-          );
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [client]);
-  const pendingGroups = new Map<string | null, ActionItem[]>();
-  for (const item of view?.pending ?? []) {
-    const key = item.source.meetingId;
-    pendingGroups.set(key, [...(pendingGroups.get(key) ?? []), item]);
-  }
-
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -377,48 +340,7 @@ export function MeetingsWeeklyPage({ client = meetingsApi }: { client?: Meetings
           </p>
           <section className="wizard-section" aria-labelledby="weekly-pending-heading">
             <h2 id="weekly-pending-heading">Action Items awaiting review</h2>
-            <p className="muted">
-              {plural(view.pending.length, "Action Item")} from {pendingGroups.size} source-Meeting
-              groups
-            </p>
-            {view.pending.length === 0 ? (
-              <p className="wizard-empty">Nothing is waiting on a decision.</p>
-            ) : (
-              [...pendingGroups].slice(0, 3).map(([meetingId, items]) => (
-                <div key={meetingId ?? "unavailable"}>
-                  <h3>
-                    {meetingId ? (
-                      <Link to={`/meetings/${meetingId}?tab=debrief#action-items`}>
-                        {meetingNames[meetingId] ?? "Source Meeting"}
-                      </Link>
-                    ) : (
-                      "Source Meeting unavailable"
-                    )}
-                  </h3>
-                  <ul className="wizard-ledger">
-                    {items.slice(0, 3).map((item) => (
-                      <ActionItemLine key={item.id} item={item} />
-                    ))}
-                  </ul>
-                  <p>
-                    <Link
-                      to={
-                        meetingId
-                          ? `/tasks?meetingId=${meetingId}#action-items`
-                          : "/tasks?source=unavailable#action-items"
-                      }
-                    >
-                      View all {items.length} pending Action Items from this source
-                    </Link>
-                  </p>
-                </div>
-              ))
-            )}
-            <p>
-              <Link to="/tasks#action-items">
-                View all {view.pending.length} pending Action Items
-              </Link>
-            </p>
+            <ProposalMeetingNavigation />
           </section>
         </>
       )}

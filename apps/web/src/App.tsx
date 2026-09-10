@@ -1,3 +1,4 @@
+import { MeetingRecoveryPage } from "./pages/MeetingRecoveryPage";
 import { MeetingsHistoryPage } from "./pages/MeetingsHistoryPage";
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
@@ -236,6 +237,7 @@ export function App() {
           <Route path="/meetings" element={<MeetingsOverviewPage />} />
           <Route path="/meetings/history" element={<MeetingsHistoryPage />} />
           <Route path="/meetings/weekly" element={<MeetingsWeeklyPage />} />
+          <Route path="/meetings/recovery/:runId" element={<MeetingRecoveryPage />} />
           <Route path="/meetings/:meetingId" element={<MeetingPage />} />
           <Route path="/meetings/brief" element={<MeetingBriefPage />} />
           <Route path="/meetings/brief/:occurrenceKey" element={<MeetingBriefPage />} />

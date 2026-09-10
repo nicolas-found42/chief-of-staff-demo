@@ -8,28 +8,18 @@
  */
 import { spawnSync } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { readdirSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  actionItemEvidence,
-  buildDebriefMessages,
-  clampDueDates,
-  dropActionItemEvidence,
-  stripFulfilledActionItems,
-  stripRestatedDecisions,
-} from "../apps/server/src/modules/meeting-debrief/extraction.js";
+import { extractDebriefCandidates } from "../apps/server/src/modules/meeting-debrief/candidate-extraction.js";
+import type { MeetingDebriefExtraction } from "../packages/shared/src/meeting-debrief.js";
 import { makeCompleteJson, type CompleteJson } from "../apps/server/src/llm/providers.js";
-import { modelBoundaryDiagnostic } from "../apps/server/src/llm/failure.js";
-import { MeetingDebriefExtractionSchema } from "../packages/shared/src/meeting-debrief.js";
+import { modelDiagnosticEventDetail } from "../apps/server/src/llm/failure.js";
+import type { ModelAttemptEvent } from "../packages/shared/src/llm.js";
 import type { TranscriptRecord } from "../packages/shared/src/transcript.js";
 
 const DEFAULT_MODELS = ["upstage/solar-pro4"];
 const DEFAULT_OUTDIR = "/tmp/debrief-gate";
 const DEFAULT_GLOB = "tests/fixtures/debrief-golden/transcripts/*.md";
-/** One transcript×model run is tried this many times before it is called failed. */
-const MAX_ATTEMPTS = 10;
-/** A run stops retrying once its attempts have cumulatively cost this long. */
-const RETRY_BUDGET_MS = 60_000;
 const DEFAULT_CONCURRENCY = 20;
 
 type Options = {
@@ -158,13 +148,9 @@ async function runOne(
     speakers: [],
     roster: [],
   } as unknown as TranscriptRecord;
-  const messages = buildDebriefMessages(record, {
-    mentions: [],
-    decisions: [],
-    organizations: [],
-  });
   const started = Date.now();
   let raw: unknown = null;
+  let extraction: MeetingDebriefExtraction | null = null;
   let attempts = 0;
   let lastDetail = "";
   let lastDiagnostic: unknown = null;
@@ -177,45 +163,33 @@ async function runOne(
     diagnostic: lastDiagnostic,
   });
   let failure: ErrorFile | null = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    if (attempt > 1 && Date.now() - started >= RETRY_BUDGET_MS) {
+  const onAttempt = (event: ModelAttemptEvent): void => {
+    attempts += 1;
+    if (event.diagnostic) lastDiagnostic = event.diagnostic;
+    if (event.outcome === "retrying")
       console.log(
-        `${tag} retry budget exhausted after ${attempt - 1} attempt(s), ${Date.now() - started}ms cumulative`,
+        `${tag} attempt ${event.attempt}: ${event.diagnostic?.classification ?? "binding recovery"}; retry after ${event.delayMs}ms`,
       );
-      failure = recordFailure();
-      break;
-    }
-    attempts = attempt;
-    const t0 = Date.now();
-    try {
-      raw = await complete({
-        system: messages.system,
-        user: messages.user,
-        schema: messages.schema,
-        temperature: 0,
-      });
-      break;
-    } catch (error) {
-      const ms = Date.now() - t0;
-      lastDetail = errorMessage(error);
-      if (attempt < MAX_ATTEMPTS) {
-        console.log(
-          `${tag} attempt ${attempt}/${MAX_ATTEMPTS} failed after ${ms}ms: ${lastDetail}`,
-        );
-        continue;
-      }
-      lastDiagnostic = modelBoundaryDiagnostic(error);
-      console.log(
-        `${tag} FAILED after ${attempt} attempt(s) / ${Date.now() - started}ms — last error after ${ms}ms: ${lastDetail}`,
-      );
-      console.log(
-        `${tag}   diagnostic: ${JSON.stringify(
-          lastDiagnostic ?? { note: "failure did not cross the model seam" },
-        )}`,
-      );
-      failure = recordFailure();
-      break;
-    }
+  };
+  try {
+    extraction = await extractDebriefCandidates({
+      record,
+      identity: { mentions: [], decisions: [], organizations: [] },
+      complete,
+      retry: { onAttempt },
+      capture: (name, value) => {
+        writeFileSync(`${outFile}.candidate-${name}.json`, JSON.stringify(value, null, 2));
+        if (name === "assembled") raw = value;
+      },
+    });
+  } catch (error) {
+    lastDetail = errorMessage(error);
+    lastDiagnostic = modelDiagnosticEventDetail(error);
+    failure = recordFailure();
+    console.log(
+      `${tag} FAILED after ${attempts} attempt(s) / ${Date.now() - started}ms: ${lastDetail}`,
+    );
+    console.log(`${tag} diagnostic: ${JSON.stringify(lastDiagnostic)}`);
   }
   if (failure) {
     await writeErrorFile(errFile, outFile, failure);
@@ -223,19 +197,8 @@ async function runOne(
   }
   const ms = Date.now() - started;
   try {
-    const checked = MeetingDebriefExtractionSchema.safeParse(dropActionItemEvidence(raw));
-    const parsed = checked.success
-      ? {
-          success: true as const,
-          data: stripRestatedDecisions(
-            stripFulfilledActionItems(
-              clampDueDates(checked.data, record),
-              actionItemEvidence(raw),
-              record,
-            ),
-          ),
-        }
-      : checked;
+    if (extraction === null) throw new Error("Candidate extraction did not return a result");
+    const parsed = { success: true as const, data: extraction };
     await writeFile(
       outFile,
       JSON.stringify(
@@ -243,22 +206,17 @@ async function runOne(
           model,
           ms,
           valid: parsed.success,
-          /* What the production pipeline would store: the extraction after the
-             module's dueDate clamp. The literal model reply rides beside it. */
-          raw: parsed.success ? parsed.data : raw,
+          /* Normalized output plus the deterministic pre-normalization assembly.
+             Individual model replies are retained in candidate artifacts. */
+          raw: parsed.data,
           modelRaw: raw,
+          strategy: "candidate-accounting-v12",
         },
         null,
         2,
       ),
     );
     await discard(errFile);
-    if (!parsed.success) {
-      console.log(`${tag} INVALID after ${ms}ms: first of ${parsed.error.issues.length} issues:`);
-      for (const issue of parsed.error.issues.slice(0, 5))
-        console.log(`${tag}   ${issue.path.join(".")}: ${issue.message}`);
-      return "invalid";
-    }
     const d = parsed.data;
     console.log(
       `${tag} OK ${ms}ms summary=${d.summary.length}ch decisions=${d.decisions.length} actions=${d.actionItems.length} questions=${d.openQuestions.length} recipients=${d.suggestedRecipients.length}`,

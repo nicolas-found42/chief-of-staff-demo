@@ -98,7 +98,9 @@ export function homeStatus(
   const needsAction = runs.filter((run) => run.status === "failed");
   const interrupted = needsAction.filter((run) => isExpectedConnectionExpiry(run.connectionState));
   const failed = needsAction.filter((run) => !isExpectedConnectionExpiry(run.connectionState));
-  const blocked = runs.filter((run) => run.status === "blocked");
+  const blocked = runs.filter(
+    (run) => run.status === "blocked" && run.module !== "meeting-debrief",
+  );
   const active = runs.filter((run) => run.status === "pending" || run.status === "running");
   /* A fresh workspace defaults to `mock`, so this is the likeliest reason a
      beginner's first upload quietly does nothing useful. It speaks only at the
@@ -173,7 +175,12 @@ export function homeStatus(
   const feed: FeedEntry[] = finished.slice(0, MAX_FEED).map((run) => {
     /* The Module's own line about what it did, or why it stopped. The Shell
        does not derive either — it renders what the Run recorded. */
-    const detail = run.status === "skipped" ? run.skipReason : run.summary;
+    const detail =
+      run.module === "meeting-debrief"
+        ? null
+        : run.status === "skipped"
+          ? run.skipReason
+          : run.summary;
     return {
       id: run.id,
       title: runDisplayName(run),

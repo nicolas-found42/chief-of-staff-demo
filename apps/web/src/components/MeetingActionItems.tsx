@@ -27,6 +27,7 @@ export function MeetingActionItems({
   revealRequest?: number;
   onCount?: (count: number) => void;
 }) {
+  const focusedAnchor = useRef("");
   const [index, setIndex] = useState<ActionItemIndex | null>(null);
   const [tasks, setTasks] = useState<TaskIndex | null>(null);
   const [profiles, setProfiles] = useState<PersonProfile[]>([]);
@@ -95,7 +96,7 @@ export function MeetingActionItems({
   }, [dismissed]);
   useEffect(() => {
     const reveal = () => {
-      if (location.hash === "#action-items") {
+      if (location.hash === "#action-items" || location.hash.startsWith("#action-item-")) {
         setExpanded(true);
         sessionStorage.setItem(`actions:${runId}`, "all");
       }
@@ -110,6 +111,16 @@ export function MeetingActionItems({
       sessionStorage.setItem(`actions:${runId}`, "all");
     }
   }, [revealRequest, runId]);
+  useEffect(() => {
+    if (!index || !tasks || !expanded || !location.hash.startsWith("#action-item-")) return;
+    if (focusedAnchor.current === location.hash) return;
+    const target = document.getElementById(location.hash.slice(1));
+    if (target) {
+      focusedAnchor.current = location.hash;
+      target.tabIndex = -1;
+      target.focus();
+    }
+  }, [index, tasks, expanded]);
   const act = async (id: string, notice: string, operation: () => Promise<unknown>) => {
     if (inFlight.current.has(id)) return false;
     inFlight.current.add(id);
@@ -224,10 +235,11 @@ export function MeetingActionItems({
         <ReadingDisclosure
           id={`${runId}-reviewed`}
           label={`Reviewed Action Items (${reviewed.length})`}
+          initialOpen={reviewed.some((item) => location.hash === `#action-item-${item.id}`)}
         >
           <ul>
             {reviewed.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} id={`action-item-${item.id}`}>
                 {item.proposal.title} ·{" "}
                 {item.state === "dismissed"
                   ? "Dismissed"
@@ -235,6 +247,11 @@ export function MeetingActionItems({
                       "completed"
                     ? "Completed Task created"
                     : "Task created"}{" "}
+                {item.handoff && (
+                  <ReadingDisclosure id={`${item.id}-reviewed-details`} label="Execution details">
+                    <p style={{ whiteSpace: "pre-wrap" }}>{item.proposal.notes}</p>
+                  </ReadingDisclosure>
+                )}
                 {item.promotedTaskId ? (
                   <Link to={`/tasks#task-${item.promotedTaskId}`}>Open Task</Link>
                 ) : (

@@ -6,6 +6,7 @@ import type {
   TaskResponsiblePerson,
 } from "@chief-of-staff-demo/shared";
 import type { TaskStore } from "./store.js";
+import { handoffNotes } from "@chief-of-staff-demo/shared";
 import { TaskValidationError } from "./tasks.js";
 
 /** One extraction's proposed commitments, as the Meeting Debrief hands them over. */
@@ -87,6 +88,7 @@ export class WorkspaceActionItems {
       }
       const item: ActionItem = {
         id,
+        ...(proposed.handoff ? { handoff: proposed.handoff } : {}),
         source: {
           debriefRunId: input.debriefRunId,
           transcriptId: input.transcriptId,
@@ -99,9 +101,14 @@ export class WorkspaceActionItems {
         },
         proposal: {
           title: proposed.title,
-          notes: "",
+          notes: proposed.handoff ? handoffNotes(proposed.handoff) : "",
           dueDate: proposed.dueDate,
-          responsiblePerson: this.proposedResponsiblePerson(proposed.ownerProfileId),
+          responsiblePerson:
+            proposed.handoff &&
+            (proposed.handoff.responsibility.names.length !== 1 ||
+              proposed.handoff.responsibility.basis === "unknown")
+              ? null
+              : this.proposedResponsiblePerson(proposed.ownerProfileId),
         },
         state: "pending",
         promotedTaskId: null,

@@ -1,3 +1,4 @@
+import { operationalHandoff } from "../helpers/operational-handoff";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,6 +100,28 @@ describe("the Stage all default", () => {
 describe("Automatically create my Tasks", () => {
   beforeEach(() => {
     policy = "auto-create-mine";
+  });
+
+  it.each(["commitment", "responsibility"] as const)(
+    "keeps inferred %s pending despite confirmed owner identity",
+    (uncertain) => {
+      const handoff = operationalHandoff(
+        uncertain === "commitment"
+          ? { commitment: "inferred" }
+          : {
+              responsibility: { names: ["Alice"], basis: "inferred", reason: "Likely responsible" },
+            },
+      );
+      const [item] = materialize([proposal({ handoff })]);
+      expect(item.state).toBe("pending");
+      expect(tasks.list({})).toEqual([]);
+    },
+  );
+
+  it("keeps an enriched commitment pending when its quotes could not be verified", () => {
+    const [item] = materialize([proposal({ handoff: operationalHandoff({ evidence: [] }) })]);
+    expect(item.state).toBe("pending");
+    expect(tasks.list({})).toEqual([]);
   });
 
   it("creates one open Task from a first extraction's confidently owned commitment", () => {

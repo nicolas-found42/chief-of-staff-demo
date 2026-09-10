@@ -26,3 +26,9 @@ tests/fixtures/debrief-golden/transcripts/
 # for reassessment provenance. Validate their schemas; never rewrite their bytes.
 artifacts/person-benchmark/**/*.json
 **/*.evidence/**
+
+# Original export retained byte-for-byte for the handoff audit.
+tests/fixtures/operational-handoff/Found42-Stand-Up-Meeting-fff12776-8d43.json
+
+# Retained extraction audit requests, model output, and rejected prototypes.
+docs/research/extraction-audit-2026-09-10-*/

@@ -50,15 +50,37 @@ export function HomePage() {
     }
   }, []);
 
-  /* Canonical work (issue #192), read once per visit. Its own request and its
-     own failure: the Runs feed above is a different contract, and a Tasks read
-     that fails should not blank the page that owns the Modules. */
+  /* Refresh on return and while Home is visible; stale failures never read as zero. */
   const [workError, setWorkError] = useState<string | null>(null);
   useEffect(() => {
-    tasksApi
-      .overview()
-      .then(setWork)
-      .catch((err: unknown) => setWorkError(errorMessage(err)));
+    let live = true;
+    let generation = 0;
+    const load = async () => {
+      const current = ++generation;
+      try {
+        const result = await tasksApi.overview();
+        if (live && current === generation) {
+          setWork(result);
+          setWorkError(null);
+        }
+      } catch (cause) {
+        if (live && current === generation) setWorkError(errorMessage(cause));
+      }
+    };
+    const poll = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    void load();
+    const onFocus = () => {
+      void load();
+    };
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(poll, 3000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -158,6 +180,13 @@ export function HomePage() {
         {variant === "a" && <VariantA data={data} />}
         {variant === "b" && <VariantB data={data} />}
         {variant === "c" && <VariantC data={data} />}
+        {workError ? (
+          <p role="alert">{workError}</p>
+        ) : work ? (
+          <WorkSummary overview={work} />
+        ) : (
+          <p role="status">Loading work…</p>
+        )}
         <PrototypeSwitcher current={variant} />
       </div>
     );

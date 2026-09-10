@@ -9,6 +9,7 @@
  * extracted array.
  */
 
+import type { MeetingHandoff } from "./meeting-debrief.js";
 import type { TaskResponsiblePerson } from "./task.js";
 
 /**
@@ -52,6 +53,7 @@ export interface ActionItemProposal {
 }
 
 export interface ActionItem {
+  handoff?: MeetingHandoff;
   /**
    * Workspace identity, derived from the Debrief Run and the proposal's own
    * content. Reordering the extracted array cannot change it, and

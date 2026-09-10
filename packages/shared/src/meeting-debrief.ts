@@ -145,6 +145,51 @@ export interface MeetingDebriefDecision {
   evidence: string | null;
 }
 
+/** Source responsibility and execution context are distinct from a Task's Responsible Person. */
+export const MeetingHandoffSchema = z.strictObject({
+  version: z.literal(1),
+  commitment: z.enum(["explicit", "inferred"]),
+  purpose: z.string(),
+  responsibility: z.strictObject({
+    names: z.array(z.string()),
+    basis: z.enum(["explicit", "inferred", "unknown"]),
+    reason: z.string(),
+  }),
+  completionCriteria: z.array(
+    z.strictObject({ text: z.string(), basis: z.enum(["explicit", "inferred"]) }),
+  ),
+  requiredInputs: z.array(z.string()),
+  missingInputs: z.array(
+    z.strictObject({
+      information: z.string(),
+      obtainBy: z.string(),
+      basis: z.enum(["explicit", "inferred"]),
+    }),
+  ),
+  dependencies: z.array(
+    z.strictObject({
+      actionTitle: z.string(),
+      condition: z.string(),
+      basis: z.enum(["explicit", "inferred"]),
+    }),
+  ),
+  timing: z.strictObject({
+    kind: z.enum(["deadline", "trigger", "unspecified"]),
+    stated: z.string(),
+    referenceDate: z.string().nullable(),
+    reasoning: z.string(),
+  }),
+  evidence: z.array(
+    z.strictObject({
+      quote: z.string(),
+      speaker: z.string().nullable(),
+      timestamp: z.string().nullable(),
+    }),
+  ),
+  statusReasoning: z.string(),
+});
+export type MeetingHandoff = z.infer<typeof MeetingHandoffSchema>;
+
 /**
  * One action item with an inferred owner. The owner is a surface name the
  * extraction inferred — never an identity guess. `ownerProfileId` is filled
@@ -152,6 +197,7 @@ export interface MeetingDebriefDecision {
  * extraction named; ambiguity stays ambiguous.
  */
 export interface MeetingDebriefActionItem {
+  handoff?: MeetingHandoff | undefined;
   title: string;
   owner: string | null;
   /** The Catalog mention the owner refers to, when the extraction identified one. */
@@ -203,6 +249,7 @@ export const MeetingDebriefExtractionSchema = z.strictObject({
   ),
   actionItems: z.array(
     z.strictObject({
+      handoff: MeetingHandoffSchema.optional(),
       title: z.string().min(1),
       owner: z.string().min(1).nullable(),
       ownerMentionId: z.string().min(1).nullable(),

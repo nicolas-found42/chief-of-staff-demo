@@ -263,6 +263,20 @@ export function ActionItemRow({
     <li className="card" id={`action-item-${item.id}`}>
       <h3>{item.proposal.title}</h3>
       {isNew && <span aria-label="New proposal">New proposal</span>}
+      {item.handoff && (
+        <>
+          <p>
+            {item.handoff.commitment === "inferred" ? "Inferred commitment" : "Explicit commitment"}
+          </p>
+          <p>{item.handoff.purpose}</p>
+          <ReadingDisclosure id={`${item.id}-execution`} label="Execution details">
+            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {item.proposal.notes}
+            </p>
+          </ReadingDisclosure>
+        </>
+      )}
+
       <p className="muted">
         Proposed · {proposedDue(item.proposal.dueDate, today)} ·{" "}
         {item.proposal.responsiblePerson
@@ -285,19 +299,21 @@ export function ActionItemRow({
           Open source Debrief
         </Link>
       </p>
-      <ReadingDisclosure id={`${item.id}-evidence`} label="Original evidence">
-        {context?.evidence ? (
-          <>
-            <blockquote>{context.evidence.quote}</blockquote>
-            {context.evidence.timestamp ? <p>At {context.evidence.timestamp}</p> : null}
-          </>
-        ) : (
-          <p>
-            Stored excerpt and timestamp unavailable. Open the source Debrief for the retained
-            extraction.
-          </p>
-        )}
-      </ReadingDisclosure>
+      {!item.handoff && (
+        <ReadingDisclosure id={`${item.id}-evidence`} label="Original evidence">
+          {context?.evidence ? (
+            <>
+              <blockquote>{context.evidence.quote}</blockquote>
+              {context.evidence.timestamp ? <p>At {context.evidence.timestamp}</p> : null}
+            </>
+          ) : (
+            <p>
+              Stored excerpt and timestamp unavailable. Open the source Debrief for the retained
+              extraction.
+            </p>
+          )}
+        </ReadingDisclosure>
+      )}
       {item.state === "promoted" && item.promotedTaskId && (
         <p className="muted">
           Promoted. <Link to={`/tasks#task-${item.promotedTaskId}`}>Open the Task</Link>

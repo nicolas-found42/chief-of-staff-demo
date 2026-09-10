@@ -180,3 +180,113 @@ Default glob `tests/fixtures/debrief-golden/transcripts/*.md`; expand, sort, run
 - `docs/agents/verification.md` — prompt eval gate, gate-model policy, API-budget notes
 - `promptfoo/promptfoo` (MIT, github.com/promptfoo/promptfoo) — bounded-pool evaluator (`src/evaluator.ts` `async.forEachOfLimit`), `-j/--max-concurrency` CLI flag, `cli-progress` progress bars, AIMD adaptive concurrency (`src/scheduler/`), `streamProcess` default concurrency 5 (`src/commands/mcp/lib/performance.ts`); discovered via context-awesome (`promptslab/awesome-prompt-engineering`), searched with gh-grep.
 - promptfoo.dev/docs/usage/command-line/ — `-j, --max-concurrency <number>`: "Maximum number of concurrent API calls"; progress bar default-on (`--no-progress-bar` disables); `eval` exits `100` on test-case failure vs `1` on other errors.
+
+
+## Operational handoff update — 2026-09-09
+
+The handoff implementation replaces the CLI's ten immediate retries within a
+60-second retry-start budget with the shared provider boundary's opt-in retry
+policy. One additional transient attempt and binding recovery share one absolute
+request deadline; server Retry-After is honored when it fits, otherwise the
+operation stops with its diagnostic. Schema-invalid outputs remain scoreable
+failures, not automatic retries. The selected --models value remains arbitrary;
+Mercury 2.5 is the user-selected test model for this change, not a product pin.
+See [the local contract amendment](operational-handoff-contract-2026-09-09.md).
+
+## Candidate accounting update — 2026-09-10
+
+Both runners now call the same candidate extraction function as the production
+Meeting Debrief host. A meeting performs bounded discovery calls, one total
+disposition pass, individual enrichment for retained work, and a separate overview.
+The pool's concurrency bounds simultaneous meetings; each meeting's model calls
+are sequential. The reported attempt count includes calls across stages and their
+provider retries, not repeated whole-meeting attempts.
+
+Successful `.debrief.json` files contain normalized `raw`, deterministic
+pre-normalization `modelRaw`, and `strategy: "candidate-accounting-v1"`.
+Literal replies, requests/schemas, attempt events and accounting artifacts use
+`.debrief.json.candidate-<stage>.json` companion names. Strict shape/accounting
+failures create `.error.json` and remove the previous successful output. Use a
+fresh output directory for each experiment so intermediate artifacts cannot be
+mistaken for another attempt. A failed extraction is not a zero-action result.
+
+For this task, the user's latest model instruction supersedes the earlier Mercury
+choice: all subsequent LLM usage uses `--models z-ai/glm-5.3-flash`. This does not
+change the application's configurable provider/model interface. See
+[implementation and measured results](candidate-accounting-implementation-2026-09-10.md).
+
+## Source audit and fact verification update — 2026-09-10
+
+The follow-up implementation emits `strategy: "candidate-accounting-v2"`.
+Each source window now has discovery and an independent coverage audit, followed
+by source-status classification and fact verification in batches of ten. Checked
+remaining-work decisions accompany the source into fact verification so completed
+prerequisites do not replace the outstanding outcome. Deduplication follows those
+checks, then individual execution-detail enrichment and overview generation.
+Assembly preserves checked titles, responsibility, timing, status and evidence.
+
+Coverage and accounting repairs are bounded to one per affected batch; these are
+new logical calls, separately recorded from transport retries. Invalid source
+quotes or incomplete accounting fail visibly after repair. Exact source speech
+may span consecutive turns by one speaker, but never silently bridge a different
+speaker. Maximums are 32 source windows and 256 observations per meeting; neither
+is a silent truncation limit. These checks do not guarantee semantic completeness.
+
+The evaluation pool still bounds meetings and their model calls remain sequential.
+All live calls in this follow-up use `z-ai/glm-5.3-flash`. Status and fact checks
+request high reasoning effort; other phases retain the configured default. Actual
+effort and usage are recorded in per-stage attempt artifacts. The implementation
+report distinguishes the whole-cohort version from the later checked-status
+transition probes; a probe is not a full extraction or golden pass. See
+[the findings implementation record](extraction-findings-implementation-2026-09-10.md).
+
+## Immutable source evidence update — 2026-09-10
+
+`candidate-accounting-v3` labels transcript lines with `@line:N` references and
+asks the model to select references for evidence instead of copying utterances.
+Code expands those references to original speech and derives speaker/location.
+Unknown references fail grounding; decision evidence without a valid source
+becomes null. Window boundaries include complete turns. The raw model artifacts
+retain selected references, while the assembled handoff stores literal evidence.
+This addresses source-copy errors without treating source presence as proof of
+correct commitment, responsibility, timing or duplicate semantics.
+
+`candidate-accounting-v4` additionally carries the untrusted discovery label into
+source-status classification to distinguish multiple promises in one source turn.
+Only the source-checked next step proceeds into fact generation. The final audit
+harness reuses request-identical v3 discovery/coverage replies and records their
+origin; all subsequent phases call the selected GLM model live. This is separate
+from the ordinary CLIs, which run every phase live. Both use the same extraction
+function and version marker.
+
+`candidate-accounting-v5` makes fact verification's status contract explicit in
+the schema: retained rows require facts, excluded rows require null, and merging
+is not an available outcome before deduplication. The mutable accounting ledger
+still records later code-side merges. The final isolated evaluation can replay
+request-identical discovery/coverage/status calls from v4, with provenance; all
+fact verification and downstream calls are live GLM. Ordinary CLI behavior remains
+fully live through the same extraction function.
+
+The final v5 parser also accepts the observed `@N` shorthand for an existing
+`@line:N` identifier; unknown numbers still fail grounding. The final audit lives
+in `findings-v5-replay-final-2026-09-10`: it replays any complete request-identical
+v5 reply, then calls GLM only when the request differs or no captured reply exists.
+Each replay records its origin. This is deterministic replay plus live continuation,
+not an independent second model sample; its elapsed time is not production latency.
+Original failures remain in the preceding v5 directory. Stopped earlier cohorts
+retain STOPPED.json and are not full-corpus evaluations. Goldens are unchanged.
+
+Successful structured extraction does not imply a quality pass. The final source
+audit records residual duplicate, missing-step and responsibility defects in
+[the source review](extraction-findings-final-source-audit-2026-09-10.md). Evaluate
+those findings alongside the fixed golden gate, rather than interpreting retained
+candidate counts or matched keywords as semantic recall.
+
+`candidate-accounting-v12` adds source-specific responsibility binding, a final
+coverage pass over the verified ledger, explicit same-deliverable/separate merge
+verdicts, bounded canonical fact reconciliation for conflicting duplicates, and
+verification of decision status. The shared turn parser supports retained Markdown
+speaker labels. Exact source selections preserve turn metadata during binding
+checks; inferred roles remain labelled inferred. The follow-up regression and live
+results are recorded in `extraction-findings-follow-up-2026-09-10.md`. Earlier v5
+results remain historical and do not describe this implementation.

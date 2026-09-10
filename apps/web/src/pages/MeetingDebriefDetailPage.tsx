@@ -169,6 +169,13 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
       <h1 ref={headingRef} tabIndex={-1}>
         {name}
       </h1>
+      {notFound && runId && (
+        <p>
+          <Link to={`/meetings/recovery/${encodeURIComponent(runId)}`}>
+            Recover retained proposals
+          </Link>
+        </p>
+      )}
       {notFound && (
         <p className="banner-error" role="alert">
           Unknown Meeting Debrief.
@@ -201,6 +208,7 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
             <MeetingDebriefContent
               key={detail.runId}
               earlierVersion={earlier}
+              reviewOnMeeting
               detail={detail}
               refresh={refresh}
               client={client}

@@ -70,16 +70,17 @@ function hrefs(container: HTMLDivElement): string[] {
 }
 
 describe("the compact work surfaces", () => {
-  it("links every Task row and every Action Item row to its own canonical anchor", async () => {
+  it("links accepted Tasks and exposes only the approval count for proposals", async () => {
     const container = await mount(createElement(WorkGroups, { overview: overview() }));
 
     expect(hrefs(container)).toContain("/tasks#task-task_1");
-    expect(hrefs(container)).toContain("/tasks#action-item-ai_1");
+    expect(hrefs(container)).toContain("/meetings#awaiting-approval");
     expect(container.textContent).toContain("Send the pricing sheet");
-    expect(container.textContent).toContain("Draft the rollout note");
+    expect(container.textContent).not.toContain("Draft the rollout note");
+    expect(container.textContent).toContain("Awaiting approval (1)");
   });
 
-  it("keeps accepted work and proposals in two headed groups, never one queue", async () => {
+  it("keeps a single accepted-work group alongside compact approval navigation", async () => {
     const container = await mount(createElement(WorkGroups, { overview: overview() }));
 
     /* Two sections, in this order: a Task is accepted work and an Action Item
@@ -87,8 +88,8 @@ describe("the compact work surfaces", () => {
     const headings = [...container.querySelectorAll("h3")].map((heading) =>
       heading.textContent.trim(),
     );
-    expect(headings).toEqual(["Tasks (2)", "Action Items awaiting review (1)"]);
-    expect(container.querySelectorAll("section.work-group")).toHaveLength(2);
+    expect(headings).toEqual(["Tasks (2)"]);
+    expect(container.querySelectorAll("section.work-group")).toHaveLength(1);
   });
 
   it("shows the total and a View all link only once a group exceeds the compact cap", async () => {
@@ -139,7 +140,7 @@ describe("the compact work surfaces", () => {
     );
 
     expect(container.textContent).toContain("No open Tasks.");
-    expect(container.textContent).toContain("Nothing is waiting on a decision.");
+    expect(container.textContent).toContain("Awaiting approval (0)");
     expect(container.textContent).not.toContain("View all");
   });
 });

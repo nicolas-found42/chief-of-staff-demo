@@ -20,7 +20,6 @@ const METRICS: Array<{ key: keyof TaskOverviewCounts; label: string; to: string 
   { key: "open", label: "Open", to: "/tasks" },
   { key: "overdue", label: "Overdue", to: "/tasks" },
   { key: "dueToday", label: "Due today", to: "/tasks" },
-  { key: "pendingActionItems", label: "Pending review", to: "/tasks#action-items" },
   { key: "failedLinks", label: "Failed links", to: "/tasks" },
   { key: "conflictedLinks", label: "Needs a decision", to: "/tasks" },
 ];
@@ -123,29 +122,11 @@ export function WorkGroups({ overview }: { overview: TaskOverview }) {
           </li>
         ))}
       </CompactGroup>
-      <CompactGroup
-        heading="Action Items awaiting review"
-        total={overview.counts.pendingActionItems}
-        viewAll="/tasks#action-items"
-        empty="Nothing is waiting on a decision."
-      >
-        {overview.actionItems.map((item) => (
-          <li key={item.id}>
-            <Link to={`/tasks#action-item-${item.id}`} className="home-feed-title">
-              {item.proposal.title}
-            </Link>
-            <span className="muted home-feed-meta">
-              {item.proposal.dueDate ? (
-                <>
-                  Proposed due <time dateTime={item.proposal.dueDate}>{item.proposal.dueDate}</time>
-                </>
-              ) : (
-                "No proposed due date"
-              )}
-            </span>
-          </li>
-        ))}
-      </CompactGroup>
+      <p>
+        <Link to="/meetings#awaiting-approval">
+          Awaiting approval ({overview.counts.pendingActionItems})
+        </Link>
+      </p>
     </>
   );
 }

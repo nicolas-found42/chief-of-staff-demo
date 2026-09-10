@@ -84,7 +84,7 @@ test("tasks journey — nav → quick add → complete → reopen → edit → l
   await expect(
     page.getByRole("heading", { level: 3, name: "Send the billing follow-up" }),
   ).toBeVisible();
-  await expect(page.getByText("No Action Items are waiting.")).toBeVisible();
+  await expect(page.getByText("Awaiting approval (0)")).toBeVisible();
 
   await scanForViolations(page);
 });
@@ -162,7 +162,8 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
     .toBe("done");
 
   await page.goto("/tasks");
-  await expect(page.getByRole("heading", { level: 2, name: "Action Items" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Meeting approvals" })).toBeVisible();
+  await page.goto(`/meetings/recovery/${runId}`);
   const proposal = page
     .getByRole("listitem")
     .filter({ hasText: "own the pricing page rewrite" })
@@ -185,11 +186,7 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
   };
   expect(tasks.tasks.map((task) => task.title)).not.toContain("own the pricing page rewrite");
 
-  // Home and the Daily Briefing link every pending proposal to
-  // `/tasks#action-item-<id>` (issue #192). The anchor those links point at
-  // was missing outright until `153eb8a`, and a link to an anchor nothing
-  // renders looks exactly like a working one — so the target is asserted here,
-  // on the page that owns it, and the link is followed to prove it lands.
+  // Legacy individual anchors resolve through the canonical source context.
   const queue = (await (await request.get("/api/action-items?state=pending")).json()) as {
     items: Array<{ id: string; proposal: { title: string } }>;
   };
@@ -202,10 +199,11 @@ test("tasks journey — a Debrief's Action Items arrive as proposals, not Tasks"
   await expect(anchor).toContainText("own the pricing page rewrite");
 
   await page.goto("/");
-  const compact = page.getByRole("link", { name: "own the pricing page rewrite" }).first();
-  await expect(compact).toHaveAttribute("href", `/tasks#action-item-${pending!.id}`);
-  await compact.click();
-  await expect(page).toHaveURL(new RegExp(`/tasks#action-item-${pending!.id}$`));
+  await expect(page.getByRole("link", { name: "own the pricing page rewrite" })).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: `Awaiting approval (${queue.items.length})`, exact: true }),
+  ).toBeVisible();
+  await page.goto(`/tasks#action-item-${pending!.id}`);
   await expect(page.locator(`#action-item-${pending!.id}`)).toBeVisible();
 });
 
@@ -262,13 +260,20 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
       .filter({ hasText: "archive rotation" })
       .filter({ has: page.getByRole("button", { name: "Restore to pending" }) });
 
-  await page.goto("/tasks");
+  await page.goto(`/meetings/recovery/${runId}`);
   await expect(pendingRow().first()).toBeVisible();
 
   // Dismissing is immediate and local-only: no Task appears, and Undo does.
   await pendingRow().first().getByRole("button", { name: "Dismiss" }).click();
   await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
   await expect(pendingRow()).toHaveCount(0);
+  await expect(page.getByText("Reviewed Action Items (1)", { exact: true })).toBeVisible();
+  if (
+    !(await page
+      .getByText("Reviewed Action Items (1)", { exact: true })
+      .evaluate((node) => node.closest("details")?.open))
+  )
+    await page.getByText("Reviewed Action Items (1)", { exact: true }).click();
   await expect(dismissedRow().first()).toBeVisible();
 
   const tasks = (await (await request.get("/api/tasks")).json()) as {
@@ -291,6 +296,13 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
 
   // Dismissing again and restoring from the Dismissed history does the same.
   await pendingRow().first().getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByText("Reviewed Action Items (1)", { exact: true })).toBeVisible();
+  if (
+    !(await page
+      .getByText("Reviewed Action Items (1)", { exact: true })
+      .evaluate((node) => node.closest("details")?.open))
+  )
+    await page.getByText("Reviewed Action Items (1)", { exact: true }).click();
   await expect(dismissedRow().first()).toBeVisible();
   await dismissedRow().first().getByRole("button", { name: "Restore to pending" }).click();
   await expect(pendingRow().first()).toBeVisible();
@@ -303,12 +315,18 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
   const dismissResponse = await request.post(`/api/action-items/${queue.items[0].id}/dismiss`);
   expect(dismissResponse.ok()).toBe(true);
 
-  await page.goto(`/meeting-debrief/${runId}`);
-  await page.getByText("Reviewed Action Items (1)", { exact: true }).click();
+  await page.goto(`/meetings/recovery/${runId}`);
   const historyRow = page
     .getByRole("listitem")
     .filter({ hasText: "archive rotation" })
     .filter({ has: page.getByRole("button", { name: "Restore to pending" }) });
+  await expect(page.getByText("Reviewed Action Items (1)", { exact: true })).toBeVisible();
+  if (
+    !(await page
+      .getByText("Reviewed Action Items (1)", { exact: true })
+      .evaluate((node) => node.closest("details")?.open))
+  )
+    await page.getByText("Reviewed Action Items (1)", { exact: true }).click();
   await expect(historyRow).toBeVisible();
   await historyRow.getByRole("button", { name: "Restore to pending" }).click();
   await expect(
@@ -318,7 +336,7 @@ test("tasks journey — dismissing an Action Item offers Undo and later restore"
       .filter({ has: page.getByRole("button", { name: "Create Task", exact: true }) }),
   ).toBeVisible();
 
-  await page.goto("/tasks");
+  await page.goto(`/meetings/recovery/${runId}`);
   await expect(pendingRow().first()).toBeVisible();
 });
 
@@ -411,6 +429,8 @@ test("tasks journey — a possible duplicate warns, and the owner can still deci
   await expect
     .poll(async () => (await openTasks()).filter((task) => task.title === title).length)
     .toBe(2);
+
+  await page.goto(`/meetings/recovery/${runId}`);
 
   // Promotion warns the same way. The proposal names Dana, not the owner, so
   // the review first decides who is responsible — the editability that makes

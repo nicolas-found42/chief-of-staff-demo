@@ -32,16 +32,15 @@ export const MODEL_REQUEST_TIMEOUT_MS = 300_000;
 export const MODEL_SMALL_REQUEST_TIMEOUT_MS = 120_000;
 
 /**
- * How long one streaming model call may go without a token — measured from the
- * call's start until its first token, then from the last token it produced. The
- * absolute `MODEL_REQUEST_TIMEOUT_MS` ceiling stays above it as a backstop: a
- * stream that keeps dripping tokens is still bounded, while a hung one ends in
- * thirty seconds instead of two minutes.
+ * How long a streaming connection may go without any wire traffic. SSE comments
+ * keep the wire alive but do not reset semantic progress. Request-local stream
+ * policies can override this default without changing other models' behavior.
  */
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000;
 
 /**
- * How long an upstream may stay connected without producing any answer.
+ * Default first-progress and between-progress allowance. Content, tool arguments
+ * and reasoning activity count as progress; keepalives do not.
  *
  * Distinct from the idle ceiling above, which asks whether the connection is
  * alive at all. Some upstreams buffer a whole tool call and send nothing but
@@ -206,8 +205,8 @@ export const ModelAttemptEventSchema = z.object({
     })
     .optional(),
   diagnostic: ModelBoundaryDiagnosticSchema.nullable(),
-  /** 500 for the one same-binding retry; 0 for binding recovery or final outcomes. */
-  delayMs: z.number().int().nonnegative().max(500),
+  /** Actual bounded backoff, including server Retry-After; 0 for binding recovery/final outcomes. */
+  delayMs: z.number().int().nonnegative(),
   stoppedReason: z.string().max(1000).nullable(),
 });
 export type ModelAttemptEvent = z.infer<typeof ModelAttemptEventSchema>;
