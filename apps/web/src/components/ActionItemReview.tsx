@@ -17,9 +17,17 @@ import type {
   TaskList,
   TaskPriority,
 } from "@chief-of-staff-demo/shared";
-import { INBOX_TASK_LIST_ID, TASK_PRIORITIES } from "@chief-of-staff-demo/shared";
+import {
+  actionItemProposal,
+  INBOX_TASK_LIST_ID,
+  latestProposalRevision,
+  promotable,
+  selectionPending,
+  TASK_PRIORITIES,
+} from "@chief-of-staff-demo/shared";
 import { meetingDate, proposedDue } from "../meetingDisplay";
-import type { TasksClient } from "../clients/tasks";
+import { tasksApi, type TasksClient } from "../clients/tasks";
+import { errorMessage } from "../client";
 
 /** The shared field set — the same in Quick Add's expansion and in an edit. */
 export function TaskFields({
@@ -153,6 +161,135 @@ export function DuplicateWarning({ duplicates }: { duplicates: Task[] }) {
   );
 }
 
+/**
+ * Dismissing is available whatever else the record is waiting for: deciding a
+ * proposal is not work, and an owner who does not want it should not have to
+ * resolve a relationship first.
+ */
+function DismissButton({
+  busy,
+  storageKey,
+  onDismiss,
+}: {
+  busy: boolean;
+  storageKey: string;
+  onDismiss: () => Promise<void>;
+}) {
+  return (
+    <button
+      type="button"
+      className="action-button"
+      disabled={busy}
+      onClick={() => {
+        if (!busy) {
+          sessionStorage.removeItem(storageKey);
+          void onDismiss();
+        }
+      }}
+    >
+      Dismiss
+    </button>
+  );
+}
+
+/**
+ * What one pending proposal is waiting for, and the decision that settles it
+ * (issue #355). Creating a Task is not offered here: the server refuses it,
+ * and a button that produces a refusal reads as a broken product rather than
+ * as the question it actually is.
+ */
+function ReviewNeeded({
+  item,
+  busy,
+  onResolved,
+}: {
+  item: ActionItem;
+  busy: boolean;
+  onResolved: () => Promise<void>;
+}) {
+  const [failure, setFailure] = useState<string | null>(null);
+  const act = async (run: () => Promise<unknown>) => {
+    setFailure(null);
+    try {
+      await run();
+      await onResolved();
+    } catch (error) {
+      setFailure(errorMessage(error));
+    }
+  };
+  if (item.reconciledInto !== null)
+    return (
+      <p role="note">Kept as evidence about earlier work. It does not become a Task of its own.</p>
+    );
+  if (selectionPending(item))
+    return (
+      <div role="group" aria-label="Corrected proposal">
+        <p>This proposal was corrected after it was reviewed. Choose the wording to accept.</p>
+        <div className="toolbar">
+          <button
+            type="button"
+            className="action-button"
+            disabled={busy}
+            onClick={() =>
+              void act(() =>
+                tasksApi.selectActionItemProposal(
+                  item.id,
+                  latestProposalRevision(item),
+                  item.version,
+                ),
+              )
+            }
+          >
+            Accept the correction
+          </button>
+          <button
+            type="button"
+            className="action-button"
+            disabled={busy}
+            onClick={() =>
+              void act(() =>
+                tasksApi.selectActionItemProposal(item.id, item.selectedRevision, item.version),
+              )
+            }
+          >
+            Keep the reviewed wording
+          </button>
+        </div>
+        {failure && <p role="alert">{failure}</p>}
+      </div>
+    );
+  return (
+    <div role="group" aria-label="Possible repeat of earlier work">
+      <p>
+        This may repeat work this Workspace already holds. Say what it is before creating a Task.
+      </p>
+      <div className="toolbar">
+        <button
+          type="button"
+          className="action-button"
+          disabled={busy}
+          onClick={() =>
+            void act(() => tasksApi.reconcileActionItem(item.id, "distinct-new-work", item.version))
+          }
+        >
+          Separate work
+        </button>
+        <button
+          type="button"
+          className="action-button"
+          disabled={busy}
+          onClick={() =>
+            void act(() => tasksApi.reconcileActionItem(item.id, "new-commitment", item.version))
+          }
+        >
+          Taken on again
+        </button>
+      </div>
+      {failure && <p role="alert">{failure}</p>}
+    </div>
+  );
+}
+
 /** The provider a Task's destination names, as the row's sentences read it. */
 export function ActionItemRow({
   item,
@@ -165,6 +302,7 @@ export function ActionItemRow({
   checkDuplicates,
   onPromote,
   onDismiss,
+  onResolved,
 }: {
   item: ActionItem;
   isNew?: boolean;
@@ -176,6 +314,8 @@ export function ActionItemRow({
   checkDuplicates: TasksClient["checkDuplicates"];
   onPromote: (values: TaskFormValues, completed: boolean) => Promise<boolean>;
   onDismiss: () => Promise<void>;
+  /** Re-read the queue after a review decision changed this record. */
+  onResolved: () => Promise<void>;
 }) {
   const storageKey = `task-review:${item.id}`;
   const [saved] = useState(() => {
@@ -192,12 +332,12 @@ export function ActionItemRow({
   const submitting = useRef(false);
   const [values, setValues] = useState<TaskFormValues>(
     saved?.values ?? {
-      title: item.proposal.title,
-      notes: item.proposal.notes,
-      dueDate: item.proposal.dueDate ?? "",
+      title: actionItemProposal(item).title,
+      notes: actionItemProposal(item).notes,
+      dueDate: actionItemProposal(item).dueDate ?? "",
       priority: "none",
       listId: INBOX_TASK_LIST_ID,
-      responsible: responsibleValue(item.proposal.responsiblePerson),
+      responsible: responsibleValue(actionItemProposal(item).responsiblePerson),
     },
   );
   useEffect(() => {
@@ -261,7 +401,7 @@ export function ActionItemRow({
   return (
     /* The anchor a compact surface links a proposal by (issue #192). */
     <li className="card" id={`action-item-${item.id}`}>
-      <h3>{item.proposal.title}</h3>
+      <h3>{actionItemProposal(item).title}</h3>
       {isNew && <span aria-label="New proposal">New proposal</span>}
       {item.handoff && (
         <>
@@ -271,16 +411,16 @@ export function ActionItemRow({
           <p>{item.handoff.purpose}</p>
           <ReadingDisclosure id={`${item.id}-execution`} label="Execution details">
             <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {item.proposal.notes}
+              {actionItemProposal(item).notes}
             </p>
           </ReadingDisclosure>
         </>
       )}
 
       <p className="muted">
-        Proposed · {proposedDue(item.proposal.dueDate, today)} ·{" "}
-        {item.proposal.responsiblePerson
-          ? responsibleLabel(item.proposal.responsiblePerson, profiles)
+        Proposed · {proposedDue(actionItemProposal(item).dueDate, today)} ·{" "}
+        {actionItemProposal(item).responsiblePerson
+          ? responsibleLabel(actionItemProposal(item).responsiblePerson, profiles)
           : "Unassigned"}
         {item.evidence.responsibleSurfaceName
           ? ` · named ${item.evidence.responsibleSurfaceName}`
@@ -319,7 +459,10 @@ export function ActionItemRow({
           Promoted. <Link to={`/tasks#task-${item.promotedTaskId}`}>Open the Task</Link>
         </p>
       )}
-      {item.state === "pending" && (
+      {item.state === "pending" && !promotable(item) && (
+        <ReviewNeeded item={item} busy={busy} onResolved={onResolved} />
+      )}
+      {item.state === "pending" && promotable(item) && (
         <div className="toolbar">
           <button
             type="button"
@@ -339,19 +482,12 @@ export function ActionItemRow({
           >
             Create completed Task
           </button>
-          <button
-            type="button"
-            className="action-button"
-            disabled={busy}
-            onClick={() => {
-              if (!busy) {
-                sessionStorage.removeItem(storageKey);
-                void onDismiss();
-              }
-            }}
-          >
-            Dismiss
-          </button>
+          <DismissButton busy={busy} storageKey={storageKey} onDismiss={onDismiss} />
+        </div>
+      )}
+      {item.state === "pending" && !promotable(item) && (
+        <div className="toolbar">
+          <DismissButton busy={busy} storageKey={storageKey} onDismiss={onDismiss} />
         </div>
       )}
       {reviewing && (

@@ -57,7 +57,9 @@ for (const file of files) {
       ),
     );
     await rm(errorFile, { force: true });
-    console.log(`${name}: OK ${raw.actionItems.length} actions, ${Date.now() - began}ms`);
+    console.log(
+      `${name}: OK ${raw.extraction.actionItems.length} actions, ${Date.now() - began}ms`,
+    );
   } catch (error) {
     await rm(output, { force: true });
     await writeFile(

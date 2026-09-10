@@ -1,4 +1,5 @@
 import type { ActionItem, ActionItemPolicy, Task } from "@chief-of-staff-demo/shared";
+import { actionItemProposal, promotable } from "@chief-of-staff-demo/shared";
 import type { ActionItemMaterialization, WorkspaceActionItems } from "./action-items.js";
 import { promoteActionItem } from "./promotion.js";
 import type { WorkspaceTasks } from "./tasks.js";
@@ -111,6 +112,13 @@ function isEligible(deps: AutoPromotionDeps, item: ActionItem): boolean {
   /* A decision already made — promoted or dismissed — is not automation's to
      revisit; a retry of this same materialization simply finds it made. */
   if (item.state !== "pending") return false;
+  /* Review cannot be bypassed (#355): an unresolved relationship, an
+     unreviewed correction, a record that is evidence about another one and a
+     proposal imported from an older Workspace all raise a question only the
+     owner can answer, and automation warns nobody. */
+  if (promotable(item) === false) return false;
+  const selected = item.proposalRevisions.find((entry) => entry.revision === item.selectedRevision);
+  if (selected?.origin.kind === "legacy-import") return false;
   if (
     item.handoff &&
     (item.handoff.commitment !== "explicit" ||
@@ -125,14 +133,14 @@ function isEligible(deps: AutoPromotionDeps, item: ActionItem): boolean {
   /* "Mine", confidently: the Debrief resolved this commitment to the
      confirmed owner's Profile. Nobody, or somebody else, waits for review —
      automation must never write another person's work into my list. */
-  if (item.proposal.responsiblePerson?.kind !== "owner") return false;
+  if (actionItemProposal(item).responsiblePerson?.kind !== "owner") return false;
   /* An obvious duplicate is the case the owner most needs to see (issue
      #180). Automation warns nobody, so it declines instead. */
   return (
     deps.tasks.findDuplicates({
-      title: item.proposal.title,
-      dueDate: item.proposal.dueDate,
-      responsiblePerson: item.proposal.responsiblePerson,
+      title: actionItemProposal(item).title,
+      dueDate: actionItemProposal(item).dueDate,
+      responsiblePerson: actionItemProposal(item).responsiblePerson,
     }).length === 0
   );
 }

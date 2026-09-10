@@ -1,11 +1,17 @@
 import { TaskCutoverReceiptSchema } from "@chief-of-staff-demo/shared";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ActionItem, Task, TaskList, TaskCutoverReceipt } from "@chief-of-staff-demo/shared";
+import type {
+  ActionItem,
+  ActionItemProposal,
+  Task,
+  TaskList,
+  TaskCutoverReceipt,
+} from "@chief-of-staff-demo/shared";
 import { writeJsonVerifiedSync } from "../engine/commit.js";
 
 /** The canonical bundle version this build writes and the newest it can read. */
-const BUNDLE_FORMAT = 2;
+const BUNDLE_FORMAT = 3;
 
 interface Bundle {
   format: number;
@@ -15,6 +21,30 @@ interface Bundle {
   actionItems: ActionItem[];
   receipt: TaskCutoverReceipt;
 }
+
+/** A Task as it may still be stored: `version` arrived with #355. */
+type StoredTask = Omit<Task, "version"> & { version?: number };
+
+/** The fields #355 added, which a Workspace written before it does not carry. */
+type AddedByProposalRevisions =
+  | "proposalRevisions"
+  | "selectedRevision"
+  | "reviewedThrough"
+  | "observations"
+  | "decisions"
+  | "reconciliations"
+  | "reconciledInto"
+  | "amendments"
+  | "version";
+
+/**
+ * An Action Item as it may still be stored: written by this build, or by one
+ * that predates proposal revisions (#355). The fields that release added are
+ * optional here because an older record genuinely lacks them, and the legacy
+ * `proposal` is consumed on read and never written again.
+ */
+type StoredActionItem = Omit<ActionItem, AddedByProposalRevisions> &
+  Partial<Pick<ActionItem, AddedByProposalRevisions>> & { proposal?: ActionItemProposal };
 
 /**
  * The Tasks product area's file-backed Workspace state (ADR-0058): Tasks, the
@@ -53,10 +83,11 @@ export class TaskStore {
    * record, and reading never writes.
    */
   readTasks(): Task[] {
-    return this.read<Task>(this.tasksFile, "Task", isTask).map((task) => ({
+    return this.read<StoredTask>(this.tasksFile, "Task", isTask).map((task) => ({
       ...task,
       externalLink: task.externalLink ?? null,
       deletedAt: task.deletedAt ?? null,
+      version: task.version ?? 1,
     }));
   }
 
@@ -72,12 +103,45 @@ export class TaskStore {
     this.write("lists", this.listsFile, lists);
   }
 
+  /**
+   * Every stored Action Item in the shape the current model describes. A
+   * record written before proposal revisions is normalized on the way out;
+   * reading never writes, so the older bytes stay on disk until something
+   * else commits the record.
+   */
   readActionItems(): ActionItem[] {
-    return this.read<ActionItem>(this.actionItemsFile, "Action Item", isActionItem);
+    const bundle = this.bundle();
+    if (bundle) return bundle.actionItems;
+    return this.readRecords(this.actionItemsFile, "Action Item", isActionItem).map(
+      normalizeActionItem,
+    );
   }
 
+  /**
+   * Commit the Action Items. One record, one commit: the materialization keys
+   * are read back out of the records themselves, so there is no second file
+   * that a crash after this write could leave behind.
+   */
   writeActionItems(items: ActionItem[]): void {
     this.write("actionItems", this.actionItemsFile, items);
+  }
+
+  /**
+   * Commit Tasks and Action Items as one change (#355). On the canonical
+   * bundle both live in one record, so accepting a proposal is a single
+   * commit and there is no interval in which the Task exists and the
+   * decision that created it does not. A Workspace still on the per-record
+   * files gets two commits and keeps relying on orphan adoption (#352),
+   * which is the interval this cannot close there.
+   */
+  commitAcceptance(tasks: Task[], actionItems: ActionItem[]): void {
+    const bundle = this.bundle();
+    if (bundle) {
+      writeJsonVerifiedSync(this.snapshotFile, this.nextBundle({ ...bundle, tasks, actionItems }));
+      return;
+    }
+    writeJsonVerifiedSync(this.tasksFile, tasks);
+    writeJsonVerifiedSync(this.actionItemsFile, actionItems);
   }
 
   cutoverReceipt(): TaskCutoverReceipt | null {
@@ -95,7 +159,11 @@ export class TaskStore {
 
   /** One atomic publication: readers observe either all old records or all migrated records. */
   publishCutover(
-    records: { tasks: Task[]; lists: TaskList[]; actionItems: ActionItem[] },
+    records: {
+      tasks: Task[];
+      lists: TaskList[];
+      actionItems: ActionItem[];
+    },
     receipt: TaskCutoverReceipt,
   ): void {
     writeJsonVerifiedSync(this.snapshotFile, this.nextBundle({ ...records, receipt }));
@@ -103,12 +171,7 @@ export class TaskStore {
 
   private bundle(): Bundle | null {
     if (!existsSync(this.snapshotFile)) return null;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(this.snapshotFile, "utf8"));
-    } catch {
-      throw new TaskStoreCorruptionError(this.snapshotFile, "the canonical snapshot is unreadable");
-    }
+    const parsed = parseJsonFile(this.snapshotFile, "the canonical snapshot is unreadable");
     if (
       typeof parsed !== "object" ||
       parsed === null ||
@@ -151,7 +214,7 @@ export class TaskStore {
       generation,
       tasks: parsed.tasks,
       lists: parsed.lists,
-      actionItems: parsed.actionItems,
+      actionItems: parsed.actionItems.map(normalizeActionItem),
       // Checked by the schema above; the field and the record agree here.
       receipt: parsed.receipt as TaskCutoverReceipt,
     };
@@ -179,21 +242,14 @@ export class TaskStore {
 
   private read<T>(path: string, record: string, guard: (value: unknown) => value is T): T[] {
     const bundle = this.bundle();
-    if (bundle)
-      return (
-        path === this.tasksFile
-          ? bundle.tasks
-          : path === this.listsFile
-            ? bundle.lists
-            : bundle.actionItems
-      ) as T[];
+    if (bundle) return (path === this.tasksFile ? bundle.tasks : bundle.lists) as T[];
+    return this.readRecords(path, record, guard);
+  }
+
+  /** One per-record file, guarded. The canonical bundle is not consulted. */
+  private readRecords<T>(path: string, record: string, guard: (value: unknown) => value is T): T[] {
     if (!existsSync(path)) return [];
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(path, "utf8"));
-    } catch {
-      throw new TaskStoreCorruptionError(path, `the ${record} file is not valid JSON`);
-    }
+    const parsed = parseJsonFile(path, `the ${record} file is not valid JSON`);
     if (!Array.isArray(parsed)) {
       throw new TaskStoreCorruptionError(path, `the ${record} file is not a list`);
     }
@@ -237,6 +293,80 @@ export class TaskStoreFormatError extends Error {
   }
 }
 
+function parseJsonFile(path: string, detail: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new TaskStoreCorruptionError(path, detail);
+  }
+}
+
+/**
+ * An Action Item written before proposal revisions existed becomes the one the
+ * current model describes: the stored proposal is revision 1, its origin says
+ * honestly that the extraction artifact and its observations are unknown, and
+ * every field the record already had — id, source, handoff, timestamps,
+ * decision, promotion — is carried over unchanged. Reading never writes; the
+ * next write stores the normalized shape.
+ */
+function normalizeActionItem(stored: StoredActionItem): ActionItem {
+  const { proposal, ...rest } = stored;
+  const revisions = Array.isArray(rest.proposalRevisions) ? rest.proposalRevisions : [];
+  if (revisions.length > 0 && proposal === undefined) {
+    return {
+      ...rest,
+      proposalRevisions: revisions,
+      selectedRevision: rest.selectedRevision ?? 1,
+      reviewedThrough: rest.reviewedThrough ?? rest.selectedRevision ?? 1,
+      observations: rest.observations ?? [],
+      decisions: rest.decisions ?? [],
+      reconciliations: rest.reconciliations ?? [],
+      reconciledInto: rest.reconciledInto ?? null,
+      amendments: rest.amendments ?? [],
+      version: rest.version ?? 1,
+    };
+  }
+  const content = proposal ??
+    revisions[0]?.content ?? { title: "", notes: "", dueDate: null, responsiblePerson: null };
+  return {
+    ...rest,
+    proposalRevisions: [
+      {
+        revision: 1,
+        content,
+        origin: {
+          kind: "legacy-import",
+          debriefRunId: rest.source.debriefRunId,
+          note: "Imported from a Workspace that predates proposal revisions: the original extraction artifact, candidate alias and evidence occurrence are unknown.",
+        },
+        extractionRevision: rest.extractionRevision,
+        createdAt: rest.createdAt,
+      },
+    ],
+    selectedRevision: 1,
+    reviewedThrough: 1,
+    observations: rest.observations ?? [
+      {
+        id: `observation_legacy_${rest.id}`,
+        proposalRevision: 1,
+        transcriptId: rest.source.transcriptId,
+        transcriptObservedRevision: null,
+        transcriptChecksum: null,
+        occurrence: { locator: "legacy:unknown", timestamp: null, quote: null },
+        artifactId: null,
+        outputEntryId: null,
+        candidateAliases: [],
+        notedAt: rest.createdAt,
+      },
+    ],
+    decisions: rest.decisions ?? [],
+    reconciliations: rest.reconciliations ?? [],
+    reconciledInto: rest.reconciledInto ?? null,
+    amendments: rest.amendments ?? [],
+    version: rest.version ?? 1,
+  };
+}
+
 function isTask(value: unknown): value is Task {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -255,12 +385,23 @@ function isTaskList(value: unknown): value is TaskList {
   return typeof candidate.id === "string" && typeof candidate.name === "string";
 }
 
-function isActionItem(value: unknown): value is ActionItem {
+function isActionItem(value: unknown): value is StoredActionItem {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
+  const proposals =
+    (typeof candidate.proposal === "object" && candidate.proposal !== null) ||
+    (Array.isArray(candidate.proposalRevisions) &&
+      candidate.proposalRevisions.length > 0 &&
+      candidate.proposalRevisions.every(
+        (revision) =>
+          typeof revision === "object" &&
+          revision !== null &&
+          typeof (revision as Record<string, unknown>).content === "object" &&
+          typeof (revision as Record<string, unknown>).revision === "number",
+      ));
   return (
     typeof candidate.id === "string" &&
-    typeof candidate.proposal === "object" &&
+    proposals &&
     typeof candidate.source === "object" &&
     (candidate.state === "pending" ||
       candidate.state === "promoted" ||

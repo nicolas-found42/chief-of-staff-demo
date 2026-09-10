@@ -8,6 +8,7 @@ import type {
   MeetingDebriefReviewState,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { composeExternalDebriefBody } from "./externalBody.js";
 
 /** Identity matching is delegated to the canonical Action Item owner. */
@@ -62,9 +63,9 @@ export function emailOptions(
   for (const item of joined?.earlier ?? [])
     candidates.push({
       id: item.id,
-      title: item.proposal.title,
+      title: actionItemProposal(item).title,
       owner: item.evidence.responsibleSurfaceName,
-      dueDate: item.proposal.dueDate,
+      dueDate: actionItemProposal(item).dueDate,
       earlier: true,
       reviewState: item.state,
       includedByDefault: false,

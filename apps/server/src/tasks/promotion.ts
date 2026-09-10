@@ -1,4 +1,5 @@
 import type { ActionItem, Task, TaskCreateInput } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import type { WorkspaceActionItems } from "./action-items.js";
 import { TaskValidationError, type WorkspaceTasks } from "./tasks.js";
 
@@ -24,6 +25,14 @@ export interface PromotionDeps {
 export interface PromotionInput extends Partial<TaskCreateInput> {
   /** Create the Task already completed — the meeting's work is already done. */
   completed?: boolean;
+  /**
+   * The Action Item version the owner reviewed (#355). A promotion decided
+   * from an older read than the record now has is refused instead of
+   * overwriting the change it never saw.
+   */
+  expectedVersion?: number;
+  /** The proposal revision the owner reviewed, checked against the selection. */
+  expectedProposalRevision?: number;
 }
 
 export interface PromotionResult {
@@ -54,10 +63,23 @@ export function promoteActionItem(
   if (!item) {
     throw new TaskValidationError("task-not-found", `No Action Item with id ${actionItemId}`);
   }
-  if (item.state === "dismissed") {
+  const refusal = deps.actionItems.promotionRefusal(item);
+  if (refusal && item.state !== "promoted") {
+    throw new TaskValidationError(refusal.code, refusal.message);
+  }
+  if (input.expectedVersion !== undefined && input.expectedVersion !== item.version) {
     throw new TaskValidationError(
-      "action-item-dismissed",
-      "That Action Item was dismissed. Restore it to pending before creating a Task.",
+      "action-item-version-conflict",
+      `That Action Item changed since you read it (expected version ${input.expectedVersion}, current ${item.version}). Reload it and review the change.`,
+    );
+  }
+  if (
+    input.expectedProposalRevision !== undefined &&
+    input.expectedProposalRevision !== item.selectedRevision
+  ) {
+    throw new TaskValidationError(
+      "action-item-version-conflict",
+      `That proposal changed since you read it (expected revision ${input.expectedProposalRevision}, current ${item.selectedRevision}). Reload it and review the change.`,
     );
   }
   if (item.state === "promoted" && item.promotedTaskId !== null) {
@@ -106,20 +128,25 @@ export function promoteActionItem(
        not authority to complete or edit the existing Task (#352). */
     return {
       task: orphan,
-      actionItem: deps.actionItems.recordPromotion(item.id, orphan.id),
+      actionItem: deps.actionItems.recordPromotion(
+        item.id,
+        orphan.id,
+        { taskVersion: orphan.version },
+        { ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }) },
+      ),
       created: false,
     };
   }
-  const task = deps.tasks.create(
+  const prepared = deps.tasks.prepare(
     {
-      title: input.title ?? item.proposal.title,
-      notes: input.notes ?? item.proposal.notes,
-      dueDate: input.dueDate === undefined ? item.proposal.dueDate : input.dueDate,
+      title: input.title ?? actionItemProposal(item).title,
+      notes: input.notes ?? actionItemProposal(item).notes,
+      dueDate: input.dueDate === undefined ? actionItemProposal(item).dueDate : input.dueDate,
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.listId === undefined ? {} : { listId: input.listId }),
       responsiblePerson:
         input.responsiblePerson === undefined
-          ? item.proposal.responsiblePerson
+          ? actionItemProposal(item).responsiblePerson
           : input.responsiblePerson,
       ...(input.destination === undefined ? {} : { destination: input.destination }),
     },
@@ -131,9 +158,18 @@ export function promoteActionItem(
       meetingId: item.source.meetingId,
     },
   );
-  if (input.completed === true) {
-    deps.tasks.complete(task.id);
-  }
-  const actionItem = deps.actionItems.recordPromotion(item.id, task.id);
-  return { task: deps.tasks.get(task.id) ?? task, actionItem, created: true };
+  /* The meeting's work may already be done, and a Task created open and then
+     completed is two states the Workspace never needs to have held. */
+  const task = input.completed === true ? deps.tasks.completedNow(prepared) : prepared;
+  /* One publication (#355): the accepted Task, its initial state and the
+     Action Item's own decision reach the Workspace together, so there is no
+     interval in which the Task exists and nothing says who accepted it. */
+  const staged = deps.actionItems.stagePromotion(
+    item.id,
+    task.id,
+    { taskVersion: task.version },
+    { ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }) },
+  );
+  deps.tasks.commitAcceptance(task, staged.all ?? deps.actionItems.list());
+  return { task: deps.tasks.get(task.id) ?? task, actionItem: staged.committed, created: true };
 }

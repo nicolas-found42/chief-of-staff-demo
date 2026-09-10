@@ -4,6 +4,7 @@ import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ActionItem, Task, TaskIndex, TaskList } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { registerTasksApi } from "../../../apps/server/src/api/tasks";
 import { TaskStore, TaskStoreCorruptionError } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
@@ -697,7 +698,7 @@ describe("promoting one reviewed Action Item", () => {
     expect(actionItem).toMatchObject({ state: "promoted", promotedTaskId: task.id });
     /* The proposal is what the meeting said, and stays that way however the
        Task is edited afterwards. */
-    expect(actionItem.proposal.title).toBe("Send the pricing sheet");
+    expect(actionItemProposal(actionItem).title).toBe("Send the pricing sheet");
   });
 
   it("creates a completed Task when the review says the work is already done", async () => {

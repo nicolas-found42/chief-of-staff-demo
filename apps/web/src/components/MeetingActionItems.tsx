@@ -6,6 +6,7 @@ import type {
   PersonProfile,
   TaskIndex,
 } from "@chief-of-staff-demo/shared";
+import { actionItemProposal } from "@chief-of-staff-demo/shared";
 import { tasksApi } from "../clients/tasks";
 import { peopleApi } from "../clients/people";
 import { errorMessage } from "../client";
@@ -146,7 +147,7 @@ export function MeetingActionItems({
   };
   const restore = async (item: ActionItem) => {
     if (
-      await act(item.id, `Restored ${item.proposal.title}.`, () =>
+      await act(item.id, `Restored ${actionItemProposal(item).title}.`, () =>
         tasksApi.restoreActionItem(item.id),
       )
     )
@@ -171,7 +172,7 @@ export function MeetingActionItems({
       )}
       {dismissed && (
         <p>
-          Dismissed {dismissed.proposal.title}.{" "}
+          Dismissed {actionItemProposal(dismissed).title}.{" "}
           <button ref={undo} type="button" onClick={() => void restore(dismissed)}>
             Undo
           </button>
@@ -191,6 +192,7 @@ export function MeetingActionItems({
               profiles={profiles}
               busy={busy.includes(item.id)}
               checkDuplicates={tasksApi.checkDuplicates}
+              onResolved={load}
               onPromote={(values, completed) =>
                 act(
                   item.id,
@@ -209,7 +211,7 @@ export function MeetingActionItems({
               }
               onDismiss={async () => {
                 if (
-                  await act(item.id, `Dismissed ${item.proposal.title}.`, () =>
+                  await act(item.id, `Dismissed ${actionItemProposal(item).title}.`, () =>
                     tasksApi.dismissActionItem(item.id),
                   )
                 )
@@ -240,7 +242,7 @@ export function MeetingActionItems({
           <ul>
             {reviewed.map((item) => (
               <li key={item.id} id={`action-item-${item.id}`}>
-                {item.proposal.title} ·{" "}
+                {actionItemProposal(item).title} ·{" "}
                 {item.state === "dismissed"
                   ? "Dismissed"
                   : tasks?.tasks.find((task) => task.id === item.promotedTaskId)?.status ===
@@ -249,7 +251,7 @@ export function MeetingActionItems({
                     : "Task created"}{" "}
                 {item.handoff && (
                   <ReadingDisclosure id={`${item.id}-reviewed-details`} label="Execution details">
-                    <p style={{ whiteSpace: "pre-wrap" }}>{item.proposal.notes}</p>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{actionItemProposal(item).notes}</p>
                   </ReadingDisclosure>
                 )}
                 {item.promotedTaskId ? (

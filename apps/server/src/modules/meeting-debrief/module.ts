@@ -30,7 +30,7 @@ import {
 } from "./review.js";
 import { resolveActionItemOwners, stripUnverifiedRecipientEmails } from "./extraction.js";
 import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
-import { extractDebriefCandidates } from "./candidate-extraction.js";
+import { extractDebriefCandidates, type CheckedExtraction } from "./candidate-extraction.js";
 import { composeExternalDebriefBody } from "./externalBody.js";
 
 export type {
@@ -90,7 +90,12 @@ interface DebriefActionItemHandover {
   transcriptId: string;
   /** The Meeting the Transcript belongs to; null until one is placed. */
   meetingId: string | null;
+  /** The immutable source revision the extraction read, when it is known. */
+  transcriptObservedRevision?: number | null;
+  transcriptChecksum?: string | null;
   actionItems: MeetingDebriefExtraction["actionItems"];
+  /** The extraction's own candidate ids, aligned with `actionItems`. */
+  candidateAliases?: (string | null)[];
 }
 
 /**
@@ -172,7 +177,7 @@ async function extractWithModel(
   identity: DebriefIdentityReview,
   deps: MeetingDebriefModuleDeps,
   useCheckpoints: boolean,
-): Promise<MeetingDebriefExtraction> {
+): Promise<CheckedExtraction> {
   if (!deps.getCompleteJson) {
     throw new Error("Meeting Debrief extraction provider is unavailable");
   }
@@ -248,13 +253,19 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     ctx: RunContext,
     record: TranscriptRecord,
     useCheckpoints = true,
-  ): Promise<MeetingDebriefExtraction> => {
+  ): Promise<CheckedExtraction> => {
     const identity = deps.identity.reviewFor(record.id);
-    const debrief = deps.extract
-      ? await deps.extract({ record, identity })
+    const checked = deps.extract
+      ? { extraction: await deps.extract({ record, identity }), checkedAliases: [] }
       : await extractWithModel(ctx, record, identity, deps, useCheckpoints);
-    const resolved = resolveActionItemOwners(debrief, deps.identity.reviewFor(record.id));
-    return stripUnverifiedRecipientEmails(resolved, record);
+    const resolved = resolveActionItemOwners(
+      checked.extraction,
+      deps.identity.reviewFor(record.id),
+    );
+    return {
+      ...checked,
+      extraction: stripUnverifiedRecipientEmails(resolved, record),
+    };
   };
 
   /** Store the result of a finished extraction or regeneration on the Run. */
@@ -310,8 +321,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       // sees exactly what every other generation saw — the immutable record
       // and the Catalog's review state. The replaced value is not an input.
       const merged = await ctx.stage("regenerate", async () => {
-        const debrief = await extract(ctx, record, false);
-        const merged = mergeRegeneratedField(currentDebrief(ctx), request.field, debrief);
+        const checked = await extract(ctx, record, false);
+        const merged = mergeRegeneratedField(
+          currentDebrief(ctx),
+          request.field,
+          checked.extraction,
+        );
         storeResult(ctx, merged, transcriptId);
         /* A regeneration is an extraction, so its proposals reach the queue
            the same way (issue #177). Materialization is idempotent and adds
@@ -322,7 +337,14 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           debriefRunId: ctx.runId,
           transcriptId,
           meetingId: record.meetingId,
+          transcriptObservedRevision: record.source.observedRevision,
+          transcriptChecksum: record.source.checksum,
           actionItems: merged.actionItems,
+          /* A regenerated Action Item list is this Run's own checked output,
+             so it carries this Run's candidate accounting. Entries the
+             regeneration kept unchanged still materialize under their original
+             keys and keep the records they already have. */
+          candidateAliases: checked.checkedAliases,
         });
         const next: MeetingDebriefReviewState = {
           ...state,
@@ -563,7 +585,8 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       // Run reports done once its proposals exist as Workspace records, not
       // once its text does (issue #177).
       await ctx.stage("extract", async () => {
-        const debrief = await extract(ctx, record);
+        const checked = await extract(ctx, record);
+        const debrief = checked.extraction;
         storeResult(ctx, debrief, transcriptId);
         ctx.event("debrief_extracted", {
           decisions: debrief.decisions.length,
@@ -574,7 +597,10 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           debriefRunId: ctx.runId,
           transcriptId,
           meetingId: record.meetingId,
+          transcriptObservedRevision: record.source.observedRevision,
+          transcriptChecksum: record.source.checksum,
           actionItems: debrief.actionItems,
+          candidateAliases: checked.checkedAliases,
         });
         return debrief;
       });

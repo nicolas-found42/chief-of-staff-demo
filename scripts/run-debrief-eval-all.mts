@@ -172,7 +172,7 @@ async function runOne(
       );
   };
   try {
-    extraction = await extractDebriefCandidates({
+    const checked = await extractDebriefCandidates({
       record,
       identity: { mentions: [], decisions: [], organizations: [] },
       complete,
@@ -182,6 +182,7 @@ async function runOne(
         if (name === "assembled") raw = value;
       },
     });
+    extraction = checked.extraction;
   } catch (error) {
     lastDetail = errorMessage(error);
     lastDiagnostic = modelDiagnosticEventDetail(error);
