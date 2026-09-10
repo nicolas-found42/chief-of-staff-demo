@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteJson } from "../../engine/atomic.js";
+import { writeJsonVerifiedSync } from "../../engine/commit.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { MeetingBriefCancellation, MeetingBriefEvent } from "@chief-of-staff-demo/shared";
 
@@ -160,7 +160,7 @@ function readState(workspaceDir: string): MeetingBriefCalendarState {
 
 function writeState(workspaceDir: string, state: MeetingBriefCalendarState): void {
   const file = filePath(workspaceDir);
-  atomicWriteJson(file, state);
+  writeJsonVerifiedSync(file, state);
 }
 
 export class MeetingBriefCalendarStore {

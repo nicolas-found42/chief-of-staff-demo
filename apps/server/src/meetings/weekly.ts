@@ -2,7 +2,7 @@ import { observeWorkspaceChanges } from "../engine/workspace-changes.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteJson } from "../engine/atomic.js";
+import { writeJsonVerifiedSync } from "../engine/commit.js";
 import type { WeeklySummaryState } from "@chief-of-staff-demo/shared";
 import { z } from "zod/v3";
 import type { CompleteJson } from "../llm/providers.js";
@@ -195,7 +195,7 @@ export class WeeklyWorkspace {
       if (cached.dirtyFingerprint !== fingerprint) {
         cached.dirtyFingerprint = fingerprint;
         cached.dirtyAt = this.deps.now().getTime();
-        atomicWriteJson(path, cached);
+        writeJsonVerifiedSync(path, cached);
       }
       const remaining = 15 * 60_000 - (this.deps.now().getTime() - (cached.dirtyAt ?? 0));
       if (remaining > 0) {
@@ -227,7 +227,12 @@ export class WeeklyWorkspace {
          Meetings produced it, the fingerprint that settles reuse, and — inside
          `summary` — the text, the generation time, the provider and the model.
          A BYOK owner who switches providers can see which one wrote this. */
-      atomicWriteJson(path, { week: view.weekStart, fingerprint, sources, summary: view.summary });
+      writeJsonVerifiedSync(path, {
+        week: view.weekStart,
+        fingerprint,
+        sources,
+        summary: view.summary,
+      });
     } catch {
       if (generation !== this.generation)
         return {
@@ -239,7 +244,7 @@ export class WeeklyWorkspace {
         state: "failed",
         error: "Weekly Summary could not be generated. Retry summary.",
       };
-      atomicWriteJson(path, {
+      writeJsonVerifiedSync(path, {
         ...(cached ?? { fingerprint: "", summary: view.summary }),
         week: view.weekStart,
         sources: cached?.sources ?? sources,
@@ -291,7 +296,7 @@ export class WeeklyWorkspace {
       if (generation !== this.generation || !email.enabled() || !email.ownerConfirmed()) return;
       const rendered = renderWeeklyBriefingEmail(view);
       const sent = already ?? (await email.deliver.send({ ...rendered, deliveryId }));
-      atomicWriteJson(path, {
+      writeJsonVerifiedSync(path, {
         weekStart: view.weekStart,
         deliveryId,
         messageId: sent.messageId,
@@ -350,7 +355,7 @@ export class WeeklyWorkspace {
           message: "Review the current provider and model before confirming.",
         });
       }
-      atomicWriteJson(join(this.deps.workspaceDir, "weekly", "consent.json"), {
+      writeJsonVerifiedSync(join(this.deps.workspaceDir, "weekly", "consent.json"), {
         provider: current.provider,
         model: current.model,
         consentedAt: this.deps.now().toISOString(),

@@ -19,6 +19,11 @@ playwright-report/
 package-lock.json
 p/
 
+# TypeScript's incremental builder writes `_tmp_<pid>_<hex>` beside the
+# tsbuildinfo it replaces. `check:static` runs typecheck and format:check in
+# parallel, so the scan can catch that file mid-rename and fail on it.
+_tmp_*
+
 # Raw transcript exports from the meeting provider; not ours to reformat.
 tests/fixtures/debrief-golden/transcripts/
 

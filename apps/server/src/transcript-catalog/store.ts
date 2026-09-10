@@ -1,12 +1,5 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { writeFileVerifiedSync } from "../engine/commit.js";
 import { join } from "node:path";
 import type {
   TranscriptConsent,
@@ -250,9 +243,8 @@ export class TranscriptCatalogStore {
     }
   }
 
+  /** Committed through the Shell's commit protocol (#354). */
   private writeAtomic(path: string, content: string): void {
-    const temporary = `${path}.tmp`;
-    writeFileSync(temporary, content, "utf8");
-    renameSync(temporary, path);
+    writeFileVerifiedSync(path, content);
   }
 }

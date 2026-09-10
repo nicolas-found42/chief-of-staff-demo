@@ -1,14 +1,11 @@
 import { notifyWorkspaceChange } from "./engine/workspace-changes.js";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+  WorkspaceIntegrityError,
+  readJsonRecord,
+  writeFileVerifiedSync,
+  writeJsonVerifiedSync,
+} from "./engine/commit.js";
 import { join } from "node:path";
 import {
   type RunDetail,
@@ -98,21 +95,67 @@ export interface Runs {
   detail(id: string): RunDetail | null;
 }
 
+/** A Run record that exists but cannot be read as the thing it claims to be. */
+export class RunStoreCorruptionError extends WorkspaceIntegrityError {
+  constructor(path: string, detail: string) {
+    super(`Run record ${path} ${detail}`);
+    this.name = "RunStoreCorruptionError";
+  }
+}
+
 /**
- * Written to a sibling and renamed over the target: a torn `meta.json` is the
- * one failure that makes a Run vanish from the list rather than merely look
- * stale, and rename is atomic within a directory.
+ * Written through the Shell's commit protocol (#354): a unique sibling, a
+ * rename over the target and a read-back of the published bytes. A torn
+ * `meta.json` is the one failure that makes a Run vanish from the list rather
+ * than merely look stale.
  */
 function writeMeta(runDir: string, meta: RunMeta): void {
-  const path = join(runDir, "meta.json");
-  const temp = `${path}.tmp`;
-  writeFileSync(temp, JSON.stringify(meta, null, 2) + "\n", "utf8");
-  renameSync(temp, path);
+  writeJsonVerifiedSync(join(runDir, "meta.json"), meta);
 }
 
 function readMeta(runDir: string): RunMeta {
-  return JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) as RunMeta;
+  const path = join(runDir, "meta.json");
+  let meta: RunMeta | null;
+  try {
+    meta = readJsonRecord(path, isRunMeta);
+  } catch (error) {
+    throw new RunStoreCorruptionError(
+      path,
+      error instanceof Error ? error.message : "cannot be read",
+    );
+  }
+  if (meta === null) throw new RunStoreCorruptionError(path, "is missing");
+  return meta;
 }
+
+/**
+ * The fields every reader of a Run depends on. A record carrying an unknown
+ * status is refused rather than rendered: the alternative is a page that shows
+ * a Run as neither pending nor finished, which reads as a product bug instead
+ * of the damaged file it is.
+ */
+function isRunMeta(value: unknown): value is RunMeta {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.module === "string" &&
+    typeof candidate.createdAt === "string" &&
+    typeof candidate.attempts === "number" &&
+    typeof candidate.status === "string" &&
+    candidate.status in RUN_STATUSES
+  );
+}
+
+/** Keyed by the status union, so a status added to `RunMeta` fails the build here. */
+const RUN_STATUSES: Record<RunMeta["status"], true> = {
+  pending: true,
+  running: true,
+  blocked: true,
+  failed: true,
+  done: true,
+  skipped: true,
+};
 
 function appendEvent(runDir: string, type: string, detail?: Record<string, unknown>): void {
   const event: RunEvent = { at: new Date().toISOString(), type };
@@ -122,23 +165,41 @@ function appendEvent(runDir: string, type: string, detail?: Record<string, unkno
   appendFileSync(join(runDir, "events.jsonl"), JSON.stringify(event) + "\n", "utf8");
 }
 
+/**
+ * The timeline, with the one damaged line a crash can explain tolerated: an
+ * interrupted append leaves the final line torn, and the transition's meta was
+ * committed before it, so the state stays consistent without it. A damaged line
+ * anywhere else means the timeline lost an event it once held — corruption, not
+ * a race, and refusing it keeps a hole in the log from rendering as a complete
+ * story (ADR-0086).
+ */
 function readEvents(runDir: string): RunEvent[] {
   const path = join(runDir, "events.jsonl");
   if (!existsSync(path)) {
     return [];
   }
+  const lines = readFileSync(path, "utf8").split("\n");
   const events: RunEvent[] = [];
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+  for (const [index, line] of lines.entries()) {
     if (line.trim() === "") {
       continue;
     }
     try {
-      events.push(JSON.parse(line) as RunEvent);
+      const parsed: unknown = JSON.parse(line);
+      if (!isRunEvent(parsed)) throw new Error("not an event");
+      events.push(parsed);
     } catch {
-      // Tolerate a torn final line rather than losing the whole timeline.
+      if (index === lines.length - 1) continue;
+      throw new RunStoreCorruptionError(path, `is damaged at line ${index + 1}`);
     }
   }
   return events;
+}
+
+function isRunEvent(value: unknown): value is RunEvent {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.at === "string" && typeof candidate.type === "string";
 }
 
 function validateArtifactName(name: string): void {
@@ -357,7 +418,7 @@ class RunHandleImpl implements RunHandle {
 
   writeArtifact(name: string, text: string): void {
     validateArtifactName(name);
-    writeFileSync(join(this.dir, name), text, "utf8");
+    writeFileVerifiedSync(join(this.dir, name), text);
     notifyWorkspaceChange(join(this.dir, "../.."));
   }
 

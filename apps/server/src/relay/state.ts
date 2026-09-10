@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { atomicWriteJson } from "../engine/atomic.js";
+import { writeJsonVerifiedSync } from "../engine/commit.js";
 
 /**
  * Shell-side relay workspace persistence — issue://80 (relay registration) + ADR-0031.
@@ -115,7 +115,7 @@ export class RelayStateStore {
   }
 
   save(state: RelayWorkspace): void {
-    atomicWriteJson(this.filePath, state);
+    writeJsonVerifiedSync(this.filePath, state);
   }
 
   ensureInstallation(): {

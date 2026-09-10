@@ -1,5 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import {
   type AppConfig,
   type ConfigUpdate,
@@ -11,6 +10,7 @@ import {
   DEFAULT_MODELS,
   DEFAULT_OLLAMA_BASE_URL,
 } from "@chief-of-staff-demo/shared";
+import { writeJsonVerifiedSync } from "./engine/commit.js";
 
 /** Recursively merge `patch` over `base`; missing keys keep the base value. */
 function deepMerge(base: unknown, patch: unknown): unknown {
@@ -271,9 +271,13 @@ export class ConfigStore {
     this.persist();
   }
 
+  /**
+   * Committed through the Shell's commit protocol (#354): policy, model and
+   * release-enablement context decide eligibility later, so a half-written
+   * configuration must never be readable as a valid one.
+   */
   private persist(): void {
-    mkdirSync(dirname(this.configFile), { recursive: true });
-    writeFileSync(this.configFile, JSON.stringify(this.get(), null, 2) + "\n", "utf8");
+    writeJsonVerifiedSync(this.configFile, this.get());
   }
 }
 

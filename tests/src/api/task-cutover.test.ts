@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -95,8 +95,10 @@ describe("canonical Task cutover", () => {
     const store = new TaskStore(dir);
     const tasks = new WorkspaceTasks({ store });
     const task = tasks.create({ title: "Preserved during failed publication" });
-    // A directory at the temporary-file path forces the actual atomic writer to fail.
-    mkdirSync(join(dir, "tasks", "state.json.tmp"));
+    /* Publication has to reach the filesystem to fail: a directory the
+       process may not write makes every commit attempt fail, whatever the
+       temporary file is called. */
+    chmodSync(join(dir, "tasks"), 0o500);
     const cutover = new TaskCutover({ workspaceDir: dir });
     const preview = await cutover.preview();
     await expect(
@@ -104,7 +106,7 @@ describe("canonical Task cutover", () => {
     ).rejects.toThrow();
     expect(new TaskStore(dir).cutoverReceipt()).toBeNull();
     expect(new WorkspaceTasks({ store: new TaskStore(dir) }).list()).toEqual([task]);
-    rmSync(join(dir, "tasks", "state.json.tmp"), { recursive: true });
+    chmodSync(join(dir, "tasks"), 0o700);
     const restarted = new TaskCutover({ workspaceDir: dir });
     const fresh = await restarted.preview();
     const receipt = await restarted.execute({ ...fresh, typedConfirmation: "MIGRATE TASKS" });
