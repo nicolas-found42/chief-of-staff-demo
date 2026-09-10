@@ -1,5 +1,6 @@
 import type {
   ActionItem,
+  ActionItemDisposition,
   ActionItemIndex,
   ActionItemPolicy,
   ActionItemState,
@@ -194,6 +195,39 @@ export const tasksApi = {
     request<{ actionItem: ActionItem }>(
       `/api/action-items/${encodeURIComponent(actionItemId)}/restore`,
       { method: "POST" },
+    ),
+  /**
+   * Choose the proposal revision promotion accepts (issue #355). Bound to the
+   * version the surface was showing, so a decision taken against a record that
+   * has since moved is refused rather than applied.
+   */
+  selectActionItemProposal: (actionItemId: string, revision: number, expectedVersion: number) =>
+    request<{ actionItem: ActionItem }>(
+      `/api/action-items/${encodeURIComponent(actionItemId)}/select-proposal`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision, expectedVersion }),
+      },
+    ),
+  /** Record what a proposal means next to the work already held (issue #355). */
+  reconcileActionItem: (
+    actionItemId: string,
+    disposition: ActionItemDisposition,
+    expectedVersion: number,
+    targetActionItemId?: string,
+  ) =>
+    request<{ actionItem: ActionItem }>(
+      `/api/action-items/${encodeURIComponent(actionItemId)}/reconcile`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          disposition,
+          expectedVersion,
+          ...(targetActionItemId === undefined ? {} : { targetActionItemId }),
+        }),
+      },
     ),
   actionItemPolicy: () => request<ActionItemPolicySetting>("/api/action-item-policy"),
   /* The confirmation travels in the request, like permanent deletion's does:

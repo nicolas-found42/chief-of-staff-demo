@@ -192,6 +192,7 @@ export function MeetingActionItems({
               profiles={profiles}
               busy={busy.includes(item.id)}
               checkDuplicates={tasksApi.checkDuplicates}
+              onResolved={load}
               onPromote={(values, completed) =>
                 act(
                   item.id,
