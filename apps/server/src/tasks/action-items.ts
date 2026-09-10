@@ -25,6 +25,7 @@ import {
   MaterializationIntegrityError,
   materializationKey,
   outputEntryId,
+  materializationIndex,
   payloadChecksum,
   type CheckedEntryPayload,
   type CheckedOutputEntry,
@@ -112,8 +113,7 @@ export class WorkspaceActionItems {
    */
   materialize(input: ActionItemMaterialization): ActionItem[] {
     const stored = this.store.readActionItems();
-    const mappings = this.store.readActionItemMappings();
-    const byKey = new Map(mappings.map((mapping) => [mapping.key, mapping]));
+    const byKey = materializationIndex(stored);
     const byId = new Map(stored.map((item) => [item.id, item]));
     const entries = input.actionItems.map((proposed, index) =>
       this.checkedEntry(
@@ -131,7 +131,6 @@ export class WorkspaceActionItems {
     const at = this.now().toISOString();
     const materialized: ActionItem[] = [];
     const added: ActionItem[] = [];
-    const appendedMappings: ActionItemMaterializationMapping[] = [];
     entries.forEach((entry, index) => {
       const entryId = outputEntryId(entries, index);
       const key = materializationKey(input.debriefRunId, entryId);
@@ -166,20 +165,9 @@ export class WorkspaceActionItems {
         candidates: this.reconciliationCandidates(stored, input, entry.payload),
       });
       added.push(item);
-      appendedMappings.push({
-        key,
-        debriefRunId: input.debriefRunId,
-        outputEntryId: entryId,
-        candidateAlias: entry.candidateAlias,
-        payloadChecksum: checksum,
-        actionItemId: id,
-        proposalRevision: 1,
-        allocatedAt: at,
-      });
       materialized.push(item);
     });
-    if (added.length > 0)
-      this.store.writeActionItems([...stored, ...added], [...mappings, ...appendedMappings]);
+    if (added.length > 0) this.store.writeActionItems([...stored, ...added]);
     return materialized;
   }
 
@@ -194,9 +182,7 @@ export class WorkspaceActionItems {
   } {
     const currentItems = this.list({ debriefRunId: input.debriefRunId });
     const items = input.meetingId ? this.list({ meetingId: input.meetingId }) : currentItems;
-    const byKey = new Map(
-      this.store.readActionItemMappings().map((mapping) => [mapping.key, mapping.actionItemId]),
-    );
+    const byKey = materializationIndex(this.store.readActionItems());
     const entries = input.actionItems.map((proposed, index) =>
       this.checkedEntry(
         proposed,
@@ -204,8 +190,10 @@ export class WorkspaceActionItems {
         input.candidateAliases?.[index] ?? null,
       ),
     );
-    const ids = entries.map((_, index) =>
-      byKey.get(materializationKey(input.debriefRunId, outputEntryId(entries, index))),
+    const ids = entries.map(
+      (_, index) =>
+        byKey.get(materializationKey(input.debriefRunId, outputEntryId(entries, index)))
+          ?.actionItemId,
     );
     const current = ids.map((id) => currentItems.find((item) => item.id === id) ?? null);
     return {
@@ -707,6 +695,7 @@ export class WorkspaceActionItems {
       meetingId: input.input.meetingId,
       materializationKey: input.key,
       outputEntryId: input.entryId,
+      payloadChecksum: payloadChecksum(payload),
       candidateAlias: input.entry.candidateAlias,
     };
     const candidateAliases =

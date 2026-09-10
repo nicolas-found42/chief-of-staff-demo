@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
+  ActionItem,
+  ActionItemMaterializationMapping,
   ActionItemOccurrence,
   MeetingHandoff,
   TaskResponsiblePerson,
@@ -110,4 +112,32 @@ export function outputEntryId(entries: readonly CheckedOutputEntry[], index: num
  */
 export function materializationKey(debriefRunId: string, entryId: string): string {
   return `materialization:v${MATERIALIZATION_KEY_VERSION}:${debriefRunId}:${entryId}`;
+}
+
+/**
+ * The materialization index, read from the records themselves. Every proposal
+ * revision an extraction produced names the key it was materialized under and
+ * the checksum of the entry that was checked, so the index is a projection of
+ * durable state rather than a second record that can go missing.
+ */
+export function materializationIndex(
+  items: readonly ActionItem[],
+): Map<string, ActionItemMaterializationMapping> {
+  const index = new Map<string, ActionItemMaterializationMapping>();
+  for (const item of items)
+    for (const revision of item.proposalRevisions) {
+      const { origin } = revision;
+      if (origin.kind !== "extraction") continue;
+      index.set(origin.materializationKey, {
+        key: origin.materializationKey,
+        debriefRunId: origin.debriefRunId,
+        outputEntryId: origin.outputEntryId,
+        candidateAlias: origin.candidateAlias,
+        payloadChecksum: origin.payloadChecksum,
+        actionItemId: item.id,
+        proposalRevision: revision.revision,
+        allocatedAt: revision.createdAt,
+      });
+    }
+  return index;
 }

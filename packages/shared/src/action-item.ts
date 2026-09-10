@@ -82,6 +82,8 @@ export type ActionItemProposalOrigin =
       meetingId: string | null;
       materializationKey: string;
       outputEntryId: string;
+      /** sha256 of the entry payload as it was checked, so the mapping is derivable. */
+      payloadChecksum: string;
       /** Local extraction accounting only; never a Workspace identity. */
       candidateAlias: string | null;
     }
@@ -261,9 +263,14 @@ export interface ActionItem {
 }
 
 /**
- * One persisted materialization mapping (#355, MWR-010): the versioned key of
- * a checked output entry and the Action Item it is now, so a replay returns
- * the same record and never allocates a second one.
+ * One materialization mapping (#355, MWR-010): the versioned key of a checked
+ * output entry and the Action Item it is now, so a replay returns the same
+ * record and never allocates a second one.
+ *
+ * Derived from the records rather than stored beside them. An index committed
+ * separately can be lost by the crash that follows the records reaching the
+ * Workspace, and the replay would then propose the obligation a second time;
+ * the record carries everything the key needs, so there is nothing to lose.
  */
 export interface ActionItemMaterializationMapping {
   /**

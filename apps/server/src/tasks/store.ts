@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   ActionItem,
-  ActionItemMaterializationMapping,
   ActionItemProposal,
   Task,
   TaskList,
@@ -20,7 +19,6 @@ interface Bundle {
   tasks: Task[];
   lists: TaskList[];
   actionItems: ActionItem[];
-  actionItemMappings: ActionItemMaterializationMapping[];
   receipt: TaskCutoverReceipt;
 }
 
@@ -69,7 +67,6 @@ export class TaskStore {
   private readonly tasksFile: string;
   private readonly listsFile: string;
   private readonly actionItemsFile: string;
-  private readonly actionItemMappingsFile: string;
 
   constructor(workspaceDir: string) {
     const dir = join(workspaceDir, "tasks");
@@ -77,7 +74,6 @@ export class TaskStore {
     this.tasksFile = join(dir, "tasks.json");
     this.listsFile = join(dir, "task-lists.json");
     this.actionItemsFile = join(dir, "action-items.json");
-    this.actionItemMappingsFile = join(dir, "action-item-mappings.json");
   }
 
   /**
@@ -121,52 +117,13 @@ export class TaskStore {
     );
   }
 
-  /** The exact materialization keys this Workspace has allocated (#355). */
-  readActionItemMappings(): ActionItemMaterializationMapping[] {
-    const bundle = this.bundle();
-    if (bundle) return bundle.actionItemMappings;
-    if (!existsSync(this.actionItemMappingsFile)) return [];
-    const parsed = parseJsonFile(
-      this.actionItemMappingsFile,
-      "the Action Item mappings file is not valid JSON",
-    );
-    if (!Array.isArray(parsed)) {
-      throw new TaskStoreCorruptionError(
-        this.actionItemMappingsFile,
-        "the Action Item mappings file is not a list",
-      );
-    }
-    const index = parsed.findIndex((entry) => !isActionItemMapping(entry));
-    if (index !== -1) {
-      throw new TaskStoreCorruptionError(
-        this.actionItemMappingsFile,
-        `Action Item mapping ${index} is not a valid record`,
-      );
-    }
-    return parsed as ActionItemMaterializationMapping[];
-  }
-
   /**
-   * Commit Action Items, and the materialization mappings that allocated them,
-   * in one publication: a mapping that exists without its record would lose
-   * the obligation, and a record without its mapping would be allocated again
-   * on the next replay.
+   * Commit the Action Items. One record, one commit: the materialization keys
+   * are read back out of the records themselves, so there is no second file
+   * that a crash after this write could leave behind.
    */
-  writeActionItems(items: ActionItem[], mappings?: ActionItemMaterializationMapping[]): void {
-    if (mappings === undefined) {
-      this.write("actionItems", this.actionItemsFile, items);
-      return;
-    }
-    const bundle = this.bundle();
-    if (bundle)
-      writeJsonVerifiedSync(
-        this.snapshotFile,
-        this.nextBundle({ ...bundle, actionItems: items, actionItemMappings: mappings }),
-      );
-    else {
-      writeJsonVerifiedSync(this.actionItemsFile, items);
-      writeJsonVerifiedSync(this.actionItemMappingsFile, mappings);
-    }
+  writeActionItems(items: ActionItem[]): void {
+    this.write("actionItems", this.actionItemsFile, items);
   }
 
   cutoverReceipt(): TaskCutoverReceipt | null {
@@ -188,18 +145,10 @@ export class TaskStore {
       tasks: Task[];
       lists: TaskList[];
       actionItems: ActionItem[];
-      actionItemMappings?: ActionItemMaterializationMapping[];
     },
     receipt: TaskCutoverReceipt,
   ): void {
-    writeJsonVerifiedSync(
-      this.snapshotFile,
-      this.nextBundle({
-        ...records,
-        actionItemMappings: records.actionItemMappings ?? this.readActionItemMappings(),
-        receipt,
-      }),
-    );
+    writeJsonVerifiedSync(this.snapshotFile, this.nextBundle({ ...records, receipt }));
   }
 
   private bundle(): Bundle | null {
@@ -217,9 +166,6 @@ export class TaskStore {
       !("actionItems" in parsed) ||
       !Array.isArray(parsed.actionItems) ||
       !parsed.actionItems.every(isActionItem) ||
-      ("actionItemMappings" in parsed &&
-        (!Array.isArray(parsed.actionItemMappings) ||
-          !parsed.actionItemMappings.every(isActionItemMapping))) ||
       !("receipt" in parsed) ||
       !TaskCutoverReceiptSchema.safeParse(parsed.receipt).success
     )
@@ -251,10 +197,6 @@ export class TaskStore {
       tasks: parsed.tasks,
       lists: parsed.lists,
       actionItems: parsed.actionItems.map(normalizeActionItem),
-      actionItemMappings:
-        "actionItemMappings" in parsed && Array.isArray(parsed.actionItemMappings)
-          ? (parsed.actionItemMappings as ActionItemMaterializationMapping[])
-          : [],
       // Checked by the schema above; the field and the record agree here.
       receipt: parsed.receipt as TaskCutoverReceipt,
     };
@@ -339,19 +281,6 @@ function parseJsonFile(path: string, detail: string): unknown {
   } catch {
     throw new TaskStoreCorruptionError(path, detail);
   }
-}
-
-function isActionItemMapping(value: unknown): value is ActionItemMaterializationMapping {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.key === "string" &&
-    typeof candidate.debriefRunId === "string" &&
-    typeof candidate.outputEntryId === "string" &&
-    typeof candidate.payloadChecksum === "string" &&
-    typeof candidate.actionItemId === "string" &&
-    typeof candidate.proposalRevision === "number"
-  );
 }
 
 /**
