@@ -16,6 +16,7 @@
         "scripts/run-search-canaries.mjs",
         "scripts/run-canaries.mjs",
         "scripts/task-cutover.mts",
+        "scripts/workspace-backup.mts",
       ],
       "project": ["scripts/**/*.{js,mjs,mts,ts}"],
     },
