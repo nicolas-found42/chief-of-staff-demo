@@ -31,3 +31,9 @@ with `--match-head-commit`; no bypass for anyone. See `docs/agents/pr-workflow.m
 Run the narrowest gate covering the change while working, `pnpm run check` before pushing;
 container changes add a Docker boot check. Test commands go through `pnpm --filter`. See
 `docs/agents/verification.md`.
+
+### Workspace preservation
+
+Before any stored-format change, quiesce the app and capture a checksum-inventoried
+baseline with an isolated restoration: `scripts/workspace-backup.mts`, documented in
+`docs/agents/workspace-backup.md`.
