@@ -1,10 +1,14 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DEBRIEF_SECTIONS,
   MEETING_DEBRIEF_MODULE_ID,
+  type DebriefSectionAvailability,
+  type MeetingDebriefDetail,
   type MeetingDebriefExtraction,
   type MeetingDebriefReviewState,
   type ActionItemMaterializationMapping,
@@ -20,8 +24,13 @@ import type {
   DebriefExtractInput,
   DebriefIdentityReviewReader,
 } from "../../../apps/server/src/modules/meeting-debrief/module";
-import { reconcileDebrief } from "../../../apps/server/src/modules/meeting-debrief/publication";
+import {
+  completionFailures,
+  reconcileDebrief,
+} from "../../../apps/server/src/modules/meeting-debrief/publication";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
+import type { CompleteJson } from "../../../apps/server/src/llm/providers";
+import { accountedHandoffModel, operationalHandoff } from "../helpers/operational-handoff";
 
 /**
  * Durable Debrief publication (#358, ADR-0084).
@@ -540,12 +549,14 @@ describe("Debrief recovery through one reconciler (#358)", () => {
     const resultBefore = artifact(runId, "result.json");
 
     // A regeneration whose checked output never reaches the Workspace: the new
-    // revision is incomplete, so it must not become the published one.
+    // revision is incomplete, so it must not become the published one. Action
+    // Items are the field whose regeneration is a new checked output; a
+    // section regeneration never re-materializes at all (#345).
     h.dropNextMaterialize();
     const posted = await h.app.inject({
       method: "POST",
       url: `/api/meeting-debrief/${runId}/regenerate`,
-      payload: { field: "summary" },
+      payload: { field: "actionItems" },
     });
     expect(posted.statusCode).toBe(200);
     await h.host.idle();
@@ -716,7 +727,7 @@ describe("Debrief final-write faults (#358)", () => {
       now: () => new Date(BASE_TIME),
       produce: async () => {
         modelCalls.count += 1;
-        return produce();
+        return { text: await produce() };
       },
       materialize: () => [
         {
@@ -823,8 +834,8 @@ describe("Debrief dependency map (MWR-048)", () => {
       policy: { capturedAt: new Date(BASE_TIME).toISOString(), actionItemPolicy: null },
       intent: "publish" as const,
       now: () => new Date(BASE_TIME),
-      produce: async () =>
-        `${JSON.stringify(
+      produce: async () => ({
+        text: `${JSON.stringify(
           {
             version: 1,
             transcriptId: record.id,
@@ -834,6 +845,7 @@ describe("Debrief dependency map (MWR-048)", () => {
           null,
           2,
         )}\n`,
+      }),
       materialize: () => [
         {
           key: "materialization:v1:run_pubD_1:ce_0",
@@ -918,5 +930,477 @@ describe("Debrief dependency map (MWR-048)", () => {
         },
       ]),
     ).rejects.toThrow(/dependency-target:ce_0/);
+  });
+});
+
+/**
+ * Incomplete publication and the checked core (#345, ADR-0085, MWR-035/038).
+ *
+ * A revision whose required sections did not all validate is exposed rather
+ * than discarded — but only when it has nothing complete to preserve, never
+ * with a completion receipt, and never with a projection a pre-#345 reader
+ * would mistake for a finished Debrief.
+ */
+describe("Incomplete Debrief publication (MWR-035, MWR-038)", () => {
+  const record = makeRecord({ id: "drive_pubI_r1" });
+
+  function io() {
+    const files = new Map<string, string>();
+    return {
+      files,
+      read: (name: string) => files.get(name) ?? null,
+      write: (name: string, text: string) => void files.set(name, text),
+      names: () => [...files.keys()],
+    };
+  }
+
+  function resultText(
+    sections?: Array<{ name: string; state: string; reason: string | null }>,
+  ): string {
+    return `${JSON.stringify(
+      {
+        version: 1,
+        transcriptId: record.id,
+        extractedAt: new Date(BASE_TIME).toISOString(),
+        debrief: extractionWith(),
+        ...(sections && sections.some((section) => section.state !== "validated")
+          ? { sections: sections as DebriefSectionAvailability[] }
+          : {}),
+      } satisfies MeetingDebriefRunResult,
+      null,
+      2,
+    )}\n`;
+  }
+
+  const corePayload = {
+    sourceChecksum: "source-1",
+    candidates: [],
+    dispositions: [],
+    actions: [],
+    retainedIds: [],
+  };
+
+  function surface() {
+    const held = io();
+    const core = `${JSON.stringify({ version: 1, format: "debrief-checked-core", payload: corePayload })}\n`;
+    held.write("core-r1.json", core);
+    return { held, core };
+  }
+
+  async function publish(input: {
+    held: ReturnType<typeof io>;
+    sections: DebriefSectionAvailability[];
+    core?: { artifact: string; checksum: string };
+    intent?: "publish" | "regenerate";
+  }) {
+    return reconcileDebrief({
+      io: input.held,
+      names: () => input.held.names(),
+      runId: "run_pubI_1",
+      record,
+      context: { version: 1, capturedAt: new Date(BASE_TIME).toISOString() } as never,
+      firstExtraction: {
+        claim: "first" as const,
+        basis: "test",
+        reservedAt: new Date(BASE_TIME).toISOString(),
+        lineageRunId: null,
+      },
+      policy: { capturedAt: new Date(BASE_TIME).toISOString(), actionItemPolicy: null },
+      intent: input.intent ?? "publish",
+      now: () => new Date(BASE_TIME),
+      produce: async () => ({
+        text: resultText(input.sections),
+        sections: input.sections,
+        ...(input.core ? { core: input.core } : {}),
+      }),
+      materialize: () => [
+        {
+          key: "materialization:v1:run_pubI_1:ce_0",
+          debriefRunId: "run_pubI_1",
+          outputEntryId: "ce_0",
+          candidateAlias: null,
+          payloadChecksum: "sha256:checked-0",
+          actionItemId: "ai_run_pubI_1_0",
+          proposalRevision: 1,
+          allocatedAt: new Date(BASE_TIME).toISOString(),
+          dependencies: [],
+        },
+      ],
+      hasMaterializationSurface: true,
+      ensureReview: () =>
+        void input.held.write(
+          "review.json",
+          `${JSON.stringify({
+            version: 1,
+            runId: "run_pubI_1",
+            email: null,
+            roster: { status: "unconfirmed", confirmedAt: null, entries: [] },
+            recipients: { additional: [] },
+            review: { droppedActionItems: [], completedActionItems: [] },
+            request: null,
+            approval: null,
+          } satisfies MeetingDebriefReviewState)}\n`,
+        ),
+      event: () => {},
+    });
+  }
+
+  const allValidated: DebriefSectionAvailability[] = DEBRIEF_SECTIONS.map((name) => ({
+    name,
+    state: "validated",
+    reason: null,
+  }));
+  const coachingFailed: DebriefSectionAvailability[] = DEBRIEF_SECTIONS.map((name) => ({
+    name,
+    state: name === "coachingAdvice" ? "failed" : "validated",
+    reason: name === "coachingAdvice" ? "the coaching provider refused" : null,
+  }));
+
+  it("exposes a checked core whose coaching section could not be produced", async () => {
+    const target = surface();
+    const outcome = await publish({ held: target.held, sections: coachingFailed });
+
+    expect(outcome.completed).toBe(false);
+    expect(outcome.reconciled).toBe("incomplete");
+    expect(outcome.receipt).toBeNull();
+    const publication = JSON.parse(target.held.read("publication.json")!);
+    expect(publication.revisionId).toBe("r1");
+    /* Exposed incomplete is permanent: nothing later restores eligibility. */
+    expect(publication.reviewOnly).toBe(true);
+    const manifest = JSON.parse(target.held.read("revision-r1.manifest.json")!) as {
+      completeness: { required: string; availability: DebriefSectionAvailability[] };
+    };
+    expect(manifest.completeness.required).toBe("incomplete");
+    expect(
+      manifest.completeness.availability.find((section) => section.name === "coachingAdvice"),
+    ).toEqual({
+      name: "coachingAdvice",
+      state: "failed",
+      reason: "the coaching provider refused",
+    });
+    expect(outcome.availability.sections).toEqual(coachingFailed);
+    /* No completion receipt, and no projection: a pre-#345 reader finds no
+       Debrief here rather than an empty, apparently finished one. */
+    expect(target.held.read("completion.json")).toBeNull();
+    expect(target.held.read("result.json")).toBeNull();
+  });
+
+  it("makes the checked core part of what the revision claims", async () => {
+    const target = surface();
+    const checksum = `sha256:${createHash("sha256").update(target.core, "utf8").digest("hex")}`;
+    await publish({
+      held: target.held,
+      sections: coachingFailed,
+      core: { artifact: "core-r1.json", checksum },
+    });
+    const manifest = JSON.parse(target.held.read("revision-r1.manifest.json")!);
+    expect(manifest.core).toEqual({ artifact: "core-r1.json", checksum });
+
+    /* Damaged core bytes are an integrity failure, not a reason to rediscover:
+       the revision named them as the work a retry resumes from, so completion
+       refuses rather than quietly re-extracting. */
+    target.held.write("core-r1.json", `${target.core} `);
+    expect(completionFailures({ read: target.held.read }, { runId: "run_pubI_1" })).toContain(
+      "core-checksum",
+    );
+  });
+
+  it("refuses to replace a complete publication with an incomplete revision", async () => {
+    const target = surface();
+    const complete = await publish({ held: target.held, sections: allValidated });
+    expect(complete.completed).toBe(true);
+    const before = target.held.read("publication.json");
+
+    await expect(
+      publish({ held: target.held, sections: coachingFailed, intent: "regenerate" }),
+    ).rejects.toThrow(/incomplete-replacement/);
+
+    expect(target.held.read("publication.json")).toBe(before);
+    expect(target.held.read("revision-r2.manifest.json")).toBeNull();
+    expect(target.held.read("completion.json")).toBeTruthy();
+  });
+
+  it("refuses a revision whose section states contradict its completion claim", async () => {
+    const target = surface();
+    await publish({ held: target.held, sections: coachingFailed });
+    /* A stored manifest that says complete while a section is failed reads one
+       way or the other, never both. */
+    const manifest = JSON.parse(target.held.read("revision-r1.manifest.json")!);
+    manifest.completeness.required = "complete";
+    target.held.write("revision-r1.manifest.json", JSON.stringify(manifest));
+    const publication = JSON.parse(target.held.read("publication.json")!);
+    publication.manifestChecksum = `sha256:${createHash("sha256")
+      .update(target.held.read("revision-r1.manifest.json")!, "utf8")
+      .digest("hex")}`;
+    target.held.write("publication.json", JSON.stringify(publication));
+
+    await expect(
+      publish({ held: target.held, sections: allValidated, intent: "regenerate" }),
+    ).rejects.toThrow(/section-availability/);
+  });
+});
+
+/**
+ * The checked core survives a section failure, and a retry resumes it
+ * (#345, MWR-035/036/038). These drive the real model path with a controlled
+ * provider, so "no rediscovery" is a call count rather than a claim.
+ */
+describe("Incomplete exposure and independent section retry (MWR-035/036/038)", () => {
+  const quote = "Bob: I will own the follow-up.";
+  const action = {
+    title: "Own the follow-up",
+    evidence: quote,
+    owner: "Bob",
+    handoff: operationalHandoff({
+      timing: { kind: "unspecified", stated: "no date stated", referenceDate: null, reasoning: "" },
+      evidence: [{ quote, speaker: "Bob", timestamp: null }],
+    }),
+  };
+
+  function harness() {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "debrief-incomplete-"));
+    const runs = openRuns(workspaceDir);
+    const record = makeRecord({ id: "drive_pubJ_r1" });
+    const calls: string[] = [];
+    const handovers: Handover[] = [];
+    let failOverview = true;
+    let failDiscovery = false;
+    const model = accountedHandoffModel({
+      version: 1,
+      summary: "Weekly sync review",
+      decisions: [],
+      openQuestions: [],
+      effectivenessEvidence: "",
+      coachingAdvice: "",
+      suggestedRecipients: [],
+      actionItems: [action],
+    });
+    const complete = async (request: Parameters<CompleteJson>[0]) => {
+      /* The stage is what the Module asked for; the first prompt line is the
+         fallback for a request the Module labelled itself. */
+      calls.push(request.stage === undefined ? request.system.split("\n")[0] : request.stage);
+      if (request.system.startsWith("OVERVIEW ONLY") && failOverview) {
+        throw new Error("the overview provider refused this request");
+      }
+      if (failDiscovery && request.system.startsWith("DISCOVER CANDIDATES")) {
+        throw new Error("the discovery provider refused this request");
+      }
+      return model(request);
+    };
+    const host = new MeetingDebriefHost({
+      runs,
+      catalog: { getTranscript: () => record },
+      identity: { reviewFor: () => ({ mentions: [], decisions: [], organizations: [] }) },
+      getCompleteJson: () => complete,
+      materializeActionItems: (handover) => {
+        handovers.push(structuredClone(handover));
+        return handover.actionItems.map((_, index) => ({
+          key: `materialization:v1:${handover.debriefRunId}:ce_${index}`,
+          debriefRunId: handover.debriefRunId,
+          outputEntryId: `ce_${index}`,
+          candidateAlias: handover.candidateAliases?.[index] ?? null,
+          payloadChecksum: `sha256:checked-${index}`,
+          actionItemId: `ai_${handover.debriefRunId}_${index}`,
+          proposalRevision: 1,
+          allocatedAt: new Date(BASE_TIME).toISOString(),
+          dependencies: [],
+        }));
+      },
+      log: () => {},
+    });
+    const app = fastify();
+    host.routes(app);
+    const runId = async () => {
+      await host.process(record);
+      await host.idle();
+      return runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs[0].id;
+    };
+    return {
+      runs,
+      host,
+      app,
+      calls,
+      handovers,
+      allowOverview: () => {
+        failOverview = false;
+      },
+      failDiscovery: (fail: boolean) => {
+        failDiscovery = fail;
+      },
+      start: runId,
+    };
+  }
+
+  const isDiscovery = (call: string) => call.startsWith("discovery") || call.startsWith("DISCOVER");
+
+  it("exposes the checked core when a required section fails, and retries it without rediscovery", async () => {
+    const h = harness();
+    const runId = await h.start();
+
+    /* The overview request carried summary, decisions, open questions,
+       effectiveness, coaching and recipients: all six are unavailable, while
+       the Action Items the core checked are published work. */
+    expect(h.runs.open(runId)!.read().status).toBe("failed");
+    const detail = (
+      await h.app.inject(`/api/meeting-debrief/${runId}`)
+    ).json<MeetingDebriefDetail>();
+    expect(detail.revision?.completeness).toBe("incomplete");
+    expect(detail.revision?.reviewOnly).toBe(true);
+    expect(
+      detail.revision?.sections.filter((section) => section.state === "failed").map((s) => s.name),
+    ).toEqual([
+      "summary",
+      "decisions",
+      "openQuestions",
+      "effectivenessEvidence",
+      "coachingAdvice",
+      "suggestedRecipients",
+    ]);
+    expect(detail.revision?.sections.find((s) => s.name === "actionItems")?.state).toBe(
+      "validated",
+    );
+    /* A failed section is unavailable, never an empty success. */
+    expect(detail.extraction?.coachingAdvice).toBe("");
+    expect(detail.extraction?.actionItems).toHaveLength(1);
+    const run = h.runs.open(runId)!;
+    expect(run.readArtifact("completion.json")).toBeNull();
+    expect(run.readArtifact("result.json")).toBeNull();
+    expect(JSON.parse(run.readArtifact("publication.json")!).reviewOnly).toBe(true);
+
+    const discoveryCalls = h.calls.filter(isDiscovery).length;
+    expect(discoveryCalls).toBeGreaterThan(0);
+    /* The checked proposals reached the Workspace even though the sections
+       did not: the Action Items are what a person can still act on. */
+    expect(h.handovers).toHaveLength(1);
+
+    await h.app.close();
+  });
+
+  it("reuses the intact core across two retries and completes when the section returns", async () => {
+    const h = harness();
+    const runId = await h.start();
+    const run = h.runs.open(runId)!;
+    const discoveryAfterFirst = h.calls.filter(isDiscovery).length;
+    const firstRevision = JSON.parse(run.readArtifact("publication.json")!).revisionId;
+
+    await h.host.retryRun(runId);
+    await h.host.idle();
+    expect(h.runs.open(runId)!.read().status).toBe("failed");
+    /* The second attempt asked for the sections again and discovered nothing. */
+    expect(h.calls.filter(isDiscovery).length).toBe(discoveryAfterFirst);
+    expect(h.calls.filter((call) => call === "overview").length).toBe(2);
+
+    h.allowOverview();
+    await h.host.retryRun(runId);
+    await h.host.idle();
+    const meta = h.runs.open(runId)!.read();
+    expect(meta.status).toBe("done");
+    expect(h.calls.filter(isDiscovery).length).toBe(discoveryAfterFirst);
+    const publication = JSON.parse(run.readArtifact("publication.json")!);
+    expect(publication.revisionId).not.toBe(firstRevision);
+    /* Completing the enrichment never restores automatic eligibility. */
+    expect(publication.reviewOnly).toBe(true);
+    const manifest = JSON.parse(run.readArtifact(publication.manifestArtifact)!);
+    expect(manifest.completeness.required).toBe("complete");
+    const detail = (
+      await h.app.inject(`/api/meeting-debrief/${runId}`)
+    ).json<MeetingDebriefDetail>();
+    expect(detail.revision?.completeness).toBe("complete");
+    expect(detail.revision?.reviewOnly).toBe(true);
+    expect(detail.extraction?.coachingAdvice).toBe("");
+    await h.app.close();
+  });
+
+  it("regenerates the summary from the checked core without discovery or materialization", async () => {
+    const h = harness();
+    h.allowOverview();
+    const runId = await h.start();
+    const run = h.runs.open(runId)!;
+    const before = JSON.parse(run.readArtifact("result.json")!) as MeetingDebriefRunResult;
+    const discoveryBefore = h.calls.filter(isDiscovery).length;
+    const materializations = h.handovers.length;
+
+    const posted = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/regenerate`,
+      payload: { field: "summary" },
+    });
+    expect(posted.statusCode).toBe(200);
+    await h.host.idle();
+
+    const after = JSON.parse(run.readArtifact("result.json")!) as MeetingDebriefRunResult;
+    /* The rejected value is not an input and the checked work is not redone:
+       no discovery call, no Workspace materialization call, and the Action
+       Items and decisions the published revision established are unchanged. */
+    expect(h.calls.filter(isDiscovery).length).toBe(discoveryBefore);
+    expect(h.handovers).toHaveLength(materializations);
+    expect(after.debrief.actionItems).toEqual(before.debrief.actionItems);
+    expect(after.debrief.decisions).toEqual(before.debrief.decisions);
+    expect(after.debrief.summary).toBe(before.debrief.summary);
+    expect(h.runs.open(runId)!.read().status).toBe("done");
+    await h.app.close();
+  });
+
+  it("refuses early review with nothing checked, and resumes a core the owner asks for", async () => {
+    const unchecked = harness();
+    unchecked.failDiscovery(true);
+    const failedRun = await unchecked.start();
+    expect(unchecked.runs.open(failedRun)!.read().status).toBe("failed");
+    const refused = await unchecked.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${failedRun}/early-review`,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ error: string }>().error).toBe("no-checked-core");
+    await unchecked.app.close();
+
+    const h = harness();
+    const runId = await h.start();
+    const discoveryBefore = h.calls.filter(isDiscovery).length;
+    const resumed = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/early-review`,
+    });
+    expect(resumed.statusCode).toBe(200);
+    await h.host.idle();
+    /* The request resumes the checked core, never the discovery: the section
+       provider is still refusing, so the exposure stands. */
+    expect(h.calls.filter(isDiscovery).length).toBe(discoveryBefore);
+    expect(h.runs.open(runId)!.read().status).toBe("failed");
+
+    h.allowOverview();
+    await h.app.inject({ method: "POST", url: `/api/meeting-debrief/${runId}/early-review` });
+    await h.host.idle();
+    expect(h.runs.open(runId)!.read().status).toBe("done");
+    const publication = JSON.parse(h.runs.open(runId)!.readArtifact("publication.json")!);
+    expect(publication.reviewOnly).toBe(true);
+    await h.app.close();
+  });
+
+  it("refuses to compose or draft email from an incomplete revision", async () => {
+    const h = harness();
+    const runId = await h.start();
+    const options = await h.app.inject(`/api/meeting-debrief/${runId}/email`);
+    expect(options.statusCode).toBe(409);
+    const refusal = options.json<{
+      error: string;
+      sections: Array<{ name: string; state: string }>;
+    }>();
+    expect(refusal.error).toBe("debrief-incomplete");
+    expect(refusal.sections.map((section) => section.name)).toContain("coachingAdvice");
+    const preview = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/preview`,
+      payload: { selectedIds: [] },
+    });
+    expect(preview.statusCode).toBe(409);
+    const approve = await h.app.inject({
+      method: "POST",
+      url: `/api/meeting-debrief/${runId}/approve`,
+      payload: { revision: "anything", selectedIds: [] },
+    });
+    expect(approve.statusCode).toBe(409);
+    expect(approve.json<{ error: string }>().error).toBe("debrief-incomplete");
+    await h.app.close();
   });
 });

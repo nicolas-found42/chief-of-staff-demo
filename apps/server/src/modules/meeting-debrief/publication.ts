@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
 import { parseReviewState } from "./review.js";
+import {
+  DEBRIEF_SECTIONS,
+  debriefSectionResolved,
+  validatedDebriefSections,
+  type DebriefSectionAvailability,
+  type MeetingDebriefRevisionAvailability,
+} from "@chief-of-staff-demo/shared";
 import type {
   ActionItemMaterializationMapping,
   HandoffDependencyTarget,
@@ -65,17 +72,6 @@ export interface DebriefReader {
 export interface DebriefArtifactIO extends DebriefReader {
   write(name: string, text: string): void;
 }
-
-/** The sections every current-contract publication must have validated (#345). */
-const DEBRIEF_REQUIRED_SECTIONS = [
-  "summary",
-  "decisions",
-  "actionItems",
-  "openQuestions",
-  "effectivenessEvidence",
-  "coachingAdvice",
-  "suggestedRecipients",
-] as const;
 
 const OPERATION_FORMAT = "debrief-operation";
 const MANIFEST_FORMAT = "debrief-revision-manifest";
@@ -188,7 +184,28 @@ interface DebriefRevisionManifest {
     expectedOutputCount: number;
     outputs: DebriefOutputMappingRecord[];
   };
-  completeness: { required: "complete"; sections: string[] };
+  completeness: {
+    /**
+     * `complete` is the claim that every required section validated. An
+     * `incomplete` manifest is a real publication (#345, ADR-0085) whose
+     * `availability` names what is missing; it never grows a completion
+     * receipt, so its Run never reports done.
+     */
+    required: "complete" | "incomplete";
+    /** The required contract this revision was checked against. */
+    sections: string[];
+    /**
+     * What happened to each section. Absent on manifests written before
+     * per-section availability existed — those were only ever written
+     * complete, so absence reads as "all validated".
+     */
+    availability?: DebriefSectionAvailability[];
+  };
+  /**
+   * The checked core this revision was assembled from, and its exact bytes.
+   * Absent on manifests whose producer did not separate the core (#361).
+   */
+  core?: { artifact: string; checksum: string };
 }
 
 interface DebriefPublicationRecord {
@@ -204,6 +221,13 @@ interface DebriefPublicationRecord {
   manifestChecksum: string;
   publishedAt: string;
   predecessorPublicationId: string | null;
+  /**
+   * Set when a revision of this lineage was exposed incomplete (#345,
+   * ADR-0085). Permanent: a later complete revision of the same Run stays
+   * review-only, so exposure can never be undone by finishing the enrichment.
+   * Absent on publications written before incomplete exposure existed.
+   */
+  reviewOnly?: boolean;
 }
 
 interface DebriefCompletionReceipt {
@@ -228,6 +252,27 @@ export interface DebriefPublishedRead {
   verified: boolean;
   /** A pre-#358 `result.json` with no publication behind it: readable, not proof. */
   legacy: boolean;
+  /**
+   * What the published revision's sections actually resolved to. Null for a
+   * legacy projection, so nothing reports section state it never checked.
+   */
+  availability: MeetingDebriefRevisionAvailability | null;
+}
+
+/** The availability a manifest and its pointer describe, as readers see it. */
+function debriefAvailability(
+  manifest: DebriefRevisionManifest,
+  publication: DebriefPublicationRecord,
+): MeetingDebriefRevisionAvailability {
+  return {
+    revision: manifest.revision,
+    revisionId: manifest.revisionId,
+    completeness: manifest.completeness.required,
+    reviewOnly: publication.reviewOnly === true,
+    sections:
+      manifest.completeness.availability?.map((section) => ({ ...section })) ??
+      validatedDebriefSections(),
+  };
 }
 
 function revisionIdFor(revision: number): string {
@@ -242,10 +287,171 @@ function revisionManifestArtifact(revisionId: string): string {
   return `revision-${revisionId}.manifest.json`;
 }
 
+function coreArtifact(revision: number): string {
+  return `core-r${revision}.json`;
+}
+
+/** A bounded unit of the checked action core, as one run committed it. */
+const CORE_FORMAT = "debrief-checked-core";
+
+/**
+ * The fully checked action core, committed before any downstream section is
+ * asked for (#345, MWR-035/038). It is what lets a failed section retry
+ * without rediscovery: the source revision, the frozen context, the candidate
+ * accounting, the checked facts and the assembled Action Items are all here,
+ * so the sections that come after it are the only work a retry repeats.
+ *
+ * The payload is opaque to this file — the Module owns its shape — but the
+ * record's own checksum is not: a core whose bytes no longer match what was
+ * accepted is an integrity failure, never a quiet re-extraction.
+ */
+interface DebriefCheckedCoreRecord<T> {
+  version: 1;
+  format: typeof CORE_FORMAT;
+  revision: number;
+  revisionId: string;
+  operationId: string;
+  runId: string;
+  transcriptId: string;
+  preparedAt: string;
+  /** The immutable source these checked bytes were derived from. */
+  sourceChecksum: string;
+  /** The frozen context snapshot they were checked against. */
+  contextChecksum: string;
+  /** sha256 over every other field, so damage is refused rather than read. */
+  coreChecksum: string;
+  payload: T;
+}
+
+function coreChecksum(
+  input: Omit<DebriefCheckedCoreRecord<unknown>, "coreChecksum" | "format"> & { format: string },
+): string {
+  return checksumOf(JSON.stringify({ ...input, payload: input.payload }));
+}
+
+/** A core as it sits in the Run: its record and the bytes a manifest addresses. */
+export interface DebriefStoredCore<T> {
+  record: DebriefCheckedCoreRecord<T>;
+  artifact: string;
+  checksum: string;
+}
+
+export function writeCheckedCore<T>(
+  io: DebriefArtifactIO,
+  input: {
+    revision: number;
+    operation: DebriefOperationRecord;
+    preparedAt: string;
+    sourceChecksum: string;
+    contextChecksum: string;
+    payload: T;
+  },
+): DebriefStoredCore<T> {
+  const artifact = coreArtifact(input.revision);
+  const body = {
+    version: FORMAT_VERSION,
+    format: CORE_FORMAT,
+    revisionId: revisionIdFor(input.revision),
+    revision: input.revision,
+    operationId: input.operation.operationId,
+    runId: input.operation.runId,
+    transcriptId: input.operation.transcriptId,
+    preparedAt: input.preparedAt,
+    sourceChecksum: input.sourceChecksum,
+    contextChecksum: input.contextChecksum,
+    payload: input.payload,
+  } as const;
+  const record: DebriefCheckedCoreRecord<T> = { ...body, coreChecksum: coreChecksum(body) };
+  const text = `${JSON.stringify(record, null, 2)}\n`;
+  const held = io.read(artifact);
+  /* A core is accepted the moment it is written: different bytes under the
+     same revision identity are damage, not a newer opinion. */
+  if (held !== null && held !== text) {
+    throw new DebriefIntegrityError(
+      "core-identity",
+      `${artifact} already holds a different checked core`,
+    );
+  }
+  if (held === null) io.write(artifact, text);
+  return { record, artifact, checksum: checksumOf(text) };
+}
+
+/** Read one committed core, refusing bytes that no longer match their checksum. */
+function readCheckedCore<T>(io: DebriefReader, revision: number): DebriefStoredCore<T> | null {
+  const artifact = coreArtifact(revision);
+  const text = io.read(artifact);
+  if (text === null) return null;
+  /* The stored bytes are the authority on what format they are: a record
+     typed as this format is only a checked core once it says so. */
+  const parsed = parseOrThrow<Omit<DebriefCheckedCoreRecord<T>, "format"> & { format: string }>(
+    text,
+    artifact,
+    "unreadable-core",
+  );
+  if (parsed === null) {
+    throw new DebriefIntegrityError("unreadable-core", `${artifact} is empty`);
+  }
+  if (parsed.format !== CORE_FORMAT) {
+    throw new DebriefIntegrityError("unsupported-core", `${artifact} is not a checked core`);
+  }
+  const { coreChecksum: held, ...body } = parsed;
+  if (coreChecksum(body) !== held) {
+    throw new DebriefIntegrityError("damaged-core", `${artifact} does not match its checksum`);
+  }
+  return {
+    record: { ...parsed, format: CORE_FORMAT },
+    artifact,
+    checksum: checksumOf(text),
+  };
+}
+
+/**
+ * The newest committed core this source and context can still be resumed from.
+ * A core checked against another source revision is not one of these — it
+ * describes work this Run is no longer doing — but a damaged core that *is*
+ * this source's is an integrity failure rather than a reason to rediscover.
+ */
+export function resumableCheckedCore<T>(
+  io: DebriefReader,
+  names: readonly string[],
+  match: { sourceChecksum: string; contextChecksum: string },
+): DebriefStoredCore<T> | null {
+  const revisions = names
+    .map((name) => /^core-r(\d+)\.json$/.exec(name)?.[1])
+    .filter((revision): revision is string => revision !== undefined)
+    .map(Number)
+    .sort((a, b) => b - a);
+  for (const revision of revisions) {
+    const core = readCheckedCore<T>(io, revision);
+    if (core && core.record.sourceChecksum === match.sourceChecksum) {
+      if (core.record.contextChecksum !== match.contextChecksum) {
+        throw new DebriefIntegrityError(
+          "core-context",
+          `${coreArtifact(revision)} was checked against a different context`,
+        );
+      }
+      return core;
+    }
+  }
+  return null;
+}
+
+/** The revision a fresh reconciliation would produce for this Run. */
+export function nextRevisionTarget(io: DebriefReader): number {
+  return (readPublication(io)?.revision ?? 0) + 1;
+}
+
 /** The checksum an artifact is addressed by, over its exact stored bytes. */
-function checksumOf(text: string): string {
+export function debriefChecksum(text: string): string {
   return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
 }
+
+/** The same convention, for the module's own source-text identity. */
+export function debriefTextChecksum(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+const checksumOf = debriefChecksum;
 
 function parseOrThrow<T>(raw: string | null, what: string, condition: string): T | null {
   if (raw === null) return null;
@@ -334,10 +540,34 @@ function parseManifest(text: string, artifact: string): DebriefRevisionManifest 
     throw new DebriefIntegrityError("missing-manifest", `${artifact} is empty`);
   }
   const completeness = parsed.completeness as { required: unknown; sections: unknown };
-  if (completeness.required !== "complete" || !Array.isArray(completeness.sections)) {
+  if (
+    (completeness.required !== "complete" && completeness.required !== "incomplete") ||
+    !Array.isArray(completeness.sections)
+  ) {
     throw new DebriefIntegrityError(
       "incomplete-contract",
-      `${artifact} does not declare a complete required section set`,
+      `${artifact} does not declare a readable required section set`,
+    );
+  }
+  const availability = parsed.completeness.availability;
+  if (availability !== undefined) {
+    const complete = availability.length === DEBRIEF_SECTIONS.length;
+    const named = DEBRIEF_SECTIONS.every((section) =>
+      availability.some((entry) => entry.name === section),
+    );
+    const resolved = availability.every((section) => debriefSectionResolved(section.state));
+    /* A manifest reads one way or the other, never both: the sections it says
+       are unavailable are exactly the reason it cannot claim completion. */
+    if (!named || !complete || (completeness.required === "complete") !== resolved) {
+      throw new DebriefIntegrityError(
+        "section-availability",
+        `${artifact} declares ${String(completeness.required)} sections that do not agree with its availability`,
+      );
+    }
+  } else if (completeness.required !== "complete") {
+    throw new DebriefIntegrityError(
+      "section-availability",
+      `${artifact} claims incomplete sections without naming which`,
     );
   }
   return parsed;
@@ -439,6 +669,24 @@ interface DebriefPreparedRevision {
   result: MeetingDebriefRunResult;
   /** True when only the result bytes exist: prepared up to the write that died. */
   adopted: boolean;
+}
+
+/**
+ * The section states a stored revision carries. A result written before #345
+ * — or by a producer that claims a complete revision — says nothing, and the
+ * honest reading of that silence is the complete contract it was written
+ * under.
+ */
+function storedSections(result: MeetingDebriefRunResult): DebriefSectionAvailability[] {
+  return result.sections?.map((section) => ({ ...section })) ?? validatedDebriefSections();
+}
+
+/** The sections of a manifest, as the reconciler works with them. */
+function manifestSections(manifest: DebriefRevisionManifest): DebriefSectionAvailability[] {
+  return (
+    manifest.completeness.availability?.map((section) => ({ ...section })) ??
+    validatedDebriefSections()
+  );
 }
 
 function listedRevisions(names: readonly string[], suffix: string): number[] {
@@ -596,6 +844,10 @@ function prepareRevision(
     contextText: string;
     mappings: readonly ActionItemMaterializationMapping[];
     materializationSurface: DebriefMaterializationSurface;
+    /** What happened to each required section of this revision (#345). */
+    sections: readonly DebriefSectionAvailability[];
+    /** The checked core this revision was assembled from, when it has one. */
+    core?: { artifact: string; checksum: string } | undefined;
   },
 ): DebriefPreparedRevision {
   const revisionId = revisionIdFor(input.revision);
@@ -667,7 +919,14 @@ function prepareRevision(
           })),
         })),
     },
-    completeness: { required: "complete", sections: [...DEBRIEF_REQUIRED_SECTIONS] },
+    completeness: {
+      required: input.sections.every((section) => debriefSectionResolved(section.state))
+        ? "complete"
+        : "incomplete",
+      sections: [...DEBRIEF_SECTIONS],
+      availability: input.sections.map((section) => ({ ...section })),
+    },
+    ...(input.core ? { core: input.core } : {}),
   };
   // The manifest is the preparation marker: written last, so a revision that
   // presents one is a revision whose referenced bytes were all committed.
@@ -709,6 +968,12 @@ function publishRevision(
     manifestChecksum: input.manifestChecksum,
     publishedAt: input.publishedAt,
     predecessorPublicationId: previous?.publicationId ?? null,
+    /* Exposing an incomplete revision is a one-way decision for this lineage:
+       the next revision inherits it, so finishing the enrichment cannot bring
+       automatic eligibility back (#345 §2, ADR-0085). */
+    ...(previous?.reviewOnly === true || input.manifest.completeness.required === "incomplete"
+      ? { reviewOnly: true }
+      : {}),
   };
   io.write(PUBLICATION_ARTIFACT, `${JSON.stringify(publication, null, 2)}\n`);
   return publication;
@@ -767,6 +1032,7 @@ export function readPublishedDebrief(io: DebriefReader): DebriefPublishedRead | 
       receipt: valid ? receipt : null,
       verified: valid,
       legacy: false,
+      availability: debriefAvailability(published.manifest, published.publication),
     };
   }
   const legacyRaw = io.read(PROJECTION_ARTIFACT);
@@ -785,6 +1051,7 @@ export function readPublishedDebrief(io: DebriefReader): DebriefPublishedRead | 
     receipt: null,
     verified: false,
     legacy: true,
+    availability: null,
   };
 }
 
@@ -809,11 +1076,20 @@ function preparedFailures(io: DebriefReader, manifest: DebriefRevisionManifest):
   if (review === null) failures.push("missing-review");
   else if (parseReviewState(review) === null) failures.push("unreadable-review");
 
-  // `required` was validated when the manifest was parsed: a stored manifest
-  // that does not declare the complete contract never becomes one of these.
-  for (const section of DEBRIEF_REQUIRED_SECTIONS) {
+  // The required contract a manifest declares is fixed and complete for every
+  // revision this build writes; a manifest naming a smaller set was written by
+  // something that did not agree with it.
+  for (const section of DEBRIEF_SECTIONS) {
     if (!manifest.completeness.sections.includes(section))
       failures.push(`missing-section:${section}`);
+  }
+  /* A revision that names the checked core it came from must still be able to
+     read that core: the core is what a later section retry resumes from, and
+     "the work is still there" is part of the claim a publication makes. */
+  if (manifest.core) {
+    const core = io.read(manifest.core.artifact);
+    if (core === null) failures.push("missing-core");
+    else if (checksumOf(core) !== manifest.core.checksum) failures.push("core-checksum");
   }
 
   const outputs = manifest.materialization.outputs;
@@ -891,9 +1167,14 @@ function publicationFailures(io: DebriefReader, input: { runId: string }): strin
   const resultText = io.read(manifest.resultArtifact);
   // The projection is how every pre-#358 reader (the Runs detail, the Meeting
   // and Weekly views) still finds a Debrief. It is repaired by reconciliation,
-  // never assumed.
-  if (resultText !== null && io.read(PROJECTION_ARTIFACT) !== resultText) {
-    failures.push("result-projection");
+  // never assumed — and a revision that never claimed completion must not have
+  // one, because a projection reads as a complete Debrief to those readers.
+  if (manifest.completeness.required === "complete") {
+    if (resultText !== null && io.read(PROJECTION_ARTIFACT) !== resultText) {
+      failures.push("result-projection");
+    }
+  } else {
+    failures.push("incomplete-revision");
   }
   return failures.concat(preparedFailures(io, manifest));
 }
@@ -946,6 +1227,29 @@ function verifyCompletion(
   return receipt;
 }
 
+/**
+ * What one production run returns: the checked result bytes, whatever the
+ * producer knows about how they were assembled, and what happened to each
+ * required section (#345). A producer that reports sections leaves the
+ * reconciler able to expose a checked core whose enrichment did not finish;
+ * one that omits them is claiming a complete revision, exactly as before.
+ */
+export interface DebriefProducedRevision {
+  text: string;
+  aliases?: readonly (string | null)[] | undefined;
+  sections?: readonly DebriefSectionAvailability[] | undefined;
+  /** The checked core these bytes were assembled from, when it was committed. */
+  core?: { artifact: string; checksum: string } | undefined;
+  /**
+   * The producer's claim that this revision carries the published revision's
+   * checked outputs unchanged — a section regeneration, not a new extraction.
+   * The reconciler still checks the bytes before believing it, and only then
+   * does it reuse the recorded mappings instead of re-materializing (#345,
+   * MWR-042).
+   */
+  retainedOutputs?: boolean | undefined;
+}
+
 /** Everything one reconciliation needs. The Module supplies it; this file owns the order. */
 export interface DebriefReconcileInput {
   io: DebriefArtifactIO;
@@ -965,10 +1269,16 @@ export interface DebriefReconcileInput {
   intent: "publish" | "regenerate";
   now: () => Date;
   /** Runs the model. Called only when no intact prepared revision exists. */
-  produce: () => Promise<string>;
-  /** Re-materializes exact mappings for a revision (idempotent by key). */
+  produce: () => Promise<DebriefProducedRevision>;
+  /**
+   * Re-materializes exact mappings for a revision (idempotent by key). The
+   * revision's own policy travels with the call: a record materialized from an
+   * incomplete exposure is review-only, and that has to be true of the very
+   * first exposure rather than only of the revisions after it.
+   */
   materialize: (
     result: MeetingDebriefRunResult,
+    revision: { reviewOnly: boolean },
   ) => readonly ActionItemMaterializationMapping[] | void;
   /** Whether the Run has a materialization surface at all. */
   hasMaterializationSurface: boolean;
@@ -980,14 +1290,20 @@ export interface DebriefReconcileInput {
 export interface DebriefReconcileOutcome {
   result: MeetingDebriefRunResult;
   publication: DebriefPublicationRecord;
-  receipt: DebriefCompletionReceipt;
+  /** Null for an incomplete publication: it never grows a completion receipt. */
+  receipt: DebriefCompletionReceipt | null;
+  /** What each required section of the published revision resolved to. */
+  availability: MeetingDebriefRevisionAvailability;
+  /** True only when the completion receipt verified: the Run may report done. */
+  completed: boolean;
   /**
    * How far the reconciler had to go: `published` verified an existing
    * publication, `recovered` finished bytes an interrupted commit left behind,
-   * `prepared` finalized a revision that had its manifest but no receipt, and
-   * `extracted` is the only outcome that asked the model.
+   * `prepared` finalized a revision that had its manifest but no receipt,
+   * `extracted` asked the model, and `incomplete` exposed a checked core whose
+   * required sections did not all validate.
    */
-  reconciled: "published" | "recovered" | "prepared" | "extracted";
+  reconciled: "published" | "recovered" | "prepared" | "extracted" | "incomplete";
   modelCalls: number;
 }
 
@@ -1033,6 +1349,7 @@ export async function reconcileDebrief(
   let revision: DebriefPreparedRevision;
   let reconciled: DebriefReconcileOutcome["reconciled"];
   let modelCalls = 0;
+  let produced: DebriefProducedRevision | null = null;
   if (newestPrepared) {
     revision = newestPrepared;
     reconciled = newestPrepared.adopted ? "recovered" : "prepared";
@@ -1040,7 +1357,15 @@ export async function reconcileDebrief(
       revisionId: revisionIdFor(revision.revision),
       adopted: newestPrepared.adopted,
     });
-  } else if (published && input.intent === "publish") {
+  } else if (
+    published &&
+    input.intent === "publish" &&
+    /* An incomplete publication is not a finished one (#345): a retry's whole
+       purpose is the sections it could not produce, so it is asked to produce
+       them again rather than verified as it stands. A complete publication is
+       verified, never re-derived. */
+    published.manifest.completeness.required === "complete"
+  ) {
     revision = {
       manifest: published.manifest,
       revision: published.publication.revision,
@@ -1054,20 +1379,69 @@ export async function reconcileDebrief(
       generation: published.publication.generation,
     });
   } else {
-    const produced = await input.produce();
+    produced = await input.produce();
     modelCalls = 1;
     /* The checked bytes are committed first and the manifest last, so an
        interruption between the two leaves a result this reconciler adopts
        instead of asking the model a second time. */
     const target = (published?.publication.revision ?? 0) + 1;
-    revision = writeRevisionResult(input.io, target, produced);
+    revision = writeRevisionResult(input.io, target, produced.text);
     reconciled = "extracted";
     input.event("debrief_revision_written", { revisionId: revisionIdFor(target) });
   }
 
   let manifest = revision.manifest;
   if (reconciled !== "published") {
-    const materialized = input.materialize(revision.result) ?? [];
+    /* What this revision's sections resolved to: what the producer just
+       reported, what an adopted result carries, or the complete contract a
+       revision without an availability record was written under. */
+    const sections: readonly DebriefSectionAvailability[] =
+      produced?.sections ??
+      (revision.manifest ? manifestSections(revision.manifest) : storedSections(revision.result));
+    const unavailable = sections
+      .filter((section) => !debriefSectionResolved(section.state))
+      .map((section) => section.name);
+    /* An incomplete revision is exposed work (#345, ADR-0085), never a
+       replacement: a failed replacement leaves the complete publication
+       exactly where it is, and refuses before anything of it is written. */
+    if (
+      unavailable.length > 0 &&
+      published &&
+      published.manifest.completeness.required === "complete"
+    ) {
+      throw new DebriefIntegrityError(
+        "incomplete-replacement",
+        `${unavailable.join(", ")} did not validate; the published ${published.publication.revisionId} is preserved`,
+      );
+    }
+    /* A revision that kept the published Action Items byte for byte is not a
+       re-materialization (#345, MWR-042): a summary regeneration makes no
+       action discovery and no materialization call, and the mappings the
+       published revision already recorded are the ones this revision has. */
+    const untouchedOutputs =
+      produced?.retainedOutputs === true &&
+      published !== null &&
+      JSON.stringify(revision.result.debrief.actionItems) ===
+        JSON.stringify(published.result.debrief.actionItems);
+    const materialized = untouchedOutputs
+      ? published.manifest.materialization.outputs.map(
+          (output): ActionItemMaterializationMapping => ({
+            key: output.materializationKey,
+            debriefRunId: published.manifest.runId,
+            outputEntryId: output.entryId,
+            candidateAlias: output.candidateAlias,
+            payloadChecksum: output.payloadChecksum,
+            actionItemId: output.actionItemId,
+            proposalRevision: output.proposalRevision,
+            allocatedAt: published.manifest.preparedAt,
+            dependencies: output.dependencies ?? [],
+          }),
+        )
+      : (input.materialize(revision.result, {
+          reviewOnly:
+            published?.publication.reviewOnly === true ||
+            sections.some((section) => !debriefSectionResolved(section.state)),
+        }) ?? []);
     const previous = revision.manifest;
     if (previous) {
       /* The manifest is immutable, so a returned mapping that disagrees with
@@ -1094,9 +1468,12 @@ export async function reconcileDebrief(
       contextText,
       mappings: materialized,
       materializationSurface: input.hasMaterializationSurface ? "workspace" : "absent",
+      sections,
+      core: produced?.core,
     }).manifest;
-    // Verified before the pointer exists: an incomplete revision is a failed
-    // Run, never a published revision that only completion would have refused.
+    // Verified before the pointer exists: a revision that does not add up is a
+    // failed Run, never a published revision that only completion would have
+    // refused.
     const failures = preparedFailures(input.io, manifest!);
     if (failures.length > 0) {
       throw new DebriefIntegrityError(failures[0]!, failures.join(", "));
@@ -1104,14 +1481,44 @@ export async function reconcileDebrief(
     input.event("debrief_revision_prepared", {
       revisionId: manifest!.revisionId,
       outputs: manifest!.materialization.outputs.length,
+      availability: manifest!.completeness.availability?.map((section) => ({
+        name: section.name,
+        state: section.state,
+      })),
     });
   }
+
+  const incomplete = manifest!.completeness.required === "incomplete";
+  const unavailable = (manifest!.completeness.availability ?? [])
+    .filter((section) => !debriefSectionResolved(section.state))
+    .map((section) => section.name);
 
   const publication = publishRevision(input.io, {
     manifest: manifest!,
     manifestChecksum: checksumOf(input.io.read(revisionManifestArtifact(manifest!.revisionId))!),
     publishedAt: input.now().toISOString(),
   });
+  const availability = debriefAvailability(manifest!, publication);
+  if (incomplete) {
+    /* No completion receipt and no projection: the pointer is the only reader
+       that may resolve this revision, and the Run cannot report done. */
+    input.event("debrief_incomplete_published", {
+      revisionId: publication.revisionId,
+      generation: publication.generation,
+      reviewOnly: publication.reviewOnly === true,
+      unavailable,
+      outputs: manifest!.materialization.outputs.length,
+    });
+    return {
+      result: revision.result,
+      publication,
+      receipt: null,
+      availability,
+      completed: false,
+      reconciled: "incomplete",
+      modelCalls,
+    };
+  }
   // The projection is written after the pointer: nothing reads it to learn
   // whether a publication happened, and an interrupted projection is a missing
   // projection the next reconciliation repairs.
@@ -1132,5 +1539,13 @@ export async function reconcileDebrief(
     receiptId: receipt.receiptId,
     revisionId: receipt.revisionId,
   });
-  return { result: revision.result, publication, receipt, reconciled, modelCalls };
+  return {
+    result: revision.result,
+    publication,
+    receipt,
+    availability,
+    completed: true,
+    reconciled,
+    modelCalls,
+  };
 }

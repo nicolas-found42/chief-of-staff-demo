@@ -1,7 +1,13 @@
 import { proposedDue } from "../meetingDisplay";
 import { Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import type { MeetingDebriefDetail, MeetingDebriefField } from "@chief-of-staff-demo/shared";
+import {
+  debriefSectionResolved,
+  type DebriefSectionAvailability,
+  type DebriefSectionName,
+  type MeetingDebriefDetail,
+  type MeetingDebriefField,
+} from "@chief-of-staff-demo/shared";
 import { meetingsApi, type MeetingsClient } from "../clients/meetings";
 import { errorMessage } from "../client";
 import { MeetingActionItems } from "./MeetingActionItems";
@@ -9,14 +15,24 @@ import { DebriefEmailPanel } from "./DebriefEmailPanel";
 import { HandoffDetail } from "./HandoffDetail";
 import { ReadingDisclosure } from "./ReadingDisclosure";
 
-const labels: Record<MeetingDebriefField, string> = {
+const labels: Record<DebriefSectionName, string> = {
   summary: "Summary",
   decisions: "Decisions",
   actionItems: "Action Items",
   openQuestions: "Open questions",
   effectivenessEvidence: "Effectiveness evidence",
   coachingAdvice: "Coaching advice",
+  suggestedRecipients: "Suggested recipients",
 };
+
+/** A section that is not available: never rendered as an empty result (#345). */
+function SectionUnavailable({ section }: { section: DebriefSectionAvailability | null }) {
+  return (
+    <p className="muted" role="status">
+      {section?.reason ?? "This section could not be produced."} Retry it to try again.
+    </p>
+  );
+}
 
 /** Complete reading content. Every mutation stays with its existing owner. */
 export function MeetingDebriefContent({
@@ -45,7 +61,34 @@ export function MeetingDebriefContent({
   );
   const [actionJump, setActionJump] = useState(0);
   const [actionCount, setActionCount] = useState<number | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const extraction = detail.extraction;
+  /* Section availability is what tells a missing section from an empty one
+     (#345): an unavailable section is never rendered as "none recorded". */
+  const revision = detail.revision ?? null;
+  const sectionOf = (name: DebriefSectionName): DebriefSectionAvailability | null =>
+    revision?.sections.find((section) => section.name === name) ?? null;
+  const available = (name: DebriefSectionName) => {
+    const section = sectionOf(name);
+    return section === null || debriefSectionResolved(section.state);
+  };
+  const unavailable = (revision?.sections ?? []).filter(
+    (section) => !debriefSectionResolved(section.state),
+  );
+  const incomplete = revision?.completeness === "incomplete";
+  const sectionName = (name: DebriefSectionName) => labels[name];
+  const retrySections = async () => {
+    setRetrying(true);
+    setError(null);
+    try {
+      await client.meetingDebriefEarlyReview(detail.runId);
+      await refresh();
+    } catch (cause: unknown) {
+      setError(errorMessage(cause));
+    } finally {
+      setRetrying(false);
+    }
+  };
   useEffect(() => {
     if (!working || detail.status === "running" || detail.status === "pending") return;
     if (started.current) return;
@@ -57,7 +100,7 @@ export function MeetingDebriefContent({
     setWorking(null);
   }, [detail, working]);
   const regenerate = (field: MeetingDebriefField) =>
-    detail.review?.approvedAt || detail.status !== "done" ? null : (
+    detail.review?.approvedAt || (!incomplete && detail.status !== "done") ? null : (
       <button type="button" disabled={working !== null} onClick={() => setConfirm(field)}>
         Regenerate {labels[field]}
       </button>
@@ -65,6 +108,18 @@ export function MeetingDebriefContent({
   if (!extraction) return <p>No Debrief content is available yet.</p>;
   return (
     <div className="meeting-debrief-content">
+      {incomplete && (
+        <div className="card" role="status" aria-label="Incomplete Debrief">
+          <p>
+            This Debrief is incomplete and review-only. Unavailable:{" "}
+            {unavailable.map((section) => sectionName(section.name)).join(", ")}. Nothing missing is
+            shown as an empty result.
+          </p>
+          <button type="button" disabled={retrying} onClick={() => void retrySections()}>
+            Retry unavailable sections
+          </button>
+        </div>
+      )}
       <DebriefEmailPanel detail={detail} client={client} refresh={refresh} />
       <nav aria-label="Debrief sections" className="toolbar">
         <a href="#debrief-summary">Summary</a>
@@ -75,12 +130,15 @@ export function MeetingDebriefContent({
             sessionStorage.setItem(`decisions:${detail.runId}`, "all");
           }}
         >
-          Decisions ({extraction.decisions.length})
+          Decisions ({available("decisions") ? extraction.decisions.length : "unavailable"})
         </a>
         <a href="#action-items" onClick={() => setActionJump((value) => value + 1)}>
           Action Items{actionCount === null ? "" : ` (${actionCount})`}
         </a>
-        <a href="#debrief-questions">Open questions ({extraction.openQuestions.length})</a>
+        <a href="#debrief-questions">
+          Open questions (
+          {available("openQuestions") ? extraction.openQuestions.length : "unavailable"})
+        </a>
       </nav>
       <p role="status">{notice}</p>
       {error && <p role="alert">{error}</p>}
@@ -125,28 +183,36 @@ export function MeetingDebriefContent({
       )}
       <section tabIndex={-1} id="debrief-summary" aria-labelledby="debrief-summary-heading">
         <h3 id="debrief-summary-heading">Summary</h3>
-        <p
-          className={allSummary || extraction.summary.length <= 200 ? undefined : "bounded-summary"}
-        >
-          {extraction.summary}
-        </p>
-        {extraction.summary.length > 200 && (
-          <button
-            type="button"
-            aria-expanded={allSummary}
-            onClick={() => {
-              sessionStorage.setItem(`summary:${detail.runId}`, allSummary ? "bounded" : "all");
-              setAllSummary(!allSummary);
-            }}
-          >
-            {allSummary ? "Read less" : "Read more"}
-          </button>
+        {!available("summary") && <SectionUnavailable section={sectionOf("summary")} />}
+        {available("summary") && (
+          <>
+            <p
+              className={
+                allSummary || extraction.summary.length <= 200 ? undefined : "bounded-summary"
+              }
+            >
+              {extraction.summary}
+            </p>
+            {extraction.summary.length > 200 && (
+              <button
+                type="button"
+                aria-expanded={allSummary}
+                onClick={() => {
+                  sessionStorage.setItem(`summary:${detail.runId}`, allSummary ? "bounded" : "all");
+                  setAllSummary(!allSummary);
+                }}
+              >
+                {allSummary ? "Read less" : "Read more"}
+              </button>
+            )}
+          </>
         )}{" "}
         {regenerate("summary")}
       </section>
       <section tabIndex={-1} id="debrief-decisions" aria-labelledby="debrief-decisions-heading">
         <h3 id="debrief-decisions-heading">Decisions</h3>
-        {extraction.decisions.length === 0 ? (
+        {!available("decisions") && <SectionUnavailable section={sectionOf("decisions")} />}
+        {available("decisions") && extraction.decisions.length === 0 ? (
           <p className="muted">No decisions recorded.</p>
         ) : (
           <ul>
@@ -165,7 +231,7 @@ export function MeetingDebriefContent({
             )}
           </ul>
         )}
-        {extraction.decisions.length > 5 && (
+        {available("decisions") && extraction.decisions.length > 5 && (
           <button
             type="button"
             aria-expanded={allDecisions}
@@ -221,7 +287,8 @@ export function MeetingDebriefContent({
       )}
       <section tabIndex={-1} id="debrief-questions" aria-labelledby="debrief-questions-heading">
         <h3 id="debrief-questions-heading">Open questions</h3>
-        {extraction.openQuestions.length === 0 ? (
+        {!available("openQuestions") && <SectionUnavailable section={sectionOf("openQuestions")} />}
+        {available("openQuestions") && extraction.openQuestions.length === 0 ? (
           <p className="muted">No open questions recorded.</p>
         ) : (
           <ul>
@@ -237,10 +304,18 @@ export function MeetingDebriefContent({
       </section>
       <ReadingDisclosure id={`${detail.runId}-coaching`} label="Meeting effectiveness and coaching">
         <h3>Effectiveness evidence</h3>
-        <p>{extraction.effectivenessEvidence}</p>
+        {available("effectivenessEvidence") ? (
+          <p>{extraction.effectivenessEvidence}</p>
+        ) : (
+          <SectionUnavailable section={sectionOf("effectivenessEvidence")} />
+        )}
         {regenerate("effectivenessEvidence")}
         <h3>Coaching advice</h3>
-        <p>{extraction.coachingAdvice}</p>
+        {available("coachingAdvice") ? (
+          <p>{extraction.coachingAdvice}</p>
+        ) : (
+          <SectionUnavailable section={sectionOf("coachingAdvice")} />
+        )}
         {regenerate("coachingAdvice")}
       </ReadingDisclosure>
     </div>

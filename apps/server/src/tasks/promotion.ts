@@ -33,6 +33,12 @@ export interface PromotionInput extends Partial<TaskCreateInput> {
   expectedVersion?: number;
   /** The proposal revision the owner reviewed, checked against the selection. */
   expectedProposalRevision?: number;
+  /**
+   * The owner saw that the Debrief this Action Item came from is incomplete
+   * and chose to accept this work anyway (#345 §3). Required — exactly, as the
+   * boolean `true` — for a review-only record, and recorded with the decision.
+   */
+  missingContentAcknowledged?: boolean;
 }
 
 export interface PromotionResult {
@@ -66,6 +72,16 @@ export function promoteActionItem(
   const refusal = deps.actionItems.promotionRefusal(item);
   if (refusal && item.state !== "promoted") {
     throw new TaskValidationError(refusal.code, refusal.message);
+  }
+  /* A record from an incomplete publication is accepted only by an owner who
+     was told what is missing. Nothing else stands in for that answer: not a
+     truthy string, not an absent field, and not the fact that the work looks
+     complete in itself. */
+  if (item.source.reviewOnly === true && input.missingContentAcknowledged !== true) {
+    throw new TaskValidationError(
+      "action-item-missing-content-acknowledgment",
+      "This Action Item comes from an incomplete Debrief. Acknowledge the missing content to accept it.",
+    );
   }
   if (input.expectedVersion !== undefined && input.expectedVersion !== item.version) {
     throw new TaskValidationError(
@@ -132,7 +148,12 @@ export function promoteActionItem(
         item.id,
         orphan.id,
         { taskVersion: orphan.version },
-        { ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }) },
+        {
+          ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }),
+          ...(input.missingContentAcknowledged === true
+            ? { missingContentAcknowledged: true }
+            : {}),
+        },
       ),
       created: false,
     };
@@ -168,7 +189,10 @@ export function promoteActionItem(
     item.id,
     task.id,
     { taskVersion: task.version },
-    { ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }) },
+    {
+      ...(input.expectedVersion === undefined ? {} : { expectedVersion: item.version }),
+      ...(input.missingContentAcknowledged === true ? { missingContentAcknowledged: true } : {}),
+    },
   );
   deps.tasks.commitAcceptance(task, staged.all ?? deps.actionItems.list());
   return { task: deps.tasks.get(task.id) ?? task, actionItem: staged.committed, created: true };

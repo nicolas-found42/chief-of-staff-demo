@@ -193,7 +193,11 @@ export function MeetingDebriefDetailPage({ client = meetingsApi }: { client?: Me
           )}
           <p className="muted">
             {detail.meetingDate ?? "Meeting date unavailable"} ·{" "}
-            {detail.extraction ? "Debrief ready" : statusLabel(detail.status)}
+            {detail.revision?.completeness === "incomplete"
+              ? "Debrief incomplete · review only"
+              : detail.extraction
+                ? "Debrief ready"
+                : statusLabel(detail.status)}
             {detail.budget && (
               <>
                 {" "}

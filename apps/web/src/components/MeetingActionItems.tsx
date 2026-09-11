@@ -154,6 +154,16 @@ export function MeetingActionItems({
       setDismissed(null);
   };
   const pending = index?.items.filter((item) => item.state === "pending") ?? [];
+  /* Accepting work out of an incomplete Debrief is the owner's decision, and
+     the server refuses it without an explicit acknowledgment (#345 §3). The
+     checkbox is the acknowledgment; the request carries it verbatim. */
+  const [acknowledged, setAcknowledged] = useState<string[]>([]);
+  const acknowledge = (actionItemId: string) =>
+    setAcknowledged((held) =>
+      held.includes(actionItemId)
+        ? held.filter((id) => id !== actionItemId)
+        : [...held, actionItemId],
+    );
   const reviewed = index?.items.filter((item) => item.state !== "pending") ?? [];
   return (
     <section tabIndex={-1} aria-labelledby="meeting-action-items-heading" id="action-items">
@@ -182,47 +192,63 @@ export function MeetingActionItems({
       {tasks && (
         <ul className="card-list">
           {(expanded ? pending : pending.slice(0, 5)).map((item) => (
-            <ActionItemRow
-              key={item.id}
-              isNew={newIds.includes(item.id)}
-              item={item}
-              context={index?.context?.[item.id]}
-              dependencies={index?.dependencies?.[item.id]}
-              targetTitle={(actionItemId: string) => {
-                const target = index?.items.find((entry) => entry.id === actionItemId);
-                return target ? actionItemProposal(target).title : null;
-              }}
-              today={tasks.today}
-              lists={tasks.lists}
-              profiles={profiles}
-              busy={busy.includes(item.id)}
-              checkDuplicates={tasksApi.checkDuplicates}
-              onResolved={load}
-              onPromote={(values, completed) =>
-                act(
-                  item.id,
-                  `Created ${completed ? "completed Task" : "Task"}: ${values.title.trim()}.`,
-                  () =>
-                    tasksApi.promoteActionItem(item.id, {
-                      title: values.title,
-                      notes: values.notes,
-                      dueDate: values.dueDate || null,
-                      priority: values.priority,
-                      listId: values.listId,
-                      responsiblePerson: responsibleFromValue(values.responsible),
-                      completed,
-                    }),
-                )
-              }
-              onDismiss={async () => {
-                if (
-                  await act(item.id, `Dismissed ${actionItemProposal(item).title}.`, () =>
-                    tasksApi.dismissActionItem(item.id),
+            <div key={`${item.id}-review-only`}>
+              {item.source.reviewOnly === true && (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={acknowledged.includes(item.id)}
+                    onChange={() => acknowledge(item.id)}
+                  />{" "}
+                  I understand this Action Item comes from an incomplete Debrief and sections are
+                  unavailable.
+                </label>
+              )}
+              <ActionItemRow
+                key={item.id}
+                isNew={newIds.includes(item.id)}
+                item={item}
+                context={index?.context?.[item.id]}
+                dependencies={index?.dependencies?.[item.id]}
+                targetTitle={(actionItemId: string) => {
+                  const target = index?.items.find((entry) => entry.id === actionItemId);
+                  return target ? actionItemProposal(target).title : null;
+                }}
+                today={tasks.today}
+                lists={tasks.lists}
+                profiles={profiles}
+                busy={busy.includes(item.id)}
+                checkDuplicates={tasksApi.checkDuplicates}
+                onResolved={load}
+                onPromote={(values, completed) =>
+                  act(
+                    item.id,
+                    `Created ${completed ? "completed Task" : "Task"}: ${values.title.trim()}.`,
+                    () =>
+                      tasksApi.promoteActionItem(item.id, {
+                        title: values.title,
+                        notes: values.notes,
+                        dueDate: values.dueDate || null,
+                        priority: values.priority,
+                        listId: values.listId,
+                        responsiblePerson: responsibleFromValue(values.responsible),
+                        completed,
+                        ...(item.source.reviewOnly === true
+                          ? { missingContentAcknowledged: acknowledged.includes(item.id) }
+                          : {}),
+                      }),
                   )
-                )
-                  setDismissed(item);
-              }}
-            />
+                }
+                onDismiss={async () => {
+                  if (
+                    await act(item.id, `Dismissed ${actionItemProposal(item).title}.`, () =>
+                      tasksApi.dismissActionItem(item.id),
+                    )
+                  )
+                    setDismissed(item);
+                }}
+              />
+            </div>
           ))}
         </ul>
       )}

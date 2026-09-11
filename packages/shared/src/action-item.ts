@@ -46,6 +46,14 @@ export interface ActionItemSource {
   transcriptId: string;
   /** The Meeting the Transcript belongs to; null until one is placed. */
   meetingId: string | null;
+  /**
+   * Set when the revision this record came from was exposed incomplete (#345,
+   * ADR-0085). A review-only lineage never gains automatic eligibility, and
+   * promoting one of its Action Items is the owner's own decision — taken with
+   * an explicit acknowledgment of the content that is missing. Absent on
+   * records materialized from a complete publication.
+   */
+  reviewOnly?: boolean;
 }
 
 /**
@@ -203,6 +211,11 @@ export interface ActionItemDecisionRecord {
   kind: ActionItemDecisionKind;
   proposalRevision: number;
   versions: ActionItemVersions;
+  /**
+   * Recorded on a promotion of a review-only Action Item: the owner answered
+   * the missing-content question when they accepted this work (#345 §3).
+   */
+  missingContentAcknowledged?: boolean;
 }
 
 /**

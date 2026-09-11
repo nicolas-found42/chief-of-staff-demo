@@ -101,7 +101,7 @@ async function seed(
 async function waitForStatus(
   request: APIRequestContext,
   runId: string,
-  status: "blocked" | "done" | "skipped",
+  status: "blocked" | "done" | "skipped" | "failed",
 ): Promise<void> {
   await expect
     .poll(async () => {
@@ -494,4 +494,86 @@ test("meeting debrief journey — a Debrief never expires, and publishing stays 
     "revision-r1.manifest.json",
     "revision-r1.result.json",
   ]);
+});
+
+test("meeting debrief journey — an incomplete Debrief is review-only and says what is missing", async ({
+  page,
+  request,
+}) => {
+  /* The section provider cannot produce coaching advice. The checked Action
+     Items are still real work (#345): the Debrief is exposed incomplete, it
+     never claims to be finished, and the missing section reads as missing
+     rather than as an empty result. */
+  const failed = await request.post("/api/test/meeting-debrief/section-failures", {
+    data: { sections: ["coachingAdvice"], reason: "the coaching provider refused" },
+  });
+  expect(failed.ok()).toBe(true);
+
+  const seeded = await seed(request, {
+    transcript: transcriptRecord({
+      id: "drive_journey_incomplete_r1",
+      source: {
+        sourceSystem: "drive",
+        externalFileId: "journey-incomplete",
+        fileName: "Incomplete notes - 2026-07-02T09-00-00.000Z.md",
+        sourceUrl: null,
+        checksum: "journey-checksum-4",
+        observedRevision: 1,
+        modifiedAt: null,
+      },
+      normalizedText:
+        "Dana: I will send the pricing page update by Friday.\nDana: We agreed to keep the launch date.",
+      meetingDate: "2026-07-02",
+      occurrence: null,
+      speakers: ["Dana"],
+      roster: [],
+    }),
+  });
+  await waitForStatus(request, seeded.runId, "failed");
+
+  const detail = (await (
+    await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
+  ).json()) as {
+    revision: {
+      completeness: string;
+      reviewOnly: boolean;
+      sections: Array<{ name: string; state: string }>;
+    };
+    extraction: { actionItems: unknown[]; coachingAdvice: string };
+  };
+  expect(detail.revision.completeness).toBe("incomplete");
+  expect(detail.revision.reviewOnly).toBe(true);
+  expect(
+    detail.revision.sections.filter((section) => section.state === "failed").map((s) => s.name),
+  ).toEqual(["coachingAdvice"]);
+  expect(detail.extraction.actionItems.length).toBeGreaterThan(0);
+  /* A failed section is not an empty success. */
+  expect(detail.extraction.coachingAdvice).toBe("");
+
+  await page.goto(`/meeting-debrief/${encodeURIComponent(seeded.runId)}`);
+  await expect(page.getByText(/Debrief incomplete · review only/).first()).toBeVisible();
+  await expect(page.getByLabel("Incomplete Debrief")).toContainText("Coaching advice");
+  await expect(page.getByText(/the coaching provider refused/).first()).toBeVisible();
+  /* Nothing outward: an incomplete revision grants no email authorization. */
+  const email = await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}/email`);
+  expect(email.status()).toBe(409);
+  expect((await email.json()).error).toBe("debrief-incomplete");
+
+  /* The section provider returns, and the owner's own retry completes the
+     Debrief — without rediscovering the transcript, and without bringing
+     eligibility back for a lineage that was already exposed. */
+  const healed = await request.post("/api/test/meeting-debrief/section-failures", {
+    data: { sections: [] },
+  });
+  expect(healed.ok()).toBe(true);
+  const resumed = await request.post(
+    `/api/meeting-debrief/${encodeURIComponent(seeded.runId)}/early-review`,
+  );
+  expect(resumed.ok()).toBe(true);
+  await waitForStatus(request, seeded.runId, "done");
+  const completed = (await (
+    await request.get(`/api/meeting-debrief/${encodeURIComponent(seeded.runId)}`)
+  ).json()) as { revision: { completeness: string; reviewOnly: boolean } };
+  expect(completed.revision.completeness).toBe("complete");
+  expect(completed.revision.reviewOnly).toBe(true);
 });
