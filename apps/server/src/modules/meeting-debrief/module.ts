@@ -3,6 +3,7 @@ import type {
   MeetingDebriefRunResult,
   MeetingDebriefReviewState,
   ExtractionContextSnapshot,
+  ActionItemMaterializationMapping,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -33,6 +34,15 @@ import { resolveActionItemOwners, stripUnverifiedRecipientEmails } from "./extra
 import { emailOptions, emailPreview, type DebriefActionItemReader } from "./email.js";
 import { extractDebriefCandidates, type CheckedExtraction } from "./candidate-extraction.js";
 import { composeExternalDebriefBody } from "./externalBody.js";
+import {
+  DebriefIntegrityError,
+  DebriefUnavailableError,
+  readPublishedDebrief,
+  reconcileDebrief,
+  type DebriefArtifactIO,
+  type DebriefFirstExtractionReservation,
+  type DebriefPolicySnapshot,
+} from "./publication.js";
 
 export type {
   DebriefCatalogReader,
@@ -50,7 +60,12 @@ export type {
 export type DebriefInput =
   | { kind: "fresh"; transcriptId: string }
   | { kind: "resume"; fromStage: "associate" | "extract" }
-  | { kind: "review"; action: "owner" };
+  | { kind: "review"; action: "owner" }
+  /**
+   * Continue a Run whose preparation is already durable, without ever asking
+   * the model: the recovery sweep's entry point (#358).
+   */
+  | { kind: "reconcile" };
 
 export interface MeetingDebriefModuleDeps {
   now?: () => Date;
@@ -77,13 +92,31 @@ export interface MeetingDebriefModuleDeps {
   /**
    * Where a successful extraction's proposed commitments become durable
    * Action Items (issue #177). The Debrief produces them and owns none of
-   * them: this is a hand-over to the Workspace, and it is part of the extract
-   * Stage, so a Run that reports done has materialized what it extracted.
+   * them: this is a hand-over to the Workspace, and it is part of the
+   * publication's coordinated materialization (#358), so it answers with the
+   * exact mappings each checked entry materialized under — the manifest
+   * records them, and a mismatch is what stops completion.
    * Absent — as in an extraction-only harness — nothing is materialized and
-   * the Run still finishes.
+   * the Run still finishes, with that surface declared rather than implied.
    */
-  materializeActionItems?: (input: DebriefActionItemHandover) => void;
+  materializeActionItems?: DebriefMaterializer;
+  /**
+   * The lineage reservation for this Run, read before the model is asked
+   * anything (#358, ADR-0084). Absent means no resolver is wired: the claim is
+   * `unknown`, which never authorizes automatic acceptance.
+   */
+  firstExtraction?: (input: {
+    transcriptId: string;
+    runId: string;
+  }) => DebriefFirstExtractionReservation;
+  /** The policy facts captured with the reservation. */
+  policy?: () => DebriefPolicySnapshot;
 }
+
+/** One coordinated materialization: the mappings the checked entries now hold. */
+type DebriefMaterializer = (
+  input: DebriefActionItemHandover,
+) => readonly ActionItemMaterializationMapping[] | void;
 
 /** What the Debrief hands the Workspace after one successful extraction. */
 interface DebriefActionItemHandover {
@@ -97,6 +130,16 @@ interface DebriefActionItemHandover {
   actionItems: MeetingDebriefExtraction["actionItems"];
   /** The extraction's own candidate ids, aligned with `actionItems`. */
   candidateAliases?: (string | null)[];
+  /**
+   * The lineage reservation recorded before inference, passed through so the
+   * Tasks side decides eligibility on what was reserved rather than on what
+   * the queue happens to hold now (#358).
+   */
+  firstExtraction?: {
+    operationId: string;
+    claim: "first" | "review-only" | "unknown";
+    basis: string;
+  };
 }
 
 /**
@@ -227,11 +270,11 @@ async function extractWithModel(
   }
 }
 
-/** The current stored debrief, for merging a regenerated field into. */
+/** The currently published Debrief, resolved through its publication pointer. */
 function currentDebrief(ctx: RunContext): MeetingDebriefExtraction {
-  const raw = ctx.readFile("result.json");
-  if (!raw) throw new Error("Debrief Run has no stored result to regenerate from");
-  return (JSON.parse(raw) as MeetingDebriefRunResult).debrief;
+  const published = readPublishedDebrief({ read: (name) => ctx.readFile(name) });
+  if (!published) throw new Error("Debrief Run has no published revision to read");
+  return published.result.debrief;
 }
 
 /**
@@ -252,15 +295,12 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     verifiedForEmail: () => null,
   };
 
-  const extract = async (
-    ctx: RunContext,
-    record: TranscriptRecord,
-    useCheckpoints = true,
-  ): Promise<CheckedExtraction> => {
+  /** The immutable context this Run extracts from (#342, #356, MWR-043). */
+  const captureContext = (record: TranscriptRecord): ExtractionContextSnapshot => {
     const identity = deps.identity.reviewFor(record.id);
-    const snapshot: ExtractionContextSnapshot = {
+    return {
       version: 1,
-      capturedAt: (deps.now?.() ?? new Date()).toISOString(),
+      capturedAt: now().toISOString(),
       source: {
         transcriptId: record.id,
         sourceSystem: record.source.sourceSystem,
@@ -283,12 +323,14 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         organizationCount: identity.organizations.length,
       },
     };
-    ctx.writeFile("context-snapshot.json", `${JSON.stringify(snapshot, null, 2)}\n`);
-    ctx.event("debrief_context_captured", {
-      transcriptId: record.id,
-      meetingId: record.meetingId,
-      timeAnchor: snapshot.timeAnchor?.date ?? null,
-    });
+  };
+
+  const extract = async (
+    ctx: RunContext,
+    record: TranscriptRecord,
+    useCheckpoints = true,
+  ): Promise<CheckedExtraction> => {
+    const identity = deps.identity.reviewFor(record.id);
     const checked = deps.extract
       ? { extraction: await deps.extract({ record, identity }), checkedAliases: [] }
       : await extractWithModel(ctx, record, identity, deps, useCheckpoints);
@@ -302,30 +344,124 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
     };
   };
 
-  /** Store the result of a finished extraction or regeneration on the Run. */
-  const storeResult = (
-    ctx: RunContext,
-    debrief: MeetingDebriefExtraction,
-    transcriptId: string,
-  ): void => {
-    const result: MeetingDebriefRunResult = {
-      version: 1,
-      transcriptId,
-      extractedAt: now().toISOString(),
-      debrief,
+  /** The checked result as one revision is addressed by: serialized bytes, not a file. */
+  const resultText = (debrief: MeetingDebriefExtraction, transcriptId: string): string =>
+    `${JSON.stringify(
+      {
+        version: 1,
+        transcriptId,
+        extractedAt: now().toISOString(),
+        debrief,
+      } satisfies MeetingDebriefRunResult,
+      null,
+      2,
+    )}\n`;
+
+  /** The reservation this Run records before the model is asked anything. */
+  const reserve = (ctx: RunContext, record: TranscriptRecord): DebriefFirstExtractionReservation =>
+    deps.firstExtraction?.({ transcriptId: record.id, runId: ctx.runId }) ?? {
+      claim: "unknown",
+      basis: "no-lineage-resolver-wired",
+      reservedAt: now().toISOString(),
+      lineageRunId: null,
     };
-    ctx.writeFile("result.json", JSON.stringify(result, null, 2) + "\n");
-  };
+
+  const policySnapshot = (): DebriefPolicySnapshot =>
+    deps.policy?.() ?? { capturedAt: now().toISOString(), actionItemPolicy: null };
 
   const ensureReviewState = (
     ctx: RunContext,
     record: TranscriptRecord,
   ): MeetingDebriefReviewState => {
-    const existing = parseReviewState(ctx.readFile("review.json"));
+    const raw = ctx.readFile("review.json");
+    const existing = parseReviewState(raw);
     if (existing) return existing;
+    /* A review record that is present and unreadable is owner evidence that
+       cannot be read, not an absent one: creating it again would replace
+       recipients, selections and locked email previews with the defaults a
+       fresh Run starts from, so recovery refuses instead (#344 §4). */
+    if (raw !== null) {
+      throw new DebriefIntegrityError(
+        "unreadable-review",
+        "review.json exists and is not a Debrief review record",
+      );
+    }
     const state = initialReviewState(ctx.runId, record);
     ctx.writeFile("review.json", serializeReviewState(state));
     return state;
+  };
+
+  /**
+   * The one reconciler, entered by every path that finalizes a Debrief (#358,
+   * ADR-0084). `produce` runs the model; when it is absent nothing may start
+   * inference, so a Run with no intact prepared revision fails visibly rather
+   * than inventing one.
+   */
+  const reconcile = async (
+    ctx: RunContext,
+    record: TranscriptRecord,
+    produce?: () => Promise<{ text: string; aliases: string[] }>,
+    intent: "publish" | "regenerate" = "publish",
+  ): Promise<MeetingDebriefRunResult> => {
+    const io: DebriefArtifactIO = {
+      read: (name) => ctx.readFile(name),
+      write: (name, text) => ctx.writeFile(name, text),
+    };
+    const reservation = reserve(ctx, record);
+    const policy = policySnapshot();
+    let aliases: string[] = [];
+    const outcome = await reconcileDebrief({
+      io,
+      names: () => ctx.artifactNames(),
+      runId: ctx.runId,
+      record,
+      context: captureContext(record),
+      firstExtraction: reservation,
+      policy,
+      intent,
+      now,
+      produce: async () => {
+        if (!produce) {
+          throw new DebriefUnavailableError(
+            `Run ${ctx.runId} has no prepared revision and this path may not start inference`,
+          );
+        }
+        const produced = await produce();
+        aliases = produced.aliases;
+        return produced.text;
+      },
+      materialize: (result) =>
+        deps.materializeActionItems?.({
+          debriefRunId: ctx.runId,
+          transcriptId: record.id,
+          meetingId: record.meetingId,
+          transcriptObservedRevision: record.source.observedRevision,
+          transcriptChecksum: record.source.checksum,
+          actionItems: result.debrief.actionItems,
+          candidateAliases: aliases,
+          ...(deps.firstExtraction
+            ? {
+                firstExtraction: {
+                  operationId: `op-${ctx.runId}`,
+                  claim: reservation.claim,
+                  basis: reservation.basis,
+                },
+              }
+            : {}),
+        }),
+      hasMaterializationSurface: deps.materializeActionItems !== undefined,
+      ensureReview: () => {
+        ensureReviewState(ctx, record);
+      },
+      event: (type, detail) => ctx.event(type, detail),
+    });
+    ctx.event("debrief_reconciled", {
+      reconciled: outcome.reconciled,
+      modelCalls: outcome.modelCalls,
+      revisionId: outcome.publication.revisionId,
+      generation: outcome.publication.generation,
+    });
+    return outcome.result;
   };
 
   /**
@@ -355,31 +491,29 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       // sees exactly what every other generation saw — the immutable record
       // and the Catalog's review state. The replaced value is not an input.
       const merged = await ctx.stage("regenerate", async () => {
-        const checked = await extract(ctx, record, false);
-        const merged = mergeRegeneratedField(
-          currentDebrief(ctx),
-          request.field,
-          checked.extraction,
+        /* A regeneration is a new revision of this operation (#358): the
+           reconciler prepares and publishes it as its own immutable bytes,
+           and a replacement that fails leaves the previous publication —
+           revision, mappings and review — exactly where it was. */
+        const merged = await reconcile(
+          ctx,
+          record,
+          async () => {
+            const checked = await extract(ctx, record, false);
+            return {
+              text: resultText(
+                mergeRegeneratedField(currentDebrief(ctx), request.field, checked.extraction),
+                transcriptId,
+              ),
+              /* A regenerated Action Item list is this Run's own checked
+                 output, so it carries this Run's candidate accounting. Entries
+                 the regeneration kept unchanged still materialize under their
+                 original keys and keep the records they already have. */
+              aliases: checked.checkedAliases,
+            };
+          },
+          "regenerate",
         );
-        storeResult(ctx, merged, transcriptId);
-        /* A regeneration is an extraction, so its proposals reach the queue
-           the same way (issue #177). Materialization is idempotent and adds
-           only what is new, so a decision already made on an unchanged
-           proposal survives — a regenerated Debrief showing a commitment the
-           queue never received would be the worse outcome. */
-        deps.materializeActionItems?.({
-          debriefRunId: ctx.runId,
-          transcriptId,
-          meetingId: record.meetingId,
-          transcriptObservedRevision: record.source.observedRevision,
-          transcriptChecksum: record.source.checksum,
-          actionItems: merged.actionItems,
-          /* A regenerated Action Item list is this Run's own checked output,
-             so it carries this Run's candidate accounting. Entries the
-             regeneration kept unchanged still materialize under their original
-             keys and keep the records they already have. */
-          candidateAliases: checked.checkedAliases,
-        });
         const next: MeetingDebriefReviewState = {
           ...state,
           review:
@@ -394,9 +528,11 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
       });
       return {
         status: "done",
-        summary: `Regenerated ${request.field} — ${merged.decisions.length} decision${
-          merged.decisions.length === 1 ? "" : "s"
-        }, ${merged.actionItems.length} action item${merged.actionItems.length === 1 ? "" : "s"}`,
+        summary: `Regenerated ${request.field} — ${merged.debrief.decisions.length} decision${
+          merged.debrief.decisions.length === 1 ? "" : "s"
+        }, ${merged.debrief.actionItems.length} action item${
+          merged.debrief.actionItems.length === 1 ? "" : "s"
+        }`,
         detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
       };
     }
@@ -531,12 +667,15 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         };
       }
       if (meta.failedStage === "extract") {
+        /* No discard: a checked revision that reached the Run is the work
+           this retry is resuming (#358). The reconciler finishes an intact
+           preparation without a model call, and refuses to regenerate one
+           whose accepted bytes are damaged. */
         return {
           fromStage: "extract",
           reason: "failed_stage_is_safe_to_repeat",
           input: { kind: "resume", fromStage: "extract" },
           resetAttempts: true,
-          discard: ["result.json"],
         };
       }
       if (meta.failedStage === "regenerate" || meta.failedStage === "review") {
@@ -551,22 +690,15 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
 
     planRecovery(state) {
       if (state.status !== "pending" && state.status !== "running") return null;
-      if (state.files.includes("review.json") || state.files.includes("result.json")) {
-        /* Extraction already happened and its result survived. Re-enter the
-           review Stage, which now settles any pending owner request and ends
-           the Run rather than re-arming a wait. */
-        return {
-          fromStage: "review",
-          reason: state.files.includes("review.json")
-            ? "debrief_review_survived_restart"
-            : "debrief_result_survived_restart",
-          input: { kind: "review", action: "owner" },
-        };
-      }
+      /* Both shapes resume the same way: the reconciler decides from the
+         committed bytes whether this Run still needs the model (#358). */
+      const prepared = state.files.some((name) =>
+        /^revision-r\d+\.(manifest|result)\.json$/.test(name),
+      );
       return {
-        fromStage: "associate",
-        reason: "debrief_survived_restart",
-        input: { kind: "resume", fromStage: "associate" },
+        fromStage: "extract",
+        reason: prepared ? "debrief_publication_survived_restart" : "debrief_survived_restart",
+        input: { kind: "resume", fromStage: "extract" },
       };
     },
 
@@ -614,32 +746,31 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
         return { status: "skipped", reason: "transcript_not_in_catalog" };
       }
 
-      // extract — the structured retrospective, from the stored artifact,
-      // then the durable Action Items it proposed. Both inside the Stage: a
-      // Run reports done once its proposals exist as Workspace records, not
-      // once its text does (issue #177).
-      await ctx.stage("extract", async () => {
-        const checked = await extract(ctx, record);
-        const debrief = checked.extraction;
-        storeResult(ctx, debrief, transcriptId);
-        ctx.event("debrief_extracted", {
-          decisions: debrief.decisions.length,
-          actionItems: debrief.actionItems.length,
-          openQuestions: debrief.openQuestions.length,
-        });
-        deps.materializeActionItems?.({
-          debriefRunId: ctx.runId,
-          transcriptId,
-          meetingId: record.meetingId,
-          transcriptObservedRevision: record.source.observedRevision,
-          transcriptChecksum: record.source.checksum,
-          actionItems: debrief.actionItems,
-          candidateAliases: checked.checkedAliases,
-        });
-        return debrief;
+      // extract — the structured retrospective, then the coordinated
+      // publication that makes it durable: exact mappings materialized, the
+      // review record kept, the pointer published, completion verified
+      // (#358). Recovery and retry enter the same reconciler, so an intact
+      // prepared revision finishes here without asking the model anything.
+      const recounted = await ctx.stage("extract", async () => {
+        const produce =
+          input.kind === "reconcile"
+            ? undefined
+            : async (): Promise<{ text: string; aliases: string[] }> => {
+                const checked = await extract(ctx, record);
+                ctx.event("debrief_extracted", {
+                  decisions: checked.extraction.decisions.length,
+                  actionItems: checked.extraction.actionItems.length,
+                  openQuestions: checked.extraction.openQuestions.length,
+                });
+                return {
+                  text: resultText(checked.extraction, transcriptId),
+                  aliases: checked.checkedAliases,
+                };
+              };
+        return reconcile(ctx, record, produce);
       });
 
-      /* The Debrief is finished the moment it is extracted. It used to stop
+      /* The Debrief is finished the moment it is published. It used to stop
          here against a thirty-day owner wait, which meant a workspace of
          transcripts sat `blocked` behind a person — the opposite of what this
          app is for. The review record is still written, because the roster,
@@ -653,12 +784,13 @@ export function meetingDebriefModule(deps: MeetingDebriefModuleDeps): ShellModul
           rosterStatus: rosterStatusOf(record),
         });
       });
-      const debrief = currentDebrief(ctx);
       return {
         status: "done",
-        summary: `${debrief.decisions.length} decision${
-          debrief.decisions.length === 1 ? "" : "s"
-        }, ${debrief.actionItems.length} action item${debrief.actionItems.length === 1 ? "" : "s"}`,
+        summary: `${recounted.debrief.decisions.length} decision${
+          recounted.debrief.decisions.length === 1 ? "" : "s"
+        }, ${recounted.debrief.actionItems.length} action item${
+          recounted.debrief.actionItems.length === 1 ? "" : "s"
+        }`,
         detail: { transcriptId, rosterStatus: rosterStatusOf(record) },
       };
     },

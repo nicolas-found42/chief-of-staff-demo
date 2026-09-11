@@ -8,7 +8,6 @@ import type {
   MeetingDebriefIndexEntry,
   MeetingDebriefReviewState,
   MeetingDebriefReviewView,
-  MeetingDebriefRunResult,
   TranscriptRecord,
 } from "@chief-of-staff-demo/shared";
 import {
@@ -30,6 +29,14 @@ import {
   type DebriefApprovalGateDeps,
 } from "./review.js";
 import { EMAIL_PATTERN } from "../../person-profile/profiles.js";
+import {
+  completionFailures,
+  readOperation,
+  readPublishedDebrief,
+  type DebriefFirstExtractionReservation,
+  type DebriefPolicySnapshot,
+  type DebriefPublishedRead,
+} from "./publication.js";
 import type { DebriefProfileDirectory } from "./profiles.js";
 import type { ModelBudgetLedger } from "../../llm/budget.js";
 import type { ModelAdmissionService } from "../../llm/admission.js";
@@ -84,15 +91,32 @@ export interface MeetingDebriefHostDeps {
   budgetLedger?: ModelBudgetLedger | undefined;
   admission?: ModelAdmissionService | undefined;
   timelineStore?: ModelTimelineStore | undefined;
+  /**
+   * Where this Run's first-extraction reservation comes from (#358). Absent,
+   * the host answers from the retained reservations of this Module's other
+   * Runs for the same Transcript, which is the Workspace's own record of who
+   * extracted it first.
+   */
+  firstExtraction?: (input: {
+    transcriptId: string;
+    runId: string;
+  }) => DebriefFirstExtractionReservation;
+  /** The Action Item Policy in force, captured with the reservation. */
+  policy?: () => DebriefPolicySnapshot;
 }
 
-function parseRunResult(raw: string | null): MeetingDebriefRunResult | null {
-  if (raw === null) return null;
-  try {
-    return JSON.parse(raw) as MeetingDebriefRunResult;
-  } catch {
-    return null;
-  }
+/**
+ * The published revision of one Run (#358): resolved through the publication
+ * pointer, never through whichever result file happens to exist. Throws
+ * DebriefIntegrityError when accepted bytes no longer match their receipt —
+ * a damaged Debrief is a visible failure, never an empty one.
+ *
+ * A Run with no pointer but a readable `result.json` is a pre-#358 legacy
+ * publication: readable, and explicitly not evidence of the current contract.
+ */
+function publishedDebrief(run: RunHandle | null): DebriefPublishedRead | null {
+  if (!run) return null;
+  return readPublishedDebrief({ read: (name) => run.readArtifact(name) });
 }
 
 /**
@@ -170,6 +194,8 @@ export class MeetingDebriefHost implements HostedModule {
   private readonly budgetLedger?: ModelBudgetLedger | undefined;
   private readonly admission?: ModelAdmissionService | undefined;
   private readonly timelineStore?: ModelTimelineStore | undefined;
+  private readonly policy: (() => DebriefPolicySnapshot) | null;
+  private readonly now: () => Date;
   /** transcriptId → runId, rebuilt once per process from Runs and the log. */
   private knownRuns: Map<string, string> | null = null;
   /** `process` serializes through one chain, so two passes never race a scan. */
@@ -185,6 +211,8 @@ export class MeetingDebriefHost implements HostedModule {
     this.budgetLedger = deps.budgetLedger;
     this.admission = deps.admission;
     this.timelineStore = deps.timelineStore;
+    this.policy = deps.policy ?? null;
+    this.now = deps.now ?? (() => new Date());
     /* A host without owner identity or a Profile directory keeps the gate
        closed: approval then reports its blockers instead of passing. */
     this.gate = {
@@ -193,6 +221,7 @@ export class MeetingDebriefHost implements HostedModule {
         ? (email) => deps.profiles!.verifiedForEmail(email)
         : () => null,
     };
+    const firstExtraction = deps.firstExtraction ?? ((input) => this.reserveLineage(input));
     this.runner = new Runner({
       runs: deps.runs,
       module: meetingDebriefModule({
@@ -207,11 +236,82 @@ export class MeetingDebriefHost implements HostedModule {
         ...(deps.materializeActionItems
           ? { materializeActionItems: deps.materializeActionItems }
           : {}),
+        firstExtraction,
+        ...(deps.policy ? { policy: deps.policy } : {}),
         ...(deps.now ? { now: deps.now } : {}),
       }),
       log: deps.log,
       ...(deps.now ? { now: deps.now } : {}),
     });
+  }
+
+  /**
+   * The lineage reservation every Run records before inference (#358,
+   * ADR-0084). A first extraction is reserved once and retained: the Run
+   * holding it is still the lineage's first even after a zero-action
+   * extraction, so a second Run for the same Transcript — a new source
+   * revision, a re-mine, a restored Run — is review-only rather than a fresh
+   * automatic-acceptance opportunity.
+   */
+  private reserveLineage(input: {
+    transcriptId: string;
+    runId: string;
+  }): DebriefFirstExtractionReservation {
+    const at = this.now().toISOString();
+    const lineage = this.retainedFirstReservation(input.transcriptId, input.runId);
+    if (lineage) {
+      return {
+        claim: "review-only",
+        basis: `first-extraction-reserved-by:${lineage}`,
+        reservedAt: at,
+        lineageRunId: lineage,
+      };
+    }
+    const policy = this.policy?.() ?? null;
+    if (!policy) {
+      return {
+        claim: "unknown",
+        basis: "no-action-item-policy-wired",
+        reservedAt: at,
+        lineageRunId: null,
+      };
+    }
+    if (policy.actionItemPolicy !== "auto-create-mine") {
+      return {
+        claim: "review-only",
+        basis: `action-item-policy:${policy.actionItemPolicy}`,
+        reservedAt: at,
+        lineageRunId: null,
+      };
+    }
+    return {
+      claim: "first",
+      basis: "no-retained-first-reservation",
+      reservedAt: at,
+      lineageRunId: null,
+    };
+  }
+
+  /**
+   * The Run whose retained reservation already claimed this source file's
+   * first extraction. The lineage is the immutable source file, so a later
+   * revision of the same Drive file belongs to it — a new Transcript id is
+   * not a new lineage.
+   */
+  private retainedFirstReservation(transcriptId: string, runId: string): string | null {
+    const sourceFileId = this.catalog.getTranscript(transcriptId)?.source.externalFileId ?? null;
+    for (const summary of this.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
+      if (summary.id === runId) continue;
+      const run = this.runs.open(summary.id);
+      if (!run) continue;
+      const operation = readOperation({ read: (name) => run.readArtifact(name) });
+      if (!operation) continue;
+      const sameLineage =
+        operation.transcriptId === transcriptId ||
+        (sourceFileId !== null && operation.source.externalFileId === sourceFileId);
+      if (sameLineage && operation.firstExtraction.claim === "first") return summary.id;
+    }
+    return null;
   }
 
   /** Resolves when every enqueued Run has settled (test seam). */
@@ -222,6 +322,81 @@ export class MeetingDebriefHost implements HostedModule {
   start(): void {
     this.runner.startRecoveryLoop();
     void this.releaseLegacyReviewWaits();
+    void this.reconcilePublications();
+  }
+
+  /**
+   * The publication sweep (#358, ADR-0084): every Run whose commit metadata is
+   * unfinished — a prepared revision with no receipt, a missing projection, or
+   * a pointer that no longer verifies — is re-entered through the reconciler.
+   * An intact preparation is finalized with zero model calls; a damaged one
+   * fails visibly again rather than being rewritten.
+   *
+   * Runs that are still pending or running are the Runner's own recovery
+   * sweep's business, so this pass takes only the terminal ones.
+   */
+  async reconcilePublications(): Promise<number> {
+    let reconciled = 0;
+    for (const summary of this.runs.list({ module: MEETING_DEBRIEF_MODULE_ID }).runs) {
+      const run = this.runs.open(summary.id);
+      if (!run) continue;
+      try {
+        /* Reading the record is inside the guard too: a damaged Run is the
+           Workspace integrity surface's business, and it must not turn this
+           best-effort sweep into an unhandled rejection at boot. */
+        const meta = run.read();
+        if (meta.status !== "done" && meta.status !== "failed") continue;
+        if (!this.publicationNeedsRecovery(run)) continue;
+        if (meta.status === "failed") {
+          /* A failed Run resumes through its Module's own retry plan; the
+             reconciler it re-enters finishes an intact preparation without
+             the model and refuses a damaged one. */
+          await this.runner.retryRun(summary.id);
+        } else {
+          /* A finished Run may not start inference, so its re-entry can only
+             finalize what is already prepared. */
+          await this.runner.reenterRun(summary.id, "extract", "debrief_publication_recovery", {
+            kind: "reconcile",
+          });
+        }
+        reconciled += 1;
+      } catch {
+        // A Run that will not re-enter stays as it is; the next pass tries again.
+      }
+    }
+    await this.runner.idle();
+    return reconciled;
+  }
+
+  /**
+   * Whether a Run has prepared work that never became a completed
+   * publication. A Run that failed *because* its accepted bytes are damaged
+   * is left alone: repeating that attempt would only fail again, and the
+   * owner already has the integrity failure in front of them.
+   */
+  private publicationNeedsRecovery(run: RunHandle): boolean {
+    const names = run.artifactNames();
+    if (!names.some((name) => /^revision-r\d+\.(manifest|result)\.json$/.test(name))) return false;
+    const failures = (this.runs.detail(run.id)?.events ?? []).filter(
+      (event) => event.type === "stage_failed",
+    );
+    const last = failures.at(-1);
+    if (
+      typeof last?.detail?.error === "string" &&
+      last.detail.error.startsWith("Debrief publication is not sound")
+    ) {
+      return false;
+    }
+    try {
+      return (
+        completionFailures({ read: (name) => run.readArtifact(name) }, { runId: run.id }).length > 0
+      );
+    } catch {
+      // The pointer or the bytes under it are damaged: the reconciler is the
+      // only path that can say so on the Run, and it refuses rather than
+      // quietly re-extracting.
+      return true;
+    }
   }
 
   /**
@@ -257,12 +432,14 @@ export class MeetingDebriefHost implements HostedModule {
   }
 
   /**
-   * Sweep due review waits now (ADR-0020's clock-resume path). The Runner's
-   * recovery loop runs this on its slow tick; the hermetic journey calls it
-   * to make expiry observable without waiting out the tick.
+   * Sweep due review waits now (ADR-0020's clock-resume path), then finish any
+   * publication whose commit metadata is still open. The Runner's recovery
+   * loop runs this on its slow tick; the hermetic journey calls it to make
+   * expiry observable without waiting out the tick.
    */
-  recover(): Promise<number> {
-    return this.runner.recoverRuns();
+  async recover(): Promise<number> {
+    const recovered = await this.runner.recoverRuns();
+    return recovered + (await this.reconcilePublications());
   }
 
   /**
@@ -496,7 +673,7 @@ export class MeetingDebriefHost implements HostedModule {
     if (record === null) return null;
     const review = this.identity.reviewFor(meta.externalId);
     const identity = identitySummary(review);
-    const extraction = parseRunResult(run.readArtifact("result.json"));
+    const extraction = publishedDebrief(run)?.result ?? null;
     const state = parseReviewState(run.readArtifact("review.json"));
     const linked = record.occurrence !== null;
     const rosterStatus = record.roster.length > 0 ? "prefilled" : "requires_confirmation";
@@ -551,7 +728,7 @@ export class MeetingDebriefHost implements HostedModule {
     if (!meta.externalId) return null;
     const record = this.catalog.getTranscript(meta.externalId);
     const identity = identitySummary(this.identity.reviewFor(meta.externalId));
-    const extraction = parseRunResult(run.readArtifact("result.json"));
+    const extraction = publishedDebrief(run)?.result ?? null;
     const state = parseReviewState(run.readArtifact("review.json"));
     const linked = record?.occurrence != null;
     const rosterStatus =
@@ -845,7 +1022,7 @@ export class MeetingDebriefHost implements HostedModule {
     app.get("/api/meeting-debrief/:runId/email", async (request, reply) => {
       const { runId } = request.params as { runId: string };
       const run = this.runs.open(runId);
-      const result = parseRunResult(run?.readArtifact("result.json") ?? null);
+      const result = publishedDebrief(run)?.result ?? null;
       const detail = result ? { extraction: result.debrief } : null;
       const record = result ? this.catalog.getTranscript(result.transcriptId) : null;
       if (!detail?.extraction || !record)
@@ -856,7 +1033,7 @@ export class MeetingDebriefHost implements HostedModule {
       const { runId } = request.params as { runId: string };
       const found = this.reviewable(runId);
       const run = this.runs.open(runId);
-      const result = parseRunResult(run?.readArtifact("result.json") ?? null);
+      const result = publishedDebrief(run)?.result ?? null;
       const detail = result ? { extraction: result.debrief } : null;
       const record = result ? this.catalog.getTranscript(result.transcriptId) : null;
       const body = request.body as { selectedIds?: unknown } | undefined;
@@ -905,7 +1082,7 @@ export class MeetingDebriefHost implements HostedModule {
           message: "Review an email preview before creating the draft.",
         });
       {
-        const result = parseRunResult(found.run.readArtifact("result.json"));
+        const result = publishedDebrief(found.run)?.result ?? null;
         const detail = result ? { extraction: result.debrief } : null;
         const record = result ? this.catalog.getTranscript(result.transcriptId) : null;
         if (

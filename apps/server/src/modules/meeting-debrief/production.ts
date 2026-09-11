@@ -44,6 +44,8 @@ export interface MeetingDebriefProductionRuntimeOptions {
    */
   materializeActionItems?: MeetingDebriefHostDeps["materializeActionItems"];
   readActionItems?: MeetingDebriefHostDeps["readActionItems"];
+  /** The Action Item Policy the lineage reservation is captured against (#358). */
+  policy?: MeetingDebriefHostDeps["policy"];
   /**
    * Staleness hand-off to the Brief side (issue #162): fired after a review
    * action-item mutation persists. The shell wires it to notifyActionItemsChanged.
@@ -91,6 +93,7 @@ export function createMeetingDebriefProductionRuntime(
     ...(options.materializeActionItems
       ? { materializeActionItems: options.materializeActionItems }
       : {}),
+    ...(options.policy ? { policy: options.policy } : {}),
     ...(options.budgetLedger ? { budgetLedger: options.budgetLedger } : {}),
     ...(options.admission ? { admission: options.admission } : {}),
     ...(options.timelineStore ? { timelineStore: options.timelineStore } : {}),

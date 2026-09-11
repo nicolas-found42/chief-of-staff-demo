@@ -66,6 +66,9 @@ export interface RunHandle {
   /** Module-owned per-Run files. The Shell stores, serves and deletes them and
    *  never reads inside one. */
   readArtifact(name: string): string | null;
+  /** The Run's own file names, so a Module can find its artifacts without
+   *  reading any of them. */
+  artifactNames(): string[];
   writeArtifact(name: string, text: string): void;
   deleteArtifact(name: string): void;
 }
@@ -414,6 +417,10 @@ class RunHandleImpl implements RunHandle {
       return null;
     }
     return readFileSync(path, "utf8");
+  }
+
+  artifactNames(): string[] {
+    return artifactNames(this.dir);
   }
 
   writeArtifact(name: string, text: string): void {

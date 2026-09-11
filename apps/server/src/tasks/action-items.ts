@@ -48,6 +48,22 @@ export interface ActionItemMaterialization {
    * Local accounting: they identify a checked entry, never a Workspace record.
    */
   candidateAliases?: (string | null)[];
+  /**
+   * The lineage reservation the Debrief recorded before it asked the model
+   * anything (#358, ADR-0084). Automatic acceptance reads this rather than
+   * re-deriving the answer from a queue that a zero-action extraction leaves
+   * empty: `review-only` here means the operation was reserved while
+   * automation was not authorized, and no later enablement authorizes it.
+   * Absent means the caller has no reservation (an older writer, or a harness).
+   */
+  firstExtraction?: DebriefExtractionReservation;
+}
+
+/** The reservation one Debrief operation carries, as the Tasks side reads it. */
+interface DebriefExtractionReservation {
+  operationId: string;
+  claim: "first" | "review-only" | "unknown";
+  basis: string;
 }
 
 /** What an Action Item query narrows on. Everything is optional. */

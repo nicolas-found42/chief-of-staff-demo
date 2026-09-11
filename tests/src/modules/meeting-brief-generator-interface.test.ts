@@ -81,6 +81,7 @@ function runContext() {
     },
     readFile: (name) => files.get(name) ?? null,
     writeFile: (name, text) => void files.set(name, text),
+    artifactNames: () => [...files.keys()],
   };
   return { context, events, files, stages, waits, waitSignal };
 }

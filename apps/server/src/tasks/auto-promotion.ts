@@ -55,6 +55,18 @@ export function materializeUnderPolicy(
      Transcript's proposals once, and automation must not answer for them a
      second time. */
   if (first !== null && first !== input.debriefRunId) return materialized;
+  /* The reservation deciding this is the one the Debrief recorded before it
+     asked the model anything (#358, ADR-0084). It is a *necessary* condition,
+     not a sufficient one: `review-only` is permanent, so an operation
+     reserved while automation was not enabled is never promoted by a later
+     enablement, and the retained reservation of a zero-action first
+     extraction is what keeps the next Run from being mistaken for the first. */
+  if (input.firstExtraction !== undefined && input.firstExtraction.claim !== "first") {
+    deps.log?.(
+      `automatic promotion withheld: ${input.firstExtraction.claim} (${input.firstExtraction.basis})`,
+    );
+    return materialized;
+  }
   return materialized.map((item) => promoteIfEligible(deps, item));
 }
 

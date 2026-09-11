@@ -99,6 +99,8 @@ export interface RunContext {
   wait(request: { reason: string; timeout: RunWaitTimeout }): never;
   /** The Run's own files. The Shell stores and serves them and never reads inside one. */
   readFile(name: string): string | null;
+  /** The names of the Run's own files, without reading any of them. */
+  artifactNames(): string[];
   writeFile(name: string, text: string): void;
 }
 

@@ -17,6 +17,7 @@ import { registerTasksApi } from "../../../apps/server/src/api/tasks";
 import { TaskStore } from "../../../apps/server/src/tasks/store";
 import { WorkspaceTasks } from "../../../apps/server/src/tasks/tasks";
 import { WorkspaceActionItems } from "../../../apps/server/src/tasks/action-items";
+import { materializationIndex } from "../../../apps/server/src/tasks/materialization";
 import { MeetingDebriefHost } from "../../../apps/server/src/modules/meeting-debrief/host";
 import { openRuns, type Runs } from "../../../apps/server/src/runs";
 
@@ -165,7 +166,13 @@ beforeEach(() => {
       reviewFor: () => ({ ...identityReview, organizations: [] }),
     },
     extract: () => Promise.resolve(extraction()),
-    materializeActionItems: (handover) => actionItems.materialize(handover),
+    /* The coordinated materialization (#358) answers with the exact
+       mappings the checked entries became, which is what the publication's
+       manifest records. */
+    materializeActionItems: (handover) =>
+      [...materializationIndex(actionItems.materialize(handover)).values()].filter(
+        (mapping) => mapping.debriefRunId === handover.debriefRunId,
+      ),
     log: () => {},
   });
   app = fastify();
