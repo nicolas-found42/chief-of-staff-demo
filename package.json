@@ -30,6 +30,7 @@
     "eval:lint": "tsx scripts/lint-golden.mts",
     "eval:score": "tsx scripts/score-debrief-eval.mts --all",
     "eval:debrief": "tsx scripts/run-debrief-eval.mts upstage/solar-pro4 /tmp/debrief-gate/solar tests/fixtures/debrief-golden/transcripts/*.md && pnpm run eval:score",
+    "eval:campaign": "tsx scripts/run-validation-campaign.mts",
     "eval:judge-contract": "tsx scripts/run-judge-contract-eval.mts",
     "eval:judge-differential": "tsx scripts/run-judge-contract-differential.mts",
     "typecheck:scripts": "tsc -p scripts --noEmit",
