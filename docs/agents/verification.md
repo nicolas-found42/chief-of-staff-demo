@@ -16,7 +16,8 @@ supported way to run the app.
 | Whole tree | `pnpm run check` | Typecheck, lint, formatting, knip, and all unit tests |
 | Unit coverage | `pnpm run test:coverage` | Server unit tests with the same coverage floors used by CI |
 | App behavior | `pnpm run check:all` | The whole-tree gate plus the Playwright suite |
-| Prompt eval | `pnpm exec tsx scripts/run-debrief-eval-all.mts --models upstage/solar-pro4 --score` | Solar-pro4 debrief extractions on all 20 real fixture transcripts score clean against hand-written goldens |
+| Prompt eval | `pnpm exec tsx scripts/run-debrief-eval-all.mts --models upstage/solar-pro4 --score` | Solar-pro4 debrief extractions on the frozen Golden corpus score clean against hand-written goldens |
+| Validation campaign (zero-spend) | `pnpm run eval:campaign -- --plan-only --provider mock` | On a checkout holding the private corpus: freezes a campaign manifest from its revision and prints derived slot counts; no provider call, no spend |
 | Production image | `docker compose build`, boot, then `GET /api/health` | The pruned runtime image contains a working server and web bundle |
 | Clean checkout | GitHub Actions on pull requests and pushes to `main` | Clean installs, the gates above, coverage, and the production image boot |
 
@@ -95,6 +96,24 @@ time eval outputs are refreshed. Goldens are hand-written from the transcripts,
 never copied from model output; keyword matching is by intent (`any` groups in
 each golden). A golden that the gate model honestly cannot meet means the prompt
 needs work, not the golden — fix the prompt and re-run.
+
+The local corpus is private, so both eval gates are run where it exists, and the
+revision it holds is what a run records. A complete private validation campaign —
+frozen manifest, one terminal outcome per planned slot, cost and timing from the
+budget ledger and timeline store, nearest-rank p95, zero-denominator categories
+reported not applicable — is `scripts/run-validation-campaign.mts` (see
+[the campaign record](../adr/0090-private-validation-campaigns-freeze-the-plan-and-record-every-slot.md)
+and `docs/research/debrief-eval-cli.md`). Its zero-spend form freezes and prints
+a plan without contacting anything; a live campaign is an explicit act needing
+`--allow-live`, an owner source-lifecycle grant and credentials, and it is an
+external prerequisite rather than part of this gate.
+
+The eval CLIs print no meeting content: a run line reports an answer's shape
+(summary characters and bucket counts) and never action titles, owners or dates.
+Every run lands exactly one terminal file in its slot — the debrief output when
+the model answered, the error record when anything failed, including the final
+serialization — so a re-run whose calls fail can never be scored against an
+earlier attempt's output.
 
 `pnpm run eval:score` re-scores the legacy `/tmp/debrief-gate/solar` dir and spends nothing; `pnpm run eval:lint` checks
 the goldens themselves and is what to run after editing one. The format and the authoring method
